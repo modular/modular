@@ -13,15 +13,17 @@
 """Mixed-step split of ragged MHA (B200).
 
 A mixed step batches decode rows (``1 + K`` tokens each) with prefill rows.
-With a split record on the KV leaf, ``mo.mha.ragged.paged`` cuts the batch
+With a split record on the KV leaf, ``attention.mha.ragged.paged`` cuts the batch
 into a head and a tail view and runs each on its own route, into one output.
 The oracle: the split output equals each view's rows run alone, bit for bit.
 A zeros record or a malformed one keeps the single launch, so it equals the
 call without a record (which sends zeros).
 
-The shape is one attention layer on one GPU, 24 query heads over 4 KV heads:
-depth 256 with FP8 or BF16 query and KV, and with BF16 at depth 512 and
-under a sliding-window mask.
+The default is 24 query heads over 4 KV heads at depth 256 with FP8 or
+BF16 query and KV, and BF16 at depth 512 or under a sliding-window mask.
+Three rows add per-head sink weights, a value narrower than its key
+(192/128, one packed plane) at 16 query heads over 1 KV head, and both
+together under a 128-token window.
 """
 
 from __future__ import annotations
@@ -33,7 +35,11 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 import torch
-from max._kv_cache_ops import mha_decode_num_partitions
+from max._kv_cache_ops import (
+    mha_decode_num_partitions,
+    mha_split_kv_decode_num_partitions,
+    multiprocessor_count,
+)
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -45,11 +51,12 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn._graph_ops import flash_attention_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
+    SplitKVHeadDims,
     packed_page_stride,
     padded_lut_cols,
 )
@@ -72,6 +79,14 @@ class Shape:
     kv_dtype: DType
     head_dim: int = 256
     local_window_size: int = -1
+    q_heads: int = NUM_Q_HEADS
+    kv_heads: int = NUM_KV_HEADS
+    v_head_dim: int | None = None
+    sink: bool = False
+
+    @property
+    def sliding(self) -> bool:
+        return self.local_window_size > 0
 
 
 @dataclass(frozen=True)
@@ -105,15 +120,28 @@ def _record(rows: Sequence[Row], head_rows: int) -> np.ndarray:
     )
 
 
-def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
+def _build(
+    session: InferenceSession,
+    with_record: bool,
+    shape: Shape,
+    kv_params: MHAKVCacheParams,
+) -> Model:
     gpu, cpu = DeviceRef.GPU(), DeviceRef.CPU()
     kv_dtype, head_dim = shape.kv_dtype, shape.head_dim
+    v_head_dim = shape.v_head_dim
     input_types: list[BufferType | TensorType] = [
-        TensorType(kv_dtype, ["total_q", NUM_Q_HEADS, head_dim], device=gpu),
+        TensorType(kv_dtype, ["total_q", shape.q_heads, head_dim], device=gpu),
         TensorType(DType.uint32, ["batch_p1"], device=gpu),
         BufferType(
             kv_dtype,
-            ["num_pages", 2, 1, PAGE_SIZE, NUM_KV_HEADS, head_dim],
+            [
+                "num_pages",
+                kv_params.kv_dim,
+                1,
+                PAGE_SIZE,
+                shape.kv_heads,
+                kv_params.storage_head_dim,
+            ],
             device=gpu,
         ),
         TensorType(DType.uint32, ["batch"], device=gpu),
@@ -122,19 +150,17 @@ def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
         TensorType(DType.uint32, [1], device=cpu),
         TensorType(DType.int64, [4], device=cpu),
     ]
+    if shape.sink:
+        input_types.append(
+            TensorType(DType.bfloat16, [shape.q_heads], device=gpu)
+        )
     if with_record:
         input_types.append(TensorType(DType.uint32, [SPLIT_SIZE], device=cpu))
-    kv_params = MHAKVCacheParams(
-        dtype=kv_dtype,
-        n_kv_heads=NUM_KV_HEADS,
-        head_dim=head_dim,
-        num_layers=1,
-        page_size=PAGE_SIZE,
-        devices=[gpu],
-    )
-    sliding = shape.local_window_size > 0
+    sliding = shape.sliding
     with Graph(
-        f"mha_mixed_split_{with_record}_{kv_dtype}_{head_dim}_{sliding}",
+        "mha_mixed_split_"
+        f"{with_record}_{kv_dtype}_{head_dim}_{sliding}_{shape.q_heads}_"
+        f"{shape.kv_heads}_{v_head_dim}_{shape.sink}",
         input_types=input_types,
     ) as g:
         q, offsets, blocks, lengths, lut, max_q, max_cache, metadata = g.inputs[
@@ -150,8 +176,10 @@ def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
             max_cache_length=max_cache.tensor,
             attention_dispatch_metadata=metadata.tensor,
         )
+        if kv_params.has_split_head_dims:
+            cache = replace(cache, split_head_dims=SplitKVHeadDims())
         if with_record:
-            cache = replace(cache, mixed_step_split=g.inputs[8].tensor)
+            cache = replace(cache, mixed_step_split=g.inputs[-1].tensor)
         out = flash_attention_ragged(
             kv_params,
             input=q.tensor,
@@ -163,6 +191,7 @@ def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
             else MHAMaskVariant.CAUSAL_MASK,
             scale=1.0 / math.sqrt(head_dim),
             local_window_size=shape.local_window_size,
+            sink_weights=g.inputs[8].tensor if shape.sink else None,
             output_dtype=DType.bfloat16,
         )
         g.output(out)
@@ -172,36 +201,54 @@ def _build(session: InferenceSession, with_record: bool, shape: Shape) -> Model:
 class Harness:
     def __init__(self, shape: Shape) -> None:
         self.device = Accelerator()
+        self.shape = shape
         self.head_dim = shape.head_dim
         self.torch_dtype = TORCH_DTYPES[shape.kv_dtype]
+        self.kv_params = MHAKVCacheParams(
+            dtype=shape.kv_dtype,
+            n_kv_heads=shape.kv_heads,
+            head_dim=shape.head_dim,
+            v_head_dim=shape.v_head_dim,
+            num_layers=1,
+            page_size=PAGE_SIZE,
+            devices=[DeviceRef.GPU()],
+        )
         session = InferenceSession(devices=[self.device])
-        self.split_model = _build(session, True, shape)
-        self.plain_model = _build(session, False, shape)
+        self.split_model = _build(session, True, shape, self.kv_params)
+        self.plain_model = _build(session, False, shape, self.kv_params)
         generator = torch.Generator(device="cuda").manual_seed(0)
         # One page at a time keeps the float32 staging small.
+        kv_dim = self.kv_params.kv_dim
+        row_width = self.kv_params.storage_head_dim
         self.blocks = torch.empty(
             NUM_PAGES,
-            2,
+            kv_dim,
             1,
             PAGE_SIZE,
-            NUM_KV_HEADS,
-            self.head_dim,
+            shape.kv_heads,
+            row_width,
             dtype=self.torch_dtype,
             device="cuda",
         )
         for page in range(NUM_PAGES):
             self.blocks[page] = (
                 torch.randn(
-                    2,
+                    kv_dim,
                     1,
                     PAGE_SIZE,
-                    NUM_KV_HEADS,
-                    self.head_dim,
+                    shape.kv_heads,
+                    row_width,
                     generator=generator,
                     device="cuda",
                 )
                 * 0.5
             ).to(self.torch_dtype)
+        self.sink: torch.Tensor | None = None
+        if shape.sink:
+            self.sink = (
+                torch.randn(shape.q_heads, generator=generator, device="cuda")
+                * 0.5
+            ).to(torch.bfloat16)
         self.generator = generator
 
     def _inputs(
@@ -222,9 +269,22 @@ class Harness:
             lut[i, : len(row_pages)] = row_pages
         max_q = max(widths)
         max_cache = max(r.valid_length for r in rows)
-        partitions = mha_decode_num_partitions(
-            len(rows), max_cache, NUM_KV_HEADS, self.device
-        )
+        if self.kv_params.has_split_head_dims:
+            # The split cache's decode kernel launches exactly this count.
+            partitions = mha_split_kv_decode_num_partitions(
+                len(rows),
+                max_cache,
+                self.kv_params.n_kv_heads_per_device,
+                self.shape.local_window_size if self.shape.sliding else None,
+                multiprocessor_count(self.device),
+            )
+        else:
+            partitions = mha_decode_num_partitions(
+                len(rows),
+                max_cache,
+                self.kv_params.n_kv_heads_per_device,
+                self.device,
+            )
         metadata = np.array(
             [len(rows), max_q, partitions, max_cache], dtype=np.int64
         )
@@ -232,7 +292,7 @@ class Harness:
         def gpu(array: np.ndarray) -> Buffer:
             return Buffer.from_dlpack(torch.from_numpy(array).cuda())
 
-        return [
+        inputs = [
             Buffer.from_dlpack(q),
             gpu(offsets),
             Buffer.from_dlpack(self.blocks),
@@ -242,6 +302,9 @@ class Harness:
             Buffer.from_numpy(np.array([max_cache], dtype=np.uint32)),
             Buffer.from_numpy(metadata),
         ]
+        if self.sink is not None:
+            inputs.append(Buffer.from_dlpack(self.sink))
+        return inputs
 
     def step(self, rows: Sequence[Row]) -> tuple[list[list[int]], torch.Tensor]:
         """Returns each row's pages and a random query for ``rows``."""
@@ -255,7 +318,7 @@ class Harness:
         q = (
             torch.randn(
                 sum(r.width for r in rows),
-                NUM_Q_HEADS,
+                self.shape.q_heads,
                 self.head_dim,
                 generator=self.generator,
                 device="cuda",
@@ -294,15 +357,44 @@ class Harness:
         Shape(DType.bfloat16, head_dim=512),
         # Shorter than most rows' prefixes, so the window clips them.
         Shape(DType.bfloat16, local_window_size=512),
+        Shape(DType.bfloat16, sink=True),
+        Shape(
+            DType.bfloat16,
+            head_dim=192,
+            v_head_dim=128,
+            q_heads=16,
+            kv_heads=1,
+        ),
+        # The window is shorter than every row's tokens, so each view
+        # attends only its own windowed band.
+        Shape(
+            DType.bfloat16,
+            head_dim=192,
+            v_head_dim=128,
+            q_heads=32,
+            local_window_size=128,
+            sink=True,
+        ),
     ],
-    ids=["fp8", "bf16", "bf16-depth512", "bf16-sliding"],
+    ids=[
+        "fp8",
+        "bf16",
+        "bf16-depth512",
+        "bf16-sliding",
+        "sink",
+        "split-head-dims",
+        "sink-split-head-dims-window",
+    ],
 )
 def harness(request: pytest.FixtureRequest) -> Harness:
     return Harness(request.param)
 
 
-def _decode_rows(num: int) -> list[Row]:
-    prefixes = np.linspace(300, 1_000, num).astype(int)
+def _decode_rows(shape: Shape, num: int) -> list[Row]:
+    # Longer prefixes give the decode view different counts under the
+    # generic heuristic and the split-cache policy.
+    stop = 1_532 if shape.v_head_dim is not None else 1_000
+    prefixes = np.linspace(300, stop, num).astype(int)
     return [Row(int(p), 1 + NUM_DRAFT_TOKENS) for p in prefixes]
 
 
@@ -328,7 +420,7 @@ def _assert_split_equals_parts(
 def test_verify_rows_ahead_of_a_prompt_chunk_match_their_parts(
     harness: Harness,
 ) -> None:
-    rows = [*_decode_rows(30), Row(2_000, 200)]
+    rows = [*_decode_rows(harness.shape, 30), Row(2_000, 200)]
     _assert_split_equals_parts(harness, rows, 30)
 
 
@@ -336,13 +428,13 @@ def test_verify_rows_ahead_of_a_prompt_chunk_match_their_parts(
 def test_a_prompt_row_ahead_of_verify_rows_matches_its_parts(
     harness: Harness,
 ) -> None:
-    rows = [Row(0, 900), *_decode_rows(31)]
+    rows = [Row(0, 900), *_decode_rows(harness.shape, 31)]
     _assert_split_equals_parts(harness, rows, 1)
 
 
 @pytest.mark.skipif(not is_b100_b200(), reason="the split runs on B200")
 def test_a_zeros_record_keeps_the_single_launch(harness: Harness) -> None:
-    rows = [*_decode_rows(8), Row(500, 300)]
+    rows = [*_decode_rows(harness.shape, 8), Row(500, 300)]
     pages, q = harness.step(rows)
     zeros = np.zeros(SPLIT_SIZE, dtype=np.uint32)
     assert torch.equal(
@@ -356,7 +448,7 @@ def test_without_a_record_the_verify_rows_take_another_route(
     harness: Harness,
 ) -> None:
     """The control: the parts tests can only fail if the routes differ."""
-    rows = [*_decode_rows(30), Row(2_000, 200)]
+    rows = [*_decode_rows(harness.shape, 30), Row(2_000, 200)]
     pages, q = harness.step(rows)
     cut = sum(r.width for r in rows[:30])
     whole = harness.plain(rows, pages, q)
@@ -371,7 +463,7 @@ def test_without_a_record_the_verify_rows_take_another_route(
 def test_a_malformed_record_keeps_the_single_launch(
     harness: Harness, fault: str
 ) -> None:
-    rows = [*_decode_rows(30), Row(2_000, 200)]
+    rows = [*_decode_rows(harness.shape, 30), Row(2_000, 200)]
     pages, q = harness.step(rows)
     record = _record(rows, 30)
     if fault == "head_rows_out_of_range":

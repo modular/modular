@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Named TileOp struct for QK score masking on gfx950.
 
-Uses TileLayout / `Coord` Layout Algebra (not hand-rolled integer formulas)
+Uses Layout / `Coord` Layout Algebra (not hand-rolled integer formulas)
 to map lanes and registers into the MMA fragment space:
 
 - `WarpLayoutT.idx2crd(lane)` decomposes the lane into (lane_row, lane_col).
@@ -36,7 +36,7 @@ from max.gpu import block_idx, lane_id
 from std.utils import IndexList
 
 from layout import TileTensor
-from layout.tile_layout import Layout, col_major
+from layout.layout import Layout, col_major
 from layout.coord import Coord, ComptimeInt, Idx
 from nn.attention.mha_mask import CausalMask, MHAMask
 from nn.attention.mha_utils import _kernel_mask
@@ -105,7 +105,7 @@ struct MaskTileOp[
     """
 
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
-    # TileLayout. idx2crd decomposes a lane into (lane_row, lane_col).
+    # Layout. idx2crd decomposes a lane into (lane_row, lane_col).
     comptime _warp_rows = 32 if Self.mma_m == 32 else 16
     comptime _warp_cols = 2 if Self.mma_m == 32 else 4
     comptime WarpLayoutT = type_of(

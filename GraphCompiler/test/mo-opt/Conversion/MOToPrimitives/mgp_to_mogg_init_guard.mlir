@@ -10,7 +10,7 @@
 // CHECK: %[[GUARDED_CTX:.*]] = mgp.guard %[[MODULE_LOAD_CHAIN]], %[[CTX]] : !mgp.context
 // CHECK: "mgp.generic.execute"(%[[GUARDED_CTX]]) <{aRuntimeSlot
 
-mgp.model @init_execute_guard : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @init_execute_guard devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   "mogg.compiled.load"() {symbols = ["__gen_0"], value = dense_resource<fake_binary> : tensor<1xui8>} : () -> ()
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
@@ -32,7 +32,7 @@ mgp.model @init_execute_guard : mof devices [#M.device_ref<"cpu", 0>] init (%wei
 // CHECK-NOT: mgp.guard
 // CHECK: "mgp.generic.execute"
 
-mgp.model @execute_block_no_guard : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @execute_block_no_guard devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   "mogg.compiled.load"() {symbols = ["__gen_0"], value = dense_resource<fake_binary> : tensor<1xui8>} : () -> ()
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2

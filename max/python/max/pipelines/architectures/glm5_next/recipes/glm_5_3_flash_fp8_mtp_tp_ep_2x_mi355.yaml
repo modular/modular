@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 2x MI355 recipe for GLM-5.3-Flash with its MTP layer (K=3), text-only.
+# 2x MI355 recipe for GLM-5.3-Flash with its MTP layer (K=3).
 #
-# The 2x MI355 base recipe beside this one, plus speculation. Prefix caching is
+# The 2x MI355 recipe beside this one, plus speculation. Prefix caching is
 # forced off by the architecture: a recurrent state's checkpoints would be
-# published at the wrong depth under speculation.
+# published at the wrong depth under speculation. At 0.82 of device memory the
+# cache still holds a full 16K sequence beside the MTP layer.
 model:
   model_path: zai-org/GLM-5.3-Flash
   device_specs: [0, 1]
@@ -26,7 +27,6 @@ model:
 runtime:
   ep_size: 2
   max_batch_input_tokens: 8192
-  max_batch_size: 8
 
 sampling:
   enable_structured_output: true

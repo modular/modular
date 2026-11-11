@@ -341,6 +341,23 @@ comptime if conforms_to(Ext, SupportsPeerAccessV1):
     )
 ```
 
+A capability can come in tiers, each a trait that refines the one below it.
+Completion flags (`M_driver_flag.h`) are one example: `SupportsCompletionFlagV1`
+creates, signals and waits on a flag, `SupportsCompletionFlagResetV1` adds an
+in-place reset, and `SupportsCompletionFlagAddressV1` (CUDA and HIP) adds the
+flag's device address. A wait takes its condition at run time, and the plugin
+rejects one it doesn't support. To fail at compile time instead, assert the
+condition against the comptime `FlagConditions` set. Here `flag` came from
+`create_flag` and `stream` is a `Stream` on the same device, which resolves the
+flag group from its own plugin:
+
+```mojo
+comptime Ext = type_of(device.extensions())
+comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+    comptime assert FlagCondition.eq in Ext.FlagConditions
+    stream.wait_flag(flag, 5, FlagCondition.eq)
+```
+
 Declaring an extension doesn't require changing the core driver. A backend
 defines and implements an interface, and the only requirement is that kernels
 that want to use it can import the trait.

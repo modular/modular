@@ -107,6 +107,12 @@ def _declare_tools(platform):
     )
 
     cc_tool(
+        name = "{}-dsymutil".format(platform),
+        src = "@clang-{}//:bin/dsymutil".format(platform),
+        tags = ["manual"],
+    )
+
+    cc_tool(
         name = "{}-llvm-otool".format(platform),
         src = "@clang-{}//:bin/llvm-otool".format(platform),
         data = ["@clang-{}//:bin/llvm-objdump".format(platform)],

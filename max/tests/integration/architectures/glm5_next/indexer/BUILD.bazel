@@ -25,20 +25,15 @@ modular_py_library(
 modular_py_test(
     name = "indexer",
     size = "large",
-    srcs = [
-        "graph_op_reference.py",
-        "test_pooled_indexer.py",
-    ],
+    srcs = ["test_pooled_indexer.py"],
     gpu_constraints = ["//:has_gpu"] + select({
-        # The topk2048 cases ask for 180 MB contiguous against a cache whose
-        # free space is fragmented across blocks. On NVIDIA the VMM allocator
-        # reassembles that from scattered granules; `vmmSupported()` is false
-        # on HIP, so it auto-disables and the request cannot be served. The
-        # model this exercises is 8xB200 anyway.
-        "//:amd_gpu": ["@platforms//:incompatible"],
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     precompile_mefs = True,
     precompile_shards = 4,
     tags = [
@@ -47,11 +42,17 @@ modular_py_test(
     ],
     deps = [
         ":torch_reference",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/glm5_next",
         requirement("numpy"),
         requirement("torch"),
     ],

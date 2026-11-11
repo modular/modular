@@ -20,7 +20,8 @@ GEMM does, and each requests more dynamic shared memory than the default
 from std.math import ceildiv
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import TileTensor
 from max.gpu import global_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
@@ -62,14 +63,14 @@ def _shape_kernel[
 def _launch[
     variant: Int, salt: Int
 ](
-    output: OutputTensor[dtype=.float32, rank=2, ...],
-    input: InputTensor[dtype=.float32, rank=2, ...],
+    output: TileTensor[mut=True, .float32, ...],
+    input: TileTensor[.float32, ...],
     ctx: DeviceContext,
 ) raises:
-    var n = input.dim_size(0) * input.dim_size(1)
+    var n = Int(input.dim[0]()) * Int(input.dim[1]())
     ctx.enqueue_function[_shape_kernel[variant, salt]](
-        output.to_device_buffer(ctx),
-        input.to_device_buffer(ctx),
+        output.ptr.unsafe_origin_cast[MutAnyOrigin](),
+        input.ptr.unsafe_mut_cast[True]().unsafe_origin_cast[MutAnyOrigin](),
         Int32(n),
         grid_dim=ceildiv(n, BLOCK_THREADS),
         block_dim=BLOCK_THREADS,
@@ -86,17 +87,25 @@ struct ShapeKernel:
 
     @staticmethod
     def execute[
-        target: StaticString, salt: Int
+        salt: Int
     ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.float32, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime if target != "gpu":
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).dtype == .float32
+        comptime assert type_of(input).dtype == .float32
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime if not ctx.target.is_gpu():
             raise Error("shape_kernel runs on GPUs only")
-        var bucket = (input.dim_size(0) - 1) // BUCKET_TOKENS
+        var output_tile = output.to_tile_tensor[.float32]()
+        var input_tile = input.to_tile_tensor[.float32]()
+        var bucket = (Int(input.shape()[0].value()) - 1) // BUCKET_TOKENS
         if bucket >= NUM_VARIANTS:
             bucket = NUM_VARIANTS - 1
         comptime for variant in range(NUM_VARIANTS):
             if bucket == variant:
-                _launch[variant, salt](output, input, ctx)
+                _launch[variant, salt](output_tile, input_tile, ctx)

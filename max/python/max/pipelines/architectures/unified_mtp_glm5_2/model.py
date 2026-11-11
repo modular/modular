@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar, Protocol
 
@@ -24,12 +25,19 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import UnifiedSpecDecodeInputs
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib import (
+    CheckpointRole,
+    UnifiedSpecDecodeInputs,
+    WeightEntry,
+    WeightTransform,
+)
 from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _graph_callable,
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -37,6 +45,7 @@ from max.pipelines.speculative import (
     DraftAliases,
     validate_draft_state_dict,
 )
+from max.pipelines.speculative.spec_input_types import spec_decode_outputs
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs
@@ -77,16 +86,23 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     """Inputs for the UnifiedMTPGlm5_2 model.
 
     Target-prefix fields come from :class:`DeepseekV3Inputs`; the spec-decode
-    fields and trailing buffer packing come from
-    :class:`UnifiedSpecDecodeInputs`. The MTP graph binds the per-row
-    ``in_thinking_phase`` flag (consumed by relaxed acceptance).
+    fields and the packing come from :class:`UnifiedSpecDecodeInputs`. The
+    MTP graph binds the per-row ``in_thinking_phase`` flag (consumed by
+    relaxed acceptance).
     """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        """The step's buffers, plus the speculative decode tail's."""
-        return super().buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True,
+        """The step's buffers, in the order the fused graph takes them."""
+        return self._spec_decode_buffers(
+            tokens=self.tokens,
+            input_row_offsets=self.input_row_offsets,
+            return_n_logits=self.return_n_logits,
+            host_input_row_offsets=self.host_input_row_offsets,
+            data_parallel_splits=self.data_parallel_splits,
+            signal_buffers=self.signal_buffers,
+            batch_context_lengths=self.batch_context_lengths,
+            ep_inputs=self.ep_inputs,
         )
 
 
@@ -99,6 +115,7 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
 
     _draft_state_dict: dict[str, Any]
     _draft_config: DeepseekV3_2NextNConfig
+    _input_tree: Mapping[str, object] | None = None
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
@@ -124,6 +141,15 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             self._draft_state_dict["shared_head_norm.weight"] = raw_state_dict[
                 "target.norm.weight"
             ]
+        else:
+            # The architecture's rules name every weight of the fused graph,
+            # unless a draft weight is the copy above, which rules can't name.
+            assert isinstance(self.adapter, WeightTransform)
+            self.weight_naming = {
+                GraphRole.SPEC_DECODER: (
+                    WeightEntry(CheckpointRole.TARGET, self.adapter),
+                )
+            }
 
         return {
             k[len("target.") :]: v
@@ -212,8 +238,7 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             )
             logger.info("Upsizing shared EP buffers for bf16 draft dispatch.")
 
-        self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(session, ep_alloc_config)
         config.ep_config.node_id = ep_alloc_config.node_id
         if config.ep_config.node_id == -1:
             raise ValueError(
@@ -245,6 +270,9 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             speculative_config=self.pipeline_config.speculative,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
+        if (batch_processor := self.batch_processor) is not None:
+            assert isinstance(batch_processor, UnifiedMTPGlm5_2BatchProcessor)
+            batch_processor.input_spec = nn_model.input_spec
 
         # Share embed_tokens and lm_head BEFORE loading so state_dict()
         # deduplicates them — the adapter only emits target.* copies.
@@ -269,18 +297,33 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             DraftAliases(always=("embed_tokens.", "lm_head.")),
         )
 
+        # The graph names its weights under ``target.`` and ``draft.``, as
+        # the architecture's rules name the checkpoint's. The draft's shared
+        # embedding and head are the target's.
+        shared = ("embed_tokens.", "lm_head.")
         weights_registry = {
-            **nn_model.draft.state_dict(),
-            **nn_model.target.state_dict(),
+            **{
+                f"draft.{name}": value
+                for name, value in nn_model.draft.state_dict().items()
+                if not name.startswith(shared)
+            },
+            **{
+                f"target.{name}": value
+                for name, value in nn_model.target.state_dict().items()
+            },
         }
+        for prefix, module in (
+            ("draft", nn_model.draft),
+            ("target", nn_model.target),
+        ):
+            for name, weight in module.raw_state_dict().items():
+                weight.name = f"{prefix}.{name}"
 
         assert isinstance(self.kv_params, MultiKVCacheParams)
         kv_params = self.kv_params
 
-        with Graph(
-            "glm5_2_with_mtp_graph",
-            input_types=nn_model.input_types(kv_params),
-        ) as graph:
+        input_types = nn_model.input_types(kv_params)
+        with Graph("glm5_2_with_mtp_graph", input_types=input_types) as graph:
             graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
 
             outputs = nn_model(
@@ -312,9 +355,40 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 draft_probs_full=graph_inputs.draft_probs_full,
             )
 
-            graph.output(outputs)
+            graph.output(spec_decode_outputs(outputs))
 
+        self._input_tree = nn_model.input_tree(
+            kv_params,
+            ep=(
+                EPBatchManager(model_config.ep_config).input_tree()
+                if model_config.ep_config is not None
+                else None
+            ),
+        )
+        if self._input_tree is not None:
+            self._bind_graph_inputs(self._input_tree)
         return graph, weights_registry
+
+    @override
+    def _compile_and_load(
+        self,
+        session: InferenceSession,
+        graph: Graph,
+        weights_registry: dict[str, Any],
+    ) -> Model:
+        """Compiles the fused graph and keeps it as the ``spec_decoder`` role.
+
+        An artifact exports the role with the graph's inputs named by group.
+        """
+        compiled = session.compile_reusing_mefs(graph)
+        model = session.init(compiled, weights_registry=weights_registry)
+        self.compiled_modules = {
+            **self.compiled_modules,
+            GraphRole.SPEC_DECODER: _graph_callable(
+                graph, compiled, model, self._input_tree
+            ),
+        }
+        return model
 
     def _create_draft_config(
         self,

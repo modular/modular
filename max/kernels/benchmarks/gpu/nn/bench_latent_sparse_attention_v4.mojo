@@ -17,8 +17,8 @@ sequence):
 
 * `slow`: the portable `_latent_sparse_attention_gpu_kernel`, launched
   directly exactly as the op launched it before the SM100 route.
-* `fast`: `latent_sparse_attention_ragged_paged`, the op's entry, which on
-  SM100 runs the plan kernel, the sparse MLA decode and its split-K combine.
+* `fast`: `SM100MLAGraph.latent_sparse_attention`, the op's SM100 entry, which
+  runs the plan kernel, the sparse MLA decode and its split-K combine.
 * `fast_nosplit`: the same entry with `split_k=False`, one CTA per row and no
   combine, so no split partial is rounded to bf16.
 * `slow_pbf16`: `slow` with each attention weight rounded to bf16 before its
@@ -42,9 +42,9 @@ from layout import (
     TileTensor,
     row_major,
 )
+from nn.attention.gpu.mla_graph import SM100MLAGraph
 from nn.attention.latent_sparse_attention import (
     _latent_sparse_attention_gpu_kernel,
-    latent_sparse_attention_ragged_paged,
 )
 
 comptime HEAD_DIM = 512
@@ -371,7 +371,7 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        latent_sparse_attention_ragged_paged[target="gpu", window=WINDOW](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW](
             out_tt, q_tt, offs_tt, idx_tt, sink_tt, win, cmp, scale, launch_ctx
         )
 
@@ -388,9 +388,7 @@ def run_shape[
         imm cmp,
         imm scale,
     }:
-        latent_sparse_attention_ragged_paged[
-            target="gpu", window=WINDOW, split_k=False
-        ](
+        SM100MLAGraph.latent_sparse_attention[window=WINDOW, split_k=False](
             out_nosplit_tt,
             q_tt,
             offs_tt,

@@ -1267,6 +1267,23 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
   return specializedType;
 }
 
+/// Returns true if the result of `bindParams` is a partially specialized
+/// version of its body generator (in contrast to a nested generator).
+static bool isCurriedBinding(BindParamsAttr bindParams) {
+  auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
+  ArrayRef<TypedAttr> values = bindParams.getParamValues();
+  if (values.size() != genType.getInputParamTypes().size() ||
+      llvm::any_of(values, llvm::IsaPred<UnboundAttr>))
+    return true;
+
+  PogListAttr metadata = genType.getParamListAttrs();
+  size_t numConstraints = metadata ? metadata.getBodyConstraints().size() : 0;
+  DenseBoolArrayAttr discharged = bindParams.getDischarged();
+  size_t numDischarged =
+      discharged ? llvm::count(discharged.asArrayRef(), true) : 0;
+  return numDischarged != numConstraints || !isEagerlyInstantiatable(genType);
+}
+
 Type BindParamsAttr::inferResultType(
     TypedAttr generator, ArrayRef<TypedAttr> paramValues,
     DenseBoolArrayAttr discharged,
@@ -1299,9 +1316,11 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       isEqualCanon(generator.getType(), type))
     return generator;
 
-  // If the generator is itself a BindParamsAttr, flatten the new bindings into
-  // the existing ones.
-  if (auto bindParams = sugarDynCast<BindParamsAttr>(generator)) {
+  // If the generator is a curried BindParamsAttr, flatten the new bindings into
+  // the existing ones. A non-curried one has instantiated its body, so the
+  // new bindings belong to that body instead.
+  auto bindParams = sugarDynCast<BindParamsAttr>(generator);
+  if (bindParams && isCurriedBinding(bindParams)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
@@ -3955,6 +3974,15 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
+/// Narrows a data layout query's type operand to a type constant, or returns
+/// null. Extensions, casts and rebinds only change a type value's trait view,
+/// so its layout is the wrapped type's; without stripping them a closure
+/// whose type is extended never folds.
+static TypeParamAttr getLayoutTypeConstant(TypedAttr type) {
+  return sugarDynCast<TypeParamAttr>(
+      stripIdentityWrappers(SugarAttr::strip(type)));
+}
+
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
@@ -3963,7 +3991,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};
@@ -3985,7 +4013,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!resultType)
     resultType = b.getIndexType();
 
-  auto typeCst = sugarDynCast<TypeParamAttr>(operands[0]);
+  auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
     return {};

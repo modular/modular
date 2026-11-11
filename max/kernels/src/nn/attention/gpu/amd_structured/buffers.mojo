@@ -24,8 +24,8 @@ from max.gpu.intrinsics import cvt_pk_fp8_f32_raw
 from layout import TensorEngine, TensorLayout, TileTensor
 from layout.coord import Coord, ComptimeInt, Idx
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
-    Layout as TileLayout,
+from layout.layout import (
+    Layout,
     col_major,
     row_major,
 )
@@ -893,7 +893,7 @@ struct PRegisterBuffer[
         comptime mma_N = Self.mma_shape[1]
         comptime S0 = type_of(mma_tile).LayoutType._stride_types[0].static_value
         comptime layout_3d = type_of(
-            TileLayout(
+            Layout(
                 Coord(
                     ComptimeInt[mma_M](),
                     ComptimeInt[mma_N // frag_w](),

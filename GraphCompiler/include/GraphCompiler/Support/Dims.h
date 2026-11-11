@@ -33,13 +33,6 @@ inline int64_t clampAxis(int64_t axis, int64_t rank) {
   return std::max(std::min(normalizedAxis, rank), (int64_t)0);
 }
 
-/// Normalize negative dims in `dims` to their positive equivalent.
-inline void normalizeNegativeDims(llvm::MutableArrayRef<int64_t> dims,
-                                  size_t rank) {
-  for (auto [i, dim] : llvm::enumerate(dims))
-    dims[i] = normalizeAxis(dim, rank);
-}
-
 } // namespace M
 
 #endif // GENERICML_GRAPHCOMPILER_SUPPORT_DIMS_H

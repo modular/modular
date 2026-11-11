@@ -15,7 +15,7 @@
 
 from std.collections import Optional
 from std.bit import count_trailing_zeros
-from std.math import ceildiv
+from std.math import ceildiv, sqrt
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import (
     has_amd_rdna_gpu_accelerator,
@@ -54,8 +54,7 @@ from layout import (
     row_major,
 )
 
-from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
@@ -113,7 +112,7 @@ def naive_grouped_matmul_kernel[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
@@ -695,7 +694,7 @@ def grouped_matmul[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -917,44 +916,54 @@ def grouped_matmul[
             comptime BK = (a_swizzle.bytes() // size_of[a_type]())
             # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
             comptime cta_group = 2 if N % 256 == 0 else 1
-            comptime block_tile_shape = (128, 32 // cta_group, BK)
-            comptime umma_shape = (
-                block_tile_shape[0] * cta_group,
-                block_tile_shape[1] * cta_group,
-                MMA_K,
-            )
-            comptime cluster_shape = (cta_group, 1, 1)
-            comptime transpose_b = True
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=block_tile_shape,
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
 
-            grouped_matmul_sm100_persistent[
-                c_type=c_type,
-                a_type=a_type,
-                b_type=b_type,
-                transpose_b=transpose_b,
-                config=config,
-                cta_group=cta_group,
-                a_swizzle=a_swizzle,
-                b_swizzle=b_swizzle,
-                has_epilogue_fn=has_epilogue_fn,
-                has_compute_fn=has_compute_fn,
-                a_plane_splits=a_plane_splits,
-                pdl_level=pdl_level,
-            ](
-                c,
-                a,
-                a_offsets,
-                b,
-                expert_ids,
-                expert_usage_stats,
-                ctx,
-                epilogue_fn,
-                compute_fn,
-            )
+            @inline(.always)
+            def launch[mma_n: Int]() raises {imm}:
+                comptime config = MatmulConfig[a_type, b_type, c_type, True](
+                    block_tile_shape=(128, mma_n // cta_group, BK),
+                    mma_shape=(128 * cta_group, mma_n, MMA_K),
+                    cluster_shape=(cta_group, 1, 1),
+                )
+                grouped_matmul_sm100_persistent[
+                    c_type=c_type,
+                    a_type=a_type,
+                    b_type=b_type,
+                    transpose_b=True,
+                    config=config,
+                    cta_group=cta_group,
+                    a_swizzle=a_swizzle,
+                    b_swizzle=b_swizzle,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                    a_plane_splits=a_plane_splits,
+                    pdl_level=pdl_level,
+                ](
+                    c,
+                    a,
+                    a_offsets,
+                    b,
+                    expert_ids,
+                    expert_usage_stats,
+                    ctx,
+                    epilogue_fn,
+                    compute_fn,
+                )
+
+            # A token tile narrower than an expert's rows streams that
+            # expert's weights once per tile, so size it to the busiest
+            # expert, about m + 3 * sqrt(m) rows at m rows per expert. The
+            # one-CTA config was only checked at 32.
+            comptime if cta_group == 2:
+                var m = Float64(Int(c.dim[0]())) / Float64(b.static_shape[0])
+                var busiest = m + 3 * sqrt(m)
+                if busiest > 64:
+                    launch[128]()
+                elif busiest > 32:
+                    launch[64]()
+                else:
+                    launch[32]()
+            else:
+                launch[32]()
         elif is_amd_kernel_applicable:
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
@@ -1101,7 +1110,7 @@ def grouped_matmul[
     *,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1159,7 +1168,7 @@ def naive_grouped_matmul[
     transpose_b: Bool = True,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
-    a_plane_splits: IndexList[2] = Index(0, 0),
+    a_plane_splits: Tuple[Int, Int] = (0, 0),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1549,7 +1558,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     b_scales_type: DType,
     //,
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, Engine=_, ...],
@@ -1588,7 +1596,6 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
         a_scales_type: Per-token activation scale dtype (``float32``).
         b_scales_type: Per-channel weight scale dtype (``float32``).
         transpose_b: Must be ``True``; ``b`` is ``[E, N, K]``.
-        target: Compilation target string.
         pdl_level: Programmatic dependent launch level; above ``PDLLevel.OFF``
             the kernel waits on its predecessor grid before its first read and
             releases dependent grids when it finishes.
@@ -1623,7 +1630,7 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     comptime assert (
         a_scales_type == .float32 and b_scales_type == .float32
     ), "A and B scales must be float32 for rowwise/per-token granularity"
-    comptime assert is_gpu[target](), (
+    comptime assert ctx.target.is_gpu(), (
         "grouped rowwise dynamic scaled fp8 matmul only supports GPUs with"
         " native FP8 support"
     )

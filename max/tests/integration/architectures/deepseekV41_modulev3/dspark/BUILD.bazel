@@ -72,13 +72,15 @@ modular_py_test(
     deps = [
         ":dspark_test_support",
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         # test_model_config.py builds the real HF shim
         # (hf_config_shims.DeepseekV41HFConfig) like arch:test_hf_config_shim.
         "//max/python/max/pipelines/architectures",
@@ -109,7 +111,7 @@ modular_py_test(
     srcs = ["test_dspark_dp4_graph.py"],
     data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
     imports = ["."],
-    # The drafter's MXFP8 projections stage mo.matmul.mxfp8.cluster_splitk,
+    # The drafter's MXFP8 projections stage matmul.mxfp8.cluster_splitk,
     # registered only by the closed-source kernels.
     target_compatible_with = select({
         # No NVPTX target for the staged sm_100a virtual devices.
@@ -124,7 +126,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
@@ -163,7 +165,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:simple_kv_cache",

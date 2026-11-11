@@ -1,0 +1,59 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# Tells the owning Mojo team in Slack about a new pull request. The work runs
+# in a Cursor automation; this workflow only sends it the PR number.
+#
+# Cursor's own pull request triggers skip PRs from forks, which is where
+# community PRs come from, so this calls the automation's webhook instead.
+# pull_request_target gives fork PRs access to the webhook secret. That is
+# safe only because no step checks out or runs code from the PR.
+
+name: PR intake
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to send.
+        required: true
+        type: number
+      mode:
+        description: '"dry-run" stops the automation from posting; "live" lets it post.'
+        required: false
+        type: choice
+        options: [dry-run, live]
+        default: dry-run
+
+permissions: {}
+
+jobs:
+  notify:
+    if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger the Cursor PR intake automation
+        env:
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'live' }}
+          TOKEN: ${{ secrets.CURSOR_PR_INTAKE_AUTOMATION_TOKEN }}
+        run: |
+          payload=$(jq -n --argjson pr "$PR" --arg mode "$MODE" '{pr: $pr, mode: $mode}')
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            https://api2.cursor.sh/automations/webhook/29fb5a6d-dc09-11f1-8120-06b44be262b7

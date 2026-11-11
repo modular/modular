@@ -15,11 +15,21 @@ modular_cc_test(
             "KernelLoggerTest.cpp",
         ],
     ),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/Runtime",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         "//GraphCompiler:MGPPrimitives",
         "//GraphCompiler:SafeTensor",
         "//GraphCompiler:Support",
-        "//Support:Globals",
+        "//Mojo:CompilerRT.static",
+        "//Support:Globals.static",
     ],
 )
 
@@ -29,12 +39,22 @@ modular_cc_test(
     srcs = [
         "KernelLoggerTest.cpp",
     ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/Runtime",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     local_defines = ["ENABLE_MGP_KERNEL_LOGGING"],
     tags = ["kernel_logging"],
     deps = [
         "//GraphCompiler:MGPPrimitivesWithLogging",
         "//GraphCompiler:SafeTensor",
         "//GraphCompiler:Support",
-        "//Support:Globals",
+        "//Mojo:CompilerRT.static",
+        "//Support:Globals.static",
     ],
 )

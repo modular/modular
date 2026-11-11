@@ -17,8 +17,10 @@ from __future__ import annotations
 from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.quant_linear import QuantizedLinear
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
+
+from . import mxfp8
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):
@@ -49,4 +51,6 @@ class HYV4MLP(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the SwiGLU feed-forward over ``x``."""
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        gate = mxfp8.matmul(x, self.gate_proj.weight)
+        up = mxfp8.matmul(x, self.up_proj.weight)
+        return mxfp8.matmul(F.silu(gate) * up, self.down_proj.weight)

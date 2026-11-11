@@ -212,27 +212,26 @@ A single `matrix_multiplication` operation is used, and the algorithm variant is
 specified by the `algorithm` compile-time parameter.
 
 The custom operation itself is defined in Mojo within the
-`kernels/matrix_multiplication.mojo` file. Tensor types such as
-`InputTensor`, `OutputTensor`, and `ManagedTensorSlice` are imported from the
-`extensibility` package. The `MatrixMultiplication` struct
-hosts all of the setup code for taking in the matrix tensors, branching
-execution based on whether the operation is running on CPU or GPU, and then
-selecting and running a specific algorithm. Mojo supports compile-time
-specialization of code based on parameters like target hardware, and that is
-also extended here to user-supplied algorithm choice. Compiling only the code
-paths used for a particular piece of hardware avoids run-time branching and
-allows full utilization of an accelerator or CPU.
+`kernels/matrix_multiplication.mojo` file. Its `execute()` method takes each
+tensor argument as a generic type bounded by tensor traits (written compactly as
+`Some[Input & Tensor]`), projects them to `TileTensor` views, and passes them to
+`run()`. The `run()` method hosts all of the setup code for branching execution
+based on whether the operation is running on CPU or GPU, and then selecting and
+running a specific algorithm. The benchmarks call `run()` directly. Mojo
+supports compile-time specialization of code based on parameters like target
+hardware, and that is also extended here to user-supplied algorithm choice.
+Compiling only the code paths used for a particular piece of hardware avoids
+run-time branching and allows full utilization of an accelerator or CPU.
 
 Each algorithm is contained within its own function in
 `kernels/matrix_multiplication.mojo`. Next, we'll discuss how each works.
 
-On GPU, the operation obtains native `TileTensor` views with
-`to_tile_tensor()` before launching the selected kernel. The Python example
-also verifies rectangular inputs: a 128x256 matrix multiplied by a 256x384
-matrix. These dimensions provide full tiles for every algorithm in the example.
-The tiled kernels don't handle partial tiles, so this rectangular check doesn't
-establish support for arbitrary matrix dimensions. The naive kernel checks
-output bounds before storing results.
+On GPU, `run()` launches the selected kernel on those `TileTensor` views. The
+Python example also verifies rectangular inputs: a 128x256 matrix multiplied by
+a 256x384 matrix. These dimensions provide full tiles for every algorithm in the
+example. The tiled kernels don't handle partial tiles, so this rectangular check
+doesn't establish support for arbitrary matrix dimensions. The naive kernel
+checks output bounds before storing results.
 
 ### Matrix multiplication algorithms
 
@@ -279,7 +278,7 @@ be the same.
 ### Layouts and `TileTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](/api/mojo/layout/layout/) and
+[layouts](/api/mojo/layout/layout/Layout/) and
 [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
@@ -290,14 +289,11 @@ a layout could represent a 2x6, row-major layout:
 
 ```mojo
 var my_layout = row_major[2, 6]()
-print_layout(my_layout)
+print(my_layout)
 ```
 
 ```plaintext
-       0    1    2    3    4    5
-    +----+----+----+----+----+----+
- 0  |  0 |  1 |  2 |  3 |  4 |  5 |
-    +----+----+----+----+----+----+
+((2, 6):(6, 1))
  1  |  6 |  7 |  8 |  9 | 10 | 11 |
     +----+----+----+----+----+----+
 ```

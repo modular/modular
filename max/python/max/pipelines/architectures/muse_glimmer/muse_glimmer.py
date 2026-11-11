@@ -22,12 +22,12 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
@@ -251,7 +251,7 @@ class MuseModelBase(Module[..., tuple[Tensor, ...]]):
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
         """Unflattens the hybrid KV leaves, then runs the text model."""
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_inputs = iter(kv_input_values(variadic_args))
         # Each device owns a whole KV cache, so the shards are replicated
         # over the TP mesh rather than sharded over it.
         kv_mapping = DeviceMapping.replicated(self.mesh)

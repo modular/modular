@@ -118,6 +118,7 @@ def pipeline(request: pytest.FixtureRequest) -> Iterator[Pipeline]:
                 max_batch_size=len(PROMPT_LENGTHS),
                 device_graph_capture=True,
                 disable_overlap=synchronous,
+                prefer_module_v3=False,
             ),
         )
     )

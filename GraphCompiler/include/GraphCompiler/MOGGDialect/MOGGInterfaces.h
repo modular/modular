@@ -25,7 +25,8 @@
 
 namespace M::MOGG {
 // Enforces `!mogg.buffer => mut` for `MOGG_TensorCreateInterface`. Defined in
-// MOGGOps.cpp because the generated `verifyTrait` cannot name the MOGG types.
+// MOGGOpsVerifiers.cpp because the generated `verifyTrait` cannot name the MOGG
+// types.
 ::llvm::LogicalResult
 verifyTensorCreateInterfaceMutability(::mlir::Operation *op);
 } // namespace M::MOGG

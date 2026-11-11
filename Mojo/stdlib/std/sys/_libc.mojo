@@ -113,19 +113,6 @@ def setvbuf(
     return external_call["setvbuf", c_int](stream, buffer)
 
 
-struct BufferMode:
-    """
-    Modes for use in `setvbuf` to control buffer output.
-    """
-
-    comptime buffered = 0
-    """Equivalent to `_IOFBF`."""
-    comptime line_buffered = 1
-    """Equivalent to `_IOLBF`."""
-    comptime unbuffered = 2
-    """Equivalent to `_IONBF`."""
-
-
 # ===-----------------------------------------------------------------------===#
 # spawn.h - Spawn process
 # ===-----------------------------------------------------------------------===#
@@ -321,11 +308,7 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
     """[`fcntl()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html)
     — file control.
     """
-    # The pack is loaded so the variadic arguments are the values themselves
-    # rather than references to them.
-    return external_call["fcntl", c_int, num_fixed_args=2](
-        fd, cmd, args.get_loaded_kgen_pack()
-    )
+    return external_call["fcntl", c_int, num_fixed_args=2](fd, cmd, *args)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -450,6 +433,10 @@ comptime MAP_ANONYMOUS: c_int = platform_map[
     T=c_int, "MAP_ANONYMOUS", linux=c_int(0x20), macos=c_int(0x1000)
 ]()
 """The mapping is zero-filled memory rather than a file."""
+comptime MAP_POPULATE: c_int = platform_map[
+    T=c_int, "MAP_POPULATE", linux=c_int(0x08000)
+]()
+"""Prefault the mapping's pages. Linux only."""
 
 comptime MS_ASYNC: c_int = 0x1
 """Schedule the writes and return without waiting for them."""

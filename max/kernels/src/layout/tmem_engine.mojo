@@ -65,7 +65,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 
 from layout import Coord, CoordLike, Idx, TensorLayout, coord
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from max.gpu import lane_id
 from layout.tile_tensor import TileTensor
 from layout.tensor_engine import (
@@ -138,7 +138,7 @@ cells."""
 comptime _FRAGMENT_LANE_PAIR_STRIDE = 8
 """Lanes between the two rows of a thread's `16x256b` fragment."""
 
-comptime TMem16x256bLayout[num_cols: Int] = TileLayout(
+comptime TMem16x256bLayout[num_cols: Int] = Layout(
     shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
     stride=Coord(
         coord[TMEM_NUM_LANES, _FRAGMENT_LANE_PAIR_STRIDE],
@@ -158,7 +158,7 @@ Parameters:
 """
 
 
-comptime TMem16x256bRegisters[num_cols: Int] = TileLayout(
+comptime TMem16x256bRegisters[num_cols: Int] = Layout(
     shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
     stride=Coord(coord[1, 2], Idx[4]),
 )

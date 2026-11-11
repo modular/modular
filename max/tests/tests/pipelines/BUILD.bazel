@@ -10,7 +10,7 @@ package(default_visibility = [
 exports_files(
     ["testdata/vision_metadata.json"],
     visibility = [
-        "//mach/crates/multimodal:__pkg__",
+        "//mach:__subpackages__",
         "//orchestrator/crates/orchestrator:__pkg__",
         "//orchestrator/crates/orchestrator-engine:__pkg__",
     ],
@@ -47,6 +47,9 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max:tensor",
         "//max/python/max/experimental/torch",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/graph",
         "//max/python/max/mlir",
@@ -65,6 +68,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gpt_oss",
         "//max/python/max/pipelines/architectures/gpt_oss_modulev3",
+        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/granite",
         "//max/python/max/pipelines/architectures/granite_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
@@ -76,6 +80,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/mistral3",
         "//max/python/max/pipelines/architectures/mpnet",
         "//max/python/max/pipelines/architectures/mpnet_modulev3",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         "//max/python/max/pipelines/architectures/olmo",
         "//max/python/max/pipelines/architectures/olmo2",
         "//max/python/max/pipelines/architectures/olmo2_modulev3",
@@ -168,4 +173,14 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
     ],
+)
+
+# Mach's engine-batch and engine-rt tests check their graph contracts against these.
+exports_files(
+    [
+        "testdata/graph_group_kinds.json",
+        "testdata/graph_input_trees.json",
+        "testdata/vision_input_trees.json",
+    ],
+    visibility = ["//mach:__subpackages__"],
 )

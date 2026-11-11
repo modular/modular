@@ -65,8 +65,11 @@ def _build_layer() -> KimiK3DecoderLayer:
         conv_kernel_size=_CONV_KERNEL,
         gate_lower_bound=None,
     )
-    attention.qkv_proj.weight = Tensor(
-        interleave_for_tp([_arr(inner, _HIDDEN) for _ in range(3)], 1),
+    attention.qkvg_proj.weight = Tensor(
+        interleave_for_tp(
+            [_arr(inner, _HIDDEN) for _ in range(4)] + [_arr(_HEADS, _HIDDEN)],
+            1,
+        ),
         dtype=DType.float32,
     )
     attention.f_a_proj.weight = Tensor(
@@ -75,8 +78,6 @@ def _build_layer() -> KimiK3DecoderLayer:
     attention.f_b_proj.weight = Tensor(
         _arr(inner, _HEAD_DIM), dtype=DType.float32
     )
-    attention.b_proj.weight = Tensor(_arr(_HEADS, _HIDDEN), dtype=DType.float32)
-    attention.g_proj.weight = Tensor(_arr(inner, _HIDDEN), dtype=DType.float32)
     attention.o_proj.weight = Tensor(_arr(_HIDDEN, inner), dtype=DType.float32)
     attention.o_norm.weight = Tensor(
         (1.0 + 0.1 * _RNG.standard_normal(_HEAD_DIM)).astype(np.float32),
@@ -192,6 +193,11 @@ def test_shared_pool_rows_do_not_collide() -> None:
             input_row_offsets=row_offsets,
         )
 
+        # These layers run the plain (non-folded) return path.
+        assert isinstance(out0_ref, Tensor)
+        assert isinstance(out1_ref, Tensor)
+        assert isinstance(out0_shared, Tensor)
+        assert isinstance(out1_shared, Tensor)
         out0_ref_np = out0_ref.to_numpy()
         out1_ref_np = out1_ref.to_numpy()
         out0_shared_np = out0_shared.to_numpy()

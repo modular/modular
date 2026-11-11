@@ -20,7 +20,7 @@ from typing import Literal
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.laguna.model import (
     LagunaModel as LagunaGraphModel,
 )

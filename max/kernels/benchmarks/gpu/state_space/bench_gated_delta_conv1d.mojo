@@ -17,7 +17,9 @@ optional `--legacy=True` also times the retired sequential kernel below;
 that comparison is not evidence for a change to the current kernel.
 
 The adjacent YAML manifest owns the grids. Named CLI arguments select one
-sequence-length vector and channel count.
+sequence-length vector and channel count; a positive `--capture_slot` with
+`--drafts` times a speculative verify's forward launch instead, which copies
+each row into a slot of that many rows and leaves the state unwritten.
 Each sample starts from identical state restored outside the event interval.
 Timing uses 5 warmup launches, 30 single-launch samples, and no L2 flush.
 """
@@ -36,7 +38,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from state_space.gated_delta_conv1d import (
     CONV1D_TOKENS_PER_BLOCK,
     gated_delta_conv1d_fwd_gpu,
@@ -218,11 +220,15 @@ def gated_delta_conv1d_sequential_reference[
         conv_state.store((slot, conv_channel_idx, state_slot_j), state_value)
 
 
-def _bench(
+def _bench[
+    CAPTURE: Bool
+](
     ctx: DeviceContext[],
     seq_lengths: List[Int],
     conv_dim: Int,
     compare_legacy: Bool = False,
+    capture_slot: Int = 0,
+    drafts: Int = 0,
 ) raises:
     comptime work_dtype = DType.float32
     comptime state_dtype = DType.bfloat16
@@ -250,6 +256,9 @@ def _bench(
     var offsets_d = ctx.enqueue_create_buffer[.uint32](num_seqs + 1)
     var out_new_d = ctx.enqueue_create_buffer[work_dtype](total_T * conv_dim)
     var out_old_d = ctx.enqueue_create_buffer[work_dtype](total_T * conv_dim)
+    # The verify forward's input copy: one slot of `capture_slot` rows per row.
+    var window_rows = num_seqs * capture_slot if CAPTURE else total_T
+    var window_d = ctx.enqueue_create_buffer[work_dtype](window_rows * conv_dim)
 
     var qkv_h = ctx.enqueue_create_host_buffer[work_dtype](total_T * conv_dim)
     for i in range(total_T * conv_dim):
@@ -290,6 +299,7 @@ def _bench(
     var offsets_tt = TileTensor(offsets_d, row_major(num_seqs + 1))
     var out_new_tt = TileTensor(out_new_d, row_major(total_T, conv_dim))
     var out_old_tt = TileTensor(out_old_d, row_major(total_T, conv_dim))
+    var window_tt = TileTensor(window_d, row_major(window_rows, conv_dim))
 
     var compiled_new = ctx.compile_function[
         gated_delta_conv1d_fwd_gpu[
@@ -297,7 +307,8 @@ def _bench(
             state_dtype,
             KERNEL_SIZE,
             CONV1D_BLOCK_DIM,
-            True,
+            # The verify forward leaves the state to the rollback.
+            not CAPTURE,
             qkv_tt.LayoutType,
             weight_tt.LayoutType,
             pool_new_tt.LayoutType,
@@ -305,6 +316,8 @@ def _bench(
             offsets_tt.LayoutType,
             out_new_tt.LayoutType,
             qkv_tt.Engine,
+            CAPTURE,
+            window_tt.LayoutType,
         ]
     ]()
     var compiled_old = ctx.compile_function[
@@ -334,10 +347,12 @@ def _bench(
         imm slot_tt,
         imm offsets_tt,
         imm out_new_tt,
-        imm out_old_tt,
+        imm window_tt,
         imm total_T,
         imm conv_dim,
         imm num_seqs,
+        imm capture_slot,
+        imm drafts,
     }:
         lctx.enqueue_function(
             compiled_new,
@@ -345,14 +360,15 @@ def _bench(
             Int32(total_T),
             Int32(conv_dim),
             Int32(tokens_per_block),
+            Int32(capture_slot),
+            Int32(drafts),
             qkv_tt,
             weight_tt,
             pool_new_tt,
             slot_tt,
             offsets_tt,
             out_new_tt,
-            # Never written without CAPTURE_INPUT.
-            out_old_tt,
+            window_tt,
             grid_dim=(
                 ceildiv(total_T, tokens_per_block),
                 ceildiv(conv_dim, CONV1D_BLOCK_DIM),
@@ -399,7 +415,8 @@ def _bench(
         t"work_dtype={work_dtype} state_dtype={state_dtype} "
         t"conv_dim={conv_dim} kernel_size={KERNEL_SIZE} "
         t"batch={num_seqs} sequence_lengths={lengths} total_tokens={total_T} "
-        t"tokens_per_block={tokens_per_block} write_state=true"
+        t"tokens_per_block={tokens_per_block} write_state={not CAPTURE} "
+        t"capture_slot={capture_slot} drafts={drafts}"
     )
     for _ in range(WARMUP):
         ctx.enqueue_copy(pool_new_d, pool_initial_d)
@@ -465,6 +482,7 @@ def _bench(
     _ = offsets_d^
     _ = out_new_d^
     _ = out_old_d^
+    _ = window_d^
 
 
 def main() raises:
@@ -475,6 +493,9 @@ def main() raises:
         lengths.append(Int(value))
     var channels = arg_parse("channels", 0)
     var compare_legacy = arg_parse("legacy", False)
+    # A positive slot times the verify forward: input copy, no state write.
+    var capture_slot = arg_parse("capture_slot", 0)
+    var drafts = arg_parse("drafts", 0)
     if len(lengths) == 0 or channels <= 0:
         raise Error(
             "Sequence lengths and a positive channel count are required"
@@ -488,4 +509,9 @@ def main() raises:
             t"launches_per_sample=1 state_reset=outside_timing l2_flush=false"
             t" csv_statistic=mean raw_statistic=median"
         )
-        _bench(ctx, lengths, channels, compare_legacy)
+        if capture_slot > 0:
+            _bench[True](
+                ctx, lengths, channels, compare_legacy, capture_slot, drafts
+            )
+        else:
+            _bench[False](ctx, lengths, channels, compare_legacy)

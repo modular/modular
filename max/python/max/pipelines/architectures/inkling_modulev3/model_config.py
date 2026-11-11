@@ -30,7 +30,7 @@ from ..inkling.model_config import InklingConfig as BaseInklingConfig
 from ..inkling.processor import load_processor_config
 
 _EXPERT_SCALE = re.compile(
-    r"(\.experts\.w(?:13|2))_(weight_scale(?:_2)?|input_scale)$"
+    r"(\.experts\.w(?:13|2))_(weight_scale(?:_2)?|input_amax)$"
 )
 
 

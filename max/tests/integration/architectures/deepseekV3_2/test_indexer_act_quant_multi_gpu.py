@@ -27,7 +27,7 @@ import pytest
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.functional import cast, transfer_to
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

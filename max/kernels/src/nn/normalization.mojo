@@ -13,7 +13,7 @@
 
 from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
-from std.sys.info import align_of, simd_width_of, size_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 import max.gpu.primitives.warp as warp
 from std.algorithm import vectorize
@@ -35,7 +35,6 @@ from max.gpu.sync import (
     barrier,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
-from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.memory import external_memory
 from std.sys.info import is_apple_gpu
 from max.gpu.primitives import block
@@ -54,7 +53,7 @@ from layout import (
     row_major,
 )
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
@@ -1441,7 +1440,7 @@ def rms_norm_cpu[
 
 @inline(.always)
 def _rms_norm_input_alignment[
-    dtype: DType, width: Int, target: StaticString
+    dtype: DType, width: Int, target: CompilationTarget
 ]() -> Int:
     """The alignment an rms_norm input_fn can claim for a load of `width`.
 
@@ -1449,7 +1448,7 @@ def _rms_norm_input_alignment[
     requesting `width > 1`. CPU always claims 1: its vectorized loop runs
     regardless of `num_cols % simd_width`.
     """
-    comptime if is_cpu[target]():
+    comptime if target.is_cpu():
         return 1
     else:
         return align_of[SIMD[dtype, width]]()
@@ -1471,7 +1470,6 @@ def _rms_norm_impl[
     /,
     epsilon: Float32,
     weight_offset: Float32,
-    target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
 ](
     input_0_fn: Input0FnType,
@@ -1498,6 +1496,8 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
+    comptime target = ctx.target
+
     @inline(.always)
     def input_fn_target[
         width: Int
@@ -1505,7 +1505,7 @@ def _rms_norm_impl[
         comptime align = _rms_norm_input_alignment[dtype, width, target]()
         return input_0_fn[width, align](coords)
 
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         rms_norm_cpu[
             epsilon=epsilon,
             weight_offset=weight_offset,
@@ -1517,7 +1517,7 @@ def _rms_norm_impl[
             gamma,
             Optional(ctx.assert_cpu_target()),
         )
-    elif is_gpu[target]():
+    elif ctx.target.is_gpu():
         rms_norm_gpu[
             rank,
             epsilon=epsilon,
@@ -1531,7 +1531,7 @@ def _rms_norm_impl[
             ctx,
         )
     else:
-        comptime assert False, "unsupported target " + target
+        comptime assert False, "unsupported target"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1872,7 +1872,6 @@ def apply_qk_rms_norm[
     in_dtype: DType,
     out_dtype: DType,
     //,
-    target: StaticString = "cpu",
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
@@ -1908,7 +1907,6 @@ def apply_qk_rms_norm[
         in_dtype: Element type of both activation inputs (`bfloat16` or
             `float32`).
         out_dtype: Element type of the outputs (typically equal to `in_dtype`).
-        target: `"cpu"` or a GPU target string.
 
     Args:
         q_out: Scaled Q output, shape `[M, Nq]`.
@@ -1930,7 +1928,7 @@ def apply_qk_rms_norm[
     def description_fn() {imm} -> String:
         return trace_arg("qk", Coord(rows, q_cols + k_cols), in_dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "apply_qk_rms_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
@@ -1938,7 +1936,7 @@ def apply_qk_rms_norm[
         if rows == 0:
             return
 
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             apply_qk_rms_norm_cpu(
                 q_out,
                 k_out,
@@ -1952,7 +1950,7 @@ def apply_qk_rms_norm[
                 q_cols,
                 k_cols,
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             apply_qk_rms_norm_gpu(
                 q_out,
                 k_out,
@@ -1968,7 +1966,7 @@ def apply_qk_rms_norm[
                 ctx,
             )
         else:
-            comptime assert False, "unsupported target " + target
+            comptime assert False, "unsupported target"
 
 
 def group_norm_reshape[
@@ -2852,8 +2850,6 @@ def group_norm[
     BetaFn: ImplicitlyCopyable
     & RegisterPassable
     & (def[width: Int](Coord) -> SIMD[dtype, width]),
-    /,
-    target: StaticString = "cpu",
 ](
     input_fn: InputFn,
     gamma_fn: GammaFn,
@@ -2888,12 +2884,12 @@ def group_norm[
     def description_fn() {imm} -> String:
         return trace_arg("input", shape, dtype)
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        comptime if is_cpu[target]():
+        comptime if ctx.target.is_cpu():
             group_norm_cpu[dtype=dtype, rank=rank](
                 input_fn,
                 gamma_fn,
@@ -2904,7 +2900,7 @@ def group_norm[
                 num_groups,
                 Optional(ctx.assert_cpu_target()),
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             group_norm_gpu[dtype=dtype, rank=rank](
                 input_fn,
                 gamma_fn,
@@ -2916,7 +2912,7 @@ def group_norm[
                 ctx=ctx,
             )
         else:
-            comptime assert False, "unsupported target " + target
+            comptime assert False, "unsupported target"
 
 
 # ===----------------------------------------------------------------------=== #

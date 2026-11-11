@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModelInputs
 from max.pipelines.lib.interfaces.batch_processor import (

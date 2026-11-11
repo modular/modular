@@ -291,6 +291,13 @@ private:
               bool erroneous, ASTType contextualType = {})
       : explicitParamBindings(declScope, expr), contextualType(contextualType),
         syntax(syntax), erroneous(erroneous) {}
+
+  /// Resolve the selected candidate `fnDecl` into a single PValue callee.
+  /// `verifiedBindings`, when provided, are the bindings already inferred
+  /// against `fnDecl`'s signature under this set's contextual type.
+  PValue getCallee(ASTDecl *fnDecl,
+                   const VerifiedParamBindings &verifiedBindings) const;
+  PValue getCallee(ASTDecl *fnDecl) const;
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

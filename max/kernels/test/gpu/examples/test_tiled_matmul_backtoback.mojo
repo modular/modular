@@ -45,7 +45,7 @@ from layout.tile_io import (
     copy_sram_to_dram,
 )
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import block_swizzle
@@ -271,7 +271,7 @@ def b2b_gemm[
 
     # Global-memory tile iterators along K. Their layouts are static, so a
     # tile is masked only when its dimension does not divide the matrix.
-    comptime a_gmem_layout = TileLayout(
+    comptime a_gmem_layout = Layout(
         Coord(Idx[BM], Idx[BK]), Coord(Idx[A.static_stride[0]], Idx[1])
     )
     var a_gmem_iter = TileTensorIter[
@@ -287,10 +287,10 @@ def b2b_gemm[
     )
     comptime b_tile_axis = 1 if transpose_b else 0
     comptime c_tile_axis = 1 if transpose_c else 0
-    comptime b_gmem_layout = TileLayout(
+    comptime b_gmem_layout = Layout(
         Coord(Idx[BD_0], Idx[BD_1]), Coord(Idx[B.static_stride[0]], Idx[1])
     )
-    comptime c_gmem_layout = TileLayout(
+    comptime c_gmem_layout = Layout(
         Coord(Idx[CD_0], Idx[CD_1]), Coord(Idx[C.static_stride[0]], Idx[1])
     )
     comptime b_gmem_masked = (

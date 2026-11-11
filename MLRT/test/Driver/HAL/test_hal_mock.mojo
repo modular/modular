@@ -26,7 +26,10 @@ from max._driver.max_license.hal.device import Device, get_device_spec
 from max._driver.max_license.hal.queue import Queue
 from max._driver.max_license.hal.stream import Stream
 from max._driver.max_license.hal.event import Event, EVENT_FLAG_CPU_VISIBLE
-from max._driver.max_license.hal.extensions.traits import SupportsPeerAccessV1
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsCompletionFlagV1,
+    SupportsPeerAccessV1,
+)
 from max._driver.max_license.hal.status import (
     STATUS_SUCCESS,
     STATUS_INCOMPATIBLE_VERSION,
@@ -165,9 +168,10 @@ def test_queue_native_handle() raises:
     var device = driver[].get_device[Int64(0)]()
     var ctx = device[].get_context()
     var queue = ctx[].create_queue()
-    var handle = queue[].native_handle()
-    assert_true(Bool(handle))
-    assert_true(handle.value() != 0)
+    if case .Some(handle) = queue[].native_handle():
+        assert_true(handle != 0)
+    else:
+        raise Error("queue has no native handle")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -747,6 +751,18 @@ def test_peer_access_mock() raises:
         print("extension set has no peer access; nothing to call")
 
 
+def test_completion_flag_absent() raises:
+    # The mock exports no flag symbols, so the optional group stays unloaded
+    # and the plugin still loads.
+    var driver = Driver.create(_get_plugin_spec())
+    var dev = driver[].get_device_dynamic(Int64(0))
+    comptime Ext = type_of(dev[].extensions())
+    comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+        assert_false(Bool(dev[].extensions().completion_flag()))
+    else:
+        print("extension set has no completion flags; nothing to load")
+
+
 def main() raises:
     test_status_code_values()
 
@@ -783,3 +799,4 @@ def main() raises:
     test_unified_copy_pinned_cross_device()
     test_unified_copy_pinned_cross_device_on_queue()
     test_peer_access_mock()
+    test_completion_flag_absent()

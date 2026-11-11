@@ -360,7 +360,7 @@ def _is_newline_char_utf8[
 
 
 struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
-    var valid: StringSlice[Self.origin]
+    var valid: StringSpan[Self.origin]
     """The valid UTF-8 bytes."""
 
     var invalid: Span[Byte, Self.origin]
@@ -370,7 +370,7 @@ struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
     def __init__(
         out self,
         *,
-        valid: StringSlice[Self.origin],
+        valid: StringSpan[Self.origin],
         invalid: Span[Byte, Self.origin],
     ):
         self.valid = valid
@@ -496,5 +496,5 @@ struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
         var valid = inspected[:valid_up_to]
         var invalid = inspected[valid_up_to:]
         return UTF8Chunk(
-            valid=StringSlice(unsafe_from_utf8=valid), invalid=invalid
+            valid=StringSpan(unsafe_from_utf8=valid), invalid=invalid
         )

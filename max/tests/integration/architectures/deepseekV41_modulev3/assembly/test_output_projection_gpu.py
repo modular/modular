@@ -31,11 +31,11 @@ from max.graph import (
     Type,
 )
 from max.nn import Module
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     rms_norm_quantize_mxfp8_q_kv,
     rope_quantize_dynamic_block_scaled,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV41.layers.csa2 import (
     WindowStore,
     norm_quantize_q_store_kv,

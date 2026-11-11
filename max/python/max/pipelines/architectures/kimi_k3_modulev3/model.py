@@ -57,10 +57,14 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorType, TensorValue
 from max.nn import Embedding, Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MLAKVCacheParams,
@@ -69,8 +73,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
@@ -83,8 +87,10 @@ from max.tensor.sharding import (
 
 from .layers import ep
 from .layers.attn_residual import (
+    PendingAttnResStream,
     attn_res_mix_op,
     kimi_k3_attn_res_mix_norm,
+    kimi_k3_attn_res_mix_norm_delta,
 )
 from .layers.decoder_layer import (
     KimiK3DecoderLayer,
@@ -404,6 +410,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         mla_rope_table_rows: int | None = None,
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
+        max_tokens_per_expert: int = 8192,
+        tp_size: int = 1,
     ) -> None:
         """Builds the model's layers and weights.
 
@@ -448,6 +456,13 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             weight, so ``forward`` reads them off the tail of ``kv_inputs``
             instead of a stored attribute (which ``Module.stage`` would
             otherwise declare as one).
+            max_tokens_per_expert: Rows one forward can route to an expert
+            (``KimiK3Config.max_tokens_per_expert``), a serving-time bound
+            like ``mla_buffer_size``.
+            tp_size: The TP degree ``tensor_parallel_kimi_k3_model`` shards
+            the model over, 1 when it runs on one device or expert-parallel.
+            It sizes each MLA layer's fused input projection; see
+            :class:`KimiK3MLAAttention`.
         """
         super().__init__()
         self.config = config
@@ -497,6 +512,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_lora_rank=config.kv_lora_rank,
                     kv_params=attn_params,
                     layer_idx=full_attn_idx,
+                    tp_size=tp_size,
                 )
                 full_attn_idx += 1
 
@@ -526,6 +542,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     topk_group=config.topk_group,
                     moe_renormalize=config.moe_renormalize,
                     quant_config=quant_config,
+                    max_tokens_per_expert=max_tokens_per_expert,
                 )
 
             layers.append(
@@ -538,6 +555,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     attention=attention,
                     ffn=ffn,
                     rms_norm_eps=config.rms_norm_eps,
+                    # The residual add folds into the next layer's mix; the
+                    # tap layers hand the drafter a materialized stream.
+                    fold_pending_ffn=i not in (self._capture_after or ()),
                 )
             )
         self.layers = ModuleList(layers)
@@ -606,7 +626,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
             assert self.kv_params is not None, (
                 "KimiK3Model needs kv_params to serve a real kv_inputs tensor"
             )
-            graph_values = iter(x._graph_value for x in kv_inputs)
+            graph_values = iter(kv_input_values(kv_inputs))
             if isinstance(self.kv_params, MultiKVCacheParams):
                 kv_tree = self.kv_params.unflatten_kv_inputs(graph_values)
                 attn_tree = kv_tree[ATTN_CACHE_KEY]
@@ -632,7 +652,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     kv_collection=kv_collection,
                     input_row_offsets=input_row_offsets,
                     buffer_size=self.mla_buffer_size,
-                    buffer_length=Tensor.from_graph_value(next(graph_values)),
+                    buffer_length=cache_tensor([next(graph_values)]),
                 )
                 mla_freqs_cis = kimi_k3_nope_freqs_cis(
                     max_seq_len=self.mla_rope_table_rows,
@@ -653,21 +673,21 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 # `counters` is one graph value per device; the other six
                 # leaves share a single CPU-resident pointer table.
                 mesh = self.embed_tokens.weight.mesh
-                counters = Tensor.from_shard_values(
+                counters = cache_tensor(
                     [next(graph_values) for _ in range(mesh.num_devices)],
                     DeviceMapping(mesh, (Sharded(axis=0),) * mesh.ndim),
                 )
                 ep_buffers = ep.EPBuffers(
                     counters=counters,
                     dispatch=ep.Tables(
-                        send=Tensor.from_graph_value(next(graph_values)),
-                        recv=Tensor.from_graph_value(next(graph_values)),
-                        count=Tensor.from_graph_value(next(graph_values)),
+                        send=cache_tensor([next(graph_values)]),
+                        recv=cache_tensor([next(graph_values)]),
+                        count=cache_tensor([next(graph_values)]),
                     ),
                     combine=ep.Tables(
-                        send=Tensor.from_graph_value(next(graph_values)),
-                        recv=Tensor.from_graph_value(next(graph_values)),
-                        count=Tensor.from_graph_value(next(graph_values)),
+                        send=cache_tensor([next(graph_values)]),
+                        recv=cache_tensor([next(graph_values)]),
+                        count=cache_tensor([next(graph_values)]),
                     ),
                 )
 
@@ -678,6 +698,9 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         capture_after = self._capture_after
         block_residual: list[Tensor] = []
         captures: list[Tensor] = []
+        # The layer boundary carries the pending stream between the fold's
+        # producer and consumer layers.
+        current: Tensor | PendingAttnResStream = hidden_states
         kda_idx = 0
         for layer_idx, layer in enumerate(self.layers):
             if layer.is_kda:
@@ -686,8 +709,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     " layer"
                 )
                 conv, recurrent = state.leaves[:2]
-                hidden_states, block_residual = layer(
-                    hidden_states,
+                current, block_residual = layer(
+                    current,
                     block_residual,
                     conv_pool=conv.pool,
                     conv_row_id=conv.live_row_ids[kda_idx],
@@ -699,8 +722,8 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 )
                 kda_idx += 1
             else:
-                hidden_states, block_residual = layer(
-                    hidden_states,
+                current, block_residual = layer(
+                    current,
                     block_residual,
                     input_row_offsets=input_row_offsets,
                     kv_collection=kv_collection,
@@ -710,22 +733,37 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     ep_buffers=ep_buffers,
                 )
             if capture_after is not None and layer_idx in capture_after:
+                # The tap layers run with the fold off, so the boundary
+                # value is materialized here.
+                assert isinstance(current, Tensor)
                 captures.append(
-                    self._capture_tap(block_residual, hidden_states, layer_idx)
+                    self._capture_tap(block_residual, current, layer_idx)
                 )
 
         # The final norm rides the fused mix; the output head takes the
         # already-normed hidden state (norm-then-gather is per-row
         # identical to V2's gather-then-norm).
-        normed = kimi_k3_attn_res_mix_norm(
-            hidden_states,
-            block_residual,
-            self.output_attn_res_proj_weight,
-            self.output_attn_res_norm_weight,
-            self.final_norm_weight,
-            eps=self.config.rms_norm_eps,
-            norm_eps=KIMI_RMS_NORM_EPS,
-        )
+        if isinstance(current, PendingAttnResStream):
+            normed, _ = kimi_k3_attn_res_mix_norm_delta(
+                current.prefix,
+                current.delta,
+                block_residual,
+                self.output_attn_res_proj_weight,
+                self.output_attn_res_norm_weight,
+                self.final_norm_weight,
+                eps=self.config.rms_norm_eps,
+                norm_eps=KIMI_RMS_NORM_EPS,
+            )
+        else:
+            normed = kimi_k3_attn_res_mix_norm(
+                current,
+                block_residual,
+                self.output_attn_res_proj_weight,
+                self.output_attn_res_norm_weight,
+                self.final_norm_weight,
+                eps=self.config.rms_norm_eps,
+                norm_eps=KIMI_RMS_NORM_EPS,
+            )
         output = kimi_k3_output_head(
             normed,
             input_row_offsets,
@@ -774,6 +812,10 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                 candidate.
             layer_idx: The tapped layer's 0-based index.
         """
+        if isinstance(stream, PendingAttnResStream):
+            # The tap layers materialize their stream in the decoder; this
+            # keeps the tap correct if the fold set ever widens.
+            stream = stream.materialize()
         if self._tap_mode == KimiK3TapMode.PREFIX:
             return stream
         # The mixture mode's ids never name the last layer; `_tap_layers`
@@ -826,14 +868,32 @@ def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
 
 
-def _fuse_qkv_proj(q: np.ndarray, k: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+def _fuse_qkvgb_proj(
+    q: np.ndarray,
+    k: np.ndarray,
+    v: np.ndarray,
+    g: np.ndarray,
+    b: np.ndarray,
+) -> np.ndarray:
+    """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
-    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight. This eager
+    ``KimiK3KDAAttention.qkvg_proj`` takes the merged weight. This eager
     loader is single-device, so a plain row concat is the TP-degree-1 case
     of the weight adapter's per-rank interleave.
     """
-    return np.ascontiguousarray(np.concatenate([q, k, v], axis=0))
+    return np.ascontiguousarray(np.concatenate([q, k, v, g, b], axis=0))
+
+
+def _fuse_qkv_a_g_proj(
+    q_a: np.ndarray, kv_a: np.ndarray, g: np.ndarray
+) -> np.ndarray:
+    """Merges an MLA layer's q_a, kv_a and gate projections into one weight.
+
+    ``KimiK3MLAAttention.qkv_a_g_proj`` takes the merged weight. This eager
+    loader is single-device, so a plain row concat is the TP-degree-1 case
+    of the weight adapter's per-rank ``[q_a | kv_a | g_r]`` blocks.
+    """
+    return np.ascontiguousarray(np.concatenate([q_a, kv_a, g], axis=0))
 
 
 def _fuse_qkv_conv_weight(
@@ -929,11 +989,13 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkv_proj.weight = Tensor(
-                _fuse_qkv_proj(
+            attn.qkvg_proj.weight = Tensor(
+                _fuse_qkvgb_proj(
                     get(f"{attn_src}.q_proj.weight"),
                     get(f"{attn_src}.k_proj.weight"),
                     get(f"{attn_src}.v_proj.weight"),
+                    get(f"{attn_src}.g_proj.weight"),
+                    get(f"{attn_src}.b_proj.weight"),
                 ),
                 dtype=DType.float32,
             )
@@ -942,12 +1004,6 @@ def load_kimi_k3_weights(
             )
             attn.f_b_proj.weight = Tensor(
                 get(f"{attn_src}.f_b_proj.weight"), dtype=DType.float32
-            )
-            attn.b_proj.weight = Tensor(
-                get(f"{attn_src}.b_proj.weight"), dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                get(f"{attn_src}.g_proj.weight"), dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
@@ -978,8 +1034,13 @@ def load_kimi_k3_weights(
             )
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.q_a_proj.weight = Tensor(
-                get(f"{attn_src}.q_a_proj.weight"), dtype=DType.float32
+            attn.qkv_a_g_proj.weight = Tensor(
+                _fuse_qkv_a_g_proj(
+                    get(f"{attn_src}.q_a_proj.weight"),
+                    get(f"{attn_src}.kv_a_proj_with_mqa.weight"),
+                    get(f"{attn_src}.g_proj.weight"),
+                ),
+                dtype=DType.float32,
             )
             attn.q_a_layernorm.weight = Tensor(
                 get(f"{attn_src}.q_a_layernorm.weight"), dtype=DType.float32
@@ -987,18 +1048,11 @@ def load_kimi_k3_weights(
             attn.q_b_proj.weight = Tensor(
                 get(f"{attn_src}.q_b_proj.weight"), dtype=DType.float32
             )
-            attn.kv_a_proj_with_mqa.weight = Tensor(
-                get(f"{attn_src}.kv_a_proj_with_mqa.weight"),
-                dtype=DType.float32,
-            )
             attn.kv_a_layernorm.weight = Tensor(
                 get(f"{attn_src}.kv_a_layernorm.weight"), dtype=DType.float32
             )
             attn.kv_b_proj.weight = Tensor(
                 get(f"{attn_src}.kv_b_proj.weight"), dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                get(f"{attn_src}.g_proj.weight"), dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 get(f"{attn_src}.o_proj.weight"), dtype=DType.float32
@@ -1019,7 +1073,7 @@ def load_kimi_k3_weights(
             assert isinstance(ffn, KimiK3LatentMoE)
             moe = f"{src}.block_sparse_moe"
             ffn.gate.gate_score.weight = Tensor(
-                get(f"{moe}.gate.weight"), dtype=DType.float32
+                get(f"{moe}.gate.weight"), dtype=DType.bfloat16
             )
             ffn.gate.e_score_correction_bias = Tensor(
                 get(f"{moe}.gate.e_score_correction_bias"), dtype=DType.float32

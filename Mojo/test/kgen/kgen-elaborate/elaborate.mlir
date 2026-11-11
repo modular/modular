@@ -706,6 +706,75 @@ kgen.generator @constexprIfEarlyExitWithParam2() -> index {
 
 // -----
 
+// COM: Ops nested in regions after an early-returning comptime.if are dead and
+// COM: must not be elaborated. Instantiating @failsUnlessZero with a nonzero
+// COM: value fails, so any such call that survives breaks the test.
+kgen.generator @failsUnlessZero<n: index>() {
+  kgen.param.assert <eq(n, 0)>, "dead code was elaborated"
+  hlcf.return
+}
+
+// CHECK-LABEL: @earlyExitSkipsNestedIf
+kgen.generator @earlyExitSkipsNestedIf(%arg0: !kgen.scalar<bool>) {
+  hlcf.comptime.if true {
+    // CHECK-NEXT: hlcf.return
+    hlcf.return
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.if %arg0 {
+    kgen.call @failsUnlessZero<1>() : () -> ()
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  hlcf.return
+}
+
+// CHECK-LABEL: @earlyExitSkipsNestedLoop
+kgen.generator @earlyExitSkipsNestedLoop() {
+  hlcf.comptime.if true {
+    // CHECK-NEXT: hlcf.return
+    hlcf.return
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.loop {
+    kgen.call @failsUnlessZero<2>() : () -> ()
+    hlcf.break
+  }
+  hlcf.return
+}
+
+// COM: An early return inside a runtime region kills only the rest of that
+// COM: region; the ops after the region are still live.
+// CHECK-LABEL: @earlyExitInRuntimeIfKeepsOuterOps
+kgen.generator @earlyExitInRuntimeIfKeepsOuterOps(%arg0: !kgen.scalar<bool>) {
+  // CHECK-NEXT: hlcf.if
+  hlcf.if %arg0 {
+    hlcf.comptime.if true {
+      // CHECK-NEXT: hlcf.return
+      hlcf.return
+    } else {
+      hlcf.comptime.yield
+    }
+    hlcf.if %arg0 {
+      kgen.call @failsUnlessZero<3>() : () -> ()
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+  // CHECK: kgen.call @"failsUnlessZero,n=0"
+  kgen.call @failsUnlessZero<0>() : () -> ()
+  hlcf.return
+}
+
+// -----
+
 kgen.generator @returnTrue() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: scalar<bool> = <<true>>
   hlcf.return %0 : !kgen.scalar<bool>
@@ -2371,4 +2440,15 @@ kgen.generator @comptime_if_elif_else_arm() -> index {
     hlcf.comptime.yield %c : index
   }
   hlcf.return %0 : index
+}
+
+// -----
+
+!BaseTrait = !lit.trait<@BaseTrait>
+
+// CHECK-LABEL: kgen.func @downcast_in_trait_list_layout
+// CHECK-NOT: kgen.rebind
+kgen.generator @downcast_in_trait_list_layout(%arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout>) {
+  %0 = kgen.rebind %arg0 : !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout> to !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !BaseTrait] isParamPack layout>
+  hlcf.return
 }

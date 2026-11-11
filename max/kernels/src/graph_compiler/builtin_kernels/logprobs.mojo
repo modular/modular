@@ -22,8 +22,8 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from extensibility import InputTensor, OutputTensor
-from extensibility import Tensor, TileTensorable
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import Coord, TileTensor
 
 from std.utils.index import IndexList
 
@@ -100,22 +100,21 @@ comptime offset_dtype = DType.uint32
 
 
 def compute_log_probabilities_1tok[
-    target: StaticString, levels: Int
+    levels: Int
 ](
     output_token_index: Int,
-    lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
-    lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
-    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
-    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    lp_logits: TileTensor[mut=True, logit_dtype, ...],
+    lp_tokens: TileTensor[mut=True, token_dtype, ...],
+    logits: TileTensor[mut=False, logit_dtype, ...],
+    tokens: TileTensor[mut=False, token_dtype, ...],
+    sampled_tokens: TileTensor[mut=False, token_dtype, ...],
+    logit_row_offsets: TileTensor[mut=False, offset_dtype, ...],
+    token_row_offsets: TileTensor[mut=False, offset_dtype, ...],
+    lp_output_offsets: TileTensor[mut=False, offset_dtype, ...],
 ) -> None:
     """Computes log probabilities for a single token position from its logits row.
 
     Parameters:
-        target: Compilation target string, such as `"cpu"` or `"gpu"`.
         levels: Number of heap levels controlling the top-k width; the output
             stores `2**levels` entries per token. When `levels <= 0`, only
             the sampled token's log probability is emitted.
@@ -138,28 +137,51 @@ def compute_log_probabilities_1tok[
         lp_output_offsets: Per-batch start offsets into the output row axis,
             mapping each output index to its batch.
     """
-    var vocab_size = logits.shape()[1]
+    comptime assert lp_logits.rank == 2
+    comptime assert lp_tokens.rank == 2
+    comptime assert logits.rank == 2
+    comptime assert tokens.rank == 1
+    comptime assert sampled_tokens.rank == 1
+    comptime assert logit_row_offsets.rank == 1
+    comptime assert token_row_offsets.rank == 1
+    comptime assert lp_output_offsets.rank == 1
+    var vocab_size = Int(logits.dim[1]())
     var batch_index = get_batch_from_row_offsets(
-        lp_output_offsets.to_tile_tensor[.int64](), output_token_index
+        lp_output_offsets, output_token_index
     )
     var reverse_index_in_seq = (
-        lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1
+        lp_output_offsets.load[width=1](Coord(batch_index + 1))
+        - UInt32(output_token_index)
+        - 1
     )
-    var token_end_index = token_row_offsets[batch_index + 1]
+    var token_end_index = token_row_offsets.load[width=1](
+        Coord(batch_index + 1)
+    )
     var sampled_token: Scalar[token_dtype]
     if reverse_index_in_seq == 0:
-        sampled_token = sampled_tokens[batch_index]
+        sampled_token = sampled_tokens.load[width=1](Coord(batch_index))
     else:
-        sampled_token = tokens[Int(token_end_index - reverse_index_in_seq)]
+        sampled_token = tokens.load[width=1](
+            Coord(Int(token_end_index - reverse_index_in_seq))
+        )
 
-    var logit_end_index = logit_row_offsets[batch_index + 1]
+    var logit_end_index = logit_row_offsets.load[width=1](
+        Coord(batch_index + 1)
+    )
     var logit_index = Int(logit_end_index - reverse_index_in_seq - 1)
-    var x_max = logits[logit_index, 0]
+
+    @always_inline
+    def logit_at(
+        token_value: Int,
+    ) {var logits, var logit_index} -> Scalar[logit_dtype]:
+        return logits.load[width=1](Coord(logit_index, token_value))
+
+    var x_max = logit_at(0)
     for token_value in range(1, vocab_size):
-        x_max = max(x_max, logits[logit_index, token_value])
+        x_max = max(x_max, logit_at(token_value))
     var sum_exp = Scalar[logit_dtype](0.0)
     for token_value in range(vocab_size):
-        sum_exp += exp(logits[logit_index, token_value] - x_max)
+        sum_exp += exp(logit_at(token_value) - x_max)
     var log_sum_exp = log(sum_exp)
     var normalizer = -(x_max + log_sum_exp)
 
@@ -172,18 +194,25 @@ def compute_log_probabilities_1tok[
             fill_k=UInt32(vocab_size), fill_v=-inf[logit_dtype]()
         )
         for token_value in range(vocab_size):
-            var logit_value = logits[logit_index, token_value]
+            var logit_value = logit_at(token_value)
             if logit_value > heap.v_array[0]:
                 heap.k_array[0] = UInt32(token_value)
                 heap.v_array[0] = logit_value
                 heap.heap_down()
         for i in range(heap.num_elements):
-            lp_tokens[output_token_index, i] = heap.k_array[i]
-            lp_logits[output_token_index, i] = heap.v_array[i] + normalizer
+            lp_tokens.store[width=1](
+                Coord(output_token_index, i), heap.k_array[i]
+            )
+            lp_logits.store[width=1](
+                Coord(output_token_index, i), heap.v_array[i] + normalizer
+            )
         post_heap_idx = heap.num_elements
-    lp_tokens[output_token_index, post_heap_idx] = sampled_token
-    lp_logits[output_token_index, post_heap_idx] = (
-        logits[logit_index, Int(sampled_token)] + normalizer
+    lp_tokens.store[width=1](
+        Coord(output_token_index, post_heap_idx), sampled_token
+    )
+    lp_logits.store[width=1](
+        Coord(output_token_index, post_heap_idx),
+        logit_at(Int(sampled_token)) + normalizer,
     )
 
 
@@ -194,23 +223,22 @@ struct LogProbabilitiesRagged:
 
     @staticmethod
     def execute[
-        target: StaticString, levels: Int
+        levels: Int
     ](
-        lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
-        lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
-        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
-        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_logits: Some[Output & Tensor],
+        lp_tokens: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        tokens: Some[Input & Tensor],
+        sampled_tokens: Some[Input & Tensor],
+        logit_row_offsets: Some[Input & Tensor],
+        token_row_offsets: Some[Input & Tensor],
+        lp_output_offsets: Some[Input & Tensor],
+        lp_output_offsets_host: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises -> None:
         """Executes the ragged log-probabilities computation across all batches.
 
         Parameters:
-            target: Compilation target string, such as `"cpu"` or `"gpu"`.
             levels: Number of heap levels controlling the top-k width; the
                 output stores `2**levels` entries per token.
 
@@ -236,27 +264,59 @@ struct LogProbabilitiesRagged:
             Error: If `lp_logits` and `lp_tokens` disagree on axis 0, or if
                 either output's axis 1 does not match `2**levels`.
         """
-        var num_output_tokens = lp_logits.shape()[0]
-        if lp_tokens.shape()[0] != num_output_tokens:
+        comptime assert conforms_to(type_of(lp_logits), TileTensorable)
+        comptime assert conforms_to(type_of(lp_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(tokens), TileTensorable)
+        comptime assert conforms_to(type_of(sampled_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(logit_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(token_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(lp_output_offsets), TileTensorable)
+        comptime assert type_of(lp_logits).rank == 2
+        comptime assert type_of(lp_tokens).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(tokens).rank == 1
+        comptime assert type_of(sampled_tokens).rank == 1
+        comptime assert type_of(logit_row_offsets).rank == 1
+        comptime assert type_of(token_row_offsets).rank == 1
+        comptime assert type_of(lp_output_offsets).rank == 1
+        comptime assert type_of(lp_output_offsets_host).rank == 1
+        var num_output_tokens = Int(lp_logits.shape()[0].value())
+        if Int(lp_tokens.shape()[0].value()) != num_output_tokens:
             raise Error("Mismatch in axis 0 of lp_logits and lp_tokens")
-        if lp_logits.shape()[1] != 2**levels:
+        if Int(lp_logits.shape()[1].value()) != 2**levels:
             raise Error("Axis 1 of lp_logits inconsistent with level setting")
-        if lp_tokens.shape()[1] != 2**levels:
+        if Int(lp_tokens.shape()[1].value()) != 2**levels:
             raise Error("Axis 1 of lp_tokens inconsistent with level setting")
 
-        comptime if is_cpu[target]():
+        var lp_logits_tt = lp_logits.to_tile_tensor[logit_dtype]()
+        var lp_tokens_tt = lp_tokens.to_tile_tensor[token_dtype]()
+        var logits_tt = logits.to_tile_tensor[logit_dtype]()
+        var tokens_tt = tokens.to_tile_tensor[token_dtype]()
+        var sampled_tokens_tt = sampled_tokens.to_tile_tensor[token_dtype]()
+        var logit_row_offsets_tt = logit_row_offsets.to_tile_tensor[
+            offset_dtype
+        ]()
+        var token_row_offsets_tt = token_row_offsets.to_tile_tensor[
+            offset_dtype
+        ]()
+        var lp_output_offsets_tt = lp_output_offsets.to_tile_tensor[
+            offset_dtype
+        ]()
+
+        comptime if ctx.target.is_cpu():
 
             def lp_idx_kernel(output_token_index: Int) {imm} -> None:
-                compute_log_probabilities_1tok[target, levels](
+                compute_log_probabilities_1tok[levels](
                     output_token_index=output_token_index,
-                    lp_logits=lp_logits,
-                    lp_tokens=lp_tokens,
-                    logits=logits,
-                    tokens=tokens,
-                    sampled_tokens=sampled_tokens,
-                    logit_row_offsets=logit_row_offsets,
-                    token_row_offsets=token_row_offsets,
-                    lp_output_offsets=lp_output_offsets,
+                    lp_logits=lp_logits_tt,
+                    lp_tokens=lp_tokens_tt,
+                    logits=logits_tt,
+                    tokens=tokens_tt,
+                    sampled_tokens=sampled_tokens_tt,
+                    logit_row_offsets=logit_row_offsets_tt,
+                    token_row_offsets=token_row_offsets_tt,
+                    lp_output_offsets=lp_output_offsets_tt,
                 )
 
             parallelize(
@@ -264,7 +324,7 @@ struct LogProbabilitiesRagged:
                 num_output_tokens,
                 ctx=Optional(ctx.assert_cpu_target()),
             )
-        elif is_gpu[target]():
+        elif ctx.target.is_gpu():
             # `Int` is not device-passable; the closure carries a fixed-width
             # copy of the token count.
             var num_output_tokens_dev = Int32(num_output_tokens)
@@ -272,27 +332,27 @@ struct LogProbabilitiesRagged:
             @__name(t"log_probabilities_l{levels}")
             def raw_lp_kernel() {
                 var num_output_tokens_dev,
-                var lp_logits,
-                var lp_tokens,
-                var logits,
-                var tokens,
-                var sampled_tokens,
-                var logit_row_offsets,
-                var token_row_offsets,
-                var lp_output_offsets,
+                var lp_logits_tt,
+                var lp_tokens_tt,
+                var logits_tt,
+                var tokens_tt,
+                var sampled_tokens_tt,
+                var logit_row_offsets_tt,
+                var token_row_offsets_tt,
+                var lp_output_offsets_tt,
             }:
                 var output_token_index = global_idx.x
                 if output_token_index < Int(num_output_tokens_dev):
-                    compute_log_probabilities_1tok[target, levels](
+                    compute_log_probabilities_1tok[levels](
                         output_token_index=output_token_index,
-                        lp_logits=lp_logits,
-                        lp_tokens=lp_tokens,
-                        logits=logits,
-                        tokens=tokens,
-                        sampled_tokens=sampled_tokens,
-                        logit_row_offsets=logit_row_offsets,
-                        token_row_offsets=token_row_offsets,
-                        lp_output_offsets=lp_output_offsets,
+                        lp_logits=lp_logits_tt,
+                        lp_tokens=lp_tokens_tt,
+                        logits=logits_tt,
+                        tokens=tokens_tt,
+                        sampled_tokens=sampled_tokens_tt,
+                        logit_row_offsets=logit_row_offsets_tt,
+                        token_row_offsets=token_row_offsets_tt,
+                        lp_output_offsets=lp_output_offsets_tt,
                     )
 
             comptime block_size = 64

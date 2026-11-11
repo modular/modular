@@ -21,7 +21,7 @@ from typing import Any
 from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
     create_empty_embeddings,
@@ -114,15 +114,14 @@ class Gemma4ModuleV3BatchProcessor(DecoderBatchProcessor):
                 " is loaded); image and video inputs are not supported."
             )
         # The tower runs on device 0, and its embeddings are copied to the
-        # other devices.
-        outputs = self._vision_model(
+        # other devices. Its inputs are its named tree's leaves, in order.
+        (device0_embeddings,) = self._vision_model.execute_raw(
             packed.patches_flat[0],
             packed.pixel_position_ids[0],
             packed.cu_seqlens[0],
             packed.pool_gather_index[0],
             packed.max_seq_len,
         )
-        device0_embeddings = outputs.local_shards[0].driver_tensor
         return VisionEncodeResult(
             embeddings=[device0_embeddings.to(device) for device in devices]
         )

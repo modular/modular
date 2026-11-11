@@ -24,7 +24,6 @@ from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    Coord,
     coord,
     DefaultEngine,
     RowMajorLayout,

@@ -723,7 +723,23 @@ LIT::verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
       if (structAliasDecl->resolvedness == DeclResolvedness::body) {
         clonedDefault = structAliasDeclOp;
       } else {
-        AliasDeclOp defaultAliasOp = structAliasDeclOp;
+        // This is not necessarily the trait decl that we are trying to verify,
+        // a refined trait might provide the default.
+        auto parentTraitDecl = shared.resolveAndGetTypeDecl(
+            getFullyResolvedSymbolRef(
+                cast<TraitDeclOp>(structAliasDeclOp->getParentOp())),
+            traitDecl.getLoc());
+        ArrayRef<ASTDecl *> decls = parentTraitDecl->lookupInCurrentScope(name);
+        assert(decls.size() == 1 &&
+               isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation()) &&
+               "expected one AliasDeclOp in the trait");
+        if (failed(shared.declResolver->resolveSignature(*decls.front(),
+                                                         traitDecl.getLoc()))) {
+          hadErrors = true;
+          return success();
+        }
+        auto defaultAliasOp =
+            cast<AliasDeclOp>(decls.front()->getIfOperation());
         // Position builder before the first ConformanceOp (there will always
         // be one since the struct should at least conform the trait that we
         // are cloning the defaulted value from).
@@ -1664,4 +1680,23 @@ LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
           shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol()))
           .getOp();
   return populateTraitBindingEvaluator(traitSymbol, traitDecl);
+}
+
+ParameterEvaluator LIT::populateStructBindingEvaluator(StructDeclOp structDecl,
+                                                       ASTType structType,
+                                                       SharedState &shared) {
+  ParameterEvaluator evaluator = shared.getParameterEvaluator();
+  for (auto [idx, paramDecl, value] :
+       llvm::enumerate(structDecl.getParams(), structType.getParamBindings()))
+    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
+    // "forwarded" parameters. e.g.,
+    // ```mojo
+    //   comptime A[a : Int] = Param[a, a]
+    // ```
+    // only the first `a` is a forward parameter, not the second (turning
+    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
+    // equal).
+    if (!structType.isUnresolvedParam(idx))
+      evaluator.setDeclBinding(paramDecl, value);
+  return evaluator;
 }

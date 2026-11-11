@@ -1216,16 +1216,6 @@ struct Dict[
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def _minimum_size_of_string_representation(self) -> Int:
-        # we do a rough estimation of the minimum number of chars that we'll see
-        # in the string representation, we assume that String(key) and String(value)
-        # will be both at least one char.
-        return (
-            2  # '{' and '}'
-            + len(self) * 6  # String(key), String(value) ": " and ", "
-            - 2  # remove the last ", "
-        )
-
     def find(
         self, key: Self.K
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):

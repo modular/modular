@@ -36,6 +36,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     tensor_parallel_mla_attention,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
     interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
@@ -49,7 +50,7 @@ def _rel_error(got: np.ndarray, want: np.ndarray) -> float:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_mla_tp1_matches_tp2() -> None:
     hidden, heads, qk_nope, qk_rope, v_head, q_lora, kv_lora = (
@@ -94,9 +95,8 @@ def test_mla_tp1_matches_tp2() -> None:
     weights = make(heads)
     x_np = _RNG.standard_normal((2, 5, hidden)).astype(np.float32)
 
-    # TP=1.
-    with default_device(Accelerator(0)):
-        layer1 = KimiK3MLAAttention(
+    def build(tp_size: int) -> KimiK3MLAAttention:
+        layer = KimiK3MLAAttention(
             hidden_size=hidden,
             num_heads=heads,
             qk_nope_head_dim=qk_nope,
@@ -104,10 +104,27 @@ def test_mla_tp1_matches_tp2() -> None:
             v_head_dim=v_head,
             q_lora_rank=q_lora,
             kv_lora_rank=kv_lora,
+            tp_size=tp_size,
         )
-        for name, arr in weights.items():
-            w = getattr(layer1, name)
-            w.weight = Tensor(arr, dtype=DType.float32).cast(w.weight.dtype)
+        layer.qkv_a_g_proj.weight = Tensor(
+            fuse_qkv_a_g_for_tp(
+                weights["q_a_proj"],
+                weights["kv_a_proj_with_mqa"],
+                weights["g_proj"],
+                tp_size,
+            ),
+            dtype=DType.float32,
+        ).cast(layer.qkv_a_g_proj.weight.dtype)
+        for name in ("q_b_proj", "kv_b_proj", "o_proj"):
+            w = getattr(layer, name)
+            w.weight = Tensor(weights[name], dtype=DType.float32).cast(
+                w.weight.dtype
+            )
+        return layer
+
+    # TP=1.
+    with default_device(Accelerator(0)):
+        layer1 = build(1)
         x1 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
         out1 = layer1(x1).cast(DType.float32).to_numpy()
 
@@ -117,18 +134,7 @@ def test_mla_tp1_matches_tp2() -> None:
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        layer2 = KimiK3MLAAttention(
-            hidden_size=hidden,
-            num_heads=heads,
-            qk_nope_head_dim=qk_nope,
-            qk_rope_head_dim=qk_rope,
-            v_head_dim=v_head,
-            q_lora_rank=q_lora,
-            kv_lora_rank=kv_lora,
-        )
-        for name, arr in weights.items():
-            w = getattr(layer2, name)
-            w.weight = Tensor(arr, dtype=DType.float32).cast(w.weight.dtype)
+        layer2 = build(len(devices))
         tensor_parallel_mla_attention(layer2, mesh)
         x2 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
         partial = layer2(x2)
@@ -196,17 +202,21 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
     def assign(layer: KimiK3KDAAttention, tp_size: int) -> None:
-        layer.qkv_proj.weight = Tensor(
+        layer.qkvg_proj.weight = Tensor(
             interleave_for_tp(
-                [weights["q_proj"], weights["k_proj"], weights["v_proj"]],
+                [
+                    weights["q_proj"],
+                    weights["k_proj"],
+                    weights["v_proj"],
+                    weights["g_proj"],
+                    weights["b_proj"],
+                ],
                 tp_size,
             ),
             dtype=DType.float32,
         )
         layer.f_a_proj.weight = Tensor(weights["f_a_proj"], dtype=DType.float32)
         layer.f_b_proj.weight = Tensor(weights["f_b_proj"], dtype=DType.float32)
-        layer.b_proj.weight = Tensor(weights["b_proj"], dtype=DType.float32)
-        layer.g_proj.weight = Tensor(weights["g_proj"], dtype=DType.float32)
         layer.o_proj.weight = Tensor(weights["o_proj"], dtype=DType.float32)
         layer.conv_weight = Tensor(
             interleave_for_tp(np.split(conv_weight_np, 3), tp_size),

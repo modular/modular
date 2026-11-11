@@ -30,7 +30,7 @@ proves.
 from __future__ import annotations
 
 import numpy as np
-from fusion_utils import run_and_verify_fusion
+from fusion_utils import execute, load_and_verify_fusion, run_and_verify_fusion
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -157,24 +157,12 @@ def test_fuses_independently_per_conditional_branch(
     # Both branches compile regardless of which one a given call executes, so
     # the fusion check only needs to run once, against either branch's
     # pattern; the loop below is purely for the numeric check per branch.
-    (out,) = run_and_verify_fusion(
-        session,
-        graph,
-        a_np,
-        b_np,
-        idx_np,
-        np.array(True),
-        fused=r"mo\.add.*mo\.gather",
-    )
-    np.testing.assert_allclose(out, (a_np + b_np)[idx_np], rtol=1e-5, atol=1e-5)
-
+    model = load_and_verify_fusion(session, graph, fused=r"mo\.add.*mo\.gather")
     for cond_np, ref_fn in (
         (np.array(True), lambda: (a_np + b_np)[idx_np]),
         (np.array(False), lambda: (a_np * b_np)[idx_np]),
     ):
-        (out,) = run_and_verify_fusion(
-            session, graph, a_np, b_np, idx_np, cond_np
-        )
+        (out,) = execute(model, a_np, b_np, idx_np, cond_np)
         np.testing.assert_allclose(out, ref_fn(), rtol=1e-5, atol=1e-5)
 
 
@@ -209,13 +197,12 @@ def test_no_fuse_across_conditional_blocks(session: InferenceSession) -> None:
     b_np = np.random.randn(3, 3).astype(np.float32)
     idx_np = np.array([[0, 2], [1, 0]], dtype=np.int32)
 
+    model = load_and_verify_fusion(session, graph)
     for cond_np, ref_fn in (
         (np.array(True), lambda: (a_np + b_np)[idx_np]),
         (np.array(False), lambda: a_np[idx_np]),
     ):
-        (out,) = run_and_verify_fusion(
-            session, graph, a_np, b_np, idx_np, cond_np
-        )
+        (out,) = execute(model, a_np, b_np, idx_np, cond_np)
         np.testing.assert_allclose(out, ref_fn(), rtol=1e-5, atol=1e-5)
 
 
@@ -265,12 +252,12 @@ def test_matmul_gains_no_prologue_capture(session: InferenceSession) -> None:
     x_np = np.random.randn(8, 8).astype(np.float32)
     y_np = np.random.randn(8, 8).astype(np.float32)
     z_np = np.random.randn(8, 8).astype(np.float32)
-    (out,) = run_and_verify_fusion(session, graph, x_np, y_np, z_np)
+    model = load_and_verify_fusion(session, graph)
     # The matmul never absorbs the add: no single kernel carries both.
-    model = session.load(graph)
     assert not any(
         "mo.matmul" in s and "mo.add" in s for s in model.kernel_summaries
     )
+    (out,) = execute(model, x_np, y_np, z_np)
     np.testing.assert_allclose(out, (x_np + y_np) @ z_np, rtol=1e-5, atol=1e-5)
 
 

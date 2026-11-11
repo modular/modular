@@ -27,7 +27,7 @@ import numpy as np
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MIXED_STEP_SPLIT_SIZE,
     PACKED_PAGE_STRIDE,
     KVCacheParams,
@@ -150,7 +150,13 @@ def build_paged_cache(
             mla_num_partitions=(
                 Tensor(
                     storage=Buffer.from_numpy(
-                        np.array([attn_key.num_partitions], np.int64)
+                        np.array(
+                            [
+                                attn_key.num_partitions,
+                                attn_key.decode_num_partitions,
+                            ],
+                            np.int64,
+                        )
                     )
                 )
                 if isinstance(attn_key, MLAAttnKey)

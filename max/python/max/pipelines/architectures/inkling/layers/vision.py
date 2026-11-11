@@ -20,10 +20,16 @@ from __future__ import annotations
 
 import itertools
 import math
+from collections import OrderedDict
 from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.nn.legacy.graph_groups import (
+    VisionEmbeddings,
+    VisionRows,
+    vision_outputs,
+)
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
@@ -232,7 +238,9 @@ class InklingVisionModel(Module):
             ],
         )
 
-    def __call__(self, patches: TensorValue) -> TensorValue:
+    def __call__(
+        self, patches: TensorValue
+    ) -> OrderedDict[str, VisionEmbeddings]:
         """Runs the vision tower over the patches."""
         x = self.normalize(patches)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
@@ -242,13 +250,19 @@ class InklingVisionModel(Module):
                 x = ops.gelu(self.norms[index](x))
         if self.final_norm is not None:
             x = self.final_norm(x)
-        return x.reshape([x.shape[0], self.config.decoder_dmodel])
+        return vision_outputs(
+            (x.reshape([x.shape[0], self.config.decoder_dmodel]),)
+        )
+
+    def input_tree(self) -> OrderedDict[str, object]:
+        """Groups the raw patches as rows the vision batcher concatenates."""
+        return OrderedDict(patches=VisionRows(pixels=self.input_types()[0]))
 
     def input_types(self) -> tuple[TensorType, ...]:
         """One block of raw patches, as the image processor emits them."""
         return (
             TensorType(
-                DType.int16,
+                DType.int32,
                 shape=[
                     "total_patches",
                     self.config.patch_size,

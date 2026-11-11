@@ -22,6 +22,7 @@ from collections.abc import Iterator
 
 from max._core import __version__
 from max._core.driver import (
+    ArchitectureVersion,
     CompletionFlag,
     DeviceEvent,
     HostHazardError,
@@ -132,6 +133,7 @@ def launch_trace() -> Iterator[list[LaunchTraceEntry]]:
 __all__ = [
     "CPU",
     "Accelerator",
+    "ArchitectureVersion",
     "Buffer",
     "CompletionFlag",
     "DLPackArray",

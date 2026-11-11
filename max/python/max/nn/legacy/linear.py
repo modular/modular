@@ -32,12 +32,8 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import Segment
-from max.nn.legacy.quant_config import (
-    QuantConfig,
-    ScaleGranularity,
-    fp4_packed_k,
-)
-from max.nn.legacy.quant_ops import quantized_matmul
+from max.nn._graph_ops.quant import quantized_matmul
+from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.support.math import ceildiv
 
 from .activation import activation_function_from_name
@@ -130,7 +126,7 @@ class Linear(Module, Shardable):
             has_bias: When ``True``, adds a bias vector to the layer.
                 Defaults to ``False``.
             quantization_encoding: :class:`~max.graph.quantization.QuantizationEncoding` for the weights.
-            quant_config: :class:`~max.nn.legacy.quant_config.QuantConfig` for scaled quantization.
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization.
             clip_weight: Optional weight clipping threshold.
             is_sharding: Disable child layer creation during sharding.
         """
@@ -801,7 +797,7 @@ class GPTQLinear(Linear):
                 Defaults to ``False``.
             quantization_encoding: The :class:`~max.graph.quantization.QuantizationEncoding` of the weights.
             quantization_config: Extra :class:`~max.graph.quantization.QuantizationConfig` for the weight quantization.
-            quant_config: :class:`~max.nn.legacy.quant_config.QuantConfig` for scaled quantization (not supported).
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization (not supported).
         """
         del out_dim, dtype  # Unused.
         if has_bias:
@@ -932,7 +928,7 @@ class MLP(Module, Shardable):
                 - ``tanh``
                 - ``sigmoid``
 
-            quant_config: :class:`~max.nn.legacy.quant_config.QuantConfig` for scaled quantization.
+            quant_config: :class:`~max.nn.quant_config.QuantConfig` for scaled quantization.
             swiglu_limit: Upper bound on the SwiGLU gate branch, also applied
                 to both ends of the up branch. ``0`` disables the clamp.
             is_sharding: Disable child layer creation during sharding.

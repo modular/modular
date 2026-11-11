@@ -28,9 +28,9 @@ import numpy as np
 import pytest
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import inplace_memcpy, wait_host_value_with_dep
+from max.nn._graph_ops import inplace_memcpy, wait_host_value_with_dep
 from max.pipelines.lib.pipeline_variants.structured_output_overlap import (
     StructuredOutputOverlapState,
 )
@@ -59,6 +59,8 @@ def _spin_until_signaled(state: StructuredOutputOverlapState) -> None:
 _MAX_BATCH = 2
 _NUM_POSITIONS = 3
 _VOCAB = 128
+# The state packs the bitmask 32 tokens to an int32 word.
+_BITMASK_SHAPE = [_MAX_BATCH, _NUM_POSITIONS, _VOCAB // 32]
 
 
 @pytest.fixture
@@ -164,7 +166,7 @@ def test_payload_shape_matches_wait_host_value(
     """``wait_payload`` is CPU int64[2] = [flag._unsafe_ptr, 1].
 
     Matches the contract in
-    ``max.nn.legacy.kernels.wait_host_value_with_dep``'s docstring.
+    ``max.nn._graph_ops.wait_host_value_with_dep``'s docstring.
     """
     payload = state.wait_payload
     assert payload.dtype == DType.int64
@@ -217,8 +219,23 @@ def _build_overlap_smoke_graph(
     return graph
 
 
+# Compiled once per module, and before any test allocates its state.
+@pytest.fixture(scope="module")
+def overlap_session() -> InferenceSession:
+    return InferenceSession(devices=[Accelerator(), CPU()])
+
+
+@pytest.fixture(scope="module")
+def smoke_model(overlap_session: InferenceSession) -> Model:
+    return overlap_session.load(
+        _build_overlap_smoke_graph(Accelerator(), _BITMASK_SHAPE)
+    )
+
+
 def test_in_graph_h2d_preserves_pinned_row_layout(
-    accelerator: Accelerator, state: StructuredOutputOverlapState
+    accelerator: Accelerator,
+    smoke_model: Model,
+    state: StructuredOutputOverlapState,
 ) -> None:
     """End-to-end: pinned -> in-graph H2D -> device scratch preserves rows.
 
@@ -240,12 +257,6 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
       - The wait_host_value not actually gating on the flag (would
         race the inplace_memcpy against the pinned write).
     """
-    shape = list(state.max_bitmask_shape)
-    graph = _build_overlap_smoke_graph(accelerator, shape)
-
-    session = InferenceSession(devices=[accelerator, CPU()])
-    model = session.load(graph)
-
     # Distinct per-(batch, position) pattern: row b position p is
     # all-True iff (b * num_positions + p) is even. Easy to inspect
     # by eye and easy to detect if rows are swapped or shifted.
@@ -263,7 +274,7 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
     # correct copy.
     state.device_bitmask_scratch.to_numpy()[...] = False
 
-    model.execute(
+    smoke_model.execute(
         state.pinned_bitmask,
         state.wait_payload,
         state.device_bitmask_scratch,
@@ -284,7 +295,9 @@ def test_in_graph_h2d_preserves_pinned_row_layout(
 
 
 def test_callback_writes_propagate_to_device(
-    accelerator: Accelerator, state: StructuredOutputOverlapState
+    accelerator: Accelerator,
+    smoke_model: Model,
+    state: StructuredOutputOverlapState,
 ) -> None:
     """End-to-end with the async callback in the loop.
 
@@ -294,12 +307,6 @@ def test_callback_writes_propagate_to_device(
     completion, and the device scratch should match what the callback
     wrote.
     """
-    shape = list(state.max_bitmask_shape)
-    graph = _build_overlap_smoke_graph(accelerator, shape)
-
-    session = InferenceSession(devices=[accelerator, CPU()])
-    model = session.load(graph)
-
     expected = np.zeros(state.max_bitmask_shape, dtype=np.int32)
     for b in range(state.max_batch_size):
         for p in range(state.num_positions):
@@ -311,7 +318,7 @@ def test_callback_writes_propagate_to_device(
     state.device_bitmask_scratch.to_numpy()[...] = False
     state.enqueue_async_callback(cb)
 
-    model.execute(
+    smoke_model.execute(
         state.pinned_bitmask,
         state.wait_payload,
         state.device_bitmask_scratch,
@@ -332,7 +339,9 @@ def test_callback_writes_propagate_to_device(
 
 
 def test_stale_flag_no_race_with_default_queue_callback(
-    accelerator: Accelerator, state: StructuredOutputOverlapState
+    accelerator: Accelerator,
+    smoke_model: Model,
+    state: StructuredOutputOverlapState,
 ) -> None:
     """Mirrors the production pattern: callback on the device default
     stream, captured graph with ``wait_host_value_with_dep`` +
@@ -348,12 +357,6 @@ def test_stale_flag_no_race_with_default_queue_callback(
     without adding an explicit ordering edge to the captured-graph
     wait, this test should fail with stale data in scratch.
     """
-    shape = list(state.max_bitmask_shape)
-    graph = _build_overlap_smoke_graph(accelerator, shape)
-
-    session = InferenceSession(devices=[accelerator, CPU()])
-    model = session.load(graph)
-
     # Pre-condition: leftover flag=1 + stale pinned, as if from a
     # prior iteration's callback.
     stale = np.zeros(state.max_bitmask_shape, dtype=np.int32)
@@ -372,7 +375,7 @@ def test_stale_flag_no_race_with_default_queue_callback(
 
     state.enqueue_async_callback(cb)
 
-    model.execute(
+    smoke_model.execute(
         state.pinned_bitmask,
         state.wait_payload,
         state.device_bitmask_scratch,
@@ -432,7 +435,7 @@ def test_overlap_smoke_graph_ir_dump(
     accelerator: Accelerator, state: StructuredOutputOverlapState
 ) -> None:
     """Dump the smoke graph IR so chain wiring between
-    ``mo.wait_host_value_with_dep`` and ``mo.inplace_memcpy`` is
+    ``runtime.wait_host_value_with_dep`` and ``runtime.inplace_memcpy`` is
     auditable.
 
     The two ops share ``scratch`` as a mutable operand, so the
@@ -454,13 +457,22 @@ def test_overlap_smoke_graph_ir_dump(
     assert "wait_host_value_with_dep" in ir, (
         f"wait_host_value_with_dep op not found in IR:\n{ir}"
     )
-    assert "mo.inplace_memcpy" in ir or "inplace_memcpy" in ir, (
+    assert "runtime.inplace_memcpy" in ir or "inplace_memcpy" in ir, (
         f"inplace_memcpy op not found in IR:\n{ir}"
     )
 
 
+@pytest.fixture(scope="module")
+def smoke_model_with_output(overlap_session: InferenceSession) -> Model:
+    return overlap_session.load(
+        _build_overlap_smoke_graph_with_output(Accelerator(), _BITMASK_SHAPE)
+    )
+
+
 def test_in_graph_h2d_is_gated_by_wait_host_value(
-    accelerator: Accelerator, state: StructuredOutputOverlapState
+    accelerator: Accelerator,
+    smoke_model_with_output: Model,
+    state: StructuredOutputOverlapState,
 ) -> None:
     """The captured in-graph H2D must not run before ``wait_host_value``
     passes.
@@ -491,12 +503,6 @@ def test_in_graph_h2d_is_gated_by_wait_host_value(
     inplace_memcpy) or to teach the lowering / capture path to
     respect the device chain.
     """
-    shape = list(state.max_bitmask_shape)
-    graph = _build_overlap_smoke_graph_with_output(accelerator, shape)
-
-    session = InferenceSession(devices=[accelerator, CPU()])
-    model = session.load(graph)
-
     # Sentinel pattern. Pinned all-True is what the H2D would copy.
     state.pinned_bitmask.to_numpy()[...] = True
     state.device_bitmask_scratch.to_numpy()[...] = False
@@ -509,7 +515,7 @@ def test_in_graph_h2d_is_gated_by_wait_host_value(
 
     def run() -> None:
         try:
-            outputs = model.execute(
+            outputs = smoke_model_with_output.execute(
                 state.pinned_bitmask,
                 state.wait_payload,
                 state.device_bitmask_scratch,

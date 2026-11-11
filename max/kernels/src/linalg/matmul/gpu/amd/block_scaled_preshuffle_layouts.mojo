@@ -29,10 +29,10 @@ time (per the load-time-prep convention).
     (k_pack, mn_pack) order, feeding 4 sub-MMAs via the MFMA opsel byte
     selectors.
 
-`mo.block.scaled.preshuffle.b.5d` (graph op over `Shuffler.preshuffle_b_5d`):
+`quantization.block.scaled.preshuffle.b.5d` (graph op over `Shuffler.preshuffle_b_5d`):
     LDS-staged so both HBM
     reads and writes are wave-coalesced. Constant-folded by the graph
-    compiler when called via `mo.block.scaled.preshuffle.b.5d` on a `Constant`
+    compiler when called via `quantization.block.scaled.preshuffle.b.5d` on a `Constant`
     weight, so the shuffle runs once at session.load instead of every
     forward pass.
 
@@ -57,7 +57,7 @@ from std.memory import bitcast
 
 from layout import Coord, Idx, TensorEngine, TileTensor, row_major
 
-from layout.tile_layout import Layout, TensorLayout, col_major
+from layout.layout import Layout, TensorLayout, col_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import StaticTuple

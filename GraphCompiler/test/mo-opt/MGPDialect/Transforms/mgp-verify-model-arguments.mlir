@@ -22,7 +22,7 @@
 // CHECK-NEXT:     mef.output %[[CH0]], %[[ARG2]], %[[ARG3]] : !mef.chain, !mgp.tensor<2x4xf32>, !mgp.tensor<2x4xf32>
 // CHECK-NEXT:   }
 
-mgp.model @static : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @static devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -35,7 +35,7 @@ mgp.model @static : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.o
 // CHECK-LABEL: mgp.model @dynamic
 // CHECK:       } execute
 // CHECK-NEXT:    mef.output
-mgp.model @dynamic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dynamic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -58,7 +58,7 @@ mgp.model @dynamic : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.
 // CHECK-NEXT:     %[[ASSERT2:.*]] = mgp.assert %[[EQUAL2]]
 // CHECK-NEXT:     mef.output %[[CH0]], %[[ARG2]], %[[ARG3]] : !mef.chain, !mgp.tensor<?x4xf32>, !mgp.tensor<?x4xf32>
 // CHECK-NEXT:   }
-mgp.model @mixed : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @mixed devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

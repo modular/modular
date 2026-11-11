@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Sampling custom ops."""
 
-from .min_p import MinPSampler
-from .penalties import LogitPenalties
-from .rejection_sampler import (
+from max.nn._graph_ops.sampling import (
     AcceptanceSampler,
-    RejectionSampler,
-    RejectionSamplerWithResiduals,
+    LogitPenalties,
     compute_synthetic_acceptance_base_rate,
     greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
     synthetic_acceptance_sampler,
 )
+
+from .min_p import MinPSampler
+from .rejection_sampler import RejectionSampler, RejectionSamplerWithResiduals
 
 __all__ = [
     "AcceptanceSampler",

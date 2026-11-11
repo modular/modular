@@ -14,7 +14,7 @@
 from std.math import align_up
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.packing import pack_b
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 

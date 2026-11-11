@@ -3690,7 +3690,7 @@ def test_topk_cluster_graph_capture(ctx: DeviceContext) raises:
     # its stride unpadded, the TMA arm's padded one reaches the pipeline --
     # and each must survive capture, so both variants' launch (attributes,
     # mbarriers' shared-memory request and all) are held to replay.
-    comptime for N in [32769, 900000]:
+    for N in [32769, 900000]:
         var bounds = _cluster_bounds(N, K)
         var scores = _poisoned_bounded_scores(
             B, N, bounds, UInt32(0x6AFC0000 + N)

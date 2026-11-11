@@ -30,7 +30,6 @@
 #include "Support/ErrorOr.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/ML/CompiledFrameworkLabel.h"
 #include "Support/ML/SizeUtils.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Builders.h"
@@ -1021,21 +1020,6 @@ static void printSymbolVisibility(OpAsmPrinter &p, Operation *op,
     p << visibility.getValue() << ' ';
 }
 
-/// Parse the frameworkName attribute as a keyword.
-static ParseResult parseClassName(OpAsmParser &p, StringAttr &frameworkName) {
-  StringRef keyword;
-  if (p.parseKeyword(&keyword))
-    return failure();
-  frameworkName = StringAttr::get(p.getContext(), keyword);
-  return success();
-}
-
-/// Prints the frameworkName attribute as a keyword.
-static void printClassName(OpAsmPrinter &p, const ModelOp &op,
-                           StringAttr frameworkName) {
-  p << frameworkName.getValue();
-}
-
 /// Parse the init region.
 static ParseResult parseInitRegion(OpAsmParser &p, Region &initRegion) {
   llvm::SMLoc argLoc;
@@ -1115,10 +1099,10 @@ static void printExecuteRegion(OpAsmPrinter &p, const ModelOp &op,
 }
 
 void ModelOp::build(OpBuilder &builder, OperationState &state, StringAttr name,
-                    StringRef frameworkName, ArrayRef<DeviceRef> devices,
-                    ArrayRef<Type> inputTypes, ArrayRef<Type> outputTypes,
-                    ArrayRef<Location> inputArgLocs, bool isSubgraph,
-                    bool isDeviceGraph, ArrayRef<NamedAttribute> extraAttrs) {
+                    ArrayRef<DeviceRef> devices, ArrayRef<Type> inputTypes,
+                    ArrayRef<Type> outputTypes, ArrayRef<Location> inputArgLocs,
+                    bool isSubgraph, bool isDeviceGraph,
+                    ArrayRef<NamedAttribute> extraAttrs) {
   MLIRContext *ctx = state.getContext();
 
   SmallVector<Type> finalInputTypes(inputTypes.begin(), inputTypes.end());
@@ -1136,7 +1120,6 @@ void ModelOp::build(OpBuilder &builder, OperationState &state, StringAttr name,
     return dyn_cast<Attribute>(DeviceRefAttr::get(ctx, ref.label, ref.id));
   });
   build(builder, state, ArrayAttr::get(ctx, deviceAttrs),
-        StringAttr::get(ctx, frameworkName),
         TypeAttr::get(builder.getFunctionType(finalInputTypes, outputTypes)),
         name, /*sym_visibility=*/nullptr,
         isSubgraph ? builder.getUnitAttr() : nullptr,

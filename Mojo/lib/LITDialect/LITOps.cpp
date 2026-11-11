@@ -1305,9 +1305,11 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
 
   // TODO: we don't need sig in struct type under the generator representation.
   // Remove it after fully migration.
-  auto newSig = paramValues.empty() ? sig : sig.bind(paramValues);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  SmallVector<TypedAttr> sigForwardParams = llvm::map_to_vector(
+      forwardParams, [&](TypedAttr p) { return plusOneAdjuster.replace(p); });
   auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
-                                 forwardParams, newSig);
+                                 forwardParams, sig.bind(sigForwardParams));
 
   auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
   // A simple type without parameters.
@@ -2332,12 +2334,15 @@ void VarDeclOp::walkDefinitions(
 }
 
 void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
-                      StringRef name, StringRef originName, VarDeclKind kind) {
+                      StringRef name, StringRef originName, VarDeclKind kind,
+                      TypedAttr addressSpace) {
   auto originType = b.getType<OriginType>(/*isMutable=*/true);
   auto originNameAttr = b.getAttr<StringAttr>(originName);
   auto originDecl = ParamDeclAttr::get(originNameAttr, originType);
-  auto resultType = RefType::get(
-      elementType, ParamDeclRefAttr::get(originNameAttr, originType));
+  auto origin = ParamDeclRefAttr::get(originNameAttr, originType);
+  auto resultType = addressSpace
+                        ? RefType::get(elementType, origin, addressSpace)
+                        : RefType::get(elementType, origin);
   build(b, state, resultType, name, kind, originDecl);
 }
 
@@ -2534,6 +2539,59 @@ LogicalResult RefPackCreateOp::verify() {
                          << " but got " << provided;
   }
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackConcatOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RefPackConcatOp::verify() {
+  if (getPacks().empty())
+    return emitOpError() << "expected at least one operand";
+
+  RefPackType resultType = getType();
+  SmallVector<TypedAttr> operandLists;
+  for (auto [i, operandType] : llvm::enumerate(getPacks().getTypes())) {
+    auto packType = cast<RefPackType>(operandType);
+    if (!isEqualCanon(packType.getParamListElementType(),
+                      resultType.getParamListElementType())) {
+      return emitOpError() << "operand #" << i << " has element type "
+                           << packType.getParamListElementType()
+                           << " but the result has "
+                           << resultType.getParamListElementType();
+    }
+    if (!isEqualCanon(packType.getAddressSpace(),
+                      resultType.getAddressSpace())) {
+      return emitOpError() << "operand #" << i << " has address space "
+                           << packType.getAddressSpace()
+                           << " but the result has "
+                           << resultType.getAddressSpace();
+    }
+    // The rule is the same as for lit.ref.pack.create. A change of origin must
+    // be an explicit rebind.
+    if (!isEqualCanon(packType.getOrigin(), resultType.getOrigin())) {
+      return emitOpError() << "operand #" << i << " has origin "
+                           << packType.getOrigin() << " but the result has "
+                           << resultType.getOrigin();
+    }
+    operandLists.push_back(packType.getVariadic());
+  }
+
+  // A concat of one parametric list does not fold to that list. Thus, a
+  // one-operand result can also have the list of the operand.
+  TypedAttr expected = ParamListConcatAttr::get(operandLists);
+  if (isEqualCanon(expected, resultType.getVariadic()) ||
+      (operandLists.size() == 1 &&
+       isEqualCanon(operandLists.front(), resultType.getVariadic())))
+    return success();
+  return emitOpError() << "result element list should be " << expected
+                       << " but got " << resultType.getVariadic();
+}
+
+OpFoldResult RefPackConcatOp::fold(FoldAdaptor adaptor) {
+  if (getPacks().size() == 1 && getPacks().front().getType() == getType())
+    return getPacks().front();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

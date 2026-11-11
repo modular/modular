@@ -515,3 +515,56 @@ modular_py_test(
         ":mmmu_logit_gate_lib",
     ],
 )
+
+# Leaderboard-style scoring of a Pier DeepSWE job directory. Stdlib only:
+# run_deepswe_local.sh also calls the module directly outside bazel.
+modular_py_binary(
+    name = "deepswe_score",
+    testonly = True,
+    srcs = ["deepswe_score.py"],
+    imports = ["."],
+    main = "deepswe_score.py",
+)
+
+modular_py_test(
+    name = "test_deepswe_score",
+    size = "small",
+    srcs = ["test_deepswe_score.py"],
+    deps = [":deepswe_score"],
+)
+
+# Scrubs the endpoint's API key from DeepSWE results; the agent can print it.
+# Stdlib only, like deepswe_score.
+modular_py_binary(
+    name = "deepswe_redact",
+    testonly = True,
+    srcs = ["deepswe_redact.py"],
+    imports = ["."],
+    main = "deepswe_redact.py",
+)
+
+modular_py_test(
+    name = "test_deepswe_redact",
+    size = "small",
+    srcs = ["test_deepswe_redact.py"],
+    deps = [":deepswe_redact"],
+)
+
+# One-command DeepSWE run: provisions Pier + the deep-swe tasks under
+# DEEPSWE_HOME, runs mini-swe-agent through Pier against a MAX Serve endpoint
+# in podman task containers, then scores like the leaderboard. See DEEPSWE.md.
+#   MODEL=MiniMaxAI/MiniMax-M3.1-Flash PORT=8000 DEEPSWE_HOME=~/deepswe \
+#     ./bazelw run //max/tests/integration/accuracy/model_evals:deepswe_eval_local
+sh_binary(
+    name = "deepswe_eval_local",
+    testonly = True,
+    srcs = ["run_deepswe_local.sh"],
+    data = [
+        "deepswe_healthcheck_pump.sh",
+        "deepswe_patch_pier.py",
+        "deepswe_setup.sh",
+        ":deepswe_redact",
+        ":deepswe_score",
+    ],
+    tags = ["manual"],
+)

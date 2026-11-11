@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for GLM-5.3-Flash."""
+"""Input batching for GLM-5.3-Flash on ModuleV3.
+
+The framework batches the text. The pipeline's vision cache selects each
+batch's new images and video frames, and this encodes them on the first
+device and copies the rows to every other one.
+"""
 
 from __future__ import annotations
 
@@ -18,70 +23,41 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
-from max import tree
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.pipelines.architectures.deepseekV3.batch_processor import (
-    DeepseekV3BatchProcessorBase,
-)
-from max.pipelines.architectures.deepseekV3.model import DeepseekV3Inputs
+from max.engine import InferenceSession
 from max.pipelines.context import ImageMetadata
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
 from max.pipelines.lib.vision_batching import create_empty_image_embeddings
 from max.pipelines.lib.vision_encoder_cache import (
     VisionEncodeResult,
     concat_device_buffers,
 )
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable
 
 from .context import Glm5NextTextAndVisionContext
 from .model_config import Glm5NextConfig
-from .nn.vision_geometry import vision_cu_seqlens, vision_position_ids
+from .vision.geometry import vision_cu_seqlens, vision_position_ids
 
-__all__ = ["Glm5NextBatchProcessor", "Glm5NextInputs"]
+__all__ = ["Glm5NextBatchProcessor"]
+
+_Entry = tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]
+"""An image's patch rows and its ``(t, h, w)`` grid."""
+
+_VisionTower = CompiledCallable[[Tensor, Tensor, Tensor, Tensor], Tensor]
+"""The compiled tower: pixel rows, their ``(h, w)`` positions, per-frame row
+offsets and the longest frame, to one embedding row per merged patch."""
 
 
-class Glm5NextInputs(DeepseekV3Inputs):
-    """DeepSeek-V3 inputs with the vision-merge buffers after ``tokens``.
+class Glm5NextBatchProcessor(DecoderBatchProcessor):
+    """Batches text for the GLM-5.3-Flash decoder and encodes its images.
 
-    ``vision_embeddings`` and ``vision_scatter_indices`` are set by the
-    pipeline's vision seam on every prepared batch, empties included, so the
-    tuple always matches :meth:`.glm5_next.Glm5Next.input_types`.
+    Images and video frames go through the same tower; a frame is an image
+    with ``grid_t = 1``, which the tokenizer already split them into.
     """
 
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        """The step's buffers, in the graph's input order."""
-        return (
-            self.tokens,
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
-            self.input_row_offsets,
-            self.host_input_row_offsets,
-            self.return_n_logits,
-            self.data_parallel_splits,
-            *self.signal_buffers,
-            *(
-                tree.leaves(self.kv_cache_inputs)
-                if self.kv_cache_inputs
-                else ()
-            ),
-            *self.batch_context_lengths,
-            *self.ep_inputs,
-        )
-
-
-class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
-    """DeepSeek-V3 batching that builds :class:`Glm5NextInputs`.
-
-    Also encodes images through
-    :class:`~max.pipelines.lib.vision_encoder_cache.SupportsVisionEncoding`
-    once the compiled tower is bound, so a caller that builds the language
-    model without :class:`.model.Glm5NextModel`, as spec decoding does, can
-    still run it.
-    """
-
-    _vision_model: Model | None = None
+    _vision_model: _VisionTower | None = None
     _empty_vision_embeddings: list[Buffer] | None = None
 
     @property
@@ -90,7 +66,10 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
         return self.config
 
     def bind_vision_encoder(
-        self, *, vision_model: Model, session: InferenceSession
+        self,
+        *,
+        vision_model: _VisionTower,
+        session: InferenceSession,
     ) -> None:
         """Binds the compiled vision tower."""
         del session
@@ -103,7 +82,7 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
         ],
         devices: list[Device],
     ) -> None:
-        """Packs inline in :meth:`vision_execute` instead."""
+        """Packs nothing: :meth:`vision_execute` packs each chunk itself."""
         return
 
     def vision_execute(
@@ -127,9 +106,7 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
         assert vision_config is not None
         merge_unit = vision_config.spatial_merge_size**2
 
-        entries: list[
-            tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]
-        ] = []
+        entries: list[_Entry] = []
         for ctx, miss_images in selection:
             # Spans never overlap, so a start index names one image even when
             # the miss list holds a reconstructed `ImageMetadata`.
@@ -164,13 +141,12 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
             embeddings=embeddings, per_image_token_counts=counts
         )
 
-    def _encode_images(
-        self,
-        entries: Sequence[
-            tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]
-        ],
-    ) -> list[Buffer]:
-        """Runs the tower once; returns one ``[rows, hidden]`` copy per device."""
+    def _encode_images(self, entries: Sequence[_Entry]) -> list[Buffer]:
+        """Runs the tower once; returns one ``[rows, hidden]`` copy per device.
+
+        The tower runs on the first device, and its rows are copied to the
+        others.
+        """
         assert self._vision_model is not None
         vision_config = self._glm_config.vision_config
         assert vision_config is not None
@@ -201,7 +177,9 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
         for entry, _ in entries:
             staged[row : row + len(entry)] = entry
             row += len(entry)
-        outputs = self._vision_model.execute(
+        # Dropping `pixels` on return is safe while its copy runs: the driver
+        # frees pinned memory only once the streams that copied it are done.
+        (rows,) = self._vision_model.execute_raw(
             pixels.to(device0),
             Buffer.from_numpy(
                 vision_position_ids(grids, vision_config.spatial_merge_size)
@@ -209,12 +187,8 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
             Buffer.from_numpy(row_offsets).to(device0),
             Buffer.from_numpy(max_seqlen),
         )
-        assert len(outputs) == len(devices)
-        buffers: list[Buffer] = []
-        for output in outputs:
-            assert isinstance(output, Buffer)
-            buffers.append(output)
-        return buffers
+        assert isinstance(rows, Buffer)
+        return [rows, *(rows.to(device) for device in devices[1:])]
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
         """Per-device ``[0, hidden]`` rows for a step that encodes nothing.
@@ -226,28 +200,3 @@ class Glm5NextBatchProcessor(DeepseekV3BatchProcessorBase[Glm5NextInputs]):
                 devices, self._glm_config.hidden_size
             )
         return self._empty_vision_embeddings
-
-    def _make_mla_inputs(
-        self,
-        *,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        host_input_row_offsets: Buffer,
-        batch_context_lengths: list[Buffer],
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
-        return_n_logits: Buffer,
-        data_parallel_splits: Buffer,
-        ep_inputs: tuple[Buffer, ...],
-    ) -> Glm5NextInputs:
-        return Glm5NextInputs(
-            tokens=tokens,
-            input_row_offsets=input_row_offsets,
-            host_input_row_offsets=host_input_row_offsets,
-            batch_context_lengths=batch_context_lengths,
-            signal_buffers=signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-            data_parallel_splits=data_parallel_splits,
-            ep_inputs=ep_inputs,
-        )

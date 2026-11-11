@@ -37,6 +37,7 @@ kernels are not probed.
 """
 
 from std.math import ceildiv
+from std.os import getenv
 from std.sys import size_of
 from std.testing import assert_equal, assert_true
 from std.time import global_perf_counter_ns, sleep
@@ -127,7 +128,7 @@ struct Indices[num_experts: Int]:
     def enqueue(
         mut self, ctx: DeviceContext, topk_ids: DeviceBuffer[DType.int32]
     ) raises:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             TileTensor(self.order, row_major(self.n_topk)),
             TileTensor(self.start, row_major(Self.num_experts + 1)),
             TileTensor(self.restore, row_major(self.n_topk)),
@@ -254,7 +255,6 @@ def test_group_limited_chain(num_tokens: Int, ctx: DeviceContext) raises:
             n_groups=n_groups,
             topk_group=topk_group,
             norm_weights=True,
-            target="gpu",
         ](
             TileTensor(out_idx, row_major(num_tokens, Idx[topk])),
             TileTensor(out_w, row_major(num_tokens, Idx[topk])),
@@ -331,7 +331,7 @@ def test_sink_gate_chain(num_tokens: Int, ctx: DeviceContext) raises:
         mut out_sink: DeviceBuffer[dtype],
         in_logits: DeviceBuffer[dtype],
     ) raises {imm}:
-        sink_gate_router[n_routed, topk, n_shared, "gpu"](
+        sink_gate_router[n_routed, topk, n_shared](
             TileTensor(out_idx, row_major(num_tokens, Idx[topk])),
             TileTensor(out_w, row_major(num_tokens, Idx[topk])),
             TileTensor(out_sink, row_major(num_tokens, Idx[n_shared])),
@@ -449,7 +449,6 @@ def test_eplb_router_chain(num_tokens: Int, ctx: DeviceContext) raises:
             num_log=_num_log,
             max_replicas=_max_replicas,
             hash_decorrelate=True,
-            target="gpu",
         ](
             TileTensor(out_phy, row_major(num_tokens, Idx[_eplb_topk])),
             TileTensor(out_log, row_major(num_tokens, Idx[_eplb_topk])),
@@ -522,7 +521,6 @@ def test_eplb_remap_chain(num_tokens: Int, ctx: DeviceContext) raises:
             max_replicas=_max_replicas,
             K=_eplb_topk,
             hash_decorrelate=True,
-            target="gpu",
         ](
             TileTensor(out_phy, row_major(num_tokens, Idx[_eplb_topk])),
             TileTensor(in_idx, row_major(num_tokens, Idx[_eplb_topk])).as_imm(),
@@ -687,7 +685,7 @@ def test_quantize_successor[
 
     publish(ctx, ids, ids_src, slots)
     comptime if with_slots:
-        moe_create_indices_with_slots[_TOPK, "gpu"](
+        moe_create_indices_with_slots[_TOPK](
             TileTensor(order, row_major(slots)),
             TileTensor(start, row_major(_E + 1)),
             TileTensor(restore_i, row_major(slots)),
@@ -705,7 +703,7 @@ def test_quantize_successor[
             ctx,
         )
     else:
-        moe_create_indices["gpu"](
+        moe_create_indices(
             TileTensor(order, row_major(slots)),
             TileTensor(start, row_major(_E + 1)),
             TileTensor(restore_u, row_major(slots)),
@@ -799,7 +797,7 @@ def test_grouped_gemm_successor(num_tokens: Int, ctx: DeviceContext) raises:
     ctx.synchronize()
 
     publish(ctx, ids, ids_src, slots)
-    moe_create_indices["gpu"](
+    moe_create_indices(
         TileTensor(order, row_major(slots)),
         TileTensor(start, row_major(_E + 1)),
         TileTensor(restore, row_major(slots)),
@@ -841,6 +839,16 @@ def stamp_around_wait(times: MutPointer[UInt64, MutUntrackedOrigin]):
     times[1] = after
 
 
+def _redzone_allocator() -> Bool:
+    """Whether `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` is set.
+
+    It reads the redzones back and synchronizes the stream on every free, so
+    a free between two launches drops the second launch's programmatic
+    dependency on the first, and an early release cannot be observed.
+    """
+    return "out-of-bounds" in getenv("MODULAR_DEBUG_DEVICE_ALLOCATOR")
+
+
 def test_indices_release_on_entry(ctx: DeviceContext) raises:
     """A grid behind `moe_create_indices` is resident while its scan runs.
 
@@ -876,6 +884,9 @@ def test_indices_release_on_entry(ctx: DeviceContext) raises:
     sort(gaps)
     var gap_ns = gaps[len(gaps) // 2]
     print("  indices start-to-release gap (ns):", gap_ns)
+    if _redzone_allocator():
+        print("  skipping the gap check: the redzone allocator syncs on free")
+        return
     assert_true(
         gap_ns > 50_000,
         String("probe did not start early: gap ", gap_ns, " ns"),

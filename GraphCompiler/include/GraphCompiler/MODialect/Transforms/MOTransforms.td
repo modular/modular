@@ -450,6 +450,25 @@ def MergeAdjacentParallels :
   }];
 }
 
+def TmpDecomposeComposites
+    : Pass<"mo-tmp-decompose-composites", "GraphOp"> {
+  let summary = "Replace each composite no kernel implements with its parts.";
+  let description = [{
+    Temporary, until no pattern depends on a composite (rms_norm + rope, for
+    example).
+
+    Runs right before `mo-to-map`, after the patterns that fuse composites
+    with their neighbors. A composite that has no kernel registered for its
+    device becomes the ops it is made of, so the graph compiler fuses them and
+    generates its kernel. A composite a target
+    implements, as plugins do for rms_norm, keeps running that kernel.
+  }];
+
+  let dependentDialects = [
+    "M::MOSH::MOSHDialect",
+  ];
+}
+
 def MarkStableTensorsPass : Pass<"mo-mark-stable-tensors", "GraphOp"> {
   let summary = "Route operands that a kernel's build_graph declares stable "
                 "through mo.stable.create.";

@@ -190,12 +190,40 @@ def test_equality() raises:
     var sp3 = Span(l2)
     # same pointer
     assert_true(sp == sp2)
+    assert_false(sp != sp2)
     # different pointer
     assert_true(sp == sp3)
     # different length
     assert_true(sp != sp3[0 : len(l2) - 1])
     # empty
     assert_true(sp[0:0] == sp3[0:0])
+
+
+struct NotEquatable:
+    pass
+
+
+def test_span_conforms_to_equatable() raises:
+    assert_true(conforms_to(Span[Int, ImmStaticOrigin], Equatable))
+    assert_false(conforms_to(Span[NotEquatable, ImmStaticOrigin], Equatable))
+    assert_false(
+        conforms_to(
+            Span[Int, ImmStaticOrigin, address_space=.SHARED], Equatable
+        )
+    )
+
+    # This is purposefully not using `assert_equal` because there is currently
+    # an overload of `assert_equal` which does manual element-wise comparison
+    # instead of actually going through the `Equatable` trait as expected.
+    # This test catches cases were we rely on the default implementation of
+    # Equatable.__eq__ which only does field-wise comparison.
+    def do_eq[T: Equatable](a: T, b: T) -> Bool:
+        return a == b
+
+    var a: List = [1, 2, 3]
+    var b: List = [1, 2, 3]
+    comptime SpanT = ImmSpan[Int, origin_of(a, b)]
+    assert_true(do_eq(SpanT(a), SpanT(b)))
 
 
 def test_fill() raises:
@@ -471,16 +499,16 @@ def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    var result = span.binary_search_by[lambda (x: Int) -> Int: x - 7]()
+    var result = span.binary_search_by(lambda (x: Int) -> Int: x - 7)
     assert_equal(Optional(3), result)
 
-    var result2 = span.binary_search_by[lambda (x: Int) -> Int: x - 6]()
+    var result2 = span.binary_search_by(lambda (x: Int) -> Int: x - 6)
     assert_true(not result2)
 
-    var result3 = span.binary_search_by[lambda (x: Int) -> Int: x - 1]()
+    var result3 = span.binary_search_by(lambda (x: Int) -> Int: x - 1)
     assert_equal(Optional(0), result3)
 
-    var result4 = span.binary_search_by[lambda (x: Int) -> Int: x - 13]()
+    var result4 = span.binary_search_by(lambda (x: Int) -> Int: x - 13)
     assert_equal(Optional(6), result4)
 
 

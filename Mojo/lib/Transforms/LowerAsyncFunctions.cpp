@@ -13,7 +13,6 @@
 
 #include "FrameData.h"
 #include "FrameEvaluation.h"
-#include "LegacyFrameEvaluation.h"
 #include "Mojo/CODialect/CODialect.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -441,8 +440,12 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
   for (BlockArgument oldArg : fromFuncOp.getArguments()) {
     Value newArg = block.addArgument(oldArg.getType(), oldArg.getLoc());
     mapping.map(oldArg, newArg);
-    frameData.valueToIndexInFrame[newArg] =
-        originalFrameData->valueToIndexInFrame[oldArg];
+    // Only values the original frame holds get a slot. Default-inserting here
+    // would hand an absent argument the slot `operator[]` fabricates, which
+    // the ramp would then store over a live frame value.
+    auto entry = originalFrameData->valueToIndexInFrame.find(oldArg);
+    if (entry != originalFrameData->valueToIndexInFrame.end())
+      frameData.valueToIndexInFrame[newArg] = entry->second;
   }
 
   FuncType signature = FuncType::get(
@@ -473,8 +476,9 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
           for (Value arg : sourceBlock.getArguments()) {
             Value newArg = block.addArgument(arg.getType(), arg.getLoc());
             mapping.map(arg, newArg);
-            frameData.valueToIndexInFrame[newArg] =
-                originalFrameData->valueToIndexInFrame[arg];
+            auto entry = originalFrameData->valueToIndexInFrame.find(arg);
+            if (entry != originalFrameData->valueToIndexInFrame.end())
+              frameData.valueToIndexInFrame[newArg] = entry->second;
           }
         }
         paths.push_back({&*sourceBlock.begin(), &cloneRegion->front()});
@@ -504,10 +508,6 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
         if (indexMaybe != originalFrameData->valueToIndexInFrame.end())
           frameData.valueToIndexInFrame[image] = indexMaybe->second;
       }
-      auto maybeIndex =
-          originalFrameData->operationToIndexInFrame.find(operation);
-      if (maybeIndex != originalFrameData->operationToIndexInFrame.end())
-        frameData.operationToIndexInFrame[clone] = maybeIndex->second;
 
       /// Traverse.
       if (auto suspendOp = dyn_cast<SuspendOp>(operation)) {
@@ -891,7 +891,7 @@ COTypes LowerAsyncBuildContext::calculateFrame(FuncOp original,
   auto rematerializeFrameValues = [&](FuncOp, FrameInterface &frame) {
     cloneFrameArgs(original, builder, dominanceInfo, frame);
   };
-  FrameData frameData(original, dominanceInfo, errorValue, memoryResultValue,
+  FrameData frameData(original, errorValue, memoryResultValue,
                       rematerializeFrameValues, /*isHot=*/!includeArgs,
                       evaluateFrame);
   COTypes coTypes(
@@ -1110,9 +1110,8 @@ ReturnOp LowerAsyncBuildContext::lowerReturn(ReturnOp returnOp,
       StoreOp::create(builder, value,
                       StructGEPOp::create(builder, promiseSlot, idx));
     }
-    auto result = ReturnOp::create(builder);
-    returnOp->erase();
-    return result;
+    returnOp->setOperands({});
+    return returnOp;
   }
   return returnOp;
 }
@@ -1155,34 +1154,34 @@ void LowerAsyncBuildContext::storeOpInFrameIfNeeded(
     const FrameData *frameData, Operation *op, Value continuation,
     SmallVector<Operation *> &opsToDelete) {
   if (isa<StackAllocLifetimeEndOp, StackAllocLifetimeStartOp>(op)) {
-    int index = 0;
-    for (Value value : op->getOperands()) {
-      auto entry =
-          frameData->operationToIndexInFrame.find(value.getDefiningOp());
-      if (entry != frameData->operationToIndexInFrame.end())
-        op->eraseOperand(index);
-      else
-        ++index;
-    }
+    // Decide every erasure before making any, since erasing shifts the
+    // remaining operands down and would skip the one that moves into the slot.
+    llvm::BitVector toErase(op->getNumOperands());
+    for (auto [index, value] : llvm::enumerate(op->getOperands()))
+      if (frameData->valueToIndexInFrame.contains(value))
+        toErase.set(index);
+    op->eraseOperands(toErase);
     if (op->getNumOperands() == 0)
       opsToDelete.push_back(op);
     return;
   }
-  auto entry = frameData->operationToIndexInFrame.find(op);
-  if (entry != frameData->operationToIndexInFrame.end()) {
-    if (isa<StackAllocationOp>(op)) {
-      opsToDelete.push_back(op);
-      return;
-    }
+  // A stack allocation is replaced by the frame slot itself, which its uses
+  // read directly, so there is nothing to store.
+  if (isa<StackAllocationOp>(op) &&
+      frameData->valueToIndexInFrame.contains(op->getResult(0))) {
+    opsToDelete.push_back(op);
+    return;
+  }
+  for (OpResult result : op->getResults()) {
+    auto entry = frameData->valueToIndexInFrame.find(result);
+    if (entry == frameData->valueToIndexInFrame.end())
+      continue;
     builder.setInsertionPointAfter(op);
-    [[maybe_unused]] Type frameEntryType =
-        frameData->frameTypes[entry->getSecond()];
-    assert(frameEntryType == op->getResultTypes().front() &&
+    assert(frameData->frameTypes[entry->getSecond()] == result.getType() &&
            "The frame type slot does not match the value");
-    assert(op->getNumResults() == 1 && "TODO: support multiple results");
     Value dataSlot =
         StructGEPOp::create(builder, continuation, Frame + entry->getSecond());
-    StoreOp::create(builder, op->getResult(0), dataSlot);
+    StoreOp::create(builder, result, dataSlot);
   }
 }
 
@@ -1288,11 +1287,8 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // look it up.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
-  FrameEvaluator evaluateFrame = useLivenessFrameEvaluation
-                                     ? evaluateFrameByLiveness
-                                     : evaluateFrameByStateNumbering;
   LowerAsyncBuildContext buildContext(sharedTable, b, domInfo, targetInfo,
-                                      evaluateFrame);
+                                      evaluateFrameByLiveness);
 
   DenseMap<SymbolRefAttr, Temp> temperatures;
   SmallVector<FuncOp> asyncFunctions;

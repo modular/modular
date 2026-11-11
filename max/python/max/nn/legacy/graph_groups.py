@@ -31,6 +31,7 @@ from typing_extensions import Self, TypeVar
 
 __all__ = [
     "BatchContext",
+    "BlockDiffusionGraphInputs",
     "ConvStates",
     "DecoderGraphInputs",
     "DecoderOutputs",
@@ -44,7 +45,10 @@ __all__ = [
     "MRoPEPositions",
     "RaggedBatch",
     "SparseIndices",
+    "SpecDecode",
+    "SpecDecodeOutputs",
     "TPSignals",
+    "TokenBitmask",
     "VisionEmbeddings",
     "VisionHostMax",
     "VisionMerge",
@@ -59,12 +63,16 @@ __all__ = [
 _K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 # A ModuleV3 graph's groups hold tensor layouts and tensors in place of
-# graph-API types and values.
+# graph-API types and values, and a step packs some groups with its buffers.
 _TensorT = TypeVar("_TensorT", default=TensorValue)
 _MergeT = TypeVar(
     "_MergeT",
     default=tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...],
 )
+_SignalsT = TypeVar("_SignalsT", default=tuple[BufferType, ...])
+_ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
+_SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
+_BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
 
 
 class GraphGroup(OrderedDict[_K, _V]):
@@ -115,7 +123,7 @@ class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
     kind = "ragged_batch"
 
 
-class TPSignals(GraphGroup[str, tuple[BufferType, ...]]):
+class TPSignals(GraphGroup[str, _SignalsT]):
     """The allreduce signal buffers, one per device."""
 
     kind = "tp_signals"
@@ -187,7 +195,7 @@ class VisionHostMax(GraphGroup[str, _VisionInput]):
     kind = "vision_host_max"
 
 
-class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
+class VisionEmbeddings(GraphGroup[str, tuple[_TensorT, ...]]):
     """A vision encoder's ``image_embeddings``, one per device.
 
     They feed the decoder's :class:`VisionMerge` group.
@@ -197,8 +205,8 @@ class VisionEmbeddings(GraphGroup[str, tuple[TensorValue, ...]]):
 
 
 def vision_outputs(
-    image_embeddings: Sequence[TensorValue],
-) -> OrderedDict[str, VisionEmbeddings]:
+    image_embeddings: Sequence[_TensorT],
+) -> OrderedDict[str, VisionEmbeddings[_TensorT]]:
     """Returns a vision encoder graph's named outputs.
 
     The kinded group sits under a plain root, as a decoder's do, since a
@@ -231,7 +239,7 @@ class ItemPositions(GraphGroup[str, TensorValue]):
     kind = "item_positions"
 
 
-class BatchContext(GraphGroup[str, tuple[TensorType, ...]]):
+class BatchContext(GraphGroup[str, _ContextT]):
     """Per-device host scalars summarizing the batch's context lengths."""
 
     kind = "batch_context"
@@ -302,6 +310,49 @@ class SparseIndices(GraphGroup[str, tuple[TensorValue, ...]]):
     """The rows a sparse-attention indexer selected, for a drafter to reuse."""
 
     kind = "sparse_indices"
+
+
+class SpecDecode(GraphGroup[str, _SpecT]):
+    """A speculative-decoding step's drafts and per-row sampling inputs.
+
+    The drafts to verify, any distributions the draft sampled them from, and
+    the seed, temperature, top-k and top-p each row samples with, as a fused
+    speculative-decoding graph takes them.
+    """
+
+    kind = "spec_decode"
+
+
+class TokenBitmask(GraphGroup[str, _BitmaskT]):
+    """The structured-output token bitmask and the handshake it arrives by.
+
+    The host writes each row's allowed tokens to ``pinned_bitmask`` and sets
+    the flag ``wait_payload`` points at; the graph waits on the flag, then
+    copies the bitmask to ``device_bitmask_scratch``.
+    """
+
+    kind = "token_bitmask"
+
+
+class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
+    """A speculative-decoding step's verdicts and the next step's drafts.
+
+    How many drafts each row accepted, the token that follows them, the next
+    step's drafts, and any distributions the draft sampled those from.
+    """
+
+    kind = "spec_decode_outputs"
+
+
+class BlockDiffusionGraphInputs(GraphGroup[str, Any]):
+    """A block-diffusion denoiser graph's named inputs, keyed by its fields.
+
+    The keys are the
+    :class:`~max.pipelines.lib.role_contracts.BlockDiffusionInputs` fields,
+    in their order, so a serving engine finds each input by name.
+    """
+
+    kind = "block_diffusion_inputs"
 
 
 class DecoderGraphInputs(GraphGroup[str, Any]):

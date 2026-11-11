@@ -67,15 +67,20 @@ void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
   if (!shared)
     return; // Ignore discarded diagnostics.
 
-  // Format it of course.
-  diag << '\'' << ASTType::getParamAsString(paramValue, /*forDiag=*/shared)
-       << '\'';
-
   // Remember the context decl for when this type was emitted - it could change
   // before the diagnostic is emitted.  This happens (e.g.) in overload
   // resolution where lots of diagnostics are producted (with different callees)
   // and then are emitted in a deferred way.
   ASTDecl *ctxDecl = shared->declResolver->getDiagnosticDeclContext();
+
+  // Format it only if the diagnostic is emitted,
+  // since overload resolution drops the diagnostic of each failed candidate
+  // when another one matches.
+  diag.addLazyText([shared, paramValue, ctxDecl] {
+    DeclResolver::DiagnosticDeclContextChanger x(ctxDecl);
+    return "'" + ASTType::getParamAsString(paramValue, /*forDiag=*/shared) +
+           "'";
+  });
 
   // Remember we emitted this parameter so we can post-process the diagnostic.
   auto &mdiag = static_cast<MojoInflightDiag &>(diag);
@@ -568,6 +573,8 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
     return metaType.getParamValues();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getParamValues();
+
+  // FIXME: this is wrong, remove the following branch
   if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
       genAttr && LIT::isTypeExpr(genAttr.getBody()))
     return ASTType(genAttr.getBody()).getParamBindings();
@@ -581,11 +588,22 @@ TypeSignatureType ASTType::getSignature() const {
     return metaType.getSignature();
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getSignature();
+
+  // FIXME: this is wrong, remove the following branch
   if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
       genAttr && LIT::isTypeExpr(genAttr.getBody()))
     return ASTType(genAttr.getBody()).getSignature();
 
   return {};
+}
+
+bool ASTType::isUnresolvedParam(size_t idx) const {
+  TypedAttr param = getParamBindings()[idx];
+  if (!LIT::StructTypeGenerator::dynCast(*this))
+    return isa<UnboundAttr>(param);
+
+  ParamIndexRefAttrFinder paramFinder;
+  return paramFinder.hasReferences(param);
 }
 
 /// Return this type with any parameter bindings removed.
@@ -613,8 +631,12 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
 }
 
 bool ASTType::hasUnboundParameters() const {
-  return llvm::any_of(getParamBindings(),
-                      [](TypedAttr param) { return isa<UnboundAttr>(param); });
+  // Generator type should be the only case after fully migrated.
+  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this)))
+    return !genAttr.getInputParamTypes().empty();
+
+  return any_of(getParamBindings(),
+                [](TypedAttr param) { return isa<UnboundAttr>(param); });
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
@@ -646,8 +668,16 @@ bool ASTType::isEqualAllowingUnbound(ASTType other, SharedState &shared) const {
   ArrayRef<TypedAttr> rhsParams = other.getParamBindings();
   assert(lhsParams.size() == rhsParams.size() &&
          "Type with the same decl should have consistent number of params");
-  for (auto [lhsParam, rhsParam] : llvm::zip(lhsParams, rhsParams)) {
-    if (!isa<UnboundAttr>(lhsParam) &&
+  for (auto [idx, lhsParam, rhsParam] : llvm::enumerate(lhsParams, rhsParams)) {
+    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
+    // "forwarded" parameters. e.g.,
+    // ```mojo
+    //   comptime A[a : Int] = Param[a, a]
+    // ```
+    // only the first `a` is a forward parameter, not the second (turning
+    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
+    // equal).
+    if (!isUnresolvedParam(idx) &&
         getCanonicalAttr(lhsParam) != getCanonicalAttr(rhsParam))
       return false;
   }

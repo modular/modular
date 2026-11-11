@@ -39,11 +39,35 @@ trait HalPlugin(Plugin):
 trait HalLauncher:
     """Launches kernels for a plugin whose launches aren't grid/block shaped.
 
-    The HAL DeviceContext hands a grid/block `enqueue_function` to the
-    launcher when `overrides_grid_block` is set, with the compiled function's
-    wrapper and declared argument types so the launcher can pack the
-    arguments its runtime expects.
+    The HAL DeviceContext hands a launch to the launcher with the compiled
+    function's wrapper and declared argument types, so the launcher can pack
+    the arguments its runtime expects. A launch from the plugin's own
+    execution config goes to `enqueue` when `launches_config` is set, and a
+    grid/block launch goes to `enqueue_grid_block` when `overrides_grid_block`
+    is set.
     """
+
+    comptime launches_config: Bool = False
+    """Whether `enqueue` launches execution configs that aren't grid/block
+    shaped, such as the plugin's own `ExecutionConfigType`."""
+
+    @staticmethod
+    def enqueue[
+        spec: DeviceSpec,
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        Wrapper: DeviceFunctionWrapper,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        *Ts: AnyType,
+    ](
+        mut stream: Stream[spec],
+        func: FunctionHandle,
+        *args: *Ts,
+        execution_config: ExecutionConfigType,
+    ) raises:
+        """Launches `func` on `stream` with `args` as `execution_config`
+        describes."""
+        raise Error("the active HAL plugin has no execution config launcher")
 
     comptime overrides_grid_block: Bool
     """Whether `enqueue_grid_block` replaces grid/block launches."""
@@ -258,7 +282,7 @@ trait HalPluginHooks:
     such as a generated entry point the plugin's runtime launches."""
 
     comptime Launcher: HalLauncher = DefaultHalLauncher
-    """Launches grid/block `enqueue_function` calls the plugin takes over."""
+    """Launches `enqueue_function` calls the plugin takes over."""
 
     comptime Enqueuer: HalEnqueuer = DefaultHalEnqueuer
     """Replaces `enqueue_function` outright, before anything is compiled."""

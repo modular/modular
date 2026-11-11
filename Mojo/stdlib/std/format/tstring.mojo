@@ -131,7 +131,7 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
         def write_string() {mut writer, imm} -> Int:
             var literal_start = self._encoded.unsafe_offset(offset)
             var literal_length = _strlen(literal_start)
-            var string_literal = StringSlice(
+            var string_literal = StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=literal_start, length=literal_length
                 )

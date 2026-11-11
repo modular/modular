@@ -20,6 +20,7 @@
 #define MLRT_DRIVER_DEVICECONTEXT_DEVICEAFFINITY_H
 
 #include "AsyncRT/Runtime/Algorithms.h"
+#include "Support/SymbolExport.h"
 
 #include <cstddef>
 
@@ -34,13 +35,13 @@ namespace M::MLRT {
 ///   3. Round-robin fallback across workers 1..N-1 (skipping worker 0).
 ///
 /// Returns kDefaultTaskId (-1) when numWorkers <= 1.
-int taskIdForDevice(int deviceId, size_t numWorkers);
+MODULAR_CXX_EXPORT int taskIdForDevice(int deviceId, size_t numWorkers);
 
 /// Compute the worker task ID which explicitly avoids assigning to the
 /// per-device-affinitized threads. This is for offloading tasks that should
 /// not block per-device threads, which could accidentally pick up task when
 /// given a generic assignment of kDefaultTaskId.
-int taskIdForNonDevice(int taskId, size_t numWorkers);
+MODULAR_CXX_EXPORT int taskIdForNonDevice(int taskId, size_t numWorkers);
 
 /// Like parallelForEachNChainWithTaskIds, but automatically pins each element
 /// to the worker thread with affinity for device `elementIdx`, using

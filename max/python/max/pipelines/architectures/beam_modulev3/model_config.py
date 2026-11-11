@@ -20,10 +20,10 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )

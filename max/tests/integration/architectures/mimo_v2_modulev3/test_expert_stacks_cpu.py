@@ -47,16 +47,17 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy import kernels
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn import _graph_ops as kernels
+from max.nn.quant_config import QuantConfig
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import MiMoV2MoE
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
-)
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -140,9 +141,7 @@ def test_tp4_staged_graph_holds_only_final_expert_stacks(
         kv_params=config.kv_params, device_refs=refs
     )
     weights = SafetensorWeights(sorted(tmp_path.glob("*.safetensors")))
-    adapted = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=hf
-    )
+    adapted = WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
     devices = [Accelerator(i) for i in range(n_devices)]
     mesh = DeviceMesh(tuple(devices), (n_devices,), ("tp",))
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):

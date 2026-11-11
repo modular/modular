@@ -18,9 +18,9 @@ needs a target of its own: the knobs are set at import, before anything below
 reaches a device. The graphs are plain CPU graphs -- the stand-in is about
 whether the process can execute at all, not about which arch it compiled for.
 
-Eager tensors are out of scope: realizing one under virtual devices cannot work
-at all, since the eager interpreter falls back to an artifact it loads by path
-and ``init_all`` cannot name the graphs in one. That predates the stand-in.
+Eager tensors are out of scope: realizing one needs the device, which is what
+the stand-in refuses. The artifact the eager interpreter loads by path is covered
+here, though: ``init_all`` names its graphs from the artifact itself.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _graph(name: str = "add_one") -> Graph:
     return graph
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def stand_in() -> CompileOnlyModel:
     model = InferenceSession(devices=[CPU()]).load(_graph())
     assert isinstance(model, CompileOnlyModel)
@@ -98,9 +98,19 @@ def test_executing_refuses(stand_in: CompileOnlyModel, call: object) -> None:
         call(stand_in)
 
 
-# What the stand-in answers rather than refuses: both are known without a
-# device, and `execute` refuses when called rather than when looked up.
-_CARRIED = frozenset({"name", "compiled", "execute"})
+# What the stand-in answers rather than refuses: everything known without a
+# device. `execute` refuses when called rather than when looked up.
+_CARRIED = frozenset(
+    {
+        "name",
+        "compiled",
+        "execute",
+        "input_metadata",
+        "output_metadata",
+        "kernel_summaries",
+        "signature",
+    }
+)
 
 
 @pytest.mark.parametrize(
@@ -123,6 +133,27 @@ def test_every_model_member_refuses(
         getattr(stand_in, member)
 
 
+def test_metadata_comes_from_the_artifact(stand_in: CompileOnlyModel) -> None:
+    for specs in (stand_in.input_metadata, stand_in.output_metadata):
+        assert [(s.shape, s.dtype) for s in specs] == [([4], DType.float32)]
+    assert list(stand_in.signature.parameters) == [
+        s.name for s in stand_in.input_metadata
+    ]
+    # The graph's one add is fused into a kernel the compile summarizes.
+    assert any("mo.add" in kernel for kernel in stand_in.kernel_summaries)
+
+
+def test_a_graph_missing_from_the_artifact_is_not_a_device_refusal(
+    stand_in: CompileOnlyModel,
+) -> None:
+    # A miss means the module's graph names and the compile disagree, which
+    # no device would fix.
+    misnamed = CompileOnlyModel("not_compiled", stand_in.compiled)
+    with pytest.raises(RuntimeError, match="add_one") as raised:
+        _ = misnamed.output_metadata
+    assert not isinstance(raised.value, CompileOnlyExecutionError)
+
+
 def test_an_attribute_no_model_has_stays_an_attribute_error(
     stand_in: CompileOnlyModel,
 ) -> None:
@@ -130,6 +161,31 @@ def test_an_attribute_no_model_has_stays_an_attribute_error(
     missing = "not_a_member_of_any_model"
     with pytest.raises(AttributeError):
         getattr(stand_in, missing)
+
+
+def test_init_all_names_the_graphs_of_a_path_compiled_artifact(
+    tmp_path: Path,
+) -> None:
+    # The eager interpreter, and anyone replaying a recorded MEF, loads an
+    # artifact by path. There is no source module to read graph names from,
+    # so the stand-ins are keyed by the names the artifact itself carries.
+    # A body unlike `_graph`'s: the compile cache keys on the body and would
+    # otherwise hand back the `add_one` artifact under this name.
+    dtype = TensorType(DType.float32, [4], device=DeviceRef.CPU())
+    with Graph("exported", input_types=[dtype]) as graph:
+        graph.output(graph.inputs[0].tensor * 2.0)
+    session = InferenceSession(devices=[CPU()])
+    path = tmp_path / "exported.mef"
+    session.compile(graph).export_mef(path)
+
+    models = session.init_all(session.compile(path))
+
+    assert list(models) == ["exported"]
+    stand_in = models["exported"]
+    assert isinstance(stand_in, CompileOnlyModel)
+    assert [(s.shape, s.dtype) for s in stand_in.input_metadata] == [
+        ([4], DType.float32)
+    ]
 
 
 @pytest.fixture

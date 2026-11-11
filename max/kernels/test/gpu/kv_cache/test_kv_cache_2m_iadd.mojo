@@ -285,7 +285,7 @@ def test_kv_cache_2m_iadd_gpu[
     a.to_device()
 
     var layer_idx = 1
-    kv_cache_2m_iadd_dispatch[target="gpu"](
+    kv_cache_2m_iadd_dispatch(
         a.device_tensor(),
         kv_collection_device,
         input_row_offsets_slice.device_tensor(),
@@ -332,7 +332,7 @@ def test_kv_cache_2m_iadd_cpu[
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     comptime num_layers = 2
     assert (
@@ -445,7 +445,7 @@ def test_kv_cache_2m_iadd_cpu[
         a_host_flat[i] = Scalar[dtype](i)
 
     var layer_idx = 1
-    kv_cache_2m_iadd_dispatch[target="cpu"](
+    kv_cache_2m_iadd_dispatch(
         a_host,
         kv_collection_host,
         input_row_offsets_slice_host,

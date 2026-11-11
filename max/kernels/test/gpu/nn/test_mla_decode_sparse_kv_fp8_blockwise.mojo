@@ -25,7 +25,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from internal_utils import coprime_multiplier
 from layout import Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -261,6 +261,7 @@ def run_test[
             ragged=True,
             sparse=True,
             skip_masked_tiles=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -284,6 +285,7 @@ def run_test[
             config=MHAConfig[q_dtype](num_heads, Q_DEPTH),
             ragged=True,
             sparse=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,

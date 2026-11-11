@@ -17,11 +17,10 @@ from __future__ import annotations
 from typing import ClassVar
 
 from max import functional as F
-from max import tree
 from max.dtype import DType
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import default_dtype
 
@@ -65,7 +64,7 @@ class HYV4Decoder(Module[[DecoderInputs], DecoderOutputs]):
         if mesh.num_devices > 1:
             tokens = F.distributed_broadcast(tokens, mesh)
             input_row_offsets = F.distributed_broadcast(input_row_offsets, mesh)
-        values = iter(t._graph_value for t in tree.leaves(inputs.kv))
+        values = iter(kv_input_values(inputs.kv))
         mla, indexer = (
             PagedCacheValues.from_upstream(
                 params.unflatten_kv_inputs(values), tokens.mapping

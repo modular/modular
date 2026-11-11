@@ -10,7 +10,10 @@ modular_py_test(
     name = "kvcache_tests",
     srcs = glob(
         ["*.py"],
-        exclude = ["*_gpu.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_mla_quantized_op_compiles.py",
+        ],
     ),
     data = ["testdata/split_kv_decode_partitions.csv"],
     target_compatible_with = select({
@@ -26,6 +29,9 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/mlir",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -37,6 +43,35 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+# Compiles the quantized dense MLA op, which no Python builder emits, on a
+# virtual B200. Virtual-device mode latches process-wide, so it needs its own
+# target; the virtual CUDA graph needs the Linux-only NVPTX compiler.
+modular_py_test(
+    name = "test_mla_quantized_op_compiles",
+    size = "medium",
+    srcs = ["test_mla_quantized_op_compiles.py"],
+    tags = [
+        "skip-ci-asan",
+        "skip-ci-m7g",
+        "skip-ci-ubsan",
+        "skip-external-ci",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -60,10 +95,18 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
+)
+
+# Mach's engine-kv tests check its split-KV partitions against this.
+exports_files(
+    [
+        "testdata/split_kv_decode_partitions.csv",
+    ],
+    visibility = ["//mach:__subpackages__"],
 )

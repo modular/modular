@@ -10,565 +10,232 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""NoPE sparse MLA for GLM-5.3-Flash, as the decoder layer calls it.
+"""NoPE sparse MLA for GLM-5.3-Flash's 11 sparse layers, on ModuleV3.
 
-The 11 sparse-MLA layers (plus the MTP draft layer) are GLM-5.2's block with
-two changes, both of which land here rather than in
-:mod:`max.pipelines.architectures.deepseekV3_2`:
+GLM-5.2's block with two changes:
 
-**NoPE.** ``qk_rope_head_dim`` is 0, so the absorbed decode latent is
-``kv_lora_rank`` = 512 rather than 576. Every MLA kernel in the tree is
-compiled against 576 --- the three sparse prefill kernels comptime-assert
-``config.qk_depth == 576``
-(``max/kernels/src/nn/attention/gpu/nvidia/sm100/mla_prefill_sparse.mojo:1418``
-and its two FP8 siblings), the SM100 decode config's ``supported()`` requires
-``q_depth == 576 and depth == 512``
-(``nvidia/sm100/mla_decode_utils.mojo:800``), and ``flareMLA_decoding`` asserts
-576 (``gpu/mla.mojo:771``). So this module zero-pads the query and the latent
-to the 576 geometry on the way into the kernel, which is exact: the padded
-columns are zero in *both* operands, adding ``0.0`` to a float32 accumulator
-does not round, and ``BN_QK`` = 64 divides 512 and 576 alike, so the first
-eight tiles decompose identically and the ninth contributes exactly zero. The
-padding is deliberately not in the weights: ``q_b_proj`` and
-``kv_a_proj_with_mqa`` stay at their checkpoint widths, so nothing pays the
-25% wider ``q_b_proj`` matmul that a padded weight would cost forever.
+* **NoPE.** The latent is 512 wide, but every MLA kernel compiles against 576,
+  so the query and the latent are zero-padded to that geometry on the way into
+  the kernel. That is exact: the padded columns are zero in both operands.
+* **k-pooled indexing.** :class:`~.indexer.PooledIndexer` selects 2051 token
+  positions per query, which the kernel reads as logical positions with the
+  k-pool layout.
 
-**k-pooled indexing.** The selection comes from :class:`~max.pipelines.architectures.deepseekV3_2.layers.indexer.Indexer`, which
-scores 4-token pools and emits ``index_topk + index_kpool - 1`` = 2051 token
-positions per query. The shared sparse-MLA block is therefore built with
-``skip_topk=True`` --- it declares no indexer weights of its own and its rope is
-never reached --- and ``index_topk`` set to that 2051 *selection width*, which
-is what it uses for both ``sparse_topk_lengths`` and ``sparse_indices_stride``.
-
-Nothing here subclasses the shared block. It is composed: the per-device module
-is `SparseLatentAttentionWithRopeFp8` unmodified, and this file supplies the
-projections' call order around its ``_mla_impl`` so the padding has somewhere to
-live without forking a file five shipping architectures ride on.
+``kv_b_proj`` is BF16 in this checkpoint while the other projections are FP8,
+so the absorbed ``w_uk`` / ``w_uv`` carry no scales and the kernel takes no
+quant config.
 """
 
 from __future__ import annotations
 
-from dataclasses import field
-
-from max import tree
+from max import functional as F
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    ShardingStrategy,
-    TensorValue,
-    ops,
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_mla import (
+    QuantizedLatentAttention,
+    tensor_parallel_latent_attention_with_rope,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.kernels import mla_decode_graph
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_ops import quantized_matmul
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
-    Indexer,
-    KpoolTailReplayInputs,
+from max.nn.kernels import (
+    mla_decode_graph,
 )
-from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
-    SparseLatentAttentionWithRopeFp8,
-)
+from max.nn.quant_config import QuantConfig
+from max.tensor import Tensor
 
 from ..model_config import Glm5NextConfig
-from ..quantization import UNQUANTIZED_ATTN_PROJECTIONS
+from .indexer import KPoolTail, PooledIndexer
 
-__all__ = [
-    "Glm5NextSparseMLASublayer",
-    "SparseMLASublayerInputs",
-    "nope_pad_rotary",
-]
+__all__ = ["Glm5NextSparseMLA"]
 
 
-class _FlatSparseMLA(SparseLatentAttentionWithRopeFp8):
-    """The shared sparse-MLA block, holding its checkpoint weight names.
+def _zero_pad_last(x: Tensor, width: int) -> Tensor:
+    """Appends ``width`` zero columns to ``x``'s last axis.
 
-    The only thing this changes is the FQN prefix. The checkpoint puts the MLA
-    projections directly under ``self_attn`` --- ``self_attn.q_a_proj.weight``
-    --- and the decoder layer binds this sublayer as ``self_attn``, so the
-    attribute name it is held under here must not appear in between. The KDA
-    lane's :class:`KimiDeltaAttention` carries the same property for the same
-    reason. No behaviour is overridden.
+    A concat with a broadcast zero runs as one kernel; a pad fills the
+    whole output first, a second launch per pad on every step.
     """
-
-    @property
-    def _omit_module_attr_name(self) -> bool:
-        return True
-
-
-@tree.dataclass(frozen=True, kw_only=True)
-class SparseMLASublayerInputs:
-    """One sparse-MLA layer's per-step inputs, one entry per device.
-
-    The decoder layer is generic over each sublayer's bundle
-    (``tasks/glm53-scope/contracts/mhc-decoder-layer.md``), so this lives here
-    rather than in a shared dataclass nobody owns.
-    """
-
-    signal_buffers: list[BufferValue]
-    """Allreduce signal buffers for ``o_proj``'s partial sums."""
-
-    input_row_offsets: list[TensorValue]
-    """``[batch_size + 1]`` uint32 exclusive prefix offsets over the packed
-    tokens."""
-
-    mla_kv_collections: list[PagedCacheValues]
-    """The ``"mla"`` leaf of the multi-cache: the 576-wide padded latent."""
-
-    indexer_kv_collections: list[PagedCacheValues]
-    """The ``"indexer"`` leaf: the pooled-key cache, declared
-    ``index_head_dim // index_kpool`` = 32 wide. Only the fused pooled scorer
-    reads it; the dense bring-up scorer projects its keys from ``xs``."""
-
-    layer_idx: TensorValue
-    """uint32 scalar on CPU. This is the layer's index *within the cached
-    subset*, not its index in the model: only the sparse-MLA layers hold a KV
-    cache, so layer 3 of the model is cache layer 0."""
-
-    tail_pools: list[BufferValue]
-    """``[num_rows, 2, index_kpool, index_head_dim]`` k-pool tail ring, one per
-    device. Every sparse layer shares the pool and differs only in the row it
-    runs in, so this is the whole pool rather than one layer's slice."""
-
-    tail_row_ids: list[TensorValue]
-    """``[batch]`` uint32 ring row this layer runs each sequence in, one per
-    device. Drawn from the ring leaf at the layer's index within the *ring's*
-    layer set -- the indexer cache's -- so a model index would bind one
-    layer's ring to another and pass every shape check."""
-
-    prev_selection: list[TensorValue] = field(default_factory=list)
-    """Per-device ``[total_tokens, 2051]`` int32 selection to reuse instead of
-    running the indexer, for ``index_share_for_mtp_iteration``, or empty. The
-    shared value is the *expanded token* selection, not the 512 pool ids."""
-
-    selection: list[TensorValue] = field(default_factory=list)
-    """Per-device sink for this layer's selection. Appended to the model's
-    graph outputs so the draft graph can take it as ``prev_topk_indices``, the
-    pattern ``deepseekV3_2_nextn.py:342`` already uses. Mutated in place, which
-    is why this dataclass is frozen but this field is a list."""
-
-
-def nope_pad_rotary(config: Glm5NextConfig) -> RotaryEmbedding:
-    """Builds the rotary table the 576 padding needs, and nothing else uses.
-
-    GLM-5.3-Flash has no rotary embedding anywhere in its decoder. The padded
-    kernel geometry nevertheless carries 64 rotary columns, and the fused MLA
-    ops derive that width from ``freqs_cis.shape[1]``, so a table of that shape
-    has to exist. Its *values* are irrelevant --- every query column it rotates
-    is zero, and rotating zero yields zero --- but its first dimension has to
-    cover the longest position the model will see.
-
-    Build it **once per model** and pass the same instance to every sparse
-    layer: at ``max_seq_len`` = 1M the table is 134 MB, and eleven copies of it
-    would not be. It disappears entirely when the MLA kernels grow a native
-    512-wide configuration.
-
-    Args:
-        config: The model config, read for ``max_seq_len``.
-
-    Returns:
-        A rotary embedding whose ``freqs_cis`` is ``[max_seq_len, 64]``.
-    """
-    rope_width = config.mla_head_dim - config.kv_lora_rank
-    if rope_width <= 0:
-        raise ValueError(
-            "nope_pad_rotary is only needed when the latent is padded: "
-            f"mla_head_dim ({config.mla_head_dim}) must exceed kv_lora_rank "
-            f"({config.kv_lora_rank}). Set Glm5NextConfig.mla_latent_pad_to."
-        )
-    return RotaryEmbedding(
-        dim=rope_width,
-        n_heads=config.num_attention_heads,
-        theta=10000.0,
-        max_seq_len=config.max_seq_len,
-        head_dim=rope_width,
-        interleaved=False,
-    )
-
-
-def _zero_pad_last(x: TensorValue, width: int) -> TensorValue:
-    """Appends ``width`` zero columns to ``x``'s last axis."""
     if width == 0:
         return x
-    zeros = ops.broadcast_to(
-        ops.constant(0, x.dtype, device=x.device).reshape(
-            (1,) * (x.rank - 1) + (1,)
-        ),
-        tuple(x.shape[:-1]) + (width,),
-    )
-    return ops.concat([x, zeros], axis=-1)
+    zeros = F.full([*x.shape[:-1], width], 0, dtype=x.dtype, device=x.mapping)
+    return F.concat([x, zeros], axis=-1)
 
 
-class Glm5NextSparseMLASublayer(Module):
-    """Sparse MLA plus the k-pooled indexer, across all devices.
+class Glm5NextSparseMLA(QuantizedLatentAttention):
+    """Sparse MLA plus the k-pooled indexer, tensor-parallel over heads.
 
-    Satisfies ``Glm5NextSublayer[SparseMLASublayerInputs]`` structurally: it
-    takes one already normalized ``[total_tokens, hidden_size]`` per device and
-    returns one output per device with ``o_proj``'s partial sums all-reduced.
-    It adds no residual and declares no input layernorm --- the decoder layer
-    owns both, because the mHC write-back is not an add.
-
-    The indexer is **replicated**, not head-sharded, and that is a correctness
-    requirement rather than a tuning choice: its 32 head scores are summed
-    before the top-k, so a sharded head axis would leave each rank holding a
-    partial sum and ranks would select different tokens. The all-reduce that
-    would repair it is O(context) --- about 1 MB per sequence per layer at 1M
-    --- against a fixed 164 MB of replicated weights across the 11 layers.
-
-    Args:
-        config: The model config.
-        layer_idx: This layer's index in the model, for error messages only.
-            The cache-facing index travels in the bundle.
-        rope: The padding rotary table from :func:`nope_pad_rotary`, shared
-            across every sparse layer.
+    Returns ``o_proj``'s partial sums; the decoder layer reduces them.
     """
-
-    tail_seed_offsets: list[TensorValue] | None = None
-    """Per-device row offsets the indexer's tail seed reads, or ``None``.
-
-    Set by the speculative graph around a verify: all zeros at a nonzero
-    verify width, so the ring keeps its pre-verify members until the rollback
-    seeds the accepted rows. ``None`` in the base graph, which seeds every
-    call's own rows.
-    """
-
-    tail_capture: list[list[KpoolTailReplayInputs]] | None = None
-    """Per-device sink for this layer's tail-seed inputs, or ``None``.
-
-    Set alongside :attr:`tail_seed_offsets`.
-    """
-
-    selection_lag: int = 0
-    """Positions between the token a reused selection was computed for and
-    the token reading it. Nonzero only on an MTP draft step that reuses an
-    earlier step's selection, which never runs inside a subgraph."""
 
     def __init__(
         self,
         config: Glm5NextConfig,
         layer_idx: int,
-        *,
-        rope: RotaryEmbedding,
+        quant_config: QuantConfig | None,
     ) -> None:
-        super().__init__()
-        self.layer_idx = layer_idx
-        devices = config.devices
-        self.devices = list(devices)
-
-        kv_params = _mla_leaf(config)
-        if kv_params.head_dim != config.mla_head_dim:
-            raise ValueError(
-                f"The 'mla' cache leaf is {kv_params.head_dim} wide but "
-                f"Glm5NextConfig.mla_head_dim is {config.mla_head_dim}. The "
-                "kernel reads the cache row and the padded query as one "
-                "geometry, so a disagreement is a silent wrong answer rather "
-                "than a shape error. Both must come from mla_latent_pad_to."
-            )
-        self.rope = rope
-        self.latent_pad = config.mla_head_dim - config.kv_lora_rank
-
-        quant_scheme = config.quant_scheme
-        if quant_scheme is None:
-            raise ValueError(
-                "Glm5NextSparseMLASublayer needs a resolved quant scheme: the "
-                "sparse-MLA block is FP8 except kv_b_proj and the indexer, and "
-                "that split is read off the checkpoint's weight scales."
-            )
-        assert "kv_b_proj" in UNQUANTIZED_ATTN_PROJECTIONS
-
-        # The shared DSA indexer, not a GLM-specific one: k-pool compression
-        # and the zero-width RoPE GLM-5.3-Flash needs both live there now, so
-        # forking would mean two implementations of one thing.
-        self.indexer = Indexer(
-            dim=config.hidden_size,
-            index_n_heads=config.index_n_heads,
-            index_head_dim=config.index_head_dim,
-            qk_rope_head_dim=0,  # NoPE throughout GLM-5.3-Flash's decoder
-            index_topk=config.index_topk,
-            q_lora_rank=config.q_lora_rank,
-            devices=self.devices,
-            quant_config=quant_scheme.config,
-            # GLM norms the indexer key in the compute dtype, not float32.
-            k_norm_dtype=config.compute_dtype,
-            index_kpool=config.index_kpool,
-            index_kpool_compress=config.index_kpool_compress,
-            index_kpool_always_select_tail=config.index_kpool_always_select_tail,
-            # GLM-5.3-Flash leaves the indexer out of its FP8 map.
-            indexer_weights_fp8=False,
-        )
-        self.indexer.sharding_strategy = ShardingStrategy.replicate(
-            len(self.devices)
-        )
-        self.indexer_shards = self.indexer.shard(self.devices)
-
-        self.attention = _FlatSparseMLA(
-            rope=rope,
+        super().__init__(
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
             hidden_size=config.hidden_size,
-            kv_params=kv_params,
-            quant_config=quant_scheme.config,
-            devices=self.devices,
+            kv_params=config.mla_kv_params,
+            layer_idx=layer_idx,
             q_lora_rank=config.q_lora_rank,
             kv_lora_rank=config.kv_lora_rank,
             qk_nope_head_dim=config.qk_nope_head_dim,
-            # The block's own geometry stays NoPE so its weights match the
-            # checkpoint; the padding is applied to activations below.
             qk_rope_head_dim=0,
             v_head_dim=config.v_head_dim,
-            norm_dtype=config.compute_dtype,
-            # TODO(GLM53-PREFILLSCALE): "auto" would route prefill through
-            # `mla_prefill_decode_graph`, which asserts the absorbed scales are
-            # present (`max/python/max/nn/legacy/kernels.py:4580`) and so cannot serve
-            # a checkpoint that ships `kv_b_proj` unquantized --- the very
-            # split this model needs. `mla_decode_graph` already takes them as
-            # `TensorValue | None`, so the decode route is correct today and
-            # the prefill route needs the same three asserts relaxed. Until
-            # then prefill runs the decode kernel, which is the same fallback
-            # the shared block already takes for unsupported head counts.
             graph_mode="decode",
-            # No indexer of its own: `skip_topk` declares none, and the
-            # selection arrives from `Indexer` instead.
-            skip_topk=True,
-            # Both `sparse_topk_lengths` and `sparse_indices_stride` come from
-            # this, so it is the 2051 selection width and not `index_topk`.
-            index_topk=self.indexer.selection_width,
-            kv_b_proj_dtype=config.kv_b_proj_dtype,
+            quant_config=quant_config,
         )
-        self.attention.sharding_strategy = ShardingStrategy.tensor_parallel(
-            len(self.devices)
+        if self.kv_params.head_dim != config.mla_latent_pad_to:
+            raise ValueError(
+                f"The 'mla' cache leaf is {self.kv_params.head_dim} wide but "
+                f"the padded latent is {config.mla_latent_pad_to}; the kernel "
+                "reads both as one geometry."
+            )
+        self.latent_pad = config.mla_latent_pad_to - config.kv_lora_rank
+        # BF16 in the checkpoint even though the layer's other projections
+        # are FP8.
+        self.kv_b_proj = quant_ops.quantized_weight(
+            self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
+            self.kv_lora_rank,
+            None,
         )
-        self.shards = self.attention.shard(self.devices)
-        if self.attention.kv_b_proj_scale is None:
-            for shard in self.shards:
-                # TODO(GLM53-KVBSCALE): `SparseLatentAttentionWithRopeFp8.shard`
-                # builds each replica without forwarding `kv_b_proj_dtype`, so
-                # a replica re-declares `kv_b_proj.weight_scale` even when the
-                # parent has none -- an unmapped weight at load, and a scale
-                # handed to the kernel for a weight that was never quantized.
-                # Every absorb path keys off this attribute being None
-                # (`multi_latent_attention_fp8.py:_gather_per_head_scale`), so
-                # clearing it here is the whole repair. The one-line fix is to
-                # pass `kv_b_proj_dtype=self.kv_b_proj.dtype` in that
-                # constructor call; this loop is inert once it lands.
-                shard.kv_b_proj_scale = None
-                shard._kv_b_proj_quantized = False
-        self.allreduce = Allreduce(num_accelerators=len(self.devices))
+        assert quant_config is not None
+        self.indexer = PooledIndexer(config, quant_config)
+        tensor_parallel_latent_attention_with_rope(self)
 
-    def __call__(
-        self, xs: list[TensorValue], inputs: SparseMLASublayerInputs
-    ) -> list[TensorValue]:
-        """Runs the layer on every device and all-reduces the result.
+    @property
+    def w_uk(self) -> tuple[Tensor, Tensor | None]:
+        """The key half of the absorbed KV projection weight."""
+        w = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+        return w.transpose(0, 1), None
+
+    @property
+    def w_uv(self) -> tuple[Tensor, Tensor | None]:
+        """The value half of the absorbed KV projection weight."""
+        w = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
+        return w.permute([1, 2, 0]), None
+
+    def forward(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        input_row_offsets: Tensor,
+        freqs_cis: Tensor,
+        tail: KPoolTail,
+    ) -> Tensor:
+        """Runs the absorbed attention over ``x``."""
+        out, _ = self.attend(
+            x,
+            kv_collection,
+            indexer_kv_collection,
+            layer_idx,
+            input_row_offsets,
+            freqs_cis,
+            tail,
+        )
+        return out
+
+    def attend(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        input_row_offsets: Tensor,
+        freqs_cis: Tensor,
+        tail: KPoolTail,
+        prev_selection: Tensor | None = None,
+        selection_lag: int = 0,
+    ) -> tuple[Tensor, Tensor]:
+        """Returns ``o_proj``'s partial sums and the token selection.
 
         Args:
-            xs: ``[total_tokens, hidden_size]`` per device, normalized.
-            inputs: This layer's per-step caches, offsets and selection.
-
-        Returns:
-            ``[total_tokens, hidden_size]`` per device.
+            x: The layer's input rows.
+            kv_collection: The latent cache.
+            indexer_kv_collection: The indexer key cache.
+            layer_idx: This layer's slot in both caches.
+            input_row_offsets: Offsets of each request's rows.
+            freqs_cis: The rotary table.
+            tail: The k-pool tail ring at this layer.
+            prev_selection: A selection to attend over instead of running the
+                indexer, for an MTP draft step that reuses its first step's.
+            selection_lag: Positions between the token ``prev_selection`` was
+                made for and this call's token.
         """
-        outputs: list[TensorValue] = []
-        for i, shard in enumerate(self.shards):
-            # `q_a_proj` and `kv_a_proj_with_mqa` are one fused matmul, and the
-            # indexer consumes the normalized query residual it produces, so
-            # this runs once and feeds both.
-            q_a_normed, kv = self._project(shard, xs[i])
-            selection = self._select(i, xs[i], q_a_normed, inputs)
-            inputs.selection.append(selection)
-            outputs.append(
-                self._attend(
-                    shard,
-                    q_a_normed,
-                    kv,
-                    selection,
-                    kv_collection=inputs.mla_kv_collections[i],
-                    layer_idx=inputs.layer_idx,
-                    input_row_offsets=inputs.input_row_offsets[i],
-                )
-            )
-        if len(self.shards) == 1:
-            # `o_proj` produced the whole sum, and `Allreduce` still demands a
-            # matching signal buffer per device, so a single-device graph would
-            # have to fabricate one for a no-op.
-            return outputs
-        return self.allreduce(outputs, inputs.signal_buffers)
-
-    def _project(
-        self, shard: SparseLatentAttentionWithRopeFp8, x: TensorValue
-    ) -> tuple[TensorValue, TensorValue]:
-        """Returns ``(q_a_layernorm(q_a_proj(x)), kv_a_proj_with_mqa(x))``."""
-        wqkv, wqkv_scale = shard.wqkv
-        qkv = quantized_matmul(
-            x=x,
-            weight=wqkv,
-            weight_scale=wqkv_scale,
-            input_scale=None,
-            quant_config=shard.quant_config,
+        assert prev_selection is not None or selection_lag == 0, (
+            "selection_lag needs a prev_selection to lag"
         )
-        q_a_out, kv = ops.split(
-            qkv, [shard.q_lora_rank, shard.cache_head_dim], axis=1
-        )
-        return shard.q_a_layernorm(q_a_out), kv
-
-    def _select(
-        self,
-        device_idx: int,
-        x: TensorValue,
-        q_a_normed: TensorValue,
-        inputs: SparseMLASublayerInputs,
-    ) -> TensorValue:
-        """Returns this device's ``[total_tokens, 2051]`` token selection.
-
-        Reuses ``prev_selection`` when the caller already has one, and
-        otherwise runs the pooled indexer: compress, cache, score pools, expand
-        back to token positions.
-        """
-        if inputs.prev_selection:
-            return inputs.prev_selection[device_idx]
-        selection, _ = self.indexer_shards[device_idx](
-            x,
-            q_a_normed,
-            # NoPE: `qk_rope_head_dim` is 0, so the indexer skips the rotary
-            # entirely and never reads this table.
-            self.rope.freqs_cis,
-            inputs.input_row_offsets[device_idx],
-            inputs.indexer_kv_collections[device_idx],
-            inputs.layer_idx,
-            # The indexer's default is no mask, under which a prefill query
-            # spends its pool budget on pools after it that `_attend`'s causal
-            # mask then discards.
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            tail=inputs.tail_pools[device_idx],
-            slot_idx=inputs.tail_row_ids[device_idx],
-            write_logical=True,
-            seed_row_offsets=(
-                None
-                if self.tail_seed_offsets is None
-                else self.tail_seed_offsets[device_idx]
-            ),
-            tail_capture=(
-                None
-                if self.tail_capture is None
-                else self.tail_capture[device_idx]
-            ),
-        )
-        assert selection is not None
-        return selection
-
-    def _attend(
-        self,
-        shard: SparseLatentAttentionWithRopeFp8,
-        q_a_normed: TensorValue,
-        kv: TensorValue,
-        selection: TensorValue,
-        *,
-        kv_collection: PagedCacheValues,
-        layer_idx: TensorValue,
-        input_row_offsets: TensorValue,
-    ) -> TensorValue:
-        """Projects the query, pads to 576, and runs sparse MLA.
-
-        The shared block's own ``__call__`` is bypassed rather than subclassed:
-        it would run its rope, and it offers no seam between ``q_b_proj`` and
-        the kernel, which is exactly where the NoPE padding has to go. Every
-        weight, the absorbed ``w_uk`` / ``w_uv`` / ``w_k`` and ``_mla_impl``
-        itself are the shared block's, unmodified.
-        """
-        xq = quantized_matmul(
-            x=q_a_normed,
-            weight=shard.q_b_proj,
-            weight_scale=shard.q_b_proj_scale,
-            input_scale=None,
-            quant_config=shard.quant_config,
-        ).reshape((-1, shard.n_heads, shard.qk_head_dim))
-
-        # Zero-pad both operands to the geometry every MLA kernel compiles.
-        xq = _zero_pad_last(xq, self.latent_pad)
-        kv = _zero_pad_last(kv, self.latent_pad)
-        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
-
-        w_uk, w_uk_scale = shard.w_uk
-        w_uv, w_uv_scale = shard.w_uv
-        if w_uk_scale is not None or w_uv_scale is not None:
-            raise ValueError(
-                "GLM-5.3-Flash absorbs a BF16 kv_b_proj, so the MLA kernel "
-                "takes no absorbed scales. A scale here means the block was "
-                "built without kv_b_proj_dtype."
-            )
         if kv_collection.kv_scales is not None:
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "
                 "the FP8 MLA op requires absorbed weight scales this "
-                "checkpoint does not ship (max/python/max/nn/legacy/kernels.py:4410). "
-                "Run the BF16 latent cache, which is what the accuracy gates "
-                "use, until that pairing is supported."
+                "checkpoint does not ship. Run the BF16 latent cache, which is "
+                "what the accuracy gates use, until that pairing is supported."
             )
+        assert self.q_lora_rank is not None
+        qkv = quant_ops.matmul(x, self.wqkv)
+        q_a_out, kv = qkv.split([self.q_lora_rank, self.cache_head_dim], axis=1)
+        q_a_normed = self.q_a_layernorm(q_a_out)
+        if prev_selection is None:
+            selection = self.indexer(
+                x,
+                q_a_normed,
+                input_row_offsets,
+                indexer_kv_collection,
+                layer_idx,
+                tail,
+            )
+        else:
+            selection = prev_selection
 
-        # `mla_decode_graph` directly rather than the block's `_mla_impl`: that
-        # helper always forwards its FP8 `quant_config`, and every operand this
-        # kernel sees is BF16. The block's FP8-ness lives in `q_a_proj`,
-        # `q_b_proj`, `kv_a_proj_with_mqa` and `o_proj`, which are separate
-        # `quantized_matmul` calls; `kv_b_proj` --- the only weight the MLA
-        # kernel itself consumes, through the absorb --- is BF16 in this
-        # checkpoint. Passing a quant config here would assert on the absorbed
-        # scales that do not exist.
+        xq = quant_ops.matmul(q_a_normed, self.q_b_proj)
+        xq = xq.reshape((xq.shape[0], self.n_heads, self.qk_head_dim))
+        xq = _zero_pad_last(xq, self.latent_pad)
+        kv = _zero_pad_last(kv, self.latent_pad)
+
+        w_uk, _ = self.w_uk
+        w_uv, _ = self.w_uv
+        width = self.indexer.selection_width
         assert kv_collection.attention_dispatch_metadata is not None
         assert kv_collection.mla_num_partitions is not None
         attn_out = mla_decode_graph(
             q=xq,
             kv=kv,
             input_row_offsets=input_row_offsets,
-            freqs_cis=freqs_cis,
-            kv_norm_gamma=shard.kv_a_proj_layernorm,
+            freqs_cis=freqs_cis.cast(xq.dtype),
+            kv_norm_gamma=self.kv_a_proj_layernorm,
             w_uk=w_uk,
             w_uv=w_uv,
-            kv_params=shard.kv_params,
+            kv_params=self.kv_params,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
-            scale=shard.scale,
+            scale=self.scale,
             epsilon=1e-6,
-            v_head_dim=shard.v_head_dim,
+            v_head_dim=self.v_head_dim,
             scalar_args=kv_collection.attention_dispatch_metadata,
             num_partitions_scalar=kv_collection.mla_num_partitions,
             sparse_indices=selection,
             physical_indices=False,
-            sparse_topk_lengths=ops.broadcast_to(
-                ops.constant(
-                    self.indexer.selection_width,
-                    dtype=DType.int32,
-                    device=xq.device,
-                ),
-                (xq.shape[0],),
+            sparse_topk_lengths=F.full(
+                [xq.shape[0]],
+                width,
+                dtype=DType.int32,
+                device=selection.mapping,
             ),
-            # No `sparse_attn_sink`: the checkpoint has none, and the -1e38
-            # constant passed before added exp(-1e38) == 0 to the softmax
-            # denominator, so it never changed the output. The BF16 AMD
-            # sparse arm also rejects any sink operand.
-            sparse_indices_stride=self.indexer.selection_width,
-            # A k-pool row holds fewer valid entries than its 2051 slots
-            # once every pool is selected; the kernel masks the `-1` padding
-            # from this layout instead of scoring it as zero keys.
-            index_kpool=self.indexer.index_kpool,
+            sparse_indices_stride=width,
+            # A pooled row holds fewer valid entries than its 2051 slots once
+            # every pool is selected; the kernel masks the padding from this.
+            index_kpool=self.indexer.kpool,
             index_pool_topk=self.indexer.pools_selected,
             index_kpool_select_tail=self.indexer.always_select_tail,
-            selection_lag=self.selection_lag,
-        ).reshape((-1, shard.n_heads * shard.v_head_dim))
-        return shard.o_proj(attn_out)
-
-
-def _mla_leaf(config: Glm5NextConfig) -> KVCacheParams:
-    """Returns the ``"mla"`` leaf of the model's multi-cache."""
-    children = getattr(config.kv_params, "children", None)
-    if children is None or "mla" not in children:
-        raise ValueError(
-            "Glm5NextSparseMLASublayer expects a MultiKVCacheParams with an "
-            "'mla' leaf alongside 'indexer', as Glm5NextConfig."
-            "construct_kv_params builds."
+            selection_lag=selection_lag,
+        ).rebind_mapping(xq.mapping)
+        attn_out = attn_out.reshape(
+            (attn_out.shape[0], self.n_heads * self.v_head_dim)
         )
-    leaf = children["mla"]
-    assert isinstance(leaf, KVCacheParams)
-    return leaf
+        return self.o_proj(attn_out), selection

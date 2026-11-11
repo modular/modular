@@ -1210,6 +1210,43 @@ def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_StructConcatOp : KGENOp<"struct.concat", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "concatenate the elements of structs";
+  let description = [{
+    The `kgen.struct.concat` operation makes a struct from the elements of its
+    operands, in sequence. The operation must have one or more operands. The
+    element lists of the operands can be parametric. Thus, the result type is
+    explicit.
+
+    The same list can have multiple forms, for example
+    `variadic_ptr_map(concat(A, B))` and `concat(variadic_ptr_map(A),
+    variadic_ptr_map(B))`. These two forms are equal only when the lists are
+    resolved.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.struct.concat(%a, %b)
+      : !kgen.struct<(index)>, !kgen.struct<(f32, f64)>
+     -> !kgen.struct<(index, f32, f64)>
+    ```
+  }];
+
+  let arguments = (ins Variadic<KGEN_StructType>:$structs);
+  let results = (outs KGEN_StructType:$result);
+  let assemblyFormat = [{
+    `(` $structs `)` attr-dict `:` type($structs) `->` qualified(type($result))
+  }];
+
+  let hasVerifier = 1;
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 

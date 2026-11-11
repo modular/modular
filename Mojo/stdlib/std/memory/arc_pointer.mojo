@@ -568,12 +568,13 @@ struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
     @inline(.never)
     def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
-        if self._inner and self._inner.unsafe_value()[].drop_weak():
-            dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=self._inner.unsafe_value()
-                ).unsafe_with_layout({length = 1})
-            )
+        if case .Some(inner) = self._inner:
+            if inner[].drop_weak():
+                dealloc(
+                    ThinAllocation(unsafe_owned_ptr=inner).unsafe_with_layout(
+                        {length = 1}
+                    )
+                )
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:
         """Attempts to obtain a strong reference.
@@ -582,8 +583,9 @@ struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
             An `ArcPointer` sharing the allocation, or `None` if the
             payload has already been destroyed (strong count reached 0).
         """
-        if self._inner and self._inner.unsafe_value()[].try_add_strong():
-            return {ArcPointer[Self.T](_inner=self._inner.unsafe_value())}
+        if case .Some(inner) = self._inner:
+            if inner[].try_add_strong():
+                return {ArcPointer[Self.T](_inner=inner)}
         return Optional[ArcPointer[Self.T]]()
 
     def strong_count(self) -> UInt64:

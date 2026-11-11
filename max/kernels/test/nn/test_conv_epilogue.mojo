@@ -54,7 +54,7 @@ def test[
 
     var output_dims = IndexList[rank](1)
 
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = (
             input_dims[i]
             + pad[2 * i]
@@ -77,6 +77,8 @@ def test[
             pad_d = Index(pad[0], pad[1])
             pad_h = Index(pad[2], pad[3])
             pad_w = Index(pad[4], pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[rank](
         n=N,

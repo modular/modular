@@ -42,16 +42,16 @@ def test_std_alias_fragment_kernel_tarball() -> None:
 
 def test_kernels_layout_kernel_tarball_root_relative() -> None:
     assert resolve_api_href(
-        "/kernels/layout/tile_layout/TensorLayout",
+        "/kernels/layout/layout/TensorLayout",
         hosted_on_mojolang=False,
-    ) == ("/api/mojo/layout/tile_layout/TensorLayout")
+    ) == ("/api/mojo/layout/layout/TensorLayout")
 
 
 def test_kernels_layout_mojolang_tarball_uses_absolute_max_mojo() -> None:
     assert resolve_api_href(
-        "/kernels/layout/tile_layout/TensorLayout",
+        "/kernels/layout/layout/TensorLayout",
         hosted_on_mojolang=True,
-    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/layout/tile_layout/TensorLayout")
+    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/layout/layout/TensorLayout")
 
 
 def test_kernels_layout_exact_module() -> None:
@@ -78,9 +78,9 @@ def test_kernels_other_mojolang_tarball_uses_absolute_max_mojo() -> None:
 
 def test_layout_path_mojolang_tarball_uses_absolute_max_mojo() -> None:
     assert resolve_api_href(
-        "/layout/tile_layout/X",
+        "/layout/layout/X",
         hosted_on_mojolang=True,
-    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/layout/tile_layout/X")
+    ) == (f"{MAX_MOJO_ORIGIN}/api/mojo/layout/layout/X")
 
 
 def test_extensibility_tensor_kernel_tarball_root_relative() -> None:

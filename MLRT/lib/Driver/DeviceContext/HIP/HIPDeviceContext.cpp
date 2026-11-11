@@ -22,8 +22,10 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
+#include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
 #include "Support/max_license/Tracy/Tracy.h"
@@ -53,14 +55,6 @@
 
 // Helpers for logging.
 #define TWINE(val) (llvm::Twine(val))
-
-#define HIP_CHECK_ERR(hip_call)                                                \
-  do {                                                                         \
-    HIPDriver::Result hipResult = hip_call;                                    \
-    if (hipResult != HIPDriver::SUCCESS) {                                     \
-      return formatHipError(__FILE__, __LINE__, __FUNCTION__, hipResult);      \
-    }                                                                          \
-  } while (0)
 
 #define HIP_CHECK(hip_call)                                                    \
   do {                                                                         \
@@ -162,39 +156,6 @@ private:
   hipDevice_t prevDevice_;
   HIPDriver::Result status_;
 };
-
-static Error formatHipError(const char *file, int line, const char *func,
-                            HIPDriver::Result result,
-                            std::string extra_msg = "") {
-  ErrorOr<const HIPDriver &> errDriver = HIPDriver::get();
-  const char *errName = nullptr;
-  const char *errStr = nullptr;
-
-  if (!errDriver) {
-    // Ignore errors and use nullptr of char* instead.
-    errDriver->hipDrvGetErrorName(result, &errName);
-    errDriver->hipDrvGetErrorString(result, &errStr);
-  }
-
-  if (!extra_msg.empty())
-    extra_msg = std::string(" - ") + extra_msg;
-
-  if ((errName != nullptr) && (errStr != nullptr)) {
-    return DeviceContext::formatError(file, line, func,
-                                      llvm::Twine("HIP call failed: ") +
-                                          errName + " (" + errStr + ")" +
-                                          extra_msg);
-  } else if ((errName != nullptr) || (errStr != nullptr)) {
-    return DeviceContext::formatError(
-        file, line, func,
-        llvm::Twine("HIP call failed: ") +
-            (errName != nullptr ? errName : errStr) + extra_msg);
-  } else {
-    return DeviceContext::formatError(file, line, func,
-                                      llvm::Twine("HIP call failed: ") +
-                                          llvm::Twine(result) + extra_msg);
-  }
-}
 
 // The id of the capture `stream` is recording into, or 0 when it is not
 // capturing (or the runtime lacks capture introspection).
@@ -496,154 +457,6 @@ ErrorOr<std::string> HIPDevice::getPciBusId() const {
 }
 
 ErrorOr<const char *> HIPDevice::getArchName() const { return arch_.c_str(); }
-
-ErrorOr<std::string> HIPDevice::getArchName(hipDevice_t device) {
-  // We do need the full AMD GPU architecture name in order to compie for the
-  // right LLVM target. Parsing via KFD, as used by amd-smi and rocm-smi seems
-  // to be one of the two reliable ways to get the full architecture name. The
-  // other way, which we use here, is through the HSA API and some PCIe device
-  // matching with the HIP API. The HIP API directly does provide the
-  // architecture name in the `hipDeviceProp_t::gcnArchName` field, but it is
-  // not always set. Likewise, `hipDeviceAttributeGcnArchName` is now
-  // deprecated. Major & minor versions are available via
-  // `hipDeviceAttributeComputeCapabilityMajor` and
-  // `hipDeviceAttributeComputeCapabilityMinor`, but lack the last digit.
-
-  DEFINE_OR_RETURN_ERROR(const HIPDriver &, driver, HIPDriver::get());
-
-  // Initialize HSA runtime if available.
-  if (driver.HsaInit() != HSA_STATUS_SUCCESS)
-    return Error("Failed to initialize HSA runtime");
-
-  // Get HIP device PCIe info via device attributes
-  int pciBusId = 0, pciDeviceId = 0, pciDomainId = 0;
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciBusId, hipDeviceAttribute_t::hipDeviceAttributePciBusId, device));
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciDeviceId, hipDeviceAttribute_t::hipDeviceAttributePciDeviceId,
-      device));
-  HIP_CHECK_ERR(driver.hipDeviceGetAttribute(
-      &pciDomainId, hipDeviceAttribute_t::hipDeviceAttributePciDomainID,
-      device));
-
-  // Data structure to pass to HSA agent and ISA iteration callbacks.
-  struct SearchData {
-    const HIPDriver *driver;
-    uint32_t targetPciBusID;
-    uint32_t targetPciDeviceID;
-    uint32_t targetPciDomainID;
-    std::string archName;
-  };
-
-  SearchData search = {&driver, static_cast<uint32_t>(pciBusId),
-                       static_cast<uint32_t>(pciDeviceId),
-                       static_cast<uint32_t>(pciDomainId), ""};
-
-  // Callback function for HSA agent iteration.
-  auto agentCallback = [](hsaAgent_t agent, void *data) -> hsaStatus_t {
-    auto *search = static_cast<SearchData *>(data);
-
-    // Match by PCIe address of HIP and HSA device.
-    uint32_t hsaDomain = 0;
-    uint32_t hsaBdfId = 0;
-
-    // Get PCIe domain. On failure, continue to next agent.
-    if (search->driver->HsaAgentGetInfo(
-            agent, hsaAgentInfo_t::HSA_AMD_AGENT_INFO_DOMAIN, &hsaDomain) !=
-            HSA_STATUS_SUCCESS ||
-        search->driver->HsaAgentGetInfo(
-            agent, hsaAgentInfo_t::HSA_AMD_AGENT_INFO_BDFID, &hsaBdfId) !=
-            HSA_STATUS_SUCCESS)
-      return HSA_STATUS_SUCCESS;
-
-    // BDFID is typically encoded as: (bus << 8) | (device << 3) | function
-    uint32_t hsaBus = (hsaBdfId >> 8) & 0xFF;
-    uint32_t hsaDevice = (hsaBdfId >> 3) & 0x1F;
-    // uint32_t hsaFunction = hsaBdfId & 0x7;
-
-    // Compare with HIP device PCIe info. On failure, continue to next agent.
-    if (hsaDomain != search->targetPciDomainID ||
-        hsaBus != search->targetPciBusID ||
-        hsaDevice != search->targetPciDeviceID)
-      return HSA_STATUS_SUCCESS;
-
-    // Callback to iterate through ISAs for this agent.
-    auto isaCallback = [](hsaIsa_t isa, void *data) -> hsaStatus_t {
-      auto *search = static_cast<SearchData *>(data);
-
-      // First, get the length of the ISA name.
-      uint32_t nameLen = 0;
-      if (search->driver->HsaIsaGetInfo(isa,
-                                        hsaIsaInfo_t::HSA_ISA_INFO_NAME_LENGTH,
-                                        &nameLen) != HSA_STATUS_SUCCESS)
-        return HSA_STATUS_SUCCESS;
-
-      // Continue if the ISA name length is invalid.
-      if (nameLen == 0 || nameLen > 256)
-        return HSA_STATUS_SUCCESS;
-
-      // Allocate memory for the ISA name
-      std::vector<char> isaName(nameLen);
-
-      // Get the actual ISA name. Continue to next ISA if it fails.
-      if (search->driver->HsaIsaGetInfo(isa, hsaIsaInfo_t::HSA_ISA_INFO_NAME,
-                                        isaName.data()) != HSA_STATUS_SUCCESS)
-        return HSA_STATUS_SUCCESS;
-
-      // Check if this ISA name contains "gfx".
-      std::string isaStr(isaName.data(), nameLen > 0
-                                             ? nameLen - 1
-                                             : 0); // Remove null terminator.
-      size_t gfxPos = isaStr.find("gfx");
-      if (gfxPos != std::string::npos) {
-        // Find the end of the digits after "gfx".
-        size_t start = gfxPos;
-        // Start after "gfx".
-        size_t end = start + 3;
-
-        // Continue until we find a non-digit character.
-        while (end < isaStr.length() && std::isdigit(isaStr[end]))
-          ++end;
-
-        // Extract the gfx* part.
-        std::string gfxArch = isaStr.substr(start, end - start);
-        search->archName = gfxArch;
-        // Stop ISA iteration.
-        return HSA_STATUS_INFO_BREAK;
-      }
-
-      // Continue ISA iteration.
-      return HSA_STATUS_SUCCESS;
-    };
-
-    // Iterate through ISAs for this agent. Continue agent iteration if it
-    // fails.
-    if (search->driver->HsaAgentIterateIsas(agent, isaCallback, search) !=
-        HSA_STATUS_SUCCESS)
-      return HSA_STATUS_SUCCESS;
-
-    // If we found an architecture, stop agent iteration.
-    if (search->archName.size())
-      return HSA_STATUS_INFO_BREAK;
-
-    // Continue agent iteration.
-    return HSA_STATUS_SUCCESS;
-  };
-
-  // Iterate through all HSA agents to find our device.
-  if (driver.HsaIterateAgents(agentCallback, &search) != HSA_STATUS_SUCCESS) {
-    driver.HsaShutDown();
-    return Error("Failed to iterate HSA agents");
-  }
-
-  // Clean up HSA runtime.
-  driver.HsaShutDown();
-
-  if (search.archName.empty())
-    return Error("Could not determine architecture name for HIP device");
-
-  return search.archName;
-}
 
 ErrorOr<DeviceContextRef> HIPDevice::createContext() {
   // Make sure that we associate the stream with the correct device.
@@ -959,7 +772,7 @@ ErrorOr<HIPDevice &> HIPDevice::get(int id) {
     }
 #endif
 
-    ErrorOr<std::string> errArch = getArchName(hipDevice);
+    ErrorOr<std::string> errArch = getHIPArchName(hipDevice);
     if (errArch)
       RETURN_ERROR(llvm::Twine("HIP architecture query failed: ") +
                    errArch.getError());
@@ -1218,7 +1031,7 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
     params->op.waitValue.address = address;
     params->op.waitValue.value64 = value;
     params->op.waitValue.flags = static_cast<unsigned int>(
-        hipStreamWaitValueFlags::hipStreamWaitValueEq);
+        hipStreamWaitValueFlags::hipStreamWaitValueGte);
     params->node.ctx = ctx;
     params->node.count = 1;
     params->node.paramArray = &params->op;
@@ -1227,14 +1040,14 @@ internWaitValueNodeParams(hipCtx_t ctx, hipDeviceptr_t address,
   return &params->node;
 }
 
-ErrorOrSuccess
-HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const {
+ErrorOrSuccess HIPDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                  uint64_t value) const {
   const auto &hipDevice = HIPDevice::cast(this->device());
 
   HIP_WITH_DEV_ERR(hipDevice);
   const HIPDriver &driver = hipDevice.hipDriver();
-  auto address = reinterpret_cast<hipDeviceptr_t>(flag.devicePtr());
+  auto address = reinterpret_cast<hipDeviceptr_t>(
+      PinnedCompletionFlag::cast(flag).devicePtr());
 
   // Stream capture does not record hipStreamWaitValue64. Measured on ROCm
   // 7.2.4 / gfx950, under all three capture modes: the call returns success,
@@ -1251,7 +1064,7 @@ HIPDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
   if (getCaptureStatus() !=
       hipStreamCaptureStatus::hipStreamCaptureStatusActive) {
     HIP_CHECK_ERR(driver.hipStreamWaitValue64(
-        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueEq,
+        stream_, address, value, hipStreamWaitValueFlags::hipStreamWaitValueGte,
         /*mask*/ static_cast<uint64_t>(-1)));
     return success();
   }
@@ -1852,8 +1665,8 @@ ErrorOr<CompletionFlagRef> HIPDeviceContext::allocateCompletionFlag() {
   }
   // Initialize the flag to zero so the first wait observes a clean state.
   *static_cast<uint64_t *>(hostPtr) = 0;
-  return CompletionFlagRef::take(
-      new CompletionFlag(*this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
+  return CompletionFlagRef::take(new PinnedCompletionFlag(
+      *this, hostPtr, reinterpret_cast<uint64_t>(devPtr)));
 }
 
 ErrorOrSuccess HIPDeviceContext::freeCompletionFlag(void *hostPtr) {

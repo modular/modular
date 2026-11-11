@@ -23,7 +23,7 @@ from std.math.uutils import umod
 from max.gpu import lane_id, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from layout import TileTensor
-from layout.tile_layout import col_major, row_major
+from layout.layout import col_major, row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from nn.softmax import _exp2_concrete, _exp_concrete
 

@@ -102,7 +102,6 @@ public:
   };
 
   struct Identifier {
-    Coordinates mLocation;
     std::string mDeclaration;
   };
 

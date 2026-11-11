@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from max.nn.legacy.kv_cache import KVCacheGroupId
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
 class KVLoadRefused(Exception):
@@ -513,6 +513,15 @@ class KVConnector(Protocol):
         connector that answers in place is asked in place about the gap a
         short device hit leaves. ``False`` by default, matching the default
         :meth:`start_lookup`.
+        """
+        return False
+
+    def routes_hint(self, hint: bytes) -> bool:
+        """Returns whether a lookup asked with ``hint`` is routed by it.
+
+        Labels the block manager's dropped-lookup counts, so they say which
+        drops a cache hint shaped. ``False`` by default, for a connector that
+        ignores hints.
         """
         return False
 

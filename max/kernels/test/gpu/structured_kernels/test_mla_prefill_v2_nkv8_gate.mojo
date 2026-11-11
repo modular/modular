@@ -50,7 +50,7 @@ from std.sys import get_defined_int, get_defined_string
 
 from layout import TileTensor
 from layout.coord import Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2

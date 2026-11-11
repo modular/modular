@@ -35,6 +35,7 @@ modular_shared_library(
         "@//oss/modular/bazel:__subpackages__",
         "@//utils:__subpackages__",
     ],
+    with_import = True,
     # CUDAHeaders provides cuda.h from the NVIDIA cuda_cudart redistributable
     # so that targets depending on NVPTX automatically get the CUDA driver
     # API header.

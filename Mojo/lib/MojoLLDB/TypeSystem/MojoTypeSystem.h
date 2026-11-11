@@ -555,6 +555,12 @@ public:
   lldb_private::CompilerType
   GetPointerType(lldb::opaque_compiler_type_t type) override;
 
+  /// Returns the type unchanged: Mojo pointer types carry their address
+  /// space themselves, and the base implementation returns an invalid type.
+  lldb_private::CompilerType
+  AddAddressSpaceModifier(lldb::opaque_compiler_type_t type,
+                          uint32_t addressSpace) override;
+
   //===--------------------------------------------------------------------===//
   // Type Navigation
   //===--------------------------------------------------------------------===//

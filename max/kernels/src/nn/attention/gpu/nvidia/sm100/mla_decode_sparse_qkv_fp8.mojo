@@ -70,7 +70,7 @@ from std.memory import Pointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
 from std.memory import bitcast
-from std.sys import get_defined_int, size_of, _RegisterPackType
+from std.sys import get_defined_int, size_of
 from std.sys._assembly import inlined_assembly
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -152,7 +152,7 @@ from layout import (
     TileTensor,
     coord,
 )
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
@@ -1085,6 +1085,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.Common_MLA_Op.store_empty(
                     o_tma, offset_position.out_row_offset
                 )
+                # With an LSE output (decode context parallelism) an empty
+                # shard also writes `-inf`, so a cross-rank merge weights it 0.
+                comptime if not Self.SplitAccumType.is_null:
+                    Self.Common_MLA_Op.store_empty_lse(
+                        offset_position.q_token_idx, lse_accum_split_ptr
+                    )
                 return
 
         stamp_cta_event(CTA_OFFSETS)
@@ -1921,6 +1927,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.Common_MLA_Op.store_empty(
                     o_tma, offset_position.out_row_offset
                 )
+                # With an LSE output (decode context parallelism) an empty
+                # shard also writes `-inf`, so a cross-rank merge weights it 0.
+                comptime if not Self.SplitAccumType.is_null:
+                    Self.Common_MLA_Op.store_empty_lse(
+                        offset_position.q_token_idx, lse_accum_split_ptr
+                    )
                 return
 
         stamp_cta_event(CTA_OFFSETS)

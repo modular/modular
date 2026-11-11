@@ -34,29 +34,24 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnLogits,
-    logits_outputs,
-)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, logits_outputs
 from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
 from max.nn.legacy.transformer.transformer import fuse_captured_hidden_states
+from max.nn.outputs import ReturnLogits
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 
 from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
 from ..deepseekV3.model_config import DeepseekV3Config

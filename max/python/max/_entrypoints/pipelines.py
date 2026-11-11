@@ -849,6 +849,19 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--error-report-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Measure each quantized weight's error against its native-precision"
+        " source inside the compiled graph, and write the per-layer report"
+        " (table on stdout, quant_error_report.json) to this directory."
+        " A format that cannot measure its error is rejected. Costs extra"
+        " memory while the graph runs. Rebuild a report later from the"
+        " directory with `max quantize-report`."
+    ),
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -858,7 +871,7 @@ def cli_pipeline(
     "--export-path",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="After generation, write an NVFP4 checkpoint to this directory.",
+    help="After generation, write a quantized checkpoint to this directory.",
 )
 @click.option(
     "--prompt",
@@ -916,6 +929,7 @@ def cli_pipeline(
 def quantize(
     targets: list[str],
     quantization_format: str,
+    error_report_dir: Path | None,
     verbose: bool,
     export_path: Path | None,
     prompt: str,
@@ -990,12 +1004,30 @@ def quantize(
         prompt=prompt,
         quantization_format=quantization_format,
         verbose=verbose,
+        error_report_dir=error_report_dir,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,
         profile_top_n=profile_top_n,
         export_path=export_path,
     )
+
+
+@main.command(name="quantize-report")
+@click.argument(
+    "directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+def quantize_report(directory: Path) -> None:
+    """Rebuild the quantization error report from a finished run.
+
+    Reads the dumps `max quantize --error-report-dir DIRECTORY` left behind,
+    prints the per-layer table and rewrites quant_error_report.json. Needs
+    neither the model nor a GPU.
+    """
+    from max._entrypoints.cli.quant_error_report import write_report
+
+    write_report(directory)
 
 
 @main.command(name="encode", cls=WithLazyPipelineOptions)

@@ -29,8 +29,8 @@ from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn import Linear
 from max.nn import Module as ModuleV3
-from max.nn.legacy.kv_cache import MHAKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.eagle_llama3.arch import (
     eagle3_llama_arch,
     eagle_llama_arch,

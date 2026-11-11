@@ -343,7 +343,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
     ptr.unsafe_write(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(NAME), ptr.unsafe_bitcast[NoneType]()
+        StringSpan(NAME), ptr.unsafe_bitcast[NoneType]()
     )
     return ptr[]
 
@@ -493,7 +493,6 @@ def allreduce[
 
     elementwise[
         simd_size,
-        target="gpu",
         _trace_description="ccl_epilogue",
     ](epilogue_wrapper, Coord(count), ctx)
     # The free is stream-ordered; keep `scratch` until the epilogue is queued.

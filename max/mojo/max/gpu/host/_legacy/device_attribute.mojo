@@ -36,6 +36,11 @@ struct DeviceAttribute(TrivialRegisterPassable):
     This struct encapsulates the various device properties and capabilities that can be
     queried through the CUDA driver API. Each attribute is represented as a constant
     with a corresponding integer value that maps to the CUDA driver's attribute enum.
+
+    This is the raw, GPU-family attribute query: other backends map these CUDA
+    values to their own. For the common limits every device can answer, use the
+    named methods on the `Device` view instead, such as
+    `ctx.device().multiprocessor_count()`.
     """
 
     var _value: Int32

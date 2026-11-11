@@ -18,8 +18,7 @@ For example, here's how to print to a file
 
 ```mojo
 var f = open("my_file.txt", "w")
-var fd = RawFileDescriptor(f)
-print("hello", file=fd)
+print("hello", file=BorrowedFileDescriptor(f))
 f^.close()
 ```
 
@@ -134,14 +133,14 @@ struct RawFileDescriptor(
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `RawFileDescriptor`.
+        Write a `StringSpan` to this `RawFileDescriptor`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `RawFileDescriptor`.
+            string: The `StringSpan` to write to this `RawFileDescriptor`.
         """
         self.write_bytes(string.as_bytes())
 
@@ -188,10 +187,8 @@ struct RawFileDescriptor(
 
         Examples:
             ```mojo
-            from std.sys import stdout
-
             # Check if stdout is a terminal
-            if stdout.isatty():
+            if RawFileDescriptor(1).isatty():
                 print("Running in a terminal")
             else:
                 print("Output is redirected")
@@ -294,11 +291,26 @@ struct FileDescriptor(
     def _raw(self) -> c_int:
         return self._value._raw()
 
+    def unsafe_into_raw(deinit self) -> RawFileDescriptor:
+        """Releases ownership of the descriptor without closing it.
+
+        Use this to hand the descriptor to an API that takes ownership of it,
+        such as `fdopen`, which closes it on `fclose`.
+
+        Returns:
+            The raw descriptor.
+
+        Safety:
+            The caller becomes responsible for closing the descriptor exactly
+            once.
+        """
+        return self._value
+
     comptime _KgenNichedFieldName = "_value".value
 
 
 struct BorrowedFileDescriptor[origin: ImmOrigin](
-    TrivialRegisterPassable, _FieldNicheable
+    TrivialRegisterPassable, Writer, _FieldNicheable
 ):
     """Copyable, non-owning view of a `FileDescriptor`.
 
@@ -331,5 +343,74 @@ struct BorrowedFileDescriptor[origin: ImmOrigin](
             fd: The owning descriptor to view.
         """
         self._value = fd._value
+
+    @implicit
+    def __init__(out self, ref[Self.origin] f: FileHandle):
+        """Constructs a view of the descriptor behind a `FileHandle`.
+
+        Args:
+            f: The file handle whose descriptor to view.
+        """
+        self._value = f._get_raw_fd()
+
+    @doc_hidden
+    def __init__(out self, *, unsafe_from_raw: RawFileDescriptor):
+        """Constructs a view of a descriptor that no owner tracks.
+
+        The standard streams are built with this: they stay open for the
+        whole program, so a view with a static origin is sound.
+
+        Args:
+            unsafe_from_raw: The descriptor to view.
+
+        Safety:
+            The descriptor must stay open for as long as `origin` lives.
+        """
+        self._value = unsafe_from_raw
+
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value._raw()
+
+    def isatty(self) -> Bool:
+        """Checks whether the descriptor refers to a terminal.
+
+        Returns:
+            `True` if the descriptor is open and connected to a terminal,
+            otherwise `False`. Always `False` on GPUs.
+
+        Examples:
+            ```mojo
+            if stdout.isatty():
+                print("Running in a terminal")
+            ```
+        """
+        return self._value.isatty()
+
+    @inline(.always)
+    def write_bytes(mut self, bytes: ImmSpan[Byte, _]):
+        """Writes a span of bytes to the descriptor.
+
+        Writing through a view is sound because `write` needs no exclusive
+        access to the descriptor.
+
+        Args:
+            bytes: The bytes to write.
+        """
+        self._value.write_bytes(bytes)
+
+    def write_string(mut self, string: StringSpan):
+        """Writes a `StringSpan` to the descriptor.
+
+        Args:
+            string: The string to write.
+
+        Examples:
+            ```mojo
+            var out = stdout
+            out.write("Hello, ", 42)
+            ```
+        """
+        self._value.write_string(string)
 
     comptime _KgenNichedFieldName = "_value".value

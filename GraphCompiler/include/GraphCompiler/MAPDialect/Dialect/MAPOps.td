@@ -437,6 +437,7 @@ def MAP_IterRowwiseOp : MAP_Op<"iter.rowwise", [
   AttrSizedOperandSegments,
   IsolatedFromAbove,
   MAP_IterOpInterface,
+  MAP_RowwiseOpInterface,
   DeclareOpInterfaceMethods<MAP_StructuredIterOpInterface>,
   SingleBlock,
   NoTerminator,
@@ -496,6 +497,7 @@ def MAP_IterRowwiseOp : MAP_Op<"iter.rowwise", [
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 
   let extraClassDeclaration = [{
     ::mlir::Block::BlockArgListType getInputBlockArgs();
@@ -520,6 +522,7 @@ def MAP_IterRowwiseOp : MAP_Op<"iter.rowwise", [
 
 def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
   HasParent<"IterOpaqueOp">,
+  MAP_RowwiseOpInterface,
   IsolatedFromAbove,
   SingleBlock,
   NoTerminator,
@@ -562,6 +565,13 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+  let hasRegionVerifier = 1;
+
+  let extraClassDeclaration = [{
+    ::mlir::BlockArgument getRowArg() {
+      return getBody().front().getArgument(0);
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -572,6 +582,7 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   RecursiveMemoryEffects,
+  MAP_RowwisePhaseOpInterface,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
@@ -604,11 +615,109 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
+    YieldOp getYield();
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// map.iter.map
+//===----------------------------------------------------------------------===//
+
+def MAP_IterCacheOp : MAP_Op<"iter.cache", [
+  ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
+  SingleBlock,
+  RecursiveMemoryEffects,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "A value every phase of the row reads, computed once and cached";
+  let description = [{
+    Computes, at index `%i`, a value the phases of the enclosing rowwise all
+    compute: a load of the reduced input, or a fused computation on it. The
+    row computes it once per element and caches it; each phase reads it with
+    `map.iter.cache.load` instead of computing it again. A row has at most
+    one, after only constants, so it reads nothing the row computes.
+    `map-rcse` creates it.
+
+    Example:
+    ```mlir
+    %p = map.iter.cache index (%i: !map.index<2>) -> bf16 {
+      %x = map.load %x[%i] : !mo.tensor<[M, N], bf16>
+      %s = map.load %s[%i] : !mo.tensor<[M, N], bf16>
+      %v = map.call.elementwise @builtin_kernels.elementwise.Mul(%i, %x, %s)
+          : !map.index<2>, bf16, bf16 -> bf16
+      map.yield %v : bf16
+    }
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+        index (%i: !map.index<2>) -> f32 {
+      %v = map.iter.cache.load %p[%i] : !map.index<2>, bf16
+      ...
+    }
+    ```
+  }];
+
+  let results = (outs AnyType:$result);
+  let regions = (region SizedRegion<1>:$body);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
     ::mlir::BlockArgument getIndexArg() {
       return getBody().front().getArgument(0);
     }
-    YieldOp getYield();
   }];
+}
+
+def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
+  ParentOneOf<["IterReduceOp", "IterMapOp"]>,
+  AllTypesMatch<["cache", "result"]>,
+  Pure,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "Read the row's cache at the current phase's element";
+  let description = [{
+    Reads the value `$cache` computes at `$index`, the enclosing phase's
+    index.
+  }];
+  let arguments = (ins AnyType:$cache, MAP_AnyIndex:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $cache `[` $index `]` attr-dict `:` type($index) `,` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+def MAP_IterMapOp : MAP_Op<"iter.map", [
+  ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
+  SingleBlock,
+  NoTerminator,
+  RecursiveMemoryEffects,
+  MAP_RowwisePhaseOpInterface,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "A per-element phase over the current row";
+  let description = [{
+    Runs its body once per element of the enclosing rowwise's current row, at
+    index `%i`. It reads the row's values computed before it, such as fold
+    results, and stores at `%i` into tensors of the rowwise shape.
+
+    Example:
+    ```mlir
+    %acc = map.iter.reduce @builtin_kernels.monoids.ReduceSum
+        index (%i: !map.index<2>) -> f32 { ... }
+    map.iter.map index (%i: !map.index<2>) {
+      %v = map.load %x[%i] : !mo.tensor<[M, N], f32>
+      %y = map.call.elementwise @builtin_kernels.elementwise.Div(%i, %v, %acc)
+          : !map.index<2>, f32, f32 -> f32
+      map.store %out[%i] = %y : !mo.tensor<[M, N], f32>
+    }
+    ```
+  }];
+
+  let regions = (region SizedRegion<1>:$body);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -618,7 +727,7 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 def MAP_ConstantScalarOp : MAP_Op<"constant.scalar", [
   ConstantLike,
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
 ]> {
   let summary = "A compile-time scalar constant, as a value not a tensor";
   let description = [{
@@ -654,7 +763,7 @@ def MAP_LoadOp : MAP_Op<"load", [
                  "::M::MAP::IndexType::get($_self.getContext(), "
                  "::M::MO::castFromTensorLike($_self).getRank())">,
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>
 ]> {
   let summary = "Load a value from a tensor at an N-D index";
   let description = [{
@@ -687,7 +796,7 @@ def MAP_StoreOp : MAP_Op<"store", [
                  "tensor", "index",
                  "::M::MAP::IndexType::get($_self.getContext(), "
                  "::M::MO::castFromTensorLike($_self).getRank())">,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
 ]> {
   let summary = "Store a value into a tensor (or buffer) at an N-D index";
   let description = [{
@@ -713,7 +822,7 @@ def MAP_StoreOp : MAP_Op<"store", [
 
 def MAP_CallElementwiseOp : MAP_Op<"call.elementwise", [
   Pure,
-  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface, ["lowerToMOGGTile"]>,
   DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
   let summary = "Call a named pointwise kernel on the current index and scalar arguments";
@@ -906,7 +1015,8 @@ def MAP_SliceStrideOp : MAP_Op<"index.slice.stride", [
 
 def MAP_BroadcastIndexOp : MAP_Op<"index.broadcast", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
 ]> {
   let summary = "Project an output-shape index to the input-shape index for a broadcast view";
   let description = [{
@@ -982,7 +1092,8 @@ def MAP_BroadcastStrideOp : MAP_Op<"index.broadcast.stride", [
 
 def MAP_TransposeIndexOp : MAP_Op<"index.transpose", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
 ]> {
   let summary = "Project an output-shape index to the input-shape index for a transpose view";
   let description = [{
@@ -1070,7 +1181,8 @@ def MAP_TransposeStrideOp : MAP_Op<"index.transpose.stride", [
 
 def MAP_ReshapeIndexOp : MAP_Op<"index.reshape", [
   Pure,
-  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, ["createStridedView"]>,
+  DeclareOpInterfaceMethods<MAP_IndexTransformOpInterface, [
+    "createStridedView", "mapLoopDims"]>,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {

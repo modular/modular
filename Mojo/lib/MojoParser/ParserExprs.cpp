@@ -1308,34 +1308,17 @@ ParseResult ExprParser::checkOperands(ArrayRef<Operand> operands,
   // We keep a map of "name -> operand" so that we can emit better diagnostics.
   llvm::SmallDenseMap<StringAttr, const Operand *> kwOperandMap;
   bool hasUnpackedKw = false;
-  const Operand *unpackedPosOperand = nullptr;
   for (const Operand &operand : operands) {
     SMLoc loc = operand.getLoc();
     hasUnpackedKw |= operand.unpackStyle == ArgUnpackStyle::kStarStar;
 
-    if (isArgument && operand.unpackStyle == ArgUnpackStyle::kStar) {
-      if (unpackedPosOperand) {
-        auto diag =
-            emitError(loc, "unpack markers (*name syntax) must not appear more "
-                           "than once in a call; remove the second unpack");
-        diag.attachNote(unpackedPosOperand->getLoc())
-            << "previous unpacked positional argument specified here";
-        return std::move(diag);
-      }
-      if (hasUnpackedKw) {
-        return emitError(loc,
-                         "positional unpack must not follow keyword unpacking; "
-                         "move it before the '**' unpack");
-      }
-      unpackedPosOperand = &operand;
-    } else if (isArgument && unpackedPosOperand && !operand.isKeyword() &&
-               operand.unpackStyle != ArgUnpackStyle::kStarStar) {
-      auto diag =
-          emitError(loc, "positional argument must not follow an unpack; move "
-                         "it before or convert to a keyword argument");
-      diag.attachNote(unpackedPosOperand->getLoc())
-          << "unpacked positional argument specified here";
-      return std::move(diag);
+    // Positional operands and unpacks can be mixed. The callee decides if it
+    // accepts them.
+    if (isArgument && operand.unpackStyle == ArgUnpackStyle::kStar &&
+        hasUnpackedKw) {
+      return emitError(loc,
+                       "positional unpack must not follow keyword unpacking; "
+                       "move it before the '**' unpack");
     }
 
     if (operand.unpackStyle == ArgUnpackStyle::kPositional) {

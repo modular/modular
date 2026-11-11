@@ -34,6 +34,8 @@ from typing_extensions import TypeVar
 from .interfaces.pipeline_model import ModuleV3Outputs
 
 __all__ = [
+    "BlockDiffusionInputs",
+    "BlockDiffusionOutputs",
     "DecoderInputs",
     "DecoderOutputs",
     "VisionInputs",
@@ -171,3 +173,69 @@ DecoderOutputs = ModuleV3Outputs
 
 Generic over the same tensor type as :class:`DecoderInputs`.
 """
+
+
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionInputs(Generic[TensorT]):
+    """The inputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    One denoise step over the batch's canvases. The framework builds every
+    field, and the graph takes them in this order, named by a
+    :class:`~max.nn.legacy.graph_groups.BlockDiffusionGraphInputs`. The
+    ``DECODER`` has
+    already committed each request's context into the KV cache; the step
+    reads it and writes the canvas's keys and values into the slots after
+    it, without committing them.
+    """
+
+    tokens: TensorT
+    """The canvases' token ids, shape ``[total_seq_len]``, in batch order."""
+
+    input_row_offsets: TensorT
+    """Each canvas's start in :attr:`tokens`, shape ``[batch_size + 1]``."""
+
+    sc_logits: TensorT
+    """The previous step's processed logits, shape
+    ``[total_seq_len, vocab_size]``: the self-conditioning signal."""
+
+    sc_enabled: TensorT
+    """Whether :attr:`sc_logits` holds a previous step, a ``float32`` tensor
+    of shape ``[1]``: zero on a canvas's first step, one after."""
+
+    temperature: TensorT
+    """The step's sampling temperature, a ``float32`` tensor of shape
+    ``[1]``."""
+
+    kv: Any
+    """The KV cache inputs, in the tree the config's KV params declare."""
+
+
+@tree.kind("block_diffusion_outputs")
+@tree.dataclass(frozen=True, kw_only=True)
+class BlockDiffusionOutputs(Generic[TensorT]):
+    """The outputs of a ``BLOCK_DIFFUSION`` module's ``forward``.
+
+    The graph returns them in this order. The processed logits feed the
+    next step's
+    :attr:`BlockDiffusionInputs.sc_logits`; the rest are the sampling
+    statistics the block-diffusion pipeline accepts and renoises from.
+    """
+
+    logits: TensorT
+    """The temperature-scaled logits, ``bfloat16`` of shape
+    ``[total_seq_len, vocab_size]``."""
+
+    argmax: TensorT
+    """Each token's most likely id, ``int64`` of shape ``[total_seq_len]``."""
+
+    top_k_probs: TensorT
+    """Each token's largest probabilities, ``float32`` of shape
+    ``[total_seq_len, k]``."""
+
+    top_k_indices: TensorT
+    """The ids of :attr:`top_k_probs`, ``int64`` of shape
+    ``[total_seq_len, k]``."""
+
+    entropy: TensorT
+    """Each token's entropy over the full vocabulary, ``float32`` of shape
+    ``[total_seq_len]``."""

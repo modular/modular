@@ -4,8 +4,6 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _FILECHECK_TESTS = [
-    "test_layout.mojo",
-    "test_swizzle.mojo",
     "test_tensor_math.mojo",
     "test_tiled_matmul.mojo",
     "test_vectorized_matmul.mojo",
@@ -37,17 +35,6 @@ _EXTRA_DEPS = {
 ]
 
 mojo_filecheck_test(
-    name = "test_negative_index_int_tuple.mojo.test",
-    srcs = ["test_negative_index_int_tuple.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    expect_crash = True,
-    deps = [
-        "//max:layout",
-        "@mojo//:std",
-    ],
-)
-
-mojo_filecheck_test(
     name = "test_tile_tensor_split_dynamic_negative_idx.mojo.test",
     srcs = ["test_tile_tensor_split_dynamic_negative_idx.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
@@ -72,7 +59,6 @@ mojo_filecheck_test(
     for src in glob(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + _LIT_TESTS + [
-            "test_negative_index_int_tuple.mojo",
             "test_tile_tensor_numpy.mojo",
             "test_tile_tensor_split_dynamic_negative_idx.mojo",
         ],

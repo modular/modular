@@ -17,7 +17,7 @@
 # MoE: 32 experts, gate_up [32, 6144, 3584] and down [32, 3584, 3072]. Decode
 # at batch 1 (top-16: one token on each of 16 experts) and at 2, 4 and 16
 # tokens on each of the 32 experts; prefill at 1024 tokens on each.
-# LoRA SGMV (`mo.lora_sgmv.ragged`): 4 adapters of rank 16 on a 4096-wide
+# LoRA SGMV (`matmul.lora_sgmv.ragged`): 4 adapters of rank 16 on a 4096-wide
 # layer, shrink [4, 16, 4096] and expand [4, 4096, 16], at decode (2 tokens
 # per adapter) and prefill (512 per adapter).
 #

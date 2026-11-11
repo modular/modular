@@ -44,9 +44,7 @@ def test_scatter_set_constant(ctx: DeviceContext) raises:
 
     var ctx_ptr = ctx
 
-    scatter_set_constant[target="gpu",](
-        data_gpu, indices_gpu, fill_value, ctx_ptr
-    )
+    scatter_set_constant(data_gpu, indices_gpu, fill_value, ctx_ptr)
 
     ctx.enqueue_copy(Span(data_stack), data_ptr_gpu)
     ctx.synchronize()

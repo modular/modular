@@ -162,7 +162,6 @@ def test_blockwise_fp8_matmul_amd[
             n_scale_granularity=BLOCK_SCALE_N,
             k_scale_granularity=BLOCK_SCALE_K,
             transpose_b=transpose_b,
-            target="gpu",
         ](c_my_dev, a_dev, b_dev, a_scale_dev, b_scale_dev, ctx)
     else:
         blockwise_scaled_fp8_matmul_amd[
@@ -315,6 +314,24 @@ def main() raises:
         )
         test_blockwise_fp8_matmul_amd[.bfloat16](
             ctx, Idx[64], Idx[6144], Idx[2048]
+        )
+        # Deeper splits at the 8-wave CTA cap: 4 bands at a wide N that
+        # already launches 384 CTAs, and 32 three-slab bands at a deep K
+        # (GLM-5.3-Flash's dense MLP).
+        test_blockwise_fp8_matmul_amd[.bfloat16](
+            ctx, Idx[6], Idx[24576], Idx[4096]
+        )
+        test_blockwise_fp8_matmul_amd[.bfloat16](
+            ctx, Idx[48], Idx[4096], Idx[12288]
+        )
+        # Past the M where the fp32 partials outweigh the weights, the split
+        # drops to K // (8 * BM): 8 splits at N = K = 4096, M = 48, and 24
+        # at N = 4096, K = 12288, M = 64.
+        test_blockwise_fp8_matmul_amd[.bfloat16](
+            ctx, Idx[48], Idx[4096], Idx[4096]
+        )
+        test_blockwise_fp8_matmul_amd[.bfloat16](
+            ctx, Idx[64], Idx[4096], Idx[12288]
         )
 
         # K % BK tail (PR02 review B3): every case above has K in {256,

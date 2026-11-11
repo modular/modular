@@ -201,3 +201,9 @@ ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
 
   return success();
 }
+
+int64_t M::KGEN::countOps(Region &region) {
+  int64_t count = 0;
+  region.walk([&](Operation *) { ++count; });
+  return count;
+}

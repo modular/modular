@@ -40,6 +40,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     expert_parallel_config,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh
 
@@ -60,7 +63,7 @@ def _arr(*shape: int) -> np.ndarray:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
     # Matches test_tp_attention.py's MLA parameters: flash_attention_gpu has
@@ -132,9 +135,19 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
             q_lora_rank=q_lora,
             kv_lora_rank=kv_lora,
         )
-        for name, arr in attn_weights.items():
+        # Expert parallelism leaves attention replicated: TP degree 1.
+        attention.qkv_a_g_proj.weight = Tensor(
+            fuse_qkv_a_g_for_tp(
+                attn_weights["q_a_proj"],
+                attn_weights["kv_a_proj_with_mqa"],
+                attn_weights["g_proj"],
+                1,
+            ),
+            dtype=DType.float32,
+        ).cast(DType.bfloat16)
+        for name in ("q_b_proj", "kv_b_proj", "o_proj"):
             getattr(attention, name).weight = Tensor(
-                arr, dtype=DType.float32
+                attn_weights[name], dtype=DType.float32
             ).cast(DType.bfloat16)
         for name, arr in norm_weights.items():
             getattr(attention, name).weight = Tensor(
@@ -209,6 +222,7 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
                 for c in block_residual_np
             ],
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.cast(DType.float32).to_numpy()
 
     # MLA only rebinds onto `tp` if the tensor is actually distributed, so
@@ -235,6 +249,7 @@ def test_decoder_layer_mla_moe_single_device_matches_ep2() -> None:
             ep_config=config,
             ep_buffers=buffers,
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.cast(DType.float32).to_numpy()
 
     err = _rel_error(out2_np, out1_np)

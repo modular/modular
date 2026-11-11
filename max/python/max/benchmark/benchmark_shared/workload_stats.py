@@ -30,7 +30,7 @@ locally and never sent, and a session ends at the first turn whose context
 would exceed the tokenizer's context limit.
 
 The stats describe the sampled workload, not any single run of it:
-``--warmup-to-steady-state`` later drops unpicked candidate sessions and
+``--warmup-multiturn`` later drops unpicked candidate sessions and
 gives the picked ones warm-up prefix turns, so a run with it on sends fewer
 requests than these stats report.
 """

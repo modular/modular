@@ -31,7 +31,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.legacy.state_space import gated_delta_conv1d_fwd
+from max.nn._graph_ops.state_space import gated_delta_conv1d_fwd
 from max.tensor import Tensor
 
 

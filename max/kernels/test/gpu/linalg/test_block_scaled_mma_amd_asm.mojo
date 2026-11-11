@@ -76,7 +76,7 @@ def _directive_value(asm: String, directive: String) raises -> Int:
     return Int(line[byte = colon + 1 :].strip())
 
 
-def _register_span(operand: StringSlice) raises -> Int:
+def _register_span(operand: StringSpan) raises -> Int:
     """Returns how many registers a `v[lo:hi]` instruction operand covers."""
     var text = String(operand).strip()
     var open_bracket = text.find("[")

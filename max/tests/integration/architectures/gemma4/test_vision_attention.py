@@ -204,6 +204,10 @@ def test_vision_attention_matches_reference() -> None:
     weights = _make_weights()
     hidden_states, freqs_cis, position_embeddings = _make_inputs(num_patches=16)
 
+    max_attn = Gemma4VisionAttention(_make_max_vision_config(), layer_idx=0)  # type: ignore[arg-type]
+    max_attn.load_state_dict(weights)
+    max_out = _build_and_run_max_attention(max_attn, hidden_states, freqs_cis)
+
     ref = TorchGemma4VisionAttention(
         VISION_EMBED_HIDDEN_SIZE,
         VISION_NUM_HEADS,
@@ -212,9 +216,5 @@ def test_vision_attention_matches_reference() -> None:
     )
     ref.load_state_dict(weights)
     ref_out = _run_ref_attention(ref, hidden_states, position_embeddings)
-
-    max_attn = Gemma4VisionAttention(_make_max_vision_config(), layer_idx=0)  # type: ignore[arg-type]
-    max_attn.load_state_dict(weights)
-    max_out = _build_and_run_max_attention(max_attn, hidden_states, freqs_cis)
 
     torch.testing.assert_close(ref_out, max_out, rtol=RTOL, atol=ATOL)

@@ -44,6 +44,7 @@ from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hash import Hasher
 from std.memory import MaybeUninit, forget_deinit
 from std.reflection import call_location, reflect
+from std.sys import align_of, size_of
 from std.utils import StaticTuple
 from std.utils._nicheable import (
     UnsafeNicheable,
@@ -181,6 +182,10 @@ struct Optional[T: AnyType](
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "value"
+    ]
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -294,6 +299,15 @@ struct Optional[T: AnyType](
         out self, optional_reg: OptionalReg[Self.T]
     ) where conforms_to(Self.T, TrivialRegisterPassable):
         """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
+        # SAFETY: Each `OptionalReg` storage matches the `Variant` storage
+        # that `Optional` selects for the same `T`. The asserts check size and
+        # alignment only; the discriminant order is checked by the tests.
+        comptime assert (
+            size_of[Self]() == size_of[OptionalReg[Self.T]]()
+        ), "Optional and OptionalReg must have the same size"
+        comptime assert (
+            align_of[Self]() == align_of[OptionalReg[Self.T]]()
+        ), "Optional and OptionalReg must have the same alignment"
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         Pointer(to=self).unsafe_bitcast[OptionalReg[Self.T]]()[] = optional_reg
 
@@ -494,10 +508,13 @@ struct Optional[T: AnyType](
         """
         return not self
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self,
-    ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
+    ) raises EmptyOptionalError[Self.T] -> ref[
+        Self._InteriorOrigin[origin_of(self)]
+    ] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -608,8 +625,9 @@ struct Optional[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def value(ref self) -> ref[self._value] Self.T:
+    def value(ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -641,9 +659,14 @@ struct Optional[T: AnyType](
 
         return self._unsafe_unchecked_value()
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def _unsafe_unchecked_value(ref self) -> ref[self._value] Self.T:
-        return self._value._unsafe_unchecked_get[Self.T]()
+    def _unsafe_unchecked_value(
+        ref self,
+    ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
+        return self._value._unsafe_ptr[
+            Self.T
+        ]()._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
 
     # ===-------------------------------------------------------------------===#
     # EnumLike
@@ -671,15 +694,20 @@ struct Optional[T: AnyType](
 
         Only valid when the discriminant is `1` (`Some`).
         """
+        # TODO: Return `Self._InteriorOrigin[origin_of(self)]` like `value()`
+        # once `EnumLike` payload accessors can vend interior origins.
         comptime assert id != 0, "cannot get payload for None case"
         return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
-            Pointer(to=self._unsafe_unchecked_value()).unsafe_origin_cast[
+            self._value._unsafe_ptr[Self.T]().unsafe_origin_cast[
                 origin_of(self)
             ]()[]
         )
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
-    def unsafe_value(ref self) -> ref[self._value] Self.T:
+    def unsafe_value(
+        ref self,
+    ) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -1109,28 +1137,35 @@ trait _OptionalRegStorageTraits(TrivialRegisterPassable):
 struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
     TrivialRegisterPassable, _OptionalRegStorageTraits
 ):
-    comptime _mlir_type = __mlir_type[`!kgen.variant<`, Self.T, `, i1>`]
+    # The alternatives are in the same order as `Variant[_NoneType, T]`, the
+    # storage of `Optional[T]`, so that `Optional[T]` can bitcast from
+    # `OptionalReg[T]`.
+    comptime _mlir_type = __mlir_type[
+        `!kgen.variant<`, _NoneType, `, `, Self.T, `>`
+    ]
+    comptime _none_index = SIMDLength(0)._mlir_value
+    comptime _some_index = SIMDLength(1)._mlir_value
     var _value: Self._mlir_type
 
     @inline(.always)
     def __init__(out self):
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDLength(1)._mlir_value
-        ](__mlir_attr.false)
+            _type=Self._mlir_type, index=Self._none_index
+        ](_NoneType())
 
     @inline(.always)
     def __init__[U: TrivialRegisterPassable](out self, value: U):
         comptime assert U == Self.T
         self._value = __mlir_op.`kgen.variant.create`[
-            _type=Self._mlir_type, index=SIMDLength(0)._mlir_value
+            _type=Self._mlir_type, index=Self._some_index
         ](rebind[Self.T](value))
 
     @inline(.always)
     def value[U: TrivialRegisterPassable](self) -> U:
         comptime assert U == Self.T
-        var value = __mlir_op.`kgen.variant.get`[
-            index=SIMDLength(0)._mlir_value
-        ](self._value)
+        var value = __mlir_op.`kgen.variant.get`[index=Self._some_index](
+            self._value
+        )
         return rebind[U](value)
 
     @inline(.always)
@@ -1141,15 +1176,13 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
         return Pointer[Self.T, origin_of(self)](
             _mlir_value=__mlir_op.`pop.variant.bitcast`[
                 _type=Pointer[Self.T, origin_of(self)]._mlir_type,
-                index=SIMDLength(0)._mlir_value,
+                index=Self._some_index,
             ](Pointer(to=self._value)._get_kgen_pointer())
         ).unsafe_bitcast[U]()
 
     @inline(.always)
     def __bool__(self) -> Bool:
-        return __mlir_op.`kgen.variant.is`[index=SIMDLength(0)._mlir_value](
-            self._value
-        )
+        return __mlir_op.`kgen.variant.is`[index=Self._some_index](self._value)
 
 
 struct _NicheableOptionalRegStorage[

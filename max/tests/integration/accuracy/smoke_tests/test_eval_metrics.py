@@ -62,8 +62,6 @@ def test_eval_timeout_keeps_the_request_timeout_separate(
     [
         "max_num_output_tokens_total",
         "max_request_output_tokens_total",
-        "maxserve_num_output_tokens_total",
-        "mach_request_output_tokens_total",
     ],
 )
 def test_generated_tokens(metric: str) -> None:
@@ -72,9 +70,10 @@ def test_generated_tokens(metric: str) -> None:
         assert get_num_tokens_generated("http://engine/metrics") == 15
 
 
-def test_acceptance_prefers_current_without_adding_aliases() -> None:
+def test_acceptance_reads_the_engines_histogram_totals() -> None:
     response = Mock(
-        text="max_spec_decode_avg_acceptance_length_sum 12\nmax_spec_decode_avg_acceptance_length_count 3\nmach_spec_decode_avg_acceptance_length_sum 100\nmach_spec_decode_avg_acceptance_length_count 50\n"
+        text="max_spec_decode_avg_acceptance_length_sum 12\n"
+        "max_spec_decode_avg_acceptance_length_count 3\n"
     )
     with patch("smoke_tests.eval_runner.requests.get", return_value=response):
         assert get_spec_decode_acceptance_totals("http://engine/metrics") == (

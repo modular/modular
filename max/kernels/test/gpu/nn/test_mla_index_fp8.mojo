@@ -24,6 +24,8 @@ from kv_cache.types import (
 )
 from nn.attention.gpu.mla_index_fp8 import (
     _SCORES_BUDGET_BYTES,
+    BlockSplitTopk,
+    IndexerTopk,
     mla_indexer_ragged_float8_paged,
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
@@ -41,6 +43,7 @@ from nn.attention.mha_operand import (
 from nn.attention.mha_mask import MaskName
 from nn.index_fp8 import _has_gfx950_accelerator, fp8_index_score_amd
 from nn.topk_bitonic import _elems_per_16b
+from nn.topk_filtered import FilteredTopk
 from std.math import align_up, ceildiv, clamp, log
 from std.sys import size_of
 from std.random import rand, random_ui64
@@ -214,6 +217,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     check_remap: Bool = False,
     check_physical_only: Bool = False,
     check_scale_remap: Bool = False,
+    Topk: IndexerTopk = BlockSplitTopk,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
@@ -287,6 +291,7 @@ def test_mla_index_fp8_paged_variable_lengths[
             count, and a block stride of three layers of pages), and compare
             both halves slot by slot against a host remap of its own logical
             output.
+        Topk: The top-k the op runs (`BlockSplitTopk` by default).
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -569,6 +574,7 @@ def test_mla_index_fp8_paged_variable_lengths[
             top_k,
             mask_name,
             kpool=kpool,
+            Topk=Topk,
             write_logical=True,
         ](
             o_tile,
@@ -596,6 +602,7 @@ def test_mla_index_fp8_paged_variable_lengths[
             top_k,
             mask_name,
             kpool=kpool,
+            Topk=Topk,
         ](
             o_tile,
             q_tile,
@@ -673,6 +680,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 top_k,
                 mask_name,
                 kpool=kpool,
+                Topk=Topk,
                 write_logical=False,
             ](
                 TileTensor(untouched_device, row_major(total_seq_len, top_k)),
@@ -2069,6 +2077,60 @@ def main() raises:
             cache_lens=[128, 192, 256, 320],
             ctx=ctx,
             scores_budget_bytes=23040,
+        )
+
+        # Hy4's prefill on a cached history: 32 heads, top-k 2048 and rows
+        # past 2048 keys, so the top-k is the radix select. The budget splits
+        # the rows into a window of 200, which fills a B200 and takes the
+        # occupancy arm, and a tail of 120, which takes the prefetch arm. No
+        # second run to compare against: at bf16 scores the threshold ties
+        # often, and this top-k picks among tied columns in a different order
+        # from one launch to the next.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            check_remap=True,
+        ](
+            seq_lens=[320],
+            cache_lens=[6000],
+            ctx=ctx,
+            scores_budget_bytes=200 * 6320 * 2,
+        )
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[160],
+            cache_lens=[3000],
+            ctx=ctx,
+        )
+        # The same prefill on a 32K history with the filtered top-k Hy4's op
+        # runs: 320 rows in one window fill a B200 and each holds more than
+        # four times top-k keys, so they take the filtered launches and write
+        # physical rows through the remap. A filtered row's set is
+        # deterministic, so the physical-only rerun must select the same keys;
+        # at random scores no row's bound fails (its margin is five standard
+        # deviations), so no row takes the full select's tie order.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            check_remap=True,
+            check_physical_only=True,
+            Topk=FilteredTopk,
+        ](
+            seq_lens=[320],
+            cache_lens=[32768],
+            ctx=ctx,
         )
 
         # Test with very short sequences (edge case: some num_keys < top_k)

@@ -75,7 +75,7 @@ def bench_group_norm_gpu[
 
     @inline(.always)
     def kernel_launch(ctx: DeviceContext[]) raises {imm}:
-        group_norm[dtype, rank, target="gpu"](
+        group_norm[dtype, rank](
             input_fn,
             gamma_fn,
             beta_fn,

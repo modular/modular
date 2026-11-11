@@ -104,9 +104,7 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
 
         row.emit(write)
 
-    rowwise.launch[axis=1, simd_width=1, target="cpu", num_phases=1](
-        body, shape
-    )
+    rowwise.launch[axis=1, simd_width=1, num_phases=1](body, shape)
     _ = x^
     return out^
 

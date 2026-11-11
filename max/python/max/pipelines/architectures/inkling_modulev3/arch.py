@@ -30,7 +30,7 @@ from ..inkling.tool_parser import (
 from .model_config import InklingConfig
 from .modules import InklingDecoder, InklingVision
 from .registered_batch_processor import InklingModuleV3BatchProcessor
-from .weight_adapters import convert_registered_state_dict
+from .weight_adapters import inkling_modulev3_weight_rules
 
 inkling_modulev3_arch = SupportedArchitecture(
     name="InklingForConditionalGeneration_ModuleV3",
@@ -49,9 +49,8 @@ inkling_modulev3_arch = SupportedArchitecture(
     context_type=TextAndVisionContext,
     config=InklingConfig,
     tool_parser="inkling",
-    weight_adapters={
-        WeightsFormat.safetensors: convert_registered_state_dict,
-    },
+    weight_rules=inkling_modulev3_weight_rules,
+    use_weight_rules=True,
     multi_gpu_supported=True,
     supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,

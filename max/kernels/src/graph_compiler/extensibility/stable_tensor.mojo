@@ -14,7 +14,7 @@
 `StableVariadicTensors`, the variadic pack of such views."""
 
 from layout import coord_to_index_list
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from max.gpu.host import StableAddr
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys.info import is_gpu
@@ -66,7 +66,7 @@ struct StableTensor[
             layout.
     """
 
-    comptime RuntimeLayout = TileLayout[
+    comptime RuntimeLayout = Layout[
         shape_types=Self.static_spec.static_layout._shape_types,
         stride_types=Self.static_spec.static_layout._stride_types,
     ]

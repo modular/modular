@@ -39,7 +39,7 @@ decisions. If one CTA skips a tile and the other doesn't, barriers desync.
 from std.math import ceildiv
 from std.sys import size_of
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from layout.tma_async import TMATensorTile
 from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem

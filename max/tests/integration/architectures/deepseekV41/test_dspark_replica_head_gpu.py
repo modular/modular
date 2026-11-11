@@ -32,7 +32,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
 from max.nn.legacy import Signals
-from max.nn.legacy.transformer import ReturnLogits, logits_postprocess
+from max.nn.legacy.transformer import logits_postprocess
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
     DeepseekV41DSparkDrafter,
 )

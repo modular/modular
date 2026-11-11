@@ -17,15 +17,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, fields
-from typing import TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
+from max import tree
 from max.graph import BufferValue, TensorValue
-from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
-from max.nn.legacy.kv_cache.input_types import (
-    PagedCacheValues as _PagedCacheValues,
-)
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn.kv_cache.input_types import PagedCacheValues as _PagedCacheValues
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 TensorLike: TypeAlias = TensorValue | BufferValue | Tensor
 """One device's shard of a cache field: a graph value, or a single-device
@@ -45,12 +45,13 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
     ) -> PagedCacheValues:
         """Constructs from per-device caches, as graph values or tensors.
 
-        Each device's fields are its shards: graph values, or single-device
-        tensors in the graph being built.
+        Each device's fields are its shards: graph values, single-device
+        tensors in the graph being built, or, for a decoder called eagerly,
+        real tensors.
         """
 
         def _wrap(values: Sequence[TensorLike]) -> Tensor:
-            return Tensor.from_shard_values(values, mapping)
+            return cache_tensor(values, mapping)
 
         kv_scales: Tensor | None = None
         if per_device[0].kv_scales is not None:
@@ -156,3 +157,97 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
         yield self.max_cache_length
         if self.kv_scales is not None:
             yield self.kv_scales
+
+
+def cache_tensor(
+    shards: Sequence[TensorLike], mapping: DeviceMapping | None = None
+) -> Tensor:
+    """Returns one cache input's shards as a tensor, keeping real ones.
+
+    Like :meth:`~max.tensor.Tensor.from_shard_values`, except that real
+    tensors, as a decoder called eagerly gets, keep their buffers, so ops
+    that write the cache in place write the decoder's buffers.
+
+    Args:
+        shards: One graph value or tensor per device.
+        mapping: How the shards make up the tensor. Required for more than
+            one shard.
+
+    Returns:
+        A tensor backed by ``shards``.
+    """
+    real = [s for s in shards if isinstance(s, Tensor) and s.real]
+    if len(real) != len(shards):
+        return Tensor.from_shard_values(shards, mapping)
+    if len(real) == 1:
+        return real[0]
+    assert mapping is not None
+    devices = tuple(s.device for s in real)
+    if devices != mapping.mesh.devices:
+        # As in from_shard_values, a field that lives on the host, such as
+        # the max cache length, keeps the mapping's grid on its own devices.
+        mesh = mapping.mesh
+        mapping = DeviceMapping(
+            DeviceMesh(devices, mesh.mesh_shape, mesh.axis_names),
+            mapping.placements,
+        )
+    return Tensor._from_shards(tuple(s.driver_tensor for s in real), mapping)
+
+
+def kv_input_values(kv: tree.Tree[Tensor] | Sequence[Tensor]) -> list[Any]:
+    """Returns a decoder's KV cache inputs for its params to unflatten.
+
+    A traced decoder gets each input's graph value. A decoder called eagerly
+    gets the real tensors, which have no graph values.
+
+    Args:
+        kv: The decoder's KV cache inputs.
+
+    Returns:
+        One value per input, in order.
+    """
+    leaves = tree.leaves(kv)
+    if any(leaf.real for leaf in leaves):
+        return leaves
+    return [leaf._graph_value for leaf in leaves]
+
+
+def per_device_caches(
+    kv_params: KVCacheParamInterface, kv: tree.Tree[Tensor]
+) -> list[KVCacheInputsPerDevice[Any, Any]]:
+    """Returns a decoder's KV cache inputs as one record per device.
+
+    A traced decoder gets records of graph values, as
+    ``kv_params.unflatten_kv_inputs`` builds them. A decoder called eagerly
+    gets real tensors, which have no graph values, so each record is a
+    :class:`~max.nn.common_layers.kv_cache.PagedCacheValues` of them, whose
+    blocks attention ops can write.
+
+    Args:
+        kv_params: The parameters of the cache ``kv`` holds.
+        kv: The decoder's KV cache inputs, as its ``DecoderInputs`` holds
+            them.
+
+    Returns:
+        One record per device, in device order.
+    """
+    values = kv_input_values(kv)
+    records = tree.leaves(
+        kv_params.unflatten_kv_inputs(iter(values)),
+        leaf=KVCacheInputsPerDevice,
+    )
+    if not any(isinstance(v, Tensor) for v in values):
+        return records
+    return [
+        PagedCacheValues(**{f.name: getattr(r, f.name) for f in fields(r)})
+        for r in records
+    ]
+
+
+__all__ = [
+    "PagedCacheValues",
+    "TensorLike",
+    "cache_tensor",
+    "kv_input_values",
+    "per_device_caches",
+]

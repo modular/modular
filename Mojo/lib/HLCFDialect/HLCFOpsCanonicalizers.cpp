@@ -145,13 +145,34 @@ static IfOp getTailNestedIf(IfOp op) {
 /// the allocation itself as their operand. Keep those values in their original
 /// lexical region rather than turning them into block arguments.
 static bool canFlattenBoundary(IfOp parent, IfOp nested) {
-  llvm::SetVector<Value> captures;
-  for (Region &region : nested->getRegions())
-    mlir::getUsedValuesDefinedAbove(region, captures);
-  return llvm::none_of(captures, [&](Value value) {
-    return value.getParentRegion() == &parent.getElseRegion() &&
-           isa<KGEN::PointerType>(value.getType());
-  });
+  // Check if the given value has a use within the `nested` IfOp.
+  auto hasNestedUse = [nested](Value value) {
+    // Non-pointer values are safe to promote to block arguments.
+    if (!isa<KGEN::PointerType>(value.getType()))
+      return false;
+
+    // Scan for any uses inside `nested`.
+    return llvm::any_of(value.getUses(), [&](OpOperand &use) {
+      return nested->isProperAncestor(use.getOwner());
+    });
+  };
+
+  // Pointer values defined in the else-block prevent promotion when used within
+  // `nested`. Check each block argument and operation result produced in
+  // the else-block.
+  Block &elseBlock = parent.getElseBlock();
+  if (llvm::any_of(elseBlock.getArguments(), hasNestedUse))
+    return false;
+
+  for (Operation &op : elseBlock.without_terminator()) {
+    // No need to check results from the nested IfOp.
+    if (&op == nested)
+      break;
+
+    if (llvm::any_of(op.getResults(), hasNestedUse))
+      return false;
+  }
+  return true;
 }
 
 /// Replace a trailing `else { ...; if ... }` chain with the equivalent elif

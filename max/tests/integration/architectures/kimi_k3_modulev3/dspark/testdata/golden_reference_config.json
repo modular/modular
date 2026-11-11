@@ -1,0 +1,51 @@
+{
+  "architectures": [
+    "K3DSparkModel"
+  ],
+  "model_type": "k3_dspark",
+  "hidden_size": 32,
+  "intermediate_size": 16,
+  "num_hidden_layers": 2,
+  "num_attention_heads": 4,
+  "num_key_value_heads": 4,
+  "q_lora_rank": 16,
+  "kv_lora_rank": 512,
+  "qk_nope_head_dim": 128,
+  "qk_rope_head_dim": 64,
+  "v_head_dim": 128,
+  "mla_use_nope": false,
+  "mla_use_output_gate": false,
+  "vocab_size": 37,
+  "rms_norm_eps": 1e-05,
+  "max_position_embeddings": 1048576,
+  "rope_theta": 50000.0,
+  "num_target_layers": 2,
+  "target_hidden_size": 32,
+  "target_num_hidden_layers": 2,
+  "target_layer_ids": [
+    0,
+    1
+  ],
+  "mask_token_id": 34,
+  "bos_token_id": 36,
+  "eos_token_id": 36,
+  "pad_token_id": 36,
+  "markov_rank": 6,
+  "markov_head_type": "vanilla",
+  "enable_confidence_head": true,
+  "confidence_head_with_markov": true,
+  "tie_word_embeddings": false,
+  "draft_vocab_size": 37,
+  "_torchspec_version": "0.1.0",
+  "torch_dtype": "bfloat16",
+  "rope_parameters": {
+    "rope_type": "yarn",
+    "factor": 32.0,
+    "original_max_position_embeddings": 32768,
+    "rope_theta": 50000.0,
+    "beta_fast": 32,
+    "beta_slow": 1,
+    "mscale": 1.0,
+    "mscale_all_dim": 1.0
+  }
+}

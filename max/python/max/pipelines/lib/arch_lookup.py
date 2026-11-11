@@ -341,6 +341,24 @@ class SupportedArchitecture:
     unconstrained.
     """
 
+    tokenizer_family: (
+        tuple[str, str | None]
+        | Callable[[HuggingFaceRepo], tuple[str, str | None] | None]
+        | None
+    ) = None
+    """Optional orchestrator tokenizer family for this architecture's checkpoints.
+
+    The family and flavor the orchestrator builds its fast-path tokenizer
+    from, such as ``("gemma4", "thinking")`` or ``("llama3", None)`` for a
+    family with one flavor, or a callable that takes the model's
+    :class:`HuggingFaceRepo` handle and returns them, or ``None`` for a
+    checkpoint with no family code. ``max export`` records them in the
+    pipeline artifact's ``tokenizer`` section.
+
+    If None, the artifact names no family, and the orchestrator picks it by
+    model name as it does without an artifact.
+    """
+
     batching: type[Any] | None = None
     """Optional batch processor for input/output handling.
 

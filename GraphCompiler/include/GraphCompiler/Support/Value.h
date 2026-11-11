@@ -16,6 +16,7 @@
 
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "MLRT/Core/Tensor/Tensor.h"
+#include "Support/SymbolExport.h"
 
 namespace M::GML {
 
@@ -61,7 +62,7 @@ std::ostream &operator<<(std::ostream &os, const DenseMapInfoKey &info);
 
 /// Wraps `AnyAsyncValueRef` for use as a map key (`hash`, `to_string`, `==`)
 /// and for string and YAML representations.
-class Variant {
+class MODULAR_CXX_EXPORT Variant {
 public:
   Variant();
 
@@ -88,11 +89,11 @@ private:
 
 /// Defines equality on the underlying `AnyAsyncValueRef`s. See `Value.h` for
 /// details.
-bool operator==(const Variant &lhs, const Variant &rhs);
+MODULAR_CXX_EXPORT bool operator==(const Variant &lhs, const Variant &rhs);
 
 /// Defines inequality on the underlying `AnyAsyncValueRef`s. See `Value.h` for
 /// details.
-bool operator!=(const Variant &lhs, const Variant &rhs);
+MODULAR_CXX_EXPORT bool operator!=(const Variant &lhs, const Variant &rhs);
 
 /// Defines the less-than operator on the underlying `AnyAsyncValueRef`s. See
 /// `Value.h` for details.
@@ -103,9 +104,9 @@ raw_ostream &operator<<(raw_ostream &os, const Variant &variant);
 std::ostream &operator<<(std::ostream &os, const Variant &variant);
 
 /// Prints (nested) values; leaf tensors use `Kernels::printTensor`.
-ErrorOrSuccess printGenericValue(raw_ostream &os,
-                                 const AsyncRT::AnyAsyncValueRef &value,
-                                 ResultOutputStyle style, unsigned precision);
+MODULAR_CXX_EXPORT ErrorOrSuccess
+printGenericValue(raw_ostream &os, const AsyncRT::AnyAsyncValueRef &value,
+                  ResultOutputStyle style, unsigned precision);
 
 /// Stringifies a supported composed type or tensor. Not `to_string` because
 /// it isn't generic.
@@ -133,7 +134,7 @@ size_t hashCombine(size_t seed, size_t value);
 
 namespace std {
 
-std::string to_string(const M::GML::DenseMapInfoKey &value);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::DenseMapInfoKey &value);
 
 /// Computes the hash for `None`, which is constant 0.
 template <>
@@ -142,7 +143,7 @@ struct hash<M::GML::None> {
 };
 
 /// Returns the string representation "<none>".
-std::string to_string(const M::GML::None &none);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::None &none);
 
 /// Computes the hash function of the underlying `AnyAsyncValueRef`.
 template <>
@@ -151,7 +152,7 @@ struct hash<M::GML::Variant> {
 };
 
 /// Delegates to the individual key types.
-std::string to_string(const M::GML::Variant &variant);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::Variant &variant);
 
 } // namespace std
 

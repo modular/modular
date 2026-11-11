@@ -20,24 +20,31 @@ from typing import Any
 import pytest
 from max import functional as F
 from max import tree
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Graph,
     SymbolicDim,
     TensorValue,
 )
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import (
+from max.nn import _graph_ops as kernels
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    kv_input_values,
+    per_device_caches,
+)
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     SplitKVHeadDims,
 )
 from max.tensor import Tensor
+from max.tensor.realization_context import GraphRealizationContext
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
+from max.tensor.tensor import realization_context
 
 
 def _per_device(
@@ -111,3 +118,100 @@ def test_a_device_without_the_split_record_is_refused() -> None:
                 [only, dataclasses.replace(only, mixed_step_split=None)],
                 mapping,
             )
+
+
+def _cpu_params() -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=8,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        page_size=16,
+    )
+
+
+def test_per_device_caches_of_real_tensors() -> None:
+    """An eager decoder's real tensors become a cache whose blocks the
+    attention ops can write."""
+    params = _cpu_params()
+    tensors = _real_inputs(params)
+
+    (cache,) = per_device_caches(params, tensors)
+
+    assert isinstance(cache, PagedCacheValues)
+    assert any(cache.kv_blocks is t for t in tensors)
+    with F.lazy():
+        assert isinstance(cache.to_graph_values().kv_blocks, BufferValue)
+
+
+def test_per_device_caches_while_tracing() -> None:
+    """A traced decoder gets the cache as graph values."""
+    params = _cpu_params()
+    graph = Graph("kv", input_types=tree.leaves(params.get_symbolic_inputs()))
+    with (
+        GraphRealizationContext(graph) as ctx,
+        realization_context(ctx),
+    ):
+        tensors = [Tensor.from_graph_value(v) for v in graph.inputs]
+
+        (cache,) = per_device_caches(params, tuple(tensors))
+
+    assert not isinstance(cache, PagedCacheValues)
+    assert isinstance(cache.kv_blocks, BufferValue)
+
+
+def _real_inputs(params: MHAKVCacheParams) -> tuple[Tensor, ...]:
+    """Zero tensors with data, shaped like ``params``' cache inputs."""
+    tensors = []
+    for field_type in tree.leaves(params.get_symbolic_inputs()):
+        shape = [
+            1 if isinstance(d, SymbolicDim) else int(d)
+            for d in field_type.shape
+        ]
+        tensors.append(
+            Tensor(storage=Buffer.zeros(shape, field_type.dtype, CPU()))
+        )
+    return tuple(tensors)
+
+
+def test_kv_input_values_keeps_real_tensors() -> None:
+    tensors = _real_inputs(_cpu_params())
+    values = kv_input_values(tensors)
+    assert len(values) == len(tensors)
+    assert all(v is t for v, t in zip(values, tensors, strict=True))
+
+
+def test_from_upstream_keeps_a_real_cache_writable() -> None:
+    """One device's cache of real tensors stays those tensors, so the
+    attention ops still get its blocks as a buffer."""
+    params = _cpu_params()
+    tensors = _real_inputs(params)
+    per_device = params.unflatten_kv_inputs(iter(kv_input_values(tensors)))
+    mapping = DeviceMapping(DeviceMesh.single(CPU()), (Replicated(),))
+
+    cache = PagedCacheValues.from_upstream(per_device, mapping)
+
+    assert any(cache.kv_blocks is t for t in tensors)
+    with F.lazy():
+        assert isinstance(cache.to_graph_values().kv_blocks, BufferValue)
+
+
+def test_from_upstream_keeps_each_device_real_cache() -> None:
+    """Several devices' real caches stay their own buffers, so the attention
+    ops write each device's blocks."""
+    params = _cpu_params()
+    inputs = [_real_inputs(params) for _ in range(2)]
+    per_device = [
+        params.unflatten_kv_inputs(iter(kv_input_values(values)))[0]
+        for values in inputs
+    ]
+    mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+
+    cache = PagedCacheValues.from_upstream(
+        per_device, DeviceMapping(mesh, (Replicated(),))
+    )
+
+    assert cache.kv_blocks.real
+    for shard, values in zip(cache.kv_blocks.buffers, inputs, strict=True):
+        assert any(shard is t.driver_tensor for t in values)

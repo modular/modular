@@ -95,11 +95,17 @@ use_repo(toolchains, "default_rust_toolchains")
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
 use_repo(rules_rust, "rules_rust")
 
-# The pyo3 rule attaches rustfmt_aspect, which pulls the nightly rustfmt
-# toolchain into every cold build of a pyo3 extension. Nothing reads its
-# output; //:format runs rustfmt directly.
 rules_rust.patch(
-    patches = ["//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch"],
+    patches = [
+        # rules_rust prefers a cc dependency's interface library (.ifso) but
+        # links it as -ldylib=<name>, which the linker resolves only to
+        # lib<name>.so; this links the .ifso by its file name instead.
+        "//bazel/public-patches:rules_rust_link_interface_libraries.patch",
+        # The pyo3 rule attaches rustfmt_aspect, which pulls the nightly
+        # rustfmt toolchain into every cold build of a pyo3 extension. Nothing
+        # reads its output; //:format runs rustfmt directly.
+        "//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch",
+    ],
     strip = 1,
 )
 
@@ -163,6 +169,20 @@ single_version_override(
     patches = [
         # FIXME: `@system_python` is a dev dep, but used in non-dev code
         "//bazel/public-patches:protobuf-dev-dep.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "jemalloc",
+    patch_strip = 1,
+    patches = [
+        # As part of building this, jemalloc expects an `nm` from the
+        # cc toolchain, but plumbing it through requires a rules_cc fix.
+        # Without it, the action just gives us "/bin/bash: line 1: -a: command not found"
+        # since `{nm}` expands to nothing. Unless/until we want to fix it,
+        # just disable the feature. This is not a flag but just a setting,
+        # so annoyingly we have to patch it.
+        "//bazel/public-patches:jemalloc-no-private-namespace.patch",
     ],
 )
 
@@ -258,6 +278,8 @@ use_repo(compat, "cc_compatibility_proxy")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+libkineto_repository = use_repo_rule("//bazel/public-patches:libkineto.bzl", "libkineto_repository")
 
 # ......................... NIXL (KV transfer) ................................
 #
@@ -526,16 +548,16 @@ http_archive(
 )
 
 # libkineto is the on-demand CPU+GPU profiler MAX uses to emit Chrome trace
-# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). We pin to the exact SHA
-# bundled with torch==2.12.0+cu130 because the PyTorch/HTA/libkineto/Dynolog
-# compatibility chain at that pairing is empirically validated end-to-end
-# (see MXTOOLS-190 initial spike). The accompanying
-# bazel/public-patches/libkineto.BUILD wires up the CUPTI / CUDA Toolkit deps
-# and exposes the cc_library target.
-http_archive(
+# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). github.com/pytorch/kineto
+# is archived; libkineto now lives in pytorch/pytorch (copied in by #198648,
+# moved to torch/csrc/profiler/kineto after the 2.15 branch cut). We pin the
+# v2.15.0 tag, the first torch release that ships libkineto in-tree, so the
+# libkineto we build is the one bundled with torch==2.15.0. The commit and the
+# per-file sha256 manifest live in bazel/public-patches/libkineto.bzl; bump
+# them with `update-libkineto <pytorch ref>`.
+libkineto_repository(
     name = "libkineto",
     build_file = "//bazel/public-patches:libkineto.BUILD",
-    patch_args = ["-p1"],
     patches = [
         # Emit "Record Window End" on the (-1, 0) overhead track with thread
         # scope so it stops spawning an Unnamed SliceTrack in Perfetto. Covers
@@ -543,14 +565,11 @@ http_archive(
         # in max/internal/profiler/lib/Range.cpp (MXTOOLS-266).
         "//bazel/public-patches:libkineto-record-window-end-track.patch",
     ],
-    sha256 = "7615b3c028b3148d046ba7a34b890d9bf90e5178024c7b749b5018366fc9e631",
-    strip_prefix = "kineto-b2103f78d13fde4937af010c0ef8e24313568bc5",
-    url = "https://github.com/pytorch/kineto/archive/b2103f78d13fde4937af010c0ef8e24313568bc5.tar.gz",
 )
 
 # dynolog supplies the IPC fabric headers libkineto includes under
-# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why the kineto
-# tarball can't provide them. Pinned to b32376d, validated against Dynolog
+# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why we don't
+# use libkineto's vendored copy. Pinned to b32376d, validated against Dynolog
 # 0.6.0 + libkineto's IPC protocol.
 http_archive(
     name = "dynolog",
@@ -1153,11 +1172,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_gpt-oss_golden.tar.gz",
         "sha256": "808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
-    },
-    {
-        "name": "torch_olmo-1b-hf_golden.tar.gz",
-        "sha256": "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
     },
     {
         "name": "torch_llama3-8b_q4_k_golden.tar.gz",

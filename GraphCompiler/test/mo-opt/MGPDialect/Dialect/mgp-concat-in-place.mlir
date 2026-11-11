@@ -20,7 +20,7 @@
 // CHECK: %[[TEN:.*]] = mgp.tensor.create %[[CH4]], %[[OUT_BUF]]
 // CHECK: mef.output %[[CH0]], %[[TEN]]
 
-mgp.model @dynamic_concat : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dynamic_concat devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -52,7 +52,7 @@ mgp.model @dynamic_concat : mof devices [#M.device_ref<"cpu", 0>] init (%weights
 // CHECK: %{{.*}} = mgp.buffer.slice
 // CHECK: %{{.*}} = mgp.buffer.slice
 
-mgp.model @concat_with_shared_input_buffer : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @concat_with_shared_input_buffer devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -82,7 +82,7 @@ mgp.model @concat_with_shared_input_buffer : mof devices [#M.device_ref<"cpu", 0
 // CHECK: %{{.*}} = mgp.buffer.slice
 // CHECK: %{{.*}} = mgp.buffer.slice
 
-mgp.model @non_trivial_chains : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @non_trivial_chains devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -110,7 +110,7 @@ mgp.model @non_trivial_chains : mof devices [#M.device_ref<"cpu", 0>] init (%wei
 // CHECK-LABEL: mgp.model @dont_trigger_since_duplicate_buffers
 // CHECK: %{{.*}} = mgp.buffer.concat
 
-mgp.model @dont_trigger_since_duplicate_buffers : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dont_trigger_since_duplicate_buffers devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -141,7 +141,7 @@ mgp.model @dont_trigger_since_duplicate_buffers : mof devices [#M.device_ref<"cp
 // CHECK-DAG: %{{.*}} = mgp.buffer.slice %{{.*}}, %[[OFFSET2]], %[[SIZE]]
 // CHECK: mef.output
 
-mgp.model @dynamic_same_size : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dynamic_same_size devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -188,7 +188,7 @@ mgp.model @dynamic_same_size : mof devices [#M.device_ref<"cpu", 0>] init (%weig
 // CHECK: %{{.*}} = mgp.buffer.concat
 // CHECK-NOT: %{{.*}} = mgp.buffer.slice
 
-mgp.model @dont_trigger_since_offset_alignment_unknown : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @dont_trigger_since_offset_alignment_unknown devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

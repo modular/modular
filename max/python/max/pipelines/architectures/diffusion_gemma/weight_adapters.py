@@ -20,12 +20,13 @@ tied to ``model.decoder.embed_tokens``.
 
 MoE experts are stored per expert (``experts.J.{gate,up,down}_proj``), each as
 an NVFP4 quadruplet: packed ``weight`` (u8), ``weight_scale`` (fp8-e4m3 group
-scales), ``weight_scale_2`` and ``input_scale`` (fp32) — exactly the per-expert
-fields ``max.nn.legacy.moe.MoEQuantized`` reads. The BF16 checkpoint stores them
-stacked, as the gemma4 donor's ``Gemma4MoE`` reads them.
+scales), ``weight_scale_2`` and ``input_scale`` (fp32), the per-expert fields
+``DiffusionGemmaQuantizedMoE`` reads (``moe.py``, a ``QuantizedMoE``). The BF16
+checkpoint stores them stacked, as ``DiffusionGemmaMoE`` reads them.
 
-Both the encoder and decoder MAX graphs load from the same converted dict;
-shared FQNs in the combined weights registry give weight sharing for free.
+The encoder and the denoiser load from the same converted dict under the same
+FQNs, but each compiles as its own graph and holds its own device copy of the
+text weights (see ``DiffusionGemmaMemoryPlanner.estimate_weights_size``).
 """
 
 from __future__ import annotations
@@ -153,11 +154,10 @@ def convert_safetensor_state_dict(
     pipeline_config: PipelineConfig,
     **unused_kwargs,
 ) -> dict[str, WeightData]:
-    """Registered adapter: merged language + vision conversion.
+    """Converts the language and vision weights in one dict.
 
-    The pipeline model's ``load_model`` calls the two specific converters
-    directly (mirroring the gemma4 donor); this merged form exists for
-    registry tooling and offline audits.
+    The architecture registers this as its safetensors weight adapter, so
+    every role's graph loads its weights from the dict it returns.
     """
     return {
         **convert_safetensor_language_state_dict(state_dict),

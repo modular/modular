@@ -40,6 +40,6 @@ mo.graph @fused(%x: !mo.tensor<[8, 128], bf16>, %b: !mo.tensor<[8, 1], f32>) -> 
 // CHECK:         mogg.tensor.store %cap1[%row] = %[[F]]#0 : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
 // CHECK-NEXT:    mogg.tensor.store %cap2[%row] = %[[F]]#1 : !mogg.tensor, !map.index<2>, !mogg.simd<si64>
 mo.graph @argMaxDynamic<M, N>(%x: !mo.tensor<[M, N], f32>) -> (!mo.tensor<[1, N], f32>, !mo.tensor<[1, N], si64>) {
-  %v, %i = mo.custom [symbol = "mo.reduce.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[M, N], f32>) -> (!mo.tensor<[1, N], f32>, !mo.tensor<[1, N], si64>)
+  %v, %i = mo.custom [symbol = "reduction.arg_max.tmp", device = #M.device_ref<"cpu", 0>](%x) : (!mo.tensor<[M, N], f32>) -> (!mo.tensor<[1, N], f32>, !mo.tensor<[1, N], si64>)
   mo.output %v, %i : !mo.tensor<[1, N], f32>, !mo.tensor<[1, N], si64>
 }

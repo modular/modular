@@ -93,42 +93,16 @@ _EXTRA_TAGS = {
             "@mojo//:std",
         ] + _EXTRA_DEPS.get(src, []),
     )
-    # Excluded from this glob:
-    #  - nkv8 gate harness: built via the explicit per-shape targets below
-    #    (needs R3 copts + shape defines the glob cannot supply).
-    #  - v227 round-trip: built as an explicit `manual` target below (kept
-    #    referenced but out of CI build/run; see that target).
+    # The nkv8 gate harness is excluded from this glob and built via the
+    # explicit per-shape targets below (it needs R3 copts + shape defines the
+    # glob cannot supply).
     for src in glob(
         ["**/*.mojo"],
         exclude = [
             "test_mla_prefill_v2_nkv8_gate.mojo",
-            "test_v227_adapter_round_trip.mojo",
         ],
     )
 ]
-
-# v227 round-trip: `manual` keeps it referenced (no unreferenced-file lint)
-# but out of CI wildcard build/run — it fails to compile under the merged
-# toolchain (comptime-type mismatch at the `load_V_frag` call). Drives the
-# FP8 32x32x64 (gfx950) `ds_read_tr8_b64` V loaders directly; re-enable once
-# that fix lands.
-mojo_test(
-    name = "test_v227_adapter_round_trip.mojo.test",
-    size = "medium",
-    srcs = ["test_v227_adapter_round_trip.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:mi355_gpu"],
-    deps = [
-        "//max:layout",
-        "//max:nn",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
 
 # ============================================================
 # MlaPrefillV2 GQA (nkv>1) grouping nkv-GATE.

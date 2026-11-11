@@ -53,8 +53,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn import Module
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,
@@ -586,6 +586,7 @@ _EXEC_N_GLOBAL_KV_HEADS = 1
 
 def _make_small_model_config(
     devices: list[DeviceRef],
+    dtype: DType = MAX_DTYPE,
 ) -> Gemma4ForConditionalGenerationConfig:
     """Build a small Gemma4 config suitable for execution tests."""
     sliding_layers = sum(
@@ -594,7 +595,7 @@ def _make_small_model_config(
     global_layers = sum(1 for t in _EXEC_LAYER_TYPES if t == "full_attention")
 
     sliding_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,
         num_layers=sliding_layers,
@@ -602,7 +603,7 @@ def _make_small_model_config(
         page_size=128,
     )
     global_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_GLOBAL_KV_HEADS,
         head_dim=_EXEC_GLOBAL_HEAD_DIM,
         num_layers=global_layers,
@@ -614,7 +615,7 @@ def _make_small_model_config(
     )
 
     text_kv = MHAKVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=dtype,
         n_kv_heads=_EXEC_N_KV_HEADS,
         head_dim=_EXEC_HEAD_DIM,
         num_layers=_EXEC_NUM_LAYERS,
@@ -643,7 +644,7 @@ def _make_small_model_config(
         attn_logit_softcapping=None,
         rope_local_base_freq=TEXT_SLIDING_WINDOW_ROPE_THETA,
         sliding_window_pattern=-1,
-        dtype=MAX_DTYPE,
+        dtype=dtype,
         devices=devices,
         interleaved_rope_weights=False,
         kv_params=text_kv,
@@ -661,7 +662,7 @@ def _make_small_model_config(
 
     return Gemma4ForConditionalGenerationConfig(
         devices=devices,
-        dtype=MAX_DTYPE,
+        dtype=dtype,
         kv_params=kv_params,
         text_config=text_config,
         vision_config=_make_vision_config(),
@@ -697,6 +698,7 @@ def _stub_attention(model: Gemma4TextModel) -> None:
 
 def _build_shared_weights(
     max_model: Gemma4TextModel,
+    torch_dtype: torch.dtype = TORCH_DTYPE,
 ) -> dict[str, torch.Tensor]:
     """Generate random weights shared between the MAX and torch models.
 
@@ -708,28 +710,30 @@ def _build_shared_weights(
 
     for key, param in max_model.parameters:
         shape = tuple(int(d) for d in param.shape)
-        w[key] = torch.randn(shape, dtype=TORCH_DTYPE)
+        w[key] = torch.randn(shape, dtype=torch_dtype)
 
     # Set layer scalars to a non-trivial value.
     for key in w:
         if key.endswith(".layer_scalar"):
-            w[key] = torch.tensor([2.0], dtype=TORCH_DTYPE)
+            w[key] = torch.tensor([2.0], dtype=torch_dtype)
 
     return w
 
 
 def _build_eager_stubbed_model(
     device: Accelerator,
+    dtype: DType = MAX_DTYPE,
+    torch_dtype: torch.dtype = TORCH_DTYPE,
 ) -> tuple[Gemma4TextModel, dict[str, torch.Tensor]]:
     """Build the small model eagerly on GPU, stub attention, load weights."""
     mesh = DeviceMesh((device,), (1,), ("tp",))
-    config = _make_small_model_config([DeviceRef.GPU()])
+    config = _make_small_model_config([DeviceRef.GPU()], dtype)
     config.text_config.return_logits = ReturnLogits.ALL
-    with default_dtype(MAX_DTYPE):
+    with default_dtype(dtype):
         model = Gemma4TextModel(config, mesh)
     _stub_attention(model)
 
-    shared_weights = _build_shared_weights(model)
+    shared_weights = _build_shared_weights(model, torch_dtype)
     # Load first, then transfer: for single-device (non-distributed)
     # parameters load_state_dict adopts the source tensor's device, so the
     # CPU torch weights would otherwise stay on host.
@@ -772,7 +776,14 @@ def _to_torch(t: Tensor) -> torch.Tensor:
     [1],
     ids=["single_token"],
 )
-def test_text_model_execution_matches_torch(seq_len: int) -> None:
+@pytest.mark.parametrize(
+    ("dtype", "torch_dtype"),
+    [(DType.bfloat16, torch.bfloat16), (DType.float16, torch.float16)],
+    ids=["bfloat16", "float16"],
+)
+def test_text_model_execution_matches_torch(
+    seq_len: int, dtype: DType, torch_dtype: torch.dtype
+) -> None:
     """Execute the text model eagerly and compare against the torch reference.
 
     Uses identity attention stubs so the test exercises: scaled embedding,
@@ -784,7 +795,9 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
     compared, plus the LAST_TOKEN gather path via the first output.
     """
     device = Accelerator(0)
-    max_model, shared_weights = _build_eager_stubbed_model(device)
+    max_model, shared_weights = _build_eager_stubbed_model(
+        device, dtype, torch_dtype
+    )
 
     torch_model = TorchGemma4TextModel(
         vocab_size=_EXEC_VOCAB,
@@ -803,10 +816,10 @@ def test_text_model_execution_matches_torch(seq_len: int) -> None:
     tokens = torch.randint(0, _EXEC_VOCAB, (seq_len,), dtype=torch.int64)
 
     # -- Run torch reference (embed → layers → norm → tied head) --
-    torch_model = torch_model.to(TORCH_DTYPE)
+    torch_model = torch_model.to(torch_dtype)
     with torch.no_grad():
         torch_hidden = torch_model(tokens)
-    embed_w = shared_weights["embed_tokens.weight"].to(TORCH_DTYPE)
+    embed_w = shared_weights["embed_tokens.weight"].to(torch_dtype)
     # Match the module's logit path: cast to float32, then softcap
     # (cap * tanh(logits / cap)).
     torch_logits = (torch_hidden @ embed_w.T).float()

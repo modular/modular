@@ -27,14 +27,13 @@ from max.gpu import WARP_SIZE
 from nn.mtp_eh_norm import mtp_eh_norm_kernel
 
 
-@extensibility.register("mo.mtp.eh_norm")
+@extensibility.register("speculative.mtp.eh_norm")
 struct MTPEhNorm:
-    """Registers the `mo.mtp.eh_norm` graph op with the graph compiler."""
+    """Registers the `speculative.mtp.eh_norm` graph op with the graph compiler.
+    """
 
     @staticmethod
     def execute[
-        target: StaticString,
-        //,
         hidden_size: Int,
         block_threads: Int,
     ](
@@ -49,7 +48,6 @@ struct MTPEhNorm:
         """Normalizes both draft inputs and writes them side by side.
 
         Parameters:
-            target: Compilation target.
             hidden_size: Channels per input; the output row is twice this.
             block_threads: Threads per block.
 
@@ -76,7 +74,9 @@ struct MTPEhNorm:
         comptime assert type_of(prev).rank == 2
         comptime assert type_of(enorm_weight).rank == 1
         comptime assert type_of(hnorm_weight).rank == 1
-        comptime assert is_gpu[target](), "mo.mtp.eh_norm is GPU only"
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "speculative.mtp.eh_norm is GPU only"
         comptime assert (
             block_threads % WARP_SIZE == 0
         ), "block_threads must be a whole number of warps"

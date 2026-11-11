@@ -34,7 +34,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.graph import BufferType, StaticDim
 
 __all__ = ["DecoderScratch", "build_decoder_scratch"]
@@ -48,7 +48,8 @@ class DecoderScratch:
     """The graph inputs, in the order the decoder declares them."""
 
     buffers: tuple[Buffer, ...]
-    """One buffer per :attr:`input_types` entry, allocated once."""
+    """One buffer per :attr:`input_types` entry, allocated once; empty on
+    virtual devices, where nothing runs the graph."""
 
 
 def build_decoder_scratch(
@@ -79,7 +80,6 @@ def build_decoder_scratch(
     )
     if not input_types:
         return None
-    buffers = []
     for input_type in input_types:
         if not isinstance(input_type, BufferType):
             raise TypeError(
@@ -92,11 +92,15 @@ def build_decoder_scratch(
                 f"{input_type}, but workspace is allocated once at a static "
                 "size"
             )
-        buffers.append(
-            Buffer(
-                dtype=input_type.dtype,
-                shape=[int(dim) for dim in input_type.shape],
-                device=input_type.device.to_device(),
-            )
+    # A virtual device compiles without running the graph.
+    if is_virtual_device_mode():
+        return DecoderScratch(input_types, ())
+    buffers = tuple(
+        Buffer(
+            dtype=input_type.dtype,
+            shape=[int(dim) for dim in input_type.shape],
+            device=input_type.device.to_device(),
         )
-    return DecoderScratch(input_types, tuple(buffers))
+        for input_type in input_types
+    )
+    return DecoderScratch(input_types, buffers)

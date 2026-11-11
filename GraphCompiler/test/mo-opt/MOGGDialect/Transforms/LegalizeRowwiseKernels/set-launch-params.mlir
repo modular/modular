@@ -1,9 +1,12 @@
 // RUN: mo-opt %s --mogg-rowwise-set-launch-params | FileCheck %s
 // RUN: mo-opt %s --mogg-rowwise-set-launch-params="expensive-cost-threshold=32" | FileCheck %s --check-prefix=T32
 
-// Sets each rowwise kernel's launch parameters. Bodies are reduce-shaped, so
-// `num_phases` is 1 and `dtype_size` 0. `cols` is the static size of the
-// reduced axis.
+// Sets each rowwise kernel's launch parameters as the hand-written kernels do.
+// A reduce-shaped body has `num_phases` 1 and `dtype_size` 0; a body with a
+// map phase has one phase per fold plus one, may split its row when its folds
+// keep one field each (`dtype_size` is the cache's byte size), and is
+// computationally expensive. `cols` is the static size of the reduced
+// axis.
 
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
@@ -11,11 +14,11 @@
 #SIMD = #lit<symbol@std::@builtin::@simd::@SIMD>
 !Int = !lit.struct<#SIMD <:!DType {:dtype index}, :!SIMDLength {1}>>
 
-mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
-mogg.kernel.decl @builtin_kernels.monoids.ArgMax registration = "mo.reduce.arg_max.tmp" device_info = <"", "", "", ""> reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc_values", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"acc_indices", #lit.struct<{_mlir_value: dtype = si64}> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
-mogg.kernel.decl @builtin_kernels.elementwise.Div registration = "mo.div" device_info = <"", "", "", ""> elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("lhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>, "rhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}, {dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
-mogg.kernel.decl @builtin_kernels.elementwise.Add registration = "mo.add" device_info = <"", "", "", ""> elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("lhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>, "rhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}, {dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
-mogg.kernel.decl @builtin_kernels.elementwise.Exp registration = "mo.exp" device_info = <"", "", "", ""> elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("x": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.monoids.ArgMax registration = "reduction.arg_max.tmp" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc_values", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"acc_indices", #lit.struct<{_mlir_value: dtype = si64}> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.elementwise.Div registration = "mo.div" elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("lhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>, "rhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}, {dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.elementwise.Add registration = "mo.add" elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("lhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>, "rhs": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}, {dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.elementwise.Exp registration = "mo.exp" elementwise = <<!lit.generator<<"dtype": !lit.struct<@std::@builtin::@dtype::@DType>, "width": !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>("x": !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>) -> !lit.struct<@std::@simd::@SIMD<:!lit.struct<@std::@builtin::@dtype::@DType> *(0,0), :!lit.struct<@std::@builtin::@simd_length::@SIMDLength> *(0,1)>>>>, [#kgen<param.decl dtype : !lit.struct<@std::@builtin::@dtype::@DType>>, #kgen<param.decl width : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>>], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}], [{dtype = #kgen.param.decl.ref<"dtype"> : !lit.struct<@std::@builtin::@dtype::@DType>, size = #kgen.param.decl.ref<"width"> : !lit.struct<@std::@builtin::@simd_length::@SIMDLength>}]> struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: func.func @staticSum
 // CHECK:       mogg.call.rowwise
@@ -69,9 +72,9 @@ func.func @widestState(%ctx: !mogg.context, %x: !mogg.tensor, %os: !mogg.tensor,
       %xv = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       mogg.yield %xv : !mogg.simd<f32>
     }
-    mogg.rowwise.emit {
-      mogg.tensor.store %cs[%row] = %s : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
-      mogg.tensor.store %ci[%row] = %i : !mogg.tensor, !map.index<2>, !mogg.simd<si64>
+    mogg.rowwise.map (%j : !map.index<2>) {
+      mogg.tensor.store %cs[%j] = %s : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+      mogg.tensor.store %ci[%j] = %i : !mogg.tensor, !map.index<2>, !mogg.simd<si64>
     }
   }
   return
@@ -92,6 +95,29 @@ func.func @expensiveFold(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tens
       %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       %e = mogg.call.elementwise @builtin_kernels.elementwise.Exp(%v) moOpName = "mo.exp" : !mogg.simd<f32> -> !mogg.simd<f32>
       mogg.yield %e : !mogg.simd<f32>
+    }
+    mogg.rowwise.emit {
+      mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// The cache runs per element too: its exp makes the kernel expensive.
+// CHECK-LABEL: func.func @expensiveCache
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size
+func.func @expensiveCache(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      %e = mogg.call.elementwise @builtin_kernels.elementwise.Exp(%v) moOpName = "mo.exp" : !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.yield %e : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
     }
     mogg.rowwise.emit {
       mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
@@ -183,6 +209,79 @@ func.func @sixteenCheapOps(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.te
     }
     mogg.rowwise.emit {
       mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// A fold, then a map phase.
+// CHECK-LABEL: func.func @normalize
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  attributes {cols = 128 : i64, computationally_expensive, dtype_size = 4 : i64, num_phases = 2 : i64, simd_monoid = @builtin_kernels.monoids.ReduceSum}
+func.func @normalize(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %xk : !mogg.simd<f32>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %y = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %acc) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// A fold that keeps two fields, like layer_norm's Welford, leaves `dtype_size`
+// 0, so the row doesn't split.
+// CHECK-LABEL: func.func @normalizeTwoFields
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  computationally_expensive, dtype_size = 0 : i64, num_phases = 2 : i64
+func.func @normalizeTwoFields(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %xk : !mogg.simd<f32>
+    }
+    %m, %mi = mogg.rowwise.reduce @builtin_kernels.monoids.ArgMax (%i : !map.index<2>) -> (!mogg.simd<f32>, !mogg.simd<si64>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %y = mogg.call.elementwise @builtin_kernels.elementwise.Div(%v, %m) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// `dtype_size` is the cache's size, not the accumulator's.
+// CHECK-LABEL: func.func @normalizeBf16
+// CHECK:       mogg.call.rowwise
+// CHECK-SAME:  dtype_size = 2 : i64, num_phases = 2 : i64
+func.func @normalizeBf16(%ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  %shape = mogg.shape.create() <shape = #mosh<ape[8, 128]> : !mosh.ape>
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<bf16> {
+      %xk = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<bf16>
+      mogg.yield %xk : !mogg.simd<bf16>
+    }
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.rowwise.cache.load : !mogg.simd<bf16>
+      %c = builtin.unrealized_conversion_cast %v : !mogg.simd<bf16> to !mogg.simd<f32>
+      mogg.yield %c : !mogg.simd<f32>
+    }
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.rowwise.cache.load : !mogg.simd<bf16>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<bf16>
     }
   }
   return

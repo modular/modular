@@ -31,7 +31,7 @@ from typing import Any, Literal, Protocol
 from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
@@ -636,7 +636,7 @@ class KVLeafSpec:
     float32: bool = False
     packed_format: int | None = None
     stride_alignment: int | None = None
-    """See :attr:`~max.nn.legacy.kv_cache.KVLeafRegion.stride_alignment`."""
+    """See :attr:`~max.nn.kv_cache.KVLeafRegion.stride_alignment`."""
     ring_rows: int | None = None
     """Rows of a ``state`` leaf's per-request ring, or ``None`` for a leaf
     paged by token."""

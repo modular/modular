@@ -25,7 +25,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from linalg.bmm import (
     _batched_matmul_gpu,
     batched_matmul,
@@ -214,7 +214,7 @@ def run_bmm_and_check_result[
         )
 
     comptime if lambda_fn:
-        elementwise[pack_size, target="gpu"](
+        elementwise[pack_size](
             func,
             (b, m, n),
             ctx,
@@ -667,7 +667,7 @@ def _late_producer_once[
     var a_t = TileTensor(a, row_major(b, m, Idx[K]))
     var w_t = TileTensor(w, row_major(b, Idx[N], Idx[K]))
     comptime if via_public:
-        batched_matmul[transpose_b=True, target="gpu", pdl_level=pdl_level](
+        batched_matmul[transpose_b=True, pdl_level=pdl_level](
             c_t, a_t.as_imm(), w_t.as_imm(), context=ctx
         )
     else:
@@ -837,6 +837,33 @@ def main() raises:
             N=Int(128),
             K=Int(128),
         ](ctx, 2, 3, 64)
+
+        # transpose_b=True edge cases: odd K, N % 4 != 0, f32, dynamic N.
+        test_static_NK[
+            .bfloat16,
+            transpose_b=True,
+            N=Int(256),
+            K=Int(65),
+        ](ctx, 2, 5)
+
+        test_static_NK[
+            .bfloat16,
+            transpose_b=True,
+            N=Int(6),
+            K=Int(128),
+        ](ctx, 2, 5)
+
+        test_static_NK[
+            .float32,
+            transpose_b=True,
+            N=Int(256),
+            K=Int(128),
+        ](ctx, 2, 5)
+
+        test_dynamic_shapes[
+            .bfloat16,
+            transpose_b=True,
+        ](ctx, 2, 5, 256, 128)
 
         comptime if ctx.target.is_nvidia_gpu():
             # NOTE: these tests should be run on a100 and above

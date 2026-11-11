@@ -22,7 +22,8 @@ drift apart.
 Two attention classes route the prefill branch into ``mla_sm100_prefill_sparse``:
 ``SparseLatentAttentionWithRopeFp8`` (FP8 attention weights, the ``.fp8.sparse``
 op) and ``SparseLatentAttentionWithRope`` (BF16 attention weights, the GLM
-``.sparse`` op). ``PrefillSpec.route`` selects between them.
+``.sparse`` op). ``PrefillSpec.route`` selects between them; the ``nvfp4`` route
+is the BF16-weight class over a packed NVFP4 latent cache (``.sparse.nvfp4``).
 """
 
 from __future__ import annotations
@@ -39,12 +40,13 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -52,7 +54,9 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.pipelines.architectures.deepseekV3.model_config import (
+    mla_kv_cache_quant_config,
+)
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRope,
     SparseLatentAttentionWithRopeFp8,
@@ -85,9 +89,10 @@ class PrefillSpec:
     name: str
     """Stable identifier used for the MEF filename and the test id."""
 
-    route: Literal["fp8", "bf16"]
-    """``"fp8"`` for the FP8-attention class (``.fp8.sparse``) or ``"bf16"`` for
-    the BF16-attention GLM class (``.sparse``)."""
+    route: Literal["fp8", "bf16", "nvfp4"]
+    """``"fp8"`` for the FP8-attention class (``.fp8.sparse``), ``"bf16"`` for
+    the BF16-attention GLM class (``.sparse``), or ``"nvfp4"`` for that class
+    over a packed NVFP4 latent cache (``.sparse.nvfp4``)."""
 
     num_heads: int
     """Number of attention heads (the DeepSeek/GLM head counts and their
@@ -99,6 +104,9 @@ class PrefillSpec:
 
     cache_dtype: DType = DType.bfloat16
     """Element type of the MLA latent cache."""
+
+    index_topk: int = INDEX_TOPK
+    """Sparse-index top-k width."""
 
 
 PREFILL_SPECS: tuple[PrefillSpec, ...] = (
@@ -134,6 +142,15 @@ PREFILL_SPECS: tuple[PrefillSpec, ...] = (
     PrefillSpec(
         "prefill_fp8_fp8kv_64h", "fp8", 64, cache_dtype=DType.float8_e4m3fn
     ),
+    # A serving-sized top-k over an FP8 latent cache, which runs a split
+    # batch's prefill view on the decode kernel.
+    PrefillSpec(
+        "prefill_fp8_fp8kv_8h_topk256",
+        "fp8",
+        8,
+        cache_dtype=DType.float8_e4m3fn,
+        index_topk=256,
+    ),
 )
 
 # Disaggregated prefill_only (``graph_mode="prefill"``) variants of the FP8 head
@@ -144,8 +161,14 @@ PREFILL_ONLY_SPECS: tuple[PrefillSpec, ...] = (
     PrefillSpec("prefill_only_fp8_8h", "fp8", 8, graph_mode="prefill"),
 )
 
+# The packed NVFP4 latent cache arm of the same sparse path. Kept out of
+# PREFILL_SPECS: the fresh-prefill test drives every entry with a BF16 cache.
+NVFP4_SPECS: tuple[PrefillSpec, ...] = (
+    PrefillSpec("prefill_nvfp4_8h", "nvfp4", 8, cache_dtype=DType.uint8),
+)
+
 SPECS_BY_NAME: dict[str, PrefillSpec] = {
-    s.name: s for s in PREFILL_SPECS + PREFILL_ONLY_SPECS
+    s.name: s for s in PREFILL_SPECS + PREFILL_ONLY_SPECS + NVFP4_SPECS
 }
 
 
@@ -182,6 +205,11 @@ def make_kv_params(
         page_size=PAGE_SIZE,
         devices=[DeviceRef.GPU()],
         num_q_heads=num_heads,
+        kvcache_quant_config=(
+            mla_kv_cache_quant_config(cache_dtype, QK_ROPE_HEAD_DIM)
+            if cache_dtype == DType.uint8
+            else None
+        ),
     )
     indexer = MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
@@ -232,7 +260,7 @@ def make_attn(
             qk_rope_head_dim=QK_ROPE_HEAD_DIM,
             v_head_dim=V_HEAD_DIM,
             buffer_size=BUFFER_SIZE,
-            index_topk=INDEX_TOPK,
+            index_topk=spec.index_topk,
         )
     return SparseLatentAttentionWithRope(
         rope=rope,
@@ -250,7 +278,7 @@ def make_attn(
         qk_rope_head_dim=QK_ROPE_HEAD_DIM,
         v_head_dim=V_HEAD_DIM,
         buffer_size=BUFFER_SIZE,
-        index_topk=INDEX_TOPK,
+        index_topk=spec.index_topk,
     )
 
 

@@ -22,8 +22,8 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
+from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.legacy import Signals
-from max.nn.legacy.data_parallelism import split_batch_replicated
 
 HIDDEN = 64
 

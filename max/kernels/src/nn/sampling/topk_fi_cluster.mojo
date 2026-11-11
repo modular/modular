@@ -52,7 +52,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.math import ceildiv, exp, gcd, isfinite
 from std.memory import bitcast, unsafe_stack_allocation
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -1631,14 +1631,16 @@ def topk_topp_sampling_from_prob_cluster[
         ] = None
 
         comptime if emit_dist:
-            if not out_dist:
-                raise Error("out_dist is required when emit_dist is set")
-            var dist_shape = coord_to_index_list(
-                out_dist.unsafe_value().layout.shape_coord()
-            )
-            if dist_shape[0] != batch_size or dist_shape[1] != d:
-                raise Error("out_dist shape must match probs shape")
-            dist_ptr = out_dist.unsafe_value().ptr
+            match out_dist:
+                case .Some(dist):
+                    var dist_shape = coord_to_index_list(
+                        dist.layout.shape_coord()
+                    )
+                    if dist_shape[0] != batch_size or dist_shape[1] != d:
+                        raise Error("out_dist shape must match probs shape")
+                    dist_ptr = dist.ptr
+                case .None:
+                    raise Error("out_dist is required when emit_dist is set")
 
         # A speculative-decoding step that skips its drafter samples zero
         # draft rows, and a zero grid is rejected by `enqueue_function`.

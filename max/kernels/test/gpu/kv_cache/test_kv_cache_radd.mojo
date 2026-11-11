@@ -123,7 +123,7 @@ def test_kv_cache_radd[
     a.to_device()
 
     var layer_idx = 1
-    generic_kv_cache_radd_dispatch[target="gpu"](
+    generic_kv_cache_radd_dispatch(
         a.device_tensor(),
         kv_collection_device,
         input_row_offsets_slice.device_tensor(),

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 from collections.abc import Callable, Iterator
 from unittest.mock import MagicMock
@@ -50,6 +51,11 @@ OTHER_CONVERSATION: list[dict[str, object]] = [
     {"role": "system", "content": "Answer with a number."},
     {"role": "user", "content": "2 + 2 ="},
 ]
+
+
+def test_prefers_module_v3_by_default() -> None:
+    parameter = inspect.signature(AutoPipeline).parameters["prefer_module_v3"]
+    assert parameter.default is True
 
 
 @pytest.fixture(scope="module")

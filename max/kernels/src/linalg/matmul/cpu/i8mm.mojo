@@ -28,8 +28,6 @@ from std.sys.intrinsics import PrefetchOptions
 from linalg.utils import partial_simd_load, partial_simd_store
 from layout import Coord, Idx, TileTensor
 
-from std.utils.index import Index, IndexList
-
 from ...accumulate import _Accumulator
 from ...arch.cpu.neon_intrinsics import _neon_matmul
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
@@ -89,7 +87,7 @@ struct LoadStore_i8mm[
         c_ptr: Pointer[Scalar[Self.dtype], ...],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: IndexList[2],
+        c_bound: Tuple[Int, Int],
     ):
         var c_ptr_loc = c_ptr.unsafe_offset(tile_n_idx)
 
@@ -137,7 +135,7 @@ struct LoadStore_i8mm[
         c_ptr: MutPointer[Scalar[Self.dtype], ...],
         c_stride: Int,
         tile_n_idx: Int,
-        c_bound: IndexList[2],
+        c_bound: Tuple[Int, Int],
     ):
         var c_ptr_loc = c_ptr.unsafe_offset(tile_n_idx)
 
@@ -209,7 +207,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
-        tile_n_k_idx: IndexList[2],
+        tile_n_k_idx: Tuple[Int, Int],
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
@@ -274,7 +272,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
-        tile_n_k: IndexList[2],
+        tile_n_k: Tuple[Int, Int],
         skip_boundary_check: Bool,
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
@@ -311,8 +309,9 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
 
         var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
 
-        var c_bound = Index(global_bound.M, global_bound.N) - Index(
-            global_offset.M, global_offset.N
+        var c_bound = (
+            global_bound.M - global_offset.M,
+            global_bound.N - global_offset.N,
         )
 
         var acc = LoadStore_i8mm[

@@ -10,44 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps OLMo3 checkpoint names onto the MAX tree."""
+"""Maps OLMo 3 checkpoints onto the ModuleV3 module tree."""
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
-from max.pipelines.lib import PipelineConfig
-from transformers import AutoConfig
+from collections.abc import Sequence
 
-OLMO3_SAFETENSOR_MAP: dict[str, str] = {
-    "model.embed_tokens.": "language_model.embed_tokens.",
-    "model.norm.": "language_model.norm.",
-    "lm_head.": "language_model.lm_head.",
-    "model.layers.": "language_model.layers.",
-}
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
 
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights],
-    huggingface_config: AutoConfig | None = None,
-    pipeline_config: PipelineConfig | None = None,
-) -> dict[str, WeightData]:
-    """Convert safetensor state dict to MAX format.
+def olmo3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map an OLMo 3 checkpoint onto the decoder.
 
     Args:
-        state_dict: Dictionary of weight tensors
-        huggingface_config: The HuggingFace model configuration.
-        pipeline_config: The MAX pipeline configuration.
-
-    Returns:
-        Dictionary of converted weight data
+        huggingface_config: The checkpoint's config.
     """
-    new_state_dict: dict[str, WeightData] = {}
-
-    for weight_name, value in state_dict.items():
-        max_name: str = weight_name
-        for before, after in OLMO3_SAFETENSOR_MAP.items():
-            max_name = max_name.replace(before, after)
-
-        new_state_dict[max_name] = value.data()
-
-    return new_state_dict
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.", "language_model."),
+        WeightRenaming(r"^lm_head\.", "language_model.lm_head."),
+    )

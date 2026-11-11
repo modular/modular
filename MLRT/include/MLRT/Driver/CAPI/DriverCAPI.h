@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 0
+#define M_DRIVER_CAPI_VERSION_MINOR 5
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -158,6 +158,7 @@ typedef struct M_DriverStream M_DriverStream;
 typedef struct M_DriverEvent M_DriverEvent;
 typedef struct M_DriverBuffer M_DriverBuffer;
 typedef struct M_DriverMapping M_DriverMapping;
+typedef struct M_DriverCompletionFlag M_DriverCompletionFlag;
 
 //===----------------------------------------------------------------------===//
 // Devices
@@ -235,9 +236,10 @@ M_DRIVER_API size_t M_DriverDeviceApi(const M_DriverDevice *device,
                                       char *buffer, size_t capacity);
 
 /// Writes the device's architecture name to `buffer`: the CUDA compute
-/// capability (`"sm_90"`), the AMD target (`"gfx950"`), or the Metal GPU
-/// family. Use it to select precompiled kernels. The CPU device has no
-/// architecture name and reports 0 with a message.
+/// capability (`"sm_90a"`), the AMD target (`"gfx950"`), or the Apple silicon
+/// generation with an optional Metal language suffix (`"5-metal4"`). Use it to
+/// select precompiled kernels. The CPU device has no architecture name and
+/// reports 0 with a message.
 ///
 /// Returns the size the name needs including the NUL terminator; copies only
 /// when `capacity` is sufficient.
@@ -246,6 +248,32 @@ M_DRIVER_API size_t M_DriverDeviceApi(const M_DriverDevice *device,
 M_DRIVER_API size_t M_DriverDeviceArchitectureName(const M_DriverDevice *device,
                                                    char *buffer,
                                                    size_t capacity);
+
+/// Writes the device's architecture version to `*out_major`, `*out_minor` and
+/// `*out_stepping`, so a caller compares architectures instead of parsing
+/// `M_DriverDeviceArchitectureName`. The numbers follow the vendor's own
+/// numbering, so compare them only between devices with the same API:
+///
+/// - CUDA: the compute capability. `sm_100a` is 10.0.0; the `a` and `f`
+///   feature-set suffixes are not part of the version.
+/// - HIP: the AMDGPU processor version. `gfx950` is 9.5.0 and `gfx90a` is
+///   9.0.10.
+/// - Metal: the Apple silicon generation. `5-metal4` (an M5) is 5.0.0.
+///
+/// The version is derived from the API and the architecture name alone, so a
+/// virtual device configured with an architecture name such as `sm_100a` or
+/// `gfx950` reports what a real device of that architecture reports. Any
+/// out-pointer may be null.
+///
+/// Returns `M_DRIVER_NOT_SUPPORTED` for the CPU device and for an API or an
+/// architecture name this library cannot read, such as a virtual device
+/// configured with the target alias `mi355x`, and `M_DRIVER_RUNTIME_ERROR`
+/// when the driver cannot report the architecture name.
+///
+/// Mirrors `max._core.driver.Device.architecture_version`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceArchitectureVersion(
+    const M_DriverDevice *device, uint32_t *out_major, uint32_t *out_minor,
+    uint32_t *out_stepping);
 
 /// Writes the device's marketing name to `buffer` (e.g. `"NVIDIA H100"`).
 ///
@@ -316,10 +344,92 @@ M_DriverDeviceSynchronize(const M_DriverDevice *device);
 /// `*out_free`. Either out-pointer may be null. `*out_free` is
 /// `M_DRIVER_MEMORY_UNKNOWN` when the driver cannot measure free memory.
 ///
-/// Mirrors `max._core.driver.Device.stats`, whose free figure is `None` in
-/// that case.
+/// These are the physical figures, not the memory manager's. To size a cache,
+/// use `M_DriverDeviceAllocatorMemoryInfo`.
 M_DRIVER_API M_DriverStatus M_DriverDeviceMemoryInfo(
     const M_DriverDevice *device, uint64_t *out_total, uint64_t *out_free);
+
+/// Writes the budget of the pool MAX allocates this device's memory from to
+/// `*out_budget`, and the bytes still allocatable from it to
+/// `*out_allocatable`. Either out-pointer may be null.
+///
+/// Where the device has a caching memory manager these are the manager's
+/// numbers, which is what an allocation through MAX or this interface draws
+/// on, and they differ from the physical figures `M_DriverDeviceMemoryInfo`
+/// reports. A device without one (the CPU device, Metal, or a manager that is
+/// disabled) reports the driver's figures instead, the same ones
+/// `M_DriverDeviceMemoryInfo` writes. `*out_allocatable` is
+/// `M_DRIVER_MEMORY_UNKNOWN` when the driver cannot measure free memory. Size
+/// a cache from these figures, not the physical ones, so it fits the pool.
+/// Without a memory manager on CUDA or HIP, the driver's figures come from a
+/// query that synchronizes the device's shared queue, so do not call it while
+/// that queue is being captured.
+///
+/// Mirrors `max._core.driver.Device.stats`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(
+    const M_DriverDevice *device, uint64_t *out_budget,
+    uint64_t *out_allocatable);
+
+/// Writes the allocation statistics of the device's memory manager: the bytes
+/// it has handed out and not yet had back (`*out_live`), the most of those at
+/// once (`*out_peak`), the largest single request (`*out_max_request`), and the
+/// requests it could not serve and passed to the driver, past its budget
+/// (`*out_driver_fallbacks`, totalling `*out_driver_fallback_bytes`). Any
+/// out-pointer may be null.
+///
+/// A caller that sizes its own pools from what its work really allocates resets
+/// the peaks with `M_DriverDeviceResetAllocatorPeaks`, runs the work, and reads
+/// `*out_peak`. Live bytes count allocations at their aligned size; a block the
+/// manager caches after a free is not live. The peak, the largest request and
+/// the fallbacks run from the first allocation or the last reset, and the
+/// fallback bytes only add up in between, since the manager never sees those
+/// frees. A
+/// device without a memory manager (the CPU device, Metal, or a manager that is
+/// disabled) reports zeros.
+///
+/// Returns `M_DRIVER_NOT_SUPPORTED` in a HAL device context build, which has no
+/// memory manager statistics; so do the two calls below.
+///
+/// Mirrors `max._core.driver.Device.memory_manager_stats`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorStats(
+    const M_DriverDevice *device, uint64_t *out_live, uint64_t *out_peak,
+    uint64_t *out_max_request, uint64_t *out_driver_fallbacks,
+    uint64_t *out_driver_fallback_bytes);
+
+/// Copies the distinct sizes of the memory manager's requests of at least
+/// 256 MiB since the last `M_DriverDeviceResetAllocatorPeaks`, ascending, into
+/// `sizes`, and writes how many there are to `*out_count`. At most the 64
+/// largest are kept. Copies the first `capacity` of them; call with a null
+/// `sizes` to size the buffer. `out_count` may be null. A device without a
+/// memory manager reports none.
+M_DRIVER_API M_DriverStatus M_DriverDeviceAllocatorRequestSizes(
+    const M_DriverDevice *device, uint64_t *sizes, size_t capacity,
+    size_t *out_count);
+
+/// Restarts the memory manager's peak from its live bytes, and clears the
+/// largest request, the request sizes and the fallback counts. Does nothing on
+/// a device without a memory manager.
+M_DRIVER_API M_DriverStatus
+M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device);
+
+/// A device property `M_DriverDeviceGetAttribute` reports. A consumer built
+/// against a newer header may pass a value this library does not know, which
+/// is `M_DRIVER_NOT_SUPPORTED`.
+typedef enum M_DriverDeviceAttribute {
+  /// The number of streaming multiprocessors (NVIDIA) or compute units (AMD,
+  /// Apple): the width a persistent kernel's grid is sized to.
+  M_DRIVER_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT = 0,
+} M_DriverDeviceAttribute;
+
+/// Writes the value of `attribute` for `device` to `*out`.
+///
+/// Returns `M_DRIVER_NOT_SUPPORTED` for the CPU device and for an attribute
+/// this library does not know. An accelerator whose backend cannot report the
+/// attribute returns `M_DRIVER_RUNTIME_ERROR`, since this layer cannot tell
+/// that from a driver failure.
+M_DRIVER_API M_DriverStatus
+M_DriverDeviceGetAttribute(const M_DriverDevice *device,
+                           M_DriverDeviceAttribute attribute, int64_t *out);
 
 /// Resolves the driver allocation that contains `address`: writes its base to
 /// `*out_base` and its byte size to `*out_size`.
@@ -375,7 +485,8 @@ M_DRIVER_API void M_DriverUnbindFromCurrentThread(void);
 /// memory, so copies issued through it are ordered against each other and,
 /// via events, against work enqueued through other streams.
 ///
-/// Create with `M_DriverStreamCreate`, or adopt MAX's own stream with
+/// Create with `M_DriverStreamCreate`, retain MAX's own queue for a device
+/// with `M_DriverDeviceStream`, or adopt a context with
 /// `M_DriverStreamFromContextHandle`; destroy with `M_DriverStreamDestroy`.
 
 /// Creates a stream: a context on `device` plus its submission queue. The
@@ -390,6 +501,25 @@ M_DRIVER_API void M_DriverUnbindFromCurrentThread(void);
 /// with the HAL device context hands out the context's base queue instead,
 /// which may be blocking, because that build keeps no pool.
 M_DRIVER_API M_DriverStatus M_DriverStreamCreate(const M_DriverDevice *device,
+                                                 M_DriverStream **out);
+
+/// Retains the device's shared queue, the one MAX enqueues the device's own
+/// work on, as a stream.
+///
+/// Copies, event records and waits through it are ordered with MAX's work on
+/// the device without a host synchronization, so a copy enqueued here after a
+/// MAX model wrote a tensor reads the written bytes. Every operation is
+/// available on it. It shares the device's pending error slot (see the
+/// Devices section), so a call through it can report and clear an error MAX
+/// recorded there. Unlike `M_DriverStreamFromContextHandle`, it needs no
+/// context address, so it works in every build.
+///
+/// Each call returns a new handle on the same queue, which the caller
+/// destroys; destroying it leaves the queue to MAX.
+///
+/// Accelerators only: MAX runs CPU work on contexts of its own, so the CPU
+/// device returns `M_DRIVER_NOT_SUPPORTED`.
+M_DRIVER_API M_DriverStatus M_DriverDeviceStream(const M_DriverDevice *device,
                                                  M_DriverStream **out);
 
 /// Adopts a driver context, previously observed through
@@ -462,6 +592,17 @@ M_DRIVER_API M_DriverStatus M_DriverStreamDevice(const M_DriverStream *stream,
 M_DRIVER_API M_DriverStatus
 M_DriverStreamSynchronize(const M_DriverStream *stream);
 
+/// Writes to `*out` whether `stream` is capturing into a device graph, which
+/// means work enqueued on it is recorded and runs only when the graph
+/// replays. A caller whose work must run now, such as a host callback with
+/// side effects, checks this first and takes another path.
+///
+/// Backends without capture always report false, and so does a failed driver
+/// query. A stream adopted from a native handle returns
+/// `M_DRIVER_NOT_SUPPORTED`, because no context of ours runs that queue.
+M_DRIVER_API M_DriverStatus
+M_DriverStreamIsCapturing(const M_DriverStream *stream, bool *out);
+
 /// Orders all work after this call on `stream` to start only once `other`'s
 /// work enqueued so far has completed. This is the vendor-agnostic way to
 /// order one unit of work after another; it does not block the host, and it
@@ -512,6 +653,23 @@ M_DriverStreamRecordNewEvent(const M_DriverStream *stream, M_DriverEvent **out);
 /// Mirrors `max._core.driver.DeviceQueue.record_event(event)`.
 M_DRIVER_API M_DriverStatus M_DriverStreamRecordEvent(
     const M_DriverStream *stream, const M_DriverEvent *event);
+
+/// Enqueues a call of `fn(user_data)` on `stream`. It runs once, on a thread
+/// the driver owns, after all work enqueued on the stream before this call
+/// has completed, and work enqueued after it waits until `fn` returns. Does
+/// not block the host.
+///
+/// `fn` must not call into this interface or a vendor API, must not block on
+/// the stream's work, and must not unwind; the usual body hands `user_data`
+/// to a thread of the caller's and returns. When this call fails, `fn` never
+/// runs, so the caller still owns `user_data`. On a stream that is capturing
+/// (`M_DriverStreamIsCapturing`), the call is recorded and runs at each
+/// replay instead.
+///
+/// CUDA and HIP streams support it; other backends return
+/// `M_DRIVER_NOT_SUPPORTED`.
+M_DRIVER_API M_DriverStatus M_DriverStreamEnqueueHostFunction(
+    const M_DriverStream *stream, void (*fn)(void *), void *user_data);
 
 //===----------------------------------------------------------------------===//
 // Events
@@ -568,6 +726,70 @@ M_DRIVER_API M_DriverStatus M_DriverEventIsReady(const M_DriverEvent *event,
 /// Mirrors `max._core.driver.DeviceEvent.elapsed_time`.
 M_DRIVER_API M_DriverStatus M_DriverEventElapsedTimeMs(
     const M_DriverEvent *start, const M_DriverEvent *end, double *out_ms);
+
+//===----------------------------------------------------------------------===//
+// Completion flags
+//===----------------------------------------------------------------------===//
+
+/// A 64-bit value the host signals and a stream waits on. CUDA, HIP and Metal
+/// only; the CPU device fails with `M_DRIVER_RUNTIME_ERROR`. A HAL device
+/// context build supports them on any non-CPU device whose plugin exports the
+/// completion-flag extension with reset (CUDA, HIP and Metal), and reports
+/// `M_DRIVER_NOT_SUPPORTED` for any other device.
+
+/// Allocates a flag on `device`, holding 0.
+M_DRIVER_API M_DriverStatus M_DriverCompletionFlagCreate(
+    const M_DriverDevice *device, M_DriverCompletionFlag **out);
+
+/// Releases a flag handle. Destroying a flag while a wait on it is pending is
+/// undefined behavior. On CUDA and HIP, destroy frees pinned memory, which
+/// synchronizes the device, so destroying any flag while a wait on any flag on
+/// that device is pending is undefined behavior. On Metal, a wait the flag did
+/// not satisfy before destroy blocks the stream forever.
+M_DRIVER_API M_DriverStatus
+M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag);
+
+/// Stores `value` in the flag with release ordering. The value must not
+/// decrease, and this interface has no reset: a value lower than the flag's
+/// current one is `M_DRIVER_INVALID_ARGUMENT` and leaves the flag unchanged.
+///
+/// Signal from a thread that does not first block on a stream waiting on the
+/// flag (see `M_DriverStreamWaitFlag`); otherwise the signal never comes.
+M_DRIVER_API M_DriverStatus
+M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag, uint64_t value);
+
+/// Orders work after this call on `stream` to start only once `flag` holds at
+/// least `value`. Keep values below 2^63: HIP compares them as signed. Does
+/// not block the host. A flag from another backend than `stream` is
+/// `M_DRIVER_INVALID_ARGUMENT`.
+///
+/// While the wait is pending, the thread that will signal the flag must not
+/// make a call that waits for the stream or the device, or neither side makes
+/// progress. That rules out `M_DriverStreamSynchronize`, a copy to or from
+/// pageable host memory (on CUDA and HIP a host-to-device copy below a small,
+/// vendor-dependent size may return), freeing any pinned host or device
+/// buffer, even an unrelated one, and destroying a flag. On Metal, memset and
+/// fill also wait. Stage copies through a pinned host buffer
+/// (`M_DriverBufferAllocate` with `pinned_host`), or signal from another
+/// thread.
+M_DRIVER_API M_DriverStatus
+M_DriverStreamWaitFlag(const M_DriverStream *stream,
+                       const M_DriverCompletionFlag *flag, uint64_t value);
+
+/// Writes to `*out` the value a `mo.wait_host_value` graph payload takes for
+/// `flag` (payload[0]), so a graph can gate on a flag this interface created.
+///
+/// The value is the address of the driver's own flag object, not of the
+/// `M_DriverCompletionFlag` handle; the graph op rebuilds the flag from it, so
+/// passing the handle's address instead corrupts memory. It equals what Mach's
+/// transitional shim `m_ext_alloc_completion_flag` returns.
+///
+/// Opaque: never dereference it. It stays valid while `flag` is alive, so keep
+/// the flag alive for as long as any graph that holds this value can run.
+/// Every flag this interface can create has a graph handle, including in a HAL
+/// device context build.
+M_DRIVER_API M_DriverStatus M_DriverCompletionFlagGraphHandle(
+    const M_DriverCompletionFlag *flag, uint64_t *out);
 
 //===----------------------------------------------------------------------===//
 // Buffers, host memory registration, and copies
@@ -745,6 +967,14 @@ typedef enum M_DriverCopyDirection {
   M_DRIVER_COPY_HOST_TO_DEVICE = 0,
   /// `dsts` are host addresses and `srcs` are device addresses.
   M_DRIVER_COPY_DEVICE_TO_HOST = 1,
+  /// `dsts` are device addresses on `stream`'s device. `srcs` are device
+  /// addresses on that device, or on a peer it can access with access
+  /// enabled (`M_DriverDeviceEnablePeerAccess`); a source it cannot reach
+  /// fails in the driver as `M_DRIVER_RUNTIME_ERROR`. Unlike
+  /// `M_DriverCopyPeerToPeer`, nothing waits for the source device, so the
+  /// caller orders `stream` after the sources' producer, for example with
+  /// `M_DriverStreamWaitForDevice`.
+  M_DRIVER_COPY_DEVICE_TO_DEVICE = 2,
 } M_DriverCopyDirection;
 
 /// Enqueues `count` copies in one direction, `sizes[i]` bytes from `srcs[i]`
@@ -752,10 +982,12 @@ typedef enum M_DriverCopyDirection {
 ///
 /// One vendor submission where the driver has a batched copy (CUDA 12.8+ and
 /// recent HIP), otherwise the equivalent sequence of scalar copies. Each piece
-/// has the requirements of `M_DriverCopyHostToDevice` / `DeviceToHost`: the
-/// device address belongs to `stream`'s device, the host address is DMA
-/// accessible, the two ranges do not overlap, and both stay valid until the
-/// batch completes. Nothing is recorded on or awaited on any other stream.
+/// has the requirements of `M_DriverCopyHostToDevice`, `DeviceToHost` or the
+/// device-to-device direction: a device address belongs to `stream`'s device
+/// (or, for a device-to-device source, a reachable peer), a host address is
+/// DMA accessible, the two ranges do not overlap, and both stay valid until
+/// the batch completes. Nothing is recorded on or awaited on any other
+/// stream.
 ///
 /// A `count` of 0 succeeds. A null address, zero size, null array with a non
 /// zero count, or unknown direction is `M_DRIVER_INVALID_ARGUMENT`, and
@@ -778,6 +1010,18 @@ M_DRIVER_API M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
 M_DRIVER_API M_DriverStatus
 M_DriverCopyDeviceToDevice(const M_DriverStream *stream, void *dst_device,
                            const void *src_device, uint64_t byte_size);
+
+/// Enqueues a fill of `byte_size` bytes at `dst_device` with `value`, on
+/// `stream`, and returns without waiting for it.
+///
+/// `dst_device` is device memory of `stream`'s device. A `byte_size` of 0 is
+/// `M_DRIVER_INVALID_ARGUMENT`, and a stream adopted from a native handle is
+/// `M_DRIVER_NOT_SUPPORTED`, as for the copies.
+///
+/// Mirrors `cuMemsetD8Async`.
+M_DRIVER_API M_DriverStatus M_DriverMemset(const M_DriverStream *stream,
+                                           void *dst_device, uint8_t value,
+                                           uint64_t byte_size);
 
 /// Enqueues a copy of `byte_size` bytes from `src_device`+`src` to
 /// `dst_device`+`dst`, on `stream`, and returns without waiting for it.

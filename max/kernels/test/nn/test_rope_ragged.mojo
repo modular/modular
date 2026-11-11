@@ -25,7 +25,7 @@ from testdata.fused_qk_rope_goldens import (
 
 def test_rope_ragged[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert dtype == .float32, "goldens only for float32, currently"
 
@@ -148,7 +148,6 @@ def test_rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -193,7 +192,7 @@ def test_rope_ragged[
 
 def test_rope_ragged_non_interleaved[
     dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Checks non-interleaved RoPE against a scalar rotate-half reference.
 
     `interleaved=False` is the only path that calls `output_fn` twice per
@@ -287,7 +286,6 @@ def test_rope_ragged_non_interleaved[
         dtype,
         dtype,
         interleaved=False,
-        target=StaticString("cpu"),
     ](
         x=q_tensor,
         input_row_offsets=input_row_offsets_tensor,
@@ -324,7 +322,7 @@ def test_rope_ragged_non_interleaved[
 
 def test_rope_ragged_rope_first[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) raises -> None:
+](ctx: DeviceContext.CPU) raises -> None:
     """Checks `rope_first` against an explicit slice -> RoPE -> concat.
 
     The Indexer fusion rewrites `concat(rope(x[..., :R]), x[..., R:])` into
@@ -434,7 +432,6 @@ def test_rope_ragged_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
         rope_first=True,
     ](
         x=q_tensor,
@@ -449,7 +446,6 @@ def test_rope_ragged_rope_first[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("cpu"),
     ](
         x=prefix_tensor,
         input_row_offsets=input_row_offsets_tensor,

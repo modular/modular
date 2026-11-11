@@ -24,19 +24,19 @@ def test_literals() raises:
 
     # Concatenation with literals
     var concat_static = "foo" + StaticString("bar")
-    var concat_static2 = StringSlice("foo") + "bar"
+    var concat_static2 = StringSpan("foo") + "bar"
     assert_equal(concat_static, "foobar")
     assert_equal(concat_static2, "foobar")
 
     # Conditional expressions with literals
     var if_string1 = "foo" if cond else StaticString("bar")
-    var if_string2 = StringSlice("foo") if cond else "bar"
+    var if_string2 = StringSpan("foo") if cond else "bar"
     assert_equal(if_string1, "foo")
     assert_equal(if_string2, "foo")
 
     # Logical or with literals
     var or_string1 = "" or StaticString("foo")
-    var or_string2 = StringSlice("foo") or ""
+    var or_string2 = StringSpan("foo") or ""
     assert_equal(or_string1, "foo")
     assert_equal(or_string2, "foo")
 
@@ -77,11 +77,11 @@ def test_alias_expressions() raises:
 def _test_string_types_compatibility(
     string: String,
     static_string: StaticString,
-    string_slice: StringSlice,
+    string_slice: StringSpan,
     cond: Bool = True,
 ) raises:
-    """Test compatibility between String, StaticString, and StringSlice in various operations.
-    Focus on String and StringSlice compatibility.
+    """Test compatibility between String, StaticString, and StringSpan in various operations.
+    Focus on String and StringSpan compatibility.
     """
 
     # String concatenation tests
@@ -104,7 +104,7 @@ def _test_string_types_compatibility(
     # Conditional expression tests - fix type compatibility issues
     var if1 = string if cond else static_string
     var if2 = static_string if cond else string
-    # Convert StringSlice to String for compatibility
+    # Convert StringSpan to String for compatibility
     var if3 = string if cond else String(string_slice)
     # Since cond is True, we expect the first operands
     assert_equal(if1, string)
@@ -114,7 +114,7 @@ def _test_string_types_compatibility(
     # Logical or tests - fix type compatibility issues
     var or1 = string or static_string
     var or2 = static_string or string
-    # Convert StringSlice to String for compatibility
+    # Convert StringSpan to String for compatibility
     var or3 = string or String(string_slice)
     # Since inputs are truthy, we expect the first operands
     assert_equal(or1, string)
@@ -124,34 +124,34 @@ def _test_string_types_compatibility(
 
 def _test_string_slice_conversions(
     string: String,
-    string_slice: StringSlice,
+    string_slice: StringSpan,
 ) raises:
-    """Test explicit conversions between String and StringSlice."""
-    # Convert String to StringSlice
-    var slice_from_string = StringSlice(string)
+    """Test explicit conversions between String and StringSpan."""
+    # Convert String to StringSpan
+    var slice_from_string = StringSpan(string)
     assert_equal(String(slice_from_string), string)
 
-    # Convert StringSlice to String
+    # Convert StringSpan to String
     var string_from_slice = String(string_slice)
     assert_equal(string_from_slice, String(string_slice))
 
     # Test round-trip conversion
-    var round_trip = String(StringSlice(string))
+    var round_trip = String(StringSpan(string))
     assert_equal(round_trip, string)
 
-    # Test that StringSlice content matches when converted to String
+    # Test that StringSpan content matches when converted to String
     assert_equal(String(string_slice), String(string_slice))
 
 
 def _test_equality_operations(
-    string: String, static_string: StaticString, string_slice: StringSlice
+    string: String, static_string: StaticString, string_slice: StringSpan
 ) raises:
     """Test equality operations between different string types."""
     var string_a = String("hello")
     var static_a = "hello"
     # Use a separate string for the slice to avoid aliasing issues
     var string_for_slice = String("hello")
-    var slice_a = StringSlice(string_for_slice)
+    var slice_a = StringSpan(string_for_slice)
 
     var string_b = String("world")
     var static_b = "world"
@@ -171,7 +171,7 @@ def _test_equality_operations(
 def _test_chained_operations(
     string: String,
     static_string: StaticString,
-    string_slice: StringSlice,
+    string_slice: StringSpan,
     cond: Bool = True,
 ) raises:
     """Test chained operations with mixed string types."""
@@ -316,27 +316,27 @@ def _test_conditional_edge_cases(
 def test_string_types_compatibility() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = StringSlice("string_slice")
+    var string_slice = StringSpan("string_slice")
     _test_string_types_compatibility(string, static_string, string_slice)
 
 
 def test_string_slice_conversions() raises:
     var string = "string"
-    var string_slice = StringSlice("string_slice")
+    var string_slice = StringSpan("string_slice")
     _test_string_slice_conversions(string, string_slice)
 
 
 def test_equality_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = StringSlice("string_slice")
+    var string_slice = StringSpan("string_slice")
     _test_equality_operations(string, static_string, string_slice)
 
 
 def test_chained_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = StringSlice("string_slice")
+    var string_slice = StringSpan("string_slice")
     _test_chained_operations(string, static_string, string_slice)
 
 

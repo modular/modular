@@ -66,12 +66,7 @@ from max.graph import (
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.stacked_linear import StackedLinear
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
@@ -79,8 +74,15 @@ from max.nn.legacy.state_space import (
     gated_delta_recurrence_verify_ring_fwd,
     kda_chunk,
     kda_chunk_is_registered,
+    kda_chunk_rows,
+    kda_chunk_rows_servable,
     kda_chunk_supports_head_dims,
 )
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 from ..state_cache import GatedDeltaRingAccess
 
@@ -122,6 +124,31 @@ right; Qwen3.8-Flash-Next says `sigmoid`, where it is silently wrong -- the
 model runs and answers plausibly. Hence the config read and the rejection of
 an unknown value.
 """
+
+
+def _mixed_case_predicate(
+    verify_width: TensorValue,
+    prefill_case: TensorValue,
+    total_tokens: TensorValue,
+    batch_size: TensorValue,
+) -> TensorValue:
+    """Returns whether a verify step holds a row longer than its window.
+
+    A draft-free prefill owns the step instead, and a decode-only step has
+    exactly ``K + 1`` tokens per row, so neither enters the long-row branch.
+    """
+    k = ops.shape_to_tensor(verify_width.shape)[0]
+    return ops.logical_and(
+        ops.logical_not(prefill_case), total_tokens > batch_size * (k + 1)
+    )
+
+
+def _prefill_case(
+    verify_width: TensorValue, is_prefill: TensorValue
+) -> TensorValue:
+    """Returns whether a draft-free prefill owns the step."""
+    no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+    return ops.logical_and(no_drafts, is_prefill)
 
 
 class GatedDeltaNet(Module, Shardable):
@@ -478,7 +505,7 @@ class GatedDeltaNet(Module, Shardable):
                 of writing ``recurrent_pool``, and the caller must fold them
                 before the pool is read again.
             verify_width: The speculative graph's
-                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                :func:`~max.nn._graph_ops.state_space.verify_width_operand`. A launch at
                 width zero lands both leaves on the live pools, and a wider
                 one leaves them for the rollback.
 
@@ -550,6 +577,7 @@ class GatedDeltaNet(Module, Shardable):
                 input_row_offsets=offsets_uint32,
             )
         else:
+            assert ring is not None, "a verify needs a ring"
             conv_output_ragged, qkv_window = gated_delta_conv1d_verify_fwd(
                 qkv_input_ragged=qkv_f32,
                 conv_weight=conv_weight_flat,
@@ -573,11 +601,16 @@ class GatedDeltaNet(Module, Shardable):
                 )
             )
 
-        def _prefill_recurrence() -> TensorValue:
+        def _chunk_inputs(
+            conv: TensorValue,
+            a: TensorValue,
+        ) -> tuple[
+            TensorValue, TensorValue, TensorValue, TensorValue, TensorValue
+        ]:
             # Split the fused conv output into separate bf16 q/k/v so the KDA
             # chunk op has explicit head dimensions.
             q_f32, k_f32, v_f32 = ops.split(
-                conv_output_ragged,
+                conv,
                 [self.key_dim, self.key_dim, self.value_dim],
                 axis=-1,
             )
@@ -608,13 +641,18 @@ class GatedDeltaNet(Module, Shardable):
                 DType.float32,
                 device=device,
             )
-            raw_gate = ops.reshape(a_float, [-1, nv, 1]) * ones_k
+            raw_gate = ops.reshape(a, [-1, nv, 1]) * ones_k
             dt_bias_2d = ops.reshape(dt_bias, [nv, 1]) * ops.constant(
                 np.ones((1, self.key_head_dim), dtype=np.float32),
                 DType.float32,
                 device=device,
             )
+            return q, k, v, raw_gate, dt_bias_2d
 
+        def _prefill_recurrence() -> TensorValue:
+            q, k, v, raw_gate, dt_bias_2d = _chunk_inputs(
+                conv_output_ragged, a_float
+            )
             recurrence_output = kda_chunk(
                 q=q,
                 k=k,
@@ -631,6 +669,33 @@ class GatedDeltaNet(Module, Shardable):
                 beta_mode="probability",
                 state_layout="K_FIRST",
                 use_computebound=True,
+            )
+            return ops.reshape(recurrence_output, [-1, self.value_dim])
+
+        def _chunk_long_rows(ring_output: TensorValue) -> TensorValue:
+            assert verify_width is not None
+            q, k, v, raw_gate, dt_bias_2d = _chunk_inputs(
+                conv_output_ragged, a_float
+            )
+            recurrence_output = kda_chunk_rows(
+                q=q,
+                k=k,
+                v=v,
+                raw_gate=raw_gate,
+                beta_logits=beta,
+                a_log=A_log,
+                dt_bias=dt_bias_2d,
+                cu_seqlens=offsets_int32,
+                state_pool=recurrent_pool,
+                state_indices=rec_slot_int32,
+                passthrough=ops.reshape(
+                    ring_output, [conv_output_ragged.shape[0], nv, vd]
+                ),
+                verify_width=verify_width,
+                output_dtype=DType.float32,
+                gate_mode="original",
+                beta_mode="probability",
+                state_layout="K_FIRST",
             )
             return ops.reshape(recurrence_output, [-1, self.value_dim])
 
@@ -675,6 +740,11 @@ class GatedDeltaNet(Module, Shardable):
             )
             and kda_chunk_is_registered()
         )
+        # Row select needs the fused contract; a geometry outside it keeps
+        # the non-skip serial ring the design's fallback names.
+        rows_servable = chunk_servable and kda_chunk_rows_servable(
+            self.key_head_dim, self.value_head_dim
+        )
         output_types = [
             TensorType(DType.float32, [x.shape[0], self.value_dim], device)
         ]
@@ -682,7 +752,7 @@ class GatedDeltaNet(Module, Shardable):
         batch_size_t = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
         is_prefill = total_tokens_t > batch_size_t
 
-        def _verify_recurrence() -> TensorValue:
+        def _verify_recurrence(skip_long_rows: bool = False) -> TensorValue:
             assert verify_width is not None
             assert ring is not None, "a verify needs a ring"
             return gated_delta_recurrence_verify_ring_fwd(
@@ -695,16 +765,39 @@ class GatedDeltaNet(Module, Shardable):
                 ring_slot_idx=ring.row_id,
                 input_row_offsets=offsets_uint32,
                 verify_width=verify_width,
+                skip_long_rows=skip_long_rows,
             )
 
-        if verify_width is not None and chunk_servable:
+        if verify_width is not None and rows_servable:
             # A draft-free prefill has nothing to roll back, so it runs the
             # forward's own prefill kernel and lands on the forward. A verify
-            # stays on the sequential recurrence, since its ring records and
-            # the fold follow that kernel's arithmetic.
-            no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+            # keeps its decode rows on the sequential recurrence, since their
+            # ring records and the fold follow that kernel's arithmetic; its
+            # prompt rows, when it has any, commit through the chunked prefill.
+            prefill_case = _prefill_case(verify_width, is_prefill)
+            # The skip variant runs a row the window holds as the
+            # records-only launch does, so every verify takes it.
+            ring_output = ops.cond(
+                prefill_case,
+                output_types,
+                _prefill_recurrence,
+                lambda: _verify_recurrence(skip_long_rows=True),
+            )[0]
+            mixed_case = _mixed_case_predicate(
+                verify_width, prefill_case, total_tokens_t, batch_size_t
+            )
             recurrence_output_flat = ops.cond(
-                ops.logical_and(no_drafts, is_prefill),
+                mixed_case,
+                output_types,
+                lambda: _chunk_long_rows(ring_output),
+                lambda: ring_output,
+            )[0]
+        elif verify_width is not None and chunk_servable:
+            # The chunk op still runs the prefill, but row select needs the
+            # fused contract this geometry misses.
+            prefill_case = _prefill_case(verify_width, is_prefill)
+            recurrence_output_flat = ops.cond(
+                prefill_case,
                 output_types,
                 _prefill_recurrence,
                 _verify_recurrence,

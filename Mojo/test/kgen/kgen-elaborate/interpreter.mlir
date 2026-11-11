@@ -453,6 +453,36 @@ kgen.generator export @interpret_pack_load() -> !kgen.struct<(si4, ui8) isParamP
 
 // -----
 
+kgen.func @pack_concat(%a: !kgen.struct<(index)>, %b: !kgen.struct<(si4, ui8)>) -> !kgen.struct<(index, si4, ui8)> {
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(si4, ui8)> -> !kgen.struct<(index, si4, ui8)>
+  hlcf.return %0 : !kgen.struct<(index, si4, ui8)>
+}
+
+// CHECK-LABEL: kgen.func export @interpret_pack_concat
+kgen.generator export @interpret_pack_concat() -> !kgen.struct<(index, si4, ui8)> {
+  // CHECK-NEXT: %{{.*}} = kgen.param.constant: struct<(index, si4, ui8)> = <{ 7, -5, 42 }>
+  %0 = kgen.param.constant: !kgen.struct<(index, si4, ui8)> = <apply(:(!kgen.struct<(index)>, !kgen.struct<(si4, ui8)>) -> !kgen.struct<(index, si4, ui8)> @pack_concat, #kgen.struct<7> : !kgen.struct<(index)>, #kgen.struct<-5, 42> : !kgen.struct<(si4, ui8)>)>
+  hlcf.return %0 : !kgen.struct<(index, si4, ui8)>
+}
+
+// -----
+
+// A concat of one struct of the same type as the result interprets to the
+// constant value of that struct.
+kgen.func @pack_concat_one_operand(%a: !kgen.struct<(index, si4)>) -> !kgen.struct<(index, si4)> {
+  %0 = kgen.struct.concat(%a) : !kgen.struct<(index, si4)> -> !kgen.struct<(index, si4)>
+  hlcf.return %0 : !kgen.struct<(index, si4)>
+}
+
+// CHECK-LABEL: kgen.func export @interpret_pack_concat_one_operand
+kgen.generator export @interpret_pack_concat_one_operand() -> !kgen.struct<(index, si4)> {
+  // CHECK-NEXT: %{{.*}} = kgen.param.constant: struct<(index, si4)> = <{ 7, -5 }>
+  %0 = kgen.param.constant: !kgen.struct<(index, si4)> = <apply(:(!kgen.struct<(index, si4)>) -> !kgen.struct<(index, si4)> @pack_concat_one_operand, #kgen.struct<7, -5> : !kgen.struct<(index, si4)>)>
+  hlcf.return %0 : !kgen.struct<(index, si4)>
+}
+
+// -----
+
 #mem = #interp.memref<{[(#interp.memory_handle<64, "0x0700000000000000">, heap, [], [])], []}, 0, 0> : !kgen.pointer<index>
 
 // COM: Ensure 'load_from_mem' externalizes pointer values.

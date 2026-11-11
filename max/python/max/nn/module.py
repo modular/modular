@@ -438,12 +438,13 @@ class Module(Generic[_P, _R]):
 
         By default (``auto_cast=False``) any dtype mismatch between the loaded
         tensor and the parameter raises. When ``auto_cast=True``, loaded
-        weights whose dtype is in the safe-cast set (currently ``float32`` and
-        ``bfloat16``) are automatically cast to the parameter's dtype when
-        shapes match, and a single summary message is logged at ``WARNING``
-        level per call describing how many parameters were cast. Narrowing
-        casts (such as ``float32`` -> ``bfloat16``) are flagged in the log
-        message as ``(precision loss)``. Dtype mismatches outside the
+        weights whose dtype is in the safe-cast set (currently ``float32``,
+        ``bfloat16`` and ``float16``) are automatically cast to the
+        parameter's dtype when shapes match, and a single summary message is
+        logged at ``WARNING`` level per call describing how many parameters
+        were cast. Narrowing casts (such as ``float32`` -> ``bfloat16``) are
+        flagged in the log message as ``(precision loss)``, and ``bfloat16``
+        -> ``float16`` as ``(range loss)``. Dtype mismatches outside the
         safe-cast set still raise regardless of ``auto_cast``.
 
         Args:
@@ -458,9 +459,10 @@ class Module(Generic[_P, _R]):
                 are used (that is, match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
             auto_cast: If :obj:`True`, permit safe dtype auto-casting between
-                ``float32`` and ``bfloat16`` when shapes match. Defaults to
-                :obj:`False` — dtype mismatches always raise. Pipelines that
-                want to opt in via ``MODULAR_AUTO_CAST_WEIGHTS`` should pass
+                ``float32``, ``bfloat16`` and ``float16`` when shapes match.
+                Defaults to :obj:`False` — dtype mismatches always raise.
+                Pipelines that want to opt in via ``MODULAR_AUTO_CAST_WEIGHTS``
+                should pass
                 ``auto_cast=max.pipelines.lib.weight_loading.auto_cast_weights_from_env()``.
 
         Raises:
@@ -638,6 +640,7 @@ class Module(Generic[_P, _R]):
         allow_subgraphs: bool = True,
         is_device_graph: bool = False,
         signal_buffer_index: int | None = None,
+        signals_group: compilation.SignalsGroup | None = None,
     ) -> compilation.CompiledCallable[_P, _R]:
         """Traces ``forward`` and compiles it into a callable.
 
@@ -693,14 +696,17 @@ class Module(Generic[_P, _R]):
             custom_extensions: Paths to custom Mojo kernel libraries, required
                 when ``forward`` calls
                 :func:`~max.functional.custom`.
-            auto_cast: Whether to permit a safe ``float32``/``bfloat16`` cast
-                when shapes match. See :meth:`load_state_dict`.
+            auto_cast: Whether to permit a safe cast between ``float32``,
+                ``bfloat16`` and ``float16`` when shapes match. See :meth:`load_state_dict`.
             allow_subgraphs: Whether calls made through
                 :func:`~max.tensor.compilation.as_subgraph` are traced
                 as subgraphs. If ``False``, they are inlined.
             is_device_graph: Whether to build a device graph.
             signal_buffer_index: The graph input position of the signal
                 buffers. See :func:`~max.tensor.compilation.stage`.
+            signals_group: Names the signal buffers in the callable's
+                serialized signature. See
+                :meth:`~max.tensor.compilation.CompiledCallable.graph_signature`.
 
         Returns:
             A :class:`~max.tensor.compilation.CompiledCallable` with
@@ -730,7 +736,10 @@ class Module(Generic[_P, _R]):
             )
             timer.mark_build_complete()
             return compilation.CompiledCallable(
-                staged, registry, session=session
+                staged,
+                registry,
+                session=session,
+                signals_group=signals_group,
             )
 
     def stage(

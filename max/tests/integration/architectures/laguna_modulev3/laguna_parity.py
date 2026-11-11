@@ -37,13 +37,13 @@ from max import tree
 from max.driver import Buffer, DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.graph_groups import DecoderGraphInputs
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
+from max.nn.legacy.graph_groups import DecoderGraphInputs
 from max.pipelines.architectures.hf_config_shims import LagunaHFConfig
 from max.pipelines.architectures.laguna import model as graph_model
 from max.pipelines.architectures.laguna import weight_adapters as graph_adapters
@@ -362,22 +362,20 @@ def _v3_logits(model: Any) -> torch.Tensor:
 def assert_logits_match(case_name: str) -> None:
     """Asserts both architectures produce the same logits for one case."""
     case = CASES[case_name]
-    expected = _graph_logits(
-        _build(
-            graph_model.LagunaModel,
-            graph_adapters.convert_safetensor_state_dict,
-            case,
-        )
-    )
     v3_model = laguna_modulev3_arch.pipeline_model
     assert isinstance(v3_model, type)
-    actual = _v3_logits(
-        _build(
-            v3_model,
-            v3_adapters.convert_safetensor_state_dict,
-            case,
-        )
+    graph_built = _build(
+        graph_model.LagunaModel,
+        graph_adapters.convert_safetensor_state_dict,
+        case,
     )
+    v3_built = _build(
+        v3_model,
+        v3_adapters.convert_safetensor_state_dict,
+        case,
+    )
+    expected = _graph_logits(graph_built)
+    actual = _v3_logits(v3_built)
 
     assert actual.shape == expected.shape == (len(PROMPT_LENS), VOCAB_SIZE)
     assert torch.isfinite(actual).all()

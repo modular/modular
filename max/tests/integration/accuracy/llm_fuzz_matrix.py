@@ -62,6 +62,26 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=90,
     ),
     PipelineEntry(
+        pipeline="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        model_path="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
+        timeout=210,
+        # Mach serves the shipped recipe, with the DSpark drafter.
+        mach_key="meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
+    ),
+    PipelineEntry(
+        pipeline="reflection/Beam-1.0-501B-A23B-NVFP4",
+        model_path="reflection/Beam-1.0-501B-A23B-NVFP4",
+        runner="modrunner-b200-4x",
+        gpu_flag="--devices gpu:0,1,2,3",
+        instance_type="bm.gpu.b200.4",
+        timeout=210,
+        # Mach only, with the DFlash2 drafter the model ships with.
+        mach_key="reflection/Beam-1.0-501B-A23B-NVFP4__dflash2",
+    ),
+    PipelineEntry(
         pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
         model_path="tencent/Hy4-preview-FP8",
         runner="modrunner-b200-efa-8x",
@@ -99,6 +119,15 @@ PIPELINES: Final[list[PipelineEntry]] = [
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
+        timeout=120,
+    ),
+    # 8x B200: TP8 attention, EP8 MoE.
+    PipelineEntry(
+        pipeline="zai-org/GLM-5.3-Flash-FP8-ep-tp",
+        model_path="zai-org/GLM-5.3-Flash",
+        runner="modrunner-b200-efa-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.b200.8",
         timeout=120,
     ),
     PipelineEntry(

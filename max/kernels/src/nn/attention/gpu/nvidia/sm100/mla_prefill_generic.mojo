@@ -46,7 +46,7 @@ from nn.attention.gpu.nvidia.common import (
 )
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -669,6 +669,8 @@ __extension SM100MLA:
                 )
             case .Empty:
                 warpgroup_reg_dealloc[num_reg_empty]()
+            case _:
+                pass
 
     @staticmethod
     @inline(.always)

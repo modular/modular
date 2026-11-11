@@ -48,10 +48,10 @@ from collections.abc import Sequence
 from typing import Any
 
 from max.dtype import DType
-from max.nn.legacy.kv_cache import RecurrentStateRegion
-from max.nn.legacy.state_space import kda_ring_record_elements
+from max.nn._graph_ops.state_space.kimi_delta import kda_ring_record_elements
+from max.nn.kv_cache import RecurrentStateRegion
 
-from ..qwen3_5.state_cache import (
+from .ring import (
     COMPILED_RING_LENS,
     RING_DTYPE,
     ring_record_stride,
@@ -110,9 +110,9 @@ TAIL_RING_DTYPE = DType.bfloat16
 
 Not ``state_dtype``, which is the KDA pools' float32. The ring holds indexer
 keys and their compression-gate scores, and the gate and its position table are
-bfloat16 and unquantized in the checkpoint whatever the FP8 map says -- see
-``deepseekV3_2.layers.indexer``. The tail kernel takes one dtype for the ring,
-the keys and the gate together, so this follows the gate.
+bfloat16 and unquantized in the checkpoint whatever the FP8 map says. The tail
+kernel takes one dtype for the ring, the keys and the gate together, so this
+follows the gate.
 """
 
 
@@ -206,7 +206,7 @@ def with_verify_ring(
     """Appends the speculative verify's ring to the live state leaves.
 
     A ring row holds one record per value head and window position, laid out
-    as :func:`~max.nn.legacy.state_space.kda_ring_record_elements` counts it. The
+    as :func:`~max.nn._graph_ops.state_space.kda_ring_record_elements` counts it. The
     record stride is padded so the ring's page divides the live leaves' least
     common multiple, which is the pool's block, so declaring the ring never
     widens it.
@@ -214,7 +214,7 @@ def with_verify_ring(
     Args:
         regions: The live leaves :func:`state_regions` declares, per device.
         ring_len: Records one request's ring holds, one of
-            :data:`~..qwen3_5.state_cache.COMPILED_RING_LENS`.
+            :data:`~.ring.COMPILED_RING_LENS`.
 
     Raises:
         ValueError: If ``ring_len`` is not a compiled ring length.

@@ -41,7 +41,7 @@ from max.gpu.host import (
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_bf16_num_partitions,
 )
@@ -442,7 +442,7 @@ def main() raises:
                 if opts.which_case == "prefill" or opts.which_case == "all":
                     ts.append(16384)
                 if opts.which_case == "decode" or opts.which_case == "all":
-                    for t in [1, 8, 32, 64, 128]:
+                    for t in [1, 8, 32, 48, 64, 96, 128]:
                         ts.append(t)
             for t in ts:
                 bench_case(ctx, b, t, opts)

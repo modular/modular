@@ -43,10 +43,9 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.nn._identity import IdentitySet
 from max.tree import Tree
 from typing_extensions import Self
-
-from .._identity import IdentitySet
 
 
 @runtime_checkable
@@ -307,7 +306,7 @@ class Module(Layer, ABC):
                 positional argument of the layer's ``__call__``. Each argument
                 may be a single :class:`~max.graph.Value`, a (possibly nested)
                 list/tuple of values, or a structured type following the pytree
-                protocol, such as :class:`~max.nn.legacy.kv_cache.PagedCacheValues`.
+                protocol, such as :class:`~max.nn.kv_cache.PagedCacheValues`.
                 The subgraph's signature is derived from the flattened leaves'
                 types, and the same structure is rebuilt from the subgraph's
                 inputs before the layer is invoked.

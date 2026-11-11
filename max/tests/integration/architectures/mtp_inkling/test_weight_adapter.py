@@ -21,8 +21,9 @@ from max.pipelines.architectures.inkling.model_config import (
     parse_inkling_mtp_config,
 )
 from max.pipelines.architectures.mtp_inkling.weight_adapters import (
-    convert_inkling_mtp_state_dict,
+    inkling_mtp_weight_rules,
 )
+from max.pipelines.lib.weight_transform import WeightTransform
 
 
 def test_parse_inkling_mtp_config_reads_namespace_and_caps_depths() -> None:
@@ -77,7 +78,7 @@ def test_inkling_mtp_config_num_depths_rejects_empty_spec() -> None:
         mtp.num_depths(0)
 
 
-def test_convert_inkling_mtp_state_dict_keeps_only_the_depths() -> None:
+def test_inkling_mtp_rules_keep_only_the_depths() -> None:
     weight = NonCallableMock()
     state_dict = {
         "model.llm.embed.weight": weight,
@@ -92,7 +93,9 @@ def test_convert_inkling_mtp_state_dict_keeps_only_the_depths() -> None:
         "model.visual.unused.weight": weight,
     }
 
-    new_state_dict = convert_inkling_mtp_state_dict(state_dict, None)
+    new_state_dict = WeightTransform(
+        inkling_mtp_weight_rules(NonCallableMock())
+    )(state_dict)
 
     assert set(new_state_dict) == {
         "chain_norm.weight",
@@ -112,40 +115,21 @@ def _depth_weight_names(depth: int) -> list[str]:
     ]
 
 
-def test_convert_inkling_mtp_drops_depths_past_the_cap() -> None:
-    """A K=2 draft leaves the checkpoint's remaining depths unread."""
-    hf = SimpleNamespace(mtp_config={"num_nextn_predict_layers": 8})
-    pipeline_config = NonCallableMock(
-        speculative=SimpleNamespace(num_speculative_tokens=2)
-    )
+def test_inkling_mtp_rules_keep_checkpoint_depths_without_reading_metadata() -> (
+    None
+):
     state_dict = {
         name: NonCallableMock()
         for depth in range(8)
         for name in _depth_weight_names(depth)
     }
-    state_dict["model.mtp.chain_norm.weight"] = NonCallableMock()
-
-    new_state_dict = convert_inkling_mtp_state_dict(
-        state_dict, hf, pipeline_config
+    ignored = NonCallableMock()
+    state_dict[
+        "model.mtp.layers.0.transformer_block.mlp.w13_dn.original_shape"
+    ] = ignored
+    converted = WeightTransform(inkling_mtp_weight_rules(NonCallableMock()))(
+        state_dict
     )
-
-    assert "chain_norm.weight" in new_state_dict
-    for depth in (0, 1):
-        assert f"layers.{depth}.hidden_norm.weight" in new_state_dict
-    for depth in range(2, 8):
-        assert not any(
-            key.startswith(f"layers.{depth}.") for key in new_state_dict
-        )
-        # Dropped depths must not be read off disk, not merely discarded.
-        for name in _depth_weight_names(depth):
-            state_dict[name].data.assert_not_called()
-
-
-def test_convert_inkling_mtp_keeps_all_depths_without_a_width() -> None:
-    """With no pipeline config to resolve the width, nothing is dropped."""
-    hf = SimpleNamespace(mtp_config={"num_nextn_predict_layers": 8})
-    state_dict = {name: NonCallableMock() for name in _depth_weight_names(7)}
-
-    new_state_dict = convert_inkling_mtp_state_dict(state_dict, hf, None)
-
-    assert "layers.7.hidden_norm.weight" in new_state_dict
+    for depth in range(8):
+        assert f"layers.{depth}.hidden_norm.weight" in converted
+    ignored.data.assert_not_called()

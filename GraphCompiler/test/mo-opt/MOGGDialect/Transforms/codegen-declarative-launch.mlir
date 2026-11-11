@@ -15,9 +15,9 @@
 // CHECK:   var [[CONFIG:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT:[A-Za-z0-9_]+]], [[IN:[A-Za-z0-9_]+]])
 // CHECK:   comptime [[OUT_T:[A-Za-z0-9_]+]] = type_of([[OUT]])
 // CHECK:   comptime [[IN_T:[A-Za-z0-9_]+]] = type_of([[IN]])
-// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT_T]].TileTensorType, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].TileTensorType):
+// CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].device_type):
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT_T]]([[A0]]), [[IN_T]]([[A1]]))
-// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT]].to_tile_tensor(), [[IN]].to_tile_tensor())
+// CHECK:   builtin_primitives.primitives.mogg_launch_declarative{{\[}}[[KERNEL]]{{\]}}([[CTX]], [[CONFIG]], [[OUT]], [[IN]])
 
 mo.graph @declarative(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>

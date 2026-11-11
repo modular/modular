@@ -27,7 +27,7 @@
 // CHECK:     var [[YV:.*]] = {{.*}}simd_load_from_tensor_pointer[static_spec = [[SPEC1]], simd_width = width, element_alignment = element_alignment]([[PTR1]], [[SH1]], [[ST1]], {{.*}})
 // CHECK:     var [[RES:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.float32]([[XV]], [[YV]])
 // CHECK:     {{.*}}simd_store_into_tensor_pointer[static_spec = [[SPEC2]], simd_width = width, element_alignment = element_alignment]([[PTR2]], [[SH2]], [[ST2]], {{.*}}, rebind[SIMD[{{.*}}, width]]([[RES]]))
-// CHECK:   {{.*}}_foreach[simd_width = {{.*}}get_simd_width_for_dtypes[{{.*}}](), target = "cpu"]([[SHAPE]], [[LAMBDA]], [[CTX]])
+// CHECK:   {{.*}}_foreach[simd_width = {{.*}}get_simd_width_for_dtypes[{{.*}}]()]([[SHAPE]], [[LAMBDA]], [[CTX]])
 
 mo.graph @add(%arg0: !mo.tensor<[2, 2], f32>, %arg1: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   %c = mo.add(%arg0, %arg1) : !mo.tensor<[2, 2], f32>

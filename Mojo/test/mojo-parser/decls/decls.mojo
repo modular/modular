@@ -1428,3 +1428,25 @@ struct PartiallyBoundParam[T: AnyType](Movable where False):
 def infer_partially_bound_var_type():
     # CHECK: lit.var.decl "v" var : !lit.ref<!lit.struct<#PartiallyBoundParam <:!AnyType !Int>>, mut *"v`1">
     var v: PartiallyBoundParam = 1
+
+
+##===----------------------------------------------------------------------===##
+# Auto-parameterization on unbound struct metatypes.
+##===----------------------------------------------------------------------===##
+
+struct AutoParamStruct[x: Int]:
+    pass
+
+comptime AutoParamAlias[t: Int] = AutoParamStruct[t]
+
+
+# CHECK-LABEL: lit.fn @"autoparam_via_alias
+# CHECK-SAME: <["f.t`1"]*"f.t`1": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.t`1">>>>()
+def autoparam_via_alias[f: type_of(AutoParamAlias[_])]():
+    pass
+
+
+# CHECK-LABEL: lit.fn @"autoparam_direct_ref
+# CHECK-SAME: <["f.x`1"]*"f.x`1": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.x`1">>>>()
+def autoparam_direct_ref[f: type_of(AutoParamStruct[_])]():
+    pass

@@ -124,6 +124,26 @@ def test_var_decl_patterns(c: Bool) raises:
         pass
 
 
+# Destructuring assignment should consume each rvalue tuple element instead of
+# requiring the aggregate tuple to be implicitly copyable.
+def destructure_rvalue_tuple_assignment():
+    var a: List[Int] = []
+    var b: List[Int] = []
+    var (c, d) = (a^, b^)
+    _ = c
+    _ = d
+
+
+def make_list_tuple() -> Tuple[List[Int], List[Int]]:
+    return (List[Int](), List[Int]())
+
+
+def destructure_returned_rvalue_tuple_assignment():
+    var (a, b) = make_list_tuple()
+    _ = a
+    _ = b
+
+
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
@@ -414,6 +434,46 @@ def test_mergewith(
 ##===----------------------------------------------------------------------===##
 # Chained comparisons.
 ##===----------------------------------------------------------------------===##
+
+struct ReflectedComparison(ImplicitlyCopyable):
+    def __init__(out self):
+        pass
+
+    def __lt__(self, other: Int) -> Bool:
+        return True
+
+    def __le__(self, other: Int) -> Bool:
+        return True
+
+    def __gt__(self, other: Int) -> Bool:
+        return True
+
+    def __ge__(self, other: Int) -> Bool:
+        return True
+
+
+# CHECK-LABEL: lit.fn @"reflected_comparisons
+# CHECK: ReflectedComparison::@"__gt__
+# CHECK: ReflectedComparison::@"__ge__
+# CHECK: ReflectedComparison::@"__lt__
+# CHECK: ReflectedComparison::@"__le__
+# CHECK: ReflectedComparison::@"__gt__
+# CHECK: ReflectedComparison::@"__lt__
+def reflected_comparisons(value: ReflectedComparison):
+    _ = 0 < value
+    _ = 0 <= value
+    _ = 0 > value
+    _ = 0 >= value
+    _ = 0 < value < 100
+
+
+# The left IntLiteral must be materialized for Scalar's reflected comparison.
+# CHECK-LABEL: lit.fn @"reflected_intliteral_scalar
+def reflected_intliteral_scalar():
+    var x: Scalar[DType.float64] = 1.0
+    _ = x > 0
+    _ = 0 < x
+    _ = 0 < x < 100
 
 
 # CHECK-LABEL: lit.fn @"chained_cmp

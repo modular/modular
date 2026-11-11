@@ -17,8 +17,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from max.graph import BufferValue, TensorValue
+from max.nn.kv_cache import PagedCacheValues
 
-from ..kv_cache import PagedCacheValues
 from ..layer import Module
 
 

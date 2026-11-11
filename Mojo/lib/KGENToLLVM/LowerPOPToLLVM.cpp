@@ -1222,8 +1222,11 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPFloorDiv(FloorDivOp op) {
   }
 
   auto intType = dyn_cast<IntegerType>(getElementTypeOrSelf(type));
+  // The constant-divisor sequence forms a 2W-bit product, so it needs a target
+  // that can compile that wider integer type: an `i128` for a 64-bit dividend,
+  // which some targets reject.
   bool canWiden = intType && (2 * intType.getWidth() <= 64 || !targetLowering ||
-                              targetLowering->supportsI128());
+                              targetLowering->supportsDType(KGENDType::si128));
   if (intType && intType.getWidth() >= 8 && intType.getWidth() <= 64 &&
       llvm::isPowerOf2_32(intType.getWidth()) && canWiden) {
     std::optional<APInt> divisor =

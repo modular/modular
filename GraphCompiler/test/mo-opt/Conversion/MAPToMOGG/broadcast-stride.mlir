@@ -2,9 +2,9 @@
 
 // Full pipeline from a real mo.static.broadcast_to op through MOToMAP,
 // outlining, view motion, and MAPToMOGG: map.index.broadcast.stride lowers to
-// mogg.tensor.create.broadcast, which only carries the view's own output
-// shape -- the input's shape/rank is read off the input tensor operand at
-// Mojo-emission time, not duplicated onto this op. The `canonicalize` right
+// mogg.tensor.create.broadcast, which carries the view's own output shape,
+// statically and as a runtime `!mogg.shape` -- the input's shape/rank is read
+// off the input tensor operand at Mojo-emission time. The `canonicalize` right
 // after LoopInvariantViewMotion drops the closure's now-dead original input
 // capture (unused once the hoisted broadcast view replaces the load) via
 // `DropDeadCapturingClosureCaptures`.
@@ -20,7 +20,8 @@
 // CHECK-NEXT:    [[IT:%[^ ]+]] = mogg.tensor.create([[IP]], [[ISH]]) {{.*}}io = Input{{.*}} : !mogg.tensor
 // CHECK-NEXT:    [[OSH:%[^ ]+]] = mogg.shape.create() <shape = #mosh<ape[8, 64]> : !mosh.ape>
 // CHECK-NEXT:    [[OT:%[^ ]+]] = mogg.tensor.create([[OP]], [[OSH]]) {{.*}}io = Output{{.*}} : !mogg.tensor
-// CHECK-NEXT:    [[BCAST:%[^ ]+]] = mogg.tensor.create.broadcast([[IT]]) {{.*}}outShape = #mosh<ape[8, 64]>{{.*}} : !mogg.tensor
+// CHECK-NEXT:    [[BSH:%[^ ]+]] = mogg.shape.create() <shape = #mosh<ape[8, 64]> : !mosh.ape>
+// CHECK-NEXT:    [[BCAST:%[^ ]+]] = mogg.tensor.create.broadcast([[IT]], [[BSH]]) {{.*}}staticOutShape = #mosh<ape[8, 64]>{{.*}} : !mogg.tensor
 // CHECK-NEXT:    [[LSH:%[^ ]+]] = mogg.shape.create() <shape = #mosh<ape[8, 64]> : !mosh.ape>
 // CHECK-NEXT:    mogg.call.foreach @builtin_primitives.primitives._foreach shape([[LSH]]) context([[CTX]]) ([[IDX:%[^ :,]+]] : !map.index<2>) capturing {[[OUT:%[^ :,]+]] = [[OT]] : !mogg.tensor, [[BCASTARG:%[^ :,]+]] = [[BCAST]] : !mogg.tensor} device = "cpu" {
 // CHECK-NEXT:      [[VAL:%[^ ]+]] = mogg.tensor.load [[BCASTARG]]{{\[}}[[IDX]]] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
@@ -35,14 +36,28 @@ mo.graph @broadcastSameRank(%input: !mo.tensor<[1, 64], f32>)
 
 // Rank-expanding: in has one fewer dim than out (numpy semantics). The
 // generated mogg.tensor.create.broadcast is identical in shape to the
-// rank-preserving case above -- $outShape is the only shape this op carries;
-// the input's own (smaller) rank is inferred later, purely from its Mojo
-// argument type at emission time.
+// rank-preserving case above -- it carries only the output shape; the input's
+// own (smaller) rank is inferred later, purely from its Mojo argument type at
+// emission time.
 
 // CHECK-LABEL: mo.graph @broadcastRankExpanding
-// CHECK: mogg.tensor.create.broadcast(%{{.*}}) {{.*}}outShape = #mosh<ape[8, 64]>{{.*}} : !mogg.tensor
+// CHECK: mogg.tensor.create.broadcast(%{{.*}}) {{.*}}staticOutShape = #mosh<ape[8, 64]>{{.*}} : !mogg.tensor
 mo.graph @broadcastRankExpanding(%input: !mo.tensor<[64], f32>)
     -> !mo.tensor<[8, 64], f32> {
   %res = mo.static.broadcast_to(%input) : !mo.tensor<[64], f32> -> !mo.tensor<[8, 64], f32>
   mo.output %res : !mo.tensor<[8, 64], f32>
+}
+
+// A symbolic dim reaches the view only through its runtime shape, built from
+// the kernel's dims: a slice composed on top clamps against it.
+
+// CHECK-LABEL: mo.graph @broadcastDynamic
+// CHECK:       dims ([[R:%[^ :]+]]: !mogg.dim<R>)
+// CHECK:       mogg.tensor.create({{.*}}io = Output
+// CHECK-NEXT:  [[BSH:%[^ ]+]] = mogg.shape.create([[R]]) <shape = #mosh<ape[dyn, 64]> : !mosh.ape> : !mogg.dim<R>
+// CHECK-NEXT:  mogg.tensor.create.broadcast(%{{.*}}, [[BSH]]) {{.*}}staticOutShape = #mosh<ape[R, 64]>{{.*}} : !mogg.tensor
+mo.graph @broadcastDynamic<R>(%input: !mo.tensor<[R, 1], f32>)
+    -> !mo.tensor<[R, 64], f32> {
+  %res = mo.static.broadcast_to(%input) : !mo.tensor<[R, 1], f32> -> !mo.tensor<[R, 64], f32>
+  mo.output %res : !mo.tensor<[R, 64], f32>
 }

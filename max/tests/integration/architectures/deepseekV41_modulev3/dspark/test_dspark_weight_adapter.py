@@ -30,7 +30,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, load_weights
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
 )

@@ -33,9 +33,11 @@ comptime inlineWhereIsError[x: Int where x > 0] = x
 comptime ComptimeWithParametricType2[x: Int]: SIMD[.int, x*20] = SIMD[.int, x]()
 
 # expected-error @below {{'SIMD[.int, _]' is not concrete, use '[]' to bind missing parameters}}
+# expected-note @below {{missing parameter 'size'}}
 comptime HoleAnnotation[x: Int]: SIMD[.int, _] = SIMD[.int, x]()
 
 # expected-error @below {{'Origin[mut=mut]' is not concrete, use '[]' to bind missing parameters}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
 comptime MutOriginAnn[mut: Bool]: Origin[mut=mut] = AnyOrigin[mut=mut]
 
 def implicit_generator_constraint_drop_error[cond: Bool]():
@@ -119,7 +121,7 @@ struct Dep[T: AnyType, v: T](Movable where False):
 comptime MyDep[T: AnyType, v: T] = Dep[T, v]
 
 # expected-error @below {{'T' refers to an unbound parameter in 'MyDep'}}
-# expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
+# expected-note @below {{'MyDep' is aka 'Dep[_, _]'}}
 comptime MyDepDotT = MyDep.T
 
 # expected-error @below {{'Dep[_, _]' value has no attribute 'hello'}}
@@ -134,8 +136,10 @@ comptime MyDepGetAlias2 = MyDep[Int, 2].hello
 
 # COM: Using a generator as a struct field type should be rejected (MOCO-3514).
 struct FieldWithUnboundAlias(Movable where False):
-    # expected-error @below {{'MyDep' is not a concrete type, use '[]' to bind missing parameters}}
-    # expected-note @below {{'MyDep' is aka 'comptime[T: AnyType, v: T] Dep[T, v]'}}
+    # expected-error @below {{'MyDep' is not concrete, use '[]' to bind missing parameters}}
+    # expected-note @below {{missing parameter 'T'}}
+    # expected-note @below {{missing parameter 'v'}}
+    # expected-note @below {{'MyDep' is aka 'Dep[_, _]'}}
     var f: MyDep
 
 

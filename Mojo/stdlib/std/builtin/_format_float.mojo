@@ -177,7 +177,7 @@ def _write_float[
                     n //= 10
                     pos -= 1
             writer.write_string(
-                StringSlice(
+                StringSpan(
                     unsafe_from_utf8=Span(
                         unsafe_ptr=digits.unsafe_ptr().unsafe_offset(pos + 1),
                         length=11 - pos,
@@ -203,7 +203,7 @@ def _write_float[
                     if frac < 1e-7:
                         break
             writer.write_string(
-                StringSlice(
+                StringSpan(
                     unsafe_from_utf8=Span(
                         unsafe_ptr=frac_digits.unsafe_ptr(),
                         length=frac_len,
@@ -492,40 +492,6 @@ def _compute_endpoint[
                 (cache + (cache >> UInt64(sig_bits + 1)))
                 >> UInt64(cache_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
-
-
-def _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
-    comptime total_bits = size_of[dtype]() * 8
-    var output = String()
-
-    comptime if not dtype.is_floating_point():
-        for i in reversed(range(total_bits)):
-            output.write((x >> Scalar[dtype](i)) & 1)
-            if i % 8 == 0:
-                output.write(" ")
-    else:
-        comptime sig_bits = 23 if dtype == .float32 else 52
-        comptime exp_bits = 8 if dtype == .float32 else 11
-        comptime cast_type = DType.uint32 if dtype == .float32 else DType.uint64
-        var casted = bitcast[cast_type](x)
-        for i in reversed(range(total_bits)):
-            output.write((casted >> Scalar[cast_type](i)) & 1)
-            if i == total_bits - 1:
-                output.write(" ")
-            if i == sig_bits:
-                if total_bits == 64:
-                    output.write(" ")
-                else:
-                    output.write("    ")
-            if i < sig_bits:
-                if (
-                    total_bits == 32
-                    and (total_bits - sig_bits - 2 - i) % 8 == 0
-                ):
-                    output.write(" ")
-                if total_bits == 64 and (total_bits - sig_bits - i) % 8 == 0:
-                    output.write(" ")
-    return output
 
 
 def _rotr[

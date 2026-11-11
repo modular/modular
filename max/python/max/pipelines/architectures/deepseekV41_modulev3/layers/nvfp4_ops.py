@@ -15,12 +15,10 @@
 from max import functional as F
 from max.dtype import DType
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
-    moe_create_indices,
-)
 from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
 )
+from max.nn.kernels import moe_create_indices
 from max.tensor import Tensor
 
 

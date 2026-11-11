@@ -13,7 +13,7 @@
 #
 # Per-kernel fuzz target: fused_qk_rms_norm_ragged_paged
 # (the MiniMax-M3 per-head QK RMSNorm over Q and the newly-written K rows in the
-#  paged KV cache, op `mo.fused_qk_rms_norm.ragged.paged`; kernel in
+#  paged KV cache, op `kv_cache.fused_qk_rms_norm.ragged.paged`; kernel in
 #  nn/kv_cache.mojo). Distinct from the MLA `fused_rope_rmsnorm` target: here the
 #  cache is a standard MHA-style paged cache (num_kv_heads > 1, K/V dim, is_mla=
 #  False) and the kernel RMSNorms the FULL head_dim of Q AND K (no RoPE).
@@ -490,9 +490,7 @@ def run_one_case(
     var row_offsets = TileTensor(row_offsets_device, row_major(batch_size + 1))
 
     # === Kernel under test ===================================================
-    fused_qk_rms_norm_ragged_paged[
-        target="gpu", multiply_before_cast=multiply_before_cast
-    ](
+    fused_qk_rms_norm_ragged_paged[multiply_before_cast=multiply_before_cast,](
         q_proj.as_imm(),
         kv_collection,
         q_gamma.as_imm(),

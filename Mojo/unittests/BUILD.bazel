@@ -15,6 +15,16 @@ kgen_kernel(
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/Runtime",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     deps = [
         ":test_kernels",
         "//Mojo:HostBackend",
@@ -26,8 +36,13 @@ modular_cc_test(
     name = "KGENDialectTest",
     srcs = glob(["kgen-dialect/*.cpp"]),
     deps = [
+        "//Mojo:CODialect",
+        "//Mojo:HLCFDialect",
         "//Mojo:KGENDialect",
         "//Mojo:LITDialect",
+        "//Mojo:POPDialect",
         "//Mojo:ToolCommon",
+        "//Mojo:Transforms",
+        "@llvm-project//mlir:Parser",
     ],
 )

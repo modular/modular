@@ -496,12 +496,13 @@ This creates an `Optional` with a value of `None`, which is equivalent
 to a null pointer. `Optional[Pointer]` has the same memory layout
 as a raw pointer, so you can pass it across FFI boundaries as `NULL`.
 
-To check whether an optional pointer is null, use `Optional` methods:
+To check whether an optional pointer is null and unwrap it, use
+[`if case`](/docs/manual/control-flow/#matching-optional-values):
 
 ```mojo
-if ptr:
+if case .Some(p) = ptr:
     # ptr is not None — safe to unwrap
-    var p = ptr.value()
+    print(p[])
 ```
 
 When you need a non-null value for deferred initialization, use

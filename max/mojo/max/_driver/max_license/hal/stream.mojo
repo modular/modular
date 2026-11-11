@@ -18,8 +18,11 @@ from .buffer import Buffer, BufferView
 from .context import Context
 from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
+from .extensions.completion_flag import FlagCondition
+from .extensions.traits import SupportsCompletionFlagV1
+from .plugins import FlagHandle
 from .device import DeviceSpec
-from .status import STATUS_SUCCESS, HALError
+from .status import STATUS_SUCCESS, STATUS_UNKNOWN_SYMBOL, HALError
 from std.collections import OptionalReg
 from std.memory import (
     ArcPointer,
@@ -276,11 +279,47 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     def wait_value64(
         mut self, device_address: UInt64, value: UInt64
     ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` equals
-        `value`. Runs after all previous Stream ops."""
+        """Enqueues a wait until the 64-bit slot at `device_address` is at
+        least `value`. Runs after all previous Stream ops."""
         self._chain_wait()
         self._queue[].wait_value64(device_address, value)
         self._chain_signal()
+
+    def wait_flag(
+        mut self,
+        flag: FlagHandle,
+        value: UInt64,
+        cond: FlagCondition,
+    ) raises HALError:
+        """Enqueues a wait until `flag` meets `cond` against `value`. Runs
+        after all previous Stream ops.
+
+        Args:
+            flag: The flag to wait on, created by this stream's plugin.
+            value: The target value. Keep it below 2^63: HIP compares flag
+                values as signed.
+            cond: The comparison, one the plugin reports.
+
+        Raises:
+            `STATUS_UNKNOWN_SYMBOL` if the stream's plugin has no completion
+            flags, or the plugin's error if it refuses the wait.
+        """
+        comptime if conforms_to(Self.HALExtensions, SupportsCompletionFlagV1):
+            if case .Some(flags) = self.extensions().completion_flag():
+                self._chain_wait()
+                flags.wait(
+                    self._queue[]._raw[],
+                    self._queue[]._handle,
+                    flag,
+                    value,
+                    cond,
+                )
+                self._chain_signal()
+                return
+        raise HALError(
+            STATUS_UNKNOWN_SYMBOL,
+            message="plugin does not export completion flags",
+        )
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

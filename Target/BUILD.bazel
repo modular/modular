@@ -18,7 +18,7 @@ modular_cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextHeaders",
         "//SDK:HAL",
         "//Support:Base",
         "//Support:SymbolExport",
@@ -251,6 +251,13 @@ modular_cc_binary(
         "lib/CPU/*.cpp",
         "lib/CPU/*.h",
     ]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
     linkshared = True,
     linkstatic = False,
     visibility = ["//visibility:public"],
@@ -317,6 +324,7 @@ modular_cc_library(
     name = "Support",
     srcs = glob(["lib/Support/*.cpp"]),
     hdrs = glob(["lib/Support/*.h"]),
+    textual_hdrs = glob(["lib/Support/*.inc"]),
     visibility = ["//visibility:public"],
     deps = [
         "//SDK:HAL",

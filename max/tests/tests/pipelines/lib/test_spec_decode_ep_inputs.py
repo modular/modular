@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
     build_spec_decode_input_types,
@@ -51,7 +51,7 @@ def test_ep_inputs_follow_the_tail_of_a_signature_that_isnt_distributed() -> (
     assert types == (*without, *EP)
     with Graph("ep_inputs", input_types=types) as graph:
         named = decode_spec_decode_input_values(
-            graph.inputs, spec, kv_params=kv, num_ep_inputs=len(EP)
+            graph.inputs, spec, kv_params=kv, ep_input_types=EP
         )
         decoded = []
         for value in named.ep_inputs:

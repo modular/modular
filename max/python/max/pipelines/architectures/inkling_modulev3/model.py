@@ -23,7 +23,7 @@ from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,

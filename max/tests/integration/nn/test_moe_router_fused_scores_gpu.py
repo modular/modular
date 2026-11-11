@@ -20,7 +20,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     moe_router_group_limited,
     moe_router_single_group_eplb,
 )
@@ -102,11 +102,10 @@ def test_single_group_router_with_fused_scores(
     gpu_session: InferenceSession, num_tokens: int
 ) -> None:
     n_experts = 384
-    logits, bias = _inputs(num_tokens, n_experts)
-
     compiled = gpu_session.load(
         _build_group_limited_graph(n_experts, n_groups=1, topk_group=1)
     )
+    logits, bias = _inputs(num_tokens, n_experts)
     got_indices, got_weights = (
         from_dlpack(t) for t in compiled.execute(logits, bias)
     )
@@ -126,11 +125,10 @@ def test_group_limited_router_with_fused_scores(
     gpu_session: InferenceSession, num_tokens: int
 ) -> None:
     n_experts, n_groups, topk_group = 256, 8, 4
-    logits, bias = _inputs(num_tokens, n_experts)
-
     compiled = gpu_session.load(
         _build_group_limited_graph(n_experts, n_groups, topk_group)
     )
+    logits, bias = _inputs(num_tokens, n_experts)
     got_indices, got_weights = (
         from_dlpack(t) for t in compiled.execute(logits, bias)
     )
@@ -162,14 +160,6 @@ def test_single_group_router_eplb_with_fused_scores(
     gpu_session: InferenceSession, num_tokens: int
 ) -> None:
     n_experts, num_layers, layer = 384, 2, 1
-    logits, bias = _inputs(num_tokens, n_experts)
-    # One replica per logical expert, so the remap is a per-layer permutation.
-    log2phy = torch.stack(
-        [torch.randperm(n_experts) for _ in range(num_layers)]
-    ).to(device="cuda", dtype=torch.int32)
-    logcnt = torch.ones(num_layers, n_experts, device="cuda", dtype=torch.int32)
-    layer_idx = torch.tensor([layer], device="cuda", dtype=torch.int32)
-
     with Graph(
         "moe_router_single_group_eplb",
         input_types=(
@@ -207,6 +197,14 @@ def test_single_group_router_eplb_with_fused_scores(
         )
 
     compiled = gpu_session.load(graph)
+
+    logits, bias = _inputs(num_tokens, n_experts)
+    # One replica per logical expert, so the remap is a per-layer permutation.
+    log2phy = torch.stack(
+        [torch.randperm(n_experts) for _ in range(num_layers)]
+    ).to(device="cuda", dtype=torch.int32)
+    logcnt = torch.ones(num_layers, n_experts, device="cuda", dtype=torch.int32)
+    layer_idx = torch.tensor([layer], device="cuda", dtype=torch.int32)
     got_phy, got_log, got_weights = (
         from_dlpack(t)
         for t in compiled.execute(

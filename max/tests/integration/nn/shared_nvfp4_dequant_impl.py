@@ -30,7 +30,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import nvfp4_dequant
+from max.nn._graph_ops import nvfp4_dequant
 
 BLOCK = 16
 

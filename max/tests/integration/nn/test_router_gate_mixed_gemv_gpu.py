@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Mixed bf16-A x fp32-B router-gate GEMV op (KERN-3098).
 
-Covers the graph custom op (`mo.router.gate.mixed.gemv`) shape/dtype contract
+Covers the graph custom op (`moe.router.gate.mixed.gemv`) shape/dtype contract
 and numerics, including the tiny-M GEMV and large-M matmul fallback paths.
 """
 
@@ -21,12 +21,9 @@ from __future__ import annotations
 import pytest
 import torch
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import (
-    _router_gate_mixed_gemv,
-    moe_router_group_limited,
-)
+from max.nn._graph_ops import _router_gate_mixed_gemv, moe_router_group_limited
 from torch.utils.dlpack import from_dlpack
 
 # Router-gate shape (KERN-3219): N experts, K hidden.
@@ -74,6 +71,52 @@ def test_router_gate_mixed_gemv_op(
     # the fp32 weight to TF32; the fused GEMV (IEEE fp32) is held to 1e-2.
     atol = 0.25 if torch.version.hip is None and m > 128 else 1e-2
     torch.testing.assert_close(got, ref, rtol=1e-2, atol=atol)
+
+
+@pytest.fixture(scope="module")
+def bf16_weight_op(gpu_session: InferenceSession) -> Model:
+    """One compiled bf16-weight op graph, symbolic M, shared by every case.
+
+    The op branches on runtime M (the production graph passes it dynamic),
+    so a single compile serves every case; per-case graphs would pay one
+    GPU graph compile each.
+    """
+    with Graph(
+        "router_gate_mixed_gemv_bf16_weight",
+        input_types=(
+            TensorType(DType.bfloat16, ["m", K], device=DeviceRef.GPU()),
+            TensorType(DType.bfloat16, [N, K], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        graph.output(_router_gate_mixed_gemv(a, b))
+    return gpu_session.load(graph)
+
+
+@pytest.mark.parametrize("m", [2, 16, 32, 64, 96, 512, 1024])
+def test_router_gate_mixed_gemv_op_bf16_weight(
+    m: int, bf16_weight_op: Model
+) -> None:
+    """The op over a bf16 weight (the K3 checkpoint's own gate storage):
+    fp32 [M, N] out, numerically close to the fp32-widened reference on the
+    tiny-M fused route, and exercising the bf16 x bf16 -> fp32 matmul the
+    large-M fallback takes (no activation cast launch). m=1024 stays inside
+    the test sandbox's device-memory cap; the production prefill M range is
+    covered by the kernel bench's bf16_matmul arm."""
+    torch.manual_seed(0)
+    a = torch.randn(m, K, dtype=torch.bfloat16, device="cuda")
+    b16 = torch.randn(N, K, dtype=torch.bfloat16, device="cuda")
+    got = from_dlpack(bf16_weight_op.execute(a, b16)[0])
+
+    assert tuple(got.shape) == (m, N)
+    assert got.dtype == torch.float32
+
+    # Reference: both operands widened to fp32 (lossless) then fp32 GEMM.
+    # The fused bf16 route's fdot2 and the bf16 matmul's MFMA both differ
+    # from this only in summation order.
+    ref = a.to(torch.float32) @ b16.to(torch.float32).t()
+    assert torch.equal(got.argmax(dim=1), ref.argmax(dim=1))
+    torch.testing.assert_close(got, ref, rtol=1e-2, atol=1e-2)
 
 
 @pytest.mark.skipif(
@@ -281,13 +324,15 @@ def test_router_gate_mixed_gemv_validation() -> None:
             pass
         else:
             raise AssertionError("fp32 hidden states must be rejected")
-        # bf16 weight rejected (must be fp32).
+        # bf16 weight accepted (the K3 checkpoint's own gate storage).
+        _router_gate_mixed_gemv(a_bf16, b_bf16)
+        # fp16 weight rejected (the op binds fp32 or bf16 only).
         try:
-            _router_gate_mixed_gemv(a_bf16, b_bf16)
+            _router_gate_mixed_gemv(a_bf16, b_bf16.cast(DType.float16))
         except ValueError:
             pass
         else:
-            raise AssertionError("bf16 gate weights must be rejected")
+            raise AssertionError("fp16 gate weights must be rejected")
         # Dynamic N/K rejected (must be static).
         try:
             _router_gate_mixed_gemv(a_bf16, b_dyn)

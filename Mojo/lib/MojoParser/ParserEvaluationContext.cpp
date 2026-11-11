@@ -35,7 +35,8 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
                                          bool /*acceptAsync*/) {
   // Parser doesn't support async concretization, so acceptAsync is ignored -
   // we always return the generator.
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
+  auto typeParam =
+      sugarDynCast<TypeParamAttr>(KGEN::stripIdentityWrappers(typeValue));
   if (!typeParam)
     return failure();
 

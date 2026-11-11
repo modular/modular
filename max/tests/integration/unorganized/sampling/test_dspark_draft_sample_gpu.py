@@ -33,7 +33,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import _dspark_draft_sample
+from max.nn._graph_ops import _dspark_draft_sample
 
 _PHILOX_SA = 0xD2511F53
 _PHILOX_SB = 0xCD9E8D57

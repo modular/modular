@@ -69,7 +69,7 @@ def test_mut_optional_pointer_weakens_to_imm() raises:
     var mut_opt = Optional(Pointer(to=x))
     assert_true(take_imm(mut_opt))
     var weak: Optional[ImmPointer[Int, ImmOrigin(origin_of(x))]] = mut_opt
-    assert_equal(weak.value()[], 7)
+    assert_equal(weak.copied(), 7)
 
 
 def main() raises:

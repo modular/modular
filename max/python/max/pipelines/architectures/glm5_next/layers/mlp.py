@@ -10,264 +10,292 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Feed-forward sublayers for GLM-5.3-Flash: dense MLP and MoE.
+"""Feed-forward blocks for GLM-5.3-Flash: dense MLP and MoE, on ModuleV3.
 
-Layers 0-2 are dense at ``intermediate_size`` (12288); layers 3 onward, the MTP
-draft layer included, are MoE at ``moe_intermediate_size`` (2048) with one
-shared expert and eight of 288 routed. Both use GLM's clamped SwiGLU.
-
-GLM needs ``silu(min(gate, limit)) * clamp(up, -limit, limit)``: the clamp
-bounds the activation's *input*. Clamping after the activation agrees below
-the limit and diverges above it, so random weights never show the difference
-and a real checkpoint does.
-
-The MoE below gets this order from the fused ``"silu"`` activation with a
-``limit``. The dense MLP calls :func:`clamped_swiglu` directly, because the
-other clamped-SwiGLU paths in MAX compute something else:
-
-* ``max/python/max/nn/legacy/activation.py`` -- ``swigluoai`` adds GPT-OSS's
-  ``+1`` bias on ``up`` and an ``alpha`` inside the sigmoid.
-* ``max/python/max/nn/legacy/moe/moe.py`` -- ``make_concatenated_gated_activation_fn``
-  with a ``limit`` applies the activation and *then* clamps.
-* ``max/python/max/nn/legacy/linear.py`` -- the ``swiglu_limit`` branch does the same.
+Both are DeepSeek-V3.2's apart from the activation, which clamps its inputs:
+``silu(min(gate, limit)) * clamp(up, -limit, limit)``. Clamping the output
+instead agrees below the limit and diverges above it, which a random-weight
+test never reaches and a real checkpoint does.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+import functools
+from typing import ClassVar
 
-from max import tree
+from max import functional as F
+from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    TensorValue,
-    TensorValueLike,
-    Value,
-)
-from max.nn.legacy import MLP
-from max.nn.legacy.activation import GatedActivation
+from max.graph import StaticDim
+from max.nn import Module
+from max.nn._graph_ops import _router_gate_mixed_gemv
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.moe import MoEGate
+from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.nn.common_layers.quant_moe import ExpertParallelMoE, TensorParallelMoE
+from max.nn.kernels import moe_router_group_limited
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.layer import Module
-from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.pipelines.architectures.deepseekV3_2.layers.moe import DeepseekV3_2MoE
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, match_operand_placement
 
-from ..model_config import Glm5NextConfig, token_shard_degree
-from .clamped_swiglu import clamped_swiglu
-from .token_parallel import gather_token_shards, token_shard
+from ..model_config import Glm5NextConfig
 
 __all__ = [
+    "Glm5NextExpertParallelMoE",
     "Glm5NextMLP",
-    "Glm5NextMlpSublayer",
-    "Glm5NextMlpSublayerInputs",
-    "Glm5NextMoE",
+    "Glm5NextTensorParallelMoE",
+    "Glm5NextTopKRouter",
+    "build_mlp",
 ]
 
+# The logits take the activation's placement: the gate weight is replicated.
+_router_gate_mixed_gemv_op = F.functional(
+    _router_gate_mixed_gemv,
+    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
+)
 
-class Glm5NextMLP(MLP):
-    """The dense MLP on layers 0-2.
+# A bf16-weight launch walks K in `8 * 128` granules with no tail guard
+# (max/kernels/src/linalg/gemv.mojo); Flash's K is 4096.
+_BF16_GEMV_K_TILE = 1024
 
-    Accumulates in float32 like DeepSeek-V3.2 -- the reference evaluates
-    ``silu`` on a float32 cast -- and clamps before the activation.
+
+def _mixed_gemv_applies(hidden_states: Tensor, weight: Tensor) -> bool:
+    """Returns whether the mixed bf16 router GEMV can produce the logits.
+
+    The op is GPU-only and its AMD launch table is tuned on gfx950, so a
+    host-device graph, another accelerator, or a missing one keeps the
+    float32 matmul. The placement comes from ``hidden_states.mesh`` because
+    ``Tensor.device`` raises on the multi-device mesh a tensor-parallel
+    router input lives on.
     """
+    if any(device.is_host for device in hidden_states.mesh.devices):
+        return False
+    if accelerator_count() == 0 or accelerator_architecture_name() != "gfx950":
+        return False
+    k_dim = weight.shape[1]
+    return (
+        hidden_states.dtype == DType.bfloat16
+        and weight.dtype == DType.bfloat16
+        and isinstance(k_dim, StaticDim)
+        and int(k_dim) % _BF16_GEMV_K_TILE == 0
+    )
+
+
+class Glm5NextTensorParallelMoE(TensorParallelMoE):
+    """Tensor-parallel MoE with a float32 gate/up and combine.
+
+    Unlike the base class, it returns the all-reduced sum: a cast that
+    changes the dtype rounds, so each partial sum is all-reduced before the
+    cast that widens or narrows it.
+    """
+
+    gate_up_accum_dtype: ClassVar[DType | None] = DType.float32
+    combine_accum_dtype: ClassVar[DType | None] = DType.float32
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed and shared experts over the replicated ``x``.
+
+        Returns:
+            ``(seq_len, hidden_dim)`` in ``x``'s dtype, replicated.
+        """
+        replicated = DeviceMapping.replicated(self.mesh)
+        out = self.routed_partial_sums(x)
+        if self.shared_experts is not None:
+            shared = self.shared_experts(x).to(replicated).cast(out.dtype)
+            out = out.to(replicated) + shared
+        return out.to(replicated).cast(x.dtype)
+
+
+class Glm5NextExpertParallelMoE(ExpertParallelMoE):
+    """Expert-parallel MoE with the routed experts' clamped SwiGLU in bfloat16.
+
+    The clamp and SwiGLU read the bfloat16 gate/up output and fuse into the
+    row-bounded FP8 quantize. A float32 gate/up cast over the EP receive
+    buffer cannot fuse and costs a full-buffer pass per MoE layer, and the EP
+    combine already accumulates in the dispatch dtype. The dense MLP and an
+    unfused shared expert keep float32.
+    """
+
+
+class Glm5NextTopKRouter(MoEGate):
+    """DeepSeek-V3.2's group-limited top-k router, scored in float32.
+
+    Uses sigmoid scoring with a group-limited top-k router and a learned
+    expert correction bias (``noaux_tc``). V3.2 computes the gate score and
+    the sigmoid in float32. On gfx950 the gate GEMV runs on the
+    checkpoint's bf16 operands in one launch (``moe.router.gate.mixed.gemv``)
+    instead of casting both to float32 first, which costs two cast launches
+    (the weight's every step, since the graph does not fold weight-only ops)
+    and a GEMV over a float32 copy of the weight. bf16 products are exact in
+    float32, so only the summation order differs from the float32 matmul.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_experts: int,
+        num_experts_per_token: int,
+        routed_scaling_factor: float,
+        scoring_func: str,
+        topk_method: str,
+        n_group: int,
+        topk_group: int,
+        norm_topk_prob: bool,
+        correction_bias_dtype: DType | None,
+    ) -> None:
+        """Stores the router dimensions and routing parameters.
+
+        Args:
+            hidden_dim: Dimension of the hidden state.
+            num_experts: Number of routed experts.
+            num_experts_per_token: Top-k experts to select per token.
+            routed_scaling_factor: Scaling factor applied to expert weights.
+            scoring_func: Score function for the router. Only "sigmoid" is
+                supported.
+            topk_method: Top-k routing method. Only "noaux_tc" is supported.
+            n_group: Number of expert groups.
+            topk_group: Number of expert groups selected per token.
+            norm_topk_prob: Whether to normalize the top-k probabilities.
+            correction_bias_dtype: Data type of the correction bias.
+        """
+        super().__init__(
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_experts_per_token=num_experts_per_token,
+        )
+
+        if topk_method != "noaux_tc":
+            raise ValueError(
+                f"Invalid topk_method: {topk_method}. Only 'noaux_tc' is "
+                "supported for GLM-5.3-Flash."
+            )
+        if scoring_func != "sigmoid":
+            raise ValueError(
+                f"Invalid scoring_func: {scoring_func}. Only 'sigmoid' is "
+                "supported for GLM-5.3-Flash."
+            )
+
+        if num_experts % n_group != 0:
+            raise ValueError(
+                f"num_experts must be divisible by n_group: {num_experts} % "
+                f"{n_group} != 0"
+            )
+
+        self.topk_method = topk_method
+        self.scoring_func = scoring_func
+        self.n_group = n_group
+        self.topk_group = topk_group
+        self.routed_scaling_factor = routed_scaling_factor
+        self.norm_topk_prob = norm_topk_prob
+
+        if correction_bias_dtype is None:
+            raise ValueError(
+                "correction_bias_dtype must be set for noaux_tc router"
+            )
+        self.e_score_correction_bias = Tensor.zeros(
+            [num_experts], dtype=correction_bias_dtype
+        )
+
+    def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
+        """Compute expert routing weights and indices for input hidden states.
+
+        Args:
+            hidden_states: Input tensor of shape ``(seq_len, hidden_dim)``.
+
+        Returns:
+            A pair ``(topk_idx, topk_weight)`` of selected expert indices and
+            their routing weights, each of shape
+            ``(seq_len, num_experts_per_token)``.
+        """
+        if _mixed_gemv_applies(hidden_states, self.gate_score.weight):
+            logits = _router_gate_mixed_gemv_op(
+                hidden_states, self.gate_score.weight
+            )
+        else:
+            # V3.2 runs the gate matmul itself in float32, not just the sigmoid.
+            weight = self.gate_score.weight.cast(DType.float32)
+            logits = hidden_states.cast(DType.float32) @ weight.T
+        scores = F.sigmoid(logits)
+        topk_idx, topk_weight = moe_router_group_limited(
+            scores,
+            self.e_score_correction_bias.cast(DType.float32),
+            self.num_experts,
+            self.num_experts_per_token,
+            self.n_group,
+            self.topk_group,
+            self.norm_topk_prob,
+            self.routed_scaling_factor,
+        )
+        return (
+            topk_idx.rebind_mapping(scores.mapping),
+            topk_weight.rebind_mapping(scores.mapping),
+        )
+
+
+class Glm5NextMLP(QuantizedMLP):
+    """Gated MLP with the activation in float32 and its inputs clamped."""
 
     def __init__(self, *args, swiglu_limit: float, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.swiglu_limit = swiglu_limit
 
-    def __call__(self, x: TensorValueLike) -> TensorValue:
-        """Applies the clamped gated MLP.
-
-        Args:
-            x: Input of shape ``(..., hidden_dim)``.
-
-        Returns:
-            Output of shape ``(..., hidden_dim)``.
-        """
-        x = TensorValue(x)
-        gate_out = self.gate_proj(x).cast(DType.float32)
-        up_out = self.up_proj(x).cast(DType.float32)
-        hidden = clamped_swiglu(gate_out, up_out, self.swiglu_limit)
-        return self.down_proj(hidden.cast(x.dtype))
-
-    def shard(self, devices: Iterable[DeviceRef]) -> Sequence[Glm5NextMLP]:
-        """Creates :class:`Glm5NextMLP` shards across multiple devices.
-
-        :meth:`MLP.shard` builds stock :class:`MLP` shards, which activate
-        before clamping and skip the float32 accumulation. The model only runs
-        the dense MLP and the shared expert through their shards, so every
-        shard has to keep this class's ``__call__``.
-
-        Args:
-            devices: Iterable of devices to place the shards on.
-
-        Returns:
-            Sharded :class:`Glm5NextMLP` instances, one per device.
-        """
-        shards = []
-        for base in super().shard(devices):
-            shard = Glm5NextMLP(
-                dtype=self.gate_proj.weight.dtype,
-                quantization_encoding=self.quantization_encoding,
-                hidden_dim=self.hidden_dim,
-                feed_forward_length=self.feed_forward_length,
-                devices=base.devices,
-                has_bias=self.gate_proj.bias is not None,
-                quant_config=self.quant_config,
-                swiglu_limit=self.swiglu_limit,
-                is_sharding=True,
-            )
-            shard.gate_proj = base.gate_proj
-            shard.down_proj = base.down_proj
-            shard.up_proj = base.up_proj
-            shard._parent_layer = self
-            shards.append(shard)
-        return shards
-
-
-class Glm5NextMoE(DeepseekV3_2MoE):
-    """The MoE block on layers 3 onward.
-
-    Identical to DeepSeek-V3.2's -- ``noaux_tc`` sigmoid routing with a learned
-    ``e_score_correction_bias``, float32 router math, one shared expert -- apart
-    from the activation, which clamps before ``silu``.
-
-    ``n_group`` and ``topk_group`` are both 1, so group-limited routing is
-    inactive and any of the 288 experts is reachable from any token. That is
-    what makes expert parallelism's all-to-all dense and unbounded here, unlike
-    DeepSeek-V3's node-limited routing.
-    """
-
-    def __init__(
-        self, *args, swiglu_limit: float | None = None, **kwargs
-    ) -> None:
-        # `MoE.shard()` rebuilds each shard through `self.__class__`, passing
-        # the parent's `activation` rather than `swiglu_limit`.
-        if swiglu_limit is not None:
-            kwargs["activation"] = GatedActivation("silu", limit=swiglu_limit)
-        elif kwargs.get("activation") is None:
-            raise ValueError("Glm5NextMoE needs swiglu_limit or activation")
-        super().__init__(*args, **kwargs)
-
-
-@tree.dataclass(frozen=True, kw_only=True)
-class Glm5NextMlpSublayerInputs:
-    """The feed-forward sublayer's per-step inputs, one entry per device.
-
-    A bundle rather than the bare buffer list the other feed-forward paths
-    take, because the expert-parallel MoE now runs on one rank's share of the
-    tokens and needs the collective buffers to gather the result back.
-    """
-
-    ep_buffers: list[Value[Any]]
-    """Expert-parallel communication buffers, empty without EP. Bound per
-    sublayer rather than once for the stack because a subgraph body cannot
-    reference a value the outer graph owns."""
-
-    signal_buffers: list[BufferValue]
-    """Collective synchronization buffers, for the all-gather that puts the
-    MoE's per-rank outputs back together."""
-
-    host_input_row_offsets: TensorValue
-    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens,
-    on CPU. Only the last entry is read, as the row count the token split
-    divides. The host copy rather than the device one because
-    :func:`~max.graph.ops.slice_tensor` wants its bounds on CPU, and reading
-    them off the device tensor would put a synchronizing device-to-host copy
-    in every step -- which no captured device graph can record."""
-
-
-class Glm5NextMlpSublayer(Module):
-    """The feed-forward sublayer as the decoder layer calls it.
-
-    Satisfies ``Glm5NextSublayer[None]``: one already-normalized sequence per
-    device in, one output per device out, no residual add and no input
-    layernorm -- the decoder layer owns both, because the mHC write-back is not
-    an add.
-
-    Wraps either the dense MLP or the MoE block. Its inputs bundle is the
-    expert-parallel communication buffers, which an EP MoE needs and every
-    other feed-forward path ignores. ``forward_moe_sharded_layers`` runs the
-    full expert-parallel dispatch/compute/combine for an EP MoE and falls back
-    to a plain per-shard forward for a replicated MLP, so one wrapper covers
-    both.
-    """
-
-    token_shard_name: str = "moe_token_shard"
-    """Prefix of the token-shard dim this sublayer names.
-
-    Every decoder layer splits the same row count, so they share one name. An
-    MTP draft step splits a different count, and reusing the name would bind
-    two runtime sizes to one symbol.
-    """
-
-    def __init__(
-        self,
-        mlp: Glm5NextMLP | Glm5NextMoE,
-        devices: Sequence[DeviceRef],
-        config: Glm5NextConfig,
-        ep_manager: EPBatchManager | None = None,
-    ) -> None:
-        super().__init__()
-        self.mlp = mlp
-        self.ep_manager = ep_manager
-        # The MoE is per-token, so under tensor-parallel attention each rank
-        # runs the experts over its own slice of the rows instead of over
-        # every rank's copy of the whole sequence.
-        self.token_shards = token_shard_degree(
-            len(devices), config.data_parallel_degree
+    def forward(self, x: Tensor) -> Tensor:
+        """Runs the gated feed-forward over ``x``."""
+        gate_up_weight = quant_ops.concat_weights(
+            self.gate_proj.weight, self.up_proj.weight, axis=0
         )
-        # Typed as callables rather than as the module union: that is exactly
-        # what `forward_moe_sharded_layers` takes, and `shard()` returns
-        # `Sequence[Self]`, which does not narrow to a union of two subclasses.
-        shards: Sequence[Callable[[TensorValue], TensorValue]] = (
-            mlp.shard(devices) if mlp.sharding_strategy is not None else [mlp]
+        gate, up = quant_ops.matmul(x, gate_up_weight).split(
+            [self.feed_forward_length, self.feed_forward_length], axis=-1
         )
-        self.shards = list(shards)
+        limit = self.swiglu_limit
+        gate = F.min(gate.cast(DType.float32), limit)
+        up = F.max(F.min(up.cast(DType.float32), limit), -limit)
+        return self.down_proj((F.silu(gate) * up).cast(x.dtype))
 
-    @property
-    def _omit_module_attr_name(self) -> bool:
-        """Keeps the wrapper out of weight FQNs.
 
-        The decoder layer holds this as ``self.mlp`` and it holds the block as
-        ``self.mlp``, so without this the checkpoint's
-        ``layers.N.mlp.gate_proj.weight`` would have to be
-        ``layers.N.mlp.mlp.gate_proj.weight``. The wrapper exists to satisfy a
-        call signature, not to add a level to the checkpoint's namespace.
-        """
-        return True
+def build_mlp(
+    config: Glm5NextConfig,
+    layer_idx: int,
+    ep_batch_manager: EPBatchManager | None,
+) -> Module[..., Tensor]:
+    """Returns layer ``layer_idx``'s feed-forward block.
 
-    def __call__(
-        self, xs: list[TensorValue], inputs: Glm5NextMlpSublayerInputs
-    ) -> list[TensorValue]:
-        """Runs the feed-forward block on every device.
-
-        Every rank is handed the same ``xs`` here, because the residual is
-        replicated. When attention is tensor-parallel that would have each
-        rank dispatch every token to the experts, so instead each takes a
-        distinct slice of the rows, runs the block on that, and the outputs
-        are gathered back. That is also what makes the shared EP dispatch cap
-        correct without an architecture-specific override, since a rank now
-        really does send at most ``ceildiv(total_tokens, degree)``.
-
-        Args:
-            xs: ``[total_tokens, hidden_size]`` per device, normalized.
-            inputs: This layer's communication buffers.
-
-        Returns:
-            ``[total_tokens, hidden_size]`` per device.
-        """
-        if self.ep_manager is not None and inputs.ep_buffers:
-            self.ep_manager.fetch_buffers(inputs.ep_buffers)
-        if self.token_shards == 1:
-            return forward_moe_sharded_layers(list(self.shards), xs)
-        # The last row offset is the packed token count, already on CPU --
-        # which is where `slice_tensor` wants its bounds.
-        total = inputs.host_input_row_offsets[-1].cast(DType.int64)
-        shards = [
-            token_shard(x, i, self.token_shards, total, self.token_shard_name)
-            for i, x in enumerate(xs)
-        ]
-        outs = forward_moe_sharded_layers(list(self.shards), shards)
-        return gather_token_shards(outs, xs, inputs.signal_buffers)
+    Dense below ``first_k_dense_replace``, MoE from there on. Every MLP in
+    this checkpoint is FP8. The dense blocks are replicated: the decoder layer
+    runs them on each device's share of the tokens.
+    """
+    quant_config = config.quant_config
+    mlp_cls = functools.partial(Glm5NextMLP, swiglu_limit=config.swiglu_limit)
+    if layer_idx < config.first_k_dense_replace:
+        return mlp_cls(
+            hidden_dim=config.hidden_size,
+            feed_forward_length=config.intermediate_size,
+            quant_config=quant_config,
+        )
+    moe_kwargs = dict(
+        hidden_dim=config.hidden_size,
+        num_experts=config.n_routed_experts,
+        num_experts_per_token=config.num_experts_per_tok,
+        moe_dim=config.moe_intermediate_size,
+        gate_cls=functools.partial(
+            Glm5NextTopKRouter,
+            routed_scaling_factor=config.routed_scaling_factor,
+            scoring_func=config.scoring_func,
+            topk_method=config.topk_method,
+            n_group=config.n_group,
+            topk_group=config.topk_group,
+            norm_topk_prob=config.norm_topk_prob,
+            correction_bias_dtype=config.correction_bias_dtype,
+        ),
+        has_shared_experts=True,
+        shared_experts_dim=config.n_shared_experts
+        * config.moe_intermediate_size,
+        quant_config=quant_config,
+        mlp_cls=mlp_cls,
+        swiglu_limit=config.swiglu_limit,
+    )
+    if ep_batch_manager is not None:
+        return Glm5NextExpertParallelMoE(
+            **moe_kwargs, ep_batch_manager=ep_batch_manager
+        )
+    return Glm5NextTensorParallelMoE(**moe_kwargs)

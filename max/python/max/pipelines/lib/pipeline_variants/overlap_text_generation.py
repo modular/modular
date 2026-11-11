@@ -105,14 +105,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import (
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     spec_decode_cache_slack,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,
     SpecDecodingState,
@@ -297,7 +297,14 @@ def _next_draft_tokens_dtype(model: object) -> DType:
     narrower ones (DeepSeek-V4.1's ModuleV3 DSpark drafts int32), so the
     buffers that receive them follow the graph and widen where they feed an
     int64 input.
+
+    A virtual-device boot never runs a step, and the compile-only stand-in
+    its load returns refuses the metadata read, so the default serves it:
+    the only consumers are the pinned staging buffers and the step path,
+    both of which a virtual boot never reaches.
     """
+    if is_virtual_device_mode():
+        return DType.int64
     if isinstance(
         model, (_UnifiedSpecDecodeModelMixin, SpecDecodePipelineModel)
     ):
@@ -1525,7 +1532,7 @@ def build_realize_future_token_graph(
                 )
 
             # Per-sequence increments in int64 (may be negative), then fold into
-            # uint32 cache lengths to match :class:`~max.nn.legacy.kv_cache.KVCacheParams`
+            # uint32 cache lengths to match :class:`~max.nn.kv_cache.KVCacheParams`
             # paged-cache ``cache_lengths`` dtype.
             batch_increments_i64 = ops.broadcast_to(
                 ops.constant(0, dtype=DType.int64, device=device0),
@@ -3871,7 +3878,7 @@ class OverlapTextGenerationPipeline(
         iteration's D2H runs later, in ``_execute_spec_decode``). The kickoff
         trampoline lands on the device default stream after that D2H, so the
         worker observes complete data; it signals the completion flag the next
-        iter's in-graph ``mo.wait_host_value_with_dep`` gates the H2D on. The
+        iter's in-graph ``runtime.wait_host_value_with_dep`` gates the H2D on. The
         FSM advance + bitmask compute run on a separate AsyncRT worker, so they
         overlap this iteration's target forward.
 
@@ -4532,7 +4539,7 @@ class OverlapTextGenerationPipeline(
                     )
 
                 # FSM is advanced asynchronously by the host callback enqueued
-                # just above. The captured graph's ``mo.wait_host_value_with_dep``
+                # just above. The captured graph's ``runtime.wait_host_value_with_dep``
                 # blocks the in-graph H2D until the worker signals, so the FSM
                 # advancement is observed before the sampler runs.
                 curr_batch = self._execute_spec_decode(

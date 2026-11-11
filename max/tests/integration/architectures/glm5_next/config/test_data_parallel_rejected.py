@@ -13,11 +13,10 @@
 """A data-parallel degree above one must be refused, not half-honoured.
 
 The caches are built per batch shard -- both
-:class:`~max.nn.legacy.kv_cache.MLAKVCacheParams` leaves and the recurrent state take
+:class:`~max.nn.kv_cache.MLAKVCacheParams` leaves and the recurrent state take
 ``data_parallel_degree`` straight from the pipeline config -- while the compute
-graph is tensor-parallel throughout: KDA and sparse MLA shard by head, and
-``data_parallel_splits`` is declared as a graph input and then discarded. So a
-batch shard reaches the cache and never reaches the graph, which reads and
+graph is tensor-parallel throughout: KDA and sparse MLA shard by head. So a
+batch shard would reach the cache and never reach the graph, which reads and
 writes as though it owned the whole batch.
 
 Nothing downstream notices. ``--data-parallel-degree 8`` is the shape GLM-5.x
@@ -30,8 +29,10 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
-from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.pipelines.architectures.glm5_next.model_config import (
+    Glm5NextConfig,
+)
 
 HIDDEN_SIZE = 256
 INTERMEDIATE_SIZE = 512

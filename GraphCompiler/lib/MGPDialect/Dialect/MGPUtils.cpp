@@ -22,6 +22,7 @@
 #include "Support/Compiler/MLIRDType.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Builders.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace M;
@@ -131,4 +132,11 @@ bool MGP::isMutated(OpOperand &opOperand) {
 bool MGP::isRead(OpOperand &opOperand) {
   InOutSignatureAttr::InOutSemantics inOut = getInOutSemantics(opOperand);
   return inOut == InOutSignatureAttr::kIn || inOut == InOutSignatureAttr::kMut;
+}
+
+DeviceRefAttr MGP::graphInputDevice(Value v) {
+  return llvm::TypeSwitch<Type, DeviceRefAttr>(v.getType())
+      .Case<MGP::DeviceTensorType, MGP::DeviceBufferType>(
+          [](auto type) { return type.getDevice(); })
+      .Default(nullptr);
 }

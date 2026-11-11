@@ -296,6 +296,8 @@ def _compute_swizzle_modes(
                     c_swizzle = TensorMapSwizzle.SWIZZLE_64B
                 case 32:
                     c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+                case _:
+                    pass
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 

@@ -25,6 +25,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
+#include "Support/SymbolExport.h"
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -45,14 +46,12 @@ class CUDADeviceMulticastBuffer;
 class CUDADeviceStream;
 class CUDADeviceTimer;
 
-using CUDADeviceRef = RCRef<CUDADevice>;
 using CUDADeviceContextRef = RCRef<CUDADeviceContext>;
 using CUDAStreamPoolRef = RCRef<CUDAStreamPool>;
 using CUDADeviceEventRef = RCRef<CUDADeviceEvent>;
 using CUDADeviceGraphRef = RCRef<CUDADeviceGraph>;
 using CUDAModuleFunctionRef = RCRef<const CUDAModuleFunction>;
 using CUDADeviceFunctionRef = RCRef<CUDADeviceFunction>;
-using CUDADeviceFunctionArgumentsRef = RCRef<const CUDADeviceFunctionArguments>;
 using CUDADeviceMulticastBufferRef = RCRef<CUDADeviceMulticastBuffer>;
 using CUDADeviceStreamRef = RCRef<CUDADeviceStream>;
 using CUDADeviceTimerRef = RCRef<CUDADeviceTimer>;
@@ -113,6 +112,8 @@ public:
   ErrorOrSuccess vmmMapAndSetAccess(void *va, size_t byteSize,
                                     uint64_t handle) override;
   ErrorOrSuccess vmmUnmap(void *va, size_t byteSize) override;
+  ErrorOrSuccess vmmMap(void *va, size_t byteSize, uint64_t handle) override;
+  ErrorOrSuccess vmmSetAccess(void *va, size_t byteSize) override;
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const override;
   ErrorOr<AllocationRange> allocationRange(void *ptr) const override;
@@ -128,8 +129,6 @@ public:
 
   static const CUDADevice &cast(const Device &device);
   static CUDADevice &cast(Device &device);
-
-  static ErrorOr<std::string> getFirstArchName();
 
   static ErrorOr<int> numberOfGPUs();
   static ErrorOr<CUDADevice &> get(int id);
@@ -283,7 +282,7 @@ private:
   CUgraphExec exec_ = nullptr; // non-null after instantiate() succeeds
 };
 
-class CUDADeviceStream : public DeviceStream {
+class MODULAR_CXX_EXPORT CUDADeviceStream : public DeviceStream {
 public:
   CUDADeviceStream(CUDADeviceContext &ctx, CUstream stream);
 
@@ -298,8 +297,8 @@ public:
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *),
                                  void *userData) const override;
 
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
 
   virtual ErrorOrSuccess enqueueFunctionExecDirect(
       const DeviceFunction &func, uint32_t gridX, uint32_t gridY,
@@ -349,7 +348,7 @@ private:
   mutable std::vector<size_t> paramSizes_;
 };
 
-class CUDADeviceFunction : public DeviceFunction {
+class MODULAR_CXX_EXPORT CUDADeviceFunction : public DeviceFunction {
 public:
   CUDADeviceFunction(CUDADeviceContext &context, CUDAModuleFunctionRef modFunc);
   ~CUDADeviceFunction() override;
@@ -429,7 +428,7 @@ private:
   std::vector<CUstream> streams_;
 };
 
-class CUDADeviceContext : public DeviceContext {
+class MODULAR_CXX_EXPORT CUDADeviceContext : public DeviceContext {
 public:
   CUDADeviceContext(CUDADevice &device, CUcontext context, CUstream stream);
   ~CUDADeviceContext() override;

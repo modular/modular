@@ -22,7 +22,6 @@ from max.algorithm import elementwise
 from max._plugin import MaxPluginForTarget
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch
 
@@ -243,7 +242,6 @@ def elementwise[
     //,
     simd_width: Int,
     *,
-    target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     """Unified-closure entry point for `elementwise` (DeviceContext).
@@ -259,7 +257,6 @@ def elementwise[
         FuncType: A parametric callable taking an index `Coord` and template
             parameters `width` and `alignment`.
         simd_width: The SIMD vector width to use.
-        target: The target to run on.
         _trace_description: Description of the trace.
 
     Args:
@@ -272,7 +269,6 @@ def elementwise[
     """
     _elementwise_impl[
         simd_width,
-        target=target,
         trace_description=_trace_description,
     ](func, shape, context)
 
@@ -285,11 +281,8 @@ def _elementwise_impl[
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
-    target: StaticString = "cpu",
     trace_description: StaticString,
-](func: FuncType, shape: Coord, context0: DeviceContext) raises:
-    var context = context0.cast_if_cpu[target]()
-
+](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @inline(.always)
     def description_fn() {imm} -> String:
         var shape_str = trace_arg("shape", shape)
@@ -301,7 +294,13 @@ def _elementwise_impl[
     comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["elementwise", desc]()
 
-    with Trace[TraceLevel.OP, target=target](
+    # An accelerator that is not a SIMT GPU, such as an NPU, is traced on the
+    # host, so `device_kind_label()` (which rejects such targets) can't be used.
+    comptime trace_target = get_static_string[
+        "gpu" if context.target.is_gpu() else "cpu"
+    ]()
+
+    with Trace[TraceLevel.OP, target=trace_target](
         kind,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
@@ -312,7 +311,7 @@ def _elementwise_impl[
         # `MaxPluginForTarget`.
         # TODO(DRIV-186): GPUInfo should handle CPU device,
         # Should not need to additionally check accelerator arch here
-        comptime if is_cpu[target]():
+        comptime if context.target.is_cpu():
 
             @inline(.always)
             def func_wrap_cpu[
@@ -337,7 +336,7 @@ def _elementwise_impl[
                 shape,
                 context.assert_default_target(),
             )
-        elif is_gpu[target]():
+        elif context.target.is_gpu():
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
@@ -361,7 +360,6 @@ def _elementwise_impl[
 def dual_elementwise[
     simd_width: Int,
     *,
-    target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
 ](
     shape_0: Coord,
@@ -384,7 +382,6 @@ def dual_elementwise[
 
     Parameters:
         simd_width: The SIMD vector width to use.
-        target: The target to run on (must be GPU).
         _trace_description: Description of the trace.
 
     Args:
@@ -400,7 +397,6 @@ def dual_elementwise[
 
     _dual_elementwise_impl[
         simd_width,
-        target=target,
         trace_description=_trace_description,
     ](func_0, func_1, shape_0, shape_1, context)
 
@@ -416,7 +412,6 @@ def _dual_elementwise_impl[
     & def[width: Int, alignment: Int = 1](Coord) -> None,
     /,
     *,
-    target: StaticString = "gpu",
     trace_description: StaticString,
 ](
     func_0: Func0Type,
@@ -425,6 +420,10 @@ def _dual_elementwise_impl[
     shape_1: Coord,
     context: DeviceContext,
 ) raises:
+    comptime assert (
+        context.target.is_gpu()
+    ), "dual_elementwise only supports GPU target"
+
     @inline(.always)
     def description_fn() {imm} -> String:
         var s0 = trace_arg("shape_0", shape_0)
@@ -436,14 +435,11 @@ def _dual_elementwise_impl[
     comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["dual_elementwise", desc]()
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
         kind,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
-        comptime assert is_gpu[
-            target
-        ](), "dual_elementwise only supports GPU target"
         _dual_elementwise_impl_gpu[
             simd_width=simd_width,
             trace_description=kind,

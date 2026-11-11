@@ -66,7 +66,7 @@ def bench_gather_sum_gpu[
         def kernel_launch(
             ctx: DeviceContext[],
         ) raises {mut output, imm input, imm indices,}:
-            gather_sum[target="gpu"](output, input, indices, ctx)
+            gather_sum(output, input, indices, ctx)
 
         bencher_iter_custom(b, kernel_launch, ctx)
 

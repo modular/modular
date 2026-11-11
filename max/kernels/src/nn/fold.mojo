@@ -25,7 +25,6 @@ def fold[
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
     padding: Tuple[Int, Int],
-    target: StaticString,
 ](
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -40,7 +39,6 @@ def fold[
         stride: Stride of the sliding blocks.
         dilation: Dilation of the sliding blocks.
         padding: 0-paddings to be added on both sides of the inputs.
-        target: The target architecture to compile for.
 
     Args:
         input: Input tensor to fold, shape [N, C x kernel size, num_blocks].
@@ -151,7 +149,6 @@ def fold[
     var dispatch_shape = (N, C, H, W)
     elementwise[
         simd_width=1,
-        target=target,
         _trace_description="fold_fn",
     ](fold_fn, dispatch_shape, ctx)
 

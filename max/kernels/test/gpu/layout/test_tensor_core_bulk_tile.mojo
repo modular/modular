@@ -14,7 +14,7 @@
 from std.testing import assert_equal
 from max.gpu.host import DeviceContext
 from layout import TileTensor, TensorLayout, coord, row_major, stack_allocation
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import TensorCore
 

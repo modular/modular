@@ -433,7 +433,7 @@ def is_absolute[PathLike: stdPathLike, //](path: PathLike) -> Bool:
 
 
 # TODO(MOCO-1532):
-#   Use StringSlice here once param inference bug for empty variadic
+#   Use StringSpan here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
 def join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
@@ -566,10 +566,10 @@ def basename[PathLike: stdPathLike, //](path: PathLike) -> String:
 # TODO: Move this to a generic path module when Windows is supported.
 # As it can be used for both Windows and Unix-like systems.
 def _split_extension(
-    path: StringSlice,
-    sep: StringSlice,
-    alt_sep: StringSlice,
-    extension_sep: StringSlice,
+    path: StringSpan,
+    sep: StringSpan,
+    alt_sep: StringSpan,
+    extension_sep: StringSpan,
 ) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
 
@@ -592,7 +592,7 @@ def _split_extension(
         # skip all leading dots
         var file_start = head_end + 1
         while file_start < file_end:
-            if StringSlice(path[byte=file_start]) != extension_sep:
+            if StringSpan(path[byte=file_start]) != extension_sep:
                 return String(path[byte=:file_end]), String(
                     path[byte=file_end:]
                 )
@@ -653,14 +653,14 @@ def splitroot[
     var length = p.byte_length()
 
     # Relative path, e.g.: 'foo'
-    if length < 1 or p[byte=:1] != StringSlice(sep):
+    if length < 1 or p[byte=:1] != StringSpan(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
     elif (
         length < 2
-        or p[byte=1:2] != StringSlice(sep)
-        or (length >= 3 and p[byte=2:3] == StringSlice(sep))
+        or p[byte=1:2] != StringSpan(sep)
+        or (length >= 3 and p[byte=2:3] == StringSpan(sep))
     ):
         return empty, String(sep), String(p[byte=1:])
 
@@ -796,7 +796,7 @@ def _is_alphanumeric(byte: Byte) -> Bool:
 
 def _parse_variable_name[
     immutable: ImmOrigin
-](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
+](bytes: Span[Byte, immutable]) -> Tuple[StringSpan[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
     For `${}` expansions, two additional bytes are added to the byte count to
     account for the braces, unless the closing brace is missing, in which
@@ -814,26 +814,26 @@ def _parse_variable_name[
             and _is_shell_special_variable(bytes[1])
             and bytes[2] == UInt8(ord("}"))
         ):
-            return StringSlice(unsafe_from_utf8=bytes[1:2]), 3
+            return StringSpan(unsafe_from_utf8=bytes[1:2]), 3
 
         # Scan until the closing brace or the end of the bytes.
         var i = 1
         while i < len(bytes):
             if bytes[i] == UInt8(ord("}")):
-                return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
+                return StringSpan(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
         # No closing brace found: `i == len(bytes)`, so the whole remainder
         # was consumed with no closing-brace byte to account for.
-        return StringSlice(unsafe_from_utf8=bytes[1:i]), i
+        return StringSpan(unsafe_from_utf8=bytes[1:i]), i
     elif _is_shell_special_variable(bytes[0]):
-        return StringSlice(unsafe_from_utf8=bytes[0:1]), 1
+        return StringSpan(unsafe_from_utf8=bytes[0:1]), 1
 
     # Scan until we hit an invalid character in environment variable names.
     var i = 0
     while i < len(bytes) and _is_alphanumeric(bytes[i]):
         i += 1
 
-    return StringSlice(unsafe_from_utf8=bytes[:i]), i
+    return StringSpan(unsafe_from_utf8=bytes[:i]), i
 
 
 def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:

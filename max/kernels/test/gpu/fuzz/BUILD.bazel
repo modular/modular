@@ -411,7 +411,7 @@ mojo_test(
 
 # Target: fused QK RMSNorm over Q + the newly-written K rows in the paged KV
 # cache (`fused_qk_rms_norm_ragged_paged` -> `_fused_qk_rms_norm_ragged_paged_gpu`,
-# the MiniMax-M3 per-head QK RMSNorm op `mo.fused_qk_rms_norm.ragged.paged`).
+# the MiniMax-M3 per-head QK RMSNorm op `kv_cache.fused_qk_rms_norm.ragged.paged`).
 # Distinct from the MLA `fused_rope_rmsnorm` target: standard MHA-style paged
 # cache (num_kv_heads > 1, K/V dim), full-head_dim RMSNorm of Q AND K (no RoPE),
 # `weight_offset` runtime (M3 = 1.0), `multiply_before_cast` compile-time True.
@@ -449,7 +449,7 @@ mojo_test(
 
 # Target: fused QK RoPE over Q + the newly-written K rows in the paged KV cache
 # (`fused_qk_rope_ragged`, the MiniMax-M3 ragged RoPE op
-# `mo.fused_qk_rope.ragged.paged`). Distinct from the MLA combined
+# `kv_cache.fused_qk_rope.ragged.paged`). Distinct from the MLA combined
 # `fused_rope_rmsnorm` kernel: this is RoPE-only. M3 dense attention uses
 # INTERLEAVED full-head_dim RoPE (head_dim == rope_dim == 128). The ragged shape
 # (batch, per-batch cache lengths driving the freqs row + K-cache slot, per-batch
@@ -487,7 +487,7 @@ mojo_test(
 
 # Target: the MiniMax-M3-MXFP8 fused QKV projection
 # (`generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4`, the dual-mode
-# NVFP4/MXFP8 entry; op `mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`). MXFP8:
+# NVFP4/MXFP8 entry; op `kv_cache.fused_qkv_matmul.ragged.paged.scale.mxfp8`). MXFP8:
 # float8_e4m3fn input + weights, float8_e8m0fnu (E8M0) block scales over 32-elem
 # K blocks in the rank-5 SF-atom layout, fp32 accum; computes hidden @ [Wq|Wk|Wv]^T,
 # returns Q (bf16) and SCATTERS K/V into the paged cache. The ragged shape (batch,
@@ -531,7 +531,7 @@ mojo_test(
 
 # Target: MiniMax-M3's 5-way dual-cache fused projection
 # (`generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`; op
-# `mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`). One MXFP8 block-scaled
+# `kv_cache.fused_qkv_index_matmul.ragged.paged.scale.mxfp8`). One MXFP8 block-scaled
 # GEMM over the concatenated weight [Wq|Wk|Wv|Wiq|Wik]: returns Q + IndexQ in a
 # combined output, scatters K/V into the MAIN (MHA) paged cache and IndexK into
 # the INDEX (MLA, single latent head, K only) paged cache. Bit-exactness vs
@@ -932,7 +932,7 @@ mojo_test(
 )
 
 # Target: MXFP8 dynamic block-scaled quantize (`quantize_dynamic_scaled_fp4fp8`
-# with SF_VECTOR_SIZE=32, the `mo.quantize.dynamic.block.scaled` op): BF16 ->
+# with SF_VECTOR_SIZE=32, the `quantization.quantize.dynamic.block.scaled` op): BF16 ->
 # fp8_e4m3fn + E8M0 block scales, the MiniMax-M3-MXFP8 activation-narrowing step.
 # M + the input value-distribution are the fuzz axes; N is compile-time
 # (`-D N=..`, multiple of 32). `contract` (--contract, default) checks the

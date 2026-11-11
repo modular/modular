@@ -22,7 +22,7 @@ from max import functional as F
 from max.graph.weights import WeightData
 from max.nn import Module as ModuleV3
 from max.nn.legacy.layer import Module as GraphApiModule
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative import (
     DraftAliases,
     SpeculativeConfig,

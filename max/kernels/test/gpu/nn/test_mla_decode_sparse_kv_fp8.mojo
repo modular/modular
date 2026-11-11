@@ -49,7 +49,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     compute_mla_dispatch_scalars,
@@ -725,6 +725,7 @@ def run_test_sparse_kv_fp8[
             sparse=True,
             fold_shared_index=shared_index,
             physical_indices=not logical,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -748,6 +749,7 @@ def run_test_sparse_kv_fp8[
             sparse=True,
             fold_shared_index=shared_index,
             physical_indices=not logical,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -1153,6 +1155,7 @@ def run_test_sparse_kv_fp8_variable_topk[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -1486,6 +1489,7 @@ def run_test_sparse_kv_fp8_attn_sink[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2027,6 +2031,7 @@ def run_test_sparse_kv_fp8_extra_kv[
         ragged=True,
         sparse=True,
         has_extra_k=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2401,6 +2406,7 @@ def run_test_sparse_kv_fp8_topk_clamping[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,

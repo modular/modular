@@ -24,6 +24,7 @@
 #include "AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -248,7 +249,8 @@ std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
 /// its local worker ID as well as its global worker ID (global worker ID
 /// offset + local worker ID), this is used so it can be identified when
 /// delegating.
-std::unique_ptr<WorkQueue> createPartitionedThreadPoolWorkQueue(
+MODULAR_CXX_EXPORT std::unique_ptr<WorkQueue>
+createPartitionedThreadPoolWorkQueue(
     CompactCPUDevicePtr cpuDevicePtr, int numaNode,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
     size_t globalWorkerIdOffset);
@@ -256,12 +258,12 @@ std::unique_ptr<WorkQueue> createPartitionedThreadPoolWorkQueue(
 /// Returns the global worker ID recorded by the current thread at startup, or
 /// SIZE_MAX if the current thread is not a worker of a
 /// DelegateThreadPoolWorkQueue.
-size_t getCurrentGlobalWorkerID();
+MODULAR_CXX_EXPORT size_t getCurrentGlobalWorkerID();
 
 /// Creates a WorkQueue that delegates to a set of partitioned WorkQueues,
 /// emulating a single unified queue. Each delegate must be created with a
 /// mutually exclusive, contiguous range of global worker IDs.
-std::unique_ptr<WorkQueue>
+MODULAR_CXX_EXPORT std::unique_ptr<WorkQueue>
 createDelegateThreadPoolWorkQueue(CompactCPUDevicePtr cpuDevicePtr,
                                   std::vector<WorkQueue *> delegates);
 

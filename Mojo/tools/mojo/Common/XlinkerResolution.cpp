@@ -58,11 +58,32 @@ std::optional<std::string> findLibraryByName(StringRef libName,
   return std::nullopt;
 }
 
+/// Expands clang-driver `-Wl,<a>,<b>` passthroughs into the individual linker
+/// arguments they become, so one spelling works for both the JIT resolver and
+/// `mojo build`'s system link.
+static void expandWlArgs(ArrayRef<std::string> args,
+                         SmallVectorImpl<std::string> &out) {
+  for (const std::string &arg : args) {
+    StringRef rest(arg);
+    if (!rest.consume_front("-Wl,")) {
+      out.push_back(arg);
+      continue;
+    }
+    SmallVector<StringRef> pieces;
+    rest.split(pieces, ',');
+    for (StringRef piece : pieces)
+      out.emplace_back(piece.str());
+  }
+}
+
 } // namespace
 
 SmallVector<std::string>
 M::resolveXlinkerLibraries(const State &state,
                            ArrayRef<std::string> xlinkerArgs) {
+  SmallVector<std::string> args;
+  expandWlArgs(xlinkerArgs, args);
+
   SmallVector<std::string> searchDirs;
   SmallVector<std::string> libraries;
   // Library-by-name flags (`-l<name>`) are resolved after the full pass so
@@ -70,13 +91,13 @@ M::resolveXlinkerLibraries(const State &state,
   SmallVector<std::string> deferredLibs;
 
   auto consumeNext = [&](size_t &i) -> std::optional<StringRef> {
-    if (i + 1 >= xlinkerArgs.size())
+    if (i + 1 >= args.size())
       return std::nullopt;
-    return StringRef(xlinkerArgs[++i]);
+    return StringRef(args[++i]);
   };
 
-  for (size_t i = 0; i < xlinkerArgs.size(); ++i) {
-    StringRef arg = xlinkerArgs[i];
+  for (size_t i = 0; i < args.size(); ++i) {
+    StringRef arg = args[i];
 
     if (arg.consume_front("-L") || arg.consume_front("--library-path=")) {
       if (!arg.empty())

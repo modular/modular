@@ -23,7 +23,7 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
-from layout.tile_layout import row_major, blocked_product
+from layout.layout import row_major, blocked_product
 from std.sys import has_accelerator
 from std.sys.info import simd_width_of
 from std.testing import assert_equal, assert_false, assert_true

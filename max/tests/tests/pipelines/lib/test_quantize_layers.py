@@ -14,11 +14,13 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from max import functional as F
 from max import tree
 from max._entrypoints.cli.quantize import (
-    _checkpoint_weight_name,
+    checkpoint_quantization_config,
     insert_quantized_linears,
     on_the_fly_config,
     quant_formats,
@@ -26,13 +28,19 @@ from max._entrypoints.cli.quantize import (
 from max.nn import Linear, Module
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.moe import MoE
 from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
     QuantizedQKVLinear,
 )
-from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.nn.legacy.quant_config import WeightSource
+from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.common_layers.quant_tensor import (
+    MXFP4Quantizer,
+    MXFP8Quantizer,
+    NVFP4TensorQuantizer,
+)
+from max.nn.quant_config import QuantFormat, WeightSource
 from max.tensor import Tensor
 
 
@@ -92,6 +100,49 @@ def test_every_offered_format_builds_a_quantize_on_load_config(
     assert config.source is WeightSource.QUANTIZE
     assert config.quantizes_on_load
     assert config.format.value == name
+
+
+@pytest.mark.parametrize(
+    ("name", "quantizer_cls", "block_k"),
+    [
+        ("nvfp4", NVFP4TensorQuantizer, 16),
+        ("mxfp8", MXFP8Quantizer, 32),
+        ("mxfp4", MXFP4Quantizer, 32),
+    ],
+)
+def test_insert_builds_the_formats_quantizer(
+    name: str, quantizer_cls: type[object], block_k: int
+) -> None:
+    """Each offered format wraps the linear in that format's quantizer."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(block, [r"mlp"], on_the_fly_config(name))
+
+    weight = cast(
+        NVFP4TensorQuantizer | MXFP8Quantizer | MXFP4Quantizer, block.mlp.weight
+    )
+    assert isinstance(weight, quantizer_cls)
+    assert weight.block_size == (1, block_k)
+
+
+def test_export_configs_use_the_keys_the_loaders_read() -> None:
+    """MXFP8 nests ``ignore`` where the modelopt parser looks for it."""
+    ignored = ["model.layers.0.self_attn*"]
+    mxfp8 = checkpoint_quantization_config("mxfp8", ignored)
+    assert mxfp8["quant_method"] == "modelopt"
+    section = mxfp8["quantization"]
+    assert isinstance(section, dict)
+    assert section["quant_algo"] == "MXFP8"
+    assert section["ignore"] == ignored
+
+    assert checkpoint_quantization_config("mxfp4", ignored) == {
+        "quant_method": "mxfp4"
+    }
+
+    nvfp4 = checkpoint_quantization_config("nvfp4", ignored)
+    assert nvfp4["quant_method"] == "modelopt"
+    assert nvfp4["quant_algo"] == "NVFP4"
+    assert nvfp4["ignore"] == ignored
 
 
 def test_an_unknown_format_names_the_ones_that_work() -> None:
@@ -170,26 +221,74 @@ def test_quantizer_path_omits_the_weight_segment() -> None:
     assert list(tree.nodes(module, NVFP4TensorQuantizer)) == ["down_proj"]
 
 
-def test_checkpoint_weight_name_maps_the_transparent_quantizer_path() -> None:
-    """Export writes the source key, not the adapted module path."""
-    source = "model.layers.0.mlp.down_proj.weight"
-    adapted = "language_model.layers.0.mlp.down_proj.weight"
-    assert (
-        _checkpoint_weight_name(
-            "language_model.layers.0.mlp.down_proj",
-            {adapted: source},
-            {source},
-        )
-        == source
+def _moe() -> MoE:
+    return MoE(
+        hidden_dim=32,
+        num_experts=2,
+        num_experts_per_token=1,
+        moe_dim=64,
+        has_shared_experts=True,
+        shared_experts_dim=64,
     )
-    assert (
-        _checkpoint_weight_name(
-            "language_model.layers.0.mlp.down_proj",
-            {adapted: "not-a-checkpoint-key"},
-            {source},
+
+
+class _MoeBlock(Module[[Tensor], Tensor]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.mlp = _moe()
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+
+def test_insert_swaps_a_moe_whose_experts_all_match() -> None:
+    """Routed experts become one QuantizedMoE, with the mesh init would set."""
+    with F.lazy():
+        block = _MoeBlock()
+        config = on_the_fly_config("nvfp4")
+        insert_quantized_linears(
+            block,
+            [r"^mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"],
+            config,
         )
-        is None
-    )
+
+        assert type(block.mlp) is QuantizedMoE
+        moe = cast(QuantizedMoE, block.mlp)
+        assert moe.quant_config is config
+        assert moe.swiglu_limit == 0.0
+        assert moe.mesh.num_devices >= 1
+        assert all(type(expert) is QuantizedMLP for expert in moe.experts)
+        assert isinstance(moe.experts[0].gate_proj, QuantizedLinear)
+        assert isinstance(moe.experts[0].down_proj, QuantizedLinear)
+        # The shared expert was not targeted, so it stays a plain MLP.
+        assert type(moe.shared_experts) is MLP
+
+
+def test_insert_leaves_a_moe_when_only_its_name_matches() -> None:
+    """``mlp.gate_proj`` is not an expert projection, so the MoE stays put."""
+    with F.lazy():
+        block = _MoeBlock()
+        insert_quantized_linears(
+            block,
+            [r"^mlp\.(gate_proj|up_proj)$"],
+            on_the_fly_config("nvfp4"),
+        )
+
+        assert type(block.mlp) is MoE
+        assert all(type(expert) is MLP for expert in block.mlp.experts)
+
+
+def test_insert_rejects_quantizing_some_experts() -> None:
+    """A QuantizedMoE stacks every expert, so a subset cannot be swapped."""
+    with F.lazy():
+        block = _MoeBlock()
+        with pytest.raises(ValueError, match="all experts"):
+            insert_quantized_linears(
+                block,
+                [r"^mlp\.experts\.0\.(gate_proj|up_proj)$"],
+                on_the_fly_config("nvfp4"),
+            )
+        assert type(block.mlp) is MoE
 
 
 def test_insert_rejects_half_of_a_fused_group() -> None:
@@ -204,3 +303,88 @@ def test_insert_rejects_half_of_a_fused_group() -> None:
             insert_quantized_linears(qkv, [r"^q_proj$", r"^k_proj$"], config)
         assert type(mlp) is MLP
         assert type(qkv) is QKVLinear
+
+
+def _reports_error(layer: Linear | QuantizedLinear) -> bool:
+    """Whether ``layer``'s weight is a quantizer that reports its error."""
+    assert isinstance(layer, QuantizedLinear)
+    assert isinstance(layer.weight, NVFP4TensorQuantizer)
+    return layer.weight.reports_error
+
+
+def test_report_error_builds_reporting_quantizers() -> None:
+    """With ``report_error`` every inserted quantizer reports; others do not."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(
+            block,
+            [r"q_proj", r"k_proj"],
+            on_the_fly_config("nvfp4", report_error=True),
+        )
+
+        assert _reports_error(block.q_proj)
+        assert _reports_error(block.k_proj)
+        assert isinstance(block.mlp, Linear)
+
+
+def test_report_error_is_off_by_default() -> None:
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(block, [r"q_proj"], on_the_fly_config("nvfp4"))
+        assert not _reports_error(block.q_proj)
+
+
+def test_report_error_covers_the_members_of_fused_groups() -> None:
+    """Gate and up are one matmul but each member still reports."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        insert_quantized_linears(
+            mlp,
+            [r"^gate_proj$", r"^up_proj$", r"^down_proj$"],
+            on_the_fly_config("nvfp4", report_error=True),
+        )
+
+        assert isinstance(mlp, QuantizedMLP)
+        assert _reports_error(mlp.gate_proj)
+        assert _reports_error(mlp.up_proj)
+        assert _reports_error(mlp.down_proj)
+
+
+def test_report_error_survives_the_compile_rebuild() -> None:
+    """``compile`` rebuilds the module by tree-mapping it; the flag rides along."""
+    with F.lazy():
+        block = _Block()
+        insert_quantized_linears(
+            block, [r"q_proj"], on_the_fly_config("nvfp4", report_error=True)
+        )
+        rebuilt = tree.map(lambda tensor: tensor, block, leaf=Tensor)
+
+        assert _reports_error(rebuilt.q_proj)
+
+
+def test_report_error_rejects_a_format_that_cannot_measure() -> None:
+    """A format without a measuring hook fails before compile, by name."""
+    config = on_the_fly_config("nvfp4", report_error=True)
+    config.format = QuantFormat.BLOCKSCALED_FP8
+    with F.lazy():
+        block = _Block()
+        with pytest.raises(ValueError, match="only implemented for"):
+            insert_quantized_linears(block, [r"q_proj"], config)
+
+
+def test_report_error_reaches_layers_built_from_the_config() -> None:
+    """A layer built straight from ``quant_config`` reports, with no wiring."""
+    config = on_the_fly_config("nvfp4", report_error=True)
+    with F.lazy():
+        mlp = QuantizedMLP(32, 64, quant_config=config)
+
+        assert _reports_error(mlp.gate_proj)
+        assert _reports_error(mlp.up_proj)
+        assert _reports_error(mlp.down_proj)
+
+
+def test_report_error_needs_a_weight_quantized_on_load() -> None:
+    config = on_the_fly_config("nvfp4", report_error=True)
+    config.source = WeightSource.CHECKPOINT
+    with F.lazy(), pytest.raises(ValueError, match="quantized on load"):
+        QuantizedLinear(32, 64, quant_config=config)

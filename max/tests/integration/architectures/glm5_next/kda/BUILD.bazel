@@ -18,8 +18,8 @@ modular_py_library(
 )
 
 modular_py_test(
-    name = "test_kimi_delta_attention",
-    srcs = ["test_kimi_delta_attention.py"],
+    name = "test_kda_core",
+    srcs = ["test_kda_core.py"],
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },
@@ -33,13 +33,14 @@ modular_py_test(
     }) + REQUIRES_INTERNAL_KERNELS,
     deps = [
         ":torch_reference",
+        "//max/python/max:tensor",
         requirement("numpy"),
         requirement("torch"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
@@ -60,14 +61,15 @@ modular_py_test(
         "//conditions:default": [],
     }) + REQUIRES_INTERNAL_KERNELS,
     deps = [
+        "//max/python/max:tensor",
         requirement("numpy"),
         requirement("torch"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
 
@@ -79,14 +81,14 @@ modular_py_test(
     # kernels.
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
+        "//max/python/max:tensor",
         requirement("numpy"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/_graph_ops",
         "//max/python/max/pipelines/architectures/glm5_next",
-        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
         "//max/python/max/pipelines/modeling",
     ],
 )
@@ -95,13 +97,9 @@ modular_py_test(
     name = "test_kda_state_cache",
     srcs = ["test_kda_state_cache.py"],
     deps = [
-        requirement("numpy"),
-        "//max/python/max:tree",
-        "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
@@ -111,14 +109,16 @@ modular_py_test(
 modular_py_test(
     name = "test_kda_module",
     srcs = ["test_kda_module.py"],
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
     deps = [
+        "//max/python/max/_interpreter_ops",
         requirement("numpy"),
-        requirement("torch"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )

@@ -94,9 +94,10 @@ using AsyncDeviceGraphRef = AsyncValueRef<DeviceGraphRef>;
 /// Device enumeration and identity.
 class MODULAR_CXX_EXPORT Device final : public ReferenceCounted<Device> {
 public:
-  // API is a constexpr StringLiteral for fast comparison, while being
-  // printable as a string.
-  using API = StringLiteral;
+  // A StringRef rather than the legacy driver's StringLiteral: a plugin names
+  // its own API at runtime, and `api()` reports that name as the legacy
+  // driver's backends report theirs.
+  using API = StringRef;
   static constexpr API cpuAPI = "cpu";     // Generic CPU device
   static constexpr API gpuAPI = "gpu";     // Generic GPU device
   static constexpr API cudaAPI = "cuda";   // NVIDIA CUDA device
@@ -123,6 +124,7 @@ public:
   static int numberOfDevices(StringRef api);
   /// Unlike legacy, skips devices whose plugin lacks the peer extension.
   static ErrorOrSuccess enableAllPeerAccess();
+  static ErrorOr<bool> allPeerAccessEnabled();
 
   /// Creates a device handle for device `id` of `api`.
   static ErrorOr<DeviceRef> create(StringRef api, int id = 0);
@@ -171,6 +173,7 @@ public:
   ErrorOr<AllocationRange> allocationRange(void *ptr) const;
   /// Whether this device can directly access `other`'s memory.
   ErrorOr<bool> canAccess(const Device &other) const;
+  ErrorOrSuccess enablePeerAccess(const Device &peer);
   /// Answered by the plugin's `host_unified` property; virtual devices
   /// report false.
   ErrorOr<bool> isHostUnified() const;
@@ -180,7 +183,8 @@ public:
 
   /// DLPack device descriptor for this device. Mirrors the legacy
   /// per-backend mappings; APIs without a DLPack code (for example the mock
-  /// test plugin's generic gpu) report `kDLExtDev`.
+  /// test plugin's generic gpu) report `kDLExtDev`, and their pinned buffers,
+  /// which are plain host memory, report `kDLCPU`.
   DLDevice getDLDevice(bool pinned) const {
     if (api_ == cudaAPI)
       return pinned ? DLDevice{kDLCUDAHost, 0} : DLDevice{kDLCUDA, id_};
@@ -188,7 +192,7 @@ public:
       return pinned ? DLDevice{kDLROCMHost, 0} : DLDevice{kDLROCM, id_};
     if (api_ == metalAPI)
       return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLMetal, id_};
-    return DLDevice{kDLExtDev, id_};
+    return pinned ? DLDevice{kDLCPU, 0} : DLDevice{kDLExtDev, id_};
   }
 
 private:
@@ -392,8 +396,11 @@ private:
   ErrorOrSuccess err_;
 };
 
-/// A host-signalable, device-waitable 64-bit slot in device-mapped pinned
-/// host memory (allocated by `DeviceContext::allocateCompletionFlag`).
+/// A 64-bit flag the host signals and a device waits on, backed by the
+/// plugin's completion-flag extension.
+///
+/// `reset`, `signal` and `load` abort if the plugin fails: their legacy
+/// signatures have no error channel.
 class MODULAR_CXX_EXPORT CompletionFlag final
     : public ReferenceCounted<CompletionFlag> {
 public:
@@ -402,23 +409,23 @@ public:
   CompletionFlag(const CompletionFlag &) = delete;
   CompletionFlag &operator=(const CompletionFlag &) = delete;
 
-  uint64_t devicePtr() const { return devicePtr_; }
-
+  /// Stores 0, keeping this object so a graph payload holding it stays valid.
+  ///
+  /// Don't reset while a wait on the flag is pending; doing so is undefined
+  /// behavior.
   void reset();
+  /// Don't signal a lower value than the last one without a reset in between.
   void signal(uint64_t value);
   uint64_t load() const;
 
 private:
   friend class DeviceContext;
   friend class DeviceStream;
-  CompletionFlag(MojoHALCompletionFlagBox *mojoFlag, void *hostPtr,
-                 uint64_t devicePtr)
-      : mojoFlag_(mojoFlag), hostPtr_(hostPtr), devicePtr_(devicePtr) {}
+  friend struct CompletionFlagMojoAccess;
+  explicit CompletionFlag(MojoHALCompletionFlagBox *mojoFlag)
+      : mojoFlag_(mojoFlag) {}
 
-  MojoHALCompletionFlagBox
-      *mojoFlag_; // Heap-boxed Mojo-side flag (owns the pinned slot).
-  void *hostPtr_;
-  uint64_t devicePtr_;
+  MojoHALCompletionFlagBox *mojoFlag_; // Owns the plugin flag.
 };
 
 /// An in-order command stream on one device.
@@ -439,9 +446,15 @@ public:
   /// Stalls this stream until `event` has been reached.
   ErrorOrSuccess enqueueWaitForEvent(DeviceEvent &event);
 
-  /// Stalls the stream until the flag's slot holds `value`.
-  ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                        uint64_t value) const;
+  /// Stalls the stream until the flag's slot is at least `value`.
+  ///
+  /// While the wait is pending, the thread that will signal the flag must not
+  /// make a call that waits for the stream or the device: `synchronize`, a
+  /// copy to or from pageable host memory (small host-to-device copies may
+  /// return on CUDA and HIP), freeing pinned or device memory, or destroying a
+  /// flag. On Metal, memset and fill also wait.
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const;
 
   /// CUDA and HIP only, as in legacy.
   ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const;
@@ -637,6 +650,12 @@ public:
   /// an error.
   ErrorOr<DeviceContextRef> selectStream(unsigned streamId);
 
+  /// Always false: the HAL backend has no stream capture.
+  bool isGraphCapturing() const {
+    // TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+    return false;
+  }
+
   /// Creates an event recorded on this context's stream.
   ErrorOr<DeviceEventRef> enqueueEvent();
   /// Records an existing event on this context's stream.
@@ -661,9 +680,12 @@ public:
 
   // ===-- Completion flags ---------------------------------------------=== //
 
-  /// Allocates a zero-initialized 64-bit completion flag in device-mapped
-  /// pinned host memory.
+  /// Allocates a completion flag whose value is 0.
   ErrorOr<CompletionFlagRef> allocateCompletionFlag();
+
+  /// Returns whether this is a non-CPU device whose plugin exports the
+  /// completion-flag extension with reset.
+  bool supportsCompletionFlags() const;
 
   // ===-- Error helpers -------------------------------------------------=== //
 

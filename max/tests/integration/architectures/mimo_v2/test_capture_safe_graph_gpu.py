@@ -25,8 +25,8 @@ from max import tree
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,
@@ -180,13 +180,13 @@ def test_sliding_qkv_fusion_is_opt_in(query_heads: int) -> None:
     default = _build(2, query_heads=query_heads)
     # MoE attention lives in shared callees outside the root graph.
     default_ir = default.module.mlir_module.asm()
-    assert "mo.chunked_qkv_rope_store.ragged.paged" not in default_ir
-    assert default_ir.count("mo.fused_qk_rope.ragged.paged") == 6
+    assert "kv_cache.chunked_qkv_rope_store.ragged.paged" not in default_ir
+    assert default_ir.count("kv_cache.fused_qk_rope.ragged.paged") == 6
 
     fused = _build(2, query_heads=query_heads, fused_sliding_qkv=True)
     fused_ir = fused.module.mlir_module.asm()
-    assert fused_ir.count("mo.chunked_qkv_rope_store.ragged.paged") == 2
-    assert fused_ir.count("mo.fused_qk_rope.ragged.paged") == 4
+    assert fused_ir.count("kv_cache.chunked_qkv_rope_store.ragged.paged") == 2
+    assert fused_ir.count("kv_cache.fused_qk_rope.ragged.paged") == 4
     assert [str(value.type) for value in default.inputs] == [
         str(value.type) for value in fused.inputs
     ]
@@ -215,10 +215,12 @@ def test_full_qkv_fusion_is_independent(
         fused_full_qkv=True,
     )
     ir = fused.module.mlir_module.asm()
-    assert ir.count("mo.chunked_qkv_rope_store.ragged.paged") == (
+    assert ir.count("kv_cache.chunked_qkv_rope_store.ragged.paged") == (
         6 if sliding else 4
     )
-    assert ir.count("mo.fused_qk_rope.ragged.paged") == (0 if sliding else 2)
+    assert ir.count("kv_cache.fused_qk_rope.ragged.paged") == (
+        0 if sliding else 2
+    )
     assert [str(value.type) for value in default.inputs] == [
         str(value.type) for value in fused.inputs
     ]

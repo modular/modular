@@ -11,9 +11,13 @@ package(
 modular_cc_binary(
     name = "system-info",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:Base",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
         "//Support:MDialect",

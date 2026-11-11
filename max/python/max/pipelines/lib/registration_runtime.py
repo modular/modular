@@ -39,12 +39,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
 from .interfaces.pipeline_model import ModelLoadContext
+from .weight_transform import WeightEntry
 
 __all__ = [
     "BatchContextLengths",
@@ -77,6 +79,10 @@ class ConstantInputs:
     buffers: tree.Tree[Buffer]
 
     def __post_init__(self) -> None:
+        if is_virtual_device_mode() and not self.buffers:
+            # Compile-only: a virtual device cannot allocate, and only
+            # execution reads the buffers. The declarations still stand.
+            return
         _, structure = tree.flatten(self.input_types)
         structure.flatten_up_to(self.buffers)
 
@@ -191,6 +197,19 @@ class DeploymentConfig:
         parameter dtype conversion. The default preserves every weight.
         """
         return dict(state_dict)
+
+    @classmethod
+    def weight_entries(cls) -> Mapping[str, Sequence[WeightEntry]]:
+        """Returns the entries that name each role's checkpoint weights.
+
+        A config that names the weights itself, by keeping the checkpoint's
+        keys or overriding :meth:`prepare_weights`, declares here the names
+        its roles' weights end up with, so an exported artifact names them
+        as serving does. Keyed by
+        :class:`~max.pipelines.lib.graph_specs.GraphRole`; the default names
+        none.
+        """
+        return {}
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
         """Returns the config completed with ``runtime``.

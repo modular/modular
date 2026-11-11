@@ -26,15 +26,12 @@ import json
 from pathlib import Path
 
 from max.benchmark.results_to_csv import main
-
-
-def _write_blob(path: Path, **fields: object) -> None:
-    path.write_text(json.dumps(fields))
+from tests.benchmark.benchmark_fakes import write_blob
 
 
 def test_main_cli(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(
+    write_blob(
         a,
         max_concurrency=1,
         request_throughput=10.0,
@@ -51,7 +48,7 @@ def test_main_cli(tmp_path: Path) -> None:
 
 def test_main_cli_dry_run(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    write_blob(a, max_concurrency=1, request_throughput=10.0)
     out = tmp_path / "out.csv"
     rc = main([str(a), "-o", str(out), "--dry-run"])
     assert rc == 0

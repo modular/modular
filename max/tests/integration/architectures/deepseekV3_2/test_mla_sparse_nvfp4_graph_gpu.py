@@ -43,21 +43,21 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.attention.multi_latent_attention import (
-    LatentAttentionWithRope,
-)
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     mla_decode_graph,
     mla_fp8_index_top_k_with_physical,
     mla_prefill_decode_graph,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
 )
-from max.nn.legacy.kv_cache.utils import MLAAttnKey
+from max.nn.kv_cache.utils import MLAAttnKey
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
 from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
@@ -652,8 +652,15 @@ def test_mla_sparse_native_capture_keys_follow_launches(
         base.max_cache_length.inplace_copy_from(
             Buffer.from_numpy(np.array([context + num_tokens], np.uint32))
         )
+        # Replay validates every staged element, so both follow the runtime
+        # path: the whole batch's count, then the decode view's (zero here).
         partitions.inplace_copy_from(
-            Buffer.from_numpy(np.array([key.num_partitions], np.int64))
+            Buffer.from_numpy(
+                np.array(
+                    [key.num_partitions, key.decode_num_partitions],
+                    dtype=np.int64,
+                )
+            )
         )
         base.max_cache_length.stream.synchronize()
         partitions.stream.synchronize()

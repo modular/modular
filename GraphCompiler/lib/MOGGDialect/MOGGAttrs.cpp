@@ -175,7 +175,7 @@ std::string FusionInfoAttr::toString(bool includeLineNumbers, bool quote,
 }
 
 /// Drops the dialect prefix of every dotted op name in `name`, including ones
-/// nested in a wrapper: `mo.reduce.rms_norm` -> `reduce.rms_norm`,
+/// nested in a wrapper: `mo.reduce.add` -> `reduce.add`,
 /// `shapeof(mo.range)` -> `shapeof(range)`.
 static std::string stripNestedDialectPrefixes(StringRef name) {
   std::string out;

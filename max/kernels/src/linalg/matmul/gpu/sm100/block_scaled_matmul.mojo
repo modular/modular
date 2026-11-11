@@ -52,7 +52,7 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Coord, TileTensor, coord
 from layout.coord import ComptimeInt, Idx
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -80,7 +80,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     OutputStage,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
@@ -1938,7 +1938,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfa_4d_layout = TileLayout(
+    var sfa_4d_layout = Layout(
         sfa_4d_shape,
         Coord(
             Int64(sfa_5d_tensor.dynamic_stride(0) // 2),
@@ -1954,7 +1954,7 @@ def _create_tma_and_launch[
         Int64(sfb_5d_tensor.dim[2]()),
         Idx[sf_atom_u16],
     )
-    var sfb_4d_layout = TileLayout(
+    var sfb_4d_layout = Layout(
         sfb_4d_shape,
         Coord(
             Int64(sfb_5d_tensor.dynamic_stride(0) // 2),
@@ -2292,11 +2292,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Idx[1],
             )
 
-    var sfa_5d_layout = TileLayout(
+    var sfa_5d_layout = Layout(
         _scales_5d_shape(a_scales_tensor), _scales_5d_stride(a_scales_tensor)
     )
     var sfa_5d_tensor = a_scales_tensor.as_imm().reshape(sfa_5d_layout)
-    var sfb_5d_layout = TileLayout(
+    var sfb_5d_layout = Layout(
         _scales_5d_shape(b_scales_tensor), _scales_5d_stride(b_scales_tensor)
     )
     var sfb_5d_tensor = b_scales_tensor.as_imm().reshape(sfb_5d_layout)

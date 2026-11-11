@@ -38,6 +38,7 @@
 /bazel/public-patches/llvm-avx2-bf16-broadcast.patch @modular/sdlc
 /bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
+/bazel/public-patches/llvm-shared.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc
@@ -49,7 +50,9 @@
 /bazel/public-patches/rules_python_315.patch @modular/sdlc
 /bazel/public-patches/rules_python_revert.patch @modular/sdlc
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
+/bazel/public-patches/rules_rust_link_interface_libraries.patch @modular/sdlc
 /bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
+/bazel/public-patches/jemalloc-no-private-namespace.patch @modular/public-repo-maintainers
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc
@@ -57,9 +60,9 @@
 /bazel/public-patches/nixl-libfabric-release-inflight.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
-/bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/rules_mojo_bitcode_libs.patch @modular/stdlib
+/bazel/public-patches/llvm-hexagon-qfp-pair-refill.patch @modular/mojo-compiler
 /bazel/public-patches/libkineto-record-window-end-track.patch @modular/max-sdk
 /bazel/public-patches/tracy-cuda-kernel-annotations.patch @modular/max-sdk
 /bazel/public-patches/tracy-port-logging.patch @modular/max-sdk
@@ -67,7 +70,6 @@
 /bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
 /bazel/public-patches/transformers-local-source-symlinks.patch @modular/max-serve
 /bazel/public-patches/xgrammar.patch @modular/max-serve
-/bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime
 /max/docs/site/ @modular/mojo-docs
 /max/docs/site/nightly-changelog.md @modular/public-repo-maintainers
@@ -128,6 +130,7 @@
 /max/BUILD.bazel @modular/sdlc
 /max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @copilot-pull-request-reviewer @modular/driver
 /max/mojo/max/_category_.json @modular/mojo-docs
+/max/mojo/max/_graph_blob.mojo @modular/stdlib @modular/runtime @copilot-pull-request-reviewer
 /max/mojo/max/BUILD.bazel @modular/stdlib
 /max/mojo/max/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/max/benchmark/ @modular/stdlib @copilot-pull-request-reviewer

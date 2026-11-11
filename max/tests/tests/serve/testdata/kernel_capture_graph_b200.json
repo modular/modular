@@ -10,7 +10,7 @@
   "traceName": "kernel_capture_graph_b200.json",
   "traceEvents": [
   {"ph": "X", "cat": "user_annotation", "name": "max.batch", "pid": 989028, "tid": 989028, "ts": 7570176468006.409, "dur": 7499.946, "args": {"External id": 10}},
-  {"ph": "X", "cat": "user_annotation", "name": "mo.mha.ragged.paged.causal.nhead_8.hdim_128", "pid": 989028, "tid": 989189, "ts": 7570176472497.348, "dur": 14.942, "args": {"External id": 10}},
+  {"ph": "X", "cat": "user_annotation", "name": "attention.mha.ragged.paged.causal.nhead_8.hdim_128", "pid": 989028, "tid": 989189, "ts": 7570176472497.348, "dur": 14.942, "args": {"External id": 10}},
   {"ph": "X", "cat": "user_annotation", "name": "flash_attention", "pid": 989028, "tid": 989189, "ts": 7570176472498.358, "dur": 13.164, "args": {"External id": 11}},
   {"ph": "X", "cat": "user_annotation", "name": "matmul", "pid": 989028, "tid": 989189, "ts": 7570176472513.46, "dur": 11.656, "args": {"External id": 12}},
   {"ph": "X", "cat": "user_annotation", "name": "matmulmo.matmul", "pid": 989028, "tid": 989189, "ts": 7570176472513.821, "dur": 10.72, "args": {"External id": 13}},

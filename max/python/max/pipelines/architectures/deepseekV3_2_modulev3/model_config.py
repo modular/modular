@@ -20,8 +20,8 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -129,6 +129,68 @@ def num_indexer_cache_layers(
     return sum(t == "full" for t in indexer_types[:num_layers])
 
 
+def check_replica_layout(
+    config: DeepseekV3_2Config, runtime: ModuleRuntime
+) -> None:
+    """Raises unless the deployment's replicas and DCP group fit the decoder.
+
+    Data parallelism runs one attention replica per device or, under
+    peer-to-peer expert parallelism, tensor-parallel replicas on a
+    ``(dp, tp)`` mesh whose experts span every device. A decode context
+    parallel group is ``dcp`` consecutive ranks of one replica's ``tp``
+    axis, ``dcp`` any divisor of it.
+
+    Allreduce EP can't back a ``(dp, tp)`` mesh: each device's MoE output
+    is a partial over its own experts (the shared expert added on device 0
+    only), complete only after a sum over every device, while each replica's
+    collectives reduce over its own ``tp`` group.
+
+    Raises:
+        NotImplementedError: If replicas of several devices run without
+            expert parallelism or with allreduce EP, or the DCP degree does
+            not divide the attention tensor-parallel degree.
+    """
+    n_devices = len(runtime.mesh.devices)
+    dp = max(1, runtime.data_parallel_degree)
+    if 1 < dp < n_devices and runtime.ep is None:
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs expert "
+            "parallelism; without it, use one replica per device."
+        )
+    if 1 < dp < n_devices and (
+        runtime.ep_use_allreduce
+        or (runtime.ep is not None and runtime.ep.use_allreduce)
+    ):
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs "
+            "peer-to-peer expert parallelism: allreduce EP "
+            "(ep_use_allreduce) sums each device's local-expert partials "
+            "over every device, and the replicas reduce within their own "
+            "tp group. Turn off ep_use_allreduce, or use one replica per "
+            "device."
+        )
+    attention_tp = n_devices // dp
+    dcp = config.decode_context_parallel_degree
+    if dcp > 1 and attention_tp % dcp:
+        raise NotImplementedError(
+            f"decode_context_parallel_degree={dcp} must divide the attention "
+            f"tensor-parallel degree ({attention_tp}: {n_devices} devices "
+            f"over {dp} replicas), so that its groups tile each replica."
+        )
+
+
+def resolve_dcp_q_replicate(value: bool | None) -> bool:
+    """Returns whether DCP ranks replicate the query, given the export flag.
+
+    ``None`` (no ``--dcp-q-replicate`` / ``--no-dcp-q-replicate``) means
+    True, a replicated query, for every architecture, as vLLM defaults
+    GLM-5.x. A gathered query is the explicit opt-out.
+    """
+    return True if value is None else value
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     """Configuration for DeepseekV3.2 models (ModuleV3)."""
@@ -154,9 +216,70 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     indexer_types: list[str] = field(default_factory=list)
     # GLM-5.x sets indexer_rope_interleave=true.
     indexer_rope_interleave: bool = False
+    decode_context_parallel_degree: int = 1
+    """Attention ranks that split each request's KV positions (1 = off).
+
+    Under decode context parallelism the MLA latent and indexer caches hold
+    only each rank's positions (``kv_cache.context_parallel``), every rank
+    attends all its replica's heads over its share, and the partial results
+    merge by their log-sum-exp. Ranks own positions round-robin, one at a
+    time or in blocks of ``decode_context_parallel_interleave``.
+    """
+
+    decode_context_parallel_interleave: int = 1
+    """Consecutive positions a DCP rank owns before the next rank's turn.
+
+    Position ``p`` lives on rank ``(p // interleave) % dcp``. 1 stripes
+    tokens, which balances every request across ranks. The KV page size
+    (128) stripes whole pages, so disaggregated inference can move pages
+    between ranks without restriping. It must divide the KV page size, or a
+    logical page no longer lands in one physical page per rank, and it needs
+    ``decode_context_parallel_degree > 1``.
+    """
+
+    dcp_q_replicate: bool = True
+    """Whether every DCP rank computes all its group's query heads itself.
+
+    False shards ``q_b_proj`` and ``kv_b_proj`` by head as under tensor
+    parallelism: each rank absorbs its own heads' queries and
+    the group all-gathers them. True keeps ``q_b_proj`` and ``kv_b_proj``
+    replicated so every rank absorbs all heads itself, trading weight
+    memory for the all-gather. Either way each rank applies its own heads'
+    ``w_vc`` after the merge. Named after vLLM's
+    ``ParallelConfig.dcp_q_replicate``; True is the default (see
+    :func:`resolve_dcp_q_replicate`).
+    """
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        dcp = self.decode_context_parallel_degree
+        if dcp < 1:
+            raise ValueError(
+                f"decode_context_parallel_degree must be positive (got {dcp})."
+            )
+        interleave = self.decode_context_parallel_interleave
+        if interleave < 1:
+            raise ValueError(
+                "decode_context_parallel_interleave must be positive (got "
+                f"{interleave})."
+            )
+        if interleave > 1:
+            if dcp == 1:
+                raise ValueError(
+                    "decode_context_parallel_interleave > 1 needs "
+                    "decode_context_parallel_degree > 1."
+                )
+            page_size = self.mla_kv_params.page_size
+            if page_size % interleave:
+                raise ValueError(
+                    f"decode_context_parallel_interleave={interleave} must "
+                    f"divide the KV page size ({page_size}): a logical page "
+                    "then lands in one physical page on every rank."
+                )
+        # MTP runs under DCP too: the NextN layer shards its own caches like
+        # the target's, and each draft step runs its own indexer rather than
+        # reusing a lagged selection, which the DCP attention path refuses
+        # (``QuantizedSparseLatentAttentionWithRope``).
         # A ``shared`` layer reuses the top-k from the most recent ``full``
         # layer, so the first layer must be ``full``. An empty schedule means
         # every layer is full.
@@ -253,16 +376,11 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
         """Returns the config placed on the deployment's mesh.
 
         Raises:
-            NotImplementedError: If data parallelism runs over fewer
-                replicas than devices.
+            NotImplementedError: If the replicas or the decode context
+                parallel group don't fit the mesh (see
+                :func:`check_replica_layout`).
         """
-        n_devices = len(runtime.mesh.devices)
-        if 1 < runtime.data_parallel_degree != n_devices:
-            raise NotImplementedError(
-                f"data_parallel_degree={runtime.data_parallel_degree} must "
-                f"equal the device count ({n_devices}); dp x tp meshes are "
-                "not supported yet."
-            )
+        check_replica_layout(self, runtime)
         return replace(
             self,
             mesh=runtime.mesh,
@@ -452,6 +570,15 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             attention_dropout=config.attention_dropout,
             graph_mode=graph_mode,
             data_parallel_degree=model_config.data_parallel_degree,
+            decode_context_parallel_degree=(
+                model_config.decode_context_parallel_degree
+            ),
+            decode_context_parallel_interleave=(
+                model_config.decode_context_parallel_interleave
+            ),
+            dcp_q_replicate=resolve_dcp_q_replicate(
+                model_config.dcp_q_replicate
+            ),
             # DeepseekV3.2 specific fields
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,

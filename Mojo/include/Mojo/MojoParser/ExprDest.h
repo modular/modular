@@ -186,16 +186,20 @@ public:
   }
   ExprDest(ExprDest &&rhs)
       : representation(std::move(rhs.representation)), context(rhs.context),
-        patternDeclKind(rhs.patternDeclKind) {
+        patternDeclKind(rhs.patternDeclKind),
+        patternAddressSpace(rhs.patternAddressSpace) {
     rhs.representation = NullRepresentation();
     rhs.patternDeclKind = PatternDeclKind::kNone;
+    rhs.patternAddressSpace = {};
   }
   ExprDest &operator=(ExprDest &&rhs) {
     representation = std::move(rhs.representation);
     patternDeclKind = rhs.patternDeclKind;
+    patternAddressSpace = rhs.patternAddressSpace;
     context = rhs.context;
     rhs.representation = NullRepresentation();
     rhs.patternDeclKind = PatternDeclKind::kNone;
+    rhs.patternAddressSpace = {};
     return *this;
   }
 
@@ -211,6 +215,10 @@ public:
   ExprContext getContext() const { return context; }
   PatternDeclKind getPatternDeclKind() const { return patternDeclKind; }
   void setPatternDeclKind(PatternDeclKind kind) { patternDeclKind = kind; }
+  TypedAttr getPatternAddressSpace() const { return patternAddressSpace; }
+  void setPatternAddressSpace(TypedAttr addrSpace) {
+    patternAddressSpace = addrSpace;
+  }
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
@@ -319,6 +327,10 @@ private:
   /// This enum value keeps track of whether a "target" is being emitted in a
   /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
   PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
+
+  /// The address space of the VarDecl synthesized for a 'var' pattern. Null
+  /// means the default address space.
+  TypedAttr patternAddressSpace;
 
   friend raw_ostream &operator<<(raw_ostream &os, const ExprDest &value);
 };

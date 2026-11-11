@@ -67,6 +67,10 @@ bool isMutated(OpOperand &opOperand);
 /// CAUTION: This does not mean 'read only'.
 bool isRead(OpOperand &opOperand);
 
+/// The device a tensor/buffer graph input lives on. Both types default their
+/// `#M.device_ref` parameter to the host, so an omitted device reads as CPU.
+DeviceRefAttr graphInputDevice(Value v);
+
 } // namespace M::MGP
 
 #endif // GENERICML_MGPDIALECT_MGPUTILS_H

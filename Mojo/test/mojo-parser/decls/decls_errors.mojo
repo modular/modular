@@ -258,7 +258,7 @@ def badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
-  TestTuple[Int, FloatLiteral]().test[1]()
+  TestTuple[Int, Bool]().test[1]()
 
 def badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}
@@ -1410,6 +1410,8 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
 
 
+# expected-note @below {{missing parameter 'mut'}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
 # expected-error @+1 {{'Origin[mut=_]' is not concrete, use '[]' to bind missing parameters}}
 comptime A: Origin = AnyOrigin
 
@@ -1425,5 +1427,6 @@ def overload_on_arg_conv(mut x: Int):
 def overload_on_arg_conv(imm x: Int):
     pass
 
+# expected-note @below {{missing parameter 'T'}}
 # expected-error @+1 {{'List[_]' is not concrete, use '[]' to bind missing parameters}}
 comptime _list_eq_int = List == Int

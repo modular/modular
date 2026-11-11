@@ -1837,22 +1837,21 @@ static void projectToLayouts(TypedAttr &variadic) {
 
   SmallVector<TypedAttr> normalized;
   normalized.reserve(paramList.getValues().size());
-  bool changed = false;
+  Type metatype = paramList.getType().getElementType();
   for (TypedAttr value : paramList.getValues()) {
-    if (auto typeParam = dyn_cast<TypeParamAttr>(value)) {
-      // Keep the element's metatype: a pack's list can be typed by a trait.
-      TypedAttr canonical = cast<TypedAttr>(
-          TypeParamAttr::get(typeParam.getMlirType(), typeParam.getType()));
-      normalized.push_back(canonical);
-      if (canonical != value)
-        changed = true;
-    } else {
+    TypedAttr element = stripIdentityWrappers(value);
+
+    // Keep the element's metatype: a pack's list can be typed by a trait.
+    auto typeParam = sugarDynCast<TypeParamAttr>(element);
+    if (!typeParam) {
       // Keep parametric expressions as-is.
       normalized.push_back(value);
+      continue;
     }
+    normalized.push_back(TypeParamAttr::get(typeParam.getMlirType(), metatype));
   }
 
-  if (changed)
+  if (ArrayRef<TypedAttr>(normalized) != paramList.getValues())
     variadic = ParamListAttr::get(normalized, paramList.getType());
 }
 

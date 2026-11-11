@@ -19,6 +19,7 @@ without needing real checkpoints.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -164,6 +165,17 @@ def make_small_gemma4_vision_config() -> PretrainedConfig:
     return hf_config
 
 
+def make_small_gemma4_moe_config() -> PretrainedConfig:
+    """The small vision config with a 26B-A4B-style MoE block per layer."""
+    hf_config = make_small_gemma4_vision_config()
+    text_config = hf_config.text_config
+    text_config.enable_moe_block = True
+    text_config.num_experts = 4
+    text_config.top_k_experts = 2
+    text_config.moe_intermediate_size = 32
+    return hf_config
+
+
 def _gemma4_vision_zero_weights(
     wm: dict[str, torch.Tensor], hf_config: PretrainedConfig
 ) -> None:
@@ -260,6 +272,23 @@ def _gemma4_language_zero_weights(
         wm[lp + "mlp.up_proj.weight"] = z(t.intermediate_size, t.hidden_size)
         wm[lp + "mlp.down_proj.weight"] = z(t.hidden_size, t.intermediate_size)
         wm[lp + "layer_scalar"] = z(1)
+        if t.enable_moe_block:
+            # The BF16 26B-A4B layout: stacked experts beside the dense MLP.
+            for norm in (
+                "pre_feedforward_layernorm_2",
+                "post_feedforward_layernorm_1",
+                "post_feedforward_layernorm_2",
+            ):
+                wm[lp + norm + ".weight"] = z(t.hidden_size)
+            wm[lp + "router.proj.weight"] = z(t.num_experts, t.hidden_size)
+            wm[lp + "router.scale"] = z(t.hidden_size)
+            wm[lp + "router.per_expert_scale"] = z(t.num_experts)
+            wm[lp + "experts.gate_up_proj"] = z(
+                t.num_experts, 2 * t.moe_intermediate_size, t.hidden_size
+            )
+            wm[lp + "experts.down_proj"] = z(
+                t.num_experts, t.hidden_size, t.moe_intermediate_size
+            )
     return wm
 
 
@@ -356,7 +385,14 @@ def test_load_model_gemma4_modulev3_vision() -> None:
     assert model.language_model is not None
 
 
-def test_gemma4_modulev3_entries_name_every_declared_weight() -> None:
+@pytest.mark.parametrize(
+    "make_config",
+    [make_small_gemma4_vision_config, make_small_gemma4_moe_config],
+    ids=["dense", "moe"],
+)
+def test_gemma4_modulev3_entries_name_every_declared_weight(
+    make_config: Callable[[], PretrainedConfig],
+) -> None:
     """Each graph's entries name every weight its module declares.
 
     The rules name the whole checkpoint and each graph skips the names it
@@ -364,18 +400,23 @@ def test_gemma4_modulev3_entries_name_every_declared_weight() -> None:
     the entries miss. The load tests mock the session, which never compiles,
     so they would pass on one.
     """
-    hf_config = make_small_gemma4_vision_config()
+    hf_config = make_config()
     model = _build_gemma4_model(
         hf_config, make_gemma4_vision_zero_weights(hf_config)
     )
 
     specs = model.graph_specs(model.config)
     assert specs.keys() == model.weight_naming.keys()
+    declared: set[str] = set()
     for role, spec in specs.items():
         assert isinstance(spec.module, Module)
         assert spec.weights is not None
-        missing = set(dict(spec.module.parameters)) - set(spec.weights)
+        names = set(dict(spec.module.parameters))
+        missing = names - set(spec.weights)
         assert not missing, (role, sorted(missing)[:3])
+        declared |= names
+    has_experts = any(".moe_block.experts." in name for name in declared)
+    assert has_experts == hf_config.text_config.enable_moe_block
 
 
 def test_load_model_gemma4_modulev3_text_only_skips_vision() -> None:

@@ -32,7 +32,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from internal_utils import assert_almost_equal
 
 from layout import TileTensor, Coord, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 def run_matvec[

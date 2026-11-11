@@ -17,6 +17,7 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn.common_layers.moe import MoEGate
+from max.nn.kernels import moe_router_group_limited
 from max.tensor import Tensor, default_dtype
 
 
@@ -26,8 +27,7 @@ class LagunaTopKRouter(MoEGate):
     Experts are selected by ``sigmoid(logits) + e_score_correction_bias`` and
     weighted by the unbiased sigmoid score, renormalized when
     ``norm_topk_prob`` and then scaled by ``routed_scaling_factor``. Laguna has
-    no expert groups, so this is plain top-k: the group-limited router kernel
-    the DeepSeek gate uses caps top-k at 32 per group.
+    no expert groups, so on a GPU this is the single-group router kernel.
 
     Args:
         hidden_dim: Dimension of the hidden state.
@@ -88,6 +88,24 @@ class LagunaTopKRouter(MoEGate):
             softcap = self.router_logit_softcapping
             logits = F.tanh(logits / softcap) * softcap
         scores = F.sigmoid(logits)
+        # The router kernel has no CPU implementation.
+        if not any(device.is_host for device in scores.mesh.devices):
+            topk_idx, topk_weight = moe_router_group_limited(
+                scores,
+                self.e_score_correction_bias,
+                self.num_experts,
+                self.num_experts_per_token,
+                n_groups=1,
+                topk_group=1,
+                norm_weights=self.norm_topk_prob,
+                routed_scaling_factor=self.routed_scaling_factor,
+            )
+            return (
+                topk_idx.rebind_mapping(scores.mapping),
+                topk_weight.rebind_mapping(scores.mapping).cast(
+                    self.correction_bias_dtype
+                ),
+            )
         correction_bias = self.e_score_correction_bias.cast(DType.float32)
 
         topk_sel, topk_idx = F.top_k(

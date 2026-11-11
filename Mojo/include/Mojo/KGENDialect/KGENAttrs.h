@@ -26,6 +26,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -59,7 +60,7 @@ namespace M::KGEN {
 /// This class stores a value of a particular dtype. It supports containing
 /// integer, index, float, and bool dtype values only. Index values are treated
 /// as signed.
-class DTypeValue {
+class MODULAR_CXX_EXPORT DTypeValue {
 public:
   /// Get an integer value. Signedness is taken from `dtype`, not `value`.
   DTypeValue(APSInt value, KGENDType dtype);
@@ -130,7 +131,9 @@ void printDTypeValues(llvm::raw_ostream &os, llvm::ArrayRef<DTypeValue> values,
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENAttrs.h.inc"
+#pragma GCC visibility pop
 
 //===----------------------------------------------------------------------===//
 // EmitAsAttr
@@ -159,8 +162,8 @@ public:
 /// Given an attribute or type, return the "canonical" version of the attribute
 /// with all type sugar removed.
 Attribute getCanonicalAttr(Attribute src);
-TypedAttr getCanonicalAttr(TypedAttr src);
-Type getCanonicalType(Type type);
+MODULAR_CXX_EXPORT TypedAttr getCanonicalAttr(TypedAttr src);
+MODULAR_CXX_EXPORT Type getCanonicalType(Type type);
 
 /// Return true if the specified types are canonically equal.
 bool isEqualCanon(Type t1, Type t2);
@@ -225,7 +228,7 @@ TypedAttr stripIdentityWrappers(TypedAttr attr);
 //===----------------------------------------------------------------------===//
 
 /// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
-class FuncSymbolGenerator {
+class MODULAR_CXX_EXPORT FuncSymbolGenerator {
 public:
   FuncSymbolGenerator() = default;
   /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
@@ -301,7 +304,7 @@ struct PointerLikeTypeTraits<M::KGEN::ParamDeclRefAttr>
 
 namespace M::KGEN {
 /// Emit an MLIR operation call in a parameter context.
-TypedAttr emitMLIROperationCall(
+MODULAR_CXX_EXPORT TypedAttr emitMLIROperationCall(
     StringRef opName,
     ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
     ArrayRef<TypedAttr> operands, Type resultType);

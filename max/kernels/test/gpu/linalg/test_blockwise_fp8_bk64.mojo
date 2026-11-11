@@ -137,7 +137,6 @@ def _run_one[
         n_scale_granularity=n_g,
         k_scale_granularity=k_g,
         transpose_b=True,
-        target="gpu",
     ](
         c_tt,
         a_tt,

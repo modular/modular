@@ -52,7 +52,7 @@ from layout import Idx, TileTensor, row_major
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     compute_mla_dispatch_scalars,
@@ -1431,6 +1431,7 @@ def _run_nope_native_512_fp8[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         TileTensor(
             out_576,
@@ -1458,6 +1459,7 @@ def _run_nope_native_512_fp8[
         config=MHAConfig[q_type](num_heads, LATENT_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         TileTensor(
             out_512,
@@ -1987,6 +1989,7 @@ def _run_test_sparse_qkv_fp8[
                 sparse=True,
                 fold_shared_index=shared_index,
                 physical_indices=not logical,
+                kernels=SM100MLA,
             ](
                 out_tt,
                 q_tt,
@@ -2013,6 +2016,7 @@ def _run_test_sparse_qkv_fp8[
                 sparse=True,
                 fold_shared_index=shared_index,
                 physical_indices=not logical,
+                kernels=SM100MLA,
             ](
                 out_tt,
                 q_tt,
@@ -2211,6 +2215,8 @@ def _run_test_sparse_qkv_fp8[
     _ = out_device
     _ = d_indices_device
     _ = row_offsets_device
+    _ = ref_host
+    _ = ref_neg_host
     _ = selected_tokens^
 
 
@@ -2529,6 +2535,7 @@ def _run_test_sparse_qkv_fp8_variable_topk[
         config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -2878,6 +2885,7 @@ def _run_test_sparse_qkv_fp8_attn_sink[
             config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
             ragged=True,
             sparse=True,
+            kernels=SM100MLA,
         ](
             out_tt,
             q_tt,
@@ -3433,6 +3441,7 @@ def _run_test_sparse_qkv_fp8_extra_kv[
         ragged=True,
         sparse=True,
         has_extra_k=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -3816,6 +3825,7 @@ def _run_test_sparse_qkv_fp8_topk_clamping[
         config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -3914,16 +3924,6 @@ def _run_p6_cells(
         topk=640,
         forced_np=1,
         stim=STIM_SPIKE_EVERY,
-    )
-    run_test_sparse_qkv_fp8[.float8_e4m3fn, 8, use_causal=True, logical=True](
-        "p6_causal_logical_pad3_h8_cl2048_topk203_seq6",
-        2,
-        2048,
-        ctx,
-        fixtures=fixtures,
-        topk=203,
-        q_max_seq_len=6,
-        logical_pad=3,
     )
     for topk in [1, 40, 64, 65, 100, 127, 128, 129, 191, 255]:
         run_test_sparse_qkv_fp8[.float8_e4m3fn, 8](

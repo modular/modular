@@ -33,9 +33,9 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.attention import TensorParallelAttentionWithRope
 from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.transformer import (

@@ -124,6 +124,15 @@ class ConfigFileModel(MAXBaseModel):
         return cls.load_config_file(data)
 
     @classmethod
+    def _current_field_name(cls, key: str) -> str:
+        """Returns the field a config file key sets, after any rename.
+
+        Subclasses that rename fields override this so a stray top-level key
+        under an old name is still caught.
+        """
+        return key
+
+    @classmethod
     def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Load configuration from YAML file if config_file is provided.
 
@@ -174,7 +183,8 @@ class ConfigFileModel(MAXBaseModel):
                     if dropped := sorted(
                         k
                         for k in loaded_data
-                        if k != default and k in cls.model_fields
+                        if k != default
+                        and cls._current_field_name(k) in cls.model_fields
                     ):
                         raise ValueError(
                             f"Top-level keys {dropped} would be ignored because "

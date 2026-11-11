@@ -540,8 +540,15 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
-        runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
+        # Compile-only: a virtual device allocates nothing, so the graph
+        # declares its signal inputs but has no storage to bind them to.
+        virtual = driver.is_virtual_device_mode()
+        if virtual:
+            runtime_bufs: list[driver.Buffer] = []
+            buf_types = _signal_buffer_types(tuple(gpu_ids))
+        else:
+            # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
+            runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).
         # Register them in self.sources so the execution loop picks them
@@ -551,7 +558,10 @@ class EagerRealizationContext(RealizationContext):
             value = _passes.add_input(self.graph, bt)
             assert isinstance(value, BufferValue)
             buf_values.append(value)
-            self.sources[value._mlir_value] = Tensor(storage=runtime_bufs[i])
+            if not virtual:
+                self.sources[value._mlir_value] = Tensor(
+                    storage=runtime_bufs[i]
+                )
 
         self.signal_buffers = buf_values
         return self.signal_buffers

@@ -180,12 +180,20 @@ def ref_result_invalid4(mut a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
-# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type}}
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type; use a 'ref' argument with an ImmOrigin instead}}
 def ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
-# expected-error @+1 {{cannot return 'b's origin, because it has RegisterPassable type 'Int'}}
+# expected-error @+1 {{cannot return 'b's origin, because it has RegisterPassable type 'Int'; use a 'ref' argument with a MutOrigin instead}}
 def ref_result_invalid6(mut a: MemoryType, mut b: Int) -> ref [b] Int:
+    pass
+
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type; use a 'ref' argument with a MutOrigin instead}}
+def ref_result_invalid_mut[T: AnyType](mut a: T) -> ref [a] T:
+    pass
+
+# expected-error-re @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type{{$}}}}
+def ref_result_invalid_var[T: AnyType](var a: T) -> ref [a] T:
     pass
 
 # expected-error @+1 {{'ref' result requires an origin specifier}}
@@ -214,6 +222,15 @@ def ref_invalid():
 def return_ref_type_error(a: def (x: MemoryType) thin -> ref [x] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'def(x: MemoryType) thin -> ref[*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
+
+def ref_address_space_type_error[o: Origin[mut=True], addr_space: AddressSpace](
+    a: def (ref [o, addr_space] x: MemoryType) thin -> None,
+    b: def (ref [o, AddressSpace.SHARED] x: MemoryType) thin -> None,
+):
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, addr_space] x: MemoryType) thin -> None' value to 'Int'}}
+    var c: Int = a
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, 2] x: MemoryType) thin -> None' value to 'Int'}}
+    var d: Int = b
 
 struct SBValue(RegisterPassable):
     pass

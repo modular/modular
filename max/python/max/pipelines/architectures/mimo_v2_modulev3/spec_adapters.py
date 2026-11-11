@@ -32,9 +32,9 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.graph import BufferType, TensorType, TensorValue, ops
 from max.nn.common_layers.mesh_axis import DP
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,

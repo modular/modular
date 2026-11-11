@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 2x MI355 recipe for GLM-5.3-Flash, text-only.
+# 2x MI355 recipe for GLM-5.3-Flash: text, image and video input.
 #
-# Same layout as the 8x B200 recipe at two ranks: TP2 attention, EP2 MoE.
+# TP2 attention, EP2 MoE.
 #   Weights: 306 GB / 2 = ~153 GB per GPU, out of 288 GiB.
 #   The KDA state is ~146 MiB per sequence regardless of context, and the
-#     4-stream residual makes activations 4x a single-stream model's, so the
-#     batch and context are kept small until the smoke test passes.
+#     4-stream residual makes activations 4x a single-stream model's. The
+#     memory planner counts both when it infers max_batch_size.
 # The KV cache stays BF16: the checkpoint ships `kv_b_proj` unquantized, so
 # there are no absorbed scales for an FP8 latent cache.
 model:
@@ -31,7 +31,6 @@ model:
 runtime:
   ep_size: 2
   max_batch_input_tokens: 8192
-  max_batch_size: 8
 
 sampling:
   enable_structured_output: true

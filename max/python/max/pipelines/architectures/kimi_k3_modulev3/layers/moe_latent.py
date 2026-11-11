@@ -28,11 +28,12 @@ Its AMD W4A8 validation (``validate_amd_tp_w4a8``, ``validate_amd_packed_k``)
 is copied from ``kimi_k3.layers.moe_latent`` rather than imported, so this
 port has no build dependency on V2.
 
-``tensor_parallel_latent_moe`` shards the per-expert FFN width across the
-``tp`` mesh axis. Unlike the other sharded layers, this block returns a
-complete value: ``routed_expert_norm`` cannot read a partial sum, so
-``forward()`` reduces the routed branch before the norm and the shared
-branch before adding it.
+``tensor_parallel_latent_moe`` shards the per-expert FFN width and the
+latent exit's input dim across the ``tp`` mesh axis. Unlike the other
+sharded layers, this block returns a complete value:
+``routed_expert_norm`` cannot read a partial sum, so ``forward()`` reduces
+the expert output before the norm, then reduces the exit's and the shared
+branch's partial sums together.
 
 ``expert_parallel_latent_moe`` gives each device whole experts instead,
 exchanging tokens through :mod:`ep` (mirroring ``minimax_m3_modulev3/ep.py``).
@@ -74,22 +75,27 @@ from __future__ import annotations
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorValue, ops
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn._graph_ops import (
+    amd_mega_ffn_workspace_words,
+    grouped_dynamic_block_scaled_matmul_amd,
+    grouped_ffn_block_scaled_amd,
+    moe_sort_gather_quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled,
+    stack_a8w4_mega_ffn_b,
+)
+from max.nn.activation import GatedActivation
+from max.nn.common_layers._sharding import shard_and_stack
+from max.nn.common_layers.mesh_axis import EP, TP
+from max.nn.ep_config import EPConfig
+from max.nn.kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
-    shard_and_stack,
 )
-from max.nn.common_layers.mesh_axis import EP, TP
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.kernels import (
-    grouped_dynamic_block_scaled_matmul_amd,
-    quantize_dynamic_block_scaled,
-)
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device
@@ -123,6 +129,23 @@ _AMD_K_GRANULE = 128
 # Fallback per-expert token cap; serving passes
 # ``KimiK3Config.routed_expert_row_bound`` instead (see ``model_config.py``).
 _DEFAULT_MAX_TOKENS_PER_EXPERT = 8192
+
+_AMD_MEGA_FFN_OPS = (
+    "moe.grouped.ffn.block.scaled.amd",
+    "moe.grouped.ffn.a8w4.amd.stack_b",
+)
+"""The W4A8 MegaFFN's ops, registered only by the closed-source kernel
+packages."""
+
+
+def _amd_mega_ffn_is_registered() -> bool:
+    """Reports whether the current graph's kernel library has the MegaFFN ops.
+
+    A source-only build lacks them, so its experts run the grouped-matmul chain.
+    """
+    with ensure_context():
+        library = Graph.current._kernel_library
+        return all(op in library for op in _AMD_MEGA_FFN_OPS)
 
 
 def _amd_moe_usage_stats(
@@ -182,6 +205,33 @@ def _quantize_mxfp8(activations: Tensor) -> tuple[TensorValue, TensorValue]:
 quantize_mxfp8 = F.functional(_quantize_mxfp8)
 
 
+def _moe_sort_gather_quantize_mxfp8(
+    latent: Tensor, flat_idx: Tensor, topk: int, num_experts: int
+) -> tuple[TensorValue, ...]:
+    """The fused expert sort + fan-out gather + MXFP8 quantize.
+
+    Replaces the ``moe_create_indices`` + ``F.gather`` + ``quantize_mxfp8``
+    triple on the W4A8 path with one graph node. The serving graph builds
+    once over a dynamic token count, so the op picks its arm at execution
+    by the real slot count: decode-sized launches run everything in one
+    kernel, larger ones fall back to ``moe_create_indices`` plus the
+    source-major scatter+quantize. ``expert_start_indices``,
+    ``expert_ids`` and the usage stats stay byte-identical to
+    ``moe_create_indices``'s; the order is a valid grouping whose
+    intra-expert positions were never load-bearing.
+    """
+    return moe_sort_gather_quantize_dynamic_block_scaled(
+        TensorValue(latent),
+        TensorValue(flat_idx),
+        sf_vector_size=_SF_VECTOR_SIZE,
+        topk=topk,
+        num_experts=num_experts,
+    )
+
+
+moe_sort_gather_quantize_mxfp8 = F.functional(_moe_sort_gather_quantize_mxfp8)
+
+
 def _amd_w4a8_grouped_matmul(
     activations: Tensor,
     weight: Tensor,
@@ -213,6 +263,78 @@ def _amd_w4a8_grouped_matmul(
 
 
 amd_w4a8_grouped_matmul = F.functional(_amd_w4a8_grouped_matmul)
+
+stack_mega_ffn_b = F.functional(stack_a8w4_mega_ffn_b)
+
+
+def _amd_w4a8_ffn(
+    activations: Tensor,
+    a_scales: Tensor,
+    gate_up: Tensor,
+    gate_up_scales: Tensor,
+    down: Tensor,
+    down_scales: Tensor,
+    expert_start_indices: Tensor,
+    expert_ids: Tensor,
+    usage_stats: Tensor,
+    *,
+    beta: float,
+    linear_beta: float | None,
+    max_rows: int,
+) -> TensorValue:
+    """One shard's routed FFN as one MegaFFN launch, decode or prefill.
+
+    The weights are in the MegaFFN's preshuffled layout; the output is bit
+    for bit what the chain :meth:`KimiK3LatentMoE.forward` runs without it
+    computes from the row-major ones. ``max_rows`` bounds a step's routed
+    rows, which size the prefill kernel's counters. The counters persist
+    across executions: one zeroed buffer per call site.
+    """
+    # Routed rows a step (tokens x top_k) up to which the MegaFFN runs its
+    # decode kernel; more run its prefill kernel. 2304 is 144 tokens, a
+    # DSpark-7 verify step at concurrency 16.
+    band_rows = 2304
+    hidden = TensorValue(activations)
+    workspace = ops.buffer_create(
+        BufferType(
+            DType.uint32,
+            shape=[
+                amd_mega_ffn_workspace_words(
+                    int(gate_up.shape[0]),
+                    band_rows,
+                    max_rows,
+                    grids=2,
+                )
+            ],
+            device=hidden.device,
+        ),
+        init_value=0,
+    )
+    return grouped_ffn_block_scaled_amd(
+        hidden,
+        TensorValue(gate_up),
+        TensorValue(a_scales),
+        TensorValue(gate_up_scales),
+        TensorValue(down),
+        TensorValue(down_scales),
+        TensorValue(expert_start_indices),
+        TensorValue(expert_ids),
+        TensorValue(usage_stats),
+        workspace,
+        ops.shape_to_tensor(hidden.shape)[0],
+        scales_max_padded_m=0,
+        decode_grid_m_cap=0,
+        decode_grid_m_rows=0,
+        mega_band_m=band_rows,
+        mega_max_rows=band_rows,
+        # as `kimi_situ_and_mul_quantize_mxfp8` builds it
+        activation=GatedActivation(
+            "situ", alpha=beta, limit=abs(linear_beta or 0.0)
+        ),
+    )
+
+
+amd_w4a8_ffn = F.functional(_amd_w4a8_ffn)
 
 
 class KimiK3ExpertProjection(Module[[], None]):
@@ -287,6 +409,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         quant_config: QuantConfig | None = None,
         amd_w4a8: bool | None = None,
         max_tokens_per_expert: int = _DEFAULT_MAX_TOKENS_PER_EXPERT,
+        amd_mega_ffn: bool = True,
     ) -> None:
         """Builds the latent MoE block.
 
@@ -313,13 +436,17 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             quant_config: When MXFP4, the routed experts are packed uint8 with
             E8M0 block scales; see the module docstring for the compute
             arm this selects.
-            amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` derives
-            it from the host accelerator via :func:`validate_amd_tp_w4a8`;
-            pass a value to build the graph on a host without one (e.g. a
-            shape-only CPU test).
+            amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` selects
+            it for MXFP4 routed experts via :func:`validate_amd_tp_w4a8`,
+            which requires a CDNA 4 target; pass a value to build the graph
+            for another target (e.g. a shape-only CPU test).
             max_tokens_per_expert: Rows the W4A8 grouped GEMM sizes its M grid
             for, per expert -- pass ``KimiK3Config.routed_expert_row_bound``.
             Too small silently drops an expert's tail.
+            amd_mega_ffn: Run the AMD W4A8 routed FFN as one MegaFFN launch
+                at decode and prefill, its weights preshuffled at model init,
+                rather than as the grouped-matmul chain. Builds without the
+                closed-source kernels keep the chain.
         """
         super().__init__()
         self.latent_size = latent_size
@@ -336,6 +463,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             expert_parallel=False,
             dtype=dtype,
             requested=amd_w4a8,
+        )
+        self.amd_mega_ffn = (
+            self.amd_tp_w4a8 and amd_mega_ffn and _amd_mega_ffn_is_registered()
         )
 
         self.gate = make_kimi_k3_moe_router(
@@ -407,6 +537,10 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         weight adapter's ``interleave_for_tp`` layout), and its down holds a
         slice of the FFN (K) axis, so both split along the FFN width. Under
         expert parallelism each device holds whole experts.
+
+        The MegaFFN's weights land in its preshuffled layout, each device's
+        stack written from the host's per-expert buffers with no temporary
+        on either side; their scales stay row-major.
         """
         projections = ("w1", "w3") if gate_up else ("w2",)
         parts = [
@@ -416,26 +550,43 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         ]
         mesh = self.routed_expert_down_proj.weight.mesh
         expert_parallel = EP in mesh.axis_names and mesh.axis_size(EP) > 1
-        shape = [self.num_experts, -1, int(parts[0].shape[-1])]
-        if gate_up and mesh.num_devices > 1 and not expert_parallel:
-            # Each device's [gate_r; up_r] rows come straight out of the
-            # host's per-expert buffers, with no host or device temporary.
+        if self.amd_mega_ffn and leaf == "weight":
+            with ensure_context():
+                shards = stack_mega_ffn_b(
+                    parts,
+                    self.num_experts,
+                    list(mesh.devices),
+                    0 if gate_up else 1,
+                )
+                if mesh.num_devices == 1:
+                    return Tensor.from_shard_values(shards)
+                return Tensor.from_shard_values(
+                    shards,
+                    NamedMapping(
+                        mesh, (None, TP, None) if gate_up else (None, None, TP)
+                    ),
+                )
+        if mesh.num_devices > 1 and not expert_parallel:
+            # Each device's share -- its [gate_r; up_r] rows, or its slice of
+            # the down's K axis -- comes straight out of the host's per-expert
+            # buffers, with no host or device temporary.
+            axis, spec = (
+                (0, (None, TP, None)) if gate_up else (-1, (None, None, TP))
+            )
             with ensure_context():
                 shards = [
-                    shard.reshape(shape)
-                    for shard in shard_and_stack(parts, mesh.devices, axis=0)
+                    shard.reshape([self.num_experts, -1, int(shard.shape[-1])])
+                    for shard in shard_and_stack(parts, mesh.devices, axis=axis)
                 ]
                 return Tensor.from_shard_values(
-                    shards, NamedMapping(mesh, (None, TP, None))
+                    shards, NamedMapping(mesh, spec)
                 )
-        # The down's TP share is a column block of every row, which
-        # shard_and_stack copies to each device one row at a time: hours for
-        # the full model, where stacking on the host first takes minutes.
-        stacked = F.stack(parts).reshape(shape)
+        stacked = F.stack(parts).reshape(
+            [self.num_experts, -1, int(parts[0].shape[-1])]
+        )
         if mesh.num_devices == 1:
             return stacked.to(mesh.devices[0])
-        spec = (EP, None, None) if expert_parallel else (None, None, TP)
-        return stacked.to(NamedMapping(mesh, spec))
+        return stacked.to(NamedMapping(mesh, (EP, None, None)))
 
     def forward(
         self,
@@ -455,7 +606,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             ep_buffers: The exchange's graph buffers.
 
         Returns:
-            ``[T, hidden_size]``.
+            ``[T, hidden_size]``, replicated.
         """
         if ep_config is not None:
             assert ep_buffers is not None
@@ -468,24 +619,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         latent = self.routed_expert_down_proj(hidden_states)
 
         flat_idx = F.cast(F.reshape(topk_idx, [-1]), DType.int32)
-        (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-        ) = moe_create_indices(flat_idx, self.num_experts)
 
-        permuted = F.gather(
-            latent,
-            F.cast(
-                token_expert_order // self.num_experts_per_token,
-                DType.int32,
-            ),
-            axis=0,
-        )
         if self.amd_tp_w4a8:
-            mesh = permuted.mesh
+            mesh = latent.mesh
 
             # Custom ops have no sharding rule, so every output's placement
             # is restated immediately after the call -- same convention as
@@ -500,48 +636,92 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             # leaves its own on device. See `_amd_moe_usage_stats`. Lives on
             # the CPU, off the GPU mesh entirely -- not rebound, like the
             # dense path's own `expert_start_indices`/`expert_ids`.
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                quantized,
+                act_scales,
+            ) = moe_sort_gather_quantize_mxfp8(
+                latent,
+                flat_idx,
+                self.num_experts_per_token,
+                self.num_experts,
+            )
             usage_stats = amd_moe_usage_stats(
                 expert_ids, latent, self.max_tokens_per_expert
             )
-            quantized, act_scales = quantize_mxfp8(permuted)
-            quantized, act_scales = (
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+                quantized,
+                act_scales,
+            ) = (
+                replicated(token_expert_order),
+                replicated(expert_start_indices),
+                replicated(restore_token_order),
+                replicated(expert_ids),
+                replicated(expert_usage_stats),
                 replicated(quantized),
                 replicated(act_scales),
             )
-            gate_up = ffn_sharded(
-                amd_w4a8_grouped_matmul(
+            if self.amd_mega_ffn:
+                expert_out = amd_w4a8_ffn(
                     quantized,
-                    self.experts_gate_up_proj,
                     act_scales,
+                    self.experts_gate_up_proj,
                     self.experts_gate_up_proj_scale,
+                    self.experts_down_proj,
+                    self.experts_down_proj_scale,
+                    expert_start_indices,
+                    expert_ids,
+                    usage_stats,
+                    beta=self.beta,
+                    linear_beta=self.linear_beta,
+                    max_rows=self.max_tokens_per_expert
+                    * self.num_experts_per_token,
+                )
+            else:
+                gate_up = ffn_sharded(
+                    amd_w4a8_grouped_matmul(
+                        quantized,
+                        self.experts_gate_up_proj,
+                        act_scales,
+                        self.experts_gate_up_proj_scale,
+                        expert_start_indices,
+                        expert_ids,
+                        usage_stats,
+                        out_dtype=self.dtype,
+                    )
+                )
+                # SiTU hands back BF16, so the down projection re-quantizes
+                # rather than chaining a quantized intermediate; the
+                # activation and that requant run as one kernel. The
+                # FFN-width axis is still TP-sharded here (SiTU is
+                # elementwise), so the quantized activations and their scales
+                # carry the same split.
+                quantized, act_scales = kimi_situ_and_mul_quantize_mxfp8(
+                    gate_up, self.beta, self.linear_beta
+                )
+                quantized, act_scales = (
+                    ffn_sharded(quantized),
+                    ffn_sharded(act_scales),
+                )
+                expert_out = amd_w4a8_grouped_matmul(
+                    quantized,
+                    self.experts_down_proj,
+                    act_scales,
+                    self.experts_down_proj_scale,
                     expert_start_indices,
                     expert_ids,
                     usage_stats,
                     out_dtype=self.dtype,
                 )
-            )
-            # SiTU hands back BF16, so the down projection re-quantizes
-            # rather than chaining a quantized intermediate; the activation
-            # and that requant run as one kernel. The FFN-width axis is
-            # still TP-sharded here (SiTU is elementwise), so the quantized
-            # activations and their scales carry the same split.
-            quantized, act_scales = kimi_situ_and_mul_quantize_mxfp8(
-                gate_up, self.beta, self.linear_beta
-            )
-            quantized, act_scales = (
-                ffn_sharded(quantized),
-                ffn_sharded(act_scales),
-            )
-            expert_out = amd_w4a8_grouped_matmul(
-                quantized,
-                self.experts_down_proj,
-                act_scales,
-                self.experts_down_proj_scale,
-                expert_start_indices,
-                expert_ids,
-                usage_stats,
-                out_dtype=self.dtype,
-            )
             # `experts_down_proj` is split on its K (FFN) axis, so this is a
             # PARTIAL sum over the latent axis, same as the dense row-parallel
             # case -- `moe_finalize` below needs that stated explicitly.
@@ -549,6 +729,21 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 DeviceMapping(mesh, (Partial(),))
             )
         else:
+            (
+                token_expert_order,
+                expert_start_indices,
+                restore_token_order,
+                expert_ids,
+                expert_usage_stats,
+            ) = moe_create_indices(flat_idx, self.num_experts)
+            permuted = F.gather(
+                latent,
+                F.cast(
+                    token_expert_order // self.num_experts_per_token,
+                    DType.int32,
+                ),
+                axis=0,
+            )
             gate_up = grouped_matmul_ragged(
                 permuted,
                 self.experts_gate_up_proj,
@@ -592,14 +787,20 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             )
         else:
             normed = self.routed_expert_norm(combined)
+        if sharded:
+            # The exit is row-parallel: each device multiplies its local
+            # slice of the replicated latent by its slice of the weight's
+            # input axis. The routed and shared partial sums then share one
+            # allreduce.
+            normed = normed.to(NamedMapping(mesh, (None, TP)))
         routed = self.routed_expert_up_proj(normed)
 
         # The shared branch reads the ORIGINAL full-width input, not the
-        # latent, and is added last.
-        shared = self.shared_experts(hidden_states)
+        # latent.
+        out = routed + self.shared_experts(hidden_states)
         if sharded:
-            shared = F.allreduce_sum(shared, mesh_axis=TP)
-        return routed + shared
+            out = F.allreduce_sum(out, mesh_axis=TP)
+        return out
 
     def expert_parallel_forward(
         self,
@@ -616,7 +817,8 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             ep_buffers: This block's own dispatch/combine exchange buffers.
 
         Returns:
-            ``[T, hidden_size]``, replicated, placed as ``hidden_states`` was.
+            ``[T, hidden_size]``, replicated, placed as ``hidden_states``
+            was.
         """
         topk_idx, topk_weight = self.gate(hidden_states)
         latent = self.routed_expert_down_proj(hidden_states)
@@ -657,10 +859,12 @@ class KimiK3LatentMoE(Module[..., Tensor]):
 def tensor_parallel_latent_moe(
     layer: KimiK3LatentMoE, mesh: DeviceMesh
 ) -> KimiK3LatentMoE:
-    """Shards a latent MoE block's FFN widths along the ``tp`` mesh axis.
+    """Shards a latent MoE block along the ``tp`` mesh axis.
 
-    The router and the latent entry, exit and norm stay replicated: they
-    work at the hidden or latent width, not the FFN width.
+    The FFN widths shard, and so does the latent exit, on its input (latent)
+    dim. The router, the latent entry and the norm stay replicated: sharding
+    the entry would need an allgather before the experts. ``forward()``
+    reduces internally, so the block returns a complete value.
     """
     tp_size = mesh.axis_size(TP)
     if tp_size == 1:
@@ -671,6 +875,7 @@ def tensor_parallel_latent_moe(
         layer.shared_experts.intermediate_size,
         tp_size,
     )
+    check_divisible("MoE latent width", layer.latent_size, tp_size)
     if layer.mxfp4:
         # The down weight is packed two values per byte along the expert FFN
         # axis and carries one E8M0 scale per 32 of those values, so a shard
@@ -680,8 +885,10 @@ def tensor_parallel_latent_moe(
         validate_amd_packed_k(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,
-            opt_in_env="MAX_KIMI_K3_AMD_W4A8",
         )
+    layer.routed_expert_up_proj.weight = layer.routed_expert_up_proj.weight.to(
+        NamedMapping(mesh, (None, TP))
+    )
     # The routed experts stay per-expert on the host; `_stacked` gives each
     # device its share.
     tensor_parallel_dense_mlp(layer.shared_experts, mesh)

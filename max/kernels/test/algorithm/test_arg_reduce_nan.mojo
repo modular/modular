@@ -104,11 +104,11 @@ def _run_arg[
         output_ptr.unsafe_store[width=width](val)
 
     comptime if is_max:
-        reduce_argmax[dtype, target="cpu", reduce_dim=1](
+        reduce_argmax[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(1, len(row))
         )
     else:
-        reduce_argmin[dtype, target="cpu", reduce_dim=1](
+        reduce_argmin[dtype, reduce_dim=1](
             input_fn, output_fn, Coord(1, len(row))
         )
     return Int(output_row[0])

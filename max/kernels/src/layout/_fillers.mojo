@@ -26,7 +26,7 @@ from std.random import random_float64
 from std.sys import is_nvidia_gpu
 from layout.coord import Coord, Idx
 
-from .tile_layout import TensorLayout, row_major
+from .layout import TensorLayout, row_major
 from .tile_tensor import TileTensor
 
 from std.utils.numerics import max_finite

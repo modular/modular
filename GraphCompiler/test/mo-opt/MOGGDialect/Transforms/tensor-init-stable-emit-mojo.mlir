@@ -31,7 +31,7 @@ mogg.func @consume private dispatch(deferred) (%arg0: !mo.tensor<[10], f32, {io 
 }
 
 // The stubs need a caller, or emission's symbol DCE drops them.
-mgp.model @top_level : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @top_level devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 1
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

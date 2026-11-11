@@ -372,3 +372,93 @@ lit.fn @enum_case_outside_struct() -> !kgen.none {
   lit.enum.case a : []
   lit.end_fn
 }
+
+// -----
+
+kgen.generator @ref_pack_concat_wrong_list<Ts: param_list<type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>) {
+  // expected-error @below {{'lit.ref.pack.concat' op result element list should be #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>> : !kgen.param_list<type> but got #kgen.param_list.concat<#kgen.param_list<Ts, [index]> : !kgen.param_list<param_list<type>>> : !kgen.param_list<type>}}
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<Ts, [index]> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  hlcf.return
+}
+
+// -----
+
+kgen.generator @ref_pack_concat_wrong_element_type(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!lit.trait<@AnyType>> [f32], imm #lit.any.origin>) {
+  // expected-error @below {{'lit.ref.pack.concat' op operand #1 has element type '!lit.trait<@AnyType>' but the result has '!kgen.type'}}
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!lit.trait<@AnyType>> [f32], imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin>
+  hlcf.return
+}
+
+// -----
+
+kgen.generator @ref_pack_concat_wrong_address_space(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin, 3>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> [f32], imm #lit.any.origin>) {
+  // expected-error @below {{'lit.ref.pack.concat' op operand #0 has address space 3 : index but the result has 0 : index}}
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin, 3>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin>
+  hlcf.return
+}
+
+// -----
+
+// An immutable pack must not go into a mutable pack without a rebind.
+kgen.generator @ref_pack_concat_imm_into_mut(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], mut #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> [f32], imm #lit.any.origin>) {
+  // expected-error @below {{'lit.ref.pack.concat' op operand #1 has origin #lit.any.origin : !lit.origin<false> but the result has #lit.any.origin : !lit.origin<true>}}
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut #lit.any.origin>
+  hlcf.return
+}
+
+// -----
+
+// A mutable pack must not go into an immutable pack without a rebind.
+kgen.generator @ref_pack_concat_mut_into_imm<a: origin<true>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> [f32], imm (mutcast mut a)>) {
+  // expected-error @below {{'lit.ref.pack.concat' op operand #0 has origin #kgen.param.decl.ref<"a"> : !lit.origin<true> but the result has #lit.origin.mutcast<#kgen.param.decl.ref<"a"> : !lit.origin<true>> : !lit.origin<false>}}
+  %0 = lit.ref.pack.concat(%x, %y)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], imm (mutcast mut a)>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm (mutcast mut a)>
+  hlcf.return
+}
+
+// -----
+
+// An operand with a narrower origin also needs a rebind, when the mutability
+// is the same.
+kgen.generator @ref_pack_concat_narrower_origin<a: origin<true>, b: origin<true>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>) {
+  // expected-error @below {{'lit.ref.pack.concat' op operand #0 has origin #kgen.param.decl.ref<"a"> : !lit.origin<true> but the result has #lit<origin.union <:origin<true> a, :origin<true> b>> : !lit.origin<true>}}
+  %0 = lit.ref.pack.concat(%x, %y)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut {a, b}>
+  hlcf.return
+}
+
+// -----
+
+kgen.generator @ref_pack_concat_no_operands() {
+  // expected-error @below {{'lit.ref.pack.concat' op expected at least one operand}}
+  %0 = "lit.ref.pack.concat"() : () -> !lit.ref.pack<:param_list<!kgen.type> [], imm #lit.any.origin>
+  hlcf.return
+}

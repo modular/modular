@@ -165,7 +165,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
     var _fd: FileDescriptor
     """The owned descriptor."""
 
-    def __init__(out self, path: StringSlice, mode: StringSlice) raises:
+    def __init__(out self, path: StringSpan, mode: StringSpan) raises:
         """Construct the FileHandle using the file path and mode.
 
         Args:
@@ -590,14 +590,14 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
             total_written += bytes_written
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `FileHandle`.
+        Write a `StringSpan` to this `FileHandle`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `FileHandle`.
+            string: The `StringSpan` to write to this `FileHandle`.
         """
         self.write_bytes(string.as_bytes())
 
@@ -674,7 +674,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
 def open[
     PathLike: stdPathLike
-](path: PathLike, mode: StringSlice) raises -> FileHandle:
+](path: PathLike, mode: StringSpan) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a
     FileHandle.
 

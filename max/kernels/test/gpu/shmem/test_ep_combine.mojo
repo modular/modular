@@ -23,7 +23,7 @@ from std.sys import argv, size_of
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.memory import Pointer
 from std.memory.alloc import unsafe_alloc
 from shmem import *
@@ -34,6 +34,7 @@ from shmem.ep_comm import (
     EPLocalSyncCounters,
     combine_wait_kernel,
     combine_async_kernel,
+    NullExpertLoad,
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
@@ -303,6 +304,7 @@ def test_combine[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
+            NullExpertLoad(),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

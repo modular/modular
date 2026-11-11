@@ -20,7 +20,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .lfm2 import LFM2
 from .model_config import LFM2Config
-from .weight_adapters import convert_lfm2_safetensor_state_dict
+from .weight_adapters import lfm2_weight_rules
 
 lfm2_arch = SupportedArchitecture(
     name="Lfm2ForCausalLM",
@@ -37,9 +37,9 @@ lfm2_arch = SupportedArchitecture(
         "trust_remote_code": True,
     },
     multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_lfm2_safetensor_state_dict,
-    },
+    checkpoints_recurrent_state=True,
+    weight_rules=lfm2_weight_rules,
+    use_weight_rules=True,
     config=LFM2Config,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,

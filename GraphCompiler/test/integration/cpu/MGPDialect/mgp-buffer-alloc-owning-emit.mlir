@@ -18,7 +18,7 @@
 // CHECK: mogg.primitive.decl{{.*}}@builtin_primitives.primitives.mgp_buffer_alloc
 // CHECK-SAME: "__result__": !lit.ref<!OwnedByteBuffer
 
-mgp.model @mgp_buffer_alloc_emits_owning : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @mgp_buffer_alloc_emits_owning devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

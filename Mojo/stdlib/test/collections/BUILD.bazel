@@ -74,6 +74,14 @@ _EXPECT_CRASH = [
 # reports to file:line, so use the lighter level under asan for this file only.
 _ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
 
+# Crash tests that time out in external CI after the crash handler prints its
+# trace. Temporary, until crash-test slowness is fixed.
+_SKIP_EXTERNAL_CI = [
+    "test_list_bounds_abort.mojo",
+    "test_span_bounds_abort.mojo",
+    "test_span_uninit_abort.mojo",
+]
+
 [
     mojo_test(
         name = src + ".test",
@@ -83,6 +91,7 @@ _ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
             "//conditions:default": ["full"],
         }) if src in _ASAN_LINE_TABLES_ONLY else ["full"]),
         data = [src],  # NOTE: some tests attempt to read their source files
+        tags = ["skip-external-ci"] if src in _SKIP_EXTERNAL_CI else [],
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

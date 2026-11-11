@@ -268,6 +268,13 @@ M_driver_status_t M_driver_device_property(M_driver_device_t device,
     *(int64_t *)value = 0;
     return M_DRIVER_STATUS_SUCCESS;
   }
+  // Opt-in, so tests that expect no arch from the mock keep getting none.
+  const char *arch = getenv("MOCK_DEVICE_ARCH");
+  if (arch && strcmp(property_name, M_DRIVER_DEVICE_PROPERTY_ARCH) == 0 &&
+      strlen(arch) <= M_DRIVER_DEVICE_PROPERTY_MAX_LEN) {
+    strcpy((char *)value, arch);
+    return M_DRIVER_STATUS_SUCCESS;
+  }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
 }
 
@@ -810,7 +817,7 @@ M_driver_status_t M_driver_queue_wait_value64(M_driver_queue_t queue,
     return M_DRIVER_STATUS_BAD_QUEUE;
   // The mock queue is synchronous, so the wait cannot be satisfied later:
   // check once instead of blocking.
-  if (*(const uint64_t *)(uintptr_t)device_address != value)
+  if (*(const uint64_t *)(uintptr_t)device_address < value)
     return M_DRIVER_STATUS_UNKNOWN_ERROR;
   return M_DRIVER_STATUS_SUCCESS;
 }

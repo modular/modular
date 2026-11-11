@@ -45,15 +45,14 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
-    Layout,
     coord,
     TensorEngine,
     TensorLayout,
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout, upcast, zipped_divide
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import Layout, upcast, zipped_divide
+from layout.layout import row_major as tt_row_major
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
 from max.gpu.compute.mma import ld_matrix
@@ -64,7 +63,7 @@ from linalg.utils import (
     no_epilogue_fn,
 )
 
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 
 # TileTensor-based types for C tiles
 from structured_kernels.tile_types import SMemTileArray2DRowMajor
@@ -471,11 +470,6 @@ struct TileWriter[
     comptime cta_group = Self.opc.cta_group
     comptime num_accum_pipeline_stages = Self.opc.num_stages
     comptime stage_stride_cols = Self.opc.stage_stride_cols
-
-    # Create internal layout from dimensions
-    comptime c_smem_layout = Layout.row_major(
-        Self.c_smem_dim0, Self.c_smem_dim1
-    )
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
@@ -2526,7 +2520,7 @@ struct TileWriter[
         comptime thread_shape = coord[output_threads // thread_n, thread_n]
 
         # Precompute the split layout from known dimensions
-        comptime split_layout = TileLayout(
+        comptime split_layout = Layout(
             Coord(Idx[TMA_BM], Idx[Self.stageN]),
             Coord(Idx[Self.c_smem_dim1], Idx[1]),
         )

@@ -25,13 +25,7 @@ success — typed as the same `_CString` the legacy bindings use. The C++ side
 frees it with `MojoHAL_strfree`.
 """
 
-from std.atomic import Atomic, Ordering
 from std.ffi import c_char, CStringSpan, external_call
-from std.sys import size_of
-from max._driver import get_device_spec
-from max._driver.max_license.hal.context import Buffer
-
-comptime _HALRawBuffer = Buffer[get_device_spec[0]()]
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -42,11 +36,13 @@ from max.gpu.host import (
 from max.gpu.host import _CString
 from max.gpu.host import DeviceAttribute
 from max._driver.max_license.device_context_hal.device_context_hal import (
+    _CompletionFlagBox,
     _DeviceContextScopeHAL,
     _accelerator_api_and_arch,
 )
 from std.memory import (
     alloc,
+    ArcPointer,
     dealloc,
     Layout,
     ThinAllocation,
@@ -76,7 +72,10 @@ comptime _DeviceEventBoxPtr = Pointer[DeviceEvent, MutUntrackedOrigin]
 comptime _DeviceContextScopeBoxPtr = Pointer[
     _DeviceContextScopeHAL, MutUntrackedOrigin
 ]
-comptime _CompletionFlagBoxPtr = Pointer[_CompletionFlagBox, MutUntrackedOrigin]
+# The C++ flag holds one reference; Mojo `CompletionFlag`s share the rest.
+comptime _CompletionFlagBoxPtr = Pointer[
+    ArcPointer[_CompletionFlagBox], MutUntrackedOrigin
+]
 
 # Raw device or host memory crossing the ABI as untyped bytes.
 comptime _RawMemoryPtr = Pointer[Byte, MutUntrackedOrigin]
@@ -122,6 +121,29 @@ def MojoHAL_Device_numberOfDevices(
 def MojoHAL_DeviceContext_enableAllPeerAccess() abi("C") -> _CString[]:
     try:
         DeviceContext.enable_all_peer_access()
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_allPeerAccessEnabled(
+    out_enabled: _OutPtr[Bool],
+) abi("C") -> _CString[]:
+    try:
+        out_enabled[] = DeviceContext.all_peer_access_enabled()
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_enablePeerAccess(
+    ctx: _DeviceContextBoxPtr,
+    peer: _DeviceContextBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        ctx[].enable_peer_access(peer[])
         return None
     except e:
         return _err_cstr(String(e))
@@ -579,6 +601,7 @@ def MojoHAL_HostBuffer_createSubBuffer(
 @export
 def MojoHAL_DeviceBuffer_createSubBuffer(
     out_buf: _OutPtr[_DeviceBufferBoxPtr],
+    out_ptr: _OutPtr[_RawMemoryPtr],
     parent: _DeviceBufferBoxPtr,
     byte_offset: UInt64,
     byte_size: UInt64,
@@ -595,6 +618,8 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
         Int(byte_size),
         owning=False,
     )
+    # The plugin may have given the view an address of its own.
+    out_ptr[] = view.unsafe_ptr()
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_buf[] = boxed^.unsafe_leak()
@@ -959,100 +984,70 @@ def MojoHAL_DeviceContext_getDLPackStream(
 # ===---------------------------------------------------------------------=== #
 
 
-# A device-mapped pinned 8-byte slot the host signals and the device waits on
-# (mirrors M::Driver::CompletionFlag over the legacy backend).
-@fieldwise_init
-struct _CompletionFlagBox(Movable):
-    var ctx: DeviceContext[]
-    var buffer: _HALRawBuffer
-    var host_ptr: _RawMemoryPtr
-    var device_addr: UInt64
-
-
 @export
 def MojoHAL_DeviceContext_allocateCompletionFlag(
     out_flag: _OutPtr[_CompletionFlagBoxPtr],
-    out_host_ptr: _OutPtr[_RawMemoryPtr],
-    out_device_addr: _OutPtr[UInt64],
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        ref device_ctx = ctx[]
-        ref hal_ctx = device_ctx._context[]
-        comptime slot_size = UInt64(size_of[UInt64]())
-        var buffer = hal_ctx.alloc_host_pinned(slot_size)
-        var host_ptr = hal_ctx.memory_get_host_address[MutUntrackedOrigin](
-            buffer
-        ).unsafe_bitcast[Byte]()
-        var device_addr = hal_ctx.memory_get_address(buffer)
-        # Initialize the flag to zero so the first wait observes a clean state.
-        Atomic[UInt64].store[ordering=Ordering.RELAXED](
-            host_ptr.unsafe_bitcast[UInt64](), 0
-        )
-        var boxed = alloc(Layout[_CompletionFlagBox].single())
-        boxed.unsafe_ptr().unsafe_write(
-            _CompletionFlagBox(device_ctx, buffer^, host_ptr, device_addr)
-        )
+        var flag = ArcPointer(_CompletionFlagBox(ctx[]))
+        var boxed = alloc(Layout[ArcPointer[_CompletionFlagBox]].single())
+        boxed.unsafe_ptr().unsafe_write(flag^)
         out_flag[] = boxed^.unsafe_leak()
-        out_host_ptr[] = host_ptr
-        out_device_addr[] = device_addr
         return None
     except e:
         return _err_cstr(String(e))
 
 
 @export
+def MojoHAL_DeviceContext_supportsCompletionFlags(
+    ctx: _DeviceContextBoxPtr,
+) abi("C") -> Bool:
+    return ctx[].supports_flag_wait()
+
+
+@export
 def MojoHAL_CompletionFlag_release(flag: _CompletionFlagBoxPtr) abi("C"):
     var boxed = flag
-    var box = boxed.unsafe_take_pointee()
+    _ = boxed.unsafe_take_pointee()
     dealloc(
         ThinAllocation(unsafe_owned_ptr=boxed).unsafe_with_layout(
-            Layout[_CompletionFlagBox].single()
+            Layout[ArcPointer[_CompletionFlagBox]].single()
         )
     )
-    # `Buffer` has no destructor (a plain handle + size), so rebuild one from
-    # the box's copyable fields for the consuming `free_host_pinned` call and
-    # let `box` drop normally.
-    var buffer = _HALRawBuffer(
-        _handle=box.buffer._handle,
-        byte_size=box.buffer.byte_size,
-        is_host_pinned=True,
-        _context=box.ctx._context,
-        _extensions=box.buffer._extensions,
-    )
-    try:
-        box.ctx._context[].free_host_pinned(buffer^)
-    except e:
-        print("warning: failed to free completion flag:", e)
 
 
 @export
 def MojoHAL_CompletionFlag_signal(
-    host_ptr: _RawMemoryPtr, value: UInt64
-) abi("C"):
-    # Release pairs with the device-side wait (and `load`'s acquire), mirroring
-    # CompletionFlag::signal.
-    Atomic[UInt64].store[ordering=Ordering.RELEASE](
-        host_ptr.unsafe_bitcast[UInt64](), value
-    )
+    flag: _CompletionFlagBoxPtr, value: UInt64
+) abi("C") -> _CString[]:
+    try:
+        flag[][].signal(value)
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
 def MojoHAL_CompletionFlag_load(
-    host_ptr: _RawMemoryPtr,
-) abi("C") -> UInt64:
-    return Atomic[UInt64].load[ordering=Ordering.ACQUIRE](
-        host_ptr.unsafe_bitcast[UInt64]()
-    )
+    flag: _CompletionFlagBoxPtr, out_value: _OutPtr[UInt64]
+) abi("C") -> _CString[]:
+    try:
+        out_value[] = flag[][].load()
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
-def MojoHAL_CompletionFlag_reset(host_ptr: _RawMemoryPtr) abi("C"):
-    # Relaxed, mirroring CompletionFlag::reset: stream-ordered enqueue of the
-    # wait happens-after this store.
-    Atomic[UInt64].store[ordering=Ordering.RELAXED](
-        host_ptr.unsafe_bitcast[UInt64](), 0
-    )
+def MojoHAL_CompletionFlag_reset(
+    flag: _CompletionFlagBoxPtr,
+) abi("C") -> _CString[]:
+    try:
+        flag[][].reset()
+        return None
+    except e:
+        return _err_cstr(String(e))
 
 
 @export
@@ -1069,13 +1064,13 @@ def MojoHAL_DeviceStream_launchHostFunc(
 
 
 @export
-def MojoHAL_DeviceStream_waitOnHostValue(
+def MojoHAL_DeviceStream_waitOnFlag(
     stream: _DeviceStreamBoxPtr,
-    device_addr: UInt64,
+    flag: _CompletionFlagBoxPtr,
     value: UInt64,
 ) abi("C") -> _CString[]:
     try:
-        stream[]._stream[].wait_value64(device_addr, value)
+        flag[][].wait(stream[], value)
         return None
     except e:
         return _err_cstr(String(e))

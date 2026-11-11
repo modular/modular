@@ -20,8 +20,8 @@ from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.quant_config import fp4_packed_k
+from max.nn.ep_config import EPConfig
+from max.nn.quant_config import fp4_packed_k
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.support.human_readable_formatter import to_human_readable_bytes
 

@@ -15,7 +15,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import contextlib
+import logging
+import os
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -39,7 +42,72 @@ from .datasets import (
     DistributionParameter,
     TurnSelector,
 )
+from .goodput import GoodputTargets, goodput_tokens
 from .utils import int_or_none, parse_comma_separated
+
+logger = logging.getLogger(__name__)
+
+# Options renamed in place. The old names keep working, with a warning, so
+# existing scripts and workload files keep their meaning.
+_RENAMED_OPTIONS: Mapping[str, str] = {
+    "warmup_to_steady_state": "warmup_multiturn",
+}
+
+
+def current_option_name(name: str) -> str:
+    """Returns the current name of an option, warning if ``name`` is an old one.
+
+    Args:
+        name: An option name, in snake_case or kebab-case.
+
+    Returns:
+        The option's current name, in the same case as ``name``, or ``name``
+        itself when it was never renamed.
+    """
+    new_name = _RENAMED_OPTIONS.get(name.replace("-", "_"))
+    if new_name is None:
+        return name
+    if "-" in name:
+        new_name = new_name.replace("_", "-")
+    logger.warning(
+        "Option '%s' is deprecated; use '%s' instead.", name, new_name
+    )
+    return new_name
+
+
+@contextlib.contextmanager
+def deprecated_env_vars_renamed(prefix: str) -> Iterator[None]:
+    """Exposes renamed options' old environment variables under their new names.
+
+    The copies exist only inside the ``with`` block, so each parse sees the
+    current environment and nothing leaks into later parses or child
+    processes. A variable already set under the new name wins over the old
+    one.
+
+    Args:
+        prefix: The prefix the CLI reads environment variables under, such as
+            ``MODULAR_``.
+    """
+    added: list[str] = []
+    for old_name, new_name in _RENAMED_OPTIONS.items():
+        old_var = f"{prefix}{old_name.upper()}"
+        if old_var not in os.environ:
+            continue
+        new_var = f"{prefix}{new_name.upper()}"
+        logger.warning(
+            "Environment variable %s is deprecated; use %s instead.",
+            old_var,
+            new_var,
+        )
+        if new_var not in os.environ:
+            os.environ[new_var] = os.environ[old_var]
+            added.append(new_var)
+    try:
+        yield
+    finally:
+        for var in added:
+            os.environ.pop(var, None)
+
 
 # Fixed default seed for the workload generator and request sampling. Scheduled
 # and repeated benchmark runs pin this so run-to-run deltas reflect the change
@@ -411,6 +479,23 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # values need not be re-validated, and validate_assignment can be removed.
     model_config = ConfigDict(strict=False, validate_assignment=True)
 
+    @classmethod
+    def _current_field_name(cls, key: str) -> str:
+        return current_option_name(key)
+
+    @classmethod
+    def load_config_file(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Loads the config file, then maps renamed options to their new names.
+
+        Args:
+            data: The options given directly, which may name a config file.
+
+        Returns:
+            The merged options, keyed by current field names.
+        """
+        data = super().load_config_file(data)
+        return {current_option_name(k): v for k, v in data.items()}
+
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
@@ -448,6 +533,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
         description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video, image-to-video",
+        json_schema_extra={"group": "Backend and API Configuration"},
+    )
+
+    num_gpus: int | None = Field(
+        default=None,
+        # The value divides total throughput, so anything non-positive would
+        # surface as a zero or negative per-GPU figure instead of failing at
+        # the config boundary.
+        gt=0,
+        description=(
+            "Number of GPUs the target server uses. The sweep harness sets"
+            " this from the backend's parallel sizes; set it manually when"
+            " benchmarking an external endpoint so per-GPU throughput is"
+            " reported."
+        ),
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -796,9 +896,9 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    warmup_to_steady_state: bool = Field(
+    warmup_multiturn: bool = Field(
         default=True,
-        description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",
+        description="Multi-turn workloads only: start each chat session at a randomized later turn, replaying its earlier turns as warmup, so the measured run begins with the turn mix of a long-running server. Disable to start every session at turn 0. Formerly --warmup-to-steady-state, which still works.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -828,7 +928,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     warmup_concurrency: int = Field(
         default=128,
-        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and steady-state warmup (--warmup-to-steady-state).",
+        description="Maximum in-flight requests during prefix-cache priming (--warm-shared-prefix) and multi-turn session warmup (--warmup-multiturn).",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -1117,7 +1217,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     workload_stats_json: str | None = Field(
         default=None,
-        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-to-steady-state, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-multiturn, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -1190,6 +1290,25 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         default="50,90,95,99",
         description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported.",
         json_schema_extra={"group": "Result Saving"},
+    )
+
+    # consume_multiple lets the flag take vLLM's spelling,
+    # ``--goodput ttft:500 tpot:50``, rather than one flag per target.
+    goodput: Annotated[list[str] | None, Parameter(consume_multiple=True)] = (
+        Field(
+            default=None,
+            description=(
+                "Per-request latency targets for goodput, as space-separated"
+                " key:value pairs in milliseconds with keys ttft, tpot and e2el"
+                " (e.g. --goodput ttft:500 tpot:50). When set, the result reports"
+                " request_goodput, the measured successful requests per second"
+                " that met every target, and goodput_attainment, their share of"
+                " the measured successful requests. A request without a value"
+                " for a target, such as the TPOT of a one-token reply, misses it."
+                " Text generation only."
+            ),
+            json_schema_extra={"group": "Result Saving"},
+        )
     )
 
     # Workload config file
@@ -1328,6 +1447,28 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if value is None or (isinstance(value, str) and not value.strip()):
             return None
         return _json_from_argument(value, "tools", "[")
+
+    @field_validator("goodput", mode="before")
+    @classmethod
+    def _parse_goodput(cls, value: object) -> object:
+        """Flattens ``goodput`` to ``key:value`` tokens and validates them.
+
+        Raises:
+            ValueError: If no target is given, or a target's key or value is
+                invalid.
+        """
+        if value is None:
+            return None
+        tokens = goodput_tokens(value)
+        GoodputTargets.parse(tokens)
+        return tokens
+
+    @property
+    def goodput_targets(self) -> GoodputTargets | None:
+        """The parsed ``goodput`` targets, or ``None`` when unset."""
+        if self.goodput is None:
+            return None
+        return GoodputTargets.parse(self.goodput)
 
     @field_validator("response_format")
     @classmethod

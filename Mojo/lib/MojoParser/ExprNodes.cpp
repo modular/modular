@@ -52,6 +52,7 @@
 #include "Support/AssertStream.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
+#include "Target/TargetTraits.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -426,8 +427,8 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 ///
 /// 'decl' is the alias declaration to resolve.
 static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
-                                    ArrayRef<TypedAttr> paramValues,
-                                    SMLoc refLoc, IREmitter &emitter) {
+                                    ASTType ctxType, SMLoc refLoc,
+                                    IREmitter &emitter) {
 
   // If the param is declared in a function, then just directly use it.
   Operation *parent = decl->getParentOp();
@@ -444,7 +445,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       DenseMap<StringAttr, size_t> paramDeclIndices;
       for (auto [idx, paramDecl] : llvm::enumerate(structDecl.getParams()))
         paramDeclIndices[paramDecl.getName()] = idx;
-      assert(paramDeclIndices.size() == paramValues.size() &&
+      assert(paramDeclIndices.size() == ctxType.getParamBindings().size() &&
              "incorrect number of type parameters for struct");
 
       // If the reference is to a member of the struct that has bindings, remap
@@ -468,7 +469,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
                                                          -> WalkResult {
         if (auto it = paramDeclIndices.find(attr.getName());
             it != paramDeclIndices.end() &&
-            isa<UnboundAttr>(paramValues[it->second])) {
+            ctxType.isUnresolvedParam(it->second)) {
           emitter.shared.emitError(refLoc, "cannot access comptime member '")
               << declName << "' with unbound parameter '"
               << structDecl.getName() << "." << attr.getName().str() << "'";
@@ -479,8 +480,9 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       if (findUnboundParams.wasInterrupted())
         return {};
 
-      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
-          structDecl.getParams(), paramValues);
+      // The walk above ensures the alias only uses bound parameters.
+      ParameterEvaluator evaluator =
+          populateStructBindingEvaluator(structDecl, ctxType, emitter.shared);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -494,8 +496,8 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       StructDeclOp structDeclOp = cast<StructASTDecl>(structAstDecl).getOp();
       assert(decl.getValueAttr() && "Extension's alias should have value");
       TypedAttr aliasValue = decl.getValueAttr();
-      ParameterEvaluator evaluator = emitter.shared.getParameterEvaluator(
-          structDeclOp.getParams(), paramValues);
+      ParameterEvaluator evaluator =
+          populateStructBindingEvaluator(structDeclOp, ctxType, emitter.shared);
       return evaluator.getReboundAttribute(aliasValue);
     }
 
@@ -1331,8 +1333,9 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isRefOrBind)
       varType = RefType::getAnyOrigin(varType, true);
 
-    VarDeclOp varDecl = emitter.emitVarDecl(
-        spelling, varType, expr->getLocation(emitter), declKind);
+    VarDeclOp varDecl =
+        emitter.emitVarDecl(spelling, varType, expr->getLocation(emitter),
+                            declKind, dest.getPatternAddressSpace());
     auto &varASTDecl =
         cast<VarASTDecl>(emitter.getDeclResolver().addFullyResolvedDecl(
             varDecl.getOperation(), varDecl.getNameAttr(), loc, &lookupScope));
@@ -1461,7 +1464,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     AliasDeclOp param = aliasDecl->getOp();
     PValue result =
-        resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
+        resolveAliasReference(param, spelling, /*ctxType=*/{}, loc, emitter);
 
     // Maintain alias sugar, e.g. print "UInt8" as UInt8 instead of SIMD[..].
     // We don't maintain sugar for aliases whose name start with _, because that
@@ -1480,7 +1483,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this is a type declaration, return it as a type.
   if (auto *structDecl = dyn_cast<StructASTDecl>(decl))
-    return emitter.emitCResult(structDecl->getOp().legacyBindReference(), expr,
+    return emitter.emitCResult(structDecl->getOp().bindReference(nullptr), expr,
                                dest);
   if (auto *traitDecl = dyn_cast<TraitASTDecl>(decl))
     return emitter.emitCResult(traitDecl->getOp().getCanonicalTrait(), expr,
@@ -1843,8 +1846,16 @@ static PValue substituteParametersIntoUserDefinedType(
 static PValue
 bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      ArrayRef<Operand> operands, IREmitter &emitter,
-                     const SourceRange &range,
+                     SMLoc rsquareLoc,
                      ParamBindings::BindingKind initialBindingKind) {
+  ASTDecl *typeDecl = LIT::isTypeExpr(callable)
+                          ? ASTType(callable).getDecl(emitter.shared)
+                          : nullptr;
+  // Notify the listener before parsing the bindings, which may fail.
+  if (typeDecl)
+    emitter.shared.notifyListenerOnParameterBinding(typeDecl, rsquareLoc,
+                                                    operands);
+
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
   if (failed(parseParameterBindings(operands, emitter, paramBindings,
@@ -1856,9 +1867,12 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   // diagnostic emitter points to the original struct definition.
   ParamInf inference(paramBindings, sig.getInputParamTypes(),
                      sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, nullptr,
+                     /*allowImplicitConversions=*/true,
+                     /*declIfDirect=*/typeDecl,
                      /*discardError=*/false,
-                     /*deferredTypingContext=*/emitter.deferredTypingContext);
+                     /*deferredTypingContext=*/emitter.deferredTypingContext,
+                     /*additionalAssumptions=*/sig.getBodyConstraints(),
+                     /*withinParameterScope=*/true);
   VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};
@@ -2405,9 +2419,8 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // Decl, and should be handled below;
     assert(isa<StructASTDecl>(typeDecl) ||
            isa_and_nonnull<ExtensionASTDecl>(memberDecls[0]->getParentDecl()));
-    PValue result =
-        resolveAliasReference(aliasDecl->getOp(), spelling,
-                              baseRVType.getParamBindings(), getLoc(), emitter);
+    PValue result = resolveAliasReference(aliasDecl->getOp(), spelling,
+                                          baseRVType, getLoc(), emitter);
     return emitter.emitResult(getParamMemberSugar(result), this, dest);
   } else if (auto *witness = dyn_cast<WitnessASTDecl>(memberDecls[0])) {
     assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()) &&
@@ -2584,7 +2597,7 @@ static LogicalResult decodeMLIRResultTypes(TypedAttr value, SMLoc loc,
     ASTType tupleType =
         emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, loc);
     if (valueMetaType.getSymbol() ==
-        sugarCast<StructMetaType>(tupleType.extractMetaType()).getSymbol()) {
+        StructTypeGenerator::cast(tupleType).getStructType().getSymbol()) {
       auto tca = sugarCast<TypeParamAttr>(value);
       auto drt = sugarCast<LIT::StructType>(tca.getMlirType());
       ArrayRef<TypedAttr> paramValues = drt.getParamValues();
@@ -2833,8 +2846,11 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Check for an unregistered operation, because otherwise MLIR will crash when
   // assertions are enabled.
+  // Targets allow unregistered dialects, so an unregistered op needs an owner.
   if (!state.name.getDialect() &&
-      !emitter.getContext()->allowsUnregisteredDialects()) {
+      !(emitter.getContext()->allowsUnregisteredDialects() &&
+        TargetTraitsRegistry::get().isKnownDialect(
+            emitter.getContext(), state.name.getDialectNamespace()))) {
     emitter.emitError(call.getLoc(), "use of unregistered MLIR operation ")
         << unboundOp.getName() << call.getRange();
     return {};
@@ -3470,7 +3486,7 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       PValue result = [&]() -> PValue {
         if (auto sig = sugarDynCast<GeneratorType>(baseType)) {
           return bindToGeneratorValue(value, sig, this, operands, emitter,
-                                      getIndexRange(), bindingKind);
+                                      rsquareLoc, bindingKind);
         }
         return substituteParametersIntoUserDefinedType(value, this, operands,
                                                        lsquareLoc, rsquareLoc,
@@ -3709,6 +3725,33 @@ static SpecialFunctionInfo getOpSpecialFunctions(ExprNode::Kind kind,
   return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
 }
 
+/// Return the method to try on the right operand when the left operand cannot
+/// perform a comparison. This allows "1 < x" to fall back to "x.__gt__(1)" when
+/// 1 needs to be promoted to the type of x for the comparison to succeed.
+static SpecialFunctionInfo
+getReflectedComparisonSpecialFunction(ExprNode::Kind kind) {
+  switch (kind) {
+  case ExprNode::Kind::kCmpLT:
+    kind = ExprNode::Kind::kCmpGT;
+    break;
+  case ExprNode::Kind::kCmpLE:
+    kind = ExprNode::Kind::kCmpGE;
+    break;
+  case ExprNode::Kind::kCmpGT:
+    kind = ExprNode::Kind::kCmpLT;
+    break;
+  case ExprNode::Kind::kCmpGE:
+    kind = ExprNode::Kind::kCmpLE;
+    break;
+  case ExprNode::Kind::kCmpEQ:
+  case ExprNode::Kind::kCmpNE:
+    break;
+  default:
+    return SpecialFunctionInfo::get(SpecialFunctionKind::kNormal);
+  }
+  return getOpSpecialFunctions(kind, /*isReversed=*/false);
+}
+
 /// Emit the binary operation (with a `lhs`, `rhs` and `kind`) as a special
 /// function call.
 /// A special function call is one where the` kind` must corresponds to a valid
@@ -3726,6 +3769,14 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (kind == ExprNode::Kind::kCmpEQ || kind == ExprNode::Kind::kCmpNE) {
     PValue lhsPV = lhs.ir.getIfPValue();
     PValue rhsPV = rhs.ir.getIfPValue();
+
+    // FIXME: Should we support this? we should be able to compare two partially
+    // bound type, but upcasting to AnyType below require a concrete type.
+    for (auto [pv, expr] : {std::pair{lhsPV, lhs.expr}, {rhsPV, rhs.expr}})
+      if (LIT::StructTypeGenerator::dynCast(pv) &&
+          !emitter.emitType({pv, expr}, TypeStrictness::kConcrete))
+        return {};
+
     // TODO: maybe we can extend this to any type value at the same depth, for
     // now, just handle the most common case.
     if (lhsPV && rhsPV && LIT::isFirstLevelTypeExpr(lhsPV) &&
@@ -3804,6 +3855,24 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     }
 
     // Swap these back so we emit the right error.
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kOperator;
+  }
+
+  // Python-style comparisons are reflected through the corresponding ordered
+  // operator: `a < b` can fall back to `b.__gt__(a)`. Unlike arithmetic
+  // operators, comparisons do not have separately named reverse methods.
+  auto reflectedComparisonFnInfo = getReflectedComparisonSpecialFunction(kind);
+  if (reflectedComparisonFnInfo.kind != SpecialFunctionKind::kNormal) {
+    std::swap(operands[0], operands[1]);
+    operands.syntax = CallSyntax::kReversedOperator;
+    if (auto rhsCV = rhs.ir.getIfCValue()) {
+      if (PValue callee = OverloadSet::lookupAndResolve(
+              rhsCV.getRValueType(), reflectedComparisonFnInfo.name, operands,
+              emitter))
+        return emitter.emitIndirectCall(callee, std::move(operands));
+    }
+
     std::swap(operands[0], operands[1]);
     operands.syntax = CallSyntax::kOperator;
   }
@@ -4402,7 +4471,29 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
     return this;
 
   return emitter.shared.stmtAllocator.create<UnaryOpNode>(
-      kind, opLoc, const_cast<ExprNode *>(newSubExpr));
+      kind, opLoc, const_cast<ExprNode *>(newSubExpr), addressSpace);
+}
+
+/// Evaluate the operand of an `@__address_space` decorator to the address
+/// space index it names. Returns null after diagnosing if it doesn't name one.
+static TypedAttr emitVarAddressSpace(const ExprNode *expr, IREmitter &emitter) {
+  // The contextual type is what lets the operand be written as `.SHARED`.
+  ASTType addrSpaceType = emitter.shared.lookupBuiltinType(
+      "AddressSpace", emitter.declScope, expr->getLoc());
+  if (addrSpaceType.isTypeCheckErrorType())
+    return {};
+
+  PValue value = emitter.emitExprPValue(expr, EC_Decorator, addrSpaceType);
+  if (!value)
+    return {};
+
+  TypedAttr addrSpace =
+      ASTType::extractAddressSpace(value.get(), expr->getLoc(), emitter.shared);
+  if (!addrSpace) {
+    emitter.emitError(expr->getLoc(), "expected an 'AddressSpace' value")
+        << expr->getRange();
+  }
+  return addrSpace;
 }
 
 AnyValue UnaryOpNode::emitComptime(ExprDest &dest, IREmitter &emitter) const {
@@ -4431,6 +4522,10 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
     dest.setPatternDeclKind(kind == kVarPat ? PatternDeclKind::kVar
                                             : PatternDeclKind::kRef);
+    // On a bad operand, declare the var in the default address space so later
+    // uses of it don't report spurious errors.
+    if (addressSpace)
+      dest.setPatternAddressSpace(emitVarAddressSpace(addressSpace, emitter));
     auto result = emitter.emitExpr(subExpr, dest);
 
     if (result && !result.getIfLValue()) {
@@ -5447,6 +5542,66 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
   return emitter.emitCResult(result, this, dest);
 }
 
+// Split an rvalue tuple into independently owned element references before
+// disarming the aggregate. For `var (a, b) = get_tuple()`, this preserves the
+// children for the bindings while preventing the aggregate destructor from
+// destroying them a second time.
+LogicalResult
+TupleNode::getConsumedElements(CValue tuple, const ExprNode *expr,
+                               IREmitter &emitter,
+                               SmallVectorImpl<CValue> &elements,
+                               bool disarmAggregate) {
+  auto tupleRef = tuple.getMValueReference();
+  assert(tupleRef && "consuming a tuple requires an MRValue");
+
+  ASTType tupleType = tuple.getRValueType();
+  auto tupleElements = tupleType.getParamBindings().size() == 2
+                           ? sugarDynCastIfPresent<ParamListAttr>(
+                                 tupleType.getParamBindings()[0])
+                           : ParamListAttr();
+  assert(tupleElements && "consuming a tuple requires a Tuple type");
+
+  Location loc = expr->getLocation(emitter);
+  elements.clear();
+  elements.reserve(tupleElements.getValues().size());
+  for (size_t index = 0, e = tupleElements.getValues().size(); index < e;
+       ++index) {
+    CValue intIndex = emitter.emitInt(index, expr->getLoc(), EC_CallParamValue);
+    if (!intIndex)
+      return failure();
+
+    SyntheticNode baseNode(expr->getLoc(), tuple);
+    SyntheticNode indexNode(expr->getLoc(), intIndex);
+    Operand indexOperand(&indexNode, expr->getLoc(),
+                         ArgUnpackStyle::kPositional);
+    SubscriptNode subscript(&baseNode, expr->getLoc(), indexOperand,
+                            expr->getLoc());
+    CValue child = emitter.emitExprCValue(&subscript, EC_TupleElement);
+    Value childRef = child.getMValueReference();
+    if (!childRef)
+      return failure();
+
+    // The subscript is a borrow derived from the aggregate. Round-trip it
+    // through a pointer to create an independently owned reference to the same
+    // storage: this steals responsibility for destroying the element without
+    // moving or copying its bytes.
+    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+    auto origin = cast<RefType>(tupleRef.getType()).getOrigin();
+    Value owned = RefFromPointerOp::create(
+        *emitter.builder, loc, pointer, origin,
+        StringAttr::get(emitter.getContext(), "(tuple element)"),
+        /*startsUninit=*/false, /*endsUninit=*/true);
+    elements.push_back(MRValue(owned));
+  }
+
+  // Each element now owns its storage. Optionally disable the aggregate owner
+  // so its destructor cannot destroy the stolen elements a second time. Match
+  // patterns defer this until after bindings are materialized.
+  if (disarmAggregate)
+    OwnershipMarkDestroyedOp::create(*emitter.builder, loc, tupleRef);
+  return success();
+}
+
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
                                                  IREmitter &emitter) const {
   auto getTupleItem = [&](Type eltType, unsigned index) {
@@ -5478,8 +5633,10 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   SmallVector<ASTType> eltTypes;
 
   ASTType expectedType = toUnpack.getType();
-  ASTType tupleType = emitter.shared.lookupBuiltinType(
-      "Tuple", emitter.getDeclScope(), getLoc());
+  ASTType tupleType =
+      emitter.shared
+          .lookupBuiltinType("Tuple", emitter.getDeclScope(), getLoc())
+          .getWithoutParameters(emitter.shared);
 
   if (!tupleType.isEqualCanon(
           expectedType.getWithoutParameters(emitter.shared))) {
@@ -5596,6 +5753,7 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, getLoc());
   if (sugarIsa<TypeCheckErrorType>(tupleType))
     return {};
+  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
   // element types into the subexpressions if possible to enable implicit var
@@ -5655,10 +5813,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // TODO: Add support for list LValues as well.
   if (allEltsLValue)
     return formTupleDLValue(elements);
-
-  // The ASTType will carry around parameters bound, we want to unbind them so
-  // they can be inferred from the elements.
-  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.

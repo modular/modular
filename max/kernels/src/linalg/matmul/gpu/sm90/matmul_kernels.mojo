@@ -57,7 +57,6 @@ from layout import (
 )
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
     warpgroup_fence,
 )
 from layout.tma_async import (
@@ -83,7 +82,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout.tile_layout import Layout as _Layout
+from layout.layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
@@ -331,13 +330,6 @@ struct HopperMatmulSM90Kernel[
     comptime c_frag_size = (
         Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // 128
     )
-
-    comptime a_smem_layout = tile_layout_k_major[
-        Self.a_type, Self.BM, Self.BK, Self.a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        Self.b_type, Self.BN, Self.BK, Self.b_swizzle
-    ]()
 
     comptime adjusted_num_pipeline_stages = Self.num_pipeline_stages // Self.k_group_size
 
@@ -1768,7 +1760,7 @@ def find_K_alignment_upto_16B(row_bytes_arg: Int) -> Int:
     var row_bytes = row_bytes_arg
     var alignment = 1
 
-    comptime for i in range(4):
+    for _ in range(4):
         # Check if current alignment divides evenly
         if row_bytes & 1 == 1:
             return alignment

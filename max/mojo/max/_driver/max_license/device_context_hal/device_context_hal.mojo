@@ -59,6 +59,8 @@ from std.sys import (
 from std.sys.info import _TargetType
 from std.sys.info import is_gpu
 from std.time import monotonic
+from std.runtime import parallelism_level
+from std.runtime._asyncrt import TaskGroup
 from ..hal import (
     Buffer,
     Context,
@@ -75,7 +77,13 @@ from ..hal._machine import DeviceRef, DeviceSpec
 from ..hal._plugin._impl import HalPluginForTarget
 from ..hal._plugin._trait import HalLaunchOptions
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
-from ..hal.extensions.traits import SupportsPeerAccessV1
+from ..hal.extensions.completion_flag import FlagCondition
+from ..hal.extensions.traits import (
+    SupportsCompletionFlagResetV1,
+    SupportsCompletionFlagV1,
+    SupportsPeerAccessV1,
+)
+from ..hal.plugins import FlagHandle
 from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
@@ -108,7 +116,6 @@ from max.gpu.host import DeviceAttribute
 from max.gpu.host.info import (
     GPUInfo,
     get_gpu_info,
-    is_cpu,
     _device_type_encoder_target,
 )
 from max.gpu.host import Attribute, FuncAttribute
@@ -194,6 +201,20 @@ def _check_dim_in_range[
         raise Error(location.prefix(msg))
 
 
+def _check_config_dims[
+    func_name_for_msg: StringLiteral,
+    ExecutionConfigType: ExecutionConfig,
+](execution_config: ExecutionConfigType, *, location: SourceLocation) raises:
+    """Checks a grid/block config's dims; any other config has none."""
+    comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
+        _check_dim_in_range[func_name_for_msg, "grid_dim"](
+            execution_config.get_grid_dim(), location=location
+        )
+        _check_dim_in_range[func_name_for_msg, "block_dim"](
+            execution_config.get_block_dim(), location=location
+        )
+
+
 trait _HALFunctionEnqueuer:
     """HAL equivalent of DeviceContext's `_FunctionEnqueuer`.
 
@@ -246,29 +267,58 @@ def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
     return d == a
 
 
-def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
-    """Loads the accelerator plugin named by `MODULAR_DRIVER_PLUGINS`.
+def _load_driver[api: StaticString]() -> Optional[ArcPointer[Driver]]:
+    """Loads the first plugin in `MODULAR_DRIVER_PLUGINS` that satisfies `api`.
 
-    Used as the one-time initializer for `_GPU_DRIVER`; see that global. It
-    backs a `_Global` initializer, so it must not raise: a missing or
-    unloadable plugin is reported as an empty `Optional`.
+    The one-time initializer for `_GPU_DRIVER` and `_CPU_DRIVER`. It backs a
+    `_Global` initializer, so it must not raise: a missing or unloadable plugin
+    is reported as an empty `Optional`.
+
+    Parameters:
+        api: `"gpu"` for the accelerator plugin, `"cpu"` for the CPU plugin.
     """
     var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
     if not plugin_spec:
         return None
     try:
-        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so"); load the
-        # first accelerator (non-CPU) entry.
+        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
         for entry in plugin_spec.split(";"):
             var name = String(entry.split("@")[0])
-            if _driver_satisfies_api(name, "gpu"):
+            if _driver_satisfies_api(name, api):
                 return Optional(Driver.create(String(entry)))
         return None
     except:
         return None
 
 
-comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
+comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_driver["gpu"]]
+
+# CPU kernels create a CPU context per call (`sync_parallelize` does when it is
+# given none), so loading the plugin per context would put a `dlopen` and a
+# symbol lookup per entry point on every CPU kernel launch.
+comptime _CPU_DRIVER = _Global["MODULAR_HAL_CPU_DRIVER", _load_driver["cpu"]]
+
+
+def _load_cpu_device() -> (
+    Optional[ArcPointer[_HALDevice[get_device_spec[0]()]]]
+):
+    """Opens device 0 of the CPU plugin; the initializer for `_CPU_DEVICE`.
+
+    It backs a `_Global` initializer, so it must not raise: a missing plugin or
+    device is reported as an empty `Optional`.
+    """
+    try:
+        var maybe_driver = _CPU_DRIVER.get_or_create_ptr()
+        if case .Some(driver) = maybe_driver[]:
+            return Optional(driver[].get_device[0]())
+        return None
+    except:
+        return None
+
+
+# Opening a device also resolves its extension symbols, so a CPU context per
+# kernel call would repeat those lookups too.
+comptime _CPU_DEVICE = _Global["MODULAR_HAL_CPU_DEVICE", _load_cpu_device]
 
 
 def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
@@ -289,18 +339,18 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    if not maybe_driver[]:
-        raise Error("no accelerator driver plugin is loaded")
-    var driver = maybe_driver[].value()
-    var api = String(driver[].name()).lower()
-    # A plugin listed as a bare path, without a `name@`, is named after its
-    # file, which is no API and so no `--target-accelerator` vendor either.
-    if "/" in api or api.endswith(".so"):
-        raise Error("the accelerator plugin has no API name: ", api)
-    var device = driver[].get_device_dynamic[Optional[Int64](0)](
-        Int64(device_id)
-    )
-    return (api, device[].arch())
+    if case .Some(driver) = maybe_driver[]:
+        var api = String(driver[].name()).lower()
+        # A plugin listed as a bare path, without a `name@`, is named after
+        # its file, which is no API and so no `--target-accelerator` vendor
+        # either.
+        if "/" in api or api.endswith(".so"):
+            raise Error("the accelerator plugin has no API name: ", api)
+        var device = driver[].get_device_dynamic[Optional[Int64](0)](
+            Int64(device_id)
+        )
+        return (api, device[].arch())
+    raise Error("no accelerator driver plugin is loaded")
 
 
 struct _PeerState(Movable):
@@ -365,9 +415,9 @@ def _init_peer_state() -> _PeerState:
     # `_Global` initializers must not raise; no plugin means zero devices.
     try:
         var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-        if not maybe_driver[]:
-            return _PeerState(0)
-        return _PeerState(Int(maybe_driver[].value()[].device_count()))
+        if case .Some(driver) = maybe_driver[]:
+            return _PeerState(Int(driver[].device_count()))
+        return _PeerState(0)
     except:
         return _PeerState(0)
 
@@ -496,10 +546,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     This alias may be removed once Mojo supports nested auto-parameterization.
     """
 
-    comptime NoneValue = Optional[DeviceContext[]]()
+    comptime NoneValue = Optional[DeviceContext.CPU]()
     """Convenience helper for constructing a default value for
-    `DeviceContext.Optional` parameters. This guides type inference to a default
-    value for the `target` parameter when the default argument value is used.
+    `DeviceContext.Optional` parameters. This guides type inference to the CPU
+    `target` when the default argument value is used, so omitting the context
+    means "run on the CPU".
 
     Intended to be used like:
 
@@ -526,14 +577,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         (
             ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
         ) if Self._plugin_has_attributes else (
-            ClusterLaunchConfig if Self._plugin_has_clusters else GridBlockLaunchConfig
+            ClusterLaunchConfig if Self._plugin_has_clusters else (
+                Self._PluginExecutionConfigType if (
+                    Self._HALHooks.Launcher.launches_config
+                    and not conforms_to(
+                        Self._PluginExecutionConfigType,
+                        GridBlockExecutionConfig,
+                    )
+                ) else GridBlockLaunchConfig
+            )
         )
     )
     """The launch configuration type with every launch capability this
     device supports.
 
     On NVIDIA devices it carries launch attributes, and from sm_90 on also
-    thread block clusters, as on the legacy `DeviceContext`.
+    thread block clusters, as on the legacy `DeviceContext`. When the plugin's
+    own configuration isn't grid/block shaped and the plugin's launcher takes
+    it, it's that configuration.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -664,7 +725,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         self._handle = None
         if not _driver_satisfies_api(String(chosen.split("@")[0]), "gpu"):
-            self._driver = Driver.create(chosen)
+            var maybe_cpu_driver = _CPU_DRIVER.get_or_create_ptr()
+            if case .Some(driver) = maybe_cpu_driver[]:
+                self._driver = driver
+            else:
+                # `_Global` init drops the load error; reload to raise it.
+                _ = Driver.create(chosen)
+                raise Error(String(t"failed to load CPU plugin '{chosen}'"))
 
             # Validate that the loaded plugin satisfies the requested api (its
             # concrete vendor name, or the generic accelerator alias "gpu").
@@ -676,18 +743,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            self._device = self._driver[].get_device[0]()
+            var maybe_cpu_device = _CPU_DEVICE.get_or_create_ptr()
+            if case .Some(device) = maybe_cpu_device[]:
+                self._device = device
+            else:
+                # `_Global` init drops the open error; reopen to raise it.
+                self._device = self._driver[].get_device[0]()
         else:
             # Shared so peer calls get both contexts from one driver.
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
+            if case .Some(driver) = maybe_driver[]:
+                self._driver = driver
+            else:
                 # `_Global` init drops the load error; reload to raise it.
                 _ = Driver.create(chosen)
                 raise Error(
                     String(t"failed to load accelerator plugin '{chosen}'")
                 )
-            var driver = maybe_driver[].value()
-            var driver_name = driver[].name()
+            var driver_name = self._driver[].name()
             if not _driver_satisfies_api(String(driver_name), api):
                 raise Error(
                     String(
@@ -695,12 +768,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         t" {driver_name}"
                     )
                 )
-            var count = Int(driver[].device_count())
+            var count = Int(self._driver[].device_count())
             if device_id < 0 or device_id >= count:
                 raise Error(
                     String(t"device_id {device_id} out of range [0, {count})")
                 )
-            self._driver = driver
             # The spec stays id 0 for typing; the runtime id picks the device.
             self._device = rebind[ArcPointer[_HALDevice[Self.device_spec]]](
                 self._driver[].get_device_dynamic[Optional[Int64](0)](
@@ -752,67 +824,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         except e:
             abort(t"unable to create CPU DeviceContext: {e}")
 
-    # ===-------------------------------------------------------------------===#
-    # TODO(MSTDL-3208): Temporary target parameterization helpers
-    # ===-------------------------------------------------------------------===#
-
-    # TODO(MSTDL-3265): Remove `target: StaticString` parameters from all
-    #   callers of this method after verifying all callers instead indicate
-    #   target device via `DeviceContext.target`.
-    @inline(.always)
-    def _comptime_assert_matches_target_is_cpu[
-        target_name: StaticString
-    ](self,):
-        comptime assert Self.target.is_cpu() == is_cpu[target_name](), String(
-            "`target` parameter '",
-            target_name,
-            "' does not match the DeviceContext target, which is ",
-            "a CPU" if Self.target.is_cpu() else "not a CPU",
-            " (triple: ",
-            StaticString(Self.target.__triple()),
-            ", arch: ",
-            Self.target._arch(),
-            ")",
-        )
-
-    @inline(.always)
-    def cast_if_cpu[
-        target_str: StaticString
-    ](
-        var self,
-        out result: DeviceContext[
-            CompilationTarget[
-                _mlir_value=(
-                    CompilationTarget.current()._mlir_value if target_str
-                    == "cpu" else Self.target._mlir_value
-                )
-            ]()
-        ],
-    ):
-        """Temporary function to cast this DeviceContext to the CPU target if
-        the device label is "cpu".
-
-        Parameters:
-            target_str: The device label to cast to. Typically "cpu" or "gpu".
-
-        Returns:
-            A DeviceContext with a target parameter matching the provided device
-            label.
-        """
-        comptime if target_str == "cpu":
-            # Defensive sanity check, since we make this assumption in the
-            # result type. `assert_cpu_target` checks at runtime, so this also
-            # accepts a context that already has the CPU target.
-            comptime assert CompilationTarget.current().is_cpu()
-
-            var self_cpu = self.assert_cpu_target()
-            return rebind_var[type_of(result)](self_cpu^)
-        else:
-            # Assert that this is only called on `ctx: DeviceContext` concrete
-            # / default accelerator instances for the time being.
-            var _ = self.assert_default_target()
-            return rebind_var[type_of(result)](self^)
-
     @inline(.always)
     def assert_cpu_target(var self) -> DeviceContext.CPU:
         """Temporary function to assert and cast this DeviceContext to the CPU
@@ -844,8 +855,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ctx: DeviceContext.Optional,
     ) -> Optional[DeviceContext.CPU]:
         var cpu_ctx = Optional[DeviceContext.CPU]()
-        if ctx:
-            cpu_ctx = ctx.value().assert_cpu_target()
+        if case .Some(gpu_ctx) = ctx:
+            cpu_ctx = gpu_ctx.assert_cpu_target()
         return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
@@ -1059,11 +1070,44 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # Previous context is automatically restored
         ```
         """
-        return _DeviceContextScopeHAL(self.assert_default_target())
+        return _DeviceContextScopeHAL(self)
 
     @doc_hidden
     def stream(self) -> DeviceStreamBase[Self.target]:
         return DeviceStreamBase[Self.target](self)
+
+    def allocate_completion_flag(self) raises -> CompletionFlag:
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
+
+        Returns:
+            The new flag.
+
+        Raises:
+            If the device's plugin has no completion flags.
+        """
+        return CompletionFlag(
+            _inner=ArcPointer(_CompletionFlagBox(self.assert_default_target()))
+        )
+
+    def supports_flag_wait(self) -> Bool:
+        """Returns whether this device supports completion flags.
+
+        Returns:
+            True when the device's plugin exports both the completion-flag
+            and the flag-reset extensions.
+        """
+        # A context boxed under another target's type, such as a CPU context
+        # in the accelerator's `DeviceContext[]`, would read the wrong
+        # extension struct, so check the runtime API first.
+        if self.api() != Self._default_api():
+            return False
+        comptime Ext = type_of(self._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            ref ext = self._context[].extensions()
+            return Bool(ext.completion_flag()) and Bool(
+                ext.completion_flag_reset()
+            )
+        return False
 
     @doc_hidden
     def _hal_stream(
@@ -1175,7 +1219,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
@@ -1249,12 +1293,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             var gpu_kernel = self.compile_function[func]()
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](execution_config.get_grid_dim(), location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](execution_config.get_block_dim(), location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             comptime for idx in range(HostArgs.length):
                 type_of(gpu_kernel)._check_trailing_host[
                     HostArgs[idx], actual_arg_types.length + idx
@@ -1270,7 +1311,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
     ](
         self,
@@ -1300,16 +1341,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
 
             var gpu_kernel = DeviceFunction[FuncType.__call__](self)
 
@@ -1322,7 +1357,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         *Ts: DevicePassable,
     ](
@@ -1375,16 +1410,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 *args,
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceContext.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             f._do_call_with_pack_checked(
                 self,
                 execution_config,
@@ -1795,7 +1824,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -1814,7 +1843,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return DeviceBuffer[dtype](self.assert_default_target(), size)
+        return DeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
@@ -1862,7 +1891,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        return HostBuffer[dtype](self.assert_default_target(), size)
+        return HostBuffer[dtype](self, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1887,12 +1916,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         self.enqueue_copy(
-            DeviceBuffer[dtype](
-                self.assert_default_target(), dst_ptr, size, owning=False
-            ),
-            DeviceBuffer[dtype](
-                self.assert_default_target(), src_ptr, size, owning=False
-            ),
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
@@ -1973,7 +1998,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             self.enqueue_wait_for(src_ctx)
         self._enqueue_copy_device_to_device(dst_buf, src_buf)
         if sync:
-            src_ctx.enqueue_wait_for(self.assert_default_target())
+            src_ctx.enqueue_wait_for(self)
 
     def _check_device_to_device_copy[
         dtype: DType
@@ -2290,11 +2315,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """Runs a function closure over a 1D range on a CPU `DeviceContext`.
 
         The function is called as `func(i)` for each `i` in `range(count)`.
+        Instances run in parallel on the AsyncRT worker threads, but it is not
+        guaranteed that all instances run at the same time.
 
         The HAL backend has no host-function enqueue plugin entry, so the range
-        runs serially and synchronously here; `synchronize()` is then a no-op
-        for this work. Results match the legacy backend; only the parallelism
-        differs.
+        runs synchronously here: it returns when every instance is done, and
+        `synchronize()` is then a no-op for this work.
 
         Parameters:
             FuncType: The type of function to execute.
@@ -2310,8 +2336,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             raise Error(
                 "enqueue_cpu_range is only supported on CPU DeviceContexts"
             )
-        for i in range(count):
+        if count <= 0:
+            return
+        if count == 1:
+            func(0)
+            return
+
+        @inline(.always)
+        __async def run(i: Int) {imm} -> None:
             func(i)
+
+        # Spread instances over the workers the way the legacy CPU context
+        # does. Running one on this thread instead measured slower: a worker
+        # that waits here leaves its own queued instance to be stolen late.
+        var num_workers = max(parallelism_level(), 1)
+        var group = TaskGroup()
+        for i in range(count):
+            group._create_task(run(i), desired_worker_id=i % num_workers)
+        group.wait[origin_of(func)._mlir_origin]()
 
     @inline(.always)
     def execution_time[
@@ -2615,12 +2657,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 return 0
             # Reuse the process-global accelerator driver (loaded once).
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
-                return 0
-            var driver = maybe_driver[].value()
-            if not _driver_satisfies_api(driver[].name(), api):
-                return 0
-            return Int(driver[].device_count())
+            if case .Some(driver) = maybe_driver[]:
+                if _driver_satisfies_api(driver[].name(), api):
+                    return Int(driver[].device_count())
+            return 0
         except:
             return 0
 
@@ -2727,6 +2767,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return self.device().is_host_unified()
 
+    def is_graph_capturing(self) raises -> Bool:
+        """Returns whether work enqueued on this context is only recorded.
+
+        Returns:
+            False: the HAL has no stream capture.
+
+        Raises:
+            Never; raises to match the legacy signature.
+        """
+        # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+        return False
+
 
 struct Device[target: CompilationTarget, origin: ImmOrigin](
     TrivialRegisterPassable
@@ -2777,6 +2829,111 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             If the attribute cannot be queried.
         """
         return Int(self._ctx[]._device[].get_attribute(attr._value))
+
+    def multiprocessor_count(self) raises -> Int:
+        """Returns the number of multiprocessors on this device.
+
+        On a GPU, this is the number of streaming multiprocessors (NVIDIA) or
+        compute units (AMD) that run thread blocks concurrently. A device that
+        isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The number of multiprocessors.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+
+    def max_threads_per_block(self) raises -> Int:
+        """Returns the maximum number of threads in one thread block.
+
+        On a GPU, a kernel launch whose block has more threads than this
+        fails. A device that isn't a GPU reports whatever its driver
+        provides.
+
+        Returns:
+            The maximum number of threads per block.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
+
+    def max_shared_memory_per_block(self) raises -> Int:
+        """Returns the shared memory one thread block can use by default.
+
+        On a GPU, this is the per-block limit without opting in to a larger
+        dynamic allocation. A device that isn't a GPU reports whatever its
+        driver provides.
+
+        Returns:
+            The maximum shared memory per block in bytes.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
+
+    def max_grid_dim_x(self) raises -> Int:
+        """Returns the maximum number of blocks along x in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along x fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along x.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
+
+    def max_grid_dim_y(self) raises -> Int:
+        """Returns the maximum number of blocks along y in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along y fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along y.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
+
+    def max_grid_dim_z(self) raises -> Int:
+        """Returns the maximum number of blocks along z in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along z fails.
+        A device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum grid size along z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
+
+    def max_grid_dim(self) raises -> Dim:
+        """Returns the maximum grid dimensions for a kernel launch.
+
+        On a GPU, a launch whose grid exceeds this in any dimension fails.
+        Makes one driver query per dimension; to read a single limit, use
+        `max_grid_dim_x()`, `max_grid_dim_y()`, or `max_grid_dim_z()`. A
+        device that isn't a GPU reports whatever its driver provides.
+
+        Returns:
+            The maximum number of blocks along x, y, and z.
+
+        Raises:
+            If the driver cannot answer the query.
+        """
+        return Dim(
+            self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
+        )
 
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
@@ -2843,14 +3000,14 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
 
 struct _DeviceContextScopeHAL(Movable):
-    var _device_context: DeviceContext[]
+    var _device_context: DeviceContext.Unknown
     # Driver-context handle to restore on exit; only meaningful when `_active`
     # (any value, including zero, can be a live handle).
     var _prev_driver_ctx: Int
     var _active: Bool
 
-    def __init__(out self, device_context: DeviceContext[]):
-        self._device_context = device_context
+    def __init__(out self, device_context: DeviceContext):
+        self._device_context = device_context.into_unknown_target()
         self._prev_driver_ctx = 0
         self._active = False
 
@@ -2870,7 +3027,7 @@ struct _DeviceContextScopeHAL(Movable):
         )
         self._device_context._context[].set_current()
         self._active = True
-        return self._device_context
+        return rebind[DeviceContext[]](self._device_context)
 
     def __exit__(mut self) raises:
         if self._active:
@@ -3114,7 +3271,7 @@ struct DeviceFunction[
 
     @inline(.always)
     def _do_call_closure_checked[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         ContextT: _HALFunctionEnqueuer,
     ](
@@ -3189,7 +3346,7 @@ struct DeviceFunction[
 
     @inline(.always)
     def _do_call_with_pack_checked[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         *Ts: DevicePassable,
@@ -3203,29 +3360,29 @@ struct DeviceFunction[
         var attributes: List[LaunchAttribute] = [],
         location: Optional[SourceLocation] = None,
     ) raises:
-        # Every grid/block launch, from a DeviceContext or a DeviceStream,
-        # ends up here, so this is the one place the plugin's launcher has to
-        # be honored.
+        # Every launch, from a DeviceContext or a DeviceStream, ends up here,
+        # so this is the one place the plugin's launcher has to be honored.
         comptime _HALHooks = HalPluginForTarget[
             CompilationTarget[_mlir_value=ContextT._target_value]()
         ]
         _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
-        comptime if _HALHooks.Launcher.overrides_grid_block:
+        comptime is_grid_block = conforms_to(
+            ExecutionConfigType, GridBlockExecutionConfig
+        )
+        comptime launcher_takes_config = (
+            not is_grid_block and _HALHooks.Launcher.launches_config
+        )
+        comptime launcher_takes_grid_block = (
+            is_grid_block and _HALHooks.Launcher.overrides_grid_block
+        )
+        comptime if launcher_takes_config or launcher_takes_grid_block:
             comptime if HostArgs.length != 0:
                 raise Error(
                     "the active HAL plugin's launcher doesn't take host-only"
                     " arguments"
                 )
-            # It only gets the grid and block, so refuse anything else rather
-            # than drop it.
-            var shared_mem_bytes = 0
-            comptime if conforms_to(
-                ExecutionConfigType,
-                NearComputeGeneralPurposeScratchpadExecutionConfig,
-            ):
-                shared_mem_bytes = (
-                    execution_config.get_near_compute_scratchpad_usage()
-                )
+            # It only gets its own config or the grid and block, so refuse
+            # anything else rather than drop it.
             var num_attributes = len(attributes)
             comptime if conforms_to(
                 ExecutionConfigType, LaunchAttributeHolderExecutionConfig
@@ -3241,22 +3398,77 @@ struct DeviceFunction[
                     or cluster_dim.y() != 1
                     or cluster_dim.z() != 1
                 )
-            if shared_mem_bytes != 0 or num_attributes != 0 or clustered:
+            if num_attributes != 0 or clustered:
                 raise Error(
-                    "the active HAL plugin's launcher doesn't take shared"
-                    " memory, cluster dims or launch attributes"
+                    "the active HAL plugin's launcher doesn't take cluster"
+                    " dims or launch attributes"
                 )
-            _HALHooks.Launcher.enqueue_grid_block[
-                get_device_spec[0](), Self.Wrapper, Self.declared_arg_types
-            ](
+
+        comptime if launcher_takes_config:
+            _HALHooks.Launcher.enqueue[Self.Wrapper, Self.declared_arg_types](
                 ctx._hal_stream()[],
                 self._inner[]._func_handle,
                 *args,
-                grid_dim=execution_config.get_grid_dim(),
-                block_dim=execution_config.get_block_dim(),
+                execution_config=execution_config,
             )
-            return
+        elif is_grid_block:
+            ref grid_block_config = rebind[
+                downcast[ExecutionConfigType, GridBlockExecutionConfig]
+            ](execution_config)
+            comptime if launcher_takes_grid_block:
+                # It only gets the grid and block, so refuse shared memory
+                # rather than drop it.
+                comptime if conforms_to(
+                    ExecutionConfigType,
+                    NearComputeGeneralPurposeScratchpadExecutionConfig,
+                ):
+                    if execution_config.get_near_compute_scratchpad_usage():
+                        raise Error(
+                            "the active HAL plugin's launcher doesn't take"
+                            " shared memory"
+                        )
+                _HALHooks.Launcher.enqueue_grid_block[
+                    get_device_spec[0](),
+                    Self.Wrapper,
+                    Self.declared_arg_types,
+                ](
+                    ctx._hal_stream()[],
+                    self._inner[]._func_handle,
+                    *args,
+                    grid_dim=grid_block_config.get_grid_dim(),
+                    block_dim=grid_block_config.get_block_dim(),
+                )
+            else:
+                self._do_call_grid_block_with_pack_checked(
+                    ctx,
+                    grid_block_config,
+                    *args,
+                    host_args=host_args,
+                    attributes=attributes^,
+                    location=location,
+                )
+        else:
+            comptime assert False, (
+                "the active HAL plugin's launcher doesn't take this execution"
+                " config"
+            )
 
+    @inline(.always)
+    def _do_call_grid_block_with_pack_checked[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        *Ts: DevicePassable,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        imm self,
+        ctx: ContextT,
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+        host_args: Tuple[*HostArgs],
+        var attributes: List[LaunchAttribute],
+        location: Optional[SourceLocation],
+    ) raises:
         comptime extra_host_count = HostArgs.length
 
         self._check_pdl_wait(Span(attributes))
@@ -3572,7 +3784,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         out self,
         ctx: DeviceContext,
         var function_name: String,
-        asm: StringSlice,
+        asm: StringSpan,
     ) raises:
         """Loads a function from raw PTX/SASS bytes.
 
@@ -3866,9 +4078,8 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the wait operation fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not event._event[]:
-            return
-        self._stream[].wait_for_events(event._event[].value())
+        if case .Some(recorded) = event._event[]:
+            self._stream[].wait_for_events(recorded)
 
     def record_event(self, event: DeviceEvent) raises:
         """Records an event in this stream.
@@ -3910,28 +4121,44 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         event._event[] = Optional(hal_event^)
 
     @doc_hidden
+    def wait_for_flag(
+        self,
+        flag: CompletionFlag,
+        value: UInt64,
+    ) raises:
+        """Stalls the stream until `flag` holds at least `value`.
+
+        While the wait is pending, the thread that signals `flag` must not
+        block on this stream first: no `synchronize`, no copy into or out of
+        pageable host memory, and don't drop the flag.
+
+        Args:
+            flag: A ``M::Driver::CompletionFlag``.
+            value: The 64-bit value to wait for. Keep values below 2^63.
+
+        Raises:
+            If the device has no completion flags, the flag belongs to
+            another backend, or enqueueing the wait fails.
+        """
+        flag._inner[].wait(self, value)
+
+    @deprecated("Use `wait_for_flag` instead.")
+    @doc_hidden
     def wait_for_host_value(
         self,
         flag: CompletionFlag,
         value: UInt64,
     ) raises:
-        """Stalls the stream until a host-visible flag reaches a given value.
-
-        Corresponds to CUDA's `cuStreamWaitValue64` on the slot owned by
-        `flag`.
+        """Stalls this stream until ``flag`` reaches ``value``.
 
         Args:
-            flag: A non-owning handle to a ``M::Driver::CompletionFlag``.
-            value: The 64-bit value to wait for.
+            flag: The flag to wait on.
+            value: The value to wait for.
 
         Raises:
-            If the underlying device does not support stream memory ops,
-            or if enqueueing the wait fails.
+            If the wait cannot be enqueued.
         """
-        var device_addr = external_call[
-            "AsyncRT_CompletionFlag_devicePtr", UInt64
-        ](flag._handle)
-        self._stream[].wait_value64(device_addr, value)
+        self.wait_for_flag(flag, value)
 
     def _native_stream[
         origin: Origin, //
@@ -3939,10 +4166,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         """Returns this stream's native driver-level handle (for example a
         `CUstream`), tied to this borrow of `self` so the owning queue stays
         alive while the handle is in use."""
-        var handle = self._stream[].native_handle()
-        if not handle:
-            raise Error("this device's stream has no native driver handle")
-        return OpaquePointer[origin](unsafe_from_address=Int(handle.value()))
+        if case .Some(handle) = self._stream[].native_handle():
+            return OpaquePointer[origin](unsafe_from_address=Int(handle))
+        raise Error("this device's stream has no native driver handle")
 
     def _hal_stream(
         self,
@@ -4023,7 +4249,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -4131,7 +4357,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         //,
     ](
@@ -4160,16 +4386,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
             var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
             gpu_kernel._do_call_closure_checked(
                 self,
@@ -4247,7 +4467,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_function[
-        ExecutionConfigType: GridBlockExecutionConfig,
+        ExecutionConfigType: ExecutionConfig,
         //,
         *Ts: DevicePassable,
     ](
@@ -4282,16 +4502,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 *args,
             )
         else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
 
             f._do_call_with_pack_checked(
                 self,
@@ -4514,9 +4728,8 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
             If synchronization fails.
         """
         # If an event hasn't been recorded yet, there's nothing to wait on
-        if not self._event[]:
-            return
-        self._event[].value().synchronize()
+        if case .Some(recorded) = self._event[]:
+            recorded.synchronize()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4583,7 +4796,7 @@ struct DeviceBuffer[dtype: DType](
     var _device_ptr: Self._DevicePtr
     # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
     # a reference to the same underlying buffer.
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HALBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -4602,7 +4815,7 @@ struct DeviceBuffer[dtype: DType](
         if byte_size > 0:
             addr = ctx._context[].memory_get_address(buffer)
         self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-        self._ctx = ctx.assert_default_target()
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HALBufferInner(buffer^, ctx._context, addr, [], [])
         )
@@ -4643,8 +4856,15 @@ struct DeviceBuffer[dtype: DType](
             ) if addr == 0 else ctx._context[].wrap_memory(
                 addr, byte_size, owning=owning
             )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._context[].memory_get_address(buffer)
+                except:
+                    pass
             self._device_ptr = Self._DevicePtr(unsafe_from_address=Int(addr))
-            self._ctx = ctx.assert_default_target()
+            self._ctx = ctx.into_unknown_target()
             self._inner = ArcPointer(
                 _HALBufferInner(buffer^, ctx._context, addr, [], [])
             )
@@ -4743,7 +4963,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     @doc_hidden
     @inline(.always)
@@ -5120,7 +5340,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctx: DeviceContext[]
+    var _ctx: DeviceContext.Unknown
     var _inner: ArcPointer[_HostBufferInner]
 
     # ===-------------------------------------------------------------------===#
@@ -5128,7 +5348,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
     # ===-------------------------------------------------------------------===#
 
     @doc_hidden
-    def __init__(out self, ctx: DeviceContext[], size: Int) raises:
+    def __init__(out self, ctx: DeviceContext, size: Int) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
@@ -5144,16 +5364,16 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
             host_ptr = Pointer[UInt8, MutUntrackedOrigin](
                 unsafe_from_address=Int(addr)
             )
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = ArcPointer(
             _HostBufferInner(buffer^, ctx._context, host_ptr, [])
         )
 
     @doc_hidden
     def __init__(
-        out self, ctx: DeviceContext[], var inner: ArcPointer[_HostBufferInner]
+        out self, ctx: DeviceContext, var inner: ArcPointer[_HostBufferInner]
     ):
-        self._ctx = ctx
+        self._ctx = ctx.into_unknown_target()
         self._inner = inner^
 
     # ===-------------------------------------------------------------------===#
@@ -5214,7 +5434,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         Returns:
             The device context associated with this buffer.
         """
-        return self._ctx
+        return rebind[DeviceContext[]](self._ctx)
 
     def unsafe_ptr(
         self,
@@ -6107,42 +6327,181 @@ struct DevicePointer[
 # implemented here.
 
 
+struct _CompletionFlagBox(Movable):
+    """A plugin flag shared with the C++ ``M::Driver::CompletionFlag``."""
+
+    var ctx: DeviceContext[]
+    var flag: FlagHandle
+
+    @staticmethod
+    def _flags[E: SupportsCompletionFlagV1](ext: E) raises -> E.FlagGroup:
+        if case .Some(flags) = ext.completion_flag():
+            return flags
+        raise Error("completion flags are not supported on this device")
+
+    def __init__(out self, ctx: DeviceContext[]) raises:
+        # `reset` must not fail later inside a driver callback.
+        if not ctx.supports_flag_wait():
+            raise Error("completion flags are not supported on this device")
+        comptime Ext = type_of(ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = ctx._context[]
+            var flags = Self._flags(hal_ctx.extensions())
+            self.flag = flags.create(hal_ctx._raw[], hal_ctx._handle)
+            self.ctx = ctx
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def __deinit__(deinit self):
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            try:
+                Self._flags(hal_ctx.extensions()).destroy(
+                    hal_ctx._raw[], hal_ctx._handle, self.flag
+                )
+            except e:
+                print("warning: failed to destroy completion flag:", e)
+
+    def signal(self, value: UInt64) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            Self._flags(hal_ctx.extensions()).signal(
+                hal_ctx._raw[], self.flag, value
+            )
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def load(self) raises -> UInt64:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            return Self._flags(hal_ctx.extensions()).load(
+                hal_ctx._raw[], self.flag
+            )
+        raise Error("completion flags are not supported on this device")
+
+    def reset(self) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            ref hal_ctx = self.ctx._context[]
+            if case .Some(reset) = hal_ctx.extensions().completion_flag_reset():
+                reset.reset(hal_ctx._raw[], self.flag)
+                return
+        raise Error("completion flag reset is not supported on this device")
+
+    def wait[
+        target: CompilationTarget
+    ](self, stream: DeviceStreamBase[target], value: UInt64) raises:
+        # The stream's plugin would get a flag handle it didn't create.
+        if stream._ctx.api() != self.ctx.api():
+            raise Error(
+                "completion flag waits are not supported across backends"
+            )
+        stream._stream[].wait_flag(self.flag, value, FlagCondition.geq)
+
+
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
-    This struct is intentionally non-owning: it wraps the raw address of a
-    ``M::Driver::CompletionFlag`` created by the C++ driver layer.
+    Shares the plugin flag that backs a C++ ``M::Driver::CompletionFlag``, so
+    a standalone Mojo program needs no C++ runtime to use one.
     """
 
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _handle: OpaquePointer[MutUntrackedOrigin]
+    var _inner: ArcPointer[_CompletionFlagBox]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
+    def __init__(out self, *, var _inner: ArcPointer[_CompletionFlagBox]):
+        """Wraps a plugin flag.
+
+        Args:
+            _inner: The shared plugin flag.
+        """
+        self._inner = _inner^
+
     @inline(.always)
     def __init__(out self, *, unsafe_from_address: Int):
-        """Constructs a non-owning handle from an integer address.
+        """Wraps the C++ flag at an integer address, taking a reference.
 
         Intended for graph-op execute methods that extract a packed
         pointer from a payload buffer (mirroring how
-        `mo.launch_host_func` rebuilds its trampoline/user-data
+        `runtime.launch_host_func` rebuilds its trampoline/user-data
         pointers). The caller asserts that ``unsafe_from_address``
-        points to a valid ``M::Driver::CompletionFlag`` and that the
-        underlying object outlives any in-flight use.
+        points to a valid ``M::Driver::CompletionFlag`` that outlives every
+        wait enqueued through this flag.
 
         Args:
             unsafe_from_address: Raw address of an
                 ``M::Driver::CompletionFlag`` (as packed into a graph
                 payload buffer by the producer side).
         """
-        self._handle = OpaquePointer[MutUntrackedOrigin](
-            unsafe_from_address=unsafe_from_address
-        )
+        # The runtime library built this box, and a graph kernel reads its
+        # layout here, so both must come from the same source build.
+        self._inner = external_call[
+            "AsyncRT_CompletionFlag_mojoBox",
+            Pointer[ArcPointer[_CompletionFlagBox], MutUntrackedOrigin],
+        ](
+            OpaquePointer[MutUntrackedOrigin](
+                unsafe_from_address=unsafe_from_address
+            )
+        )[]
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    # The legacy signatures can't fail, so a plugin error aborts rather than
+    # leaving a wait that never passes.
+
+    @inline(.always)
+    def signal(self, value: UInt64):
+        """Stores ``value`` in the flag with release ordering.
+
+        Don't signal a lower value than the last one without a reset in
+        between. Aborts if the plugin fails.
+
+        Args:
+            value: The value to store.
+        """
+        try:
+            self._inner[].signal(value)
+        except e:
+            abort(t"CompletionFlag.signal: {e}")
+
+    @inline(.always)
+    def load(self) -> UInt64:
+        """Loads the flag's value with acquire ordering.
+
+        Aborts if the plugin fails.
+
+        Returns:
+            The value the flag holds.
+        """
+        try:
+            return self._inner[].load()
+        except e:
+            abort(t"CompletionFlag.load: {e}")
+
+    @inline(.always)
+    def reset(self):
+        """Sets the flag back to 0.
+
+        Don't reset while a wait on the flag is pending; doing so is undefined
+        behavior. Aborts if the plugin fails.
+        """
+        try:
+            self._inner[].reset()
+        except e:
+            abort(t"CompletionFlag.reset: {e}")
 
 
 struct DeviceContextArray[

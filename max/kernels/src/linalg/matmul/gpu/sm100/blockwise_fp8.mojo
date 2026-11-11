@@ -40,7 +40,7 @@ from structured_kernels.tile_types import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 

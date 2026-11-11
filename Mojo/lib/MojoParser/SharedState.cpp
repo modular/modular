@@ -1042,7 +1042,7 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
 static ASTType typeForResolvedTypeDecl(SharedState &state, ASTDecl *decl,
                                        SMLoc loc) {
   if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(decl))
-    return structDecl->getOp().legacyBindReference();
+    return structDecl->getOp().bindReference(&state.getEvaluationContext());
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     if (failed(state.declResolver->resolveBody(*decl, loc)))
       return state.getTypeCheckErrorType();
@@ -1826,26 +1826,21 @@ SharedState::getSourceName(mlir::SymbolOpInterface op) {
   return impl->sourceNames.getSourceName(op);
 }
 
-/// Given a valid pointer into a source buffer for some token, return the
-/// length of the token by re-lex'ing it.  This is efficient.
+/// Returns the length of the token that starts at `loc` by re-lexing it.
+/// Returns 0 when `loc` is not inside a source buffer.
 static size_t getTokenLength(SharedState &shared, SMLoc loc) {
-  // Because we know the pointer is to a valid place in a source buffer, and
-  // because we know that all source buffers are NUL terminated, we know that
-  // the end of buffer check isn't needed.  This allows us to form a lexer
-  // without having to find the MemoryBuffer it came from, saving some expense
-  // in diagnostic emission.
-  const char *curPtr = loc.getPointer();
-
-  // If the byte is NUL, it is an invalid token and might be end of buffer.
-  if (*curPtr == '\0')
+  llvm::SourceMgr &sourceMgr = shared.getSourceMgr();
+  unsigned bufferId = sourceMgr.FindBufferContainingLoc(loc);
+  if (!bufferId)
     return 0;
 
-  // Use ~0U to indicate the end of the buffer, that should be fine as we don't
-  // expect tokens to be >= 2^32 charachetrs long.
-  // NOTE: We cannot use ~0ULL as it leads to integer overflow when computing
-  // end of the StringRef.
-  Lexer lexer(shared.diags,
-              StringRef(curPtr, std::numeric_limits<uint32_t>::max()), curPtr);
+  StringRef buffer = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
+  const char *curPtr = loc.getPointer();
+  // No token starts at the buffer end, and that byte may not be readable.
+  if (curPtr >= buffer.end() || *curPtr == '\0')
+    return 0;
+
+  Lexer lexer(shared.diags, buffer, curPtr);
   return lexer.getToken().getSpelling().size();
 }
 

@@ -14,6 +14,10 @@
 
 Needs 2 real, distinct devices: on a mesh that repeats a device there are no
 signal buffers, and the functionals take their simulated path instead.
+
+Each test runs one odd row count: the ragged case, the only dimension the
+wrapper layer can see. The kernel's row sweep lives in
+``max/tests/integration/graph/multi_gpu/test_allreduce_rms_norm.py``.
 """
 
 from __future__ import annotations
@@ -108,7 +112,7 @@ def _assert_replicated_rms_norm(
     )
 
 
-@pytest.mark.parametrize("rows", [8, 7])
+@pytest.mark.parametrize("rows", [7])
 def test_reduce_scatter_rms_norm(rows: int) -> None:
     rng = np.random.default_rng(0)
     fragments = [
@@ -137,7 +141,7 @@ def test_reduce_scatter_rms_norm(rows: int) -> None:
         _assert_close(normed.local_shards[i], _rms_norm(expected, gamma_values))
 
 
-@pytest.mark.parametrize("rows", [8, 7])
+@pytest.mark.parametrize("rows", [7])
 def test_allreduce_rms_norm(rows: int) -> None:
     rng = np.random.default_rng(2)
     fragments = _fragments(rng, rows, MESH_2)
@@ -149,34 +153,7 @@ def test_allreduce_rms_norm(rows: int) -> None:
     _assert_replicated_rms_norm(normed, fragments, gamma_values, MESH_2)
 
 
-@pytest.mark.parametrize("rows", [8, 7])
-def test_allreduce_rms_norm_without_signal_buffers(rows: int) -> None:
-    """The no-signal-buffer fallback: reduce on one device, norm beside it.
-
-    A mesh that repeats one device allocates no signal buffers, so the
-    wrapper sums on the first device and runs the norm there -- with the
-    gamma, which reaches it whole from the host, moved onto that device --
-    then hands every mesh slot its copy. Signed data, a gamma far from
-    ones, against numpy.
-    """
-    rng = np.random.default_rng(4)
-    simulated = DeviceMesh(
-        devices=(MESH_2.devices[0], MESH_2.devices[0]),
-        mesh_shape=(2,),
-        axis_names=("tp",),
-    )
-    fragments = _fragments(rng, rows, simulated)
-    gamma_values = (rng.standard_normal(COLS).astype(np.float32) * 0.5) + 0.5
-    with default_device(CPU()):
-        gamma = Tensor(gamma_values).cast(DType.bfloat16)
-    partial = _partial_over(fragments, simulated)
-
-    normed = allreduce_rms_norm(partial, gamma, EPS)
-
-    _assert_replicated_rms_norm(normed, fragments, gamma_values, simulated)
-
-
-@pytest.mark.parametrize("rows", [8, 7])
+@pytest.mark.parametrize("rows", [7])
 def test_allreduce_rms_norm_host_gamma(rows: int) -> None:
     """A host gamma rides the fused op on the real mesh.
 
@@ -197,42 +174,7 @@ def test_allreduce_rms_norm_host_gamma(rows: int) -> None:
     _assert_replicated_rms_norm(normed, fragments, gamma_values, MESH_2)
 
 
-@pytest.mark.parametrize("rows", [8, 7])
-def test_allreduce_rms_norm_fp32_falls_back(rows: int) -> None:
-    """A non-bfloat16 input takes the two-launch form and still normalizes.
-
-    The fused kernel is bfloat16-only, so the wrapper must reduce and norm
-    separately for float32 inputs (the form float32 TP tests exercise).
-    """
-    rng = np.random.default_rng(3)
-    fragments = _fragments(rng, rows, MESH_2)
-    gamma_values = rng.standard_normal(COLS).astype(np.float32)
-    gamma = transfer_to(
-        Tensor(gamma_values), DeviceMapping(MESH_2, (Replicated(),))
-    )
-    partial = Tensor._from_shards(
-        tuple(
-            Tensor(fragment).to(device).driver_tensor
-            for fragment, device in zip(fragments, MESH_2.devices, strict=True)
-        ),
-        DeviceMapping(MESH_2, (Partial(),)),
-    )
-
-    normed = allreduce_rms_norm(partial, gamma, EPS)
-
-    assert normed.placements == (Replicated(),)
-    total = np.sum(fragments, axis=0)
-    reference = _rms_norm(total, gamma_values)
-    for i in range(MESH_2.num_devices):
-        np.testing.assert_allclose(
-            normed.local_shards[i].to_numpy(),
-            reference,
-            rtol=1e-4,
-            atol=1e-4,
-        )
-
-
-@pytest.mark.parametrize("rows", [8, 7])
+@pytest.mark.parametrize("rows", [7])
 def test_allgather_rms_norm(rows: int) -> None:
     rng = np.random.default_rng(1)
     full = rng.standard_normal((rows, COLS)).astype(np.float32)

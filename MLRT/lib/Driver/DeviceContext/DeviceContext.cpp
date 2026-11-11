@@ -41,6 +41,7 @@ static_assert(
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
 #include "MemoryManager.h"
 #include "Metal/MetalDeviceContext.h"
+#include "PinnedCompletionFlag.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/AssertStream.h"
 #include "Support/ErrorOr.h"
@@ -143,24 +144,6 @@ DeviceFunctionCacheEntry::DeviceFunctionCacheEntry(const std::string name)
     : name_(std::move(name)) {}
 
 const std::string &DeviceFunctionCacheEntry::name() const { return name_; }
-
-Error DeviceContext::formatError(const char *file, int line, const char *func,
-                                 const llvm::Twine &msg) {
-  static bool syncModeEnabled = DeviceContext::syncModeFromConfig();
-
-  llvm::StringLiteral kErrorMessage = "";
-
-  if (!syncModeEnabled)
-    kErrorMessage = "\nTo get more accurate error information, set "
-                    "MODULAR_DEBUG=device-sync-mode.";
-
-  static bool logVerbose = DeviceContext::configAsBool("log_verbose", false);
-  if (logVerbose) {
-    return Error(llvm::Twine(file) + ":" + llvm::Twine(line) + " - " + func +
-                 " failed: " + msg + kErrorMessage);
-  }
-  return Error(msg + kErrorMessage);
-}
 
 // TODO: Remove once users have been updated to use
 // `Device::preferredAlignment`.
@@ -287,6 +270,10 @@ ErrorOrSuccess Device::vmmMapAndSetAccess(void *, size_t, uint64_t) {
 ErrorOrSuccess Device::vmmUnmap(void *, size_t) {
   return vmmUnsupportedError();
 }
+ErrorOrSuccess Device::vmmMap(void *va, size_t byteSize, uint64_t handle) {
+  return vmmMapAndSetAccess(va, byteSize, handle);
+}
+ErrorOrSuccess Device::vmmSetAccess(void *, size_t) { return success(); }
 
 MODULAR_CXX_EXPORT size_t Device::allocationAlignment() const {
   return memoryManager().allocationAlignment();
@@ -1426,13 +1413,12 @@ const DeviceContext &DeviceTimer::context() const { return *context_; }
 //
 // ===== CompletionFlag ===== //
 //
-MODULAR_CXX_EXPORT CompletionFlag::CompletionFlag(DeviceContext &context,
-                                                  void *hostPtr,
-                                                  uint64_t devicePtr)
+PinnedCompletionFlag::PinnedCompletionFlag(DeviceContext &context,
+                                           void *hostPtr, uint64_t devicePtr)
     : context_(DeviceContextRef::copy(&context)), hostPtr_(hostPtr),
       devicePtr_(devicePtr) {}
 
-MODULAR_CXX_EXPORT CompletionFlag::~CompletionFlag() {
+PinnedCompletionFlag::~PinnedCompletionFlag() {
   if (hostPtr_ == nullptr)
     return;
   // Best-effort free. Destructor must not throw; record errors on the
@@ -1443,7 +1429,7 @@ MODULAR_CXX_EXPORT CompletionFlag::~CompletionFlag() {
   hostPtr_ = nullptr;
 }
 
-MODULAR_CXX_EXPORT void CompletionFlag::reset() {
+void PinnedCompletionFlag::reset() {
   // Relaxed: the GPU's cuStreamWaitValue64 uses CUDA-level memory fencing.
   // Stream-ordered enqueue of the wait happens-after this store, so no
   // observer can race here. The release-ordering for the *signal* side
@@ -1452,7 +1438,7 @@ MODULAR_CXX_EXPORT void CompletionFlag::reset() {
       0, std::memory_order_relaxed);
 }
 
-MODULAR_CXX_EXPORT void CompletionFlag::signal(uint64_t value) {
+void PinnedCompletionFlag::signal(uint64_t value) {
   // Release pairs with the GPU-side `cuStreamWaitValue64` (which under
   // CUDA semantics performs the equivalent of an acquire when the
   // observed value satisfies the predicate) and with `load()`'s acquire
@@ -1462,7 +1448,7 @@ MODULAR_CXX_EXPORT void CompletionFlag::signal(uint64_t value) {
       value, std::memory_order_release);
 }
 
-MODULAR_CXX_EXPORT uint64_t CompletionFlag::load() const {
+uint64_t PinnedCompletionFlag::load() const {
   return reinterpret_cast<std::atomic<uint64_t> *>(hostPtr_)->load(
       std::memory_order_acquire);
 }
@@ -1470,12 +1456,6 @@ MODULAR_CXX_EXPORT uint64_t CompletionFlag::load() const {
 //
 // ===== DeviceContext ===== //
 //
-
-// Mutex to protect shared, static data. E.g. config dictionary
-static std::mutex &getGlobalMutex() {
-  static std::mutex mu;
-  return mu;
-}
 
 DeviceContext::DeviceContext(Device &device, TypeID typeID)
     : device_(DeviceRef::copy(&device)), typeID(typeID),
@@ -1558,6 +1538,27 @@ DeviceContext::getMemoryInfo() const {
 
   // Otherwise, go directly to the device.
   return getDeviceMemoryInfo();
+}
+
+DeviceContext::MemoryManagerStats DeviceContext::getMemoryManagerStats() const {
+  MemoryManagerStats out;
+  MemoryManager &cache = device().memoryManager();
+  if (!cache.isEnabled())
+    return out;
+  MemoryManager::AllocationStats s = cache.getAllocationStats();
+  out.liveBytes = s.liveBytes;
+  out.peakLiveBytes = s.peakLiveBytes;
+  out.maxRequestBytes = s.maxRequestBytes;
+  out.driverFallbacks = s.driverFallbacks;
+  out.driverFallbackBytes = s.driverFallbackBytes;
+  out.requestSizes = std::move(s.requestSizes);
+  return out;
+}
+
+void DeviceContext::resetMemoryManagerPeaks() const {
+  MemoryManager &cache = device().memoryManager();
+  if (cache.isEnabled())
+    cache.resetAllocationPeaks();
 }
 
 void DeviceContext::setPendingError(Error err) {
@@ -1941,8 +1942,10 @@ DeviceContext::create(StringRef api, int id) {
 
 MODULAR_CXX_EXPORT ErrorOr<DeviceContextRef>
 DeviceContext::getOrCreate(StringRef api, int id) {
+  // Cached contexts live for the whole process, so the map that holds them
+  // is never destroyed either. A destroyed map would make them leaks.
   static std::mutex mu;
-  static llvm::StringMap<DeviceContext *> contextMap;
+  static auto &contextMap = *new llvm::StringMap<DeviceContext *>();
 
   ErrorOr<DeviceRef> errDev = Device::create(api, id);
   if (errDev.isError())
@@ -1987,6 +1990,14 @@ DeviceContext::operator==(const DeviceContext &other) const {
   if (errStream.isError())
     return false;
   void *streamOther = (*errStream)->ptr();
+
+  // A backend with no native stream (the CPU, a virtual device) reports a null
+  // one, so two null streams say nothing about which device each context is
+  // on. Without this a CPU context equals a virtual accelerator's, and moving
+  // a host buffer to the virtual device hands back the host buffer.
+  if (!streamThis && !streamOther)
+    return device().api() == other.device().api() &&
+           device().id() == other.device().id();
 
   return streamThis == streamOther;
 }
@@ -2157,142 +2168,6 @@ ErrorOrSuccess DeviceContext::occupancyMaxActiveBlocksPerMultiprocessor(
   RETURN_ERROR(
       "occupancyMaxActiveBlocksPerMultiprocessor is not supported on this "
       "device");
-}
-
-bool DeviceContext::configAsBool(StringRef key, bool defaultValue,
-                                 bool *isDefault) {
-  std::lock_guard<std::mutex> lock(getGlobalMutex());
-  ErrorOr<Config> &config = getConfig();
-  if (config.isError()) {
-    if (isDefault != nullptr) {
-      *isDefault = true;
-    }
-    return defaultValue;
-  }
-
-  if (isDefault != nullptr) {
-    StringRef s =
-        config->getValue((llvm::Twine("device-context.") + key).str());
-    *isDefault = s.empty();
-  }
-  return config->getValueAsBool((llvm::Twine("device-context.") + key).str(),
-                                defaultValue);
-}
-
-bool DeviceContext::syncModeFromConfig() {
-  // Sync mode can be enabled via the new `max-debug.device-sync-mode` debug
-  // configuration (e.g. `MODULAR_DEBUG=device-sync-mode`) or via the legacy
-  // `device-context.sync-mode` key (e.g. `MODULAR_DEVICE_CONTEXT_SYNC_MODE=1`).
-  if (configAsBool("sync-mode", false))
-    return true;
-  std::lock_guard<std::mutex> lock(getGlobalMutex());
-  ErrorOr<Config> &config = getConfig();
-  if (config.isError())
-    return false;
-  return config->getValueAsBool("max-debug.device-sync-mode", false);
-}
-
-int64_t DeviceContext::configAsInt(StringRef key, int64_t defaultValue,
-                                   bool *isDefault) {
-  std::lock_guard<std::mutex> lock(getGlobalMutex());
-  ErrorOr<Config> &config = getConfig();
-  if (config.isError()) {
-    if (isDefault != nullptr) {
-      *isDefault = true;
-    }
-    return defaultValue;
-  }
-
-  StringRef s = config->getValue((llvm::Twine("device-context.") + key).str());
-  if (isDefault != nullptr) {
-    *isDefault = s.empty();
-  }
-  long long result = defaultValue;
-  if (s.getAsInteger(10, result)) {
-    if (isDefault != nullptr) {
-      *isDefault = true;
-    }
-    return defaultValue;
-  }
-  return result;
-}
-
-StringRef DeviceContext::configAsString(StringRef key, StringRef defaultValue,
-                                        bool *isDefault) {
-  std::lock_guard<std::mutex> lock(getGlobalMutex());
-  ErrorOr<Config> &config = getConfig();
-  if (config.isError()) {
-    if (isDefault != nullptr) {
-      *isDefault = true;
-    }
-    return defaultValue;
-  }
-
-  if (isDefault != nullptr) {
-    StringRef s =
-        config->getValue((llvm::Twine("device-context.") + key).str());
-    *isDefault = s.empty();
-  }
-  return config->getValueOr((llvm::Twine("device-context.") + key).str(),
-                            defaultValue);
-}
-
-bool DeviceContext::isDebugAllocatorEnabled(StringRef name) const {
-  std::lock_guard<std::mutex> lock(getGlobalMutex());
-  ErrorOr<Config> &config = getConfig();
-  return config->isValueInList("debug.device_allocator", name);
-}
-
-ErrorOr<Config> &DeviceContext::getConfig() {
-  static ErrorOr<Config> configuration = Config::open();
-  return configuration;
-}
-
-MODULAR_CXX_EXPORT const std::string &Device::getAcceleratorArchOrEmpty() {
-  static std::string arch = [] {
-    // First check if we're in virtual device mode (cross-compilation).
-    // Virtual device config is set at startup and takes precedence over
-    // physical hardware detection.
-    std::string virtualTargetArch = AsyncRT::getVirtualDeviceTargetArch();
-    if (!virtualTargetArch.empty()) {
-      std::string virtualAPI = AsyncRT::getVirtualDeviceAPI();
-      return (llvm::Twine(apiToVendorPrefix(virtualAPI)) + ":" +
-              virtualTargetArch)
-          .str();
-    }
-
-    // Otherwise, detect from physical hardware
-    std::string vendor("nvidia");
-    ErrorOr<std::string> archName = CUDADevice::getFirstArchName();
-
-    if (archName.isError()) {
-      vendor = "amdgpu";
-      archName = HIPDevice::getArchName(0);
-    }
-
-#if MODULAR_MACOS
-    if (archName.isError()) {
-      vendor = "metal";
-      archName = MetalDevice::getArchName(nullptr);
-    }
-#endif
-
-    // Check all loaded plugins (generic, no hardcoded vendor names).
-    if (archName.isError()) {
-      Plugin::ensurePluginsLoaded();
-      auto pluginResult = Plugin::getArchFromPlugins();
-      if (!pluginResult.isError()) {
-        vendor = pluginResult.get().first;
-        archName = pluginResult.get().second;
-      }
-    }
-
-    if (archName.isError())
-      return std::string();
-
-    return (llvm::Twine(vendor) + ":" + archName.get()).str();
-  }();
-  return arch;
 }
 
 // Exported so dynamically linked consumers can reach it: the Python bindings

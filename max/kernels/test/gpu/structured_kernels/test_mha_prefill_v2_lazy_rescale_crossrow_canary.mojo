@@ -56,7 +56,7 @@ from std.testing import assert_equal, assert_true
 
 from layout import TileTensor
 from layout.coord import Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from max.gpu.host import DeviceContext
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (

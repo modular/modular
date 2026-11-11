@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registration_draft import DraftRegistration
 from max.pipelines.speculative import SpeculativeConfig

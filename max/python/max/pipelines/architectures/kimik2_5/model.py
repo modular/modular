@@ -32,14 +32,11 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph import Module as GraphModule
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    KVCacheParams,
-)
-from max.nn.legacy.quant_config import (
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, KVCacheParams
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -47,7 +44,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

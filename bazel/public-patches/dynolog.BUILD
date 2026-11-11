@@ -2,9 +2,11 @@
 #
 # dynolog is pulled ONLY for its header-only IPC fabric (Endpoint.h, Utils.h,
 # FabricManager.h), which libkineto's IpcFabricConfigClient / DaemonConfigLoader
-# include when built with ENABLE_IPC_FABRIC. libkineto's own source tarball omits
-# these because upstream keeps dynolog as a git submodule, and source archives do
-# not include submodules. None of dynolog's daemon / CLI / Rust code is built here.
+# include when built with ENABLE_IPC_FABRIC. We don't use libkineto's vendored
+# copy (dynolog d2ffe0a, under libkineto/third_party/dynolog_headers at our
+# pin): it is older than this pin, which is the one validated against Dynolog
+# 0.6.0, and pytorch main has moved it out of the libkineto subtree.
+# None of dynolog's daemon / CLI / Rust code is built here.
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
@@ -17,10 +19,7 @@ cc_library(
         ".",
         "dynolog/src/ipcfabric",
     ],
-    target_compatible_with = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
+    target_compatible_with = ["@platforms//os:linux"],
     # Only libkineto consumes these headers; cross-repo visibility works
     # the same way libkineto.BUILD already references @fmt.
     visibility = ["@libkineto//:__pkg__"],

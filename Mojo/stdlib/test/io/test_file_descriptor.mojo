@@ -34,9 +34,9 @@ from std.testing import (
 
 
 def test_value_is_c_int() raises:
-    assert_true(type_of(stdout._value) == c_int)
-    assert_equal(stdout._value, 1)
-    assert_equal(stderr._value, 2)
+    assert_true(type_of(stdout._raw()) == c_int)
+    assert_equal(stdout._raw(), 1)
+    assert_equal(stderr._raw(), 2)
     assert_equal(RawFileDescriptor()._value, 1)
 
 
@@ -174,7 +174,7 @@ def test_from_borrowed_duplicates_fd() raises:
             n += got
     finally:
         reader.close()
-    var text = String(StringSlice(unsafe_from_utf8=Span(buffer)[:n]))
+    var text = String(StringSpan(unsafe_from_utf8=Span(buffer)[:n]))
     assert_true(distinct)
     assert_true(owner_closed)
     assert_equal(text, "ab")
@@ -183,17 +183,15 @@ def test_from_borrowed_duplicates_fd() raises:
 def test_from_borrowed_sets_close_on_exec() raises:
     var read_fd, write_fd = _make_pipe()
     var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
-    # The copy takes the lowest free descriptor from 3 up.
-    var copy_fd: c_int = 3
-    while _is_open(copy_fd):
-        copy_fd += 1
     var duplicate: FileDescriptor
     try:
         duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
     except e:
         owner^.close()
         raise e
-    var flags = fcntl(copy_fd, FcntlCommands.F_GETFD)
+    # Ask the copy for its number: the runtime's worker threads can open and
+    # close descriptors meanwhile, so the next free number can't be predicted.
+    var flags = fcntl(duplicate._raw(), FcntlCommands.F_GETFD)
     try:
         duplicate^.close()
     finally:

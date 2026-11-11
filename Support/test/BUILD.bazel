@@ -15,6 +15,7 @@ modular_shared_library(
     name = "binary_id_shared_library",
     srcs = ["binary_id_shared_library.cpp"],
     hdrs = ["binary_id_shared_library.h"],
+    dynamic_deps = ["@llvm-project//llvm:LLVM"],
     includes = [],
     deps = [
         "//Support:BinaryID",
@@ -25,8 +26,9 @@ modular_shared_library(
 modular_cc_binary(
     name = "binary_id_binary",
     srcs = ["binary_id_binary.cpp"],
+    dynamic_deps = [":binary_id_shared_library"],
     deps = [
-        ":binary_id_shared_library",
+        ":binary_id_shared_library.static",
         "//Support:BinaryID",
     ],
 )

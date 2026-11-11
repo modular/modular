@@ -30,7 +30,6 @@ from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
-from std.utils.index import Index, IndexList
 
 from .config import MatmulConfig as MatmulConfigSM90
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
@@ -734,7 +733,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
                 config=base_config,
                 schedule=MatmulSchedule.NONE,
                 swapAB=False,
-            ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn_normal, ctx)
+            ]((M, N), a_tensor, b_tensor, epilogue_fn_normal, ctx)
         else:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
@@ -766,7 +765,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
             config=base_config_swapAB,
             schedule=MatmulSchedule.NONE,
             swapAB=True,
-        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn_swapAB, ctx)
+        ]((M, N), a_tensor, b_tensor, epilogue_fn_swapAB, ctx)
     else:
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

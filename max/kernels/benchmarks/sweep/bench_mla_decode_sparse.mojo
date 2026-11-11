@@ -78,6 +78,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig
 from std.benchmark import BenchId
+from nn.attention.gpu.mla import AMDMLA, MLAKernels, SM100MLA
 
 comptime fp8 = DType.float8_e4m3fn
 comptime KV_LATENT_DIM = 512
@@ -187,10 +188,11 @@ def _run_name[
 
 
 @inline(.always)
-def _decode[
+def _decode_with[
     cache_t: KVCacheT,
     q_dtype: DType,
     //,
+    kernels: MLAKernels,
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[q_dtype, address_space=.GENERIC, ...],
@@ -211,6 +213,7 @@ def _decode[
         config=MHAConfig[q_dtype](NUM_HEADS, Q_DEPTH),
         ragged=True,
         sparse=True,
+        kernels=kernels,
     ](
         output,
         q,
@@ -225,6 +228,51 @@ def _decode[
         logical_indices=logical,
         num_partitions_in=forced_np,
     )
+
+
+def _decode[
+    cache_t: KVCacheT,
+    q_dtype: DType,
+    //,
+](
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    cache: cache_t,
+    row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    scalars: TileTensor[.int64, address_space=.GENERIC, ...],
+    indices: MutPointer[Int32, MutAnyOrigin],
+    top_k: Int,
+    logical: OptionalReg[MutPointer[Int32, MutAnyOrigin]],
+    num_partitions: Int,
+    ctx: DeviceContext,
+) raises:
+    # The sparse decode sweep runs on SM100 and AMD only.
+    comptime if default_accelerator().is_amd_gpu():
+        _decode_with[AMDMLA](
+            output,
+            q,
+            cache,
+            row_offsets,
+            scalars,
+            indices,
+            top_k,
+            logical,
+            num_partitions,
+            ctx,
+        )
+    else:
+        _decode_with[SM100MLA](
+            output,
+            q,
+            cache,
+            row_offsets,
+            scalars,
+            indices,
+            top_k,
+            logical,
+            num_partitions,
+            ctx,
+        )
 
 
 def touched_bytes(

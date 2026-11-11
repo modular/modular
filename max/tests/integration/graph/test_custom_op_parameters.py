@@ -132,3 +132,27 @@ def test_custom_op_with_static_string_parameter(
 
     execution_output = capfd.readouterr()
     assert expected_string in execution_output.out
+
+
+def test_declarative_custom_op_with_int_parameter(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """A parameter a declarative kernel declares on `execute_device` passes
+    the custom op's verification, which runs as the graph is built."""
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_declarative_op_with_int_parameter",
+        input_types=[tensor_type],
+        output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+    with graph:
+        graph.output(
+            ops.custom(
+                "declarative_op_with_int_parameter",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0]],
+                out_types=[tensor_type],
+                parameters={"IntParameter": 42},
+            )[0]
+        )

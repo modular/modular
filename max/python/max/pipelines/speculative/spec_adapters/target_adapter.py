@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 if TYPE_CHECKING:
@@ -69,15 +69,6 @@ def _default_export_contract(
     del input_types, structured_output
 
 
-def _default_tail_buffers(tail: Sequence[object]) -> list[Buffer]:
-    """Returns nothing.
-
-    The graph declares every KV child among its KV inputs.
-    """
-    del tail
-    return []
-
-
 def _default_check(
     speculative: SpeculativeConfig, structured_output: bool
 ) -> None:
@@ -89,6 +80,14 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     """Returns no inputs past the canonical tail."""
     del target_config
     return []
+
+
+def _default_trailing_input_tree(
+    target_config: Any,
+) -> Mapping[str, object] | None:
+    """Names no inputs past the canonical tail."""
+    del target_config
+    return None
 
 
 def _default_trailing_buffers(
@@ -232,9 +231,6 @@ class TargetAdapter:
     """The KV leaf a driver dispatches the target over; ``""`` for a target
     with one leaf."""
 
-    tail_kv: str | None = None
-    """The KV child the graph declares past the canonical tail, if any."""
-
     verify: Callable[[Module, Any, ReturnHiddenStates, Any], VerifyFn]
     """Returns how a built target module verifies under a driver."""
 
@@ -254,11 +250,6 @@ class TargetAdapter:
     )
     """Returns the record an engine checks the export's inputs against."""
 
-    tail_buffers: Callable[[Sequence[Any]], list[Buffer]] = (
-        _default_tail_buffers
-    )
-    """Returns the inputs of the ``tail_kv`` child, in declared order."""
-
     check: Callable[[SpeculativeConfig, bool], None] = _default_check
     """Raises if the target can't verify under the speculative config."""
 
@@ -270,6 +261,11 @@ class TargetAdapter:
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""
 
+    verify_commits_long_rows: bool = False
+    """Whether the target's verify commits a row longer than one token and
+    its drafts, at the row's last real token, in every recurrent leaf it
+    keeps. An engine may then mix a prompt row into a verify step."""
+
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
     every device count, for an engine that binds them there. ``None``
@@ -279,6 +275,12 @@ class TargetAdapter:
         _default_trailing_input_types
     )
     """Returns the inputs the target's call takes past the canonical tail."""
+
+    trailing_input_tree: Callable[[Any], Mapping[str, object] | None] = (
+        _default_trailing_input_tree
+    )
+    """Returns the groups an exported graph names :attr:`trailing_input_types`
+    by, in order; ``None`` leaves the graph's inputs unnamed."""
 
     trailing_buffers: Callable[
         [Any, Sequence[TextContext], Sequence[Device]], list[Buffer]

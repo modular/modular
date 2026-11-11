@@ -98,6 +98,30 @@ def test_mega_ffn_nvfp4_fusion_fires_in_mo_ir(tmp_path: Path) -> None:
     _assert_fused(*_compile_ir(graph, tmp_path))
 
 
+def test_mega_ffn_nvfp4_dynamic_claim_fuses_in_mo_ir(tmp_path: Path) -> None:
+    """Checks dynamic fusion and forwarding of the scheduling opt-in."""
+    graph = build_graph(
+        E,
+        "rows",
+        D,
+        K1,
+        N2,
+        "scale_rows",
+        DeviceRef.GPU(),
+        DeviceRef.CPU(),
+        max_total_m=E * 256,
+        prefill_dynamic_claim=True,
+    )
+    raw_mo, post_mo = _compile_ir(graph, tmp_path)
+    _assert_fused(raw_mo, post_mo)
+    fused_op = next(
+        line
+        for line in post_mo.splitlines()
+        if "= mo.composite.mega_ffn_nvfp4(" in line
+    )
+    assert "prefill_dynamic_claim = true" in fused_op
+
+
 def test_mega_ffn_nvfp4_fusion_keeps_row_scales(tmp_path: Path) -> None:
     """The gate-up leg's per-row input scales survive onto the fused op."""
     graph = build_graph(

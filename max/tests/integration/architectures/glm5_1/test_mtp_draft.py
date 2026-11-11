@@ -23,7 +23,7 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import Weights
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_1_modulev3 import mtp
 from max.pipelines.architectures.glm5_1_modulev3.arch import (
     glm5_1_modulev3_arch,

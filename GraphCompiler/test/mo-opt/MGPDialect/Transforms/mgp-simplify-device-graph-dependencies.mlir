@@ -3,7 +3,7 @@
 // A direct edge implied one hop away: %na -> %nb -> %nc, so %na's direct edge
 // to %nc is redundant.
 // CHECK-LABEL: mgp.model @triangle
-mgp.model @triangle : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @triangle devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -37,7 +37,7 @@ mgp.model @triangle : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp
 // Reachability is transitive across multiple hops: %nd is implied through
 // %nb -> %nc -> %nd.
 // CHECK-LABEL: mgp.model @multi_hop
-mgp.model @multi_hop : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @multi_hop devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -77,7 +77,7 @@ mgp.model @multi_hop : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mg
 // Diamond: %nd is implied through both %nb and %nc; both of those edges
 // survive because neither reaches the other.
 // CHECK-LABEL: mgp.model @diamond
-mgp.model @diamond : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @diamond devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -117,7 +117,7 @@ mgp.model @diamond : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.
 // Negative case: independent producers imply nothing about each other, so
 // every edge survives.
 // CHECK-LABEL: mgp.model @independent
-mgp.model @independent : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @independent devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -152,7 +152,7 @@ mgp.model @independent : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !
 // (empty) node still carries its dependency edges at runtime, so %ny remains
 // implied through %nx.
 // CHECK-LABEL: mgp.model @through_empty
-mgp.model @through_empty : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @through_empty devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>

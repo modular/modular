@@ -49,7 +49,7 @@ def run_exp_approx_test[
         )
 
     # Launch elementwise kernel on GPU (width is compile-time parameter)
-    elementwise[simd_width, target="gpu"](func, Coord(length), ctx)
+    elementwise[simd_width](func, Coord(length), ctx)
 
     # Validate results
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:

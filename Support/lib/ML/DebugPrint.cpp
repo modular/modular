@@ -34,6 +34,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <numeric>
 #include <string>
 
@@ -344,12 +345,18 @@ ErrorOrSuccess DebugTensorPrintOptions::printTensor(const void *buffer,
 
   if (style != ResultOutputStyle::kBinary &&
       style != ResultOutputStyle::kBinaryMaxCheckpoint) {
-    auto &os = llvm::outs();
+    // Ops print from several threads, and llvm::outs() is one unsynchronized
+    // buffer for the whole process, so each tensor goes out in a single write.
+    std::string text;
+    llvm::raw_string_ostream os(text);
     if (!label.empty())
       os << label << " = ";
     if (auto errOr = M::printTensor(os, buffer, spec, style, precision))
       return errOr.takeError();
-    os.flush();
+    static std::mutex outsMutex;
+    std::lock_guard<std::mutex> lock(outsMutex);
+    llvm::outs() << text;
+    llvm::outs().flush();
     return success();
   }
 

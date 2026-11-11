@@ -18,7 +18,7 @@ package it scans for registrations.
 
 Each is registered under its MO op's name. Those whose MO op still has a
 hand-written kernel carry a temporary `.tmp` suffix (e.g.
-`mo.reduce.mul.tmp`), dropped when the reduction moves to the graph
+`reduction.mul.tmp`), dropped when the reduction moves to the graph
 compiler.
 """
 
@@ -37,7 +37,7 @@ from algorithm.reduce_op import ReduceOp, Reducer
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.logsumexp.tmp")
+@extensibility.register("reduction.logsumexp.tmp")
 struct OnlineLogSumExp[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -236,7 +236,7 @@ struct OnlineLogSumExp[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.mean_var.tmp")
+@extensibility.register("reduction.mean_var.tmp")
 struct Welford[
     dtype: DType,
     W: Int = 1,
@@ -816,7 +816,7 @@ struct ReduceMin[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.mul.tmp")
+@extensibility.register("reduction.mul.tmp")
 struct ReduceProduct[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -939,7 +939,7 @@ struct ReduceProduct[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.reduce_min_and_max.tmp")
+@extensibility.register("reduction.min_and_max.tmp")
 struct MinMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -1112,7 +1112,7 @@ def _argmin_identity[dtype: DType]() -> Scalar[dtype]:
         return Scalar[dtype].MAX
 
 
-@extensibility.register("mo.reduce.arg_max.tmp")
+@extensibility.register("reduction.arg_max.tmp")
 struct ArgMax[
     dtype: DType,
     W: Int = simd_width_of[dtype](),
@@ -1313,7 +1313,7 @@ struct ArgMax[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.reduce.arg_min.tmp")
+@extensibility.register("reduction.arg_min.tmp")
 struct ArgMin[
     dtype: DType,
     W: Int = simd_width_of[dtype](),

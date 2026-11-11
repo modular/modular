@@ -13,7 +13,7 @@
 
 import extensibility
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
@@ -23,27 +23,31 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host.info import is_cpu
 from std.memory import unsafe_stack_allocation
 
-from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import TileTensor
 
 from std.utils import StaticTuple
+from std.utils.coord import Coord
 
 comptime bin_width = Int(UInt8.MAX)
 
 
-def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
-    for i in range(output.dim_size(0)):
-        output[i] = 0
+def _histogram_cpu(
+    output: TileTensor[mut=True, .int64, ...], input: TileTensor[.uint8, ...]
+):
+    for i in range(Int(output.dim[0]())):
+        output.store[width=1](Coord(i), 0)
 
-    for i in range(input.dim_size(0)):
-        output[Int(input[i])] += 1
+    for i in range(Int(input.dim[0]())):
+        var bin = Coord(Int(input.load[width=1](Coord(i))))
+        output.store[width=1](bin, output.load[width=1](bin) + 1)
 
 
 def _histogram_gpu(
-    output: ManagedTensorSlice,
-    input: ManagedTensorSlice,
+    output: TileTensor[mut=True, .int64, ...],
+    input: TileTensor[.uint8, ...],
     ctx_ptr: DeviceContext,
 ) raises:
     comptime bin_width = Int(UInt8.MAX) + 1
@@ -55,8 +59,8 @@ def _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
     def kernel(
-        output: Pointer[Int64, MutAnyOrigin],
-        input: Pointer[UInt8, MutAnyOrigin],
+        output: Pointer[Int64, MutUntrackedOrigin],
+        input: Pointer[UInt8, ImmUntrackedOrigin],
         n_dev: Int32,
     ):
         var n = Int(n_dev)
@@ -90,21 +94,23 @@ def _histogram_gpu(
             shared_mem[unsafe_offset=thread_idx.x],
         )
 
-    var n = input.dim_size(0)
+    var n = Int(input.dim[0]())
 
     var grid_dim = ceildiv(n, block_dim)
 
     var ctx = ctx_ptr
 
-    var output_device = output.to_device_buffer(ctx)
-    var input_device = input.to_device_buffer(ctx)
-
     # Zero initialize the output buffer
-    ctx.enqueue_memset(output_device, 0)
+    ctx.enqueue_memset(
+        DeviceBuffer(
+            ctx, output.unsafe_ptr(), Int(output.dim[0]()), owning=False
+        ),
+        0,
+    )
 
     ctx.enqueue_function[kernel](
-        output_device,
-        input_device,
+        output.unsafe_ptr(),
+        input.unsafe_ptr(),
         Int32(n),
         block_dim=block_dim,
         grid_dim=grid_dim,
@@ -114,14 +120,19 @@ def _histogram_gpu(
 @extensibility.register("histogram")
 struct Histogram:
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
-        output: OutputTensor[dtype=.int64, rank=1, ...],
-        input: InputTensor[dtype=.uint8, rank=1, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime if is_cpu[target]():
-            _histogram_cpu(output, input)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 1
+        comptime assert type_of(input).rank == 1
+        var output_tile = output.to_tile_tensor[.int64]()
+        var input_tile = input.to_tile_tensor[.uint8]().as_imm()
+
+        comptime if ctx.target.is_cpu():
+            _histogram_cpu(output_tile, input_tile)
         else:
-            _histogram_gpu(output, input, ctx)
+            _histogram_gpu(output_tile, input_tile, ctx)

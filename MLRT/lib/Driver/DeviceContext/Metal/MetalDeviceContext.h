@@ -21,6 +21,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <functional>
@@ -52,7 +53,7 @@ using MetalDeviceTimerRef = RCRef<MetalDeviceTimer>;
 using MetalModuleFunctionRef = RCRef<const MetalModuleFunction>;
 using MetalDeviceFunctionRef = RCRef<MetalDeviceFunction>;
 
-class MetalDevice : public Device {
+class MODULAR_CXX_EXPORT MetalDevice : public Device {
 public:
   static constexpr API api = Device::metalAPI;
 
@@ -105,7 +106,6 @@ public:
   static ErrorOr<int> numberOfGPUs();
 
   ErrorOr<const char *> getArchName() const override;
-  static ErrorOr<std::string> getArchName(MTL::Device *d = nullptr);
 
   DLDevice getDLDevice(bool pinned) const override {
     // Metal has no pinned-memory DLPack variant; pinned buffers are plain CPU.
@@ -142,8 +142,8 @@ private:
   mutable DriverVersion driverVersion_;
 
   // Lazily-populated cache of the architecture name string returned by the
-  // virtual `getArchName() const` override. The static `getArchName(MTL::Device
-  // *)` form is expensive (autorelease pool + MTL device introspection + Metal4
+  // virtual `getArchName() const` override. `getMetalArchName(MTL::Device *)`
+  // is expensive (autorelease pool + MTL device introspection + Metal4
   // feature detection), so the cache is computed on first call rather than at
   // construction. `mutable` because the override is `const`.
   mutable std::string arch_;
@@ -196,7 +196,7 @@ private:
   std::vector<MetalQueue> queues_;
 };
 
-class MetalDeviceContext : public DeviceContext {
+class MODULAR_CXX_EXPORT MetalDeviceContext : public DeviceContext {
 public:
   MetalDeviceContext(MetalDevice &device,
                      NS::SharedPtr<MTL::CommandQueue> commandQueue);
@@ -242,6 +242,13 @@ public:
   ErrorOrSuccess enqueueWaitFor(DeviceEvent &event) override;
   ErrorOrSuccess enqueueWaitFor(DeviceContext &ctx) override;
   ErrorOr<DeviceEventRef> eventCreate(bool enableTiming) override;
+  ErrorOr<CompletionFlagRef> allocateCompletionFlag() override;
+  /// Lets a completion flag report a misuse on the next call into this
+  /// context.
+  void recordPendingError(Error err) { setPendingError(std::move(err)); }
+  /// Holds later work on this context's queue until `event` reaches `target`.
+  ErrorOrSuccess enqueueWaitOnSharedEvent(MTL::SharedEvent *event,
+                                          uint64_t target);
 
   // Timer management
   ErrorOr<DeviceTimerRef> startTimer() override;
@@ -337,6 +344,8 @@ public:
       uint32_t argCount = 0, const size_t *argSizes = nullptr) const override;
   ErrorOrSuccess eventRecord(const DeviceEvent &event) const override;
   ErrorOrSuccess enqueueWaitForEvent(const DeviceEvent &event) const override;
+  ErrorOrSuccess enqueueWaitOnFlag(const CompletionFlag &flag,
+                                   uint64_t value) const override;
 
   // The MTLCommandQueue.
   void *ptr() const override;

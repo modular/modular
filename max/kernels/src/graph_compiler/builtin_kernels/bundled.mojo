@@ -166,7 +166,6 @@ struct BundledAllReduceSum:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
         peer_rank: Optional[Int] = None,
@@ -187,7 +186,6 @@ struct BundledAllReduceSum:
         Parameters:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             group_size: Number of contiguous devices per independent
                 allreduce group; 0 means one full-world group.
@@ -222,7 +220,6 @@ struct BundledAllReduceSum:
     def build_graph[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
         peer_rank: Optional[Int] = None,
@@ -243,7 +240,6 @@ struct BundledAllReduceSum:
         Parameters:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             group_size: Number of contiguous devices per independent
                 allreduce group; 0 means one full-world group.
@@ -326,7 +322,6 @@ struct BundledBroadcast:
         dtype: DType,
         rank: Int,
         root: Int,
-        target: StaticString,
         _trace_name: StaticString,
         peer_rank: Optional[Int] = None,
     ](
@@ -343,7 +338,6 @@ struct BundledBroadcast:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
             root: Index of the root device in the signal buffer list.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             peer_rank: THIS GPU's index in the signal buffer list; `None` takes it from the device id.
 
@@ -366,7 +360,6 @@ struct BundledBroadcast:
         dtype: DType,
         rank: Int,
         root: Int,
-        target: StaticString,
         _trace_name: StaticString,
         peer_rank: Optional[Int] = None,
     ](
@@ -383,7 +376,6 @@ struct BundledBroadcast:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
             root: Index of the root device in the signal buffer list.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             peer_rank: THIS GPU's index in the signal buffer list; `None` takes it from the device id.
 
@@ -473,7 +465,6 @@ struct BundledAllGather:
     def execute[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         _trace_name: StaticString,
         peer_rank: Optional[Int] = None,
     ](
@@ -489,7 +480,6 @@ struct BundledAllGather:
         Parameters:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             peer_rank: THIS GPU's index in `inputs` and `signal_buffers`;
                 `None` takes it from the device id.
@@ -518,7 +508,6 @@ struct BundledAllGather:
     def build_graph[
         dtype: DType,
         rank: Int,
-        target: StaticString,
         _trace_name: StaticString,
         peer_rank: Optional[Int] = None,
     ](
@@ -534,7 +523,6 @@ struct BundledAllGather:
         Parameters:
             dtype: Element type of the input and output tensors.
             rank: Number of dimensions in the input and output tensors.
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             peer_rank: THIS GPU's index in `inputs` and `signal_buffers`;
                 `None` takes it from the device id.
@@ -563,7 +551,6 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
-        target: StaticString,
         _trace_name: StaticString,
         epsilon: Float32,
         weight_offset: Float32,
@@ -589,7 +576,6 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         Parameters:
             Ins: The element types of `inputs` (inferred).
             Sigs: The element types of `signal_buffers` (inferred).
-            target: Target device identifier for code generation.
             _trace_name: Trace name used for profiling and debugging.
             epsilon: RMSNorm epsilon scalar.
             weight_offset: RMSNorm weight offset scalar.

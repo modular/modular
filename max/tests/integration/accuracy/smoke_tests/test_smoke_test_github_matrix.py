@@ -24,7 +24,9 @@ def _is_valid_matrix_entry(line: str) -> bool:
     if not (code.startswith('    "') and code.endswith(",") and '": ' in code):
         return False
     tags = code.split('": ', 1)[1].removesuffix(",").split(" | ")
-    leading = [t for t in ("NIGHTLY", "VARIANT", "PRIVATE") if t in tags]
+    leading = [
+        t for t in ("NIGHTLY", "VARIANT", "PRIVATE", "MACH") if t in tags
+    ]
     return tags[: len(leading)] == leading
 
 
@@ -60,8 +62,8 @@ def test_matrix_entries_are_one_line_with_tags_in_order() -> None:
         if not _is_valid_matrix_entry(line):
             bad.append(line)
     assert not bad, (
-        "Matrix entries must be exactly one line, with NIGHTLY, VARIANT and "
-        "PRIVATE, if present, in that order before the HW tags:\n"
+        "Matrix entries must be exactly one line, with NIGHTLY, VARIANT, "
+        "PRIVATE and MACH, if present, in that order before the HW tags:\n"
         + "\n".join(bad)
     )
 
@@ -72,6 +74,7 @@ def test_variants_have_recipes() -> None:
         for k, tags in smoke_test_github_matrix.MODELS.items()
         if "VARIANT" in tags
         and "PRIVATE" not in tags
+        and "MACH" not in tags
         and k not in smoke_test.MODEL_RECIPES
     ]
     assert not missing, (
@@ -118,7 +121,6 @@ def test_nightly_8xb200_pinned() -> None:
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
         "tencent/Hy4-preview-FP8",
         "tencent/Hy4-preview-FP8__mtp",
-        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
@@ -132,6 +134,8 @@ def test_nightly_4xb200_pinned() -> None:
     scheduled = {job["model"] for job in json.loads(result.output)["include"]}
     assert scheduled == {
         "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        "reflection/Beam-1.0-501B-A23B-NVFP4",
+        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
@@ -144,12 +148,6 @@ def test_8xmi355_stays_opt_in() -> None:
     """
     expected = {
         "max-ci": {
-            "MiniMaxAI/MiniMax-M3-MXFP8",
-            "modularai/MiniMax-M3-MXFP6",
-            "moonshotai/Kimi-K3",
-            "zai-org/GLM-5.3__fp8_tpep_mi355",
-        },
-        "max": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
             "moonshotai/Kimi-K3",
@@ -176,3 +174,31 @@ def test_8xmi355_stays_opt_in() -> None:
             job["model"] for job in json.loads(result.output)["include"]
         }
         assert scheduled == models, f"{framework} on 8xMI355"
+
+
+def test_mach_models_run_only_on_mach() -> None:
+    """A MACH model is scheduled for mach-ci and for no other framework."""
+
+    def scheduled(framework: str) -> set[str]:
+        result = CliRunner().invoke(
+            smoke_test_github_matrix.main,
+            ["--framework", framework, "--tier", "nightly", "--run-on-8xb200"],
+        )
+        assert result.exit_code == 0
+        return {job["model"] for job in json.loads(result.output)["include"]}
+
+    mach_only = {
+        m
+        for m, tags in smoke_test_github_matrix.MODELS.items()
+        if "MACH" in tags and "NIGHTLY" in tags and "8xB200" in tags
+    }
+    # Pins the Mach-only nightly 8xB200 set; widen it only deliberately.
+    assert mach_only == {
+        "RadixArk/GLM-5.3-NVFP4__dcp4_mtp",
+        "RadixArk/GLM-5.3-NVFP4__mtp_dpep",
+        "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
+        "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
+    }
+    assert mach_only <= scheduled("mach-ci")
+    for framework in ("max-ci", "vllm", "sglang"):
+        assert not mach_only & scheduled(framework), framework

@@ -13,7 +13,7 @@
 """Online softmax for gfx950 attention kernels.
 
 Score, warp_scratch, and output are TileTensors. Warp + fragment geometry is
-expressed via TileLayout / `Coord`: `WarpLayoutT` is the col-major
+expressed via Layout / `Coord`: `WarpLayoutT` is the col-major
 (warp_rows, warp_cols) lane layout, and `FragmentLayoutT` describes the
 per-lane MMA fragment shape. All lane decomposition / stride queries go
 through `Layout` methods rather than hand-rolled integer arithmetic.
@@ -26,7 +26,7 @@ from std.bit import log2_floor
 from max.gpu import lane_id, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from layout import TileTensor, row_major, stack_allocation
-from layout.tile_layout import col_major
+from layout.layout import col_major
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 
@@ -66,7 +66,7 @@ struct Softmax[
     """
 
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
-    # TileLayout. `static_shape` / `static_stride` expose geometry; `idx2crd`
+    # Layout. `static_shape` / `static_stride` expose geometry; `idx2crd`
     # decomposes a lane index into (lane_row, lane_col).
     comptime _warp_rows = 32 if Self.mma_m == 32 else 16
     comptime _warp_cols = 2 if Self.mma_m == 32 else 4

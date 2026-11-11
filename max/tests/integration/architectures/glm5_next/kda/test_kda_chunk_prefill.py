@@ -22,7 +22,8 @@ a chunked prefill that resumes a prefix-cache checkpoint is covered too.
 On gfx950 the chunk op takes bf16 q/k/v and output, so the layer casts at the
 op boundary while decode stays float32. The AMD cases grade that cast chunk
 path against float32 decode at one TP2 rank's 32 heads, out to 80K tokens of
-carried state.
+carried state. On both, the layer's routed core, prefill then decode, is
+graded against the same core built decode-only.
 """
 
 from __future__ import annotations
@@ -33,14 +34,22 @@ import max.driver as md
 import numpy as np
 import pytest
 import torch
-from max.driver import accelerator_api, accelerator_architecture_name
+from max import functional as F
+from max.driver import CPU, accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.state_space import kda_chunk, kda_decode
-from max.pipelines.architectures.glm5_next_modulev3.layers import (
-    kda as modulev3_kda,
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
 )
+from max.nn._graph_ops.state_space import kda_chunk, kda_decode
+from max.pipelines.architectures.glm5_next.layers import kda
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 HEADS = 8
 HEAD_DIM = 128
@@ -122,15 +131,9 @@ def _load(
 
 
 def _run(
-    session: InferenceSession,
-    chunked: bool,
-    inputs: list[np.ndarray],
-    pool: np.ndarray,
+    model: Model, inputs: list[np.ndarray], pool: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Runs one op over ``inputs``, returning its output and the mutated pool."""
-    model = _load(
-        session, chunked, inputs[0].shape[0], inputs[-1].shape[0], pool.shape
-    )
     device = model.input_devices[0]
     pool_buf = md.Buffer.from_numpy(pool.copy()).to(device)
     args = [md.Buffer.from_numpy(a).to(device) for a in inputs]
@@ -189,8 +192,12 @@ def test_chunk_matches_decode(seq_lens: list[int]) -> None:
         cu_seqlens,
         state_indices,
     ]
-    chunk_out, chunk_pool = _run(session, True, inputs, pool)
-    decode_out, decode_pool = _run(session, False, inputs, pool)
+    chunk_model, decode_model = [
+        _load(session, chunked, total_t, batch, pool.shape)
+        for chunked in (True, False)
+    ]
+    chunk_out, chunk_pool = _run(chunk_model, inputs, pool)
+    decode_out, decode_pool = _run(decode_model, inputs, pool)
 
     assert np.all(np.isfinite(chunk_out))
     for b in range(batch):
@@ -709,12 +716,12 @@ def test_amd_bf16_chunk_delta_rule_stress(
         assert value <= tol, f"{tag} {what} {value:.3e} > {tol:.1e}"
 
 
-MODULEV3_CONV_KERNEL = 4
-MODULEV3_DECODE_STEPS = 8
+CORE_CONV_KERNEL = 4
+CORE_DECODE_STEPS = 8
 
 
-def _load_modulev3_core(session: InferenceSession, routed: bool) -> Model:
-    """Compiles ModuleV3's per-device KDA core for one TP2 rank.
+def _load_core(session: InferenceSession, routed: bool) -> Model:
+    """Compiles the layer's per-device KDA core for one TP2 rank.
 
     ``routed=False`` builds it as if ``kda_chunk`` were unservable, so every
     call takes float32 ``kda_decode``.
@@ -723,99 +730,104 @@ def _load_modulev3_core(session: InferenceSession, routed: bool) -> Model:
     f32 = DType.float32
     qkv = AMD_HEADS * HEAD_DIM
     act = TensorType(f32, ["total_tokens", qkv], device=gpu)
-    conv = TensorType(f32, [qkv, MODULEV3_CONV_KERNEL], device=gpu)
+    conv = TensorType(f32, [qkv, CORE_CONV_KERNEL], device=gpu)
     rows = TensorType(DType.int32, [1, "batch"], device=gpu)
     with pytest.MonkeyPatch.context() as patch:
         if not routed:
-            patch.setattr(
-                modulev3_kda, "kda_chunk_servable", lambda *args: False
-            )
-        with Graph(
-            f"glm_kda_modulev3_core_{'routed' if routed else 'decode'}",
-            input_types=[
-                act,
-                act,
-                act,
-                conv,
-                conv,
-                conv,
-                BufferType(
-                    f32,
-                    [AMD_SLOTS, 3 * qkv, MODULEV3_CONV_KERNEL - 1],
-                    device=gpu,
-                ),
-                rows,
-                act,
-                TensorType(f32, ["total_tokens", AMD_HEADS], device=gpu),
-                act,
-                TensorType(f32, [AMD_HEADS], device=gpu),
-                TensorType(f32, [qkv], device=gpu),
-                TensorType(f32, [HEAD_DIM], device=gpu),
-                BufferType(
-                    f32, [AMD_SLOTS, AMD_HEADS, HEAD_DIM, HEAD_DIM], device=gpu
-                ),
-                rows,
-                TensorType(DType.uint32, ["batch_plus_one"], device=gpu),
-            ],
-        ) as graph:
-            i = graph.inputs
-            graph.output(
-                modulev3_kda._kda_core_graph(
-                    q=i[0].tensor,
-                    k=i[1].tensor,
-                    v=i[2].tensor,
-                    q_conv=i[3].tensor,
-                    k_conv=i[4].tensor,
-                    v_conv=i[5].tensor,
-                    conv_pool=i[6].buffer,
-                    conv_rows=i[7].tensor,
-                    raw_gate=i[8].tensor,
-                    beta_logits=i[9].tensor,
-                    output_gate=i[10].tensor,
-                    a_log=i[11].tensor,
-                    dt_bias=i[12].tensor,
-                    norm_weight=i[13].tensor,
-                    recurrent_pool=i[14].buffer,
-                    recurrent_rows=i[15].tensor,
-                    input_row_offsets=i[16].tensor,
-                    layer=ops.constant(0, DType.int64, device=DeviceRef.CPU()),
-                    head_dim=HEAD_DIM,
-                    norm_eps=1e-5,
-                    gate_mode="safe",
+            patch.setattr(kda, "kda_chunk_servable", lambda *args: False)
+        with (
+            Graph(
+                f"glm_kda_core_{'routed' if routed else 'decode'}",
+                input_types=[
+                    act,
+                    act,
+                    act,
+                    conv,
+                    conv,
+                    conv,
+                    BufferType(
+                        f32,
+                        [AMD_SLOTS, 3 * qkv, CORE_CONV_KERNEL - 1],
+                        device=gpu,
+                    ),
+                    rows,
+                    act,
+                    TensorType(f32, ["total_tokens", AMD_HEADS], device=gpu),
+                    act,
+                    TensorType(f32, [AMD_HEADS], device=gpu),
+                    TensorType(f32, [qkv], device=gpu),
+                    TensorType(f32, [HEAD_DIM], device=gpu),
+                    BufferType(
+                        f32,
+                        [AMD_SLOTS, AMD_HEADS, HEAD_DIM, HEAD_DIM],
+                        device=gpu,
+                    ),
+                    rows,
+                    TensorType(DType.uint32, ["batch_plus_one"], device=gpu),
+                ],
+            ) as graph,
+            ensure_context(),
+        ):
+            i = [
+                Tensor.from_graph_value(
+                    value.buffer
+                    if isinstance(value.type, BufferType)
+                    else value.tensor
                 )
+                for value in graph.inputs
+            ]
+            out = kda.kda_core(
+                qkv=F.concat([i[0], i[1], i[2]], axis=-1),
+                q_conv=i[3],
+                k_conv=i[4],
+                v_conv=i[5],
+                conv_pool=i[6],
+                conv_rows=i[7],
+                raw_gate=i[8],
+                beta_logits=i[9],
+                output_gate=i[10],
+                a_log=i[11],
+                dt_bias=i[12],
+                norm_weight=i[13],
+                recurrent_pool=i[14],
+                recurrent_rows=i[15],
+                input_row_offsets=i[16],
+                layer=F.constant(0, DType.int64, device=CPU()),
+                head_dim=HEAD_DIM,
+                norm_eps=1e-5,
+                gate_mode="safe",
             )
+            graph.output(TensorValue(out))
     return session.load(graph)
 
 
 @pytest.mark.skipif(
-    not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
+    not (_is_sm100_gpu() or _is_gfx950_gpu()),
+    reason="kda_chunk builds only for SM100+ and gfx950",
 )
-def test_amd_modulev3_core_prefill_matches_decode() -> None:
-    """ModuleV3's KDA core: routed prefill, then float32 decode steps.
+def test_core_prefill_matches_decode() -> None:
+    """The layer's KDA core: routed prefill, then float32 decode steps.
 
-    The routed graph's prefill takes the bf16 chunk path and is graded
-    against the same graph built decode-only, at the op's bounds, which the
-    gated norm's output meets in practice. Each graph
+    The routed graph's prefill takes the chunk path, float32 on SM100+ and
+    bf16 at the op boundary on gfx950, and is graded against the same graph
+    built decode-only, at the gfx950 bounds, which the gated norm's output
+    meets in practice. Each graph
     then decodes from the pools its own prefill left. One extra step from a
     shared pool must agree bit for bit, which shows decode is not routed.
     """
     session = InferenceSession(devices=[md.Accelerator()])
-    models = {
-        routed: _load_modulev3_core(session, routed) for routed in (True, False)
-    }
+    models = {routed: _load_core(session, routed) for routed in (True, False)}
     device = models[True].input_devices[0]
     rng = np.random.default_rng(2207)
     qkv = AMD_HEADS * HEAD_DIM
     state_indices = np.array([[4, 1]], dtype=np.int32)
 
-    weights = [
-        _normal(rng, qkv, MODULEV3_CONV_KERNEL, scale=0.5) for _ in range(3)
-    ]
+    weights = [_normal(rng, qkv, CORE_CONV_KERNEL, scale=0.5) for _ in range(3)]
     a_log = _normal(rng, AMD_HEADS, scale=0.5)
     dt_bias = _normal(rng, qkv, scale=0.5)
     norm_weight = 1.0 + _normal(rng, HEAD_DIM, scale=0.05)
     conv_pool = _normal(
-        rng, AMD_SLOTS, 3 * qkv, MODULEV3_CONV_KERNEL - 1, scale=0.5
+        rng, AMD_SLOTS, 3 * qkv, CORE_CONV_KERNEL - 1, scale=0.5
     )
     rec_pool = _normal(rng, AMD_SLOTS, AMD_HEADS, HEAD_DIM, HEAD_DIM, scale=0.1)
 
@@ -875,13 +887,13 @@ def test_amd_modulev3_core_prefill_matches_decode() -> None:
     for b, slot in enumerate(state_indices[0].tolist()):
         rows = slice(cu[b], cu[b + 1])
         grader.compare(
-            f"modulev3 prefill seq={b} output A-C",
+            f"core prefill seq={b} output A-C",
             out_c[rows],
             out_a[rows],
             AMD_OUTPUT_REL_L2_TOL,
         )
         grader.compare(
-            f"modulev3 prefill seq={b} state A-C",
+            f"core prefill seq={b} state A-C",
             pools_c[1][slot],
             pools_a[1][slot],
             AMD_STATE_REL_L2_TOL,
@@ -893,18 +905,18 @@ def test_amd_modulev3_core_prefill_matches_decode() -> None:
     np.testing.assert_array_equal(shared[True][1][1], shared[False][1][1])
 
     pools = {True: pools_c, False: pools_a}
-    for step in range(MODULEV3_DECODE_STEPS):
+    for step in range(CORE_DECODE_STEPS):
         results = both(decode, pools)
         pools = {routed: results[routed][1] for routed in (True, False)}
         grader.compare(
-            f"modulev3 decode step={step} output A-C",
+            f"core decode step={step} output A-C",
             results[True][0],
             results[False][0],
             AMD_OUTPUT_REL_L2_TOL,
         )
     for slot in state_indices[0].tolist():
         grader.compare(
-            f"modulev3 after decode slot={slot} state A-C",
+            f"core after decode slot={slot} state A-C",
             pools[True][1][slot],
             pools[False][1][slot],
             AMD_STATE_REL_L2_TOL,

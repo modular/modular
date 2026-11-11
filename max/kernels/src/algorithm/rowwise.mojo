@@ -52,7 +52,7 @@ def reduce_sum[...](shape, target="cpu", ctx=None) raises:
     # `num_phases=1` if the output collapses the axis (one value per
     # row); `num_phases>1` if the output keeps the input shape
     # (per-element emission along axis).
-    rowwise.launch[body, axis=..., simd_width=..., target=target, num_phases=1, ...](shape, ctx)
+    rowwise.launch[body, axis=..., simd_width=..., num_phases=1, ...](shape, ctx)
 ```
 
 The body never branches on `target` directly. `rowwise.reduce` /
@@ -108,7 +108,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu import barrier, syncwarp
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv, iota
 from std.memory import stack_allocation
@@ -286,7 +286,7 @@ def once[
 @inline(.always)
 def pick_simd_width[
     M: ReduceOp,
-    target: StaticString = "cpu",
+    target: CompilationTarget = CompilationTarget.current(),
     PER_THREAD_BUDGET: Int = 64,
     *Ts: DType,
 ]() -> Int:
@@ -313,7 +313,7 @@ def pick_simd_width[
     Parameters:
         M: The monoid type at `W=1` (`sizeof` proxy for the GPU
             storage-budget check).
-        target: `"cpu"` or `"gpu"` (anything non-CPU = GPU).
+        target: The compilation target the body launches on.
         PER_THREAD_BUDGET: GPU per-thread storage cap in bytes.
             Tunable; default 64B is an empirically reasonable
             register-pressure ceiling on B200-class GPUs.
@@ -325,19 +325,13 @@ def pick_simd_width[
         The SIMD width for the monoid `M[dtype, W]`, `simd_width=W` in
         `ContextParams`, and `tile_fn[ws]` calls. Always at least `1`.
     """
-    comptime is_gpu_target = (target != StaticString("cpu"))
+    comptime is_gpu_target = not target.is_cpu()
     # `simd_width_of` defaults to `_current_target()` (host = CPU),
     # giving wrong widths for a GPU-bound body. Resolve against the
     # actual launch target.
     var w_out = 1
     comptime for T in Ts:
-        comptime wi = (
-            simd_width_of[
-                T, get_gpu_target()
-            ]() if is_gpu_target else simd_width_of[
-                T, CompilationTarget.current()
-            ]()
-        )
+        comptime wi = simd_width_of[T, target]()
         if wi > w_out:
             w_out = wi
 
@@ -649,7 +643,6 @@ def launch[
     //,
     axis: Int,
     simd_width: Int,
-    target: StaticString,
     num_phases: Int,
     computationally_expensive: Bool = False,
     dtype_size: Int = 0,
@@ -670,8 +663,6 @@ def launch[
         axis: Axis being reduced.
         simd_width: SIMD width for tile dispatch. Bodies compute this
             via `rowwise.pick_simd_width[...]` and pass it directly.
-        target: `"cpu"` or `"gpu"` (anything non-CPU routes through the
-            GPU backend).
         num_phases: Total phase count — `1` for reduce-shaped bodies
             (the reduce's own result is the final output); `> 1` for
             normalize-shaped bodies (`num_phases - 1` dependent
@@ -710,7 +701,7 @@ def launch[
     comptime if num_phases == 1:
         # Reduce-shaped: output collapses the reduced axis, one value per
         # row. Terminal is `emit`.
-        comptime if is_cpu[target]():
+        comptime if ctx.T.target.is_cpu():
             _cpu_launch[
                 axis=axis,
                 simd_width=simd_width,
@@ -719,7 +710,7 @@ def launch[
                 supports_splitk=True,
             ](body, shape)
         else:
-            comptime assert is_gpu[target](), "unknown rowwise target"
+            comptime assert ctx.T.target.is_gpu(), "unknown rowwise target"
             # GPU launch geometry: no caller has ever needed a different
             # block/warp size than these, so they are internal to this
             # function rather than forwarded from the public signature.
@@ -740,7 +731,7 @@ def launch[
     else:
         # Normalize-shaped: output keeps the input shape, per-element
         # emission along the axis. Terminal is `elementwise`.
-        comptime if is_cpu[target]():
+        comptime if ctx.T.target.is_cpu():
             _cpu_launch[
                 axis=axis,
                 simd_width=simd_width,
@@ -748,7 +739,7 @@ def launch[
                 num_phases=num_phases if dtype_size > 0 else 0,
             ](body, shape)
         else:
-            comptime assert is_gpu[target](), "unknown rowwise target"
+            comptime assert ctx.T.target.is_gpu(), "unknown rowwise target"
             # GPU launch geometry: no caller has ever needed a different
             # block/warp size than these, so they are internal to this
             # function rather than forwarded from the public signature.
@@ -1450,6 +1441,34 @@ struct Row[
                     self.ctx,
                     emit_tile,
                 )
+
+    @staticmethod
+    @inline(.always)
+    def splat_lane[
+        value_dtype: DType
+    ](value: SIMD[value_dtype, Self.params.emit_tile_width]) -> SIMD[
+        value_dtype, Self._W
+    ]:
+        """Spreads a per-row value, read with one lane per row, over the width
+        of a fold's result: every lane when the participant handles one row,
+        and unchanged on the tiled tier, where each lane is its own row.
+
+        Parameters:
+            value_dtype: The value's element type.
+
+        Args:
+            value: The per-row value, one lane per row.
+
+        Returns:
+            The value at `simd_width` lanes.
+        """
+        comptime if Self.params.emit_tile_width == 1:
+            return SIMD[value_dtype, Self._W](value[0])
+        else:
+            comptime assert (
+                Self.params.emit_tile_width == Self._W
+            ), "a tiled tier emits one output per lane"
+            return rebind[SIMD[value_dtype, Self._W]](value)
 
     @inline(.always)
     def emit[

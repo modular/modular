@@ -45,6 +45,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
     interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
@@ -67,7 +68,7 @@ def _arr(*shape: int) -> np.ndarray:
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
+    "attention.mha.no_cache is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
     # Matches test_tp_attention.py's MLA parameters: flash_attention_gpu has
@@ -119,9 +120,27 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             v_head_dim=v_head,
             q_lora_rank=q_lora,
             kv_lora_rank=kv_lora,
+            tp_size=tp_size,
         )
-        for name, arr in weights.items():
-            getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)
+        attention.qkv_a_g_proj.weight = Tensor(
+            fuse_qkv_a_g_for_tp(
+                weights["q_a_proj"],
+                weights["kv_a_proj_with_mqa"],
+                weights["g_proj"],
+                tp_size,
+            ),
+            dtype=DType.float32,
+        )
+        for name in (
+            "q_b_proj",
+            "kv_b_proj",
+            "o_proj",
+            "q_a_layernorm",
+            "kv_a_layernorm",
+        ):
+            getattr(attention, name).weight = Tensor(
+                weights[name], dtype=DType.float32
+            )
         ffn = KimiK3DenseMLP(
             hidden_size=hidden,
             intermediate_size=inter,
@@ -152,6 +171,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             Tensor(x_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
@@ -165,6 +185,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             Tensor(x_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.to_numpy()
 
     err = _rel_error(out2_np, out1_np)
@@ -181,12 +202,11 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
     shared_inter = moe_inter
     beta, linear_beta, eps = 1.5, 1.5, 1e-5
 
-    qkv_parts_np = [_arr(inner, hidden) for _ in range(3)]  # q, k, v
+    qkv_parts_np = [_arr(inner, hidden) for _ in range(4)]  # q, k, v, g
+    b_proj_np = _arr(heads, hidden)
     attn_weights = {
         "f_a_proj": _arr(head_dim, hidden),
         "f_b_proj": _arr(inner, head_dim),
-        "b_proj": _arr(heads, hidden),
-        "g_proj": _arr(inner, hidden),
         "o_proj": _arr(hidden, inner),
     }
     conv_weight_np = _arr(3 * inner, conv_kernel)
@@ -232,8 +252,9 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             conv_kernel_size=conv_kernel,
             gate_lower_bound=None,
         )
-        attention.qkv_proj.weight = Tensor(
-            interleave_for_tp(qkv_parts_np, tp_size), dtype=DType.float32
+        attention.qkvg_proj.weight = Tensor(
+            interleave_for_tp([*qkv_parts_np, b_proj_np], tp_size),
+            dtype=DType.float32,
         )
         for name, arr in attn_weights.items():
             getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)
@@ -313,6 +334,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             recurrent_row_id=Tensor(slot_idx_np, dtype=DType.uint32),
             input_row_offsets=Tensor(input_row_offsets_np, dtype=DType.uint32),
         )
+        assert isinstance(out1, Tensor)
         out1_np = out1.to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
@@ -342,6 +364,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             recurrent_row_id=Tensor(slot_idx_np, dtype=DType.uint32),
             input_row_offsets=Tensor(input_row_offsets_np, dtype=DType.uint32),
         )
+        assert isinstance(out2, Tensor)
         out2_np = out2.to_numpy()
 
     err = _rel_error(out2_np, out1_np)

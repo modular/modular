@@ -21,9 +21,9 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.legacy.rotary_embedding import YarnScalingParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
+from max.nn.rope_scaling import YarnScalingParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -63,6 +63,7 @@ class GptOssConfig(
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
+        "float16",
     }
 
     # GPT OSS specific parameters

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Strided operands keep the unsplit route of the mixed-step MHA split (B200).
 
-`mo.mha.ragged.paged` with a split record runs a batch as two row-range views
+`attention.mha.ragged.paged` with a split record runs a batch as two row-range views
 that are pointer offsets, so it reads its operands as packed. A valid split
 record paired with a strided operand must therefore keep the single launch:
 the output must equal the call with an all-zero record on the same inputs.
@@ -42,6 +42,7 @@ from extensibility import (
     IOSpec,
     ManagedTensorSlice,
     StaticTensorSpec,
+    TensorTuple,
     get_row_major_tensor_spec_static,
 )
 from extensibility.managed_tensor_slice import _IndexListToTileLayout
@@ -316,7 +317,6 @@ def run_op(
     ](output_d.unsafe_ptr(), (total_q, NUM_Q_HEADS, HEAD_DIM))
 
     _execute_mha_ragged_paged[
-        target="gpu",
         mask_str="causal",
         local_window_size=-1,
         v_head_dim=-1,
@@ -334,6 +334,7 @@ def run_op(
         Float32(1.0) / sqrt(Float32(HEAD_DIM)),
         metadata.to_tile_tensor(),
         split_args.to_tile_tensor(),
+        TensorTuple(),
         ctx,
     )
     var output_h = ctx.enqueue_create_host_buffer[DType.bfloat16](

@@ -20,6 +20,7 @@
 
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "Support/SymbolExport.h"
 
 #include <memory>
 #include <optional>
@@ -59,7 +60,7 @@ struct BindingSpec {
 ///
 /// Its primary purpose is resolution: given an import path, work out what it
 /// names on disk and describe it as a `ModuleSpec`.
-class ModuleLoader : public SharedStateUser {
+class MODULAR_CXX_EXPORT ModuleLoader : public SharedStateUser {
 public:
   ModuleLoader(SharedState &shared);
   ~ModuleLoader();

@@ -80,13 +80,26 @@ class CompilationTarget:
         return f"{prefix}_{self.lhs_dtype}_{self.rhs_dtype}_{self.out_dtype}"
 
 
-# The sweep covers one-dtype matmuls; mixed dtypes compile lazily.
+# The sweep covers one-dtype matmuls; mixed dtypes compile lazily -- except
+# the one production mix below, which the eager lanes that forbid lazy
+# compiles must find in the warm store.
 _COMPILATION_TARGETS = [
     CompilationTarget(_GRAPH_BASE_NAME, device, dtype, dtype, dtype)
     for device, dtype in itertools.chain(
         itertools.product(_CPU_DEVICES, _CPU_DTYPES),
         itertools.product(_ACCELERATOR_DEVICES, _ACCELERATOR_DTYPES),
     )
+] + [
+    # K3's KDA beta logits: bf16 x bf16 with an fp32 output (the weight is
+    # bf16 on device; the products are exact in the fp32 accumulator).
+    CompilationTarget(
+        _GRAPH_BASE_NAME,
+        device,
+        DType.bfloat16,
+        DType.bfloat16,
+        DType.float32,
+    )
+    for device in _ACCELERATOR_DEVICES
 ]
 
 

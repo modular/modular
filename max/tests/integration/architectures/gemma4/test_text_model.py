@@ -40,7 +40,7 @@ from conftest import (
     TEXT_VOCAB_SIZE,
     TorchGemma4TextModel,
 )
-from max.driver import Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -51,10 +51,10 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.comm.allreduce import Signals
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.linear import MLP
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     create_empty_embeddings,
     create_empty_indices,
@@ -795,17 +795,19 @@ def _run_max_text_model_logits(
     and the signal buffers, exactly as the language graph does at serve time.
     ``image_embeddings`` are merged at ``image_token_indices`` when given.
     """
+    # The image constants are built on the host and placed on the device by
+    # the graph, so building and compiling it needs no device.
     if image_embeddings is None:
         image_embeddings_buf = create_empty_embeddings(
-            [device], _EXEC_HIDDEN, DType.bfloat16
+            [CPU()], _EXEC_HIDDEN, DType.bfloat16
         )[0]
-        image_token_indices_buf = create_empty_indices([device])[0]
+        image_token_indices_buf = create_empty_indices([CPU()])[0]
     else:
         assert image_token_indices is not None
-        image_embeddings_buf = Buffer.from_dlpack(image_embeddings).to(device)
+        image_embeddings_buf = Buffer.from_dlpack(image_embeddings)
         image_token_indices_buf = Buffer.from_dlpack(
             image_token_indices.to(torch.int32)
-        ).to(device)
+        )
     seq_len = tokens.shape[0]
     signals = Signals([device_ref])
     session = InferenceSession(devices=[device])
@@ -831,8 +833,12 @@ def _run_max_text_model_logits(
             global_kv_collections=[None],  # type: ignore[list-item]
             return_n_logits=return_n_logits_in,
             input_row_offsets=[row_offsets_in],
-            image_embeddings=[ops.constant(image_embeddings_buf)],
-            image_token_indices=[ops.constant(image_token_indices_buf)],
+            image_embeddings=[
+                ops.constant(image_embeddings_buf, device=device_ref)
+            ],
+            image_token_indices=[
+                ops.constant(image_token_indices_buf, device=device_ref)
+            ],
         )
         graph.output(results.logits["logits"])
 
@@ -1113,12 +1119,15 @@ def test_text_model_selected_layer_hidden_states() -> None:
             image_embeddings=[
                 ops.constant(
                     create_empty_embeddings(
-                        [device], _EXEC_HIDDEN, DType.bfloat16
-                    )[0]
+                        [CPU()], _EXEC_HIDDEN, DType.bfloat16
+                    )[0],
+                    device=device_ref,
                 )
             ],
             image_token_indices=[
-                ops.constant(create_empty_indices([device])[0])
+                ops.constant(
+                    create_empty_indices([CPU()])[0], device=device_ref
+                )
             ],
         )
         # One tap per target layer.

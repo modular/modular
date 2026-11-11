@@ -57,18 +57,21 @@ namespace M::MOGG {
 constexpr llvm::StringLiteral kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
+/// The module of the primitives a graph blob's kernel calls, and the name a
+/// graph with a blob imports it as.
+constexpr llvm::StringLiteral kGraphBlobModule = "max._graph_blob";
+constexpr llvm::StringLiteral kGraphBlobModuleAlias = "_graph_blob";
+
 /// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
 /// parser also uses. A kernel struct's method names are
 /// `stringifyKernelFunctionKind`'s.
 using KGEN::kFnRegister;
 using KGEN::kFnRegisterInternal;
 
-/// Indices into `getDecoratorLambdaArgument` for `@extensibility.register`.
-constexpr size_t kRegisterDecoratorArgName = 0;
-constexpr size_t kRegisterDecoratorArgType = 1;
-constexpr size_t kRegisterDecoratorArgApi = 2;
-constexpr size_t kRegisterDecoratorArgArch = 3;
-constexpr size_t kRegisterDecoratorArgModel = 4;
+/// The prefixes of the mangled leaf names of `@extensibility.register(name)`
+/// and `@extensibility.register(name, cond)`.
+constexpr llvm::StringLiteral kRegisterDecoratorPrefix = "register(";
+constexpr llvm::StringLiteral kRegisterCondDecoratorPrefix = "register[";
 
 constexpr llvm::StringLiteral kMoggTargetParameterName = "target";
 
@@ -261,7 +264,7 @@ constexpr llvm::StringLiteral kStructSIMD = "SIMD";
 constexpr llvm::StringLiteral kStructTileTensor = "layout.TileTensor";
 constexpr llvm::StringLiteral kStructTensorLayout = "layout.TensorLayout";
 constexpr llvm::StringLiteral kStructTileCopier = "layout.tile_io.TileCopier";
-constexpr llvm::StringLiteral kStructTileLayout = "layout.tile_layout.Layout";
+constexpr llvm::StringLiteral kStructTileLayout = "layout.MixedLayout";
 constexpr llvm::StringLiteral kStructMoggOutputStoreFusionTensor =
     "_MoggOutputStoreFusionTensor";
 constexpr llvm::StringLiteral kStructStateContext =
@@ -287,6 +290,10 @@ constexpr llvm::StringLiteral kStructStableVariadicTensors =
     "extensibility.StableVariadicTensors";
 constexpr llvm::StringLiteral kStructTensorTuple = "extensibility.TensorTuple";
 constexpr llvm::StringLiteral kStructStaticString = "StaticString";
+constexpr llvm::StringLiteral kStructMsNoComputeFusionTile =
+    "managed_tensor_slice._NoComputeFusionTile";
+constexpr llvm::StringLiteral kStructMsNoOutputFusionTile =
+    "managed_tensor_slice._NoOutputFusionTile";
 constexpr llvm::StringLiteral kStructMsFusionPack =
     "managed_tensor_slice._FusionPack";
 constexpr llvm::StringLiteral kStructMsFusedInputVariadicTensors =
@@ -376,6 +383,8 @@ constexpr llvm::StringLiteral kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
 constexpr llvm::StringLiteral kStructRowwiseContext =
     "algorithm.rowwise_types.Context";
+constexpr llvm::StringLiteral kFuncRowwiseAtAxis =
+    "algorithm.rowwise_types.at_axis";
 /// Fully qualified because `std.utils` does not re-export `coord`.
 constexpr llvm::StringLiteral kAliasDynamicCoord =
     "std.utils.coord.DynamicCoord";
@@ -655,6 +664,12 @@ public:
   MojoValue shape() const { return value.get(kShape)(); }
   MojoValue strides() const { return value.get(kStrides)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
+  MojoValue bindToFusedComputeOutputTile() const {
+    return value.get(kBindToFusedComputeOutputTile);
+  }
+  MojoValue bindToFusedOutputTile() const {
+    return value.get(kBindToFusedOutputTile);
+  }
 
   /// Return the uncalled method handle.
   MojoValue bindToFusedInput() const { return value.get(kBindToFusedInput); }

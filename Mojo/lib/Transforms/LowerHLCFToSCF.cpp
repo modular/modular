@@ -18,7 +18,9 @@
 
 #include "Mojo/HLCFDialect/HLCFDialect.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
+#include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/DirectConversion.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -27,9 +29,12 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
@@ -64,9 +69,6 @@ static bool hasNestedFunctionExit(Operation *op) {
       .wasInterrupted();
 }
 
-/// Append `values` to `out`, bridging each to its slot in `types`. The loop
-/// terminators are built from body values the conversion has not rewritten
-/// yet, so without this the `scf.while` state types would not line up.
 /// Replace a region-ending `hlcf.unreachable` with the yield the enclosing
 /// `scf` op needs. Control never gets there, so the values are poison.
 static void replaceTrailingUnreachable(DirectRewriter &rewriter, Location loc,
@@ -89,21 +91,114 @@ static std::optional<int64_t> constantStep(Value step) {
   return std::nullopt;
 }
 
-/// The first `continue`/`break` of `loop` sitting below the loop body, or
-/// null. Exits inside a nested loop belong to that loop.
-static Operation *findExitBelowBody(HLCF::LoopOp loop) {
+/// `v` with the `!kgen.scalar` <-> builtin casts the body wraps around its
+/// index arithmetic stripped.
+static Value stripScalarCasts(Value v) {
+  while (Operation *def = v.getDefiningOp()) {
+    if (auto c = dyn_cast<POP::CastFromBuiltinOp>(def))
+      v = c.getInput();
+    else if (auto c = dyn_cast<POP::CastToBuiltinOp>(def))
+      v = c.getInput();
+    else
+      break;
+  }
+  return v;
+}
+
+/// The integer value of a constant, builtin or `!kgen.scalar`.
+static std::optional<int64_t> constantInt(Value v) {
+  if (std::optional<int64_t> c = constantStep(v))
+    return c;
+  auto param = v.getDefiningOp<ParamConstantOp>();
+  if (!param)
+    return std::nullopt;
+  auto simd = dyn_cast<SIMDAttr>(param.getValue());
+  if (!simd || simd.getValues().empty())
+    return std::nullopt;
+  const DTypeValue &dv = simd.getValues().front();
+  KGENDType dtype = dv.getDType();
+  if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex())
+    return std::nullopt;
+  return dv.getIntVal().getSExtValue();
+}
+
+/// Whether `a` and `b` are the same value, through casts, or equal constants.
+static bool sameValueOrConstant(Value a, Value b) {
+  a = stripScalarCasts(a);
+  b = stripScalarCasts(b);
+  if (a == b)
+    return true;
+  std::optional<int64_t> ca = constantInt(a), cb = constantInt(b);
+  return ca && cb && *ca == *cb;
+}
+
+/// The first `continue`/`break` targeting `loop` that is not a terminator of
+/// the loop body, other than `allowed`, or null. A labeled exit inside a
+/// nested loop can target `loop` too.
+static Operation *findExitBelowBody(HLCF::LoopOp loop,
+                                    Operation *allowed = nullptr) {
   Operation *found = nullptr;
   loop.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *inner) {
-    if (isa<HLCF::LoopOp, HLCF::ForOp>(inner))
-      return mlir::WalkResult::skip();
-    if (isa<HLCF::ContinueOp, HLCF::BreakOp>(inner) &&
-        inner->getBlock()->getParent() != &loop.getBody()) {
-      found = inner;
-      return mlir::WalkResult::interrupt();
-    }
-    return mlir::WalkResult::advance();
+    StringAttr label;
+    if (auto cont = dyn_cast<HLCF::ContinueOp>(inner))
+      label = cont.getLabelAttr();
+    else if (auto brk = dyn_cast<HLCF::BreakOp>(inner))
+      label = brk.getLabelAttr();
+    else
+      return mlir::WalkResult::advance();
+    if (inner == allowed || inner->getBlock()->getParent() == &loop.getBody() ||
+        HLCF::getParentLoop(inner, label) != loop)
+      return mlir::WalkResult::advance();
+    found = inner;
+    return mlir::WalkResult::interrupt();
   });
   return found;
+}
+
+/// Matches a `while cond:` loop that `raise-for-loops` couldn't turn into a
+/// `for`. Its body checks the condition and breaks out if it is false:
+///
+///   hlcf.loop {
+///     ...
+///     hlcf.if %c {
+///       hlcf.yield
+///     } else {
+///       hlcf.break
+///     }
+///     ...
+///     hlcf.continue
+///   }
+///
+/// Returns that `hlcf.if`, or null.
+static HLCF::IfOp findWhileExitIf(HLCF::LoopOp loop) {
+  Block &body = loop.getBody().front();
+  auto cont = dyn_cast<HLCF::ContinueOp>(body.getTerminator());
+  if (!cont || !HLCF::isMatchingLoop(loop, cont.getLabelAttr()))
+    return {};
+
+  HLCF::IfOp exitIf;
+  for (Operation &inner : body.without_terminator()) {
+    auto ifOp = dyn_cast<HLCF::IfOp>(&inner);
+    if (!ifOp || ifOp->getNumResults() != 0 || !ifOp.getElifRegions().empty())
+      continue;
+    auto yield = dyn_cast<HLCF::YieldOp>(&ifOp.getThenRegion().front().front());
+    auto brk = dyn_cast<HLCF::BreakOp>(&ifOp.getElseRegion().front().front());
+    if (!yield || yield.getNumOperands() != 0 || !brk ||
+        !HLCF::isMatchingLoop(loop, brk.getLabelAttr()))
+      continue;
+    if (exitIf)
+      return {};
+    exitIf = ifOp;
+  }
+  return exitIf;
+}
+
+/// The `break` in `exitIf`, the exit check `findWhileExitIf` returns, or null
+/// when there is none. It is the one nested exit the pass can lower.
+static HLCF::BreakOp getWhileExitBreak(HLCF::IfOp exitIf) {
+  if (!exitIf)
+    return {};
+  return cast<HLCF::BreakOp>(exitIf.getElseRegion().front().getTerminator());
 }
 
 /// Whether `yield` advances the induction variable the way `scf.for` will:
@@ -111,26 +206,42 @@ static Operation *findExitBelowBody(HLCF::LoopOp loop) {
 /// compute kind.
 static bool yieldsStepAdvancedInductionVar(HLCF::ForOp forOp,
                                            HLCF::ForYieldOp yield) {
-  Value next = yield.getInductionVar();
+  Value next = stripScalarCasts(yield.getInductionVar());
   Value iv = forOp.getBody().front().getArgument(0);
   // A loop that runs its induction variable straight through is fine: the
   // `scf.for` body argument already holds the right value.
   if (next == iv)
     return true;
 
+  // Mojo's range iterators stop advancing at the bound, so `raise-for-loops`
+  // yields `iv == ub ? iv : iv + step`. A half-open loop (checked by the
+  // caller) never runs its body at `ub`, so the advance is always taken.
+  if (auto select = next.getDefiningOp<POP::SelectOp>()) {
+    auto cmp = select.getCondition().getDefiningOp<POP::CmpOp>();
+    if (cmp && cmp.getPred() == KGEN::CmpPredicate::EQ &&
+        stripScalarCasts(cmp.getLhs()) == iv &&
+        sameValueOrConstant(cmp.getRhs(), forOp.getUpperBound()) &&
+        stripScalarCasts(select.getTrueValue()) == iv)
+      next = stripScalarCasts(select.getFalseValue());
+  }
+
   Operation *def = next.getDefiningOp();
   if (!def)
     return false;
-  bool isAdd = isa<mlir::index::AddOp, mlir::arith::AddIOp>(def);
-  bool isSub = isa<mlir::index::SubOp, mlir::arith::SubIOp>(def);
+  bool isAdd = isa<mlir::index::AddOp, mlir::arith::AddIOp, POP::AddOp>(def);
+  bool isSub = isa<mlir::index::SubOp, mlir::arith::SubIOp, POP::SubOp>(def);
   bool wantSub =
       forOp.getIndVarComputeType() == HLCF::ForLoopIndVarCompute::SUB;
   if ((wantSub && !isSub) || (!wantSub && !isAdd))
     return false;
-  return def->getNumOperands() == 2 && def->getOperand(0) == iv &&
-         def->getOperand(1) == forOp.getStep();
+  return def->getNumOperands() == 2 &&
+         stripScalarCasts(def->getOperand(0)) == iv &&
+         sameValueOrConstant(def->getOperand(1), forOp.getStep());
 }
 
+/// Append `values` to `out`, bridging each to its slot in `types`. The loop
+/// terminators are built from body values the conversion has not rewritten
+/// yet, so without this the `scf.while` state types would not line up.
 static void appendConverted(DirectRewriter &rewriter, Location loc,
                             ValueRange values, TypeRange types,
                             SmallVectorImpl<Value> &out) {
@@ -439,33 +550,165 @@ struct ConvertHLCFSwitch : public DirectOpConversionPattern<HLCF::SwitchOp> {
 
 //===----------------------------------------------------------------------===//
 // hlcf.loop + hlcf.continue + hlcf.break → scf.while
-//
-// scf.while state: (i1 continue_flag, break_results..., loop_carried...)
-// before block: scf.condition(%continue_flag, break_results...,
-//               loop_carried...)
-// after block:  (break_results..., loop_carried...), the HLCF body
-//   hlcf.continue %lc → scf.yield(%true, poison_breaks..., %lc)
-//   hlcf.break %br    → scf.yield(%false, %br, poison_lc...)
 //===----------------------------------------------------------------------===//
 
 struct ConvertHLCFLoop : public DirectOpConversionPattern<HLCF::LoopOp> {
   using DirectOpConversionPattern::DirectOpConversionPattern;
 
-  LogicalResult matchAndRewrite(HLCF::LoopOp op, OpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    if (hasNestedFunctionExit(op))
-      return rewriter.notifyMatchFailure(
-          op, "a nested `return` has no structured-control-flow form");
-    // `scf.while` carries its state out through one after-region yield, so
-    // only an exit terminating the loop body can reach it.
-    if (Operation *exit = findExitBelowBody(op))
-      return rewriter.notifyMatchFailure(exit, [&](Diagnostic &diag) {
-        diag << "`" << exit->getName().stripDialect() << "` is nested inside `"
-             << exit->getParentOp()->getName()
-             << "`; `lower-hlcf-to-scf` only lowers a loop whose "
-                "`continue`/`break` terminates the loop body itself";
-      });
+  /// Lowers a `while cond:` loop by splitting its body at the exit check:
+  ///
+  ///   hlcf.loop (%j = %init) {       scf.while (%j = %init) {
+  ///     %k = index.mul %j, %c8         %k = index.mul %j, %c8
+  ///     %c = <%k < %n>                 %c = <%k < %n>
+  ///     hlcf.if %c {                   scf.condition(%c) %j
+  ///       hlcf.yield                 } do {
+  ///     } else {                     ^bb0(%j2):
+  ///       hlcf.break                   %k2 = index.mul %j2, %c8
+  ///     }                              "use"(%k2)
+  ///     "use"(%k)                      %next = index.add %j2, %c1
+  ///     %next = index.add %j, %c1      scf.yield %next
+  ///     hlcf.continue %next          }
+  ///   }
+  ///
+  /// `scf.condition` forwards the values of the before region that the after
+  /// region reads, and the operands of the `break`, which become the loop's
+  /// results.
+  LogicalResult convertWhileLoop(HLCF::LoopOp op, HLCF::IfOp exitIf,
+                                 OpAdaptor adaptor,
+                                 DirectRewriter &rewriter) const {
+    Location loc = op.getLoc();
+    Block &body = op.getBody().front();
+    HLCF::BreakOp brk = getWhileExitBreak(exitIf);
 
+    SmallVector<Type> lcTypes;
+    if (failed(getTypeConverter()->convertTypes(op.getOperands().getTypes(),
+                                                lcTypes)))
+      return mlir::failure();
+
+    // Recompute pure ops in the after region rather than forward them, so a
+    // backend that analyzes a value through its defining op can still do so.
+    auto inBefore = [&](Value v) {
+      if (auto arg = dyn_cast<BlockArgument>(v))
+        return arg.getOwner() == &body;
+      Operation *def = v.getDefiningOp();
+      return def->getBlock() == &body && def->isBeforeInBlock(exitIf);
+    };
+    llvm::SetVector<Value> forwarded;
+    llvm::SetVector<Operation *> remat;
+    SmallVector<Value> worklist;
+    for (Operation *afterOp = exitIf->getNextNode(); afterOp;
+         afterOp = afterOp->getNextNode())
+      afterOp->walk([&](Operation *nested) {
+        llvm::append_range(worklist, nested->getOperands());
+      });
+    while (!worklist.empty()) {
+      Value v = worklist.pop_back_val();
+      if (!inBefore(v))
+        continue;
+      Operation *def = v.getDefiningOp();
+      if (def && def->getNumRegions() == 0 && mlir::isPure(def)) {
+        if (remat.insert(def))
+          llvm::append_range(worklist, def->getOperands());
+        continue;
+      }
+      forwarded.insert(v);
+    }
+    // `scf.while` returns exactly what `scf.condition` forwards.
+    forwarded.insert(brk.getOperands().begin(), brk.getOperands().end());
+
+    SmallVector<Type> forwardedTypes;
+    for (Value v : forwarded) {
+      Type t = getTypeConverter()->convertType(v.getType());
+      if (!t)
+        return mlir::failure();
+      forwardedTypes.push_back(t);
+    }
+    SmallVector<unsigned> resultIndices;
+    for (Value v : brk.getOperands())
+      resultIndices.push_back(llvm::find(forwarded, v) - forwarded.begin());
+    SmallVector<Operation *> rematInOrder;
+    for (Operation &inner : body)
+      if (remat.contains(&inner))
+        rematInOrder.push_back(&inner);
+
+    auto whileOp = scf::WhileOp::create(rewriter, loc, forwardedTypes,
+                                        adaptor.getOperands());
+    Block *before =
+        rewriter.createBlock(&whileOp.getBefore(), {}, lcTypes,
+                             SmallVector<Location>(lcTypes.size(), loc));
+    SmallVector<Value> bodyArgs =
+        bridgedForMerge(rewriter, loc, body, before, before->getArguments());
+    // The body's arguments die in the merge; name them by what replaces them.
+    SmallVector<Value> forwardedVals;
+    for (Value v : forwarded) {
+      auto arg = dyn_cast<BlockArgument>(v);
+      forwardedVals.push_back(
+          arg && arg.getOwner() == &body ? bodyArgs[arg.getArgNumber()] : v);
+    }
+    rewriter.mergeBlocks(&body, before, bodyArgs);
+
+    Block *after =
+        rewriter.splitBlock(before, std::next(exitIf->getIterator()));
+    rewriter.moveBlockBefore(after, &whileOp.getAfter(),
+                             whileOp.getAfter().end());
+
+    IRMapping mapper;
+    rewriter.setInsertionPointToStart(after);
+    for (auto [v, t] : llvm::zip(forwardedVals, forwardedTypes)) {
+      Value arg = after->addArgument(t, loc);
+      mapper.map(v, t == v.getType() ? arg
+                                     : mlir::UnrealizedConversionCastOp::create(
+                                           rewriter, loc, v.getType(), arg)
+                                           .getResult(0));
+    }
+    // In program order, so each clone reads the clones before it.
+    for (Operation *beforeOp : rematInOrder)
+      rewriter.clone(*beforeOp, mapper);
+    auto inAfter = [&](OpOperand &use) {
+      return whileOp.getAfter().isAncestor(use.getOwner()->getParentRegion());
+    };
+    for (Value v : forwardedVals)
+      rewriter.replaceUsesWithIf(v, mapper.lookup(v), inAfter);
+    for (Operation *beforeOp : rematInOrder)
+      for (Value result : beforeOp->getResults())
+        rewriter.replaceUsesWithIf(result, mapper.lookup(result), inAfter);
+
+    rewriter.setInsertionPoint(exitIf);
+    Value cond = bridgeToI1(rewriter, loc, exitIf.getCond());
+    SmallVector<Value> condVals;
+    appendConverted(rewriter, loc, forwardedVals, forwardedTypes, condVals);
+    scf::ConditionOp::create(rewriter, loc, cond, condVals);
+    rewriter.eraseOp(exitIf);
+
+    auto cont = cast<HLCF::ContinueOp>(after->getTerminator());
+    rewriter.setInsertionPoint(cont);
+    SmallVector<Value> next;
+    appendConverted(rewriter, loc, cont.getOperands(), lcTypes, next);
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(cont, next);
+
+    // Ops only the after region read are dead in the before region now.
+    for (Operation *beforeOp : llvm::reverse(rematInOrder))
+      if (beforeOp->use_empty())
+        rewriter.eraseOp(beforeOp);
+
+    SmallVector<Value> results;
+    for (unsigned i : resultIndices)
+      results.push_back(whileOp.getResult(i));
+    rewriter.replaceOp(op, results);
+    return mlir::success();
+  }
+
+  /// Lowers a loop whose every `continue`/`break` terminates the loop body,
+  /// carrying a continue flag and the break results in the loop state:
+  ///
+  ///   scf.while state: (i1 continue_flag, break_results..., loop_carried...)
+  ///   before block: scf.condition(%continue_flag, break_results...,
+  ///                 loop_carried...)
+  ///   after block:  (break_results..., loop_carried...), the HLCF body
+  ///     hlcf.continue %lc → scf.yield(%true, poison_breaks..., %lc)
+  ///     hlcf.break %br    → scf.yield(%false, %br, poison_lc...)
+  LogicalResult convertLoopWithBodyExits(HLCF::LoopOp op, OpAdaptor adaptor,
+                                         DirectRewriter &rewriter) const {
     Location loc = op.getLoc();
 
     SmallVector<Type> breakResultTypes;
@@ -559,6 +802,28 @@ struct ConvertHLCFLoop : public DirectOpConversionPattern<HLCF::LoopOp> {
     rewriter.replaceOp(op, whileResults.take_front(breakResultTypes.size()));
     return mlir::success();
   }
+
+  LogicalResult matchAndRewrite(HLCF::LoopOp op, OpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    if (hasNestedFunctionExit(op))
+      return rewriter.notifyMatchFailure(
+          op, "a nested `return` has no structured-control-flow form");
+    // `scf.while` carries its state out through one after-region yield, so
+    // only an exit terminating the loop body, or splitting it in two, can
+    // reach it.
+    HLCF::IfOp exitIf = findWhileExitIf(op);
+    if (Operation *exit = findExitBelowBody(op, getWhileExitBreak(exitIf)))
+      return rewriter.notifyMatchFailure(exit, [&](Diagnostic &diag) {
+        diag << "`" << exit->getName().stripDialect() << "` is nested inside `"
+             << exit->getParentOp()->getName()
+             << "`; `lower-hlcf-to-scf` only lowers a loop whose "
+                "`continue`/`break` terminates the loop body itself or is "
+                "its while exit check";
+      });
+    if (exitIf)
+      return convertWhileLoop(op, exitIf, adaptor, rewriter);
+    return convertLoopWithBodyExits(op, adaptor, rewriter);
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -576,12 +841,14 @@ struct LowerHLCFToSCFPass
     // Reported here because a pattern's `notifyMatchFailure` never reaches
     // the user, leaving only the driver's "failed to legalize".
     mlir::WalkResult unsupported = module.walk([](HLCF::LoopOp loop) {
-      Operation *exit = findExitBelowBody(loop);
+      Operation *exit =
+          findExitBelowBody(loop, getWhileExitBreak(findWhileExitIf(loop)));
       if (!exit)
         return mlir::WalkResult::advance();
       loop.emitError("`lower-hlcf-to-scf` lowers an `hlcf.loop` only when its "
-                     "`continue`/`break` terminates the loop body; this one "
-                     "exits from inside a nested region")
+                     "`continue`/`break` terminates the loop body or is its "
+                     "while exit check; this one exits from inside a nested "
+                     "region")
               .attachNote(exit->getLoc())
           << "`" << exit->getName().stripDialect() << "` nested in `"
           << exit->getParentOp()->getName() << "` here";

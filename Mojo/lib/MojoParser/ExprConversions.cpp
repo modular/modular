@@ -982,6 +982,29 @@ classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
 // Zero Cost Conversions
 //===----------------------------------------------------------------------===//
 
+/// Returns the closure wrapper struct that a function value of type `rvType`
+/// converts to when the required type is `requiredType`, or null if there is
+/// none. A `#kgen.extension` of the wrapper is accepted too, since the wrapper
+/// rebinds to it at zero cost.
+static LIT::StructType getInflatedClosureTarget(ASTType rvType, PValue value,
+                                                ASTType requiredType,
+                                                SharedState &shared) {
+  if (!sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType))
+    return {};
+
+  // strip rebind/extention/up/downcast.
+  ASTType wrapperType = KGEN::stripIdentityWrappers(PValue(requiredType));
+  auto structMeta = sugarDynCast<StructMetaType>(wrapperType.extractMetaType());
+  if (!structMeta)
+    return {};
+  LIT::StructType structTy = structMeta.getType();
+  if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
+    value = PValue(fnLiteral.getFuncSymbolAttr());
+  if (!shared.getClosureEmitter().isInflatedClosureForFnSymbol(value, structTy))
+    return {};
+  return structTy;
+}
+
 static TypedAttr stripTypeValueCasts(TypedAttr typeValue) {
   typeValue = KGEN::stripIdentityWrappers(typeValue);
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
@@ -2153,18 +2176,9 @@ static TriBool classifyImplicitConversionImpl(
 
   // Functions can implicitly convert to their corresponding closure wrapper.
   // This is distinct from converting to a closure trait.
-  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
-    if (auto structMeta =
-            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
-      LIT::StructType structTy = structMeta.getType();
-      PValue target = value.ir.getIfPValue();
-      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getFuncSymbolAttr());
-      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
-                                                                  structTy))
-        return cacheAndReturnVal(rvType, requiredType, true);
-    }
-  }
+  if (getInflatedClosureTarget(rvType, value.ir.getIfPValue(), requiredType,
+                               shared))
+    return cacheAndReturnVal(rvType, requiredType, true);
 
   // We can implicitly convert to the specified type if we can construct it with
   // the value as an implicit conversion.
@@ -2374,22 +2388,12 @@ CValue IREmitter::emitImplicitConversionToType(
   if (succeeded(typeValueCast))
     return emitCResult(*typeValueCast, expr, dest);
 
-  // Conversions from function pointers to closures.
-  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
-    // Functions can implicitly convert to their corresponding closure wrapper.
-    if (auto structMeta =
-            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
-      StructType structTy = structMeta.getType();
-      auto target = valueExpr.ir.getIfPValue();
-      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getFuncSymbolAttr());
-      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
-                                                                  structTy)) {
-        return emitConstructorCall(
-            structTy,
-            CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
-      }
-    }
+  // Functions can implicitly convert to their corresponding closure wrapper.
+  if (LIT::StructType structTy = getInflatedClosureTarget(
+          rvType, valueExpr.ir.getIfPValue(), requiredType, shared)) {
+    return emitConstructorCall(
+        structTy,
+        CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
   }
 
   if (sugarIsa<ParamListType>(rvType) &&

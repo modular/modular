@@ -28,12 +28,7 @@ from max.algorithm.functional import elementwise
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from max.gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
-    get_gpu_target,
-    default_accelerator,
-)
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
@@ -59,7 +54,9 @@ from layout.coord import (
     crd2idx,
 )
 from layout.tile_io import TileCopier
-from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
+from layout.layout import Layout, TensorLayout, _RowMajor
+
+from .tensor_arg_traits import Output, Storable, Tensor, TileTensorable
 
 
 # ===----------------------------------------------------------------------=== #
@@ -166,7 +163,7 @@ def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
-# TileLayout helper aliases
+# Layout helper aliases
 # ===----------------------------------------------------------------------=== #
 
 comptime _AllScalar[rank: Int] = TypeList.splat[
@@ -174,20 +171,20 @@ comptime _AllScalar[rank: Int] = TypeList.splat[
 ]()
 """A variadic of `rank` Scalar types."""
 
-comptime _UnknownTileLayout[rank: Int] = TileLayout[
+comptime _UnknownTileLayout[rank: Int] = Layout[
     shape_types=_AllScalar[rank],
     stride_types=_AllScalar[rank],
 ]
-"""A fully-dynamic TileLayout where all shape and stride dims are Scalar."""
+"""A fully-dynamic Layout where all shape and stride dims are Scalar."""
 
 
 comptime _RowMajorTileLayout[
     shape_types: TypeList[Trait=CoordLike, ...]
-] = TileLayout[
+] = Layout[
     shape_types=shape_types,
     stride_types=_RowMajor[*shape_types],
 ]
-"""A TileLayout with row-major strides derived from the given shape types."""
+"""A Layout with row-major strides derived from the given shape types."""
 
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
@@ -205,29 +202,27 @@ comptime _IndexListToCoordLike[list: IndexList] = TypeList.tabulate[
 Negative values become Scalar, non-negative become ComptimeInt."""
 
 
-comptime _IndexListToTileLayout[
-    shape: IndexList, strides: IndexList
-] = TileLayout[
+comptime _IndexListToTileLayout[shape: IndexList, strides: IndexList] = Layout[
     shape_types=_IndexListToCoordLike[shape],
     stride_types=_IndexListToCoordLike[strides],
 ]
-"""Convert a pair of compile-time IndexLists to a TileLayout.
+"""Convert a pair of compile-time IndexLists to a Layout.
 Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 
 comptime _RowMajorCoordTileLayout[
     shape: Coord,
 ] = _RowMajorTileLayout[shape.element_types]
-"""A TileLayout with row-major strides derived from a Coord shape."""
+"""A Layout with row-major strides derived from a Coord shape."""
 
 
 comptime _CoordShapeIndexListStridesToTileLayout[
     shape: Coord, strides: IndexList
-] = TileLayout[
+] = Layout[
     shape_types=shape.element_types,
     stride_types=_IndexListToCoordLike[strides],
 ]
-"""Convert a Coord shape and IndexList strides to a TileLayout."""
+"""Convert a Coord shape and IndexList strides to a Layout."""
 
 
 def get_row_major_tensor_spec_static[
@@ -508,7 +503,7 @@ def _coord_sentinel_value[*element_types: CoordLike]() -> Coord[*element_types]:
 
     Static components carry their compile-time values; a `Scalar` component
     (a dynamic dim) carries -1, the raw-dims encoding of an unknown dimension,
-    so value consumers see the same sentinel the old IntTuple aliases did.
+    so value consumers see the same sentinel they always have.
     """
     var result = Coord[*element_types]()
     comptime for i in range(Coord[*element_types].rank):
@@ -815,8 +810,7 @@ struct StaticTensorSpec[
             self.address_space,
         }
 
-    # -1 (UNKNOWN_VALUE) when any dim is dynamic, as the old
-    # `product(IntTuple)` reducer returned, rather than multiplying the
+    # -1 (UNKNOWN_VALUE) when any dim is dynamic, rather than multiplying the
     # dynamic dims' -1 through.
     comptime static_size: Int = (
         Self.static_layout.static_product if Coord[
@@ -1309,7 +1303,7 @@ struct ManagedTensorSlice[
         Self.OutFusionTile != _NoOutputFusionTile
     )
 
-    comptime RuntimeLayout = TileLayout[
+    comptime RuntimeLayout = Layout[
         shape_types=Self.static_spec.static_layout._shape_types,
         stride_types=Self.static_spec.static_layout._stride_types,
     ]
@@ -2730,22 +2724,22 @@ struct _FusedOutputVariadicTensors[
 
 
 @doc_hidden
-def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
+def get_kernel_simd_width[dtype: DType, target: CompilationTarget]() -> Int:
     """Get the simd width used in lambda functions.
 
     For non-simd arch like GPU, this is the width in terms of number of elements
     used per load/store instruction.
     """
 
-    comptime if _is_gpu[target]():
+    comptime if target.is_gpu():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        comptime if default_accelerator()._is_arch["sm_100a"]():
+        comptime if target.is_nvidia_gpu["sm_100a"]():
             return 32 // size_of[dtype]()
 
-        return simd_width_of[dtype, target=get_gpu_target()]()
+        return simd_width_of[dtype, target=target]()
 
-    return simd_width_of[dtype]()
+    return simd_width_of[dtype, target=target]()
 
 
 @doc_hidden
@@ -2771,18 +2765,18 @@ def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
 def foreach[
     dtype: DType,
     rank: Int,
+    ctx_target: CompilationTarget,
     //,
     FuncType: ImplicitlyCopyable
     & RegisterPassable
     & (def[width: Int](Coord) -> SIMD[dtype, width]),
     *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
+    simd_width: Int = get_kernel_simd_width[dtype, ctx_target](),
     _trace_name: StaticString = "mogg.for_each",
 ](
     var func: FuncType,
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[ctx_target],
 ) raises:
     """Apply a `RegisterPassable` body to each element of the tensor slice.
 
@@ -2799,8 +2793,8 @@ def foreach[
     Parameters:
         dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
+        ctx_target: The compilation target of `ctx` (inferred).
         FuncType: The type of the per-element body closure.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
@@ -2818,9 +2812,75 @@ def foreach[
 
     elementwise[
         simd_width=simd_width,
-        target=target,
         _trace_description=_trace_name,
     ](wrapper, tensor.shape_coord(), ctx)
+
+
+def foreach[
+    Z: Output & Tensor,
+    ctx_target: CompilationTarget,
+    FuncType: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[Z.dtype, width]),
+    //,
+    *,
+    simd_width: Int = get_kernel_simd_width[Z.dtype, ctx_target](),
+    _trace_name: StaticString = "mogg.for_each",
+](var func: FuncType, z: Z, ctx: DeviceContext[ctx_target]) raises:
+    """Apply a `RegisterPassable` body to each element of a tensor-trait output.
+
+    Tensor-trait twin of the `ManagedTensorSlice` overload above. A dense
+    output stores through its `TileTensor` projection. A fused output stores
+    through `Storable.store`, which runs the fused consumer epilogue.
+
+    Constraints:
+        `Z` conforms to `TileTensorable`, or to `Storable` and
+        `TrivialRegisterPassable`. A fused output runs only on the CPU, because
+        its host proxy cannot store on a device.
+
+    Parameters:
+        Z: The type of the output tensor argument.
+        ctx_target: The compilation target of `ctx` (inferred).
+        FuncType: The type of the per-element body closure.
+        simd_width: The SIMD width for the target (usually leave this as its default value).
+        _trace_name: Name of the executed operation displayed in the trace_description.
+
+    Args:
+        func: The function to apply to each element of the output.
+        z: The output tensor argument which receives the return values from `func`.
+        ctx: The call context (forward this from the custom operation).
+    """
+    comptime if conforms_to(Z, TileTensorable):
+        var zt = z.to_tile_tensor()
+
+        def wrapper[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var func^, var zt}:
+            zt.store[
+                width=width,
+                alignment=min(Z.alignment, alignment * align_of[Z.dtype]()),
+            ](idx, rebind[SIMD[zt.dtype, width]](func[width](idx)))
+
+        elementwise[simd_width=simd_width, _trace_description=_trace_name](
+            wrapper, z.shape(), ctx
+        )
+    else:
+        comptime assert ctx_target.is_cpu(), (
+            "foreach: a fused output that is not TileTensorable runs only on"
+            " the CPU"
+        )
+        comptime assert conforms_to(Z, Storable & TrivialRegisterPassable)
+
+        def fused_wrapper[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var func^, var z}:
+            z.store[width=width, element_alignment=alignment](
+                idx, func[width](idx)
+            )
+
+        elementwise[simd_width=simd_width, _trace_description=_trace_name](
+            fused_wrapper, z.shape(), ctx
+        )
 
 
 def _shape_types_compatible[

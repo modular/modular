@@ -56,7 +56,7 @@ def serve_main(sock: socket.socket) -> None:
         serve_api_server_and_model_worker,
     )
     from max.driver import DeviceSpec
-    from max.pipelines import PipelineArgs
+    from max.pipelines import PipelineArgs, PipelineRuntimeConfig
     from max.serve.config import Settings
 
     settings = Settings(
@@ -72,6 +72,7 @@ def serve_main(sock: socket.socket) -> None:
         model_path=MODEL,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding="float32",
+        runtime=PipelineRuntimeConfig(prefer_module_v3=False),
     )
     # Launch server (blocks until shutdown)
     serve_api_server_and_model_worker(settings, pipeline_config, sockets=[sock])

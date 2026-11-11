@@ -12,18 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 """Registers Beam (``BeamForCausalLM``) on ModuleV3."""
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
 from .beam import Beam
 from .memory_planner import BeamMemoryPlanner
 from .model_config import BeamConfig
 from .reasoning import BeamReasoningParser  # noqa: F401  registers "beam"
 from .tokenizer import BeamTokenizer
 from .tool_parser import BeamToolParser  # noqa: F401  registers "beam"
+from .weight_adapters import beam_weight_rules
 
 beam_modulev3_arch = SupportedArchitecture(
     name="BeamForCausalLM_ModuleV3",
@@ -37,10 +39,12 @@ beam_modulev3_arch = SupportedArchitecture(
     reasoning_parser="beam",
     tool_parser="beam",
     context_type=TextContext,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=beam_weight_rules,
+    use_weight_rules=True,
     config=BeamConfig,
     memory_planner=BeamMemoryPlanner,
     multi_gpu_supported=True,
+    format_spec=Path(__file__).parent / "formatspec.json",
+    # The name Mach finds the fused DFlash2 graph by.
+    spec_decode_graph_names={"dflash2": "unified_dflash2_beam"},
 )

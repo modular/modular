@@ -21,6 +21,7 @@
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
+#include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MetalDriver.h"
 #include "Support/AlignedAlloc.h"
@@ -28,8 +29,6 @@
 #include "Support/max_license/Tracy/Tracy.h"
 
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/LineIterator.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <algorithm>
@@ -38,17 +37,10 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <set>
 #include <string>
 #include <sys/resource.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-
-#define CHECK_IS_METAL_ERR(dev)                                                \
-  do {                                                                         \
-    if ((dev).api() != Device::metalAPI)                                       \
-      RETURN_ERROR("Not a Metal device.");                                     \
-  } while (0)
 
 // Copy paths only, as on CUDA: kernel launches and event waits stay
 // asynchronous even under `device-sync-mode`.
@@ -61,31 +53,6 @@
   } while (0)
 
 namespace M::Driver {
-
-static ErrorOr<int> getComputeCapability(StringRef name) {
-  if (name.empty())
-    return 3;
-
-  if (name.contains_insensitive("M6"))
-    return 6;
-
-  if (name.contains_insensitive("M5"))
-    return 5;
-
-  if (name.contains_insensitive("M4"))
-    return 4;
-
-  if (name.contains_insensitive("M3"))
-    return 3;
-
-  if (name.contains_insensitive("M2"))
-    return 2;
-
-  if (name.contains_insensitive("M1"))
-    return 1;
-
-  RETURN_ERROR("Unknown device name");
-}
 
 // Return true if logging for Metal kernel is enabled.
 static bool isLoggingEnabled(void *attrs, uint32_t numAttrs) {
@@ -324,7 +291,7 @@ ErrorOr<int> MetalDevice::getAttribute(Attribute attr) const {
     if (device_ && device_->name()) {
       deviceName = device_->name()->cString(NS::UTF8StringEncoding);
     }
-    return getComputeCapability(deviceName);
+    return getMetalComputeCapability(deviceName);
   }
   case Device::Attribute::COMPUTE_CAPABILITY_MINOR:
     return 0;
@@ -680,8 +647,24 @@ ErrorOrSuccess MetalDeviceContext::enqueueCopyToDevice(void *dst,
     return success();
   }
 
-  // Source is regular host memory — drain prior GPU work, then memcpy into
-  // the shared MTLBuffer's CPU pointer on this thread.
+  // Source is regular host memory. Snapshot it into a staging buffer now, so
+  // the caller may reuse `src` on return, and blit it in queue order rather
+  // than draining: a drain blocks this thread behind any pending flag wait.
+  if (byteSize < metalDevice()->maxBufferLength()) {
+    DEFINE_OR_RETURN_ERROR(
+        MTL::Buffer *, staging,
+        allocateNewBuffer(metalDevice(), const_cast<void *>(src), byteSize,
+                          getResourceOptions(Device::AllocMode::HOST)));
+    if (staging == nullptr)
+      RETURN_ERROR("Failed to allocate H2D staging buffer");
+    // The committed command buffer retains `staging`.
+    NS::SharedPtr<MTL::Buffer> stagingRef = NS::TransferPtr(staging);
+    RETURN_IF_ERROR(enqueueMetalCopy(staging, dstResult.buffer, 0,
+                                     dstResult.offset, byteSize));
+    METAL_MAYBE_SYNC(*this);
+    return success();
+  }
+
   RETURN_IF_ERROR(drainQueue());
 
   void *dstContents = dstResult.buffer->contents();
@@ -1259,6 +1242,80 @@ MetalDeviceStream::enqueueWaitForEvent(const DeviceEvent &event) const {
   return metalCtx_.enqueueWaitFor(const_cast<DeviceEvent &>(event));
 }
 
+namespace {
+/// A shared event's value never decreases (a lower `setSignaledValue` is
+/// ignored, measured on M5), so `reset()` swaps in a fresh event.
+class MetalCompletionFlag final : public CompletionFlag {
+public:
+  MetalCompletionFlag(MetalDeviceContext &ctx,
+                      NS::SharedPtr<MTL::SharedEvent> event)
+      : ctx_(DeviceContextRef::copy(&ctx)), event_(std::move(event)) {}
+
+  void signal(uint64_t value) override { current()->setSignaledValue(value); }
+  uint64_t load() const override { return current()->signaledValue(); }
+
+  void reset() override {
+    NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+        NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+    NS::SharedPtr<MTL::SharedEvent> fresh =
+        NS::TransferPtr(static_cast<MetalDeviceContext &>(*ctx_)
+                            .metalDevice()
+                            ->newSharedEvent());
+    std::lock_guard<std::mutex> lock(mutex_);
+    // A target the old event hasn't reached means a wait may still be pending
+    // on it; that wait stays on the old event and only a signal of it frees it.
+    if (event_->signaledValue() < maxTarget_)
+      static_cast<MetalDeviceContext &>(*ctx_).recordPendingError(
+          Error("CompletionFlag::reset() called while a wait on the flag may "
+                "be pending"));
+    if (!fresh) {
+      static_cast<MetalDeviceContext &>(*ctx_).recordPendingError(
+          Error("CompletionFlag::reset() failed to create an MTLSharedEvent"));
+      return;
+    }
+    event_ = std::move(fresh);
+    maxTarget_ = 0;
+  }
+
+  /// Returns the event a wait for `target` encodes, noting the target so a
+  /// later `reset()` can tell whether a wait may still be pending.
+  NS::SharedPtr<MTL::SharedEvent> eventForWait(uint64_t target) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    maxTarget_ = std::max(maxTarget_, target);
+    return event_;
+  }
+
+private:
+  NS::SharedPtr<MTL::SharedEvent> current() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return event_;
+  }
+
+  DeviceContextRef ctx_;
+  mutable std::mutex mutex_;
+  NS::SharedPtr<MTL::SharedEvent> event_;
+  mutable uint64_t maxTarget_ = 0;
+};
+} // namespace
+
+ErrorOrSuccess MetalDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                                    uint64_t value) const {
+  NS::SharedPtr<MTL::SharedEvent> event =
+      static_cast<const MetalCompletionFlag &>(flag).eventForWait(value);
+  return metalCtx_.enqueueWaitOnSharedEvent(event.get(), value);
+}
+
+ErrorOr<CompletionFlagRef> MetalDeviceContext::allocateCompletionFlag() {
+  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+  NS::SharedPtr<MTL::SharedEvent> event =
+      NS::TransferPtr(metalDevice()->newSharedEvent());
+  if (!event)
+    RETURN_ERROR("Failed to create MTLSharedEvent");
+  return CompletionFlagRef::take(
+      new MetalCompletionFlag(*this, std::move(event)));
+}
+
 void *MetalDeviceStream::ptr() const { return metalCtx_.commandQueue(); }
 
 ErrorOrSuccess MetalDeviceContext::synchronize() {
@@ -1347,21 +1404,30 @@ ErrorOrSuccess MetalDeviceContext::enqueueWaitFor(DeviceEvent &event) {
   TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueWaitFor",
                        TRACY_COLOR_PURPLE);
 
+  MetalDeviceEvent &metalEvent = MetalDeviceEvent::cast(event);
+  uint64_t target = metalEvent.waitValue();
+  if (target == 0)
+    return success();
+  return enqueueWaitOnSharedEvent(metalEvent.sharedEvent(), target);
+}
+
+ErrorOrSuccess
+MetalDeviceContext::enqueueWaitOnSharedEvent(MTL::SharedEvent *event,
+                                             uint64_t target) {
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
 
   if (!orderFence_)
     RETURN_ERROR("Metal ordering fence unavailable");
-  MetalDeviceEvent &metalEvent = MetalDeviceEvent::cast(event);
-  uint64_t target = metalEvent.waitValue();
-  if (target == 0)
-    return success();
-
   MTL::CommandBuffer *cmdBuffer = commandQueue_->commandBuffer();
   if (cmdBuffer == nullptr)
     RETURN_ERROR("Failed to create command buffer for event wait");
   // The event gates this buffer; the fence update gates later work behind it.
-  cmdBuffer->encodeWait(metalEvent.sharedEvent(), target);
+  cmdBuffer->encodeWait(event, target);
+  // Keep the event alive until the buffer completes: a flag's `reset()` drops
+  // its event.
+  cmdBuffer->addCompletedHandler(
+      [keepAlive = NS::RetainPtr(event)](MTL::CommandBuffer *) {});
   MTL::BlitCommandEncoder *blit = cmdBuffer->blitCommandEncoder();
   if (blit == nullptr)
     RETURN_ERROR("Failed to create blit encoder for event wait");
@@ -1705,91 +1771,17 @@ MetalDeviceContext *MetalDeviceContext::verified_cast(DeviceContext *ctx) {
   return DeviceContext::cast<MetalDeviceContext>(ctx);
 }
 
-/// Returns true if the installed SDK supports the indicated Major.Minor
-/// revision of the Metal Shading Language.
-/// Parses the SDK header once on first call and caches all discovered
-/// MTLLanguageVersion values for the process lifetime.
-static bool sdkSupportsMSLVersion(int maj, int min) {
-  static const auto supportedVersions = [] {
-    std::set<std::pair<int, int>> versions;
-
-    // Resolve the active Xcode developer directory.
-    std::filesystem::path devDir;
-    if (const char *env = std::getenv("DEVELOPER_DIR")) {
-      devDir = env;
-    } else {
-      // Same symlink that `xcode-select -p` resolves.
-      std::error_code ec;
-      devDir = std::filesystem::read_symlink("/var/db/xcode_select_link", ec);
-      if (ec)
-        return versions;
-    }
-
-    // Header that defines the MTLLanguageVersion enum.
-    std::filesystem::path headerPath =
-        devDir / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" /
-        "System/Library/Frameworks/Metal.framework" /
-        "Versions/A/Headers/MTLLibrary.h";
-    auto bufOrErr = llvm::MemoryBuffer::getFile(headerPath.c_str());
-    if (!bufOrErr)
-      return versions;
-
-    // Scan for MTLLanguageVersionX_Y enum entries.
-    StringRef prefix = "MTLLanguageVersion";
-    for (llvm::line_iterator it(**bufOrErr, /*SkipBlanks=*/true, '\0');
-         !it.is_at_end(); ++it) {
-      StringRef line = *it;
-      auto pos = line.find(prefix);
-      if (pos == StringRef::npos)
-        continue;
-      StringRef suffix = line.substr(pos + prefix.size());
-      auto [majStr, rest] = suffix.split('_');
-      int major = 0, minor = 0;
-      // majStr is clean (e.g. "1"); rest may have trailing text
-      // (e.g. "1 API_AVAILABLE(...)"), so use consumeInteger.
-      if (!majStr.getAsInteger(10, major) && !rest.consumeInteger(10, minor))
-        versions.emplace(major, minor);
-    }
-    return versions;
-  }();
-
-  return supportedVersions.count({maj, min}) > 0;
-}
-
-ErrorOr<std::string> MetalDevice::getArchName(MTL::Device *d) {
-  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
-      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-  // CreateSystemDefaultDevice returns a +1 (Create-rule) reference that a
-  // pool cannot reclaim; own it so the nullptr-device path does not leak.
-  NS::SharedPtr<MTL::Device> createdDevice;
-  if (d == nullptr)
-    createdDevice = NS::TransferPtr(MTL::CreateSystemDefaultDevice());
-  MTL::Device *device = d ? d : createdDevice.get();
-  if (device == nullptr)
-    RETURN_ERROR("Failed to create Metal device.");
-  std::string name = device->name()->cString(NS::UTF8StringEncoding);
-
-  DEFINE_OR_RETURN_ERROR(int, cc, getComputeCapability(name));
-  std::string archName = std::to_string(cc);
-  if (device->supportsFamily(MTL::GPUFamilyMetal4) &&
-      sdkSupportsMSLVersion(4, 0)) {
-    // Prefer to use latest supported Metal version by default, but only if
-    // the installed Xcode's Metal compiler can actually handle Metal 4.0 AIR.
-    archName += "-metal4";
-  }
-  return archName;
-}
-
 ErrorOr<const char *> MetalDevice::getArchName() const {
-  // Lazily compute the arch string on first call and cache it. The static
-  // `getArchName(MTL::Device *)` form requires Metal device introspection
+  // Lazily compute the arch string on first call and cache it.
+  // `getMetalArchName(MTL::Device *)` requires Metal device introspection
   // (autorelease pool + name parsing + Metal4 feature detection) so we avoid
   // paying that cost at construction time. Mirrors HIPDevice's cached
   // `arch_` pattern (HIPDeviceContext.cpp:414), but with lazy population
   // since MetalDevice's constructor does not receive an arch parameter.
   std::lock_guard<std::mutex> lock(archMutex_);
   if (arch_.empty()) {
-    DEFINE_OR_RETURN_ERROR(std::string, computed, getArchName(device_.get()));
+    DEFINE_OR_RETURN_ERROR(std::string, computed,
+                           getMetalArchName(device_.get()));
     arch_ = std::move(computed);
   }
   return arch_.c_str();

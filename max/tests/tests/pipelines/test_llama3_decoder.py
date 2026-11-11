@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy.layer import Module
 from max.pipelines.architectures.llama3 import decoder as decoder_module
 from max.pipelines.architectures.llama3 import llama_arch

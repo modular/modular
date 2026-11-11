@@ -30,16 +30,16 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
+from max.nn._graph_ops import moe_quant as quant_strategy
+from max.nn._graph_ops.moe_quant import interleaved_block_scales_shape
 from max.nn.legacy.moe import (
     GateUpFormat,
     SigmoidTopKRouter,
     StackedMoE,
-    interleaved_block_scales_shape,
-    quant_strategy,
     stacked_moe,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

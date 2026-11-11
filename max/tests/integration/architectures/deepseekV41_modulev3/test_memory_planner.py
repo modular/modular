@@ -44,7 +44,7 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import spec_decode_cache_slack
+from max.nn.kv_cache import spec_decode_cache_slack
 from max.pipelines.architectures.deepseekV41.memory_planner import (
     _SCALE_TILE_BYTES,
     _SCALE_TILE_ROWS,

@@ -45,7 +45,7 @@ import pytest
 import tiny_fixture
 from max.driver import accelerator_count
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAAttnKey, MHAKVCacheParams
+from max.nn.kv_cache import MHAAttnKey, MHAKVCacheParams
 from mimo_runner import Runner as GraphRunner
 from mimo_v3_runner import SCHEDULES, kv_params
 from mimo_v3_runner import Runner as ModuleV3Runner

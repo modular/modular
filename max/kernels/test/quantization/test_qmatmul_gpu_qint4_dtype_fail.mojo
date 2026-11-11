@@ -15,10 +15,13 @@
 
 from layout import TileTensor, row_major
 from linalg.utils import no_epilogue_fn
+from max.gpu.host import DeviceContext
 from quantization.qmatmul_gpu import matmul_gpu_qint4
 
 
 def main() raises:
+    var ctx = DeviceContext()
+
     var c_bf16_data = Array[BFloat16, 4](fill=0)
     var c_f32_data = Array[Float32, 4](fill=0)
     var a_bf16_data = Array[BFloat16, 4](fill=0)
@@ -34,19 +37,19 @@ def main() raises:
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, //,
-    matmul_gpu_qint4[32, "gpu"](c_bf16, a_f32, b)
+    matmul_gpu_qint4[32](c_bf16, a_f32, b, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, //,
-    matmul_gpu_qint4[32, "gpu"](c_f32, a_bf16, b)
+    matmul_gpu_qint4[32](c_f32, a_bf16, b, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, EpilogueFnType:
-    matmul_gpu_qint4[32, "gpu"](c_bf16, a_f32, b, no_epilogue_fn)
+    matmul_gpu_qint4[32](c_bf16, a_f32, b, no_epilogue_fn, ctx)
 
     # CHECK: [[@LINE+3]]:5: error: no matching function in call to 'matmul_gpu_qint4'
     # CHECK: note: candidate not viable: violated constraint
     # CHECK-NEXT: def matmul_gpu_qint4[c_type: DType, a_type: DType, EpilogueFnType:
-    matmul_gpu_qint4[32, "gpu"](c_f32, a_bf16, b, no_epilogue_fn)
+    matmul_gpu_qint4[32](c_f32, a_bf16, b, no_epilogue_fn, ctx)

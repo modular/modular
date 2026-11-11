@@ -24,8 +24,8 @@ from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.legacy.kernels import argmax_with_bias
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn._graph_ops import argmax_with_bias
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm.rms_norm import RMSNorm

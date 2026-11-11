@@ -33,12 +33,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import LayerList, Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

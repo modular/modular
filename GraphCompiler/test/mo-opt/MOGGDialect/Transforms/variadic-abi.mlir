@@ -9,11 +9,12 @@
 // RUN:   -verify-each=false
 // RUN: cat %t/*.mojo | FileCheck %s
 
-// End-to-end MAP-ABI emission of the four variadic packing ABIs. The
-// `$variadic_abi` attribute `ConformCallOperands` stamps on
-// `mogg.tuple.create` (from the callee's variadic parameter type) selects the
-// aggregate `TupleCreateOp::emitMojo` builds, so emission never inspects the
-// producing ops.
+// End-to-end MAP-ABI emission of variadic operands. The `$variadic_abi`
+// attribute `ConformCallOperands` stamps on `mogg.tuple.create` (from the
+// callee's variadic parameter type) selects the aggregate
+// `TupleCreateOp::emitMojo` builds, so emission never inspects the producing
+// ops. Every kernel here takes its variadic operands as a trait-bound
+// `TensorTuple`, fused or not.
 
 // TENSOR TUPLE: mo.concat takes its fused variadic inputs as a trait-bound
 // `TensorTuple`, so each element is its own fused load wrapper.
@@ -25,24 +26,25 @@ mo.graph @tensor_tuple(%a: !mo.tensor<[2], si32>, %b: !mo.tensor<[3], si32>, %c:
   mo.output %result : !mo.tensor<[9], si32>
 }
 
-// FUSED INPUT: the kernel's variadic inputs are fused, so they pack into a
-// `_FusedInputVariadicTensors` carrying a per-element `_FusionPack`.
-// CHECK: managed_tensor_slice._FusedInputVariadicTensors[
+// FUSED INPUT: the kernel's fused variadic inputs are a trait-bound
+// `TensorTuple`, so each element is its own fused load wrapper.
+// CHECK: extensibility.TensorTuple[
 mo.graph @fused_input(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
   %c = mo.custom [symbol = "variadic_add", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
   mo.output %c : !mo.tensor<[4], f32>
 }
 
-// FUSED OUTPUT: the kernel's variadic outputs are store-epilogue-fused, so they
-// pack into a `_FusedOutputVariadicTensors`.
-// CHECK: managed_tensor_slice._FusedOutputVariadicTensors[
+// FUSED OUTPUT: the kernel's store-epilogue-fused variadic outputs pack into a
+// `TensorTuple` of fused store wrappers.
+// CHECK: extensibility.TensorTuple[
 mo.graph @fused_output(%a: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
   %c:2 = mo.custom [symbol = "map_lower_variadic_fused_output", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
   mo.output %c#0, %c#1 : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
-// PLAIN: an unfused variadic input packs into a plain `VariadicTensors`.
-// CHECK: extensibility.VariadicTensors[
+// PLAIN: an unfused variadic input packs into a `TensorTuple` of dense
+// arguments.
+// CHECK: extensibility.TensorTuple[
 mo.graph @plain(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
   %c = mo.custom [symbol = "map_lower_variadic", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
   mo.output %c : !mo.tensor<[4], f32>

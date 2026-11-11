@@ -46,9 +46,13 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import Module
-from max.nn.legacy import kernels
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn import _graph_ops as kernels
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
     MiMoV2,
     MiMoV2SpecTarget,
@@ -59,9 +63,7 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.architectures.mimo_v2_modulev3.quant import (
     MXFP8_DISPATCH_QUANT_CONFIG,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict,
-)
+from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -130,9 +132,7 @@ def _post_fusion_ir(
         config.target_layer_ids = [1, 3]
     ep_batch_manager = _ep_manager(config) if layout == "tp_ep" else None
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    adapted = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=hf
-    )
+    adapted = WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
     mesh = _device_mesh()
     extra_inputs = (
         ep_batch_manager.input_types() if ep_batch_manager is not None else []

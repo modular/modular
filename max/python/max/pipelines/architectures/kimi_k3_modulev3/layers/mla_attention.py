@@ -54,7 +54,13 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn import Linear, Module
-from max.nn.common_layers.functional_kernels import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
+from max.nn.kernels import (
     flare_mla_prefill_plan,
     flash_attention_gpu,
     flash_attention_ragged,
@@ -62,13 +68,7 @@ from max.nn.common_layers.functional_kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
@@ -100,6 +100,7 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         kv_lora_rank: int,
         kv_params: KVCacheParams | None = None,
         layer_idx: int = 0,
+        tp_size: int = 1,
     ) -> None:
         """Builds the MLA attention.
 
@@ -121,6 +122,10 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             layer_idx: This layer's position among the model's full-attention
             layers, for :meth:`forward_ragged` and
             :meth:`forward_latent_ragged`.
+            tp_size: The TP degree :func:`tensor_parallel_mla_attention`
+            shards this layer over. Every rank's block of the fused input
+            projection holds its own copy of the replicated ``q_a`` and
+            ``kv_a`` rows, so the fused weight's row count depends on it.
         """
         super().__init__()
         self.num_heads = num_heads
@@ -128,22 +133,27 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         self.qk_rope_head_dim = qk_rope_head_dim
         self.q_head_dim = qk_nope_head_dim + qk_rope_head_dim
         self.v_head_dim = v_head_dim
+        self.q_lora_rank = q_lora_rank
         self.kv_lora_rank = kv_lora_rank
         self.kv_params = kv_params
         self.layer_idx = layer_idx
+        self.tp_size = tp_size
 
-        self.q_a_proj = Linear(
-            in_dim=hidden_size, out_dim=q_lora_rank, bias=False
+        # One GEMM for the three projections that read the layer input.
+        # Under TP, q_a and kv_a are replicated while the gate is
+        # head-sharded, so the weight is one contiguous [q_a | kv_a | g_r]
+        # block per rank (see `fuse_qkv_a_g_for_tp` in the weight adapter)
+        # and carries `tp_size` copies of q_a and kv_a.
+        self.qkv_a_g_proj = Linear(
+            in_dim=hidden_size,
+            out_dim=tp_size * (q_lora_rank + kv_lora_rank + qk_rope_head_dim)
+            + num_heads * v_head_dim,
+            bias=False,
         )
         self.q_a_layernorm = RMSNorm(q_lora_rank, eps=_KIMI_QKV_A_LAYERNORM_EPS)
         self.q_b_proj = Linear(
             in_dim=q_lora_rank,
             out_dim=num_heads * self.q_head_dim,
-            bias=False,
-        )
-        self.kv_a_proj_with_mqa = Linear(
-            in_dim=hidden_size,
-            out_dim=kv_lora_rank + qk_rope_head_dim,
             bias=False,
         )
         self.kv_a_layernorm = RMSNorm(
@@ -154,12 +164,40 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             out_dim=num_heads * (qk_nope_head_dim + v_head_dim),
             bias=False,
         )
-        self.g_proj = Linear(
-            in_dim=hidden_size, out_dim=num_heads * v_head_dim, bias=False
-        )
         self.o_proj = Linear(
             in_dim=num_heads * v_head_dim, out_dim=hidden_size, bias=False
         )
+
+    def input_projections(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """Runs the fused input GEMM and splits out its three projections.
+
+        Args:
+            x: The layer input, ``hidden_size`` wide on its last axis.
+
+        Returns:
+            ``(q_a, kv_a, gate_pre)`` over ``x``'s leading axes: the query
+            latent and the compressed key/value with its MQA rope tail, both
+            unnormalized and replicated, and the output gate's pre-sigmoid
+            logits, sharded by head under TP.
+        """
+        # The sizes are GLOBAL: a distributed `split` sections each rank's
+        # own [q_a | kv_a | g_r] block.
+        q_a, kv_a, gate_pre = self.qkv_a_g_proj(x).split(
+            [
+                self.tp_size * self.q_lora_rank,
+                self.tp_size * (self.kv_lora_rank + self.qk_rope_head_dim),
+                self.num_heads * self.v_head_dim,
+            ],
+            axis=-1,
+        )
+        if self.tp_size > 1:
+            # Every rank's q_a and kv_a pieces are whole copies, not shards:
+            # restate them replicated, as their own GEMMs on a replicated
+            # weight would have produced them.
+            replicated = NamedMapping(q_a.mesh, (None,) * q_a.rank)
+            q_a = q_a.rebind_mapping(replicated)
+            kv_a = kv_a.rebind_mapping(replicated)
+        return q_a, kv_a, gate_pre
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the MLA attention over ``x``.
@@ -172,8 +210,9 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             ``[batch, seq_len, hidden]``.
         """
         batch, seq_len = x.shape[0], x.shape[1]
+        q_a, compressed_kv, gate_pre = self.input_projections(x)
 
-        q_lat = self.q_a_layernorm(self.q_a_proj(x))
+        q_lat = self.q_a_layernorm(q_a)
         q = F.reshape(
             self.q_b_proj(q_lat),
             [batch, seq_len, self.num_heads, self.q_head_dim],
@@ -189,7 +228,6 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             axis=-1,
         )
 
-        compressed_kv = self.kv_a_proj_with_mqa(x)
         kv = F.reshape(
             self.kv_b_proj(
                 self.kv_a_layernorm(compressed_kv[..., : self.kv_lora_rank])
@@ -236,8 +274,9 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             [batch, seq_len, self.num_heads * self.v_head_dim],
         )
 
-        gate = F.sigmoid(self.g_proj(x))
-        return self.o_proj(attn * gate)
+        # Activated where it multiplies, so the sigmoid fuses into the
+        # product instead of running as its own launch after the GEMM.
+        return self.o_proj(attn * F.sigmoid(gate_pre))
 
     def forward_ragged(
         self,
@@ -268,14 +307,14 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         )
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        q_a, compressed_kv, gate_pre = self.input_projections(x)
 
-        q_lat = self.q_a_layernorm(self.q_a_proj(x))
+        q_lat = self.q_a_layernorm(q_a)
         query = F.reshape(
             self.q_b_proj(q_lat),
             [total_seq_len, self.num_heads, self.q_head_dim],
         )
 
-        compressed_kv = self.kv_a_proj_with_mqa(x)
         kv = F.reshape(
             self.kv_b_proj(
                 self.kv_a_layernorm(compressed_kv[:, : self.kv_lora_rank])
@@ -323,8 +362,7 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             [total_seq_len, self.num_heads * self.v_head_dim],
         )
 
-        gate = F.sigmoid(self.g_proj(x))
-        return self.o_proj(attn * gate)
+        return self.o_proj(attn * F.sigmoid(gate_pre))
 
     def forward_latent_ragged(
         self,
@@ -365,17 +403,16 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         )
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        # `kv` stays UNNORMALIZED: the kernel normalizes the latent half in
+        # place in the cache after storing it, so normalizing here would
+        # apply the gain twice.
+        q_a, kv, gate_pre = self.input_projections(x)
 
-        q_lat = self.q_a_layernorm(self.q_a_proj(x))
+        q_lat = self.q_a_layernorm(q_a)
         query = F.reshape(
             self.q_b_proj(q_lat),
             [total_seq_len, self.num_heads, self.q_head_dim],
         )
-
-        # UNNORMALIZED: the kernel normalizes the latent half in place in the
-        # cache after storing it, so normalizing here would apply the gain
-        # twice.
-        kv = self.kv_a_proj_with_mqa(x)
 
         # `kv_b_proj.weight` is `[heads * (qk_nope + v_head_dim), kv_lora_rank]`
         # with each head's rows contiguous, so a row-sharded TP copy keeps
@@ -434,8 +471,7 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             attn, [total_seq_len, self.num_heads * self.v_head_dim]
         )
 
-        gate = F.sigmoid(self.g_proj(x))
-        return self.o_proj(attn * gate)
+        return self.o_proj(attn * F.sigmoid(gate_pre))
 
 
 def kimi_k3_mla_prefill_plan(
@@ -519,20 +555,35 @@ def tensor_parallel_mla_attention(
     """Shards an MLA layer by head along the ``tp`` mesh axis.
 
     Follows ``deepseekV3_modulev3``'s
-    ``tensor_parallel_latent_attention_with_rope``. The latent projections
-    ``q_a_proj`` and ``kv_a_proj_with_mqa`` stay replicated. ``q_b_proj``,
-    ``kv_b_proj`` and the output gate ``g_proj`` are sharded on their output
-    dim. ``o_proj`` is sharded on its input dim, so the caller must
-    allreduce the output.
+    ``tensor_parallel_latent_attention_with_rope``: the latent projections
+    stay replicated, ``q_b_proj`` and ``kv_b_proj`` are sharded on their
+    output dim, and ``o_proj`` is sharded on its input dim, so the caller
+    must allreduce the output. Here the latent projections share one fused
+    weight, ``qkv_a_g_proj``, with the head-sharded output gate. The
+    adapter already wrote it as one ``[q_a | kv_a | g_r]`` block per rank,
+    so a plain row shard hands each rank whole copies of ``q_a`` and
+    ``kv_a`` and its own heads' gate rows.
+
+    Raises:
+        ValueError: If ``layer`` was built for a TP degree other than
+            ``mesh``'s, which sized its fused weight for the wrong number
+            of rank blocks.
     """
     tp_size = mesh.axis_size(TP)
+    if layer.tp_size != tp_size:
+        raise ValueError(
+            f"Kimi K3 MLA: the layer was built for TP degree {layer.tp_size},"
+            f" but the mesh shards it {tp_size} ways."
+        )
     if tp_size == 1:
         return layer
     check_divisible("MLA head count", layer.num_heads, tp_size)
 
     row_mapping = NamedMapping(mesh, (TP, None))
+    # The per-rank blocks are unequal parts, so `shard_interleaved_blocks`
+    # cannot express them; the adapter's layout makes a row shard exact.
+    layer.qkv_a_g_proj.weight = layer.qkv_a_g_proj.weight.to(row_mapping)
     layer.q_b_proj.weight = layer.q_b_proj.weight.to(row_mapping)
     layer.kv_b_proj.weight = layer.kv_b_proj.weight.to(row_mapping)
-    layer.g_proj.weight = layer.g_proj.weight.to(row_mapping)
     layer.o_proj.weight = layer.o_proj.weight.to(NamedMapping(mesh, (None, TP)))
     return layer

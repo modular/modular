@@ -11,13 +11,19 @@ package(
 modular_cc_binary(
     name = "crash-report-path-info",
     srcs = glob(["*.cpp"]),
-    deps = [
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
         "//Init",
         "//Support:Base",
         "//Support:Configuration",
         "//Support:CrashReporting",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//llvm:Support",
     ],
 )

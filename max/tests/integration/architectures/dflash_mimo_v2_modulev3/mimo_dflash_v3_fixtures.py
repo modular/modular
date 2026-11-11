@@ -35,9 +35,10 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
-from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2Config,
     DFlashMiMoV2DraftConfig,
@@ -51,6 +52,9 @@ from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import 
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict as draft_convert,
 )
+from max.pipelines.architectures.mimo_v2.weight_adapters import (
+    mimo_v2_weight_rules,
+)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
     MiMoV2SpecTarget,
 )
@@ -59,10 +63,7 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     SLIDING,
     MiMoV2Config,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
-    convert_safetensor_state_dict as target_convert,
-)
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, WeightTransform
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _driver_call,
     _graph_name,
@@ -72,6 +73,7 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 from max.pipelines.speculative import SpeculativeConfig, spec_adapters
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
+from transformers import PretrainedConfig
 
 BLOCK = 8
 DRAFTS = 7
@@ -336,11 +338,11 @@ def target_checkpoint(config: MiMoV2Config) -> OrderedDict[str, _FakeWeight]:
 
 
 def adapted_target(config: MiMoV2Config) -> dict[str, WeightData]:
-    """The target checkpoint through the ModuleV3 adapter, by MAX name."""
-    return target_convert(
-        _as_weights(target_checkpoint(config)),
-        huggingface_config=_FakeAttrConfig(),
+    """The target checkpoint through the MiMo-V2 rules, by MAX name."""
+    transform = WeightTransform(
+        mimo_v2_weight_rules(cast(PretrainedConfig, _FakeAttrConfig()))
     )
+    return transform(_as_weights(target_checkpoint(config)))
 
 
 def draft_checkpoint(

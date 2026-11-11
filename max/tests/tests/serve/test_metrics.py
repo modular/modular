@@ -162,6 +162,8 @@ def test_tokens_per_request_histograms() -> None:
     # Verify metrics exist in SERVE_METRICS
     assert "max.input_tokens_per_request" in metrics.SERVE_METRICS
     assert "max.output_tokens_per_request" in metrics.SERVE_METRICS
+    assert "max.request.cached_input_tokens" in metrics.SERVE_METRICS
+    assert "max.request.uncached_input_tokens" in metrics.SERVE_METRICS
 
     # Test recording input tokens per request
     m_input = metrics.MaxMeasurement("max.input_tokens_per_request", 256)
@@ -178,6 +180,8 @@ def test_tokens_per_request_histograms() -> None:
         "input_tokens_per_request",
         "output_tokens_per_request",
         "prefix_coverage_per_request",
+        "request_cached_input_tokens",
+        "request_uncached_input_tokens",
     ],
 )
 @pytest.mark.parametrize(
@@ -744,6 +748,31 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_hint_loss_counters_are_counters() -> None:
+    """The hint denominator and the blocks each loss costs are per-batch
+    deltas, so counters, and the per-reason one carries its reason."""
+    common.configure_metrics(Settings())
+    for name in (
+        "max.dkv.hints_received",
+        "max.dkv.hint_blocks_forgone_by_reason",
+        "max.dkv.own_run_blocks_short_of_hint",
+        "max.dkv.peer_blocks_short_of_hint",
+        "max.dkv.hint_blocks_unserved",
+    ):
+        assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.dkv_hint_blocks_forgone_by_reason(9, reason="chain_mismatch")
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name == "max.dkv.hint_blocks_forgone_by_reason"
+    )
+    assert measurement.attributes == {"model": "m", "reason": "chain_mismatch"}
+
+
 def test_dkv_peer_writeback_counters_are_counters() -> None:
     """Per-batch deltas like the split-load counter, so counters."""
     common.configure_metrics(Settings())
@@ -751,6 +780,8 @@ def test_dkv_peer_writeback_counters_are_counters() -> None:
         "max.dkv.peer_writeback_blocks",
         "max.dkv.peer_writeback_blocks_evicted",
         "max.dkv.peer_writeback_blocks_dropped",
+        "max.dkv.peer_writeback_hold_expired",
+        "max.dkv.peer_writeback_held_offloads",
     ):
         assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
@@ -760,6 +791,18 @@ def test_dkv_hinted_lookup_latency_is_a_latency_histogram() -> None:
     """A window's mean hinted lookup, bucketed like the rpc latencies."""
     common.configure_metrics(Settings())
     name = "max.dkv.hinted_lookup_latency"
+    assert isinstance(metrics.SERVE_METRICS[name], _ProxyHistogram)
+    assert (
+        common.HISTOGRAM_BUCKETS_BY_METRIC[name]
+        == common.HISTOGRAM_BUCKETS_BY_METRIC["max.dkv.rpc_read_latency"]
+    )
+    metrics.MaxMeasurement(name, 2.5).commit()  # Should not raise
+
+
+def test_dkv_peer_writeback_hold_latency_is_a_latency_histogram() -> None:
+    """A window's mean hold behind a write-back, bucketed like the rpcs."""
+    common.configure_metrics(Settings())
+    name = "max.dkv.peer_writeback_hold_latency"
     assert isinstance(metrics.SERVE_METRICS[name], _ProxyHistogram)
     assert (
         common.HISTOGRAM_BUCKETS_BY_METRIC[name]
@@ -1016,6 +1059,66 @@ def test_connector_lookup_admission_stop_carries_the_reason(
         metrics.SERVE_METRICS["max.cache.connector_lookup_admission_stops"],
         _ProxyCounter,
     )
+
+
+@pytest.mark.parametrize(
+    ("answer", "hinted"),
+    [("offered", False), ("empty", True), ("unseen", False)],
+)
+def test_connector_lookup_drops_carry_the_reason_answer_and_hint(
+    answer: metrics.LookupDropAnswer, hinted: bool
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.cache_connector_lookup_drops(
+        3, reason="shrink_cap", answer=answer, hinted=hinted
+    )
+    recorder.cache_connector_lookup_dropped_blocks(
+        9, reason="shrink_cap", hinted=hinted
+    )
+
+    drops, blocks = (c.args[0] for c in client.send_measurement.call_args_list)
+    assert (drops.instrument_name, drops.value, drops.attributes) == (
+        "max.cache.connector_lookup_drops",
+        3,
+        {
+            "model": "m",
+            "reason": "shrink_cap",
+            "answer": answer,
+            "hinted": str(hinted).lower(),
+        },
+    )
+    assert (blocks.instrument_name, blocks.value, blocks.attributes) == (
+        "max.cache.connector_lookup_dropped_blocks",
+        9,
+        {"model": "m", "reason": "shrink_cap", "hinted": str(hinted).lower()},
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "is_histogram"),
+    [
+        ("max.cache.connector_lookup_drops", False),
+        ("max.cache.connector_lookup_dropped_blocks", False),
+        ("max.cache.connector_lookup_shrink_cap_blocks", False),
+        ("max.cache.connector_lookup_shrink_depth", True),
+        ("max.cache.connector_lookup_reasks_per_request", True),
+        ("max.cache.connector_lookup_hand_backs_per_request", True),
+    ],
+)
+def test_connector_lookup_drop_instruments(
+    name: str, is_histogram: bool
+) -> None:
+    common.configure_metrics(Settings())
+    instrument = metrics.SERVE_METRICS[name]
+    if is_histogram:
+        assert _is_histogram(instrument)
+        assert name in common.HISTOGRAM_BUCKETS_BY_METRIC
+    else:
+        assert isinstance(instrument, _ProxyCounter)
+    metrics.MaxMeasurement(name, 2).commit()  # Should not raise
 
 
 def test_scheduler_step_time_is_a_separate_histogram() -> None:

@@ -107,7 +107,6 @@ build --remote_timeout=10m
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -116,7 +115,7 @@ build --rewind_lost_inputs
 
 # Local disk cache, tools/bazel opts developers in
 build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
-build:disk-cache --experimental_disk_cache_gc_max_size=100G
+build:disk-cache --disk_cache_gc_max_size=100G
 
 # Include full test log in failed tests
 build --test_output=errors
@@ -141,9 +140,6 @@ build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY=true
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=0
 build --test_env=MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=100
 
-# Allow --modify_execution_info to be passed any number of times
-common --incompatible_modify_execution_info_additive
-
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
 build --modify_execution_info=CcLtoBackendCompile=+supports-path-mapping
@@ -159,6 +155,115 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
+# Stop --//:modular_config= from affecting exec tools
+common --incompatible_exclude_starlark_flags_from_exec_config
+# Give exec tools a reasonable config since it's not set in 'opt' feature
+build --host_copt=-O2 --host_copt=-g0
+build --host_copt=-DMODULAR_HOST_CFG=1
+
+# Disable warning for third parties
+build --per_file_copt=external/.*@-Wno-global-constructors --host_per_file_copt=external/.*@-Wno-global-constructors
+# LLVM 22 enabled new warnings that trigger in external deps.
+build --per_file_copt=external/.*@-Wno-uninitialized-const-pointer --host_per_file_copt=external/.*@-Wno-uninitialized-const-pointer
+build --per_file_copt=external/.*@-Wno-unterminated-string-initialization --host_per_file_copt=external/.*@-Wno-unterminated-string-initialization
+# LLVM 23 enabled -Wattribute-alias, which triggers on tcmalloc's operator
+# new/delete aliases (TCMALLOC_ALIAS) on Linux. Scoped to tcmalloc so the
+# warning stays active for every other external dep.
+build --per_file_copt=external/.*tcmalloc.*@-Wno-attribute-alias --host_per_file_copt=external/.*tcmalloc.*@-Wno-attribute-alias
+
+# Some tests require rtti for gtest, harmless to enable globally
+build --per_file_copt=external/.*llvm-project/third-party/unittest/.*@-frtti
+
+build --@curl//:ssl_lib=mbedtls
+build --experimental_propagate_custom_flag=@curl//:use_mbedtls
+build --@curl//:http_only=false
+build --experimental_propagate_custom_flag=@curl//:http_only
+
+build --@opentelemetry-cpp//api:with_cxx_stdlib=2017
+build --experimental_propagate_custom_flag=@opentelemetry-cpp//api:with_cxx_stdlib
+
+# Tell MLIR where to bind its python bindings
+build --per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=max/python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+build --host_per_file_copt=external/.*llvm-project.*/Bindings/Python/.*@-DMLIR_PYTHON_PACKAGE_PREFIX=max._mlir.
+# Make symbols in TypeID visible
+build --per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/lib/Support/TypeID.cpp@-fvisibility=default
+# Generate typeinfo for llvm::support::format_adapter for use in python bindings
+build --per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/Support/FormatVariadic.cpp@-frtti
+
+build --per_file_copt=external/.*llvm-project/lldb/tools/lldb-dap/.*@-DLLDB_DAP_WELCOME_MESSAGE="\"Welcome to Mojo debugging! 🔥\\nInputs prefixed with a colon are treated as LLDB commands\\, e.g. `:thread list`. Other inputs are treated as expressions\\, e.g. `my_struct.some_field`.\\n\\n\""
+
+# Enable warnings-as-errors for third party repos, disable common warnings
+build --host_per_file_copt=external/.*@-no-pedantic,-Werror,-Wno-unused-const-variable,-Wno-deprecated-volatile,-Wno-deprecated-enum-enum-conversion,-Wno-deprecated-enum-compare-conditional,-Wno-deprecated-anon-enum-enum-conversion,-Wno-deprecated-this-capture,-Wno-unused-function,-Wno-unused-result,-Wno-covered-switch-default,-Wno-implicit-fallthrough,-Wno-cast-qual,-Wno-sign-compare,-Wno-deprecated-declarations,-Wno-unused-but-set-variable,-Wno-c++20-extensions,-Wno-unused-variable,-Wno-undef
+build --per_file_copt=external/.*@-no-pedantic,-Werror,-Wno-unused-const-variable,-Wno-deprecated-volatile,-Wno-deprecated-enum-enum-conversion,-Wno-deprecated-enum-compare-conditional,-Wno-deprecated-anon-enum-enum-conversion,-Wno-deprecated-this-capture,-Wno-unused-function,-Wno-unused-result,-Wno-covered-switch-default,-Wno-implicit-fallthrough,-Wno-cast-qual,-Wno-sign-compare,-Wno-deprecated-declarations,-Wno-unused-but-set-variable,-Wno-c++20-extensions,-Wno-unused-variable,-Wno-undef
+
+build --host_per_file_copt=external/protobuf.*@-Wno-missing-field-initializers
+build --per_file_copt=external/protobuf.*@-Wno-missing-field-initializers
+
+build --host_per_file_copt=external/tcmalloc.*@-Wno-c++20-designator,-Wno-missing-field-initializers
+build --per_file_copt=external/tcmalloc.*@-Wno-c++20-designator,-Wno-missing-field-initializers
+
+build --host_per_file_copt=external/patchelf./.*@-fexceptions,-Wno-ctad-maybe-unsupported
+build --per_file_copt=external/patchelf./.*@-fexceptions,-Wno-ctad-maybe-unsupported
+
+build --host_per_file_copt=external/re2.*@-Wno-suggest-override
+build --per_file_copt=external/re2.*@-Wno-suggest-override
+
+build --host_per_file_copt=external/grpc.*@-Wno-suggest-override,-Wno-unused-function
+build --per_file_copt=external/grpc.*@-Wno-suggest-override,-Wno-unused-function
+
+build --host_per_file_copt=external/glfw.*@-Wno-missing-field-initializers,-Wno-incompatible-pointer-types-discards-qualifiers
+build --per_file_copt=external/glfw.*@-Wno-missing-field-initializers,-Wno-incompatible-pointer-types-discards-qualifiers
+
+# Macros are redefined only on macOS
+build --per_file_copt=external/.*llvm_zlib/.*@-Wno-macro-redefined
+build --host_per_file_copt=external/.*llvm_zlib/.*@-Wno-macro-redefined
+
+# macOS specific ObjC++ has some warnings
+build --per_file_copt=external/.*llvm-project/lldb/.*@-Wno-vla-cxx-extension --host_per_file_copt=external/.*llvm-project/lldb/.*@-Wno-vla-cxx-extension
+
+# Debug info isn't produced unless it is potentially used. It is stripped in the production config before pushing the release binaries.
+build --strip=never
+
+# When consuming the foo.stripped binary, strip all symbols not just debug info symbols
+build --stripopt=-s
+
+# Empty tag uses the default, shared with debug-modular
+build --cc_output_directory_tag=
+build --compilation_mode=dbg
+build --//:modular_config=default
+
+build --per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+build --host_per_file_copt=external/.*llvm-project/.*@-ULLVM_BUILD_STATIC
+# clang has almost no export annotations, so its Basic layer, which liblldb
+# shares through @llvm-project//clang:clangBasic, exports everything.
+build --per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@-fvisibility=default
+# Nor do LLVM's Debuginfod and HTTP libraries yet, which lldb uses from libLLVM.
+build --per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
+# MLIR has no export annotations either, so @llvm-project//mlir:MLIR exports
+# it the way CMake's libMLIR does, with default visibility. The toolchain's
+# -fvisibility=hidden is what makes this necessary.
+build --per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+build --host_per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
+# abseil and rules_cc's runfiles library are exported from
+# libAsyncRTRuntimeGlobals, and xxhash from libKGENCompilerRTShared. None of
+# them has an export macro outside Windows.
+build --per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/(abseil-cpp|xxhash)[+]/.*@-fvisibility=default
+build --per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+build --host_per_file_copt=external/rules_cc[+]/cc/runfiles/.*@-fvisibility=default
+# libxml2 is linked into libLLVM, and lldb calls it directly. It has no export
+# macro outside Windows.
+build --per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+build --host_per_file_copt=external/libxml2[+]/.*@-fvisibility=default
+# zlib-ng is linked into libLLVM, and lld calls it directly.
+build --per_file_copt="external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility(\"default\")))"
+build --host_per_file_copt="external/zlib-ng[+]/.*@-DZ_EXTERN=extern __attribute__((visibility(\"default\")))"
 
 # Upstream NIXL (github.com/ai-dynamo/nixl) uses exceptions internally for
 # error reporting. Public API still surfaces nixl_status_t codes.
@@ -189,9 +294,9 @@ common --experimental_propagate_custom_flag=@aspect_rules_ts//ts:skipLibCheck
 
 build --remote_download_outputs=toplevel
 # Extra headers for clangd/IDEs. Not needed for CI.
-build:download-headers --remote_download_regex='.*\.(inc|h)$'
+build:download-headers --remote_download_regex=.*.(inc|h)$
 # Required for debug info references from binaries
-build:macos --remote_download_regex='.*\.(a|lo|o|dylib)$'
+build:macos --remote_download_regex=.*.(a|lo|o|dylib)$
 build --experimental_remote_cache_eviction_retries=3
 build --grpc_keepalive_time=30s
 build --remote_upload_local_results
@@ -199,9 +304,10 @@ build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
-build:cache --remote_downloader=grpcs://modular.buildbuddy.io
-build:cache --remote_downloader_local_fallback
-build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
+# `common` so `query` and `mod` also use the downloader. It needs the cache.
+common:cache --remote_downloader=grpcs://modular.buildbuddy.io
+common:cache --remote_downloader_local_fallback
+common:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
 
 build:remote --config=cache
 build:remote --remote_executor=grpcs://modular.buildbuddy.io

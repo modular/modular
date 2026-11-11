@@ -15,7 +15,7 @@
 Covers the whole ModuleV3 layer -- the unweighted RMSNorm, the stream
 projection, the fused gate op, and the stream collapse -- compiled ahead of
 time and measured against the same reference the ModuleV2 layer uses. At the
-widths ``mo.mhc.pre`` takes, the layer is also held to a float64 reference and,
+widths ``hyper_connection.mhc.pre`` takes, the layer is also held to a float64 reference and,
 where the op runs, to the op chain it replaces. GPU-only.
 """
 
@@ -41,7 +41,7 @@ from max.driver import (
 from max.dtype import DType
 from max.nn import GemmaRMSNorm, HyperConnection, Module, RMSNorm
 from max.nn import hyper_connection as hyper_connection_module
-from max.nn.legacy.kernels import mhc_pre_supports
+from max.nn._graph_ops import mhc_pre_supports
 from max.tensor import default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import (
@@ -416,9 +416,9 @@ def test_fused_site_in_graph(variant: _Variant) -> None:
     site = _PreSite(variant)
     graph = str(site.trace(_input_type(device)))
     uses_kernel = _uses_mhc_pre(variant.fn_dtype, device)
-    assert ("mo.mhc.pre" in graph) == uses_kernel
+    assert ("hyper_connection.mhc.pre" in graph) == uses_kernel
     # The op replaces the projection and the gate op; the chain keeps both.
-    assert ("mo.hyper_connection.gates" in graph) != uses_kernel
+    assert ("hyper_connection.gates" in graph) != uses_kernel
     # The op applies a plain RMSNorm itself; any other norm runs after it.
     has_rms_norm_op = _RMS_NORM_OP.search(graph) is not None
     assert has_rms_norm_op == (
@@ -427,7 +427,7 @@ def test_fused_site_in_graph(variant: _Variant) -> None:
 
     with _op_chain_only():
         chain = str(site.trace(_input_type(device)))
-    assert "mo.mhc.pre" not in chain
+    assert "hyper_connection.mhc.pre" not in chain
     assert (_RMS_NORM_OP.search(chain) is not None) == variant.has_norm
 
 
@@ -479,7 +479,7 @@ def test_fused_site_on_replicated_mesh() -> None:
         DType.bfloat16, ["total_seq_len", _HC_MULT, _FUSED_HIDDEN], replicated
     )
     uses_kernel = _uses_mhc_pre(variant.fn_dtype, mesh.devices[0])
-    assert str(site.trace(input_type)).count("mo.mhc.pre") == (
+    assert str(site.trace(input_type)).count("hyper_connection.mhc.pre") == (
         2 if uses_kernel else 0
     )
 

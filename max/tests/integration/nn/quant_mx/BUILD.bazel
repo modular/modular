@@ -50,3 +50,85 @@ modular_py_test(
         requirement("torch"),
     ],
 )
+
+# NVFP4 quantization-error measurement (in-graph, printed). SM100-only for
+# the same reason as above. Run by hand with `--config=remote-b200`.
+modular_py_test(
+    name = "quant_error_b200_gpu_tests",
+    size = "large",
+    srcs = ["test_nvfp4_quant_error_b200_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_entrypoints",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+    ],
+)
+
+# MXFP8 quantization-error measurement. SM100-only, like the MXFP8 matmul.
+# Run by hand with `--config=remote-b200`.
+modular_py_test(
+    name = "quant_error_mxfp8_b200_gpu_tests",
+    size = "large",
+    srcs = ["test_mxfp8_quant_error_b200_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# MXFP4 quantization-error measurement. AMD CDNA is where MXFP4's matmul runs,
+# so it is constrained to mi355 like quant_mx_amd_gpu_tests. Presubmit has no
+# AMD job; run by hand with `--config=remote-mi355`.
+modular_py_test(
+    name = "quant_error_mxfp4_amd_gpu_tests",
+    size = "large",
+    srcs = ["test_mxfp4_quant_error_amd_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

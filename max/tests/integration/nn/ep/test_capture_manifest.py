@@ -47,8 +47,9 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType, ops
+from max.nn.ep_config import EPConfig
 from max.nn.legacy import Allreduce, Signals
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.moe import MoE
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 
@@ -239,7 +240,6 @@ def test_ep_manifest_records_forked_stream() -> None:
         torch.randn(hidden, moe_dim) * 0.01
     )
     moe.load_state_dict({k: v.to(torch.bfloat16) for k, v in weights.items()})
-    ep_comm_init.ep_init(session)
 
     in_types = [
         TensorType(dtype, [32, hidden], DeviceRef.GPU(i))
@@ -253,6 +253,7 @@ def test_ep_manifest_records_forked_stream() -> None:
         ep_batch_manager.fetch_buffers(graph.inputs[N_DEVICES:])
         graph.output(*forward_moe_sharded_layers(shards, xs))
     model = session.load(graph, weights_registry=moe.state_dict())
+    ep_comm_init.ep_init(session)
     inputs = [
         Buffer.from_dlpack(torch.randn(32, hidden, dtype=torch.bfloat16)).to(d)
         for d in devices

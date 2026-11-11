@@ -26,14 +26,14 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import (
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
@@ -231,7 +231,7 @@ class Lfm3Base(Module[..., ModuleV3Outputs]):
         Returns the attention caches and the conv state pool and rows.
         """
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv = {
             key: PagedCacheValues.from_upstream(

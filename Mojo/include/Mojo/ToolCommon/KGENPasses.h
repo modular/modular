@@ -98,7 +98,9 @@ enum class InlinerDebugInfoUpdateTime {
 
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
+#pragma GCC visibility push(default)
 #include "Mojo/KGENPasses.h.inc"
+#pragma GCC visibility pop
 
 /// Register all passes with default options.
 void registerDefaultKGENPasses(const std::string &cacheBaseExtra);
@@ -250,11 +252,17 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
     const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
+/// Create a ForceAlwaysInline pass. `onAnnotated` is invoked for each function
+/// that carried non-automatic inline level.
+std::unique_ptr<mlir::Pass>
+createForceAlwaysInline(std::function<void(KGEN::FuncOp)> onAnnotated);
+
 //===----------------------------------------------------------------------===//
 // DecomposeFunctionArguments
 //===----------------------------------------------------------------------===//
 
-/// One flattened leaf surviving a decomposed argument.
+/// One flattened leaf of a decomposed argument: a position that becomes an
+/// argument of its own. `{i32, {f32, f32}}` gives `[0]`, `[1, 0]`, `[1, 1]`.
 struct DecomposedArgLeaf {
   mlir::Type type;
   /// `struct.extract` index path from the original argument to this leaf.
@@ -282,6 +290,12 @@ public:
   /// - vector of decomposed leaves otherwise
   virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
   planArgument(FuncOp func, unsigned argIdx, mlir::Type argType) = 0;
+
+  /// Plans result `resIdx` (of type `resType`) of `func` the same way; only
+  /// each leaf's type and path are used, as in `DecomposedArgLeaf`. The
+  /// default leaves results alone.
+  virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
+  planResult(FuncOp func, unsigned resIdx, mlir::Type resType);
 };
 
 /// Default policy: flattens every `kgen.struct` argument unconditionally,

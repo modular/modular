@@ -17,6 +17,7 @@
 #include "AsyncRT/Runtime/AsyncValueRef.h"
 #include "AsyncRT/Support/Chain.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "Support/Threading/Shared.h"
 #include "llvm/Support/ThreadPool.h"
 
@@ -26,7 +27,7 @@ class CPUDevice;
 /// This is an implement of the LLVM thread pool interface that wraps an AsyncRT
 /// cpuDevice. This can be used to inject an AsyncRT cpuDevice as the thread
 /// pool implementation inside an MLIR context.
-class LLVMThreadPool : public llvm::ThreadPoolInterface {
+class MODULAR_CXX_EXPORT LLVMThreadPool : public llvm::ThreadPoolInterface {
 public:
   LLVMThreadPool(AsyncRT::CPUDevice &cpuDevice)
       : cpuDevice(cpuDevice), poolTurnStile(cpuDevice) {}

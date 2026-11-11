@@ -149,6 +149,7 @@ def _bench[
         imm HV,
         imm HK,
         imm key_dim,
+        imm window,
         imm output,
         imm pool,
         imm slots,
@@ -177,12 +178,17 @@ def _bench[
                 ring.LayoutType,
                 ring_slots.LayoutType,
                 output.Engine,
+                # The op's decode verify launch: every row fits the ring.
+                True,
             ]
         ](
             Int32(batch),
             Int32(HV),
             Int32(HK),
             Int32(key_dim),
+            # A decode verify window is its anchor plus drafts; only a
+            # past-ring row reads the width.
+            Int32(window - 1),
             output,
             pool,
             slots,

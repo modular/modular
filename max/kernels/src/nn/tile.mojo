@@ -15,7 +15,6 @@
 from layout import Coord, TileTensor, coord_to_index_list
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
 from std.memory import unsafe_memcpy
 from std.sys.info import simd_width_of
 from std.utils import IndexList, StaticTuple
@@ -210,7 +209,6 @@ def _tile_cpu[
 def _tile_gpu[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -300,19 +298,16 @@ def _tile_gpu[
             if width == full_width:
                 elementwise[
                     simd_width=full_width,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
             else:
                 elementwise[
                     simd_width=1,
-                    target=target,
                     _trace_description="tile",
                 ](copy_row, output.layout.shape_coord(), ctx)
         else:
             elementwise[
                 simd_width=1,
-                target=target,
                 _trace_description="tile",
             ](copy_row, output.layout.shape_coord(), ctx)
     else:
@@ -339,7 +334,6 @@ def _tile_gpu[
 
         elementwise[
             simd_width=1,
-            target=target,
             _trace_description="tile",
         ](copy_element, output.layout.shape_coord(), ctx)
 
@@ -360,7 +354,6 @@ def tile[
 def tile[
     dtype: DType,
     type_repeats: DType,
-    target: StaticString,
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
     repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
@@ -368,10 +361,10 @@ def tile[
     ctx: DeviceContext,
 ) raises:
     """Tiles `input` into `output` on CPU or GPU."""
-    comptime if is_cpu[target]():
+    comptime if ctx.target.is_cpu():
         _tile_cpu(input, repeats, output)
     else:
-        _tile_gpu[dtype, type_repeats, target](input, repeats, output, ctx)
+        _tile_gpu[dtype, type_repeats](input, repeats, output, ctx)
 
 
 @inline(.always)

@@ -24,14 +24,14 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 @fieldwise_init
 struct DispatchSink(Writer):
     """`Writer` that checksums every byte instead of discarding it. `keep()`
-    on a bare `StringSlice` only preserves the `{ptr, len}` descriptor, not
+    on a bare `StringSpan` only preserves the `{ptr, len}` descriptor, not
     the bytes, so the compiler can skip producing them.
     """
 
     var checksum: UInt64
 
     @inline(.always)
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         for byte in string.bytes():
             self.checksum = self.checksum * 31 + UInt64(byte)
 

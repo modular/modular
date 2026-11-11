@@ -4,6 +4,16 @@ sidebar_position: 1
 description: Using layouts to describe multidimensional data.
 ---
 
+:::warning Deprecated API
+
+The `Layout` and `IntTuple` types described on this page are deprecated and
+have been removed from the `layout` package. Use the `Coord`-based
+[`TileLayout`](/tile-tensor/layouts/) (`layout.layout.Layout`) for layout
+values and `Coord` for shapes, strides, and indices instead. This page is kept
+for reference while its examples are ported to `TileLayout`.
+
+:::
+
 Mojo's [`layout` package](/api/mojo/layout/) provides a
 number of APIs for working with dense multidimensional arrays, which simplify
 writing algorithms for handling linear algebra.

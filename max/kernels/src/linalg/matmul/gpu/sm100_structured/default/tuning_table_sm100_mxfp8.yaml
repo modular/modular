@@ -368,3 +368,27 @@ params:
   NUM_PIPELINE_STAGES: 0
   IS_SMALL_BN: true
   BATCH_SIZE: 1
+# The wave heuristic's own pick in this M range, a swap-AB 256x64 tile, as a
+# row: under PDL a row loads its first weight k-groups before the wait, which
+# overlaps the producer's tail.
+- M: 65
+  M_END: 129
+  N: 8192
+  K: 4096
+  MMA_M: 256
+  MMA_N: 64
+  MMA_K: 32
+  CTA_GROUP: 2
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  CLUSTER_Z: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 2
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 1
+  NUM_PIPELINE_STAGES: 0
+  IS_SMALL_BN: false
+  BATCH_SIZE: 1

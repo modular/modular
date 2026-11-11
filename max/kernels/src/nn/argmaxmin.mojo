@@ -21,7 +21,7 @@ from max.algorithm.functional import _get_num_workers
 from max.gpu.host import DeviceContext
 from std.math.math import min as _min
 from layout import Coord, Idx, TileTensor
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 
 def argmax(

@@ -83,7 +83,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -114,7 +114,7 @@ comptime _tile_layout_mn_major[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
     native: Bool,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_row_len[dtype, swizzle_mode]],

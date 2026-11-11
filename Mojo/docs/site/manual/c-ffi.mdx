@@ -449,8 +449,7 @@ var name: String = "Echo"
 var cptr = external_call[
     "strdup", Optional[Pointer[c_char, MutUntrackedOrigin]]
 ](name.as_c_string_span())
-if cptr:
-    var ptr = cptr.value()
+if case .Some(ptr) = cptr:
     # Ask C for the length. A Mojo string's `byte_length()` measures the
     # Mojo side, which says nothing about the buffer C returned.
     var length = external_call["strlen", c_size_t](ptr)
@@ -497,13 +496,13 @@ def create_buffer(
     ](n)
 
 def main() raises:
-    var buf = create_buffer(c_size_t(16))
-    if not buf:
-        raise Error("malloc failed")
-    var ptr = buf.value()
-    ptr[unsafe_offset=0] = 42
-    print(ptr[unsafe_offset=0])  # 42
-    external_call["free", NoneType](ptr.unsafe_bitcast[NoneType]())
+    match create_buffer(c_size_t(16)):
+        case .Some(buf):
+            buf[unsafe_offset=0] = 42
+            print(buf[unsafe_offset=0])  # 42
+            external_call["free", NoneType](buf.unsafe_bitcast[NoneType]())
+        case .None:
+            raise Error("malloc failed")
 ```
 
 `MutUntrackedOrigin` tells Mojo not to reason about this pointer's lifetime.
@@ -531,9 +530,11 @@ struct CBuffer:
         var allocated = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
         ](n)
-        if not allocated:
-            raise Error("malloc failed")
-        self.ptr = allocated.value()
+        match allocated:
+            case .Some(ptr):
+                self.ptr = ptr
+            case .None:
+                raise Error("malloc failed")
 
     def __enter__(self) -> Pointer[UInt8, MutUntrackedOrigin]:
         return self.ptr
@@ -564,8 +565,8 @@ def main() raises:
     var found = external_call[
         "getenv", Optional[Pointer[c_char, MutUntrackedOrigin]]
     ](name.as_c_string_span())
-    if found:
-        print(String(unsafe_from_utf8_ptr=found.value()))
+    if case .Some(ptr) = found:
+        print(String(unsafe_from_utf8_ptr=ptr))
     else:
         print(t"{name} is not set")
 ```

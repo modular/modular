@@ -106,7 +106,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[fast_div.uint_type](idx) % fast_div
         ).cast[type]()
 
-    elementwise[simd_width=1, target="gpu"](func, Coord(length), ctx)
+    elementwise[simd_width=1](func, Coord(length), ctx)
 
     ctx.enqueue_copy(divisors._storage, out_divisors)
     ctx.enqueue_copy(remainders._storage, out_remainders)

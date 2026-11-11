@@ -17,10 +17,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import (

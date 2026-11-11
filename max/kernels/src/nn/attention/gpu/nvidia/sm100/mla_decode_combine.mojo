@@ -47,7 +47,12 @@ from std.sys import get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
-from nn.attention.mha_utils import OptionalPointer, as_optional_reg
+from nn.attention.mha_utils import (
+    NullPointer,
+    OptionalPointer,
+    as_optional_reg,
+    null_pointer,
+)
 
 
 # The combine is a PDL dependent of the decode: it waits on dependent grids
@@ -226,6 +231,7 @@ def mla_combine_kernel[
     has_attn_sink: Bool = False,
     early_loads: Bool = False,
     canonical_layout: Bool = False,
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
 ](
     params: CombineParams[
         output_type,
@@ -234,7 +240,8 @@ def mla_combine_kernel[
         ragged,
         warps_per_head,
         has_attn_sink,
-    ]
+    ],
+    lse_out: LseOutPtrType,
 ):
     """Combines partial split-K attention outputs into a single decoded result using LSE-based weighting.
 
@@ -266,6 +273,8 @@ def mla_combine_kernel[
         canonical_layout: Uses the normal launcher's contiguous partial
             layout and compile-time head stride. Raw calls default to
             runtime strides.
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (defaults to
+            `NullPointer`, which writes no LSE).
 
     Args:
         params: The `CombineParams` instance carrying the per-split partial
@@ -273,6 +282,9 @@ def mla_combine_kernel[
             ragged row offsets and attention-sink pointer, and the derived
             strides used to index the split, batch, sequence, and head
             dimensions.
+        lse_out: When non-null, receives each (token, head)'s global LSE, base
+            2, as a `[total_tokens, num_heads]` float32 tensor laid out like
+            the output rows; `-inf` for a token with no keys.
     """
     # Reading the row offsets before the wait is sound: every decode CTA waits
     # on its own predecessor grid before it triggers this one, so the
@@ -569,6 +581,20 @@ def mla_combine_kernel[
     else:
         # Non-ragged: same padded layout as o_accum_split
         final_out_row = out_row
+
+    # Decode context parallelism merges ranks with this LSE, so it is the
+    # attention's own, with no sink folded in.
+    comptime if not LseOutPtrType.is_null:
+        comptime assert (
+            not has_attn_sink
+        ), "the LSE output does not support an attention sink"
+        if sub_warp_idx == 0 and lane_idx == 0:
+            var lse_out_ptr = rebind[MutPointer[Float32, origin=MutAnyOrigin]](
+                lse_out.value()
+            )
+            lse_out_ptr[final_out_row] = (
+                min_or_neg_inf[.float32]() if sum_exp == 0.0 else global_lse
+            )
 
     var out_ptr = params.output_ptr.unsafe_offset(
         final_out_row
@@ -1187,6 +1213,7 @@ def launch_mla_combine_kernel[
     has_attn_sink: Bool = False,
     pdl: Bool = False,
     early_loads: Bool = False,
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
 ](
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
@@ -1197,6 +1224,7 @@ def launch_mla_combine_kernel[
     seq_len: Int,
     num_heads: Int,
     ctx: DeviceContext,
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
 ) raises:
     """Launches the main split-K combine kernel on the device with one CTA per (batch, seq, head-block).
 
@@ -1227,6 +1255,8 @@ def launch_mla_combine_kernel[
             `wait_on_dependent_grids()` (defaults to `False`).
         early_loads: Forwarded to `mla_combine_kernel` (defaults to
             `False`).
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
+            defaults to `NullPointer`).
 
     Args:
         out_accum_split: The per-split partial output accumulator tensor of
@@ -1246,6 +1276,8 @@ def launch_mla_combine_kernel[
             dimension along the sequence axis).
         num_heads: Number of query attention heads.
         ctx: The device context used to enqueue the kernel.
+        lse_out: Optional `[total_tokens, num_heads]` float32 output for the
+            global LSE, base 2; see `mla_combine_kernel`.
     """
     comptime ParamsType = CombineParams[
         output_type,
@@ -1302,6 +1334,7 @@ def launch_mla_combine_kernel[
             canonical_layout=(
                 output_type == .bfloat16 and head_dim == 512 and num_splits == 2
             ),
+            LseOutPtrType=LseOutPtrType,
         ]
     ](
         GridBlockAttributeLaunchConfig(
@@ -1310,6 +1343,7 @@ def launch_mla_combine_kernel[
             attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
         ),
         params,
+        lse_out,
     )
 
 
@@ -1318,6 +1352,7 @@ def launch_mla_combine_kernel[
 # ===----------------------------------------------------------------------=== #
 def mla_decode_combine_partial_outputs[
     AttnSinkPtrType: OptionalPointer,
+    LseOutPtrType: OptionalPointer = NullPointer[DType.float32],
     //,
     output_type: DType,
     accum_type: DType,
@@ -1338,6 +1373,7 @@ def mla_decode_combine_partial_outputs[
     seq_len: Int,
     num_heads: Int,
     ctx: DeviceContext,
+    lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
 ) raises:
     """Dispatches split-K partial output combination to either the split-parallel or the main combine kernel.
 
@@ -1349,6 +1385,9 @@ def mla_decode_combine_partial_outputs[
         AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
             (inferred). A non-null type applies the attention-sink
             correction to the global LSE.
+        LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred). A
+            non-null type writes the global LSE; the split-parallel kernel
+            does not support it.
         output_type: The element type of the per-split partial output
             accumulator and the final combined output tensor.
         accum_type: The element type of the per-split LSE accumulator values.
@@ -1390,12 +1429,17 @@ def mla_decode_combine_partial_outputs[
             dimension along the sequence axis).
         num_heads: Number of query attention heads.
         ctx: The device context used to enqueue the kernel.
+        lse_out: Optional `[total_tokens, num_heads]` float32 output for the
+            global LSE, base 2; see `mla_combine_kernel`.
     """
     comptime has_attn_sink = not AttnSinkPtrType.is_null
     var attn_sink_opt = rebind[OptionalReg[MutPointer[Float32, MutAnyOrigin]]](
         as_optional_reg(attn_sink_ptr)
     )
     comptime if split_parallel:
+        comptime assert (
+            LseOutPtrType.is_null
+        ), "the split-parallel combine does not write the LSE"
         launch_mla_combine_kernel_split_parallel[
             output_type,
             accum_type,
@@ -1436,4 +1480,5 @@ def mla_decode_combine_partial_outputs[
             seq_len,
             num_heads,
             ctx,
+            lse_out,
         )

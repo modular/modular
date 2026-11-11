@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """MI355X small-M streaming matmul op.
 
-Covers the graph custom op (`mo.smallm.streaming.matmul`) contract and, by
+Covers the graph custom op (`matmul.smallm.streaming`) contract and, by
 comparing against a plain matmul, the parity between the op's in-graph weight
 permutation and the layout the Mojo kernel reads.
 """
@@ -24,7 +24,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import smallm_streaming_matmul
+from max.nn._graph_ops import smallm_streaming_matmul
 from torch.utils.dlpack import from_dlpack
 
 N = 512

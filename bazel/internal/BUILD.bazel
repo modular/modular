@@ -1,10 +1,11 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_rust//extensions/pyo3:defs.bzl", "rust_pyo3_toolchain")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
-load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//bazel:config.bzl", "ASYNCRT_PROFILING_OPTIONS", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":jemalloc.bzl", "jemalloc_with_lg_page")
@@ -18,6 +19,14 @@ exports_files([
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
+
+[
+    config_setting(
+        name = "profiling_{}".format(value),
+        flag_values = {"//:profiling": value},
+    )
+    for value in ASYNCRT_PROFILING_OPTIONS
+]
 
 mypy_cli(
     name = "mypy_cli",
@@ -338,4 +347,34 @@ toolchain(
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
     toolchain = ":pyo3_toolchain_target",
     toolchain_type = "@rules_rust//extensions/pyo3:rust_toolchain_type",
+)
+
+# The parts of LLVM that the runtime libraries use. libLLVM temporarily links
+# against this library instead of containing its own copy (see llvm-shared.patch),
+# so a process that loads both the runtime and the compiler has one copy of LLVM's
+# global state. See ../docs/dynamic-linking.md.
+cc_shared_library(
+    name = "LLVMSupport",
+    exports_filter = [
+        "@llvm-project//llvm:__subpackages__",
+        "@llvm-project//third-party:__subpackages__",
+        "@llvm_xz//:__subpackages__",
+        "@llvm_zlib//:__subpackages__",
+        "@llvm_zstd//:__subpackages__",
+    ],
+    user_link_flags = select({
+        # Matches libLLVM.
+        "@platforms//os:linux": ["-Wl,-Bsymbolic-functions"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@llvm-project//llvm:BinaryFormatELF",
+        "@llvm-project//llvm:Demangle",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:TargetParser",
+        # Tools such as lld call zlib and zstd directly, including functions
+        # LLVM itself never uses, so link the whole libraries.
+        "@llvm-project//third-party:zlib",
+        "@llvm-project//third-party:zstd",
+    ],
 )

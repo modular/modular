@@ -103,6 +103,18 @@ def take_tuple_linear_payload() -> Int:
             return payload^.take()
 
 
+def take_destructured_linear_payload_pair() -> Int:
+    var (first, second) = make_linear_payload_pair()
+    return first^.take() + second^.take()
+
+
+def take_transferred_linear_payload_pair() -> Int:
+    var first = LinearPayload(31)
+    var second = LinearPayload(41)
+    var (left, right) = (first^, second^)
+    return left^.take() + right^.take()
+
+
 def describe_token(tok: Token) -> String:
     match tok:
         case .eof:
@@ -376,6 +388,10 @@ def test_optional():
     print("moved-non-movable:", take_optional_non_movable_payload())
     # CHECK: moved-tuple-linear: 17
     print("moved-tuple-linear:", take_tuple_linear_payload())
+    # CHECK: destructured-tuple-linear: 42
+    print("destructured-tuple-linear:", take_destructured_linear_payload_pair())
+    # CHECK: transferred-tuple-linear: 72
+    print("transferred-tuple-linear:", take_transferred_linear_payload_pair())
 
 
 def test_enum_like_token():

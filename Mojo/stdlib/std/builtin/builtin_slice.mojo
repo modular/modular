@@ -158,30 +158,35 @@ struct Slice(
         """
         var step = self.step.or_else(1)
 
-        var start = self.start
-        var end = self.end
-
         var positive_step = step > 0
 
-        if not start:
-            start = 0 if positive_step else length - 1
-        elif start.value() < 0:
-            start = start.value() + length
-            if start.value() < 0:
-                start = 0 if positive_step else -1
-        elif start.value() >= length:
-            start = length if positive_step else length - 1
+        var start: Int
+        match self.start:
+            case .None:
+                start = 0 if positive_step else length - 1
+            case .Some(s) if s < 0:
+                start = s + length
+                if start < 0:
+                    start = 0 if positive_step else -1
+            case .Some(s) if s >= length:
+                start = length if positive_step else length - 1
+            case .Some(s):
+                start = s
 
-        if not end:
-            end = length if positive_step else -1
-        elif end.value() < 0:
-            end = end.value() + length
-            if end.value() < 0:
-                end = 0 if positive_step else -1
-        elif end.value() >= length:
-            end = length if positive_step else length - 1
+        var end: Int
+        match self.end:
+            case .None:
+                end = length if positive_step else -1
+            case .Some(e) if e < 0:
+                end = e + length
+                if end < 0:
+                    end = 0 if positive_step else -1
+            case .Some(e) if e >= length:
+                end = length if positive_step else length - 1
+            case .Some(e):
+                end = e
 
-        return (start.value(), end.value(), step)
+        return (start, end, step)
 
 
 struct StridedSlice(ImplicitlyCopyable, Writable):

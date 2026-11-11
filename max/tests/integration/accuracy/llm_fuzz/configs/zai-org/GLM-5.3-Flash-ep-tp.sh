@@ -13,14 +13,13 @@
 
 # shellcheck disable=SC2034  # Variables are used when sourced
 
-# The ModuleV3 2xMI355 deployment, as in
-# glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml, with prefix
+# The 2xMI355 deployment, as in
+# glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml, with prefix
 # caching on so needle_prefix_cache tests it, as Mach serves it.
 batch_size=8
 max_length=16384
 
 extra_pipelines_args=(
-  --prefer-module-v3
   --ep-size 2
   --device-memory-utilization=0.78
   --enable-structured-output

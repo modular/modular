@@ -39,9 +39,9 @@ from max.graph.weights import WeightData
 from max.nn.legacy.hyper_connection import HyperConnection
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm.rms_norm import RMSNorm
-from max.pipelines.architectures.deepseekV4.layers import (
-    expand_copies,
-    hc_post,
+from max.pipelines.architectures.deepseekV4.layers import expand_copies
+from max.pipelines.architectures.deepseekV4.layers.hyper_connection import (
+    _hc_post_reference,
 )
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (
     HCStreams,
@@ -118,7 +118,10 @@ class _FusedAndUnfused(Module):
         )
         outs += [h_ref, h, *_gates(ref), *_gates(new)]
         # The write-back: graph ops, then mhc_post.
-        outs += [hc_post(x, copies, post, comb), pending.materialize()]
+        outs += [
+            _hc_post_reference(x, copies, post, comb),
+            pending.materialize(),
+        ]
         # The DSpark tap and the final collapse.
         outs += [_hc_mean(copies), final_collapse(copies, pre)]
         return tuple(outs)

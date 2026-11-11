@@ -137,11 +137,6 @@ using M::KGEN::ParamDefValue;
 /// op should be executed.
 constexpr StringRef kOperationDeviceRefAttrName = "device";
 
-/// Name of optional attribute signalling that a MO or MOGG op is called via a
-/// host shim that invokes the implementation on the 'device' attribute's
-/// device.
-constexpr StringRef kOperationViaHostAttrName = "via_host";
-
 namespace Impl {
 /// Verify that ranks are either all static and match or all dynamic.
 LogicalResult verifyMatchingRanks(ArrayRef<TensorValue> values);
@@ -158,7 +153,6 @@ LogicalResult verifySlidingWindow(SlidingWindow op);
 LogicalResult verifyPadLike(PadLike op);
 LogicalResult verifyMOSameOperandsAndResultElementType(Operation *op);
 LogicalResult verifyMOSameOperandsAndResultShapeAttr(Operation *op);
-LogicalResult verifyMOSameOperandsAndResultShape(Operation *op);
 LogicalResult verifyMOSameOperandsElementType(Operation *op);
 LogicalResult verifyMOSameFirstOperandAndResultsElementType(Operation *op);
 LogicalResult verifyHostOnly(Operation *op);

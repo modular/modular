@@ -44,7 +44,7 @@ def test_elementwise() raises:
         numelems: Int,
         outer_rank: Int,
         shape: IndexList[outer_rank],
-    ](ctx: DeviceContext) raises:
+    ](ctx: DeviceContext.CPU) raises:
         var memory1 = Array[Float32, numelems](fill={})
         var buffer1 = Span(memory1)
 

@@ -347,6 +347,20 @@ kgen.func @ref_pack_from_pointer_pack(
 
 // -----
 
+// CHECK-LABEL: kgen.generator @ref_pack_concat<Ts: param_list<type>>
+lit.fn @ref_pack_concat<Ts: !kgen.param_list<!kgen.type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>) {
+  // CHECK-NEXT: kgen.struct.concat(%arg0, %arg1) : !kgen.struct<(pointer<index>) isParamPack>, !kgen.struct<variadic_ptr_map(:param_list<type> Ts, 0) isParamPack layout> -> !kgen.struct<variadic_ptr_map(:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, 0) isParamPack layout>
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  hlcf.return
+}
+
+// -----
+
 lit.fn @unbox(%arg: !lit.struct<@Int>) -> index {
   %0 = index.constant 0
   hlcf.return %0 : index

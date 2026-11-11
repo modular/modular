@@ -22,6 +22,17 @@ This version is still a work in progress.
   statements to work with non-movable and linear types, and reduces copies in
   general.
 
+- You can destructure a tuple of transferred non-copyable values into a `var`
+  pattern without copies, such as `var (x, y) = (a^, b^)`. This includes
+  movable types that are not `Copyable`.
+
+- Comparisons now try the reflected method on the right operand when the left
+  operand does not support the comparison. For example, `0 < value` can call
+  `value.__gt__(0)`.
+
+- `match` now warns when literal cases do not include a catch-all pattern,
+  helping identify unmatched values.
+
 - Auto-parameterization now reaches `_` holes nested inside other parameterized
   types, so an unbound parameter at any depth of an argument's type becomes an
   an implicit parameter of the function:
@@ -29,6 +40,38 @@ This version is still a work in progress.
   ```mojo
   def process(p: Optional[Pointer[Int, _]]): ...
   ```
+
+- Mojo now allows unbound a parameter that has a default dependencies, the
+  default value will later be refined when the unbound parameter is provided:
+
+  ```mojo
+  def depends_on_a[a: Int]() -> Int:
+      return a
+
+  struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
+      ...
+
+  # No longer a compilation error
+  comptime Partial = NestedDeps[_]
+
+  # Bound = NestedDeps[3, depend_on_a[3]()]
+  comptime Bound = Partial[3]
+  ```
+
+- A call to a function that takes a variadic pack (`*args: *Ts`) can now mix
+  arguments and unpacked packs. The callee receives one pack with all the
+  elements in order:
+
+  ```mojo
+  def show[*Ts: Writable](*args: *Ts): ...
+
+  def wrap[*Ts: Writable](*args: *Ts):
+      show("[", *args, "]")
+      show(*args, *args)
+  ```
+
+  Unpacking the same pack twice into a `mut` pack argument, such as
+  `update(*args, *args)`, is an aliasing error.
 
 ## Language changes
 
@@ -62,6 +105,9 @@ This version is still a work in progress.
   don't satisfy the condition. Previously, only an always-false conformance's
   message was reported.
 
+- `@explicit_destroy("<message>")` on a trait is deprecated and now emits a
+  warning. Only structs support a custom linear type error message.
+
 - Precompiled packages now no longer leak names and provide the same surface as
   the same packages compiled from source. This may break your code (especially
   from `std`):
@@ -77,6 +123,10 @@ This version is still a work in progress.
 
 - `List.insert`
 - `List.clear`
+- `Pointer.__init__(to=)`
+- `Pointer.__eq__`
+- `Pointer.__ne__`
+- `Pointer.unsafe_bitcast`
 
 ## Library performance improvements
 
@@ -102,6 +152,43 @@ This version is still a work in progress.
   immutable pointer, as `Pointer` does.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+
+- Added a builtin `filter()`, which takes an iterable and a predicate closure
+  and yields the elements the predicate accepts:
+  `filter(items, lambda (x: Int) -> Bool: x > 0)`.
+
+- `take_while()` and `drop_while()` in `std.itertools` now take the predicate
+  as an argument instead of a compile-time parameter, so it can be a closure
+  that captures values. Write `take_while(items, pred)` instead of
+  `take_while[pred](items)`.
+
+- `Span.binary_search_by()` no longer takes the comparator as a compile-time
+  parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
+  lets it capture the value being searched for.
+
+- `QuickBench.run()` in `std.benchmark` now takes a single closure with no
+  arguments in place of its eleven overloads for functions of 0 to 10
+  arguments. Capture the inputs instead of passing them separately:
+  `qb.run(lambda () {x} -> Float32: exp(x), bench_id=BenchId("exp"))`.
+
+- `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
+  now raise an `Error` instead of aborting when the string is empty. They also
+  raise when the string holds more than one codepoint; previously they
+  silently returned the first codepoint unless assertions were enabled.
+  Callers must now handle the error with `try` or a `raises` function. On a
+  string literal, both never raise, and a literal that isn't exactly one
+  codepoint is a compile-time error.
+
+  ```mojo
+  var text = String("🔥")
+  var codepoint = ord(text)  # 128293; raises if `text` isn't one codepoint
+  comptime letter = ord("a")  # 97; never raises
+  ```
+
+- `pow()` now takes a modulus as a third argument, like Python's `pow()`:
+  `pow(base, exp, mod)` computes `base ** exp % mod` for integers of up to 64
+  bits without overflowing. The result has the sign of `mod`, and a negative
+  `exp` uses the modular inverse of `base`, so `pow(3, -1, 7)` is `5`.
 
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
@@ -192,6 +279,36 @@ This version is still a work in progress.
   def fill(buf: Optional[MutPointer[Byte, _]]): ...
   ```
 
+- The `StringSlice`, `ImmStringSpan`, and `ImmStringSlice` aliases are
+  deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
+  the `Imm` variants are redundant.
+
+- `Span` now conforms to `Equatable` when its element type does.
+
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`
+  now return a reference with an interior origin of the `Optional`.
+  Reassigning the `Optional`, or calling a `mut self` method on it
+  invalidates outstanding references to its value. Reading through
+  such a reference afterward used to compile and read a destroyed value; it is
+  now a compile error:
+
+  ```mojo
+  var opt = Optional(5)
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
+  ```
+
+- `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
+  and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
+  instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
+  `FileDescriptor` directly, since both convert implicitly:
+
+  ```mojo
+  with open("log.txt", "w") as f:
+      print("hello", file=f)
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
@@ -213,6 +330,22 @@ This version is still a work in progress.
   `ConversionToPythonErrorType`.
 
 ## Tooling changes
+
+- `mojo build` and `mojo run` can now report what elaboration produced, to
+  show which compile-time code makes a compile slow. `--elaboration-stats`
+  lists each `comptime for` loop with its iteration count and the operations
+  its unrolled iterations produced. It also lists the calls that compile-time
+  evaluation made to the interpreter, summed by function and by call site,
+  with their cache hits and the CPU time spent interpreting. The
+  report has one part for each pipeline that elaborated: the host and each
+  accelerator target. This option is hidden; use `--help-hidden` to list it.
+
+  Like the timing reports, the report prints as text to stderr by default.
+  `--timing-json` prints it as JSON instead, under an `elaboration` key, and
+  `--timing-file` writes it to a file instead of stderr. If the compilation
+  hits the cache, elaboration is skipped and nothing is reported. Clear
+  compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
+  to get a full report.
 
 ## Removed
 
@@ -305,5 +438,16 @@ This version is still a work in progress.
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
 
+- `**` with an integer exponent no longer truncates the exponent to 32 bits,
+  so `Float64(2.0) ** Int64(4294967296)` is now `inf` instead of `1.0`, and
+  `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
+
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
+  and deinits it after its last use.
+
+- Building a `SIMD` value from a list literal with the wrong number of elements
+  is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
+  and kept only the first element.

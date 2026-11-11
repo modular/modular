@@ -12,13 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import iota
+from std.sys import align_of
 
 import extensibility
 
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
 
-from extensibility import OutputTensor, foreach
+from extensibility import (
+    Output,
+    Tensor,
+    TileTensorable,
+    get_kernel_simd_width,
+)
 
 from std.utils.coord import Coord, coord_to_index_list
 
@@ -28,11 +35,8 @@ comptime float_dtype = DType.float32
 @extensibility.register("mandelbrot")
 struct Mandelbrot:
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
-        output: OutputTensor,
+    def execute(
+        output: Some[Output & Tensor],
         # starting here are the list of inputs
         min_x: Float32,
         min_y: Float32,
@@ -42,10 +46,15 @@ struct Mandelbrot:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime output_alignment = type_of(output).alignment
+        var output_tile = output.to_tile_tensor[dtype]()
+
         @inline(.always)
         def elementwise_mandelbrot[
-            width: Int
-        ](idx: Coord) {var} -> SIMD[output.dtype, width]:
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
             # Obtain the position in the grid from the X, Y thread locations.
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
@@ -64,7 +73,7 @@ struct Mandelbrot:
             var z = ComplexSIMD[float_dtype, width](0, 0)
 
             # Perform the Mandelbrot iteration loop calculation.
-            var iters = SIMD[output.dtype, width](0)
+            var iters = SIMD[dtype, width](0)
             var in_set_mask = SIMD[.bool, width](fill=True)
             for _ in range(max_iterations):
                 if not any(in_set_mask):
@@ -73,6 +82,11 @@ struct Mandelbrot:
                 iters = in_set_mask.select(iters + 1, iters)
                 z = z.squared_add(c)
 
-            return iters
+            output_tile.store[
+                width=width,
+                alignment=min(output_alignment, alignment * align_of[dtype]()),
+            ](idx, iters)
 
-        foreach[target=target](elementwise_mandelbrot, output, ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            elementwise_mandelbrot, output.shape(), ctx
+        )

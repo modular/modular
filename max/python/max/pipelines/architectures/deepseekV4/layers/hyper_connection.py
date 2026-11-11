@@ -54,6 +54,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
+from max.nn._graph_ops import mhc_post, mhc_post_supports
 
 
 def _mixes(flat: TensorValue, fn: TensorValue, norm_eps: float) -> TensorValue:
@@ -88,7 +89,34 @@ def hc_post(
     The mixing term is a rank-5 elementwise product reduced over ``j`` rather
     than the equivalent ``comb^T @ residual``. It is the reference's form, and
     on the accelerator it is also the accurate one: a batched matmul here would
-    run the contraction in TF32 over the whole residual stream.
+    run the contraction in TF32 over the whole residual stream. On a GPU the
+    same float32 sum runs as one ``mo.mhc.post`` launch.
+    """
+    hc_mult, d = int(residual.shape[2]), int(residual.shape[3])
+    if (
+        residual.device.is_gpu()
+        and x.dtype == residual.dtype
+        and mhc_post_supports(hc_mult, d, residual.dtype)
+    ):
+        out = mhc_post(
+            ops.reshape(residual, [-1, hc_mult, d]),
+            ops.reshape(x, [-1, d]),
+            ops.reshape(post, [-1, hc_mult]),
+            ops.reshape(comb, [-1, hc_mult, hc_mult]),
+        )
+        return ops.reshape(out, residual.shape)
+    return _hc_post_reference(x, residual, post, comb)
+
+
+def _hc_post_reference(
+    x: TensorValue,
+    residual: TensorValue,
+    post: TensorValue,
+    comb: TensorValue,
+) -> TensorValue:
+    """The graph-op form of :func:`hc_post`, independent of ``mo.mhc.post``.
+
+    Kept separate so the GPU tests can check the kernel against it.
     """
     direct = ops.unsqueeze(post, -1) * ops.unsqueeze(x, -2)
     mixed = ops.squeeze(

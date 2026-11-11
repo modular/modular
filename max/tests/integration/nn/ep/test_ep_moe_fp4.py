@@ -19,7 +19,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -29,10 +29,12 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import EP_COMBINE_MX_MIN_TOKENS, EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.legacy.moe import MoEGate, MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -466,9 +468,6 @@ def test_ep_moe_nvfp4(
     # Load weights
     moe.load_state_dict(wrapped_moe_weights_fp4)
 
-    # Initialize EP communication infrastructure
-    ep_comm_init.ep_init(session)
-
     per_device_input_types: list[TensorType] = [
         TensorType(
             DType.bfloat16,
@@ -488,11 +487,6 @@ def test_ep_moe_nvfp4(
         for i in range(n_devices)
     ]
 
-    per_device_inputs = [
-        Buffer.from_dlpack(input).to(devices[i])
-        for i, input in enumerate(per_device_inputs_torch)
-    ]
-
     with Graph(
         "EPMoE_FP4",
         input_types=[
@@ -509,15 +503,7 @@ def test_ep_moe_nvfp4(
         str(graph), ep_config, n_devices, fuse_ffn_combine_send
     )
 
-    # Compile and execute MoE
     compiled = session.load(graph, weights_registry=moe.state_dict())
-    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
-    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
-
-    all_outputs = torch.cat(torch_result, dim=0)
-    assert not torch.any(torch.isnan(all_outputs)), (
-        "MoE output should not contain NaN"
-    )
 
     # Build and run MoEGate to obtain topk indices/scores for reference.
     moe_gate = MoEGate(
@@ -550,6 +536,22 @@ def test_ep_moe_nvfp4(
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    # Initialize EP communication infrastructure
+    ep_comm_init.ep_init(session)
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+
+    all_outputs = torch.cat(torch_result, dim=0)
+    assert not torch.any(torch.isnan(all_outputs)), (
+        "MoE output should not contain NaN"
+    )
+
     gate_result = gate_compiled.execute(*per_device_inputs)
     topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
 
@@ -715,9 +717,6 @@ def test_ep_moe_mxfp4(
     # Load weights
     moe.load_state_dict(wrapped_moe_weights_fp4)
 
-    # Initialize EP communication infrastructure
-    ep_comm_init.ep_init(session)
-
     per_device_input_types: list[TensorType] = [
         TensorType(
             DType.bfloat16,
@@ -737,11 +736,6 @@ def test_ep_moe_mxfp4(
         for i in range(n_devices)
     ]
 
-    per_device_inputs = [
-        Buffer.from_dlpack(input).to(devices[i])
-        for i, input in enumerate(per_device_inputs_torch)
-    ]
-
     with Graph(
         "EPMoE_FP4",
         input_types=[
@@ -754,15 +748,7 @@ def test_ep_moe_mxfp4(
         outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
         graph.output(outputs)
 
-    # Compile and execute MoE
     compiled = session.load(graph, weights_registry=moe.state_dict())
-    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
-    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
-
-    all_outputs = torch.cat(torch_result, dim=0)
-    assert not torch.any(torch.isnan(all_outputs)), (
-        "MoE output should not contain NaN"
-    )
 
     # Build and run MoEGate to obtain topk indices/scores for reference.
     moe_gate = MoEGate(
@@ -795,6 +781,22 @@ def test_ep_moe_mxfp4(
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    # Initialize EP communication infrastructure
+    ep_comm_init.ep_init(session)
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+
+    all_outputs = torch.cat(torch_result, dim=0)
+    assert not torch.any(torch.isnan(all_outputs)), (
+        "MoE output should not contain NaN"
+    )
+
     gate_result = gate_compiled.execute(*per_device_inputs)
     topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
 
@@ -840,3 +842,144 @@ def test_ep_moe_mxfp4(
         assert cos_sim.min() > 0.99, (
             f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f} < 0.99"
         )
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="FP4 kernel only supports AMD GPUs"
+)
+@pytest.mark.parametrize("tokens_per_device", [64, 1200])
+def test_ep_moe_mxfp4_mx_combine(
+    tokens_per_device: int,
+    moe_weights_mxfp4: dict[str, torch.Tensor],
+) -> None:
+    """An MXFP8 combine stays close to the exact one and kicks in by size.
+
+    The same split dispatch-wait EP layer runs with the combine exact and with
+    ``combine_mx_min_tokens``. Below the threshold the two must be bit
+    identical; above it the MXFP8 messages must change the output, but only by
+    their rounding.
+    """
+    n_devices = 2
+    if accelerator_count() < n_devices:
+        pytest.skip(f"needs {n_devices} GPUs")
+    top_k = 8
+    max_tokens_per_rank = 1280
+    dtype = DType.uint8
+
+    wrapped: dict[str, WeightData | torch.Tensor] = {}
+    for key, value in moe_weights_mxfp4.items():
+        value = value.cpu()
+        if value.dtype == torch.float8_e4m3fn:
+            wrapped[key] = WeightData(
+                Buffer.from_dlpack(value.view(torch.uint8)).view(
+                    DType.float8_e4m3fn
+                ),
+                key,
+                DType.float8_e4m3fn,
+                Shape(value.shape),
+            )
+        else:
+            wrapped[key] = value
+
+    devices = [Accelerator(id) for id in range(n_devices)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+    session = InferenceSession(devices=devices)
+    fp4_config = QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 32),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e8m0fnu,
+            block_size=(1, 32),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=QuantFormat.MXFP4,
+    )
+
+    def make_config(combine_mx_min_tokens: int) -> EPConfig:
+        return EPConfig(
+            dispatch_dtype=dtype,
+            combine_dtype=DType.bfloat16,
+            hidden_size=HIDDEN_DIM,
+            top_k=top_k,
+            n_experts=NUM_EXPERTS,
+            max_tokens_per_rank=max_tokens_per_rank,
+            n_gpus_per_node=n_devices,
+            n_nodes=1,
+            dispatch_quant_config=fp4_config,
+            combine_mx_min_tokens=combine_mx_min_tokens,
+        )
+
+    ep_comm_init = EPCommInitializer(make_config(0))
+
+    inputs_torch = [
+        torch.randn(tokens_per_device, HIDDEN_DIM, dtype=torch.bfloat16)
+        for _ in range(n_devices)
+    ]
+    input_types = [
+        TensorType(DType.bfloat16, ("n_tokens", HIDDEN_DIM), DeviceRef.GPU(i))
+        for i in range(n_devices)
+    ]
+
+    def load(combine_mx_min_tokens: int) -> Model:
+        ep_batch_manager = EPBatchManager(make_config(combine_mx_min_tokens))
+        moe = MoEQuantized(
+            devices=[DeviceRef.CPU()] + devices_ref,
+            hidden_dim=HIDDEN_DIM,
+            num_experts=NUM_EXPERTS,
+            num_experts_per_token=top_k,
+            moe_dim=MOE_DIM,
+            has_shared_experts=True,
+            shared_experts_dim=MOE_DIM,
+            ep_size=n_devices,
+            dtype=dtype,
+            ep_batch_manager=ep_batch_manager,
+            quant_config=fp4_config,
+        )
+        moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+        moe_shards = moe.shard(devices_ref)
+        moe.load_state_dict(wrapped)
+        with Graph(
+            "EPMoE_FP4_mx_combine",
+            input_types=[*input_types, *ep_batch_manager.input_types()],
+        ) as graph:
+            xs = [x.tensor for x in graph.inputs[:n_devices]]
+            ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
+            graph.output(*forward_moe_sharded_layers(moe_shards, xs))
+        return session.load(graph, weights_registry=moe.state_dict())
+
+    exact_model = load(0)
+    mx_model = load(EP_COMBINE_MX_MIN_TOKENS)
+    ep_comm_init.ep_init(session)
+
+    def run(model: Model) -> torch.Tensor:
+        result = model.execute(
+            *[
+                Buffer.from_dlpack(x).to(d)
+                for x, d in zip(inputs_torch, devices, strict=True)
+            ],
+            *ep_comm_init.model_inputs(),
+        )
+        return torch.cat([torch.from_dlpack(x).to("cpu") for x in result])
+
+    exact = run(exact_model)
+    mx = run(mx_model)
+    assert torch.isfinite(mx.float()).all()
+    if tokens_per_device * n_devices < EP_COMBINE_MX_MIN_TOKENS:
+        assert torch.equal(exact, mx), (
+            "a small step must keep the exact combine"
+        )
+        return
+    assert not torch.equal(exact, mx), (
+        "a large step must take the MXFP8 combine"
+    )
+    cos = torch.nn.functional.cosine_similarity(
+        exact.float(), mx.float(), dim=-1
+    )
+    assert cos.min() > 0.999, f"MXFP8 combine cosine {cos.min().item():.6f}"

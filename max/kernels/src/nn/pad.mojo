@@ -19,7 +19,6 @@
 
 
 from layout import (
-    Coord,
     TensorLayout,
     TileTensor,
     row_major,

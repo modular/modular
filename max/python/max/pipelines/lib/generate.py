@@ -68,11 +68,9 @@ from max.pipelines.modeling.types import (
 from PIL import Image
 
 from .config import PipelineConfig
+from .graph_specs import GraphRole
 from .interfaces import PipelineModel
 from .log_probabilities import _MAX_TOP_LOGPROBS
-from .pipeline_variants.block_diffusion_text_generation import (
-    BlockDiffusionTextGenerationPipeline,
-)
 from .registry import PIPELINE_REGISTRY
 from .tokenizer import checked_token_ids
 
@@ -849,11 +847,7 @@ def _check_supported(
             "text",
             caller=caller,
         )
-    if (
-        arch is not None
-        and arch.pipeline_cls is not None
-        and issubclass(arch.pipeline_cls, BlockDiffusionTextGenerationPipeline)
-    ):
+    if arch is not None and GraphRole.BLOCK_DIFFUSION in arch.modules:
         raise _unsupported(
             pipeline_config,
             "block diffusion models",

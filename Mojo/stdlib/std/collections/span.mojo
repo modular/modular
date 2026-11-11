@@ -173,6 +173,7 @@ struct Span[
     Boolable,
     Defaultable,
     DevicePassable where address_space == .GENERIC,
+    Equatable where conforms_to(T, Equatable) and address_space == .GENERIC,
     Hashable where conforms_to(T, Hashable) and address_space == .GENERIC,
     ImplicitlyCopyable,
     Iterable where address_space == .GENERIC,
@@ -724,10 +725,50 @@ struct Span[
         """
         return len(self) > 0
 
-    # This decorator informs the compiler that indirect address spaces are not
-    # dereferenced by the method.
-    # TODO: replace with a safe model that checks the body of the method for
-    # accesses to the origin.
+    # TODO: This decorator informs the compiler that indirect origins are
+    # not dereferenced by the method. replace with a safe model that checks the
+    # body of the method for accesses to the origin.
+    # TODO: We require these first two overload of `__eq/ne__` to conform to the
+    # `Equatable` trait as the `__eq/ne__` signature must match exactly. Ideally
+    # we don't need overloads to have origins work correctly.
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __eq__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are equal in length and contain the same
+            elements, False otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__eq__(rhs=rebind[Generic](rhs_same))
+
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __ne__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is not equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are not equal in length or contents, False
+            otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__ne__(rhs=rebind[Generic](rhs_same))
+
+    # TODO: These follow two overloads of `__eq/ne__` are required so that we
+    # can compare `Span`s with different origins. Ideally we'd only need a
+    # single eq/ne method that handles origins and conforms to the `Equatable`
+    # trait properly.
     @__unsafe_nested_origins_read_only
     @__allow_legacy_custom_self_type
     def __eq__(
@@ -756,6 +797,7 @@ struct Span[
 
     @inline(.always)
     @__allow_legacy_custom_self_type
+    @__unsafe_nested_origins_read_only
     def __ne__(
         self: Span[Self.T, _], rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -1080,59 +1122,9 @@ struct Span[
 
         return Optional(Int(cursor)) if value == needle else None
 
-    @__allow_legacy_custom_self_type
-    def binary_search_by[
-        func: def(Self.T) thin -> Int,
-    ](self: Span[Self.T, _]) -> Optional[Int]:
-        """Finds an element using binary search with a custom comparison function.
-
-        The comparison function should return:
-        - A negative value if the element is less than the target
-        - Zero if the element matches the target
-        - A positive value if the element is greater than the target
-
-        Parameters:
-            func: A function that takes an element and returns an Int representing
-                  the comparison result.
-
-        Returns:
-            Returns the index of the matching element if found, None otherwise.
-
-        Notes:
-            This function assumes that `self` is sorted according to the ordering
-            defined by `func`. If not sorted, the result is unspecified.
-
-        Example:
-            ```mojo
-            var data: List[String] = ["a", "bb", "ccc"]
-            var span = Span(data)
-
-            # Search for "bb"
-            def cmp(elem: String) -> Int:
-                if elem < "bb":
-                    return -1
-                elif elem > "bb":
-                    return 1
-                else:
-                    return 0
-
-            var index = span.binary_search_by[cmp]()
-            if case .Some(i) = index:
-                print("Found at index: ", i)
-            else:
-                print("Not found")
-            ```
-        """
-
-        def _cmp(value: Self.T) {var} -> Int:
-            return func(value)
-
-        return self.binary_search_by(_cmp)
-
-    @__allow_legacy_custom_self_type
     def binary_search_by[
         FuncType: def(Self.T) -> Int,
-    ](self: Span[Self.T, _], func: FuncType) -> Optional[Int]:
+    ](self, func: FuncType) -> Optional[Int] where Self._is_generic_as:
         """Finds an element using binary search with a custom comparison function.
 
         The comparison function should return:
@@ -1159,12 +1151,12 @@ struct Span[
             def main():
                 var data: List[String] = ["a", "bb", "ccc"]
                 var span = Span(data)
+                var target = "bb"
 
-                # Search for "bb"
-                def cmp(elem: String) {} -> Int:
-                    if elem < "bb":
+                def cmp(elem: String) {target} -> Int:
+                    if elem < target:
                         return -1
-                    elif elem > "bb":
+                    elif elem > target:
                         return 1
                     else:
                         return 0
@@ -1177,15 +1169,16 @@ struct Span[
             ```
         """
 
+        var span = rebind[Span[Self.T, Self.origin]](self)
         var cursor = 0
-        var length = len(self)
+        var length = len(span)
         var cmp_result = 1  # Initialize to non-zero value
 
         while length > 0:
             var half = length >> Int(length > 1)
             length -= half
             var mid_idx = cursor + half - 1
-            cmp_result = func(self.unsafe_get(mid_idx))
+            cmp_result = func(span.unsafe_get(mid_idx))
 
             # If cmp_result < 0, search in the right half
             cursor += splat(cmp_result < 0) & half

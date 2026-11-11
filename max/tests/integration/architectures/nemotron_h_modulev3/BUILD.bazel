@@ -29,8 +29,10 @@ modular_py_test(
         exclude = [
             "test_local_routing_ir.py",
             "test_local_routing_replica_gpu.py",
+            "test_mixed_verify_state.py",
         ],
     ),
+    data = ["testdata/lightning_checkpoints.json"],
     # The layout tests each compile and run their weight preparation on the
     # CPU.
     per_test_shard_count = {
@@ -43,12 +45,15 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 
@@ -179,5 +184,30 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         requirement("ml-dtypes"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mixed_verify_state_test",
+    srcs = ["test_mixed_verify_state.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )

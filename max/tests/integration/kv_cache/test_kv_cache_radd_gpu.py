@@ -20,11 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.legacy.kernels import kv_cache_ragged_radd
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-)
+from max.nn._graph_ops import kv_cache_ragged_radd
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 

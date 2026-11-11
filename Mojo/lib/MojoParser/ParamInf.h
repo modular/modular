@@ -40,7 +40,10 @@ public:
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError,
            DeferredTypingContext *deferredTypingContext = nullptr,
-           ArrayRef<ConstraintAttr> additionalAssumptions = {});
+           ArrayRef<ConstraintAttr> additionalAssumptions = {},
+           // Whether the inference result will be used within a parameter
+           // scope. This will be true unconditionally after the migration.
+           bool withinParameterScope = false);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding. On success, returns the verified bindings (which can be
@@ -156,6 +159,7 @@ private:
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
   bool isInferForStruct = false;
+  const bool withinParameterScope;
 
   friend class ParamMatcher;
   friend class ParamBindings;
@@ -210,6 +214,13 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                                 size_t argIdx, ASTType expectedType,
                                 ArgConvention expectedConvention);
+
+  /// Check that the `*operand` unpack can go into the variadic pack
+  /// `expectedPackType`. The operand must be a VariadicPack with the same
+  /// ownership, and at least the mutability, of the expected pack. Return the
+  /// `!lit.ref.pack` of the operand, or null after a diagnostic.
+  RefPackType checkUnpackedPack(const OperandValue &operand,
+                                ASTType expectedPackType);
 };
 
 } // namespace M::KGEN::LIT

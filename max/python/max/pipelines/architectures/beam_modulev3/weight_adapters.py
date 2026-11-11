@@ -10,28 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps Beam checkpoint names onto the ModuleV3 module's parameters."""
+"""Maps Beam checkpoints onto the ModuleV3 module's parameters."""
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from collections.abc import Sequence
+
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
 
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
-) -> dict[str, WeightData]:
-    """Strips ``model.`` and moves the router weight under ``gate_score``.
+def beam_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map a Beam checkpoint onto the decoder.
 
     Args:
-        state_dict: The checkpoint tensors, by HuggingFace name.
-        **unused_kwargs: Accepted so every adapter shares one signature.
-
-    Returns:
-        The weights under their ModuleV3 attribute paths.
+        huggingface_config: The checkpoint's config.
     """
-    return {
-        name.removeprefix("model.").replace(
-            ".mlp.gate.weight", ".mlp.gate.gate_score.weight"
-        ): value.data()
-        for name, value in state_dict.items()
-    }
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.", ""),
+        WeightRenaming(r"\.mlp\.gate\.weight$", ".mlp.gate.gate_score.weight"),
+    )

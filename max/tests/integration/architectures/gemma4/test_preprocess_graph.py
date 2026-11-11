@@ -14,11 +14,7 @@
 
 A serving engine that runs the exported graph must feed the tower what MAX
 serve does: the image processor's patches and positions, and the segment
-bounds and pooling table the model packs for them. Every output but the
-patches matches bit for bit. The graph resizes uint8 pixels, accumulating
-in float32 and rounding once at the end, where the processor resizes with
-Pillow, which rounds and clamps between its two passes, so the patches
-match within a level or two, and further around a chart's hard edges.
+bounds and pooling table the model packs for them, bit for bit.
 """
 
 from __future__ import annotations
@@ -28,6 +24,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import numpy as np
 import numpy.typing as npt
@@ -45,6 +42,9 @@ from max.pipelines.architectures.gemma4.image_processor import (
     Gemma4ImageProcessor,
 )
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
+from max.pipelines.architectures.gemma4.model_config import (
+    Gemma4ForConditionalGenerationConfig,
+)
 from max.pipelines.architectures.gemma4.video_processor import (
     Gemma4VideoProcessor,
     VideoMetadata,
@@ -115,15 +115,6 @@ _CHARTS: dict[str, Callable[[], Image.Image]] = {
 }
 
 
-def _level(processor: Gemma4ImageProcessor) -> npt.NDArray[np.float32]:
-    """How far one uint8 level moves each value of a patch row, whose
-    values run over the pixels with the channels innermost."""
-    step = np.full(3, processor.rescale_factor if processor.do_rescale else 1.0)
-    if processor.do_normalize:
-        step = step / processor.image_std
-    return np.tile(step, _PATCH * _PATCH).astype(np.float32)
-
-
 def _served(
     image: Image.Image, processor: Gemma4ImageProcessor | None = None
 ) -> tuple[tuple[int, int], list[Buffer]]:
@@ -167,7 +158,7 @@ def test_matches_the_served_inputs(
     image = _CASES[case]()
     size, served = _served(image)
     outputs = preprocess.execute_raw(*graph_inputs(image, size))
-    check(preprocess, case, outputs, served, _level(Gemma4ImageProcessor()))
+    check(preprocess, case, outputs, served)
 
 
 @pytest.mark.parametrize("case", sorted(_CHARTS))
@@ -175,18 +166,11 @@ def test_a_chart_matches_the_served_inputs(
     preprocess: CompiledCallable[..., Any], case: str
 ) -> None:
     """A chart's text, lines and bars, whose hard edges near black and white
-    Pillow clamps between its passes, match within the hard-edge bounds."""
+    Pillow clamps between its passes, match too."""
     image = _CHARTS[case]()
     size, served = _served(image)
     outputs = preprocess.execute_raw(*graph_inputs(image, size))
-    check(
-        preprocess,
-        f"chart_{case}",
-        outputs,
-        served,
-        _level(Gemma4ImageProcessor()),
-        hard_edges=True,
-    )
+    check(preprocess, f"chart_{case}", outputs, served)
 
 
 def test_matches_a_normalizing_processor() -> None:
@@ -206,7 +190,6 @@ def test_matches_a_normalizing_processor() -> None:
         "normalized",
         graph.execute_raw(*graph_inputs(image, size)),
         served,
-        _level(processor),
     )
 
 
@@ -229,30 +212,25 @@ def test_a_video_frame_is_a_one_frame_image(
             pixel_values[i][real], position_ids[i][real], soft_tokens
         )
         outputs = preprocess.execute_raw(*graph_inputs(frame, size))
-        check(
-            preprocess,
-            f"frame {i}",
-            outputs,
-            served,
-            _level(Gemma4ImageProcessor()),
-        )
+        check(preprocess, f"frame {i}", outputs, served)
 
 
-def _model(tmp_path: Path, vision_config: object) -> Any:
-    """A stand-in with what ``vision_preprocess_spec`` reads."""
+def _configs(tmp_path: Path, vision_config: object) -> tuple[Any, Any]:
+    """Stand-ins for the configs ``vision_preprocess_spec_for`` reads."""
     (tmp_path / "processor_config.json").write_text(
         json.dumps({"image_processor": {"patch_size": _PATCH}})
     )
-    return SimpleNamespace(
-        config=SimpleNamespace(
-            vision_config=vision_config, unquantized_dtype=DType.bfloat16
-        ),
-        pipeline_config=SimpleNamespace(
-            model=SimpleNamespace(
-                model_path=str(tmp_path), huggingface_model_revision=None
-            )
-        ),
+    pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            model_path=str(tmp_path), huggingface_model_revision=None
+        )
     )
+    config = Mock(
+        spec=Gemma4ForConditionalGenerationConfig,
+        vision_config=vision_config,
+        unquantized_dtype=DType.bfloat16,
+    )
+    return pipeline_config, config
 
 
 def test_vision_preprocess_returns_the_vision_inputs_by_path(
@@ -260,8 +238,9 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 ) -> None:
     """A serving engine feeds the preprocess graph's outputs to the tower by
     path, so they are the tower's one-device inputs for an image."""
-    model = _model(tmp_path, SimpleNamespace(patch_size=_PATCH))
-    spec = Gemma3_MultiModalModel.vision_preprocess_spec(model)
+    spec = Gemma3_MultiModalModel.vision_preprocess_spec_for(
+        *_configs(tmp_path, SimpleNamespace(patch_size=_PATCH))
+    )
     assert spec is not None
     outputs, out_tree = tree.flatten(spec.trace().output_tree)
     tower: Any = SimpleNamespace(
@@ -281,5 +260,5 @@ def test_vision_preprocess_returns_the_vision_inputs_by_path(
 def test_a_checkpoint_without_a_tower_has_no_preprocess_graph(
     tmp_path: Path,
 ) -> None:
-    model = _model(tmp_path, None)
-    assert Gemma3_MultiModalModel.vision_preprocess_spec(model) is None
+    configs = _configs(tmp_path, None)
+    assert Gemma3_MultiModalModel.vision_preprocess_spec_for(*configs) is None

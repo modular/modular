@@ -105,7 +105,7 @@ def run(ctx: DeviceContext, tokens: Int) raises:
         )
 
     def production() raises {imm}:
-        moe_create_indices[target="gpu"](
+        moe_create_indices(
             ob,
             sb,
             rb,

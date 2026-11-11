@@ -146,11 +146,11 @@ def test_get_metrics_url_supported_backends() -> None:
 
 
 def test_get_metrics_url_mach_uses_engine_metrics_port() -> None:
-    """The mach backend scrapes the engine's Prometheus endpoint, which the
-    CI launch exposes on the same dedicated port MAX Serve uses, not the
-    orchestrator's HTTP port the base URL points at."""
+    """The mach backend scrapes the engine's Prometheus endpoint on the
+    engine-cli ``--metrics-address`` default, not the orchestrator's HTTP
+    port the base URL points at."""
     url = get_metrics_url("mach", "http://localhost:8091")
-    assert url == "http://localhost:8001/metrics"
+    assert url == "http://localhost:9090/metrics"
 
 
 def test_get_metrics_url_ipv6() -> None:
@@ -1227,7 +1227,7 @@ def test_collect_benchmark_metrics_stamps_backend_and_mach_url(
         urls={}, backend="mach", base_url="http://localhost:8091"
     )
 
-    mock_fetch.assert_called_once_with("http://localhost:8001/metrics")
+    mock_fetch.assert_called_once_with("http://localhost:9090/metrics")
     pm = final["server"]
     assert pm.backend == "mach"
     assert (
@@ -1281,7 +1281,7 @@ class TestVerifyAlwaysEmittedMetrics:
 
         with pytest.raises(
             MissingEngineMetricsError,
-            match=r"max_batch_size.*http://localhost:8001/metrics",
+            match=r"max_batch_size.*http://localhost:9090/metrics",
         ) as excinfo:
             collect_benchmark_metrics(
                 urls={},

@@ -230,31 +230,54 @@ def test_antialiased_resize_bicubic_matches_torch(
     np.testing.assert_allclose(result.to_numpy(), expected, rtol=0, atol=1e-4)
 
 
+# Input and output (height, width) pairs both Pillow comparisons resize: the
+# edge windows and tap counts of the extremes are where a tap bug shows.
+_PILLOW_SHAPES = [
+    # Downscales, by whole and fractional factors.
+    ((448, 448), (224, 224)),
+    ((301, 517), (97, 203)),
+    ((500, 400), (96, 128)),
+    ((1500, 2000), (672, 912)),
+    # Upscales, including from a tiny image.
+    ((37, 53), (112, 140)),
+    ((5, 5), (48, 48)),
+    ((1, 9), (3, 3)),
+    # Only one side changes.
+    ((64, 64), (64, 32)),
+    ((64, 64), (96, 64)),
+    # Both change in opposite directions, or to one pixel.
+    ((9, 13), (40, 5)),
+    ((300, 200), (1, 1)),
+    # Extreme aspect ratios.
+    ((3, 3000), (3, 100)),
+    ((10, 3000), (48, 48)),
+    ((1000, 9), (100, 40)),
+    ((549, 5), (81, 758)),
+    ((851, 4), (2, 816)),
+    # The size is unchanged.
+    ((100, 100), (100, 100)),
+]
+
+
 @pytest.fixture(scope="module")
-def uint8_and_float32_resizes(session: InferenceSession) -> Model:
-    """A CPU graph that resizes NCHW uint8 pixels with antialiasing, to a
-    size given at runtime, twice: uint8 to uint8, and through float32 with a
-    round and clamp after."""
+def uint8_resize(session: InferenceSession) -> Model:
+    """A CPU graph that resizes NCHW uint8 pixels to uint8 with
+    antialiasing, to a size given at runtime."""
     input_type = TensorType(
         DType.uint8, ["n", "c", "h", "w"], device=DeviceRef.CPU()
     )
     size_type = TensorType(DType.int64, [4], device=DeviceRef.CPU())
-    out_dims = ["n", "c", "h_out", "w_out"]
     with Graph(
         "test_resize_bicubic_uint8", input_types=[input_type, size_type]
     ) as graph:
         x, size = (v.tensor for v in graph.inputs)
-        resized = ops.resize_bicubic(
-            x.cast(DType.float32), size, antialias=True, out_dims=out_dims
-        )
-        cpu = DeviceRef.CPU()
-        levels = ops.min(
-            ops.max(ops.round(resized), ops.constant(0, DType.float32, cpu)),
-            ops.constant(255, DType.float32, cpu),
-        )
         graph.output(
-            ops.resize_bicubic(x, size, antialias=True, out_dims=out_dims),
-            levels.cast(DType.uint8),
+            ops.resize_bicubic(
+                x,
+                size,
+                antialias=True,
+                out_dims=["n", "c", "h_out", "w_out"],
+            )
         )
     return session.load(graph)
 
@@ -262,34 +285,38 @@ def uint8_and_float32_resizes(session: InferenceSession) -> Model:
 @pytest.mark.parametrize(
     "input_shape,output_hw",
     [
-        ((1, 3, 301, 517), (97, 203)),
         ((2, 3, 37, 53), (112, 140)),
-        ((1, 3, 64, 64), (96, 64)),
-        # A 2x upscale of one side weighs taps in 128ths, so a whole-level
-        # input often lands on an exact half.
         ((1, 3, 64, 32), (64, 64)),
-        ((1, 3, 40, 40), (40, 40)),
+        *(((1, 3, *in_hw), out_hw) for in_hw, out_hw in _PILLOW_SHAPES),
     ],
 )
-def test_uint8_antialiased_resize_bicubic_rounds_the_float32_resize(
-    uint8_and_float32_resizes: Model,
+def test_uint8_antialiased_resize_bicubic_is_pillows(
+    uint8_resize: Model,
     input_shape: tuple[int, int, int, int],
     output_hw: tuple[int, int],
 ) -> None:
-    """A uint8 resize is the float32 resize of the same pixels, rounded half
-    to even and clamped, bit for bit. Noise overshoots [0, 255], so the
-    clamp counts, and the tie break counts where a 2x upscale lands on
-    exact halves."""
+    """A uint8 resize is Pillow's BICUBIC, bit for bit. Noise overshoots
+    [0, 255] between the passes, so Pillow's clamp between them counts."""
     rng = np.random.default_rng(input_shape[2] * output_hw[0])
     image = rng.integers(0, 256, input_shape, dtype=np.uint8)
     size = np.array([*input_shape[:2], *output_hw], np.int64)
 
-    got, want = uint8_and_float32_resizes.execute(
+    (got,) = uint8_resize.execute(
         Buffer.from_numpy(image), Buffer.from_numpy(size)
     )
-    assert isinstance(got, Buffer) and isinstance(want, Buffer)
+    assert isinstance(got, Buffer)
     assert got.dtype == DType.uint8
-    np.testing.assert_array_equal(got.to_numpy(), want.to_numpy())
+    want = np.stack(
+        [
+            np.asarray(
+                Image.fromarray(
+                    np.ascontiguousarray(rgb.transpose(1, 2, 0))
+                ).resize(output_hw[::-1], Image.Resampling.BICUBIC)
+            ).transpose(2, 0, 1)
+            for rgb in image
+        ]
+    )
+    np.testing.assert_array_equal(got.to_numpy(), want)
 
 
 @pytest.mark.parametrize(
@@ -390,34 +417,7 @@ def _natural_image(
     return np.clip(np.rint(image), 0, 255).astype(np.uint8)
 
 
-@pytest.mark.parametrize(
-    "in_hw,out_hw",
-    [
-        # Downscales, by whole and fractional factors.
-        ((448, 448), (224, 224)),
-        ((301, 517), (97, 203)),
-        ((500, 400), (96, 128)),
-        ((1500, 2000), (672, 912)),
-        # Upscales, including from a tiny image.
-        ((37, 53), (112, 140)),
-        ((5, 5), (48, 48)),
-        ((1, 9), (3, 3)),
-        # Only one side changes.
-        ((64, 64), (64, 32)),
-        ((64, 64), (96, 64)),
-        # Both change in opposite directions, or to one pixel.
-        ((9, 13), (40, 5)),
-        ((300, 200), (1, 1)),
-        # Extreme aspect ratios.
-        ((3, 3000), (3, 100)),
-        ((10, 3000), (48, 48)),
-        ((1000, 9), (100, 40)),
-        ((549, 5), (81, 758)),
-        ((851, 4), (2, 816)),
-        # The size is unchanged.
-        ((100, 100), (100, 100)),
-    ],
-)
+@pytest.mark.parametrize("in_hw,out_hw", _PILLOW_SHAPES)
 def test_antialiased_resize_bicubic_is_near_pillows(
     antialiased_resize: Model,
     in_hw: tuple[int, int],
@@ -427,10 +427,11 @@ def test_antialiased_resize_bicubic_is_near_pillows(
     level or two of Pillow's BICUBIC.
 
     Pillow resamples uint8 in fixed point and rounds and clamps to uint8
-    between its two passes; the float32 resize does neither, so it differs
-    from Pillow by an occasional level. Where a sharp edge overshoots
-    [0, 255] between the passes, Pillow's clamp moves a few pixels further,
-    so the bound holds for smooth content, not for noise or hard edges.
+    between its two passes, as a uint8 resize does; the float32 resize does
+    neither, so it differs from Pillow by an occasional level. Where a sharp
+    edge overshoots [0, 255] between the passes, Pillow's clamp moves a few
+    pixels further, so the bound holds for smooth content, not for noise or
+    hard edges.
     """
     rng = np.random.default_rng(in_hw[0] * in_hw[1] + out_hw[0])
     image = _natural_image(rng, *in_hw)
