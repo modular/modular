@@ -112,9 +112,10 @@ class BeamAttention(Module[..., Tensor]):
             The attention output, ``[total_seq_len, hidden_size]``.
         """
         head_dim = self.head_dim
-        q = self.q_norm(self.q_proj(x).reshape((-1, self.n_heads, head_dim)))
-        k = self.k_norm(self.k_proj(x).reshape((-1, self.n_kv_heads, head_dim)))
-        v = self.v_proj(x)
+        q_proj, k_proj, v_proj, gate_proj = self._project(x)
+        q = self.q_norm(q_proj)
+        k = self.k_norm(k_proj)
+        v = v_proj.reshape((x.shape[0], self.n_kv_heads * head_dim))
 
         if self.is_sliding:
             qkv = F.concat(
@@ -173,8 +174,42 @@ class BeamAttention(Module[..., Tensor]):
             output_dtype=x.dtype,
         ).rebind_mapping(xq.mapping)
 
-        gate = self.gate_proj(x).reshape(
-            (-1, self.n_heads, head_dim)
-        ) + self.gate_bias.reshape((self.n_heads, 1))
+        gate = gate_proj + self.gate_bias.reshape((self.n_heads, 1))
         gated = attn.reshape((-1, self.n_heads, head_dim)) * F.sigmoid(gate)
         return self.o_proj(gated.reshape((-1, self.n_heads * head_dim)))
+
+    def _project(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Runs the q, k, v and gate projections as one matmul per device.
+
+        Each projection is a latency-bound GEMM at decode, so one launch over
+        the four weights replaces four. Each device's rows of the fused weight
+        are its own q, k, v and gate shards, so the concat, the matmul and the
+        split stay local. The weight concat depends on the weights alone, so
+        the graph compiler runs it once, at model init.
+
+        Args:
+            x: Normalized hidden states, ``[total_seq_len, hidden_size]``.
+
+        Returns:
+            q, k, v and gate as ``[total_seq_len, heads, head_dim]``.
+        """
+        projs = (self.q_proj, self.k_proj, self.v_proj, self.gate_proj)
+        # Heads shard over every device, as in `forward`'s per-device count.
+        n = self.q_proj.weight.mesh.num_devices
+        hidden = x.shape[-1]
+        weight = F.concat(
+            [p.weight.reshape((n, -1, hidden)) for p in projs], axis=1
+        ).reshape((-1, hidden))
+        widths = [int(p.weight.shape[0]) // n for p in projs]
+        # Explicit leading dims, no -1: a sharded axis then maps by the
+        # elements before it, so each device's columns stay its own block.
+        tokens = x.shape[0]
+        fused = (x @ weight.T).reshape((tokens, n, sum(widths)))
+        q, k, v, gate = F.split(fused, widths, axis=2)
+        head_dim = self.head_dim
+        return (
+            q.reshape((tokens, self.n_heads, head_dim)),
+            k.reshape((tokens, self.n_kv_heads, head_dim)),
+            v.reshape((tokens, self.n_kv_heads, head_dim)),
+            gate.reshape((tokens, self.n_heads, head_dim)),
+        )
