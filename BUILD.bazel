@@ -595,6 +595,25 @@ selects.config_setting_group(
     ],
 )
 
+# macOS has no CUPTI, so the Tracy exclusion there is only about the host
+# glue, which compiles its plugin loader out of Tracy builds.
+config_setting(
+    name = "macos_no_tracy",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:tracy_profiling": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# Where the profiler plugin builds: Linux with a GPU libkineto flavor, and
+# macOS with the CPU-only one.
+selects.config_setting_group(
+    name = "profiler_plugin_supported",
+    match_any = [
+        ":linux_no_tracy",
+        ":macos_no_tracy",
+    ],
+)
+
 # Routes the C++ DeviceContext through the HAL implementation; referenced by
 # shared source selects. Mirrored from the internal //BUILD.bazel.
 bool_flag(
