@@ -527,19 +527,13 @@ struct TupleNode final : public LValueCapableExprNode {
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
 
-  /// Split an rvalue tuple into owned element references.
+  /// Split an rvalue tuple into owned element references and disarm the tuple.
   ///
   /// For example, `var (a, b) = get_tuple()` moves each result element into
   /// its binding without destroying it again through the aggregate.
-  ///
-  /// When `disarmAggregate` is true, the tuple is marked destroyed immediately.
-  /// Callers that still need to move bindings out of the aggregate (e.g. match
-  /// patterns) should pass false and mark the root consumed after materializing
-  /// those bindings.
   static LogicalResult getConsumedElements(CValue tuple, const ExprNode *expr,
                                            IREmitter &emitter,
-                                           SmallVectorImpl<CValue> &elements,
-                                           bool disarmAggregate = true);
+                                           SmallVectorImpl<CValue> &elements);
   LogicalResult
   buildCheckList(PatternMatchBuilder &builder, CValue subject,
                  const PatternPath *path,

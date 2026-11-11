@@ -1014,8 +1014,9 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
       Location loc = expr->getLocation(emitter);
       Value payloadPtr =
           RefToPointerOp::create(*emitter.builder, loc, payloadRef);
-      // Propagate the origin, but transfer ownership to the new value.
-      auto origin = cast<RefType>(parentRef.getType()).getOrigin();
+      // Give the stolen payload its own origin. Reusing the parent's origin
+      // would let a later mark_consumed on the subject invalidate this ref.
+      auto origin = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
       StringAttr name = StringAttr::get(emitter.getContext(), "(enum payload)");
       // The new value will own the original value, but define the start of a
       // new live range.
@@ -1219,7 +1220,6 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       rootType.getParamBindings().size() == 2
           ? sugarDynCastIfPresent<ParamListAttr>(rootType.getParamBindings()[0])
           : ParamListAttr();
-  SmallVector<CValue, 4> ownedChildren;
   if (tupleElements) {
     // Wildcards do not have binding paths, but they still need to be projected
     // and owned so that their destructors run after the tuple is disarmed.
@@ -1231,12 +1231,6 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
       child.index = index;
       children.push_back(child);
     }
-    // Project owned element refs without disarming yet: bindings still need to
-    // be moved out, and mark_consumed happens after they are materialized.
-    if (failed(TupleNode::getConsumedElements(rootSubject, expr, emitter,
-                                              ownedChildren,
-                                              /*disarmAggregate=*/false)))
-      return failure();
   } else {
     auto payload = llvm::find_if(bindings, [](const PatternBoundName &binding) {
       return binding.bindingKind == PatternDeclKind::kVar && binding.path &&
@@ -1251,20 +1245,22 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
   if (!rootRef)
     return success();
   Location loc = expr->getLocation(emitter);
-  if (!tupleElements) {
-    for (const PatternPath &childPath : children) {
-      CValue child = getPathValue(emitter, &childPath, expr);
-      auto childRef = child.getMValueReference();
-      if (!childRef)
-        return failure();
-      Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
-      Value owned = RefFromPointerOp::create(
-          *emitter.builder, loc, pointer,
-          cast<RefType>(rootRef.getType()).getOrigin(),
-          StringAttr::get(emitter.getContext(), "(pattern child)"),
-          /*startsUninit=*/false, /*endsUninit=*/true);
-      ownedChildren.push_back(MRValue(owned));
-    }
+  // Steal each child into a ref with its own origin. Reusing the subject's
+  // origin would let the later mark_consumed invalidate these refs before the
+  // bindings (and non-movable payloads) are used.
+  auto origin = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
+  SmallVector<CValue, 4> ownedChildren;
+  for (const PatternPath &childPath : children) {
+    CValue child = getPathValue(emitter, &childPath, expr);
+    auto childRef = child.getMValueReference();
+    if (!childRef)
+      return failure();
+    Value pointer = RefToPointerOp::create(*emitter.builder, loc, childRef);
+    Value owned = RefFromPointerOp::create(
+        *emitter.builder, loc, pointer, origin,
+        StringAttr::get(emitter.getContext(), "(pattern child)"),
+        /*startsUninit=*/false, /*endsUninit=*/true);
+    ownedChildren.push_back(MRValue(owned));
   }
   // Every child now has its own owning reference, so the aggregate owns
   // nothing once the bindings have been moved out. Record it so the caller can

@@ -5549,8 +5549,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
 LogicalResult
 TupleNode::getConsumedElements(CValue tuple, const ExprNode *expr,
                                IREmitter &emitter,
-                               SmallVectorImpl<CValue> &elements,
-                               bool disarmAggregate) {
+                               SmallVectorImpl<CValue> &elements) {
   auto tupleRef = tuple.getMValueReference();
   assert(tupleRef && "consuming a tuple requires an MRValue");
 
@@ -5594,11 +5593,9 @@ TupleNode::getConsumedElements(CValue tuple, const ExprNode *expr,
     elements.push_back(MRValue(owned));
   }
 
-  // Each element now owns its storage. Optionally disable the aggregate owner
-  // so its destructor cannot destroy the stolen elements a second time. Match
-  // patterns defer this until after bindings are materialized.
-  if (disarmAggregate)
-    OwnershipMarkDestroyedOp::create(*emitter.builder, loc, tupleRef);
+  // Each element now owns its storage. Disable the aggregate owner so its
+  // destructor cannot destroy the stolen elements a second time.
+  OwnershipMarkDestroyedOp::create(*emitter.builder, loc, tupleRef);
   return success();
 }
 
