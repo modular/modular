@@ -624,11 +624,8 @@ struct _MoggTensorArg[
     # encoder copies the storage handle bit-for-bit, so the graph must have
     # transferred the buffer to the device (see the GPU e2e tests'
     # `mo.transfer`) for a pointer handle to be a valid device address. A slot
-    # handle's two pointer layers are device addresses already. `DeviceType`
-    # names it with its conformances, for a declarative launch's kernel to take
-    # the argument as.
-    comptime DeviceType = Self.TileTensorType
-    comptime device_type: AnyType = Self.DeviceType
+    # handle's two pointer layers are device addresses already.
+    comptime device_type: AnyType = Self.TileTensorType
 
     @inline(.always)
     def _to_device_type(
