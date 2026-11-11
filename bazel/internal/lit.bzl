@@ -83,9 +83,9 @@ def _generate_site_cfg_impl(ctx):
     )
 
     ctx.actions.run_shell(
-        command = "set -eu; cat $1 $2 > {}".format(combined_cfg.path),
-        arguments = [ctx.file.src.path, tools_loader.path],
-        inputs = [ctx.file.src, tools_loader],
+        command = "set -eu; cat \"$@\" > {}".format(combined_cfg.path),
+        arguments = [ctx.file.src.path, tools_loader.path] + [f.path for f in ctx.files.site_cfg_extensions],
+        inputs = [ctx.file.src, tools_loader] + ctx.files.site_cfg_extensions,
         outputs = [combined_cfg],
         use_default_shell_env = True,
     )
@@ -139,6 +139,10 @@ _generate_site_cfg = rule(
             mandatory = True,
             doc = "Lit features to always enable",
         ),
+        "site_cfg_extensions": attr.label_list(
+            allow_files = [".py"],
+            doc = "Python appended to the site config, after the tool and feature setup",
+        ),
         "_load_bazel_tools": attr.label(
             default = Label(":load_bazel_tools.py"),
             allow_single_file = True,
@@ -163,7 +167,8 @@ def lit_tests(
         unique_suffix = None,
         size = None,
         force_strip = False,
-        exec_properties = {}):
+        exec_properties = {},
+        site_cfg_extensions = []):
     """Create test rules for all lit tests in the current directory.
 
     Args:
@@ -184,6 +189,7 @@ def lit_tests(
         size: Test size: https://bazel.build/reference/test-encyclopedia
         force_strip: Whether binaries should be stripped via a transition, do not use, just here to workaround a bug
         exec_properties: Remote exec resources https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation
+        site_cfg_extensions: Python files appended to the generated site config, for lit features that a plugin detects when the test runs
     """
 
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
@@ -278,6 +284,7 @@ EOF
         path = ":".join(["$(rlocationpath {})".format(tool) for tool in tools] + extra_tool_paths),
         target_compatible_with = target_compatible_with,
         available_features = ["$(GPU_LIT_FEATURE)", "$(GPU_BRAND_LIT_FEATURE)"],
+        site_cfg_extensions = site_cfg_extensions,
         toolchains = ["//bazel/internal:current_gpu_toolchain"] + mojo_test_deps,
     )
 
