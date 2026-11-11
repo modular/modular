@@ -620,8 +620,8 @@ kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
     }
     // CHECK: break %arg1 : i32
     hlcf.break %arg0, %arg1 : i32, i32
-  // CHECK: } {unrollLevel = #hlcf<unroll_level 2>}
-  } {unrollLevel = #hlcf<unroll_level 2>}
+  // CHECK: } <unrollLevel = #hlcf<unroll_level 2>>
+  } <unrollLevel = #hlcf<unroll_level 2>>
 
   hlcf.return %0#1 : i32
 }

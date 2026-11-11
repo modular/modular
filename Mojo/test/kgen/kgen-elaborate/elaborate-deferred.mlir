@@ -8,7 +8,7 @@ kgen.generator @select_pred<*"cmp`2x": scalar<bool>>() -> !kgen.deferred {
   } else {
     %0 = kgen.param.constant: !kgen.deferred = <#kgen<deferred #index.cmp_predicate<sgt>>>
     hlcf.return %0 : !kgen.deferred
-  } {elseIsolated, thenIsolated}
+  } <elseIsolated, thenIsolated>
   hlcf.unreachable
 }
 

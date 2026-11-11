@@ -537,11 +537,11 @@ def test_param_for1(cond: Bool, cond2: Bool):
         marker()
         # CHECK-NEXT: hlcf.comptime.for.break
     # Finish out the comptime.if and the comptime.for
-    # CHECK-NEXT:   } {elseIsolated, thenIsolated}
+    # CHECK-NEXT:   } <thenIsolated, elseIsolated>
     # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.unreachable
-    # CHECK-NEXT: } {bodyIsolated, elseIsolated}
+    # CHECK-NEXT: } <bodyIsolated, elseIsolated>
 
 
 # CHECK-LABEL: lit.fn @"test_param_for2

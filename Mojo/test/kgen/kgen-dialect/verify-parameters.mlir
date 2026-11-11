@@ -8,7 +8,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
   } else {
     hlcf.comptime.yield
   }
-  // CHECK: {elseIsolated, thenIsolated}
+  // CHECK: <thenIsolated, elseIsolated>
   hlcf.return
 }
 

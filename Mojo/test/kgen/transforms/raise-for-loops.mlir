@@ -11,7 +11,7 @@ kgen.func @zero_starting_range() {
   // CHECK-NEXT:   [[V:%.*]] = index.sub %idx2, %arg0
   // CHECK-NEXT:   kgen.call @foo([[V]]) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
@@ -25,7 +25,7 @@ kgen.func @zero_starting_range() {
     %2 = index.sub %idx2, %arg0
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -38,7 +38,7 @@ kgen.func @sequential_range() {
   // CHECK:        [[IDX:%.*]] = index.add %arg0, %idx1
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx4)
@@ -51,7 +51,7 @@ kgen.func @sequential_range() {
     %1 = index.add %arg0, %idx1
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -65,7 +65,7 @@ kgen.func @strided_range() {
   // CHECK:        [[IDX:%.*]] = index.add %arg0, %idx2
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx1 : index) {
     %0 = index.cmp slt(%arg0, %idx6)
@@ -78,7 +78,7 @@ kgen.func @strided_range() {
     %1 = index.add %arg0, %idx2
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -99,9 +99,9 @@ kgen.func @nested_unroll_loops() {
   // CHECK-NEXT:     [[V1:%.*]] = index.add [[V0]], %arg1
   // CHECK-NEXT:     kgen.call @foo([[V1]]) : (index) -> ()
   // CHECK-NEXT:     hlcf.for.yield [induction_var ([[IDX1]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT:   } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT:   } <unrollLevel = full>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx2 : index) {
     %0 = index.cmp sgt(%arg0, %idx0)
@@ -126,9 +126,9 @@ kgen.func @nested_unroll_loops() {
       %6 = index.add %2, %arg1
       kgen.call @foo(%6) : (index) -> ()
       hlcf.continue %5 : index
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.continue %1 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 
@@ -178,9 +178,9 @@ kgen.func @loop_carried_dependency() {
   // CHECK-NEXT:     kgen.call @foo([[V2]]) : (index) -> ()
   // CHECK-NEXT:     [[V3:%.*]] = index.add %arg4, %arg3
   // CHECK-NEXT:     hlcf.for.yield [induction_var ([[V4]] : index)] [retvals ([[V3]] : index)] [iterargs ()]
-  // CHECK-NEXT:   } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT:   } <unrollLevel = full>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[IDX0]] : index)] [retvals ([[V0]], [[V1]] : index, index)] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   %0:2 = hlcf.loop (%arg0 = %idx0 : index, %arg1 = %idx0 : index, %arg2 = %idx1 : index) -> (index, index) {
     %3 = index.cmp slt(%arg2, %idx9)
@@ -206,9 +206,9 @@ kgen.func @loop_carried_dependency() {
       kgen.call @foo(%10) : (index) -> ()
       %12 = index.add %arg3, %arg4
       hlcf.continue %12, %9 : index, index
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     hlcf.continue %6, %7, %4 : index, index, index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
   hlcf.return
@@ -230,7 +230,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
   // CHECK-NEXT:   [[V6:%.*]] = index.add %arg2, [[V5]]
   // CHECK-NEXT:   [[V7:%.*]] = pop.offset %arg3[%idx1] : !kgen.pointer<scalar<f32>>
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V2]] : index)] [retvals ([[V6]] : index)] [iterargs ([[V7]] : !kgen.pointer<scalar<f32>>)]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   %1 = hlcf.loop (%arg3 = %idx10 : index, %arg1 = %0 : !kgen.pointer<scalar<f32>>, %arg2 = %idx0 : index) -> index {
     %2 = index.cmp sgt(%arg3, %idx0)
@@ -247,7 +247,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
     %7 = index.add %arg2, %6
     %8 = pop.offset %arg1[%idx1] : !kgen.pointer<scalar<f32>>
     hlcf.continue %3, %8, %7 : index, !kgen.pointer<scalar<f32>>, index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return %1 : index
 }
 
@@ -284,7 +284,7 @@ kgen.func @negative_step() {
   // CHECK:        [[V:%.*]] = index.add %arg0, %idx-1
   // CHECK-NEXT:   kgen.call @foo(%arg0) : (index) -> ()
   // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V]] : index)] [retvals ()] [iterargs ()]
-  // CHECK-NEXT: } {unrollLevel = #hlcf<unroll_level full>}
+  // CHECK-NEXT: } <unrollLevel = full>
 
   hlcf.loop (%arg0 = %idx5 : index) {
     %3 = index.cmp sgt(%arg0, %idx1)
@@ -297,7 +297,7 @@ kgen.func @negative_step() {
     %4 = index.add %arg0, %index-1
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %4 : index
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
   hlcf.return
 }
 

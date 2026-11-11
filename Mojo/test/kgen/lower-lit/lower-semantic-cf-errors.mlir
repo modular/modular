@@ -53,9 +53,9 @@ lit.fn @resolved_fn() {
 
 lit.fn @fallthrough_error() {
   // expected-error @below {{guard 'else' block must not fall through}}
-  hlcf.unreachable {
+  hlcf.unreachable <
     fallthroughError = "guard 'else' block must not fall through"
-  }
+  >
 }
 
 // A semantic exit removes the marker, including when it is nested in
@@ -68,9 +68,9 @@ lit.fn @no_fallthrough_error(%condition: !kgen.scalar<bool>) {
     lit.return
     hlcf.yield
   }
-  hlcf.unreachable {
+  hlcf.unreachable <
     fallthroughError = "guard 'else' block must not fall through"
-  }
+  >
 }
 
 // First case always completes, so the second case and else are dead. The

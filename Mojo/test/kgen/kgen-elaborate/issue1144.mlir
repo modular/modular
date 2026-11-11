@@ -43,7 +43,7 @@ kgen.generator export @main() {
         // expected-note @below {{constraint failed: expected Int or NoneType}}
         kgen.param.assert <*"(lifted)apply_2">, "expected Int or NoneType"
         hlcf.break "inlined_cf_scope"
-      } {thenIsolated}
+      } <thenIsolated>
       hlcf.unreachable
   }
   hlcf.return
