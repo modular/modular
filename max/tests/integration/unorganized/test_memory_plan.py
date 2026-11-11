@@ -282,6 +282,24 @@ def test_measures__only_accelerators_with_measuring_on(
     assert memory_ledger.measures([gpu])
 
 
+def test_sizes_after_load__gpus_even_with_measuring_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(memory_ledger.DISABLE_ENV, raising=False)
+    gpu = MagicMock(is_host=False, api="cuda")
+    host = MagicMock(is_host=True, api="cpu")
+    npu = MagicMock(is_host=False, api="npu")
+    assert memory_ledger.sizes_after_load([gpu, gpu])
+    assert not memory_ledger.sizes_after_load([host])
+    assert not memory_ledger.sizes_after_load([])
+    assert not memory_ledger.sizes_after_load([npu])
+    # An exporter turns measuring off, but its GPUs still size the cache
+    # from what the weights left rather than from the checkpoint's size.
+    with memory_ledger.measuring_off():
+        assert memory_ledger.sizes_after_load([gpu])
+        assert not memory_ledger.measures([gpu])
+
+
 def test_unmeasured_budget__holds_back_a_fixed_reserve_per_device() -> None:
     devices = [
         _device_with_stats(free_memory=60 * GIB, total_memory=100 * GIB),

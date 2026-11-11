@@ -333,12 +333,12 @@ class TextGenerationPipeline(
         """The plan the pipeline runs with, its KV budget filled in."""
         self.memory_ledger: memory_ledger.Ledger | None = None
         """The warmups' measurement, once :meth:`size_kv_cache` ran."""
-        # With no budget planned, the warmups run against the null page and
-        # memory_ledger.size_kv_cache swaps the real cache in once they are
-        # measured.
+        # With no budget planned, the pipeline builds against the null page
+        # and memory_ledger.size_kv_cache swaps the real cache in once the
+        # weights are resident (and the warmups measured, when they run).
         measuring = (
             memory_plan.available_cache_memory is None
-            and memory_ledger.measures(self._devices)
+            and memory_ledger.sizes_after_load(self._devices)
         )
         self._kv_manager: PagedKVCacheManagerInterface = (
             NullKVCache(

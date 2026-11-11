@@ -379,8 +379,8 @@ def plan_memory(
     if not has_kv:
         return finish(batch, max_length, None)
     vision_row = _vision_row(pipeline_config, arch)
-    if memory_ledger.measures(devices):
-        # The pipeline measures its warmups and fills the budget in.
+    if memory_ledger.sizes_after_load(devices):
+        # The pipeline fills the budget in once its weights are resident.
         return finish(batch, max_length, None, vision_row)
 
     from max.pipelines.kv_cache import (

@@ -71,6 +71,7 @@ __all__ = [
     "measuring_off",
     "run_warmups",
     "size_kv_cache",
+    "sizes_after_load",
     "unmeasured_budget",
 ]
 
@@ -118,6 +119,22 @@ def measuring_off() -> Iterator[None]:
             os.environ[DISABLE_ENV] = previous
 
 
+def sizes_after_load(devices: Sequence[Device]) -> bool:
+    """Whether the planner leaves the budget until the weights are resident.
+
+    True on GPUs. The pipeline then builds against the null cache and
+    :func:`size_kv_cache` sizes the real one from what is resident: from the
+    warmups' peaks when it :func:`measures`, else with the fixed transient
+    reserve. Before loading, the checkpoint's bytes split evenly undercount
+    what each GPU holds (replicated weights, buffers allocated at load).
+    """
+    return (
+        not is_virtual_device_mode()
+        and bool(devices)
+        and all(_is_gpu(d) for d in devices)
+    )
+
+
 def measures(devices: Sequence[Device]) -> bool:
     """Whether the planner leaves the budget to a measurement on ``devices``.
 
@@ -127,12 +144,7 @@ def measures(devices: Sequence[Device]) -> bool:
     allocates their memory as it loads, so the planner sizes its cache from
     what is free before loading, as :func:`unmeasured_budget` describes.
     """
-    return (
-        not measuring_disabled()
-        and not is_virtual_device_mode()
-        and bool(devices)
-        and all(_is_gpu(d) for d in devices)
-    )
+    return not measuring_disabled() and sizes_after_load(devices)
 
 
 def _is_gpu(device: Device) -> bool:
@@ -945,11 +957,15 @@ def size_kv_cache(pipeline: Any, plan: MemoryPlan) -> MemoryPlan:
         logger.info("cache_memory: %s", to_human_readable_bytes(kv_bytes))
         return install(kv_bytes, batch_size, length, vision)
 
-    if not measurable(devices):
+    if measuring_disabled() or not measurable(devices):
+        # What the weights left, less the fixed transient reserve.
         cache_bytes = unmeasured_budget(devices, utilization)
         logger.warning(
-            "memory ledger: the memory manager reports no statistics, so the "
-            "KV cache is sized with a fixed %s transient reserve per GPU",
+            "memory ledger: %s, so the KV cache is sized with a fixed %s "
+            "transient reserve per GPU",
+            "measuring is off"
+            if measuring_disabled()
+            else "the memory manager reports no statistics",
             to_human_readable_bytes(UNMEASURED_TRANSIENT_BYTES),
         )
         if cache_bytes <= 0:
