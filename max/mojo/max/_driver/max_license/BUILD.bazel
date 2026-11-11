@@ -41,8 +41,9 @@ overlay_srcs(
     name = "max_srcs_hal",
     exclude = [
         # Nothing reaches the legacy device graph once the overlay names the
-        # HAL one, and it does not compile against the HAL `DeviceBuffer` that
-        # `max.runtime.async_value` takes from `max.gpu.host`.
+        # HAL one, and it does not compile in a HAL build: it calls
+        # `unwrap_legacy()` on the dispatching wrappers, which only compiles
+        # when the legacy backend is linked.
         "max/gpu/host/_legacy/device_graph.mojo",
     ],
     layers = [

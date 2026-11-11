@@ -20,7 +20,13 @@ graph-compiler primitives to compile; none of them can be meaningfully
 constructed or used at runtime.
 """
 
-from .device_context_hal import HALDeviceBuffer, HALDeviceContext
+from max._driver.max_license.device_context_dispatch.device_context import (
+    DeviceContext,
+)
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+)
+from .device_context_hal import HALDeviceContext
 from max.gpu.host._driver_handles import _DeviceGraphPtr
 
 
@@ -67,15 +73,17 @@ struct HALDeviceGraphBuilder(Movable):
 
     var _ctx: HALDeviceContext[]
 
-    def context(self) -> HALDeviceContext[]:
+    def context(self) -> DeviceContext[]:
         """Returns the device context this builder records against.
 
         Returns:
             The `DeviceContext` the builder was created from.
         """
-        return self._ctx
+        return DeviceContext[](
+            _impl=rebind_var[DeviceContext[]._Impl](self._ctx)
+        )
 
-    def recording_context(self) raises -> HALDeviceContext[]:
+    def recording_context(self) raises -> DeviceContext[]:
         """Unsupported: returns a `DeviceContext` that records into this builder.
 
         Returns:
@@ -90,7 +98,7 @@ struct HALDeviceGraphBuilder(Movable):
 
     def create_buffer[
         dtype: DType
-    ](self, size: Int, is_host: Bool) raises -> HALDeviceBuffer[dtype]:
+    ](self, size: Int, is_host: Bool) raises -> DeviceBuffer[dtype]:
         """Unsupported: allocates a buffer owned by the current device graph.
 
         Parameters:
@@ -112,9 +120,7 @@ struct HALDeviceGraphBuilder(Movable):
 
     def create_input_buffer[
         dtype: DType
-    ](
-        self, size: Int, is_host: Bool, out result: HALDeviceBuffer[dtype]
-    ) raises:
+    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
         """Unsupported: allocates an input buffer by the current device graph.
 
         Allocation and registration are one step so a `DeviceGraphInput` cannot

@@ -17,21 +17,33 @@ from .info import default_accelerator, get_gpu_target
 
 from ._legacy.constant_memory_mapping import ConstantMemoryMapping
 from ._legacy.device_attribute import DeviceAttribute
-from ._overlay import (
-    CompletionFlag,
-    DefaultDeviceTypeEncoder,
-    Device,
-    DeviceBuffer,
+from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
-    DeviceContextArray,
-    DeviceEvent,
+)
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+)
+from max._driver.max_license.device_context_dispatch.host_buffer import (
+    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.device_pointer import (
+    DevicePointer,
+)
+from max._driver.max_license.device_context_dispatch.function import (
     DeviceExternalFunction,
     DeviceFunction,
+)
+from max._driver.max_license.device_context_dispatch.host_types import (
+    CompletionFlag,
+    Device,
+    DeviceContextArray,
+    DeviceEvent,
     DeviceMulticastBuffer,
-    DevicePointer,
     DeviceStream,
+)
+from ._overlay import (
+    DefaultDeviceTypeEncoder,
     DeviceTypeEncoder,
-    HostBuffer,
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
@@ -39,11 +51,7 @@ from ._overlay import (
     DeviceGraphInputKind,
     DeviceGraphNode,
     StableAddr,
-    CUDA,
-    CUDA_MODULE,
     CUDA_get_current_context,
-    HIP,
-    HIP_MODULE,
 )
 from max.gpu.host._driver_handles import (
     _CString,
@@ -79,6 +87,12 @@ from ._legacy.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,
+)
+from max._driver.max_license.device_context_dispatch.vendor import (
+    CUDA,
+    CUDA_MODULE,
+    HIP,
+    HIP_MODULE,
 )
 from ._legacy._kernel_load_gate import (
     CollectiveEnqueueScope,

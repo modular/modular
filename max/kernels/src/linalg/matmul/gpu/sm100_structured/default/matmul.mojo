@@ -1100,7 +1100,10 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         The state; it lives as long as the process.
     """
     var key = String(
-        "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
+        "LINALG_SM100_SPLITK_",
+        ctx.device().id,
+        "_",
+        Int(ctx._handle_ptr().value()),
     )
     var cached = _get_global_or_null(key)
     if case .Some(ptr) = cached:

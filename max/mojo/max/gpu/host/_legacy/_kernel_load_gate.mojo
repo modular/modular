@@ -67,7 +67,7 @@ struct CollectiveGate:
         """
         return external_call[
             "AsyncRT_KernelLoadGate_tryAcquireCollective", Bool
-        ](self._ctx._handle, Pointer(to=self.grant))
+        ](self._ctx._handle_ptr(), Pointer(to=self.grant))
 
     @inline(.always)
     def __await__(self):
@@ -93,7 +93,7 @@ struct CollectiveGate:
         """Records one per-device enqueue as finished; the last releases."""
         if self._remaining.fetch_sub(1) == 1:
             external_call["AsyncRT_KernelLoadGate_releaseCollective", NoneType](
-                self._ctx._handle
+                self._ctx._handle_ptr()
             )
 
 
@@ -112,12 +112,12 @@ struct CollectiveEnqueueScope:
 
     def __enter__(self):
         external_call["AsyncRT_KernelLoadGate_beginEnqueue", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
     def __exit__(self):
         external_call["AsyncRT_KernelLoadGate_endEnqueue", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
 
@@ -138,10 +138,10 @@ struct KernelLoadScope:
 
     def __enter__(self):
         external_call["AsyncRT_KernelLoadGate_beginLoad", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )
 
     def __exit__(self):
         external_call["AsyncRT_KernelLoadGate_endLoad", NoneType](
-            self._ctx._handle
+            self._ctx._handle_ptr()
         )

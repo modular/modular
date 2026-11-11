@@ -82,6 +82,7 @@ from max._driver.max_license.device_context_dispatch.device_buffer import (
 from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
 )
+from ._device_context_extras import *
 
 
 def use_legacy_backend() -> Bool:
@@ -2234,7 +2235,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        ConfigType: GridBlockExecutionConfig,
+        ConfigType: ExecutionConfig,
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
@@ -2265,6 +2266,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime if use_legacy_backend():
+            # The legacy backend doesn't support the full
+            # `DeviceContext.ExecutionConfigType`, so the legacy
+            # context's grid and block requirement is asserted here.
+            comptime assert conforms_to(ConfigType, GridBlockExecutionConfig), (
+                "the legacy DeviceContext launches only grid and block"
+                " configurations"
+            )
             rebind[Self._Legacy](self._impl).enqueue_function[func](
                 config,
                 *encoded_args,

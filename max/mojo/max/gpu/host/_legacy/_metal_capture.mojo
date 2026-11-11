@@ -47,7 +47,7 @@ def _start_metal_trace_capture(ctx: DeviceContext, path: String) raises:
             _CString[],
             _DeviceContextPtr[mut=True],
             CStringSpan[origin_of(path_copy)],
-        ](ctx._handle, path_copy.as_c_string_span())
+        ](ctx._handle_ptr(), path_copy.as_c_string_span())
     )
 
 
@@ -65,7 +65,7 @@ def _end_metal_trace_capture(ctx: DeviceContext) raises:
             "AsyncRT_DeviceContext_stopMetalTraceCapture",
             _CString[],
             _DeviceContextPtr[mut=True],
-        ](ctx._handle)
+        ](ctx._handle_ptr())
     )
 
 
@@ -88,5 +88,5 @@ def _set_metal_gpu_print_enabled(ctx: DeviceContext, enabled: Bool) raises:
             _CString[],
             _DeviceContextPtr[mut=True],
             Bool,
-        ](ctx._handle, enabled)
+        ](ctx._handle_ptr(), enabled)
     )
