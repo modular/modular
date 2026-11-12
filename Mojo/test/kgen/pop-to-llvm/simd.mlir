@@ -368,7 +368,7 @@ kgen.func @simd_splat_scalar_to_2xf32(%a: !kgen.scalar<f32>) -> !kgen.simd<2, f3
 }
 
 // CHECK-LABEL: @simd_extractelement
-kgen.func @simd_extractelement(%vec: !kgen.simd<4, f32>, %idx: index) -> !kgen.scalar<f32> {
+kgen.func @simd_extractelement(%vec: !kgen.simd<4, f32>, %idx: !kgen.scalar<index>) -> !kgen.scalar<f32> {
   // CHECK-DAG: %[[VEC:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: %[[IDX:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK: %[[SCALAR:.*]] = llvm.extractelement %[[VEC]][%[[IDX]] : {{.*}}] : vector<4xf32>
@@ -378,7 +378,7 @@ kgen.func @simd_extractelement(%vec: !kgen.simd<4, f32>, %idx: index) -> !kgen.s
 }
 
 // CHECK-LABEL: @simd_insertelement
-kgen.func @simd_insertelement(%val: !kgen.scalar<f32>, %vec: !kgen.simd<4, f32>, %idx: index) -> !kgen.simd<4, f32> {
+kgen.func @simd_insertelement(%val: !kgen.scalar<f32>, %vec: !kgen.simd<4, f32>, %idx: !kgen.scalar<index>) -> !kgen.simd<4, f32> {
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %arg0
   // CHECK-DAG: %[[VEC:.*]] = builtin.unrealized_conversion_cast %arg1
   // CHECK-DAG: %[[IDX:.*]] = builtin.unrealized_conversion_cast %arg2
@@ -390,7 +390,7 @@ kgen.func @simd_insertelement(%val: !kgen.scalar<f32>, %vec: !kgen.simd<4, f32>,
 
 // CHECK-LABEL: @simd_insertelement_1xf32
 // CHECK-SAME: (%[[ARG0:[[:alnum:]]+]]:
-kgen.func @simd_insertelement_1xf32(%val: !kgen.scalar<f32>, %vec: !kgen.scalar<f32>, %idx: index) -> !kgen.scalar<f32> {
+kgen.func @simd_insertelement_1xf32(%val: !kgen.scalar<f32>, %vec: !kgen.scalar<f32>, %idx: !kgen.scalar<index>) -> !kgen.scalar<f32> {
   // CHECK-NEXT: hlcf.return %[[ARG0]]
   %0 = pop.simd.insertelement %val, %vec[%idx] : !kgen.scalar<f32>
   hlcf.return %0 : !kgen.scalar<f32>

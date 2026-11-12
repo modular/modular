@@ -503,8 +503,8 @@ kgen.generator @pop_simd_extractelement<size, type: dtype>(
     %b: !kgen.simd<size, f32>,
     %c: !kgen.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  index.constant
-  %idx = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %idx = kgen.param.constant: scalar<index> = <2>
   // CHECK: %[[U:.*]] = pop.simd.extractelement %[[A]][%[[IDX]]] : !kgen.simd<size, type>
   %u = pop.simd.extractelement %a[%idx] : !kgen.simd<size, type>
   // CHECK: %[[V:.*]] = pop.simd.extractelement %[[B]][%[[IDX]]] : !kgen.simd<size, f32>
@@ -529,8 +529,8 @@ kgen.generator @pop_simd_insertelement<size, DT: dtype>(
     %b: !kgen.simd<size, f32>,
     %c: !kgen.simd<4, si32>
   ) {
-  // CHECK: %[[IDX:.*]] =  index.constant
-  %idx = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %idx = kgen.param.constant: scalar<index> = <2>
   // CHECK: %[[U:.*]] = pop.simd.insertelement %[[V0]], %[[A]][%[[IDX]]] : !kgen.simd<size, DT>
   %u = pop.simd.insertelement %v0, %a[%idx] : !kgen.simd<size, DT>
   // CHECK: %[[V:.*]] = pop.simd.insertelement %[[V1]], %[[B]][%[[IDX]]] : !kgen.simd<size, f32>

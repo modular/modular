@@ -205,10 +205,14 @@ def test_pop_simd_splat() raises:
         _type=__mlir_type.`!kgen.simd<4, f32>`
     ](scalar_f32)
 
-    # Extract element 0 back out
+    # Extract element 0 back out.
+    var pos: __mlir_type.index = __mlir_attr.`0 : index`
+    var pop_pos = __mlir_op.`pop.cast_from_builtin`[
+        _type=__mlir_type.`!kgen.scalar<index>`
+    ](pos)
     var elem = __mlir_op.`pop.simd.extractelement`(
         vec,
-        __mlir_attr.`0 : index`,
+        pop_pos,
     )
 
     # Wrap in SIMD scalar to compare

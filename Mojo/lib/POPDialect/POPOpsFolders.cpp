@@ -1139,13 +1139,13 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   }
 
   auto vec = dyn_cast_if_present<SIMDAttr>(adaptor.getVector());
-  auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
+  std::optional<int64_t> idx = getConstantIndex(adaptor.getPosition());
   if (!vec || !idx)
     return {};
   // SCCP folds speculatively, so a raised counted loop hands this the
   // induction variable's exit value, one past the vector. That state is
   // unreachable at runtime; decline to fold rather than index out of bounds.
-  int64_t pos = idx.getInt();
+  int64_t pos = *idx;
   if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size())
     return {};
   return SIMDAttr::get(vec.getValues()[pos], getType());
@@ -1168,13 +1168,12 @@ SIMDExtractElementOp::parametric_interpret(ArrayRef<Attribute> operands,
   }
 
   auto vec = dyn_cast_if_present<SIMDAttr>(operands[0]);
-  auto idx = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  std::optional<int64_t> idx = getConstantIndex(operands[1]);
   if (!vec || !idx)
     return ErrorTree(getLoc(), "non-constant inputs");
 
-  return state.mapResults(
-      SIMDAttr::get(vec.getValues()[idx.getInt()],
-                    cast<SIMDType>(state.getReboundType(getType()))));
+  return state.mapResults(SIMDAttr::get(
+      vec.getValues()[*idx], cast<SIMDType>(state.getReboundType(getType()))));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1192,12 +1191,12 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   }
 
   auto val = dyn_cast_if_present<SIMDAttr>(adaptor.getValue());
-  auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
+  std::optional<int64_t> idx = getConstantIndex(adaptor.getPosition());
   if (!vec || !val || !idx)
     return {};
   // See SIMDExtractElementOp::fold: the position can be out of range while
   // SCCP explores a state the loop bound makes unreachable.
-  int64_t pos = idx.getInt();
+  int64_t pos = *idx;
   if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size() ||
       val.getValues().empty())
     return {};
@@ -1225,12 +1224,12 @@ SIMDInsertElementOp::parametric_interpret(ArrayRef<Attribute> operands,
   }
 
   auto val = dyn_cast_if_present<SIMDAttr>(operands[1]);
-  auto idx = dyn_cast_if_present<IntegerAttr>(operands[2]);
+  std::optional<int64_t> idx = getConstantIndex(operands[2]);
   if (!vec || !val || !idx)
     return ErrorTree(getLoc(), "non-constant inputs");
 
   SmallVector<DTypeValue> values(vec.getValues());
-  values[idx.getInt()] = val.getValues().front();
+  values[*idx] = val.getValues().front();
   return state.mapResults(SIMDAttr::get(values, type));
 }
 

@@ -789,7 +789,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the `!kgen.scalar` at
-    that position. The position must be of type index.
+    that position. The position must be of type `!kgen.scalar<index>`.
 
     If the position is out-of-bounds, the result is a poison value.
 
@@ -800,7 +800,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     ```
   }];
 
-  let arguments = (ins KGEN_SIMDType:$vector, Index:$position);
+  let arguments = (ins KGEN_SIMDType:$vector, IndexScalar:$position);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
@@ -822,7 +822,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
     source value into the vector at the proper position. The position must be
-    of type index.
+    of type `!kgen.scalar<index>`.
 
     If the position is out-of-bounds, the result is a poison value.
 
@@ -834,7 +834,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
   }];
 
   let arguments = (ins KGEN_SIMDType:$vector, ScalarType:$value,
-                       Index:$position);
+                       IndexScalar:$position);
   let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = [{

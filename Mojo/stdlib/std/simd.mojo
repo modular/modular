@@ -1108,7 +1108,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
         return Scalar[Self.dtype](
             mlir_value=__mlir_op.`pop.simd.extractelement`(
-                self._mlir_value, idx.__mlir_index__()
+                self._mlir_value, idx._mlir_value
             )
         )
 
@@ -1121,7 +1121,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             val: The value to set.
         """
         self._mlir_value = __mlir_op.`pop.simd.insertelement`(
-            self._mlir_value, val._mlir_value, idx.__mlir_index__()
+            self._mlir_value, val._mlir_value, idx._mlir_value
         )
 
     def __contains__(self, value: Scalar[Self.dtype]) -> Bool:

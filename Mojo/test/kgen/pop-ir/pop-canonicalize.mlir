@@ -1494,15 +1494,15 @@ kgen.func @unsupported_conv_conv(%arg0 : !kgen.simd<2, ui16>, %arg1 : !kgen.simd
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement() -> (!kgen.scalar<si8>) {
   // CHECK-NEXT: <20>
-  %idx1 = index.constant 1
+  %idx1 = kgen.param.constant: scalar<index> = <1>
   %0 = kgen.param.constant: simd<2, si8> = <<10, 20>>
   %1 = pop.simd.extractelement %0[%idx1] : !kgen.simd<2, si8>
   hlcf.return %1 : !kgen.scalar<si8>
 }
 
 // CHECK-LABEL: @simd_extractelement_scalar
-kgen.func @simd_extractelement_scalar(%scalar : !kgen.scalar<f32>, %arg : index) -> (!kgen.scalar<f32>) {
-  // CHECK: (%[[SCALAR:.*]]: !kgen.scalar<f32>, %[[ARG:.*]]: index)
+kgen.func @simd_extractelement_scalar(%scalar : !kgen.scalar<f32>, %arg : !kgen.scalar<index>) -> (!kgen.scalar<f32>) {
+  // CHECK: (%[[SCALAR:.*]]: !kgen.scalar<f32>, %[[ARG:.*]]: !kgen.scalar<index>)
   // CHECK-NEXT: hlcf.return %[[SCALAR]]
   %1 = pop.simd.extractelement %scalar[%arg] : !kgen.scalar<f32>
   hlcf.return %1 : !kgen.scalar<f32>
@@ -1511,7 +1511,7 @@ kgen.func @simd_extractelement_scalar(%scalar : !kgen.scalar<f32>, %arg : index)
 // CHECK-LABEL: @simd_insertelement
 kgen.func @simd_insertelement() -> (!kgen.simd<2, si8>) {
   // CHECK-NEXT: <30, 20>
-  %idx0 = index.constant 0
+  %idx0 = kgen.param.constant: scalar<index> = <0>
   %0 = kgen.param.constant: simd<2, si8> = <<10, 20>>
   %1 = kgen.param.constant: scalar<si8> = <30>
   %2 = pop.simd.insertelement %1, %0[%idx0] : !kgen.simd<2, si8>
@@ -1521,7 +1521,7 @@ kgen.func @simd_insertelement() -> (!kgen.simd<2, si8>) {
 // CHECK-LABEL: @simd_insertelement2
 kgen.func @simd_insertelement2() -> (!kgen.simd<2, si8>) {
   // CHECK-NEXT: <30, 0>
-  %idx0 = index.constant 0
+  %idx0 = kgen.param.constant: scalar<index> = <0>
 
   // Start from uninitialized memory instead of a constant.
   %0 = kgen.param.constant: simd<2, si8> = <#interp.uninitmem : !kgen.simd<2, si8>>
