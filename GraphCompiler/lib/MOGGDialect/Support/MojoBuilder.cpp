@@ -135,7 +135,7 @@ std::string MojoBuilder::funcDefBase(ArrayRef<NamedMojoDef> parameters,
   std::string str;
   llvm::raw_string_ostream stream(str);
   auto emitNamedDef = [&](const NamedMojoDef &def, StringRef typeSep,
-                          SmallVectorImpl<MojoValue> &out) {
+                          SmallVectorImpl<NamedMojoDef> &out) {
     MojoValue name =
         def.verbatim ? MojoValue(def.name.prefix) : newVar(def.name);
     if (!def.argConvention.empty())
@@ -145,7 +145,9 @@ std::string MojoBuilder::funcDefBase(ArrayRef<NamedMojoDef> parameters,
       stream << typeSep << def.type;
     if (def.defaultValue.has_value())
       stream << " = " << *def.defaultValue;
-    out.push_back(name);
+    NamedMojoDef emitted = def;
+    emitted.resolvedName = name;
+    out.push_back(std::move(emitted));
   };
   if (!parameters.empty()) {
     stream << "[";

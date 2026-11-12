@@ -194,7 +194,8 @@ LogicalResult DeviceGraphDependenciesOp::emitMojo(MOGG::EmitMojoState &state) {
       MojoBuilder::LambdaInline::kNever,
       /*isAsync=*/false, /*raises=*/true, /*captureConvention=*/workConvention,
       [&](const FunctionBody &functionBody) {
-        state.setMojoValueFor(builderArg, functionBody.arguments.front());
+        state.setMojoValueFor(builderArg,
+                              functionBody.arguments.front().resolvedName);
         for (Operation &op : getBodyBlock().getOperations())
           if (state.lowerOpToMojo(&op).failed()) {
             errOccurred = true;
@@ -315,8 +316,8 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kNever,
       /*isAsync=*/false, /*raises=*/true,
       /*captureConvention=*/"imm", [&](const FunctionBody &buildBody) {
-        MojoValue n = buildBody.parameters.front();
-        MojoValue builderArgMojo = buildBody.arguments.front();
+        MojoValue n = buildBody.parameters.front().resolvedName;
+        MojoValue builderArgMojo = buildBody.arguments.front().resolvedName;
 
         for (Region &region : op.getGraphs()) {
           state.setMojoValueFor(region.front().getArgument(1), sharedContext);
@@ -400,7 +401,7 @@ emitCollectiveKeyForClosure(MOGG::EmitMojoState &state,
       MojoBuilder::LambdaInline::kNever,
       /*isAsync=*/false, /*raises=*/true, /*captureConvention=*/"imm",
       [&](const FunctionBody &keyBody) {
-        MojoValue n = keyBody.parameters.front();
+        MojoValue n = keyBody.parameters.front().resolvedName;
 
         size_t inputOffset = 0;
         MojoBuilder *branch = nullptr;
@@ -522,7 +523,7 @@ DeviceGraphCollectiveCreateOp::emitMojo(MOGG::EmitMojoState &state) {
           /*isAsync=*/false, /*raises=*/true,
           /*captureConvention=*/"var", [&](const FunctionBody &bd) {
             state.file->call(*buildFor, /*parameters=*/{MojoValue(idx)},
-                             /*operands=*/{bd.arguments.front()});
+                             /*operands=*/{bd.arguments.front().resolvedName});
           });
 
       MojoValue graph = state.file->var(

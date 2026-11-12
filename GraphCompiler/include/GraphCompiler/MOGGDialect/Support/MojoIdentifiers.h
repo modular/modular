@@ -485,6 +485,10 @@ constexpr llvm::StringLiteral kParameterSimdWidth = "simd_width";
 constexpr llvm::StringLiteral kParameterPreferredSimdWidth = "simd_width";
 constexpr llvm::StringLiteral kArgMaxSimdWidth = "max_simd_width";
 constexpr llvm::StringLiteral kParameterElementAlignment = "element_alignment";
+/// The rowwise cache lambda's alignment parameter.
+constexpr llvm::StringLiteral kParameterAlignment = "alignment";
+/// The rowwise phase lambda's width parameter (`def contribute[w]`).
+constexpr llvm::StringLiteral kParameterTileWidth = "w";
 /// The source tensor's static alignment, which a `TileTensor` does not carry.
 constexpr llvm::StringLiteral kParameterTensorAlignment = "tensor_alignment";
 constexpr llvm::StringLiteral kParameterElementSize = "element_size";
@@ -871,6 +875,37 @@ public:
   }
 
   MojoValue value;
+};
+
+/// The width and alignment of a lambda that runs one SIMD operation per
+/// element of a tile: a fusion functor's method, a `foreach` closure, or a
+/// rowwise phase. Both are names the body can read; asking for one the
+/// enclosing lambda does not have is an error here rather than an empty name in
+/// the emitted text.
+class ElementwiseLambdaParameters {
+public:
+  /// Empty: asking for a width or alignment then asserts, which is what an op
+  /// reached outside an elementwise lambda wants.
+  ElementwiseLambdaParameters() = default;
+
+  ElementwiseLambdaParameters(MojoValue width, MojoValue alignment)
+      : widthValue(std::move(width)), alignmentValue(std::move(alignment)) {}
+
+  MojoValue width() const {
+    ASSERT_STREAM(!widthValue.text.empty(),
+                  << "the enclosing lambda has no width");
+    return widthValue;
+  }
+
+  MojoValue alignment() const {
+    ASSERT_STREAM(!alignmentValue.text.empty(),
+                  << "the enclosing lambda has no alignment");
+    return alignmentValue;
+  }
+
+private:
+  MojoValue widthValue;
+  MojoValue alignmentValue;
 };
 
 class OpaquePointerRef {

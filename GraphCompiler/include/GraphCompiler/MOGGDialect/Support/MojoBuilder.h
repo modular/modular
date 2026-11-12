@@ -152,11 +152,6 @@ inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
   return os << value.text;
 }
 
-struct FunctionBody {
-  SmallVector<MojoValue> parameters;
-  SmallVector<MojoValue> arguments;
-};
-
 // A prefix plus a unique index (e.g. `bar_45`), resolved by MojoBuilder.
 class UniqueMojoIdentifier {
   std::string prefix;
@@ -165,6 +160,10 @@ class UniqueMojoIdentifier {
 public:
   UniqueMojoIdentifier(const std::string &prefix)
       : prefix(prefix), idx(std::nullopt) {}
+
+  /// The name this identifier was declared with, before it was resolved to a
+  /// unique one (`width` for `width_3`).
+  llvm::StringRef declaredName() const { return prefix; }
 
 private:
   UniqueMojoIdentifier(const std::string &prefix, std::optional<uint32_t> idx)
@@ -182,6 +181,9 @@ struct NamedMojoDef {
   UniqueMojoIdentifier name;
   MojoValue type;
   std::optional<MojoValue> defaultValue;
+  /// The unique name minted for `name` when this definition was emitted
+  /// (`width` becomes `width_3`); empty until then.
+  MojoValue resolvedName;
   /// Emits the name without a counter suffix, and no annotation if `type` is
   /// empty, for signatures that must match a Mojo trait (e.g. `self`, `idx`).
   bool verbatim = false;
@@ -204,6 +206,24 @@ struct NamedMojoDef {
     NamedMojoDef def(name.str(), type, defaultValue);
     def.verbatim = true;
     return def;
+  }
+};
+
+/// The parameters and arguments of an emitted function body, as declared.
+struct FunctionBody {
+  SmallVector<NamedMojoDef> parameters;
+  SmallVector<NamedMojoDef> arguments;
+
+  /// The parameter declared as `declaredName` (e.g. `kParameterWidth`).
+  MojoValue parameter(llvm::StringRef declaredName) const {
+    for (const NamedMojoDef &parameter : parameters)
+      if (parameter.name.declaredName() == declaredName) {
+        ASSERT_STREAM(!parameter.resolvedName.text.empty(),
+                      << "parameter '" << declaredName << "' was not emitted");
+        return parameter.resolvedName;
+      }
+    ASSERT_STREAM(false, << "no parameter named '" << declaredName << "'");
+    return {};
   }
 };
 

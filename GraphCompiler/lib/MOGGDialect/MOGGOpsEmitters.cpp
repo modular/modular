@@ -391,7 +391,7 @@ LogicalResult FuncOp::emitMojoMGPABI(EmitMojoState &state) {
             "This is the entry point of the kernel. The argument is a "
             "pointer to a list of inputs and outputs.");
 
-        auto runtimeArgument = functionBody.arguments.front();
+        auto runtimeArgument = functionBody.arguments.front().resolvedName;
         auto &kernelBody = getBody().front();
         // runtimeArgument order: inputs and DPS outputs, then return values
         // (chain and non-DPS outputs).
@@ -494,7 +494,7 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
       [&](const MOGG::FunctionBody &functionBody) {
         for (auto &&[mlirArg, mojoArg] :
              llvm::zip(getBody().getArguments(), functionBody.arguments))
-          state.setMojoValueFor(mlirArg, mojoArg);
+          state.setMojoValueFor(mlirArg, mojoArg.resolvedName);
 
         errOccurred = llvm::any_of(getOps(), [&](mlir::Operation &op) {
           return state.lowerOpToMojo(&op).failed();
@@ -865,8 +865,8 @@ struct DeviceKernelArgs {
     SmallVector<MojoValue> operands;
     for (unsigned i : indices)
       operands.push_back(kinds[i] == DeviceArgKind::Tile
-                             ? types[i]({}, {body.arguments[i]})
-                             : body.arguments[i]);
+                             ? types[i]({}, {body.arguments[i].resolvedName})
+                             : body.arguments[i].resolvedName);
     return operands;
   }
 };
@@ -1155,7 +1155,7 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
           if (i > 0)
             builder.call(graphBlob.get("barrier"));
           MojoValue isActive = graphBlob.get("is_thread_active")(
-              {}, {body.arguments[active[i]]});
+              {}, {body.arguments[active[i]].resolvedName});
           const KernelCallee &executeDevice = member.call.executeDevice;
           builder.if_(isActive, [&] {
             builder.call(executeDevice.function, executeDevice.parameters,
@@ -1369,51 +1369,46 @@ static MojoValue simdLoadFromCapture(const FusedTensorArg &arg,
 }
 
 LogicalResult TensorLoadOp::emitMojo(EmitMojoState &state) {
-  // Several callers set up `currentLambdaInfo`, so builder/width/alignment are
-  // read by role. Every fusion lane records its receiver's decomposed
-  // `ManagedTensorSlice` (ptr/shape/strides + comptime `StaticTensorSpec`) via
-  // `setFusedTensorArgFor`, so `simd_load_from_tensor_pointer` honors the
-  // spec's static layout (stride-correct for fused views) and alignment.
+  // The enclosing lambda installs its width and alignment, so they are read
+  // from the state rather than assumed. Every fusion lane records its
+  // receiver's decomposed `ManagedTensorSlice` (ptr/shape/strides + comptime
+  // `StaticTensorSpec`) via `setFusedTensorArgFor`, so
+  // `simd_load_from_tensor_pointer` honors the spec's static layout
+  // (stride-correct for fused views) and alignment.
   const FusedTensorArg &arg = state.getFusedTensorArgFor(getTensor());
   const MojoValue &idx = state.getMojoValueFor(getIndex());
-  const EmitMojoState::MojoLambdaInfos &lambdaInfo = state.currentLambdaInfo;
-  ASSERT_STREAM(lambdaInfo.lambdaBuilder,
-                "TensorLoadOp::emitMojo reached without currentLambdaInfo set");
-
-  MojoValue loaded = lambdaInfo.lambdaBuilder->var(simdLoadFromCapture(
-      arg, lambdaInfo.widthParameter, lambdaInfo.alignmentParameter, idx));
+  const ElementwiseLambdaParameters &parameters =
+      state.elementwiseLambdaParameters;
+  MojoValue loaded = state.file->var(simdLoadFromCapture(
+      arg, parameters.width(), parameters.alignment(), idx));
   state.setMojoValueFor(getResult(), loaded);
   return success();
 }
 
 LogicalResult TensorStoreOp::emitMojo(EmitMojoState &state) {
-  // Reached recursively from whichever caller sets up `currentLambdaInfo` --
-  // `TensorCreateEpilogueOp`'s `__call__` and `CallForeachOp`'s closure
-  // each have a different comptime parameter list, hence reading
-  // width/alignment/builder by role rather than assuming either shape.
+  // Reached from `TensorCreateEpilogueOp`'s `__call__` and from
+  // `CallForeachOp`'s closure, whose comptime parameter lists differ: the
+  // enclosing lambda installs the width and alignment it runs at.
   const FusedTensorArg &arg = state.getFusedTensorArgFor(getTensor());
   const MojoValue &idx = state.getMojoValueFor(getIndex());
   const MojoValue &value = state.getMojoValueFor(getValue());
-  const EmitMojoState::MojoLambdaInfos &lambdaInfo = state.currentLambdaInfo;
-  ASSERT_STREAM(
-      lambdaInfo.lambdaBuilder,
-      "TensorStoreOp::emitMojo reached without currentLambdaInfo set");
+  const ElementwiseLambdaParameters &parameters =
+      state.elementwiseLambdaParameters;
 
   // The method's generic `dtype` comptime parameter isn't statically known to
   // equal the store target's own spec dtype, so the stored value needs an
   // explicit rebind to the capture spec's own dtype.
   MojoValue rebound = value.rebind(MojoValue(
-      kStructSIMD)[{arg.spec.get(kParameterDType), lambdaInfo.widthParameter}]);
+      kStructSIMD)[{arg.spec.get(kParameterDType), parameters.width()}]);
   // The loop index arrives as a `Coord`; the pointer-based store wants an
   // `IndexList[rank]`, sized by the capture's own static spec.
   MojoValue indices = MojoValue(kFnCoordToIndexList)({}, {idx}).rebind(
       MojoValue(kStructIndexList)[arg.spec.get(kParameterRank)]);
-  lambdaInfo.lambdaBuilder->call(
+  state.file->call(
       MojoValue(kFnMsSimdStoreIntoTensorPointer),
       {MojoValue(kParameterStaticSpec).equal(arg.spec),
-       MojoValue(kParameterSimdWidth).equal(lambdaInfo.widthParameter),
-       MojoValue(kParameterElementAlignment)
-           .equal(lambdaInfo.alignmentParameter)},
+       MojoValue(kParameterSimdWidth).equal(parameters.width()),
+       MojoValue(kParameterElementAlignment).equal(parameters.alignment())},
       {arg.ptr, arg.shape, arg.strides, indices, rebound});
   return success();
 }
@@ -1695,11 +1690,12 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
               returnsValue ? std::optional<MojoValue>(simdType)
                            : std::optional<MojoValue>{},
               /*exported=*/false, /*raises=*/false,
-              /*isAlwaysInline=*/true, [&](const FunctionBody &fb) {
-                EmitMojoState::LambdaInfosGuard lambdaInfosGuard(
-                    state, {/*lambdaBuilder=*/&state.file.declarations(),
-                            /*widthParameter=*/fb.parameters[2],
-                            /*alignmentParameter=*/fb.parameters[3]});
+              /*isAlwaysInline=*/true, [&](const FunctionBody &functionBody) {
+                EmitMojoState::ElementwiseLambdaParametersGuard parametersGuard(
+                    state,
+                    {/*width=*/functionBody.parameter(kParameterSimdWidth),
+                     /*alignment=*/functionBody.parameter(
+                         kParameterElementAlignment)});
 
                 // The stride-aware primitive takes a `Coord`, so convert `idx`
                 // once via `Coord`'s `IndexList` constructor (coord.mojo). Not
@@ -1708,9 +1704,10 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                 // varying loop index. The trait-wrapper lane already has a
                 // `Coord`.
                 MojoValue coordIdx =
-                    lane.coordIndex ? fb.arguments[1]
-                                    : state.file.declarations().var(MojoValue(
-                                          kStructCoord)({}, {fb.arguments[1]}));
+                    lane.coordIndex
+                        ? functionBody.arguments[1].resolvedName
+                        : state.file.declarations().var(MojoValue(kStructCoord)(
+                              {}, {functionBody.arguments[1].resolvedName}));
 
                 // The store lanes' body leads with [value, index]; the load
                 // lane's leads with [index] alone. Captures follow either way.
@@ -1720,8 +1717,10 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                   // `dtype`; nested elementwise calls hardcode `valueDtype`'s
                   // literal, so rebind `value` to it.
                   MojoValue reboundVal = state.file.declarations().var(
-                      fb.arguments[2].rebind(MojoValue(
-                          kStructSIMD)[{valueDtype, fb.parameters[2]}]));
+                      functionBody.arguments[2].resolvedName.rebind(
+                          MojoValue(kStructSIMD)[{
+                              valueDtype,
+                              functionBody.parameter(kParameterSimdWidth)}]));
                   state.setMojoValueFor(region.getArgument(0), reboundVal);
                   state.setMojoValueFor(region.getArgument(1), coordIdx);
                   captureBase = 2;
@@ -1848,8 +1847,8 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
                                     const MojoValue &width,
                                     const MojoValue &alignment,
                                     const MojoValue &tile) {
-  EmitMojoState::LambdaInfosGuard guard(state,
-                                        {&*state.file, width, alignment});
+  EmitMojoState::ElementwiseLambdaParametersGuard parametersGuard(
+      state, {width, alignment});
   state.setMojoValueFor(phase.getIndexArg(), MojoValue("idx"));
   if (failed(bindRowValues(state, phase->getRegion(0), width)))
     return failure();
@@ -1975,9 +1974,8 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
         EmitMojoState::RowwiseBodyGuard bodyGuard(state, info);
 
         // (2) The body's ops, in order.
-        EmitMojoState::LambdaInfosGuard rowLevel(
-            state,
-            {&*state.file, params.get(kParameterSimdWidth), MojoValue(1)});
+        EmitMojoState::ElementwiseLambdaParametersGuard rowLevel(
+            state, {params.get(kParameterSimdWidth), MojoValue(1)});
         for (Operation &op : body)
           if (failed(state.lowerOpToMojo(&op))) {
             failedToLower = true;
@@ -2019,16 +2017,18 @@ LogicalResult RowwiseCacheOp::emitMojo(EmitMojoState &state) {
   info.load = state.file->lambda(
       "load_",
       {NamedMojoDef::asVerbatim(kParameterWidth, kStructInt),
-       NamedMojoDef::asVerbatim("alignment", kStructInt)},
+       NamedMojoDef::asVerbatim(kParameterAlignment, kStructInt)},
       {NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       MojoValue(kStructSIMD)[{info.dtype, MojoValue(kParameterWidth)}],
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
-      [&](const FunctionBody &fb) {
-        EmitMojoState::LambdaInfosGuard guard(
-            state, {&*state.file, fb.parameters[0], fb.parameters[1]});
+      [&](const FunctionBody &functionBody) {
+        EmitMojoState::ElementwiseLambdaParametersGuard parametersGuard(
+            state, {/*width=*/functionBody.parameter(kParameterWidth),
+                    /*alignment=*/functionBody.parameter(kParameterAlignment)});
         EmitMojoState::ValueScope scope(state);
         state.setMojoValueFor(body.getArgument(0), MojoValue("idx"));
-        if (failed(bindRowValues(state, getBody(), fb.parameters[0]))) {
+        MojoValue width = functionBody.parameter(kParameterWidth);
+        if (failed(bindRowValues(state, getBody(), width))) {
           failedToLower = true;
           return;
         }
@@ -2104,16 +2104,20 @@ LogicalResult RowwiseReduceOp::emitMojo(EmitMojoState &state) {
   // (1) def contribute[w](tile: SIMD[dtype, w], idx) -> SIMD[accum, w]:
   bool failedToLower = false;
   MojoValue contribute = state.file->lambda(
-      "contribute_", {NamedMojoDef::asVerbatim("w", kStructInt)},
+      "contribute_",
+      {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim(
-           "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
+           "tile",
+           MojoValue(
+               kStructSIMD)[{info.dtype, MojoValue(kParameterTileWidth)}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
-      MojoValue(kStructSIMD)[{info.accum, MojoValue("w")}],
+      MojoValue(kStructSIMD)[{info.accum, MojoValue(kParameterTileWidth)}],
       MojoBuilder::LambdaInline::kAlways, false, false, "var",
-      [&](const FunctionBody &fb) {
+      [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
-        if (failed(lowerPhaseBody(state, *this, fb.parameters[0], MojoValue(1),
-                                  fb.arguments[0]))) {
+        if (failed(lowerPhaseBody(
+                state, *this, functionBody.parameter(kParameterTileWidth),
+                MojoValue(1), functionBody.arguments[0].resolvedName))) {
           failedToLower = true;
           return;
         }
@@ -2151,19 +2155,24 @@ LogicalResult RowwiseMapOp::emitMojo(EmitMojoState &state) {
   // (1) def elementwise[w](tile: SIMD[dtype, w], idx):
   bool failedToLower = false;
   MojoValue elementwise = state.file->lambda(
-      "elementwise_", {NamedMojoDef::asVerbatim("w", kStructInt)},
+      "elementwise_",
+      {NamedMojoDef::asVerbatim(kParameterTileWidth, kStructInt)},
       {NamedMojoDef::asVerbatim(
-           "tile", MojoValue(kStructSIMD)[{info.dtype, MojoValue("w")}]),
+           "tile",
+           MojoValue(
+               kStructSIMD)[{info.dtype, MojoValue(kParameterTileWidth)}]),
        NamedMojoDef::asVerbatim("idx", info.rowCoord)},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
-      false, "var", [&](const FunctionBody &fb) {
+      false, "var", [&](const FunctionBody &functionBody) {
         EmitMojoState::ValueScope scope(state);
+        MojoValue width = functionBody.parameter(kParameterTileWidth);
         // comptime al = Context[params].element_alignment[dtype, w]()
         MojoValue alignment = state.file->comptime(
             MojoValue(kStructRowwiseContext)[info.params].get(
-                "element_alignment")[{info.dtype, fb.parameters[0]}]({}, {}));
-        failedToLower = failed(lowerPhaseBody(state, *this, fb.parameters[0],
-                                              alignment, fb.arguments[0]));
+                kParameterElementAlignment)[{info.dtype, width}]({}, {}));
+        failedToLower =
+            failed(lowerPhaseBody(state, *this, width, alignment,
+                                  functionBody.arguments[0].resolvedName));
       });
   if (failedToLower)
     return failure();
@@ -2190,8 +2199,8 @@ LogicalResult RowwiseEmitOp::emitMojo(EmitMojoState &state) {
       "write_", {}, {NamedMojoDef::asVerbatim("oc", info.rowCoord)},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAlways, false,
       false, "var", [&](const FunctionBody &) {
-        EmitMojoState::LambdaInfosGuard guard(
-            state, {&*state.file, emitWidth, MojoValue(1)});
+        EmitMojoState::ElementwiseLambdaParametersGuard parametersGuard(
+            state, {emitWidth, MojoValue(1)});
         EmitMojoState::ValueScope scope(state);
         state.setMojoValueFor(info.body->getArguments().back(),
                               MojoValue("oc"));
@@ -3090,9 +3099,8 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
   // `simd_{load_from,store_into}_tensor_pointer`.
   //
   // The closure's comptime parameters are `[width, element_alignment]`;
-  // `TensorLoadOp`/`TensorStoreOp` read them by role from
-  // `state.currentLambdaInfo` (set via `LambdaInfosGuard` below), since the
-  // epilogue `__call__` has a different list.
+  // `TensorLoadOp`/`TensorStoreOp` read them from
+  // `state.elementwiseLambdaParameters`, which the guard below installs.
   MojoValue shape = state.getMojoValueFor(getShape());
   MojoValue context = state.getMojoValueFor(getDeviceContext());
   ValueRange capturing = getCapturing();
@@ -3124,11 +3132,11 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
       {NamedMojoDef::asVerbatim("idx", kStructCoord)},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kAutomatic,
       /*isAsync=*/false, /*raises=*/false, /*captureConvention=*/"var",
-      [&](const FunctionBody &fb) {
-        EmitMojoState::LambdaInfosGuard lambdaInfosGuard(
-            state, {/*lambdaBuilder=*/&*state.file,
-                    /*widthParameter=*/fb.parameters[0],
-                    /*alignmentParameter=*/fb.parameters[1]});
+      [&](const FunctionBody &functionBody) {
+        EmitMojoState::ElementwiseLambdaParametersGuard parametersGuard(
+            state,
+            {/*width=*/functionBody.parameter(kParameterWidth),
+             /*alignment=*/functionBody.parameter(kParameterElementAlignment)});
 
         Block &body = getBody().front();
         ArrayRef<BlockArgument> args = body.getArguments();
@@ -3140,7 +3148,8 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
           state.setFusedTensorArgFor(
               args[i], {info.ptr, info.shape, info.strides, info.spec});
         }
-        state.setMojoValueFor(args.back(), fb.arguments[0]);
+        state.setMojoValueFor(args.back(),
+                              functionBody.arguments[0].resolvedName);
 
         errOccurred = llvm::any_of(body, [&](Operation &op) {
           return state.lowerOpToMojo(&op).failed();
@@ -3728,11 +3737,6 @@ LogicalResult ChainSinkOp::emitMojo(EmitMojoState &) {
 }
 
 LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
-  const EmitMojoState::MojoLambdaInfos &lambdaInfo = state.currentLambdaInfo;
-  ASSERT_STREAM(
-      lambdaInfo.lambdaBuilder,
-      "CallElementwiseOp::emitMojo reached without currentLambdaInfo set");
-
   SmallVector<MojoValue> inputs = state.getMojoValuesFor(getInputs());
 
   // `$index` (present only if `CallElementwiseOp::lowerToMOGG` wanted it) is a
@@ -3751,8 +3755,7 @@ LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
       inputs);
   if (failed(call))
     return failure();
-  state.setMojoValueFor(getOutputs().front(),
-                        lambdaInfo.lambdaBuilder->var(*call));
+  state.setMojoValueFor(getOutputs().front(), state.file->var(*call));
   return success();
 }
 
@@ -3858,13 +3861,10 @@ LogicalResult ConstantScalarOp::emitMojo(EmitMojoState &state) {
   // call's width from its SIMD operands, so an unsplatted first-operand
   // constant would fail inference. A tile call's literal stays bare.
   if (auto simd = dyn_cast<SimdType>(getResult().getType())) {
-    const EmitMojoState::MojoLambdaInfos &lambdaInfo = state.currentLambdaInfo;
-    ASSERT_STREAM(lambdaInfo.lambdaBuilder,
-                  "a !mogg.simd constant is emitted outside a closure");
     ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(simd.getElementType());
     ASSERT_STREAM(!dtypeOr.isError(), "verified element type " << simd);
-    MojoValue simdTy =
-        EmitMojoState::getSIMDType(*dtypeOr, lambdaInfo.widthParameter);
+    MojoValue simdTy = EmitMojoState::getSIMDType(
+        *dtypeOr, state.elementwiseLambdaParameters.width());
     literal = simdTy({}, {*literal});
   }
 

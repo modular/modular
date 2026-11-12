@@ -107,32 +107,32 @@ struct EmitMojoState {
   };
   llvm::DenseMap<Value, TaskHandleInfo> taskHandleInfos;
 
-  /// Context for an op lowered inside a fused-tensor load/store callback: the
-  /// builder its statements go to, and the width/alignment comptime parameters
-  /// those loads and stores read.
-  struct MojoLambdaInfos {
-    MojoBuilder *lambdaBuilder = nullptr;
-    MojoValue widthParameter;
-    MojoValue alignmentParameter;
-  };
-  MojoLambdaInfos currentLambdaInfo;
+  /// The width and alignment of the elementwise lambda being emitted, which
+  /// `TensorLoadOp`, `TensorStoreOp`, `CallElementwiseOp` and
+  /// `ConstantScalarOp` read. Only an elementwise lambda has them; a lambda
+  /// that declares no width pushes the value it computes instead.
+  ElementwiseLambdaParameters elementwiseLambdaParameters;
 
-  /// Restores `currentLambdaInfo` on scope exit.
-  class LambdaInfosGuard {
+  /// Restores `elementwiseLambdaParameters` on scope exit.
+  class ElementwiseLambdaParametersGuard {
   public:
-    LambdaInfosGuard(EmitMojoState &state, MojoLambdaInfos newInfo)
-        : state(state), savedLambdaInfo(std::move(state.currentLambdaInfo)) {
-      state.currentLambdaInfo = std::move(newInfo);
+    ElementwiseLambdaParametersGuard(EmitMojoState &state,
+                                     ElementwiseLambdaParameters parameters)
+        : state(state),
+          savedParameters(std::move(state.elementwiseLambdaParameters)) {
+      state.elementwiseLambdaParameters = std::move(parameters);
     }
-    LambdaInfosGuard(const LambdaInfosGuard &) = delete;
-    LambdaInfosGuard &operator=(const LambdaInfosGuard &) = delete;
-    ~LambdaInfosGuard() {
-      state.currentLambdaInfo = std::move(savedLambdaInfo);
+    ElementwiseLambdaParametersGuard(const ElementwiseLambdaParametersGuard &) =
+        delete;
+    ElementwiseLambdaParametersGuard &
+    operator=(const ElementwiseLambdaParametersGuard &) = delete;
+    ~ElementwiseLambdaParametersGuard() {
+      state.elementwiseLambdaParameters = std::move(savedParameters);
     }
 
   private:
     EmitMojoState &state;
-    MojoLambdaInfos savedLambdaInfo;
+    ElementwiseLambdaParameters savedParameters;
   };
 
   /// What the ops of a `mogg.call.rowwise` body print against: names in the
