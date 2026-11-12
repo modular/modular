@@ -49,3 +49,63 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
     ],
 )
+
+# Builds the fused Laguna + DFlash module on CPU from a tiny target and
+# drafter.
+modular_py_library(
+    name = "laguna_dflash_fixtures",
+    testonly = True,
+    srcs = ["laguna_dflash_fixtures.py"],
+    data = ["//max/tests/integration/architectures/dflash_laguna_modulev3:testdata"],
+    imports = ["."],
+    deps = [
+        ":laguna_spec_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/dflash_laguna_modulev3",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/integration/architectures/laguna_modulev3:laguna_parity",
+    ],
+)
+
+# Stages the fused graph on CPU: the pairing's resolution, the name and
+# inputs Mach binds and the weight names. Never compiles.
+modular_py_test(
+    name = "test_fused_graph_cpu",
+    size = "medium",
+    srcs = ["test_fused_graph_cpu.py"],
+    data = ["//max/tests/integration/architectures/dflash_laguna_modulev3:testdata"],
+    ignore_extra_deps = [
+        # The staged trace realizes eager tensors, which import the MO
+        # interpreter; without its compiled ops the trace crawls.
+        "//max/python/max/_interpreter_ops",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":laguna_dflash_fixtures",
+        ":laguna_spec_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/dflash_laguna_modulev3",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)

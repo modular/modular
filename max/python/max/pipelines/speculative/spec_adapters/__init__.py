@@ -101,6 +101,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "KimiK3ForConditionalGeneration_ModuleV3": (
         ".kimi_k3_modulev3.dspark.spec_adapters"
     ),
+    "LagunaForCausalLM_ModuleV3": ".laguna_modulev3.spec_adapters",
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
