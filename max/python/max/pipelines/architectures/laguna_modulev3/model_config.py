@@ -87,8 +87,9 @@ class LagunaDecoderConfig(LagunaConfig):
 
         Raises:
             NotImplementedError: If the deployment needs more than one device,
-                data parallelism or other than last-token logits, or the
-                checkpoint's attention weights are quantized.
+                data parallelism or other than last-token logits outside a
+                speculative verify, or the checkpoint's attention weights are
+                quantized.
         """
         if isinstance(return_logits, ModelOutputConfig):
             return_hidden_states = return_logits.return_hidden_states
@@ -98,9 +99,15 @@ class LagunaDecoderConfig(LagunaConfig):
                 "Laguna on ModuleV3 runs on a single GPU; got "
                 f"{len(self.devices)} devices."
             )
-        if return_logits != ReturnLogits.LAST_TOKEN:
+        # A speculative verify scores every row it checks, and is the only
+        # build that taps layers.
+        if return_logits != ReturnLogits.LAST_TOKEN and not (
+            return_logits == ReturnLogits.VARIABLE
+            and return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS
+        ):
             raise NotImplementedError(
-                "Laguna on ModuleV3 returns last-token logits only; got "
+                "Laguna on ModuleV3 returns last-token logits, or variable"
+                " logits for a speculative verify; got "
                 f"{return_logits}."
             )
         if self.data_parallel_degree > 1:

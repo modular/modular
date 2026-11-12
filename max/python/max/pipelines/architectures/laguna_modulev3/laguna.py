@@ -21,7 +21,7 @@ the subgraph as an operand.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from typing import Any
 
 from max import functional as F
@@ -227,12 +227,44 @@ class LagunaTextModel(Module[..., ModuleV3Outputs]):
             A one-element tuple of float32 last-token logits.
         """
         del return_n_logits
+        h, _ = self.run_layers(tokens, input_row_offsets, kv_by_type)
+        last_token_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
+        return ModuleV3Outputs(next_token_logits=self.logits(last_token_h))
+
+    def run_layers(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        kv_by_type: dict[str, PagedCacheValues],
+        taps: Collection[int] = (),
+    ) -> tuple[Tensor, list[Tensor]]:
+        """Runs the decoder stack over a ragged batch.
+
+        Args:
+            tokens: Ragged input token IDs.
+            input_row_offsets: Ragged row offsets.
+            kv_by_type: The cache leaf of each attention type present.
+            taps: The layers whose output residual streams to return.
+
+        Returns:
+            The last layer's residual stream, and the residual stream after
+            each layer in ``taps``, in layer order.
+
+        Raises:
+            ValueError: If a tap is not a layer index.
+        """
+        if not set(taps) <= set(range(len(self.layers))):
+            raise ValueError(
+                f"Laguna taps must index its {len(self.layers)} layers; got"
+                f" {sorted(taps)}."
+            )
         h = self.embed_tokens(tokens)
         freqs_cis = {
             layer_type: rope.freqs_cis.cast(h.dtype).to(h.device)
             for layer_type, rope in self._ropes.items()
         }
 
+        tapped: list[Tensor] = []
         for idx, layer in enumerate(self.layers):
             shape = self._shapes[idx]
             call: Callable[..., Tensor] = layer
@@ -247,14 +279,18 @@ class LagunaTextModel(Module[..., ModuleV3Outputs]):
                 freqs_cis[shape.attention_type],
                 input_row_offsets,
             )
+            if idx in taps:
+                tapped.append(h)
+        return h, tapped
 
-        last_token_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
-        normed = self.norm(last_token_h)
+    def logits(self, h: Tensor) -> Tensor:
+        """Returns the float32 logits of residual-stream rows."""
+        normed = self.norm(h)
         if self.lm_head is None:
             logits = normed @ self.embed_tokens.weight.T
         else:
             logits = self.lm_head(normed)
-        return ModuleV3Outputs(next_token_logits=logits.cast(DType.float32))
+        return logits.cast(DType.float32)
 
 
 class Laguna(Module[[DecoderInputs], DecoderOutputs]):

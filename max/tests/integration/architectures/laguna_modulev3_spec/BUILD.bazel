@@ -1,0 +1,51 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Builds a tiny S-2.1-like Laguna target on CPU, for staging only.
+modular_py_library(
+    name = "laguna_spec_fixtures",
+    testonly = True,
+    srcs = ["laguna_spec_fixtures.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/laguna_modulev3:laguna_parity",
+        "//max/tests/integration/test_common:mocks",
+        requirement("pytest"),
+    ],
+)
+
+# Stages the base decoder and a tapped one on CPU; never compiles.
+modular_py_test(
+    name = "test_target_taps",
+    size = "medium",
+    srcs = ["test_target_taps.py"],
+    # The staged trace realizes eager tensors, which import the MO
+    # interpreter; without its compiled ops the trace crawls.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":laguna_spec_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
