@@ -3185,48 +3185,44 @@ struct ExecuteOnly:
 @extensibility.register("imposter_build_graph_capable")
 struct BuildGraphCapable:
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ):
         pass
 
 
 # Fused-output sibling of `imposter_build_graph_capable`: both entry points
-# declare the output `FusedOutputTensor` and take `has_epilogue_fusion`, so an
-# epilogue MAP fuses into the kernel records through `build_graph` the same
-# way it executes. Signature-only stub.
+# declare the output `Output & Fused & StoreAccess` and take
+# `has_epilogue_fusion`, so an epilogue MAP fuses into the kernel records
+# through `build_graph` the same way it executes. Signature-only stub.
 @extensibility.register("imposter_fused_output_build_graph")
 struct FusedOutputBuildGraph:
     @staticmethod
     def execute[
-        dtype: DType, rank: Int, has_epilogue_fusion: Bool
+        has_epilogue_fusion: Bool
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
     def build_graph[
-        dtype: DType, rank: Int, has_epilogue_fusion: Bool
+        has_epilogue_fusion: Bool
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ):
         pass
@@ -3296,31 +3292,33 @@ struct DeviceGraphFill:
     comptime _fill_value = 7
 
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        var out_tile = output.to_tile_tensor[dtype]()
+
         @inline(.always)
-        def func[width: Int, alignment: Int = 1](idx: Coord) {var output}:
-            output._fused_store[element_alignment=alignment](
+        def func[width: Int, alignment: Int = 1](idx: Coord) {var out_tile}:
+            out_tile.store[width=width](
                 idx, SIMD[dtype, width](Self._fill_value)
             )
 
-        elementwise[1](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape(), ctx)
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ) raises:
-        var ptr = output.unsafe_ptr()
-        var length = Int32(output.size())
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        var ptr = output.to_tile_tensor[dtype]().unsafe_ptr()
+        var length = Int32(Int(output.shape().product()))
 
         # Record a real compiled kernel that fills every output element with the
         # constant. The closure captures the output pointer and length by value;
@@ -3370,14 +3368,15 @@ struct DeviceGraphFillFromHost:
 
     @staticmethod
     def execute[
-        dtype: DType, rank: Int
+        dtype: DType
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
         h: Scalar[dtype=dtype],
         ctx: DeviceContext,
     ) raises:
-        var ptr = output.unsafe_ptr()
-        var length = Int32(output.size())
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        var ptr = output.to_tile_tensor[dtype]().unsafe_ptr()
+        var length = Int32(Int(output.shape().product()))
 
         comptime block_dim = 256
         ctx.enqueue_function[Self.fill_kernel[dtype]](
@@ -3390,17 +3389,18 @@ struct DeviceGraphFillFromHost:
 
     @staticmethod
     def build_graph[
-        dtype: DType, rank: Int
+        dtype: DType
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
         h: Scalar[dtype=dtype],
         builder: DeviceGraphBuilder,
     ) raises:
         # The enqueue-time host read: the value is frozen into the recorded
         # kernel here, so replay soundness rests on the contents being part of
         # the graph cache key.
-        var ptr = output.unsafe_ptr()
-        var length = Int32(output.size())
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        var ptr = output.to_tile_tensor[dtype]().unsafe_ptr()
+        var length = Int32(Int(output.shape().product()))
 
         comptime block_dim = 256
         _ = builder.add_function[Self.fill_kernel[dtype]](
@@ -3426,35 +3426,38 @@ struct DeviceGraphIncrement:
     comptime _increment = 1
 
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        var out_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
+
         @inline(.always)
         def func[
             width: Int, alignment: Int = 1
-        ](idx: Coord) {var x, var output}:
-            var val = rebind[SIMD[dtype, width]](x.load[width](idx)) + (
-                Self._increment
-            )
-            output._fused_store[element_alignment=alignment](idx, val)
+        ](idx: Coord) {var x_tile, var out_tile}:
+            var val = x_tile.load[width=width](idx) + Self._increment
+            out_tile.store[width=width](idx, val)
 
-        elementwise[1](func, output.shape_coord(), ctx)
+        elementwise[1](func, output.shape(), ctx)
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ) raises:
-        var in_ptr = x.unsafe_ptr()
-        var out_ptr = output.unsafe_ptr()
-        var length = Int32(output.size())
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        var in_ptr = x.to_tile_tensor[dtype]().as_imm().unsafe_ptr()
+        var out_ptr = output.to_tile_tensor[dtype]().unsafe_ptr()
+        var length = Int32(Int(output.shape().product()))
 
         # Record a real compiled kernel that reads each input element, adds the
         # constant, and writes it to the output. The closure captures the input

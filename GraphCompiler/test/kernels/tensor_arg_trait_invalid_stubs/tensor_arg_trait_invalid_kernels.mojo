@@ -18,7 +18,7 @@
 # because an invalid composition fails the package import.
 #
 from std.collections.string import StaticString
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, DeviceGraphBuilder
 from std.utils import IndexList
 
 from layout import coord_to_index_list
@@ -42,6 +42,7 @@ from extensibility import (
     Stable,
     StoreAccess,
     Storable,
+    Tensor,
     TensorTuple,
     TileTensorable,
     _LegacyComputable,
@@ -259,6 +260,21 @@ struct TraitStableOutput:
     @staticmethod
     def execute(
         z: Some[Output & TileTensorable & Stable], ctx: DeviceContext
+    ) raises:
+        pass
+
+
+# The same on `build_graph`, the one entry point that may take `Stable`
+# inputs: a device graph still writes its outputs through live addresses.
+@extensibility.register("trait_stable_output_on_build_graph")
+struct TraitStableOutputOnBuildGraph:
+    @staticmethod
+    def execute(z: Some[Output & Tensor], ctx: DeviceContext) raises:
+        pass
+
+    @staticmethod
+    def build_graph(
+        z: Some[Output & Tensor & Stable], builder: DeviceGraphBuilder
     ) raises:
         pass
 

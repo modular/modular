@@ -118,6 +118,10 @@ module {}
 // `Output & TileTensorable & Stable` (kernel `trait_stable_output`).
 // CHECK-DAG: error: Stable is not valid on an Output argument
 
+// `Output & Tensor & Stable` on `build_graph` (kernel
+// `trait_stable_output_on_build_graph`).
+// CHECK-DAG: error: Stable is not valid on an Output argument
+
 // `Input & Fused & Loadable & Stable` (kernel `trait_stable_fused`).
 // CHECK-DAG: error: a Stable tensor argument cannot also be Fused
 

@@ -23,19 +23,15 @@ from max.gpu.host import DeviceContext, DeviceGraphBuilder
 import extensibility
 from extensibility import (
     Fused,
-    IOSpec,
     Input,
-    InputTensor,
-    InputVariadicTensors,
     LoadAccess,
     Output,
     OutputTensor,
     Stable,
     StableInputVariadicTensors,
-    StableTensor,
+    StoreAccess,
     Tensor,
-    _FusedComputeOutputTensor,
-    _FusedOutputTensor as FusedOutputTensor,
+    _LegacyComputeOutput,
 )
 
 
@@ -49,33 +45,6 @@ struct StableOnExecute:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ):
-        pass
-
-
-# A stable output on `build_graph`: outputs are written through live
-# addresses.
-@extensibility.register("stable_output_on_build_graph")
-struct StableOutputOnBuildGraph:
-    @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
-    ):
-        pass
-
-    @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: StableTensor[
-            io_spec=IOSpec.Output, dtype=dtype, rank=rank, ...
-        ],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
-        builder: DeviceGraphBuilder,
     ):
         pass
 
@@ -161,46 +130,44 @@ struct TraitStableOnExecutePlainBuildGraph:
 struct FusedOutputPlainBuildGraph:
     @staticmethod
     def execute[
-        dtype: DType, rank: Int, has_epilogue_fusion: Bool
+        has_epilogue_fusion: Bool
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ):
         pass
 
 
 # Both entry points declare the output fused, but `execute` binds it through
-# the compute entry point and `build_graph` through the store one, which are
-# distinct `ManagedTensorSlice` types.
+# the compute entry point and `build_graph` through the store one, which carry
+# different access contracts.
 @extensibility.register("fused_compute_output_store_build_graph")
 struct FusedComputeOutputStoreBuildGraph:
     @staticmethod
     def execute[
-        dtype: DType, rank: Int, has_epilogue_fusion: Bool
+        has_epilogue_fusion: Bool
     ](
-        output: _FusedComputeOutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & _LegacyComputeOutput],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
     def build_graph[
-        dtype: DType, rank: Int, has_epilogue_fusion: Bool
+        has_epilogue_fusion: Bool
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ):
         pass
