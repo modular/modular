@@ -7,6 +7,23 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_session_initialization",
+    size = "medium",
+    srcs = ["test_session_initialization.py"],
+    # MAX imports live in subprocess strings to isolate the process CPU runtime.
+    ignore_extra_deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_test(
     name = "test_precompiled_mefs",
     size = "large",
     srcs = ["test_precompiled_mefs.py"],

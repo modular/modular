@@ -541,14 +541,25 @@ std::vector<Driver::Python::Buffer> ModelHandle::executePreparedDeviceTensors(
 M::Core::InferenceSession::InferenceSession(
     std::vector<Driver::Python::PyDeviceTy> &&devices,
     std::vector<std::filesystem::path> &&customExtensions, size_t numThreads) {
+  // Establish the process threading configuration before creating the
+  // implicit host device, which also acquires the shared CPU runtime.
+  runtimeConfig.setNumThreads(numThreads);
+  auto maxContextOr = Engine::Context::getOrCreateMaxContext(runtimeConfig);
+  if (maxContextOr.isError()) {
+    throw std::invalid_argument(maxContextOr.takeError().get());
+  }
+  runtimeConfig.setMaxContext(maxContextOr->getPointer());
+
   // Ideally this does direct initialization, populateCompileConfig reads
   // the current value.
   sessionCompileConfig = populateCompileConfig(std::move(customExtensions));
 
-  // Defaults to 0 (use all threads)
-  runtimeConfig.setNumThreads(numThreads);
-
   this->devices = std::move(devices);
+  auto hostCPU = Driver::Python::getCpuDevice(0);
+  if (llvm::none_of(this->devices,
+                    [&](const auto &device) { return *device == *hostCPU; })) {
+    this->devices.push_back(std::move(hostCPU));
+  }
   for (const auto &device : this->devices)
     runtimeConfig.addDevice(
         {std::make_shared<const M::DeviceSpec>(device->deviceSpec),

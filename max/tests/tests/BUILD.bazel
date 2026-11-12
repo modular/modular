@@ -381,6 +381,7 @@ test_suite(
         ":test_mojo_runtime_foreign_thread",
         "//max/tests/tests/benchmark:tests",
         "//max/tests/tests/driver:tests",
+        "//max/tests/tests/engine:test_session_initialization",
         "//max/tests/tests/graph:multi_version_tests",
         "//max/tests/tests/graph:tests",
         "//max/tests/tests/mojo-importer",
