@@ -30,7 +30,7 @@ mo.graph @plain_build_graph(%arg0: !mo.tensor<[4], f32, gpu:0>) -> !mo.tensor<[4
 
 // -----
 
-// A single `StableInputTensor` argument: the block argument is routed through
+// A single `Stable` argument: the block argument is routed through
 // a create placed at the top of the body, and the consumer is retyped.
 // CHECK-LABEL: mo.graph @single
 // CHECK-SAME: (%[[ARG:.*]]: !mo.tensor<[4], f32, gpu:0>)
@@ -45,7 +45,7 @@ mo.graph @single(%arg0: !mo.tensor<[4], f32, gpu:0>) -> !mo.tensor<[4], f32, gpu
 
 // -----
 
-// A `StableInputVariadicTensors` run: every peer of the run gets its own
+// A `TensorTuple` of `Stable` elements: every peer of the run gets its own
 // create, on its own device.
 // CHECK-LABEL: mo.graph @variadic
 // CHECK-SAME: (%[[A:.*]]: !mo.tensor<[4], f32, gpu:0>, %[[B:.*]]: !mo.tensor<[4], f32, gpu:1>)

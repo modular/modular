@@ -239,10 +239,15 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
   auto positionOf = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
     return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
   };
-  auto describe = [](const KernelDeclOperandAdaptor &arg) -> std::string {
+  // A trait argument's IOSpec names only its role, so it prints its whole
+  // contract: two trait arguments can differ only in fusion or access form.
+  auto describe = [&](const KernelDeclOperandAdaptor &arg) -> std::string {
     std::string out;
     llvm::raw_string_ostream os(out);
-    if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
+    if (std::optional<TensorArgContract> contract = arg.getTraitContract())
+      os << (arg.isVariadicTensorType() ? "variadic " : "") << "trait "
+         << tensorArgContractToAttr(decl.getContext(), *contract);
+    else if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
       os << (arg.isStableTensorType() ? "stable " : "")
          << (arg.isVariadicTensorType() ? "variadic " : "")
          << toString(*ioSpec);
@@ -250,15 +255,24 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
       os << arg.underlyingType;
     return out;
   };
-  // Tensor equality ignores the `stable` bit; everything else must agree.
-  auto sameArgument = [](const KernelDeclOperandAdaptor &executeArg,
-                         const KernelDeclOperandAdaptor &buildGraphArg) {
+  // Tensor equality ignores the `stable` bit, in the trait contract too;
+  // everything else must agree. `declVerifyStableTensorArguments` keeps
+  // `Stable` off `execute`.
+  auto contractIgnoringStable = [](const KernelDeclOperandAdaptor &arg) {
+    std::optional<TensorArgContract> contract = arg.getTraitContract();
+    if (contract)
+      contract->stable = false;
+    return contract;
+  };
+  auto sameArgument = [&](const KernelDeclOperandAdaptor &executeArg,
+                          const KernelDeclOperandAdaptor &buildGraphArg) {
     if (!executeArg.isTensorType())
       return executeArg == buildGraphArg;
     return executeArg.isVariadicTensorType() ==
                buildGraphArg.isVariadicTensorType() &&
            executeArg.getIoSpec() == buildGraphArg.getIoSpec() &&
-           executeArg.getTraitContract() == buildGraphArg.getTraitContract();
+           contractIgnoringStable(executeArg) ==
+               contractIgnoringStable(buildGraphArg);
   };
 
   // `execute` is the reference, so errors point at the `build_graph` side.
@@ -308,7 +322,11 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
 /// are a device-graph recording concept: the slot is populated by the graph
 /// builder, so only `build_graph` may declare them, and only as inputs (a
 /// kernel writes its outputs through live addresses). The pack never carries
-/// fusion functors, so a fused stable argument is rejected too.
+/// fusion functors, so a fused stable argument is rejected too. A trait
+/// `Stable` argument follows the same rules: only `build_graph` operands are
+/// routed through a slot, so on any other entry point it would read a data
+/// pointer as a slot address. Import already rejects a trait `Stable` output
+/// or one alongside `Fused`.
 LogicalResult
 declVerifyStableTensorArguments(KernelDeclOp decl,
                                 const KernelDeclAdaptor &adaptor) {
@@ -321,8 +339,10 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
     if (!func.has_value())
       return success();
     for (const auto &args : {func->inputArguments, func->outputArguments})
-      for (const auto &arg : args)
-        if (arg.isStableTensorType())
+      for (const auto &arg : args) {
+        if (!arg.isStableTensorType())
+          continue;
+        if (!arg.isTraitTensorType())
           return decl->emitError()
                  << "stable tensor arguments (StableTensor / "
                     "StableVariadicTensors) are only supported on "
@@ -330,10 +350,23 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
                  << " functions (argument at position " << positionOf(arg)
                  << " of the " << stringifyKernelFunctionKind(kind)
                  << " function)";
+        return decl->emitError()
+               << "Stable trait arguments are only supported on "
+               << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+               << " functions (argument at position " << positionOf(arg)
+               << " of the " << stringifyKernelFunctionKind(kind)
+               << " function)";
+      }
     return success();
   };
 
-  if (rejectStable(adaptor.executeFunction, KernelFunctionKind::Execute)
+  // A declarative kernel's `executeFunction` is its `execute_device`.
+  if (rejectStable(adaptor.executeFunction,
+                   adaptor.isDeclarative() ? KernelFunctionKind::ExecuteDevice
+                                           : KernelFunctionKind::Execute)
+          .failed() ||
+      rejectStable(adaptor.executeConfigurationFunction,
+                   KernelFunctionKind::ExecuteConfiguration)
           .failed() ||
       rejectStable(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise)
           .failed() ||
@@ -594,11 +627,11 @@ LogicalResult declVerifyTensorArgsAreBorrowed(
   return success();
 }
 
-// Per-function-kind policy for trait-bound tensor arguments: only `execute`
-// and the declarative `execute_device` / `execute_configuration` accept them.
-// Kind-specific rules go here (e.g. build_graph forbidding `TileTensorable`);
-// shape functions, primitives and universal well-formedness are checked at
-// import.
+// Per-function-kind policy for trait-bound tensor arguments: `execute`,
+// `build_graph`, and the declarative `execute_device` /
+// `execute_configuration` accept them. Kind-specific rules go here (e.g.
+// build_graph forbidding `TileTensorable`); shape functions, primitives and
+// universal well-formedness are checked at import.
 LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
                                               KernelDeclAdaptor &adaptor) {
   auto rejectTraitArgs = [&decl](std::optional<KernelDeclFunctionAdaptor> &func,
@@ -614,6 +647,8 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
             << stringifyKernelFunctionKind(kind) << " functions yet (only `"
             << stringifyKernelFunctionKind(KernelFunctionKind::Execute)
             << "`, `"
+            << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+            << "`, `"
             << stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice)
             << "` and `"
             << stringifyKernelFunctionKind(
@@ -626,10 +661,6 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
   };
 
   bool ok = true;
-  if (rejectTraitArgs(adaptor.buildGraphFunction,
-                      KernelFunctionKind::BuildGraph)
-          .failed())
-    ok = false;
   if (rejectTraitArgs(adaptor.elementwiseFunction,
                       KernelFunctionKind::Elementwise)
           .failed())

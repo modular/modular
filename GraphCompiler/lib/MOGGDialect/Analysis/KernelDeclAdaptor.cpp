@@ -222,7 +222,8 @@ recoverTraitArgContract(mlir::Type argType) {
 /// contract, so isTensorType/isMutableTensorType/isDpsOutput behave as for the
 /// equivalent `IOSpec`: `output -> OutputTensor`, `mutable_input ->
 /// MutableInputTensor`, `input -> InputTensor`. Fusion isn't modeled
-/// (dense-only); `fused` stays false.
+/// (dense-only); `fused` stays false. `stable` follows the contract, so a
+/// `Stable` argument is marked and checked like a `StableTensor`.
 static KernelDeclTensorAdaptor
 traitContractToTensorAdaptor(const TensorArgContract &contract) {
   KernelDeclTensorAdaptor adaptor;
@@ -240,6 +241,7 @@ traitContractToTensorAdaptor(const TensorArgContract &contract) {
     adaptor = KernelDeclTensorAdaptor{IOSpec::InputTensor};
     break;
   }
+  adaptor.stable = contract.stable;
   // Lets lowering route this arg to `mogg.tensor_arg.__init__`, unlike a
   // `ManagedTensorSlice` arg with the same `ioSpec`.
   adaptor.traitContract = contract;
@@ -252,6 +254,7 @@ static KernelDeclVariadicTensorAdaptor
 traitContractToVariadicAdaptor(const TensorArgContract &contract) {
   KernelDeclTensorAdaptor scalar = traitContractToTensorAdaptor(contract);
   KernelDeclVariadicTensorAdaptor adaptor{scalar.ioSpec};
+  adaptor.stable = scalar.stable;
   adaptor.traitContract = contract;
   return adaptor;
 }

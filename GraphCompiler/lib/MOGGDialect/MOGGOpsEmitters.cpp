@@ -3502,6 +3502,9 @@ LogicalResult TraitCreateOp::emitMojo(EmitMojoState &state) {
   // A stable `mogg.tensor.create` yields a `StableTensor` rather than a
   // slice: its layout is a field, and the pointer to hand on is the slot
   // address (`unsafe_ptr()` would read the data pointer, on the device only).
+  // That address is the create's own pointer operand, typed as the legacy
+  // `mogg_stable_tensor_init` receives it; the `StableTensor`'s slot field is
+  // a pointer to pointer and does not convert to the wrapper's `ptr`.
   auto createOp = getTensor().getDefiningOp<TensorCreateOp>();
   bool stableSource = createOp && createOp.getStable();
 
@@ -3512,8 +3515,11 @@ LogicalResult TraitCreateOp::emitMojo(EmitMojoState &state) {
   MojoValue layoutType = MojoValue("type_of")({}, {layoutArg});
   MojoValue ptrArg = state.file->var(
       stableSource
-          ? llvm::formatv("{0}.as_unsafe_any_origin()",
-                          StableTensorRef(slice).slotPtr().text)
+          ? llvm::formatv(
+                "{0}.as_unsafe_any_origin()",
+                OpaquePointerRef(state.getMojoValueFor(createOp.getPtr()))
+                    .bitcast(MojoValue(kComptimeDTypeNoneType))()
+                    .text)
                 .str()
           : llvm::formatv(
                 "{0}.unsafe_bitcast[NoneType]().as_unsafe_any_origin()",

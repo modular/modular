@@ -4,33 +4,39 @@
 // `--mogg-import-packages` has run, so parse-time verification is disabled;
 // every pass still verifies its output.
 
-// A MAP stub whose kernel takes a plain `InputVariadicTensors` in `execute`
-// but a `StableInputVariadicTensors` in `build_graph`. `ConformCallOperands`
-// packed the run against `execute`, so the original stub's `mogg.tuple.create`
-// is plain; the recording sibling calls `build_graph`, so the pass re-stamps
-// its pack `stable`. The original is left untouched.
+// A MAP stub whose kernel takes a plain `TensorTuple` in `execute` and a
+// `TensorTuple` of `Stable` elements in `build_graph`. `ConformCallOperands`
+// wrapped each operand in a `mogg.trait.create` carrying `execute`'s contract;
+// the recording sibling re-stamps those contracts `stable` and keeps the
+// `tensor_tuple` pack ABI. The output and the original stub are left as they
+// were.
 
 // CHECK: mogg.func @stub_1 private dispatch(deferred) (
-// CHECK: mogg.tuple.create(%{{.*}}, %{{.*}}) : !mogg.tensor, !mogg.tensor
+// CHECK-NOT: stable = true}>
 // CHECK: mogg.call.opaque @testing_kernels.testing_kernels.StableBuildGraph
 
-// CHECK: mogg.func @stub_1_build_graph private dispatch(deferred) (%{{.*}}: !mogg.pointer, %{{.*}}: !mogg.pointer, %{{.*}}: !mogg.pointer, %{{.*}}: !mgp.device_graph.builder)
-// CHECK: mogg.tuple.create(%{{.*}}, %{{.*}}) variadic_abi = <stable> : !mogg.tensor, !mogg.tensor
+// CHECK: mogg.func @stub_1_build_graph private dispatch(deferred)
+// CHECK-DAG: mogg.trait.create(%{{.*}}) contract = <{role = output, fused = false, access = none, capabilities = none}>
+// CHECK-DAG: %[[A:.*]] = mogg.trait.create(%{{.*}}) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>
+// CHECK-DAG: %[[B:.*]] = mogg.trait.create(%{{.*}}) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>
+// CHECK: mogg.tuple.create(%[[A]], %[[B]]) variadic_abi = <tensor_tuple>
 // CHECK: mogg.call.build_graph["testing_kernels.testing_kernels.StableBuildGraph"]
-// CHECK-NOT: mogg.call.opaque
 mogg.func @stub_1 private dispatch(deferred) (%p0: !mogg.pointer, %p1: !mogg.pointer, %po: !mogg.pointer, %ctx: !mogg.context) attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "gpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"imposter_stable_build_graph">>} {
   %s = mogg.shape.create() <shape = #mosh<ape[4]> : !mosh.ape>
-  %a = mogg.tensor.create(%p0, %s) <device = "gpu", elementType = f32, io = FusedInput, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape, stable = true> : !mogg.tensor
-  %b = mogg.tensor.create(%p1, %s) <device = "gpu", elementType = f32, io = FusedInput, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape, stable = true> : !mogg.tensor
+  %a = mogg.tensor.create(%p0, %s) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape, stable = true> : !mogg.tensor
+  %b = mogg.tensor.create(%p1, %s) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape, stable = true> : !mogg.tensor
   %out = mogg.tensor.create(%po, %s) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[4]> : !mosh.ape> : !mogg.tensor
-  %t = mogg.tuple.create(%a, %b) : !mogg.tensor, !mogg.tensor
-  mogg.call.opaque @testing_kernels.testing_kernels.StableBuildGraph inputs(%t : !mogg.tuple) outputs(%out : !mogg.tensor) context(%ctx : !mogg.context)
+  %a1 = mogg.trait.create(%a) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+  %b1 = mogg.trait.create(%b) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+  %out1 = mogg.trait.create(%out) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
+  %t = mogg.tuple.create(%a1, %b1) variadic_abi = <tensor_tuple> : !mogg.tensor, !mogg.tensor
+  mogg.call.opaque @testing_kernels.testing_kernels.StableBuildGraph inputs(%t : !mogg.tuple) outputs(%out1 : !mogg.tensor) context(%ctx : !mogg.context)
   mogg.output
 }
 
-// CHECK-LABEL: mgp.model @dg_stable_pack
+// CHECK-LABEL: mgp.model @dg_trait_stable_pack
 // CHECK: mogg.call @stub_1_build_graph
-mgp.model @dg_stable_pack device_graph devices [#M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @dg_trait_stable_pack device_graph devices [#M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %ch0, %ctx, %weights, %gpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

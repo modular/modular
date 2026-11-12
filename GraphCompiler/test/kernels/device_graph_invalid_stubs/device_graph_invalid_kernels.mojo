@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Kernel stubs that break a device-graph rule the kernel verifier enforces:
-# stable-tensor arguments (`StableTensor` / `StableVariadicTensors`) where
-# they are forbidden, and `build_graph` signatures that disagree with
-# `execute` on which tensors are fused and in which form. Each violates
-# exactly one rule; `mogg-verify-kernels` must reject every one. Kept apart
-# from the valid testing kernels because the package as a whole fails
-# verification.
+# stable arguments where they are forbidden, and `build_graph` signatures that
+# disagree with `execute` on which tensors are fused or stable, and in which
+# form. Each violates exactly one rule; `mogg-verify-kernels` must reject every
+# one. Kept apart from the valid testing kernels because the package as a
+# whole fails verification.
 #
 from max.gpu.host import DeviceContext, DeviceGraphBuilder
 
@@ -31,7 +30,7 @@ from extensibility import (
     LoadAccess,
     Output,
     OutputTensor,
-    StableInputTensor,
+    Stable,
     StableInputVariadicTensors,
     StableTensor,
     Tensor,
@@ -95,11 +94,62 @@ struct StableOverFusedExecute:
         pass
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: StableInputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
+        builder: DeviceGraphBuilder,
+    ):
+        pass
+
+
+# A trait `Stable` argument on `execute`: only `build_graph` operands are
+# routed through a slot, so `execute` would read a data pointer as a slot
+# address. Rejected whether the kernel has no `build_graph` or one taking the
+# argument `Stable` or plain.
+@extensibility.register("trait_stable_on_execute_only")
+struct TraitStableOnExecuteOnly:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
+        ctx: DeviceContext,
+    ):
+        pass
+
+
+@extensibility.register("trait_stable_on_execute")
+struct TraitStableOnExecute:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
+        ctx: DeviceContext,
+    ):
+        pass
+
+    @staticmethod
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
+        builder: DeviceGraphBuilder,
+    ):
+        pass
+
+
+@extensibility.register("trait_stable_on_execute_plain_build_graph")
+struct TraitStableOnExecutePlainBuildGraph:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
+        ctx: DeviceContext,
+    ):
+        pass
+
+    @staticmethod
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         builder: DeviceGraphBuilder,
     ):
         pass

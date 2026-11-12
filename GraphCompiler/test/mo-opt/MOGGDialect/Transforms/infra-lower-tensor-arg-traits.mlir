@@ -8,7 +8,8 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%tensor_arg_trait_pkg" 2>&1 | grep 'registration = "trait_' | FileCheck %s --check-prefix=IMPORT
 
 // Verify rejects two input-side tuples (`trait_tensor_tuple`), which the import
-// run above accepts, and the `mut` convention of `trait_bad_convention`.
+// run above accepts, the `mut` convention of `trait_bad_convention`, and the
+// `Stable` stubs below.
 // RUN: not mo-opt %s --mogg-import-packages="mojo-pkg-paths=%tensor_arg_trait_pkg" --mogg-verify-kernels 2>&1 | FileCheck %s --check-prefix=VERIFY
 // VERIFY-DAG: Kernel function can have at most one variadic input tensors
 // VERIFY-DAG: Only the borrowed argument (read) convention is supported for trait-bound tensor arguments
@@ -66,7 +67,11 @@
 
 // `Stable` sets the contract's `stable` key (elided when false, so every other
 // row above is unchanged). Input and mutable input both distill with it, as
-// does an input bound by only `Tensor`.
+// does an input bound by only `Tensor`. The stubs take it on `execute`, which
+// the VERIFY run rejects: only `build_graph` may.
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 0 of the execute function)
+// VERIFY-DAG: error: Stable trait arguments are only supported on build_graph functions (argument at position 1 of the execute function)
 // IMPORT-DAG: registration = "trait_stable_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "output"}, {access = 0 : i32, capabilities = 0 : i32, fused = false, role = "input", stable = true}, unit, unit, unit]
 // IMPORT-DAG: registration = "trait_stable_mutable_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "mutable_input", stable = true}, unit, unit, unit]
 // IMPORT-DAG: registration = "trait_stable_tensor_input"{{.*}}[{access = 0 : i32, capabilities = 0 : i32, fused = false, role = "output"}, {access = 0 : i32, capabilities = 0 : i32, fused = false, role = "input", stable = true}, unit, unit, unit]

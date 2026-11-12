@@ -50,11 +50,6 @@ from extensibility import (
     _TileProjection as TileProjection,
 )
 from extensibility import (
-    StableAddrEngine,
-    StableInputTensor,
-    StableInputVariadicTensors,
-)
-from extensibility import (
     Fused,
     Input,
     LoadAccess,
@@ -354,65 +349,6 @@ struct TraitNegate:
                 grid_dim=(ceildiv(n, block_size),),
                 block_dim=(block_size,),
             )
-
-
-# Device entry for the stable negate path: `input` is a slot-backed tile
-# (`StableAddrEngine`), so every load reads the data pointer out of the slot on
-# the device before indexing.
-def _gpu_stable_negate_kernel[
-    dtype: DType, LayoutType: TensorLayout, in_origin: Origin
-](
-    output: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    input: TileTensor[
-        dtype,
-        LayoutType,
-        in_origin,
-        Engine=StableAddrEngine[element_width=1],
-    ],
-    num_elements_dev: Int32,
-):
-    var num_elements = Int(num_elements_dev)
-    var linear_idx = global_idx.x
-    if linear_idx >= num_elements:
-        return
-    var output_flat = output.reshape(row_major(num_elements))
-    var input_flat = input.reshape(row_major(num_elements))
-    output_flat[Int(linear_idx)] = -input_flat[Int(linear_idx)]
-
-
-# Trait-lane `Stable` kernel: `x` arrives as an emitted `_MoggStableTensorArg`
-# whose `Engine` is `StableAddrEngine`, so its projection keeps reading through
-# the stable address slot. GPU only: the slot is device memory.
-@extensibility.register("trait_stable_negate")
-struct TraitStableNegate:
-    @staticmethod
-    def execute(
-        z: Some[Output & TileTensorable],
-        x: Some[Input & Tensor & Stable],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert (
-            not ctx.target.is_cpu()
-        ), "trait_stable_negate: a stable address slot is device memory"
-        comptime assert conforms_to(type_of(z), DevicePassable)
-        comptime assert conforms_to(type_of(x), TileTensorable)
-        var xt = x.to_tile_tensor()
-        # The stable arg must project through the slot engine; a pointer-backed
-        # default here would read the slot address as data.
-        comptime assert type_of(xt).Engine == StableAddrEngine[element_width=1]
-        comptime block_size = 64
-        var n = Int(x.shape().product())
-        ctx.enqueue_function[
-            _gpu_stable_negate_kernel[
-                type_of(z).dtype, type_of(z).LayoutType, type_of(xt).origin
-            ]
-        ](
-            z,
-            xt,
-            Int32(n),
-            grid_dim=(ceildiv(n, block_size),),
-            block_dim=(block_size,),
-        )
 
 
 # Top-level TileTensor projection variant of `trait_negate`: both CPU and GPU
@@ -3297,52 +3233,50 @@ struct FusedOutputBuildGraph:
 
 
 # Kernel whose `build_graph` reads its variadic peers through stable address
-# slots (`StableInputVariadicTensors`) while `execute` takes the plain
-# pointer-backed pack. Mirrors the shape of the bundled collectives; the bodies
-# are no-op stubs for import / verify / emit tests.
+# slots (`Stable` elements of a `TensorTuple`) while `execute` takes the plain
+# tuple. Mirrors the shape of the bundled collectives; the bodies are no-op
+# stubs for import / verify / emit tests.
 @extensibility.register("imposter_stable_build_graph")
 struct StableBuildGraph:
     @staticmethod
     def execute[
-        dtype: DType, rank: Int
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        //,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
     def build_graph[
-        dtype: DType, rank: Int
+        Ins: TypeList[Trait=Input & Tensor & Stable, ...],
+        //,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        inputs: TensorTuple[*Ins],
         builder: DeviceGraphBuilder,
     ):
         pass
 
 
 # Single-argument sibling of `imposter_stable_build_graph`: `build_graph`
-# takes one `StableInputTensor` where `execute` takes an `InputTensor`.
+# takes a `Stable` input where `execute` takes a plain one.
 @extensibility.register("imposter_stable_single_build_graph")
 struct StableSingleBuildGraph:
     @staticmethod
-    def execute[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: InputTensor[dtype=dtype, rank=rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ):
         pass
 
     @staticmethod
-    def build_graph[
-        dtype: DType, rank: Int
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        x: StableInputTensor[dtype=dtype, rank=rank, ...],
+    def build_graph(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor & Stable],
         builder: DeviceGraphBuilder,
     ):
         pass

@@ -701,12 +701,9 @@ public:
   static constexpr llvm::StringLiteral kShape = "shape";
   static constexpr llvm::StringLiteral kStaticSpec = "static_spec";
   static constexpr llvm::StringLiteral kIoSpec = "io_spec";
-  /// `StableAddr.ptr`: the slot address itself, a pointer to the data pointer.
-  static constexpr llvm::StringLiteral kSlotPtr = "ptr";
 
   /// Field accessors (return the raw field value, not a call).
   MojoValue addr() const { return value.get(kAddr); }
-  MojoValue slotPtr() const { return addr().get(kSlotPtr); }
   MojoValue runtimeLayout() const { return value.get(kRuntimeLayout); }
   MojoValue staticSpec() const { return value.get(kStaticSpec); }
   MojoValue ioSpec() const { return value.get(kIoSpec); }
