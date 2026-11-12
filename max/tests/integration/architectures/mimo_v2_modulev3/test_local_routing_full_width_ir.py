@@ -110,18 +110,28 @@ def _load_post_fusion_ir(
     )
 
 
-def _moe_attention_allreduces(config: MiMoV2Config) -> list[int]:
-    return [ALLREDUCES_PER_LAYER * layer for layer in sorted(config.moe_layers)]
+def _fused_allreduces(config: MiMoV2Config) -> list[int]:
+    """Returns the op index of every layer reduction that folds.
+
+    The add and RMSNorm behind each layer's attention output and MLP or MoE
+    output are all the composite needs, so every reduction folds but the last.
+    That one's add feeds the trace's taps, or in production the trailing-rows
+    gather before the final norm, so no add-to-norm edge forms and it stays a
+    plain allreduce.
+    """
+    return list(range(ALLREDUCES_PER_LAYER * len(config.layer_types) - 1))
 
 
-def test_full_width_production_fuses_only_moe_attention_allreduces(
+def test_full_width_production_fuses_every_reduction_but_the_last(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pins which of production's full-width allreduces fuse, per op index.
 
-    The dense layer's norm feeds the MLP's 1x128 FP8 quantize, which the
-    composite cannot take, so only the MoE layers' attention reductions
-    fuse. The replica trace test compares against the same indices.
+    The FP8 quantize joins the fold on the MLP and MoE outputs and on the dense
+    layer's attention output, each of which feeds a norm whose only consumer is
+    that quantize. A MoE layer's attention output feeds the experts' own
+    quantize inside the MoE subgraph instead, so only its norm folds. The
+    replica trace test compares against the same indices.
     """
     model, config = _full_width_model(monkeypatch)
     # The values are never read, so every weight of one shape and dtype
@@ -144,7 +154,7 @@ def test_full_width_production_fuses_only_moe_attention_allreduces(
         weights=weights,
     )
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
-    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
+    assert fused_allreduces(ir) == _fused_allreduces(config)
 
 
 def test_full_width_replica_trace_fuses_as_production(
@@ -163,7 +173,7 @@ def test_full_width_replica_trace_fuses_as_production(
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
-    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
+    assert fused_allreduces(ir) == _fused_allreduces(config)
 
 
 @pytest.fixture(scope="module")
@@ -219,7 +229,7 @@ def test_replica_trace_loads_and_preserves_production_fusion(
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
     assert_allreduce_form(ir)
-    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
+    assert fused_allreduces(ir) == _fused_allreduces(config)
 
 
 def test_replica_weights_stage_the_real_first_four_layers(

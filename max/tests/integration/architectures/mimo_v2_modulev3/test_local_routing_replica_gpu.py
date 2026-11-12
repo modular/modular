@@ -14,13 +14,14 @@
 
 The model is the first ``LAYERS`` layers of MiMo-V2.6 at full width with
 nonzero weights (:func:`replica_probe.replica_weights`): a dense layer, then
-three MoE layers. Each layer has two allreduces. On the MoE layers the
-attention output's reduction, residual add and ``post_attention_layernorm``
-fuse into the allreduce composite that produces the router input; layer 0's
-attention reduction and every MLP or MoE output's reduction stay plain. Ops
-``0`` through ``ALLREDUCES - 1`` number them in execution order, where
-``2 * layer`` is the attention's, ``2 * layer + 1`` the MLP's or MoE's, and
-ops 2, 4 and 6 are the composites.
+three MoE layers. Each layer has two allreduces, and ops ``0`` through
+``ALLREDUCES - 1`` number them in execution order, where ``2 * layer`` is the
+attention's and ``2 * layer + 1`` the MLP's or MoE's. Every op but the last
+becomes the allreduce composite: the trace reads each
+``post_attention_layernorm``, so an attention boundary folds the norm alone,
+while an MLP or MoE output boundary folds the next layer's norm and the FP8
+quantize behind it. The last layer's add feeds only the trace's taps, so that
+reduction stays plain.
 
 Every row count runs as its own step, one sequence of ``rows`` independent
 random rows. The kernel each op takes on four B200s at 8 KiB per row:

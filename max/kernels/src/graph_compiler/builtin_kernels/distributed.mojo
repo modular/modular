@@ -1200,9 +1200,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # only multiply-first norms.
         multiply_before_cast: Bool = True,
         # The quantized epilogue's scale granularity: `K` is one scale per `K`
-        # columns of a row, and the attribute's absence (`-1`, or the row
-        # width) is one per row. The row width is normalized to `-1` below, so
-        # every branch here tests grouping and not spelling.
+        # columns of a row, and the composite's default `-1` is one per row.
+        # The row width means the same thing and is normalized to `-1` below,
+        # so every branch here tests grouping and not spelling.
         group_size_or_per_token: Int = -1,
     ](
         outputs: TensorTuple[*Outs],

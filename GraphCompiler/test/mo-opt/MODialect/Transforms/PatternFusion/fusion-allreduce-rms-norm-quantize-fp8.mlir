@@ -339,3 +339,205 @@ mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_amax_floor<total_seq_l
 // CHECK: mo.bundled.allreduce.sum
 // CHECK-NOT: mo.composite.bundled.allreduce_add_rms_norm_quant_fp8
 // CHECK-COUNT-4: mo.composite.quantize_dynamic_scaled_fp8({{.*}}amax_floor = #M.dense_array<
+
+
+// A grouped quantize must not fold into the bundled op: it carries no group and
+// its handler writes one scale a row, so folding a 1xK-group chain here would
+// write per-token scales where the graph asked for groups. The whole chain
+// stays unfused instead.
+// CHECK-LABEL: mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_grouped
+// CHECK-NOT: mo.composite.bundled.allreduce_add_rms_norm_quant_fp8
+// CHECK: mo.bundled.allreduce.sum
+// CHECK-NOT: mo.composite.bundled.allreduce_add_rms_norm_quant_fp8
+// CHECK-COUNT-4: mo.composite.quantize_dynamic_scaled_fp8({{.*}}) {group_size_or_per_token = 128}
+mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_grouped<total_seq_len>(
+  %input0: !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+  %input1: !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+  %input2: !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+  %input3: !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+  %sign_buff0: !mo.buffer<[537919488], ui8, gpu:0>,
+  %sign_buff1: !mo.buffer<[537919488], ui8, gpu:1>,
+  %sign_buff2: !mo.buffer<[537919488], ui8, gpu:2>,
+  %sign_buff3: !mo.buffer<[537919488], ui8, gpu:3>,
+  %c: !mo.chain,
+  %residual0: !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+  %residual1: !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+  %residual2: !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+  %residual3: !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+  %gamma0: !mo.tensor<[16384], bf16, gpu:0>,
+  %gamma1: !mo.tensor<[16384], bf16, gpu:1>,
+  %gamma2: !mo.tensor<[16384], bf16, gpu:2>,
+  %gamma3: !mo.tensor<[16384], bf16, gpu:3>
+) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>,
+      !mo.chain) {
+    %input_bundle = mo.tensor.bundle(%input0, %input1, %input2, %input3)
+        : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+       -> (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+
+    %allred_bundle, %out_chain = mo.parallel (%arg, %bch)
+        in (%input_bundle : !mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+        buffers(%sign_buff0 : !mo.buffer<[537919488], ui8, gpu:0>,
+                %sign_buff1 : !mo.buffer<[537919488], ui8, gpu:1>,
+                %sign_buff2 : !mo.buffer<[537919488], ui8, gpu:2>,
+                %sign_buff3 : !mo.buffer<[537919488], ui8, gpu:3>)
+        chain(%c)
+        -> (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>) {
+      %peer0, %peer1, %peer2, %peer3 = mo.bundled.expand(%arg)
+          : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+         -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+      %out, %ch_out = mo.bundled.allreduce.sum(%peer0, %peer1, %peer2, %peer3,
+                                                %sign_buff0, %sign_buff1, %sign_buff2, %sign_buff3, %bch)
+          : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+             !mo.buffer<[537919488], ui8, gpu:0>,
+             !mo.buffer<[537919488], ui8, gpu:1>,
+             !mo.buffer<[537919488], ui8, gpu:2>,
+             !mo.buffer<[537919488], ui8, gpu:3>, !mo.chain)
+         -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.chain)
+      mo.yield %out, %ch_out : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.chain
+    }
+
+    %allred0, %allred1, %allred2, %allred3 = mo.tensor.unbundle(%allred_bundle)
+        : (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+       -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+
+    %scale_ub = mo.constant <#M.dense_array<1.200000e+03> : tensor<f32>> : !mo.tensor<[], f32>
+
+    // Add + RMSNorm + Quant (GPU:0)
+    %add0 = mo.add(%residual0, %allred0) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+    %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.tensor<[16384], bf16, gpu:0>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+    %norm_quant0:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm0, %scale_ub) {group_size_or_per_token = 128} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[128, total_seq_len], bf16, gpu:0>)
+
+    // Add + RMSNorm + Quant (GPU:1)
+    %add1 = mo.add(%residual1, %allred1) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>
+    %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:1>, !mo.tensor<[16384], bf16, gpu:1>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>
+    %norm_quant1:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm1, %scale_ub) {group_size_or_per_token = 128} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>, !mo.tensor<[128, total_seq_len], bf16, gpu:1>)
+
+    // Add + RMSNorm + Quant (GPU:2)
+    %add2 = mo.add(%residual2, %allred2) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>
+    %norm2 = mo.composite.reduce.rms_norm(%add2, %gamma2) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:2>, !mo.tensor<[16384], bf16, gpu:2>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>
+    %norm_quant2:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm2, %scale_ub) {group_size_or_per_token = 128} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:2>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>, !mo.tensor<[128, total_seq_len], bf16, gpu:2>)
+
+    // Add + RMSNorm + Quant (GPU:3)
+    %add3 = mo.add(%residual3, %allred3) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>
+    %norm3 = mo.composite.reduce.rms_norm(%add3, %gamma3) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:3>, !mo.tensor<[16384], bf16, gpu:3>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>
+    %norm_quant3:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm3, %scale_ub) {group_size_or_per_token = 128} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:3>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>, !mo.tensor<[128, total_seq_len], bf16, gpu:3>)
+
+    mo.output %norm_quant0#0, %norm_quant1#0, %norm_quant2#0, %norm_quant3#0, %out_chain : !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>, !mo.chain
+}
+
+// A per-token chain whose norm is also a graph output stays unfused: the
+// rewrite erases the norm, and the bundled composite has no form that stops at
+// it.
+// CHECK-LABEL: mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_per_token_tapped
+// CHECK-NOT: mo.composite.bundled.allreduce_add_rms_norm_quant_fp8
+// CHECK: mo.bundled.allreduce.sum
+// CHECK-NOT: mo.composite.bundled.allreduce_add_rms_norm_quant_fp8
+// CHECK-COUNT-4: mo.composite.quantize_dynamic_scaled_fp8({{.*}}) {group_size_or_per_token = 16384}
+mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_per_token_tapped<total_seq_len>(
+  %input0: !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+  %input1: !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+  %input2: !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+  %input3: !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+  %sign_buff0: !mo.buffer<[537919488], ui8, gpu:0>,
+  %sign_buff1: !mo.buffer<[537919488], ui8, gpu:1>,
+  %sign_buff2: !mo.buffer<[537919488], ui8, gpu:2>,
+  %sign_buff3: !mo.buffer<[537919488], ui8, gpu:3>,
+  %c: !mo.chain,
+  %residual0: !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+  %residual1: !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+  %residual2: !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+  %residual3: !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+  %gamma0: !mo.tensor<[16384], bf16, gpu:0>,
+  %gamma1: !mo.tensor<[16384], bf16, gpu:1>,
+  %gamma2: !mo.tensor<[16384], bf16, gpu:2>,
+  %gamma3: !mo.tensor<[16384], bf16, gpu:3>
+) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>,
+      !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>,
+      !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+      !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+      !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+      !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+      !mo.chain) {
+    %input_bundle = mo.tensor.bundle(%input0, %input1, %input2, %input3)
+        : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+       -> (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+
+    %allred_bundle, %out_chain = mo.parallel (%arg, %bch)
+        in (%input_bundle : !mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+        buffers(%sign_buff0 : !mo.buffer<[537919488], ui8, gpu:0>,
+                %sign_buff1 : !mo.buffer<[537919488], ui8, gpu:1>,
+                %sign_buff2 : !mo.buffer<[537919488], ui8, gpu:2>,
+                %sign_buff3 : !mo.buffer<[537919488], ui8, gpu:3>)
+        chain(%c)
+        -> (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>) {
+      %peer0, %peer1, %peer2, %peer3 = mo.bundled.expand(%arg)
+          : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+         -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+      %out, %ch_out = mo.bundled.allreduce.sum(%peer0, %peer1, %peer2, %peer3,
+                                                %sign_buff0, %sign_buff1, %sign_buff2, %sign_buff3, %bch)
+          : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+             !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>,
+             !mo.buffer<[537919488], ui8, gpu:0>,
+             !mo.buffer<[537919488], ui8, gpu:1>,
+             !mo.buffer<[537919488], ui8, gpu:2>,
+             !mo.buffer<[537919488], ui8, gpu:3>, !mo.chain)
+         -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.chain)
+      mo.yield %out, %ch_out : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.chain
+    }
+
+    %allred0, %allred1, %allred2, %allred3 = mo.tensor.unbundle(%allred_bundle)
+        : (!mo.bundle<[total_seq_len, 16384], bf16, gpu:0-3>)
+       -> (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>,
+           !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>)
+
+    %scale_ub = mo.constant <#M.dense_array<1.200000e+03> : tensor<f32>> : !mo.tensor<[], f32>
+
+    // Add + RMSNorm + Quant (GPU:0)
+    %add0 = mo.add(%residual0, %allred0) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+    %norm0 = mo.composite.reduce.rms_norm(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.tensor<[16384], bf16, gpu:0>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>
+    %norm_quant0:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm0, %scale_ub) {group_size_or_per_token = 16384} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[1, total_seq_len], bf16, gpu:0>)
+
+    // Add + RMSNorm + Quant (GPU:1)
+    %add1 = mo.add(%residual1, %allred1) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>
+    %norm1 = mo.composite.reduce.rms_norm(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:1>, !mo.tensor<[16384], bf16, gpu:1>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>
+    %norm_quant1:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm1, %scale_ub) {group_size_or_per_token = 16384} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>, !mo.tensor<[1, total_seq_len], bf16, gpu:1>)
+
+    // Add + RMSNorm + Quant (GPU:2)
+    %add2 = mo.add(%residual2, %allred2) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>
+    %norm2 = mo.composite.reduce.rms_norm(%add2, %gamma2) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:2>, !mo.tensor<[16384], bf16, gpu:2>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>
+    %norm_quant2:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm2, %scale_ub) {group_size_or_per_token = 16384} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:2>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>, !mo.tensor<[1, total_seq_len], bf16, gpu:2>)
+
+    // Add + RMSNorm + Quant (GPU:3)
+    %add3 = mo.add(%residual3, %allred3) : !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>
+    %norm3 = mo.composite.reduce.rms_norm(%add3, %gamma3) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:3>, !mo.tensor<[16384], bf16, gpu:3>) -> !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>
+    %norm_quant3:2 = mo.composite.quantize_dynamic_scaled_fp8(%norm3, %scale_ub) {group_size_or_per_token = 16384} : (!mo.tensor<[total_seq_len, 16384], bf16, gpu:3>, !mo.tensor<[], f32>) -> (!mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>, !mo.tensor<[1, total_seq_len], bf16, gpu:3>)
+
+    mo.output %norm_quant0#0, %norm_quant1#0, %norm_quant2#0, %norm_quant3#0, %norm0, %norm1, %norm2, %norm3, %out_chain : !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:0>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:1>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:2>, !mo.tensor<[total_seq_len, 16384], f8e4m3fn, gpu:3>, !mo.tensor<[total_seq_len, 16384], bf16, gpu:0>, !mo.tensor<[total_seq_len, 16384], bf16, gpu:1>, !mo.tensor<[total_seq_len, 16384], bf16, gpu:2>, !mo.tensor<[total_seq_len, 16384], bf16, gpu:3>, !mo.chain
+}

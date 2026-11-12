@@ -72,6 +72,7 @@ from max.tensor.compilation import StagedGraph
 from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from replica_probe import (
+    ALLREDUCES_PER_LAYER,
     allreduce_ops,
     assert_allreduce_form,
     fused_allreduces,
@@ -217,6 +218,19 @@ def _assert_local_routing_ir(ir: str, layer_count: int) -> list[str]:
     return _BROADCAST_OP.findall(ir)
 
 
+def _expected_fused_allreduces(layer_count: int) -> list[int]:
+    """Returns the op index of every reduction that folds into the composite.
+
+    The add and RMSNorm behind each layer's attention output and MLP or MoE
+    output are all the composite needs, so every reduction folds but the last:
+    that add feeds the trailing-rows gather, not the final norm. A norm's FP8
+    quantize joins the fold only where the norm feeds one alone, which the MoE
+    layers' attention outputs do not, their experts quantizing inside the MoE
+    subgraph.
+    """
+    return list(range(ALLREDUCES_PER_LAYER * layer_count - 1))
+
+
 @pytest.fixture(scope="module")
 def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("mimo_local_routing")
@@ -238,7 +252,9 @@ def test_four_device_forward_ir_reduces_on_every_device(
         post_fusion, len(config.layer_types)
     )
     if layout == "tp_tp":
-        assert len(fused_allreduces(post_fusion)) == len(config.moe_layers)
+        assert fused_allreduces(post_fusion) == _expected_fused_allreduces(
+            len(config.layer_types)
+        )
     # Two non-router broadcasts carry the graph inputs. The shared MoE
     # subgraph must not contain its two router-result broadcasts.
     assert len(treatment_broadcasts) == 2, treatment_broadcasts
@@ -253,7 +269,9 @@ def test_four_device_verify_ir_reduces_on_every_device(
     treatment_broadcasts = _assert_local_routing_ir(
         post_fusion, len(config.layer_types)
     )
-    assert len(fused_allreduces(post_fusion)) == len(config.moe_layers)
+    assert fused_allreduces(post_fusion) == _expected_fused_allreduces(
+        len(config.layer_types)
+    )
     # The verify graph carries the same two non-router input broadcasts.
     assert len(treatment_broadcasts) == 2, treatment_broadcasts
 
