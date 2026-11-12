@@ -226,7 +226,7 @@ def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
     model.load_graphs(InferenceSession(devices=[CPU()]))
     pipeline = _Pipeline(
         {
-            **model.compiled_modules,
+            **model.compiled_graphs,
             **_compile(_specs({GraphRole.SAMPLER: None})),
         }
     )

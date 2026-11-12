@@ -93,7 +93,12 @@ from max.pipelines.sampling import (
 )
 
 from .. import memory_ledger
-from ..graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
+from ..graph_specs import (
+    GraphRole,
+    GraphSpec,
+    _EagerCallable,
+    compile_and_init_graphs,
+)
 from ..interfaces import (
     ModelInputs,
     ModelOutputs,
@@ -327,6 +332,14 @@ class TextGenerationPipeline(
                 max_batch_size=max_batch_size,
                 memory_plan=memory_plan,
             )
+        if pipeline_config.runtime.eager and not isinstance(
+            self._pipeline_model.compiled_modules.get(GraphRole.DECODER),
+            _EagerCallable,
+        ):
+            raise ValueError(
+                f"eager can't run {type(self._pipeline_model).__qualname__},"
+                " which compiles its decoder itself"
+            )
 
         kv_params = self._pipeline_model.kv_params
         self.memory_plan = memory_plan
@@ -402,7 +415,7 @@ class TextGenerationPipeline(
             GraphRole.SAMPLER
         ].engine_model
         self.compiled_modules = {
-            **self._pipeline_model.compiled_modules,
+            **self._pipeline_model.compiled_graphs,
             **samplers,
         }
 

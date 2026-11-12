@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 from max.config import ConfigFileModel, ConfigModel
 from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
+from max.nn import Module as ModuleV3
 from max.nn.legacy.comm import MulticastPool
 from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
@@ -35,6 +36,7 @@ from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces import (
     arch_has_vision_tower,
 )
@@ -326,6 +328,84 @@ def _validate_kv_cache_format(kv_cache: KVCacheConfig, arch: Any) -> None:
         )
 
 
+def _check_eager(
+    runtime: PipelineRuntimeConfig,
+    model: MAXModelConfig | None,
+    arch: SupportedArchitecture | None,
+    lora: LoRAConfig | None,
+    speculative: SpeculativeConfig | None,
+    task: PipelineTask = PipelineTask.TEXT_GENERATION,
+) -> None:
+    """Fails an eager config before anything loads, if it can't run.
+
+    Every ModuleV3 decoder registered for the ``DECODER`` role runs eagerly.
+
+    Raises:
+        ValueError: If ``runtime.eager`` is set for a task other than text
+            generation, an architecture without a ModuleV3 decoder, more than
+            one device, or with device graph capture or synthesis, the overlap
+            scheduler, MEF export, LoRA, speculative decoding or expert
+            parallelism.
+    """
+    if not runtime.eager:
+        return
+    if task is not PipelineTask.TEXT_GENERATION:
+        raise ValueError(
+            "eager=True (--eager) runs text generation, not the"
+            f" {task.value} task."
+        )
+    if arch is None:
+        raise ValueError(
+            "eager=True (--eager) needs a text generation model with a"
+            " ModuleV3 decoder."
+        )
+    decoder = arch.modules.get(GraphRole.DECODER)
+    if decoder is None:
+        raise ValueError(
+            f"{arch.name} builds its graphs in its own pipeline model, with no"
+            " registered ModuleV3 decoder, so it can't run with eager=True"
+            " (--eager) yet."
+        )
+    if not (isinstance(decoder, type) and issubclass(decoder, ModuleV3)):
+        raise ValueError(
+            f"{arch.name} is a graph API architecture, so it can't run with"
+            " eager=True (--eager). MAX picks the graph API version when"
+            " prefer_module_v3 is off, or when the ModuleV3 version doesn't"
+            " support the checkpoint's encoding."
+        )
+    conflicts = [
+        name
+        for name, conflicting in (
+            (
+                "more than one device",
+                model is not None and len(model.device_specs) > 1,
+            ),
+            (
+                "device_graph_capture=True (--device-graph-capture)",
+                bool(runtime.device_graph_capture),
+            ),
+            (
+                "experimental_device_graph_synthesis=True",
+                runtime.experimental_device_graph_synthesis,
+            ),
+            (
+                "enable_overlap_scheduler=True (--enable-overlap-scheduler)",
+                bool(runtime.enable_overlap_scheduler),
+            ),
+            ("export_mefs (--export-mefs)", runtime.export_mefs is not None),
+            ("LoRA", lora is not None and lora.enable_lora),
+            ("speculative decoding", speculative is not None),
+            ("expert parallelism (ep_size > 1)", runtime.ep_size > 1),
+        )
+        if conflicting
+    ]
+    if conflicts:
+        raise ValueError(
+            "eager=True (--eager) can't be combined with "
+            + ", ".join(conflicts)
+        )
+
+
 def _resolve_overlap_and_device_graph_capture(
     runtime: PipelineRuntimeConfig,
     sampling: SamplingConfig,
@@ -341,6 +421,10 @@ def _resolve_overlap_and_device_graph_capture(
     overlap-compatibility validation, matching its meaning everywhere
     else in construction.
     """
+    if runtime.eager:
+        # An eager decoder has no graph to capture or to overlap.
+        return False, False
+
     device_graph_capture = runtime.device_graph_capture
 
     if runtime.experimental_device_graph_synthesis:
@@ -1631,6 +1715,15 @@ class PipelineConfig(ConfigFileModel):
                 args.speculative,
                 **({"num_speculative_tokens": width} if width else {}),
             )
+
+        _check_eager(
+            runtime,
+            models.get("main"),
+            arch,
+            lora,
+            speculative,
+            task=resolved_task,
+        )
 
         top_level: dict[str, Any] = {}
         if arch is not None:

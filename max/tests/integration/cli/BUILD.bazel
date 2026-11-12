@@ -230,6 +230,7 @@ modular_py_test(
     srcs = ["test_pipelines_cli_lightweight.py"],
     deps = [
         "//max/python/max/_entrypoints:pipelines",
+        requirement("click"),
     ],
 )
 

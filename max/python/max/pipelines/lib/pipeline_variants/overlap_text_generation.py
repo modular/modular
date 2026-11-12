@@ -2252,7 +2252,7 @@ class OverlapTextGenerationPipeline(
 
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
-        compiled_modules = dict(self._pipeline_model.compiled_modules)
+        compiled_modules = self._pipeline_model.compiled_graphs
         if not is_spec_decode:
             samplers = load_sampler_graphs(
                 session,

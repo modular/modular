@@ -219,7 +219,7 @@ class DeepseekV2Model(
                 **compile_and_init_graphs(session, specs),
             }
         models = {
-            role: self.compiled_modules[role].engine_model for role in specs
+            role: self.compiled_graphs[role].engine_model for role in specs
         }
         self._weights_dict = {}
         self._maybe_release_host_weights(*models.values())

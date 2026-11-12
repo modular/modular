@@ -33,7 +33,7 @@ from typing import Any
 
 from max import tree
 from max._artifact.value_types import ArtifactError, treedef_to_json
-from max.driver import DLPackArray
+from max.driver import Buffer, DLPackArray
 from max.engine import CompiledModel, InferenceSession, Model
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
@@ -41,6 +41,7 @@ from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits, TPSignals
 from max.nn.module import InputType
+from max.pipelines.modeling.eager_validation import eager_validator
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable, StagedGraph
 from max.tensor.sharding import BufferLayout, TensorLayout
@@ -330,6 +331,73 @@ def tp_signals(
         signals: The signal buffers' layouts, one per device.
     """
     return TPSignals(signal=signals)
+
+
+class _EagerCallable:
+    """Runs a ModuleV3 role's module op by op instead of a compiled graph.
+
+    It takes the buffers the role's compiled graph would, in graph order, and
+    returns what the module's ``forward`` does, with real tensors. So a
+    debugger stopped inside ``forward`` sees real values. Like a
+    :class:`~max.tensor.compilation.CompiledCallable`, it also runs on flat
+    buffers with :meth:`execute_raw`.
+
+    Args:
+        spec: The role's graph. Its weights are loaded into the module's
+            parameters.
+
+    Raises:
+        TypeError: If the spec's module is not a ModuleV3 module.
+    """
+
+    #: The structure and layouts of the last :meth:`execute_raw` call's
+    #: outputs, as a compiled callable describes its graph's outputs.
+    out_tree: tree.TreeDef
+    out_layouts: list[TensorLayout]
+
+    def __init__(self, spec: GraphSpec) -> None:
+        if not isinstance(spec.module, ModuleV3):
+            raise TypeError(
+                f"eager runs ModuleV3 decoders, and the {spec.name} graph is"
+                " built with the graph API. The checkpoint may use an encoding"
+                " the architecture's ModuleV3 version doesn't support."
+            )
+        if spec.weights is not None:
+            with eager_validator.allow_eager(reason="eager weight loading"):
+                # Not strict, as the compiled graph ignores checkpoint
+                # weights the module doesn't declare.
+                spec.module.load_state_dict(
+                    spec.weights, strict=False, auto_cast=spec.auto_cast
+                )
+        self.module = spec.module
+        _, self.in_tree = _input_signature(spec.input_types)
+
+    def __call__(self, *buffers: Buffer) -> Any:
+        """Runs the module on one buffer per graph input, in graph order."""
+        args, kwargs = tree.unflatten(
+            self.in_tree, [Tensor(storage=buffer) for buffer in buffers]
+        )
+        with (
+            eager_validator.allow_eager(reason="an eager role"),
+            eager_validator.allow_device_transfer(
+                reason="inspecting an eager role's values"
+            ),
+        ):
+            return self.module(*args, **kwargs)
+
+    def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
+        """Runs the module on buffers and returns its outputs' buffers.
+
+        Args:
+            buffers: The graph's input buffers, in graph order.
+
+        Returns:
+            One buffer per output shard, in output order. :attr:`out_tree`
+            and :attr:`out_layouts` describe them.
+        """
+        outputs, self.out_tree = tree.flatten(self(*buffers), leaf=Tensor)
+        self.out_layouts = [output.layout for output in outputs]
+        return [buffer for output in outputs for buffer in output.buffers]
 
 
 def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:

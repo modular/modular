@@ -56,6 +56,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.graph_specs import (
     GraphRole,
     GraphSpec,
+    _EagerCallable,
     compile_and_init_graphs,
 )
 from max.pipelines.lib.utils import (
@@ -667,12 +668,17 @@ class PipelineModel(
     #: The ModuleV3 LoRA target projections this arch wraps. Read by the base
     #: to construct ``LoRAManagerV3``; empty for non-ModuleV3-LoRA archs.
     lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = ()
-    #: The graphs this model compiled, by role. Empty for a model that
-    #: compiles its graphs without registering them (see
-    #: :func:`~max.pipelines.lib.graph_specs.compile_and_init_graphs`).
-    compiled_modules: Mapping[str, CompiledCallable[..., Any]] = (
-        MappingProxyType({})
-    )
+    #: The graphs this model runs, by role. Empty for a model that compiles
+    #: its graphs without registering them (see
+    #: :func:`~max.pipelines.lib.graph_specs.compile_and_init_graphs`). With
+    #: ``runtime.eager`` set, the decoder is an eager callable, not compiled.
+    compiled_modules: Mapping[
+        str, CompiledCallable[..., Any] | _EagerCallable
+    ] = MappingProxyType({})
+    #: Whether :meth:`load_graphs` keeps the decoder eager, from
+    #: ``runtime.eager``. A class default, since test models built with
+    #: ``__new__`` call :meth:`load_graphs` without a config.
+    _runs_eagerly: bool = False
     #: The entries that name each graph's weights, by role. Empty for a
     #: model whose naming isn't rules, which exports no ``weight_loader``.
     weight_naming: Mapping[str, Sequence[WeightEntry]] = MappingProxyType({})
@@ -692,6 +698,7 @@ class PipelineModel(
         max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self._runs_eagerly = pipeline_config.runtime.eager
         self.memory_plan = memory_plan
         self.max_batch_size = max_batch_size
         self.devices = devices
@@ -1179,11 +1186,26 @@ class PipelineModel(
         del pipeline_config, config
         return None
 
+    @property
+    def compiled_graphs(self) -> dict[str, CompiledCallable[..., Any]]:
+        """Returns :attr:`compiled_modules` without an eager decoder.
+
+        What reads a compiled graph, such as its engine model or MEF, reads
+        these.
+        """
+        return {
+            role: module
+            for role, module in self.compiled_modules.items()
+            if isinstance(module, CompiledCallable)
+        }
+
     @traced
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         """Compiles and initializes the graphs :meth:`graph_specs` returns.
 
-        Keeps each role's compiled graph as :attr:`compiled_modules`.
+        Keeps each role's compiled graph as :attr:`compiled_modules`. With
+        ``runtime.eager`` set, the decoder isn't compiled, and
+        :attr:`compiled_modules` holds an eager callable for it.
 
         Args:
             session: The session that compiles and initializes the graphs.
@@ -1194,12 +1216,17 @@ class PipelineModel(
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)
         with CompilationTimer("model") as timer:
-            specs = self.graph_specs(model_config)
+            specs = dict(self.graph_specs(model_config))
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
+            eager: dict[str, _EagerCallable] = {}
+            if self._runs_eagerly and GraphRole.DECODER in specs:
+                eager[GraphRole.DECODER] = _EagerCallable(
+                    specs.pop(GraphRole.DECODER)
+                )
+            compiled = compile_and_init_graphs(session, specs)
+            self.compiled_modules = {**compiled, **eager}
         models = {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
+            role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         return models

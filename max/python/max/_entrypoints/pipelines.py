@@ -311,6 +311,16 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
         os.environ.setdefault(_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, "0")
 
 
+def _refuse_eager(eager: object, reason: str) -> None:
+    """Fails a command that can't run in eager mode.
+
+    Raises:
+        click.UsageError: If ``eager`` is set.
+    """
+    if eager:
+        raise click.UsageError(reason)
+
+
 def click_option_requires(
     requires: str,
 ) -> Callable[..., Callable[..., Any]]:
@@ -498,7 +508,15 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
+    # The flag is checked before the merge, which can reach the network, and
+    # an eager set in a config file after it.
+    refusal = (
+        "--eager is for debugging with max generate or AutoModel, not max "
+        "serve."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
     if not pipeline_args.model_path:
         raise click.UsageError(
             "No model specified. Pass --model with a Hugging Face repo ID "
@@ -999,6 +1017,13 @@ def quantize(
     from max.pipelines.lib import MAXModelConfig
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    if error_report_dir is not None:
+        _refuse_eager(
+            pipeline_args.runtime.eager,
+            "--error-report-dir names each weight by its checkpoint path, "
+            "which only a compiled graph keeps, so it can't be combined with "
+            "--eager.",
+        )
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     quantize_pipeline(
         pipeline_args,
@@ -1089,7 +1114,14 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
+    refusal = (
+        "--eager runs the decoder without compiling it, so max warm-cache has "
+        "no decoder to warm. Drop --eager, or run max warm-interpreter-cache "
+        "to prepare the ops eager mode runs."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
     pipeline_config = PipelineConfig.from_args(pipeline_args)
     # Resolve the task rather than taking `retrieve`'s text-generation default,
     # which sends a diffusion pipeline down a branch that reads the main
@@ -1140,9 +1172,14 @@ def cli_export(
     from max._artifact.export import export_pipeline
     from max.pipelines import PipelineArgs, PipelineConfig
 
-    pipeline_config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(**config_kwargs)
+    refusal = (
+        "--eager runs the decoder without compiling it, so max export has "
+        "nothing to export. Drop --eager."
     )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
     try:
         dest = export_pipeline(pipeline_config, output, format_spec)
     except ArtifactError as e:

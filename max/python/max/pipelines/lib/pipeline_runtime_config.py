@@ -562,6 +562,17 @@ class PipelineRuntimeConfig(ConfigModel):
         ),
     )
 
+    eager: bool = Field(
+        default=False,
+        description=(
+            "Run the decoder op by op instead of as a compiled graph, so a "
+            "debugger stopped inside a module's ``forward()`` sees real "
+            "values. Meant for debugging with ``max generate`` and "
+            "``AutoModel``, and much slower than the compiled graph. Runs "
+            "ModuleV3 architectures. The sampler stays compiled."
+        ),
+    )
+
     eager_usage_validator: EagerValidatorMode = Field(
         default=EagerValidatorMode.INIT_ONLY,
         description=(

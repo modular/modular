@@ -44,6 +44,7 @@ from max.pipelines.lib import (
     WeightTransform,
 )
 from max.pipelines.lib.decoder_scratch import build_decoder_scratch
+from max.pipelines.lib.graph_specs import _EagerCallable
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.interfaces.pipeline_model import PipelineModel
@@ -1200,15 +1201,13 @@ class DenoisedConfig(ToyConfig):
     dtype: DType = DType.float32
 
 
-def _denoised_model() -> Any:
-    cls = module_pipeline_model(
-        DenoisedConfig,
-        (
-            (GraphRole.DECODER, PlainDecoder),
-            (GraphRole.BLOCK_DIFFUSION, ToyDenoiser),
-        ),
-        None,
-    )
+def _denoised_model(
+    roles: tuple[tuple[str, type[Module[..., Any]]], ...] = (
+        (GraphRole.DECODER, PlainDecoder),
+        (GraphRole.BLOCK_DIFFUSION, ToyDenoiser),
+    ),
+) -> Any:
+    cls = module_pipeline_model(DenoisedConfig, roles, None)
     model: Any = cls.__new__(cls)
     model.pipeline_config = SimpleNamespace(
         model=SimpleNamespace(pipeline_stage=None, data_parallel_degree=1)
@@ -1249,6 +1248,21 @@ def test_the_denoiser_compiles_beside_the_encoder_and_runs_one_step() -> None:
     np.testing.assert_array_equal(np.from_dlpack(probs), [2])
     np.testing.assert_array_equal(np.from_dlpack(indices), [0, 6])
     np.testing.assert_array_equal(np.from_dlpack(entropy), [31, 31])
+
+
+def test_an_eager_decoder_stays_out_of_compilation() -> None:
+    model = _denoised_model(((GraphRole.DECODER, PlainDecoder),))
+    model._runs_eagerly = True
+    model._load_state_dict = dict
+    model._create_model_config = lambda state_dict: DenoisedConfig()
+
+    models = model.load_graphs(InferenceSession(devices=[CPU()]))
+
+    assert models == {}
+    decoder = model.compiled_modules[GraphRole.DECODER]
+    assert isinstance(decoder, _EagerCallable)
+    assert isinstance(decoder.module, _DecoderGraph)
+    assert isinstance(decoder.module.model, PlainDecoder)
 
 
 def test_the_block_diffusion_model_reads_the_finalized_config() -> None:

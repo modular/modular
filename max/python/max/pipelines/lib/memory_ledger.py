@@ -957,15 +957,23 @@ def size_kv_cache(pipeline: Any, plan: MemoryPlan) -> MemoryPlan:
         logger.info("cache_memory: %s", to_human_readable_bytes(kv_bytes))
         return install(kv_bytes, batch_size, length, vision)
 
-    if measuring_disabled() or not measurable(devices):
+    if measuring_disabled():
+        unmeasured = "measuring is off"
+    elif config.runtime.eager:
+        # Warmups at the largest shapes would run the decoder op by op, which
+        # can take hours on a big model.
+        unmeasured = "eager mode would run the warmups op by op"
+    elif not measurable(devices):
+        unmeasured = "the memory manager reports no statistics"
+    else:
+        unmeasured = None
+    if unmeasured is not None:
         # What the weights left, less the fixed transient reserve.
         cache_bytes = unmeasured_budget(devices, utilization)
         logger.warning(
             "memory ledger: %s, so the KV cache is sized with a fixed %s "
             "transient reserve per GPU",
-            "measuring is off"
-            if measuring_disabled()
-            else "the memory manager reports no statistics",
+            unmeasured,
             to_human_readable_bytes(UNMEASURED_TRANSIENT_BYTES),
         )
         if cache_bytes <= 0:

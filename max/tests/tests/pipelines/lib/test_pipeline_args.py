@@ -311,10 +311,14 @@ def test_config_file_value_survives_and_cli_overrides_it(
 
 _FROM_ARGS_REBUILT = ("profiling", "runtime", "sampling")
 
+# Fields ``from_args`` checks against the resolved architecture, which a config
+# with no model doesn't have.
+_FROM_ARGS_SKIP = {"eager"}
+
 _FROM_ARGS_CASES = [
     (path, config_class, field, value)
     for path, config_class, field, value, _ in _CASES
-    if path in _FROM_ARGS_REBUILT
+    if path in _FROM_ARGS_REBUILT and field not in _FROM_ARGS_SKIP
 ]
 
 

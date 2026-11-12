@@ -147,7 +147,7 @@ from max.tensor.sharding import (
 from transformers import AutoConfig
 
 from .decoder_scratch import DecoderScratch, build_decoder_scratch
-from .graph_specs import GraphRole, GraphSpec
+from .graph_specs import GraphRole, GraphSpec, _EagerCallable
 from .input_binding import _flatten_role_inputs
 from .interfaces.arch_config import ArchConfig, ModelOutputConfig
 from .interfaces.batch_processor import (
@@ -1198,7 +1198,7 @@ class ModuleV3DecoderPipelineModel(
         self._session = session
         models = super().load_graphs(session)
         # A pipeline stage after the first compiles no VISION graph.
-        vision_model = self.compiled_modules.get(GraphRole.VISION)
+        vision_model = self.compiled_graphs.get(GraphRole.VISION)
         if (
             vision_model is not None
             and (vision := self.vision_encoding) is not None
@@ -1609,7 +1609,7 @@ class ModuleV3DecoderPipelineModel(
         """
         assert isinstance(model_inputs, DecoderModelInputs)
         compiled = self.model
-        assert isinstance(compiled, CompiledCallable)
+        assert isinstance(compiled, (CompiledCallable, _EagerCallable))
         raw_outputs = iter(compiled.execute_raw(*model_inputs.buffers))
         outputs = _role_outputs(
             tree.unflatten(

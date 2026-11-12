@@ -381,6 +381,7 @@ def _sizing_pipeline(max_batch_size: int | None) -> MagicMock:
     config.runtime.max_batch_input_tokens = 8192
     config.runtime.max_batch_total_tokens = None
     config.runtime.device_graph_capture = True
+    config.runtime.eager = False
     return pipeline
 
 
@@ -418,6 +419,33 @@ def test_size_kv_cache__claims_eager_plus_capture_and_installs_once(
     installs = pipeline.install_kv_manager.call_args_list
     assert [c.args[0] for c in installs] == [None, load.return_value]
     assert pipeline.memory_ledger.devices[0].capture_bytes == 2 * GIB
+
+
+def test_size_kv_cache__eager_skips_the_warmups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(memory_ledger.DISABLE_ENV, raising=False)
+    pipeline = _sizing_pipeline(max_batch_size=None)
+    pipeline.pipeline_config.runtime.eager = True
+    plan = MemoryPlan(
+        planned_max_batch_size=1,
+        footprint=0,
+        planned_max_length=512,
+        device_specs=(),
+    )
+    with (
+        patch.object(memory_ledger, "run_warmups") as warmups,
+        patch.object(memory_ledger, "unmeasured_budget", return_value=10 * GIB),
+        patch("max.pipelines.kv_cache.kv_cache_memory_size", return_value=GIB),
+        patch(
+            "max.pipelines.kv_cache.max_seq_len_fitting_in_cache",
+            return_value=None,
+        ),
+        patch("max.pipelines.kv_cache.load_kv_manager"),
+    ):
+        got = memory_ledger.size_kv_cache(pipeline, plan)
+    warmups.assert_not_called()
+    assert got.available_cache_memory == 10 * GIB
 
 
 def test_size_kv_cache__counts_what_the_warmups_kept_once(
