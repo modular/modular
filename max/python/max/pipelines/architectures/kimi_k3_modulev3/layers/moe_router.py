@@ -144,32 +144,30 @@ class KimiK3TopKRouter(DeepseekV3TopKRouter):
             # reproduces the reference's fp32 logits on every non-fused
             # route (a CPU-device graph, a non-gfx950 GPU, fp32
             # activations, or a K the fused GEMV cannot tile).
-            logits = (
+            return self.route(
                 hidden_states.cast(DType.float32)
                 @ (self.gate_score.weight.cast(DType.float32)).T
-            )
-            scores = F.sigmoid(logits.cast(self.e_score_correction_bias.dtype))
-            topk_idx, topk_weight = moe_router_group_limited(
-                scores,
-                self.e_score_correction_bias,
-                self.num_experts,
-                self.num_experts_per_token,
-                self.n_group,
-                self.topk_group,
-                self.norm_topk_prob,
-                self.routed_scaling_factor,
-            )
-            return (
-                topk_idx.rebind_mapping(scores.mapping),
-                topk_weight.rebind_mapping(scores.mapping),
             )
 
         # Unconditional on this path: a gate weight the fused op cannot bind
         # (a dtype other than fp32/bf16, a dynamic shape) raises at graph
         # build rather than silently taking the slower inherited path.
-        logits = _router_gate_mixed_gemv_op(
-            hidden_states, self.gate_score.weight
+        return self.route(
+            _router_gate_mixed_gemv_op(hidden_states, self.gate_score.weight)
         )
+
+    def route(self, logits: Tensor) -> tuple[Tensor, Tensor]:
+        """Scores fp32 gate ``logits`` and picks each row's experts.
+
+        Lets a caller that computes the logits in a merged GEMM -- the
+        latent MoE's entry -- run the routing on its own.
+
+        Args:
+            logits: ``(seq_len, num_experts)`` fp32 gate logits.
+
+        Returns:
+            A pair ``(topk_idx, topk_weight)``, as :meth:`forward` returns.
+        """
         scores = F.sigmoid(logits.cast(self.e_score_correction_bias.dtype))
         topk_idx, topk_weight = moe_router_group_limited(
             scores,
