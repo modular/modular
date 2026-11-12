@@ -116,7 +116,7 @@ pin-bump procedure and test list.
 
 The quickest path is the one-click GitHub Actions workflow, which runs the
 NIXL unit tests (Core/UCX on a B200) and dispatches the shared-pool tests,
-including the nightly's `nixl-validation-1p1d-*` Mammoth benchmarks:
+including the DI nightly's Mach 1P1D lane on B200:
 
 ```bash
 gh workflow run validateNIXLSync.yaml \
@@ -125,7 +125,7 @@ gh workflow run validateNIXLSync.yaml \
 ```
 
 Running from any branch — including `main` — auto-builds the MAX Serve images
-from that commit and passes them to the shared-pool tests — no manual image
-build step needed.
+and the Mach engine image and MEF set from that commit and passes them to the
+shared-pool tests — no manual image build step needed.
 
 As a final sanity check, also run `br //:install`.
