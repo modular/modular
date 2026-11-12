@@ -921,6 +921,13 @@ def _matmul_gpu_impl[
         use_tf32 or a_type != .float32 or ctx.target._has_blackwell_tcgen05()
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
+    # Pre-Volta NVIDIA (Maxwell sm_5x, Pascal sm_6x) has no tensor cores and no
+    # ldmatrix/mma.sync/cp.async, so the tensor-core kernels below cannot be elaborated for those
+    # targets even though the runtime shape check would skip them. Keep them out of the module.
+    comptime nvidia_no_tensor_cores = (
+        ctx.target.is_nvidia_gpu() and ctx.default_device_info.compute < 7.0
+    )
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -1162,6 +1169,7 @@ def _matmul_gpu_impl[
         and not ctx.target.is_apple_gpu()
         and use_tensor_core
         and has_static_NK
+        and not nvidia_no_tensor_cores
     ):
         if multi_gemm_cond:
 
