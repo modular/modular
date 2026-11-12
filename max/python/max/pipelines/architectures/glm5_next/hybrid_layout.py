@@ -231,6 +231,7 @@ def construct_kv_params(
         )
 
     mla_quant_config = None
+    # An int8 scale dtype declares no scales: the FP8 latent is unit-scale.
     if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
         mla_quant_config = KVCacheQuantizationConfig(
             scale_dtype=DType.int8, quantization_granularity=32

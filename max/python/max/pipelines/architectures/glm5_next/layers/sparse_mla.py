@@ -23,7 +23,7 @@ GLM-5.2's block with two changes:
 
 ``kv_b_proj`` is BF16 in this checkpoint while the other projections are FP8,
 so the absorbed ``w_uk`` / ``w_uv`` carry no scales and the kernel takes no
-quant config.
+quant config. They pair with a BF16 latent cache or a unit-scale FP8 one.
 """
 
 from __future__ import annotations
@@ -171,10 +171,9 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
         )
         if kv_collection.kv_scales is not None:
             raise ValueError(
-                "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "
-                "the FP8 MLA op requires absorbed weight scales this "
-                "checkpoint does not ship. Run the BF16 latent cache, which is "
-                "what the accuracy gates use, until that pairing is supported."
+                "A latent cache with scales needs a quantized MLA op, which "
+                "requires absorbed weight scales this checkpoint does not "
+                "ship. Run a BF16 or a unit-scale FP8 latent cache."
             )
         assert self.q_lora_rank is not None
         qkv = quant_ops.matmul(x, self.wqkv)
