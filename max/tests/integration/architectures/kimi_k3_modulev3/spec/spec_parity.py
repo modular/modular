@@ -571,6 +571,7 @@ def run(
     teacher_forced: bool = False,
     plain_pipeline: BatchPipeline | None = None,
     kv_cache_format: str | None = None,
+    device_memory_utilization: float | None = None,
 ) -> ParityReport:
     """Serves the pair speculatively and plainly, and compares the two.
 
@@ -610,6 +611,10 @@ def run(
             latent drafter's production arm is ``"float8_e4m3fn"`` and
             the selectable one ``"bfloat16"``, and which one a run was
             on was previously unstamped.
+        device_memory_utilization: The KV cache's device memory utilization,
+            or ``None`` for the default. Tiny models with measuring
+            disabled need a lower value (e.g. 0.5) to leave room for the
+            fixed transient reserve.
     """
     register_all_models()
     prompts = read_prompts(prompts_path)
@@ -632,6 +637,7 @@ def run(
         prompts,
         speculative=True,
         kv_cache_format=kv_cache_format,
+        device_memory_utilization=device_memory_utilization,
     )
     if device_graph_capture:
         assert isinstance(spec_pipeline, OverlapTextGenerationPipeline)
@@ -667,6 +673,7 @@ def run(
             prompts,
             speculative=False,
             kv_cache_format=kv_cache_format,
+            device_memory_utilization=device_memory_utilization,
         )
         if plain_pipeline is None
         else plain_pipeline

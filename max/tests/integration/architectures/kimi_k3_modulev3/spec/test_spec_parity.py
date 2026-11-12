@@ -37,9 +37,13 @@ from pathlib import Path
 
 import pytest
 import spec_parity
-from _tiny_pair import DRAFT_WIDTH, MAX_LENGTH, NARROW_LATENT, build_tiny_pair
-from max.pipelines.lib.generate import BatchPipeline
+from _tiny_pair import NARROW_LATENT, build_tiny_pair
 from spec_parity import ParityReport
+
+_MAX_LENGTH = 384
+"""Local max_length, sized to fit the test's prompts when padded to 128-token
+pages (128+128+1=257 tokens) with room for new tokens, while staying within
+the unmeasured budget when measurement is disabled."""
 
 # Building the pipelines warms up a KV manager, which virtual devices mock.
 pytestmark = pytest.mark.compile_on_gpu(
@@ -66,44 +70,6 @@ def tiny_pair(
     return pair.target, pair.drafter, pair.prompts
 
 
-_PLAIN_PIPELINE: BatchPipeline | None = None
-
-
-def _shared_plain_pipeline(
-    tiny_pair: tuple[Path, Path, Path],
-) -> BatchPipeline:
-    """One plain greedy pipeline, shared by every graded run below.
-
-    Built before any speculative pipeline exists, so the cached HF config
-    it reads is the plain one a speculative config would rewrite. Each
-    run() call would otherwise rebuild the identical pipeline. A plain
-    build needs no real hardware, so it must not be a recorded fixture of
-    its own: a fixture the record runs to its end replays exactly, and it
-    holds no artifact for the interpreter's lazily-compiled CPU casts the
-    real weight load compiles (the record's virtual CPU serves the
-    adapter's bf16-to-fp32 astype without a graph). Built at the top of
-    the clean synthetic's setup instead, its graphs ride that fixture's
-    record entry, whose hardware stop its replay already tolerates.
-    """
-    global _PLAIN_PIPELINE
-    if _PLAIN_PIPELINE is None:
-        target, _, prompts_path = tiny_pair
-        _PLAIN_PIPELINE = spec_parity._pipeline(
-            target,
-            None,
-            devices=1,
-            max_length=MAX_LENGTH,
-            num_speculative_tokens=DRAFT_WIDTH,
-            synthetic_acceptance=None,
-            device_graph_capture=False,
-            prefer_module_v3=True,
-            trust_remote_code=True,
-            prompts=spec_parity.read_prompts(prompts_path),
-            speculative=False,
-        )
-    return _PLAIN_PIPELINE
-
-
 def test_the_tiny_pair_decodes_the_plain_greedy_tokens(
     tiny_pair: tuple[Path, Path, Path],
     clean_synthetic: ParityReport,
@@ -114,10 +80,14 @@ def test_the_tiny_pair_decodes_the_plain_greedy_tokens(
     whose target-chosen bonus tokens are graded against the plain pipeline,
     which is what catches a fold short of the accepted block."""
     target, drafter, prompts = tiny_pair
-    plain_pipeline = _shared_plain_pipeline(tiny_pair)
     # A 128-token page rounds each prompt up to a page, so the context
     # budget the scheduler defaults out of ``max_length`` must clear a
     # whole page per prompt or the first prefill is refused.
+    #
+    # Don't pre-build the plain pipeline: spec_parity.run() builds the spec
+    # pipeline first, runs and deletes it, then builds the plain pipeline.
+    # Loading both simultaneously exhausts GPU memory on mi355 when memory
+    # measurement is disabled.
     report = spec_parity.run(
         target,
         drafter,
@@ -130,10 +100,10 @@ def test_the_tiny_pair_decodes_the_plain_greedy_tokens(
         # depth check).
         max_new_tokens=16,
         repeat=2,
-        max_length=MAX_LENGTH,
+        max_length=_MAX_LENGTH,
         trust_remote_code=True,
         teacher_forced=True,
-        plain_pipeline=plain_pipeline,
+        device_memory_utilization=0.5,
     )
     assert report.deterministic, "two speculative runs disagreed"
     assert report.identical, [
@@ -177,10 +147,13 @@ def clean_synthetic(
     instead of rebuilding the pair. 33 tokens span a prefill and four
     decode steps: the graded bonuses sit at the ends of the first four
     chunks (the fifth is final and skipped), and the last two of those
-    read a state a fold already landed. The shared plain pipeline is built
-    here first, before any speculative pipeline exists.
+    read a state a fold already landed.
+
+    Don't pre-build the plain pipeline: spec_parity.run() builds the spec
+    pipeline first, runs and deletes it, then builds the plain pipeline.
+    Loading both simultaneously exhausts GPU memory on mi355 when memory
+    measurement is disabled.
     """
-    plain_pipeline = _shared_plain_pipeline(tiny_pair)
     target, drafter, prompts_path = tiny_pair
     return spec_parity.run(
         target,
@@ -188,9 +161,9 @@ def clean_synthetic(
         prompts_path,
         devices=1,
         max_new_tokens=33,
-        max_length=MAX_LENGTH,
+        max_length=_MAX_LENGTH,
         trust_remote_code=True,
         synthetic_acceptance=1.0,
         teacher_forced=True,
-        plain_pipeline=plain_pipeline,
+        device_memory_utilization=0.5,
     )
