@@ -10,8 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen --emit=llvm %s -mllvm --mlir-print-ir-after=raise-for-loops -o %t.ll 2>&1 \
-# RUN:   | FileCheck %s
+# The IR dump is produced only when the pass pipeline actually runs, and a
+# warm KGEN transform cache serves the result without running it, so give
+# the run an empty cache of its own.
+# RUN: rm -rf %t.cache && env MODULAR_CACHE_DIR=%t.cache kgen --emit=llvm %s \
+# RUN:   -mllvm --mlir-print-ir-after=raise-for-loops -o %t.ll 2>&1 | FileCheck %s
 
 # Verify that mojo's `for i in range(...)` is raised from `hlcf.loop` to
 # `hlcf.for`. `range(end)` uses the `_ZeroStartingRange` iterator and
