@@ -10,6 +10,7 @@ modular_cc_binary(
     ]),
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
+        "//MLRT:Driver/Compilation",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",

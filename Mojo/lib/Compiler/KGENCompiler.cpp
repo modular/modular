@@ -579,14 +579,22 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // A backend that owns offload lowering emits one artifact per entry
       // function, so there is nothing to bundle: slice and compile each kernel
-      // on its own. This sits after the option setup above so the per-kernel
-      // compiles see the same fp-mode, target-abi and link options as a
-      // bundled group would. Each compile below parses its options into
-      // LLVM's registered cl options, so they are reset after the loop.
+      // on its own. A target whose emitter accepts one entry function per
+      // artifact asks for the same treatment. This sits after the option setup
+      // above so the per-kernel compiles see the same fp-mode, target-abi and
+      // link options as a bundled group would. Each compile below parses its
+      // options into LLVM's registered cl options, so they are reset after the
+      // loop.
       ErrorOr<const TargetBackend *> offloadBackendOr =
           TargetBackendRegistry::get().lookup(target.getTriple());
-      if (!offloadBackendOr.isError() &&
-          (*offloadBackendOr)->ownsOffloadLowering()) {
+      const TargetBackend *offloadBackend =
+          offloadBackendOr.isError() ? nullptr : *offloadBackendOr;
+      const TargetTraits *traits =
+          offloadBackend ? offloadBackend->traits() : nullptr;
+      bool perKernel =
+          (traits && traits->requiresPerKernelOffload()) ||
+          (offloadBackend && offloadBackend->ownsOffloadLowering());
+      if (perKernel) {
         SmallVector<StringRef> perKernelOptions;
         StringRef(offloadInfo.emissionOptions)
             .split(perKernelOptions, /*Separator=*/",",

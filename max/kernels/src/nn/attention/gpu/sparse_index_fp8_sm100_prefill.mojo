@@ -3142,15 +3142,17 @@ def fp8_index_score_sm100_prefill[
     # The same box over MXFP4's block-scale words; unread otherwise.
     var qsf_tma = qs_tma
     comptime if _is_mxfp4[dtype]():
-        if not q_sf:
-            raise Error("mxfp4 index prefill: q_sf is required")
-        qsf_tma = create_tma_tile[N_TOKENS, num_heads](
-            ctx,
-            TileTensor(
-                q_sf.value().unsafe_bitcast[Float32](),
-                tt_row_major(num_q_tokens, num_heads),
-            ),
-        )
+        match q_sf:
+            case .Some(sf_ptr):
+                qsf_tma = create_tma_tile[N_TOKENS, num_heads](
+                    ctx,
+                    TileTensor(
+                        sf_ptr.unsafe_bitcast[Float32](),
+                        tt_row_major(num_q_tokens, num_heads),
+                    ),
+                )
+            case .None:
+                raise Error("mxfp4 index prefill: q_sf is required")
     ctx.enqueue_function[kernel](
         GridBlockAttributeLaunchConfig(
             grid_dim=(

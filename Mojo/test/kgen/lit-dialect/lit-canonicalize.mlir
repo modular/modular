@@ -38,3 +38,18 @@ lit.struct.decl @Pair register_passable_trivial {
 lit.struct.decl @Int register_passable_trivial {
   lit.struct.field value : index
 }
+
+// -----
+
+// A concat of one pack of the same type as the result folds to that pack.
+// CHECK-LABEL: @ref_pack_concat_one_operand
+kgen.generator @ref_pack_concat_one_operand<Ts: param_list<type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>)
+    -> !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin> {
+  // CHECK-NOT: lit.ref.pack.concat
+  // CHECK: hlcf.return %arg0
+  %0 = lit.ref.pack.concat(%a)
+    : !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+  hlcf.return %0 : !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+}

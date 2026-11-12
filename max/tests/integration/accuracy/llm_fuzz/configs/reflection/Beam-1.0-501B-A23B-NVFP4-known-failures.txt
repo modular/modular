@@ -1,0 +1,42 @@
+# Beam 1.0 llm-fuzz known failures, one `scenario:test` per line.
+#
+# Read through `Beam-1.0-501B-A23B-NVFP4.sh`, which names this file in
+# `exclude_files`. An entry belongs here only if vLLM, serving the same
+# checkpoint with its Beam parsers, fails the same test. A test that only Mach
+# fails is a Mach gap: it stays red and gets a ticket, and is never listed here
+# (see configs/README.md).
+#
+# Controls: vLLM 0.33.0 at TP4 with bf16 KV, greedy, without speculative
+# decoding, at the lane's 131072 context, with the same llm-fuzz build and
+# flags as the CI lane, on a 4xB200 box. Both engines render the checkpoint's
+# own chat template. The entries were measured against Mach without its
+# DFlash2 drafter.
+
+# The chat template has no thinking-off switch: `thinking` and
+# `enable_thinking` are not read, and the lowest `reasoning_effort` is
+# `minimal`. Both engines still write reasoning.
+basic_reasoning_and_tool_usage:content-parts-thinking-off
+basic_reasoning_and_tool_usage:open-ended-thinking-off
+basic_reasoning_and_tool_usage:response-format-thinking-off
+basic_reasoning_and_tool_usage:special-token-content-thinking-off
+basic_reasoning_and_tool_usage:tool-call-and-response-format-thinking-off
+basic_reasoning_and_tool_usage:tool-call-auto-thinking-off
+basic_reasoning_and_tool_usage:tool-call-calculate-required-thinking-off
+basic_reasoning_and_tool_usage:tool-call-thinking-off
+openrouter_tests:reasoning-disabled
+
+# The chat template keeps only the leading run of system messages, so a system
+# message after the first user turn never reaches the model.
+openrouter_tests:multi-system-prompt
+
+# Both engines refuse the request with a 400. Mach cannot spell minProperties 3
+# in Beam's tool-call grammar and the tool is strict; vLLM cannot guarantee a
+# required tool call for this schema. Under tool_choice=auto vLLM serves it and
+# Mach still refuses, so that variant is a Mach gap and is not listed.
+tc_schema_enforcement:additional_properties_true[tool_choice=required]
+
+# A string's maxLength is not part of the tool-call grammar on either engine.
+# Under the named tool_choice this test forces, Mach refuses the request with
+# a 400 and vLLM serves it with an argument longer than maxLength. Runs only
+# with the full suite.
+tool_schema_validation:enforce_max_length

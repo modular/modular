@@ -304,6 +304,8 @@ struct SM100MHADepth512[
                     k_tma_op.prefetch_descriptor()
                 if e != 0:
                     v_tma_op.prefetch_descriptor()
+            case _:
+                pass
 
         if warp_idx != 1:
             cluster_wait()

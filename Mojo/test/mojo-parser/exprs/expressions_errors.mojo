@@ -1110,8 +1110,9 @@ def unbound_function_type():
   # expected-note @below {{parameter 'p' of type 'Int' is not bound}}
   var g: def(HasIntParam) thin -> None
 
-  # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
-  # expected-note @below {{'HasIntParamAlias' is aka 'comptime[p: Int] HasIntParam[p]'}}
+  # expected-error @below {{'HasIntParamAlias' is not concrete, use '[]' to bind missing parameters}}
+  # expected-note @below {{missing parameter 'p'}}
+  # expected-note @below {{'HasIntParamAlias' is aka 'HasIntParam[_]'}}
   var h: HasIntParamAlias
 
 # Various type printing cases.

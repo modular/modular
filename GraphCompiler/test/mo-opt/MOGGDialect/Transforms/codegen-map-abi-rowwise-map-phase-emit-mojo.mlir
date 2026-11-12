@@ -15,6 +15,7 @@
 // CHECK-NEXT:  var [[MS:.*]] = builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]([[ACC4]].acc, SIMD[DType.float32, params.simd_width](128.0))
 // CHECK-NEXT:  var [[V:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.float32]([[MS]], SIMD[DType.float32, params.simd_width](9.99999997E-7))
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[dtype = DType.float32]([[V]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], idx: {{.*}}) {var}:
 // CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.float32, w]()
 // CHECK-NEXT:    var [[NX:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32](tile, [[INV]].slice[w]())
@@ -59,6 +60,7 @@ mo.graph @rmsNorm(%x: !mo.tensor<[8, 128], f32>, %g: !mo.tensor<[128], f32>) -> 
 // CHECK:       var [[ROW3:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, Int({{.*}}[1].value()), row_ctx, [[LOAD3:load_+[0-9]+]])
 // CHECK:       var [[ACC3:.*]] = [[ROW3]].reduce[
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[{{.*}}]([[ACC3]].acc)
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var}:
 // CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.float32, w]()
 // CHECK-NEXT:    var [[N:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}](tile, [[INV]].slice[w]())
@@ -93,6 +95,7 @@ mo.graph @normalize<M, N>(%x: !mo.tensor<[M, N], f32>) -> !mo.tensor<[M, N], f32
 // CHECK-NEXT:  var [[S:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = params.emit_tile_width{{.*}}algorithm.rowwise_types.at_axis[1]([[ROW5]].row_coord, 0)
 // CHECK-NEXT:  var [[SW:.*]] = {{.*}}._rowwise_splat_lane([[ROW5]], [[S]])
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Mul.elementwise[{{.*}}]([[ACC5]].acc, [[SW]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var}:
 // CHECK:         builtin_kernels.elementwise.Mul.elementwise[{{.*}}](tile, [[INV]].slice[w]())
 mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>) -> !mo.tensor<[8, 128], f32> {
@@ -109,6 +112,47 @@ mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>)
     map.iter.map index (%j: !map.index<2>) {
       %v = map.load %x[%j] : !mo.tensor<[8, 128], f32>
       %y = map.call.elementwise @builtin_kernels.elementwise.Mul(%j, %v, %inv) : !map.index<2>, f32, f32 -> f32
+      map.store %out[%j] = %y : !mo.tensor<[8, 128], f32>
+    }
+  }
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}
+
+// A softmax written as MAP IR: the second fold and the map phase read the
+// first fold's result as `.slice[w]()`, one phase per fold plus the map phase.
+// CHECK-LABEL: def __iter_opaque_2(
+// CHECK:       var [[ROW6:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[128], row_ctx, [[LOAD6:load_+[0-9]+]])
+// CHECK:       var [[MAX6:.*]] = [[ROW6]].reduce[builtin_kernels.monoids.ReduceMax[dtype = DType.float32, W = params.simd_width]]
+// CHECK-NEXT:  @inline(.always)
+// CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
+// CHECK-NEXT:    var [[D6:.*]] = builtin_kernels.elementwise.Sub.elementwise[dtype = DType.float32](tile, [[MAX6]].acc.slice[w]())
+// CHECK-NEXT:    var [[E6:.*]] = builtin_kernels.elementwise.Exp.elementwise[dtype = DType.float32]([[D6]])
+// CHECK-NEXT:    return [[E6]]
+// CHECK:       var [[SUM6:.*]] = [[ROW6]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]
+// CHECK:       def [[EW6:elementwise_+[0-9]+]][w : Int]
+// CHECK:         builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]({{.*}}, [[SUM6]].acc.slice[w]())
+// CHECK:       [[ROW6]].elementwise([[EW6]], [[LOAD6]])
+// CHECK:       _rowwise[{{.*}}num_phases = 3, computationally_expensive = True, dtype_size = 4]
+mo.graph @softmax(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %r = map.iter.rowwise<[8, 128], axis = 1>
+      inputs  (%x: !mo.tensor<[8, 128], f32>)
+      outputs (%out: !mo.tensor<[8, 128], f32>)
+      row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
+    %max = map.iter.reduce @builtin_kernels.monoids.ReduceMax index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      map.yield %v : f32
+    }
+    %sum = map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%i: !map.index<2>) -> f32 {
+      %v = map.load %x[%i] : !mo.tensor<[8, 128], f32>
+      %d = map.call.elementwise @builtin_kernels.elementwise.Sub(%i, %v, %max) : !map.index<2>, f32, f32 -> f32
+      %e = map.call.elementwise @builtin_kernels.elementwise.Exp(%i, %d) : !map.index<2>, f32 -> f32
+      map.yield %e : f32
+    }
+    map.iter.map index (%j: !map.index<2>) {
+      %v = map.load %x[%j] : !mo.tensor<[8, 128], f32>
+      %d = map.call.elementwise @builtin_kernels.elementwise.Sub(%j, %v, %max) : !map.index<2>, f32, f32 -> f32
+      %e = map.call.elementwise @builtin_kernels.elementwise.Exp(%j, %d) : !map.index<2>, f32 -> f32
+      %y = map.call.elementwise @builtin_kernels.elementwise.Div(%j, %e, %sum) : !map.index<2>, f32, f32 -> f32
       map.store %out[%j] = %y : !mo.tensor<[8, 128], f32>
     }
   }

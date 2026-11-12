@@ -48,6 +48,43 @@ _MAX_TILING_RATIO = int(os.getenv("MODULAR_KV_JENGA_MAX_TILING_RATIO") or 256)
 # The share of the budget whole huge blocks may strand before planning warns.
 _STRANDING_WARN_FRACTION = 0.05
 
+# For tests only: the share of huge blocks, counted down from the highest id,
+# that allocation may hand out. A short run on a fresh pool only touches low
+# block ids, so index arithmetic that overflows near the top of a production
+# pool passes every eval; shrinking the pool to its top slice exercises those
+# ids from the first request. Capacity shrinks to that share. Unset or 1
+# allows every block.
+_TOP_BLOCK_FRACTION = float(
+    os.getenv("MODULAR_KV_JENGA_DEBUG_TOP_BLOCK_FRACTION") or 1.0
+)
+
+
+def min_huge_bid_for_top_fraction(
+    num_huge_blocks: int, top_fraction: float
+) -> int:
+    """Returns the lowest huge block a pool may allocate to use only its top.
+
+    Args:
+        num_huge_blocks: How many huge blocks the pool tiles, the null
+            block's included.
+        top_fraction: The share of allocatable huge blocks to keep, in
+            ``(0, 1]``. At least one block is always kept.
+
+    Returns:
+        ``0`` when ``top_fraction`` keeps every block, else the lowest
+        allowed huge block id.
+
+    Raises:
+        ValueError: If ``top_fraction`` is not in ``(0, 1]``.
+    """
+    if not 0 < top_fraction <= 1:
+        raise ValueError(
+            f"top_fraction must be in (0, 1], found {top_fraction}"
+        )
+    allocatable = num_huge_blocks - 1
+    kept = max(1, int(allocatable * top_fraction))
+    return 0 if kept >= allocatable else num_huge_blocks - kept
+
 
 def compute_jenga_ratios(
     available_bytes: int,

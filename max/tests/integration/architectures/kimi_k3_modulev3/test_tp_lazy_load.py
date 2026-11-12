@@ -177,7 +177,9 @@ def _compile_serve(
     with default_device(mesh):
         kv_params = kv_params_only(config, devices)
         with F.lazy(), default_dtype(DType.float32):
-            module = KimiK3Model(config, kv_params=kv_params)
+            module = KimiK3Model(
+                config, kv_params=kv_params, tp_size=len(devices)
+            )
             if len(devices) > 1:
                 tensor_parallel_kimi_k3_model(module, mesh)
     spec = GraphSpec(

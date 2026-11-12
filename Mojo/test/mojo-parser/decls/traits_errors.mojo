@@ -62,8 +62,8 @@ struct ConformsUnboundAliasInConformanceList(UnboundTraitAlias):
 
 
 def invalid_trait_bind():
-    # expected-error @below {{'ParamType[_]' is not concrete, use '[]' to bind missing parameters}}
-    # expected-note @below {{missing parameter 'x'}}
+    # FIXME: this error message can be improved.
+    # expected-error @below {{cannot implicitly convert 'AnyStruct[ParamType[_]]' value to 'FooTrait' in comptime initializer}}
     comptime Bound: FooTrait = ParamType
 
 

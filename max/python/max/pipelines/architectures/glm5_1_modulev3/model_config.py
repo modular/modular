@@ -159,6 +159,9 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
             decode_context_parallel_degree=(
                 model_config.decode_context_parallel_degree
             ),
+            decode_context_parallel_interleave=(
+                model_config.decode_context_parallel_interleave
+            ),
             dcp_q_replicate=resolve_dcp_q_replicate(
                 model_config.dcp_q_replicate
             ),

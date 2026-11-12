@@ -121,7 +121,6 @@ def test_nightly_8xb200_pinned() -> None:
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
         "tencent/Hy4-preview-FP8",
         "tencent/Hy4-preview-FP8__mtp",
-        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
@@ -136,6 +135,7 @@ def test_nightly_4xb200_pinned() -> None:
     assert scheduled == {
         "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         "reflection/Beam-1.0-501B-A23B-NVFP4",
+        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
@@ -194,6 +194,7 @@ def test_mach_models_run_only_on_mach() -> None:
     }
     # Pins the Mach-only nightly 8xB200 set; widen it only deliberately.
     assert mach_only == {
+        "RadixArk/GLM-5.3-NVFP4__dcp4_mtp",
         "RadixArk/GLM-5.3-NVFP4__mtp_dpep",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",

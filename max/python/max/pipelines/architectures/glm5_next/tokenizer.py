@@ -36,7 +36,6 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.architectures.glm5_1.tokenizer import GlmTokenizer
 from max.pipelines.context import (
     GrammarEnforcementState,
     ImageMetadata,
@@ -63,8 +62,9 @@ from PIL import Image
 from transformers.utils import cached_file
 
 from .context import Glm5NextTextAndVisionContext
-from .image_processor import Glm5NextImageProcessor
-from .video_processor import Glm5NextVideoProcessor
+from .text_tokenizer import GlmTokenizer
+from .vision.image_processor import Glm5NextImageProcessor
+from .vision.video_processor import Glm5NextVideoProcessor
 
 logger = logging.getLogger("max.pipelines")
 

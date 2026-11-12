@@ -6,6 +6,7 @@
 // phase that scales by gamma and casts back, with the same launch parameters.
 // CHECK-LABEL: def __static_broadcast_to_cast_add_{{[0-9a-f]+}}(
 // CHECK:       var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.bfloat16, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[4096], row_ctx, [[LOAD:load_+[0-9]+]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
 // CHECK-NEXT:    var [[A:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.float32](tile)
 // CHECK-NEXT:    var [[SQ:.*]] = builtin_kernels.elementwise.Mul.elementwise[dtype = DType.float32]([[A]], [[A]])
@@ -14,6 +15,7 @@
 // CHECK:       var [[MS:.*]] = builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]([[ACC]].acc,
 // CHECK-NEXT:  var [[V:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.float32]([[MS]], SIMD[DType.float32, params.simd_width](9.99999997E-7))
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[dtype = DType.float32]([[V]])
+// CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def [[EW:elementwise_+[0-9]+]][w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var}:
 // CHECK-NEXT:    comptime [[AL:.*]] = algorithm.rowwise_types.Context[params].element_alignment[DType.bfloat16, w]()
 // CHECK-NEXT:    var [[X:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.float32](tile)

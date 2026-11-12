@@ -261,6 +261,11 @@ class TargetAdapter:
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""
 
+    verify_commits_long_rows: bool = False
+    """Whether the target's verify commits a row longer than one token and
+    its drafts, at the row's last real token, in every recurrent leaf it
+    keeps. An engine may then mix a prompt row into a verify step."""
+
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
     every device count, for an engine that binds them there. ``None``

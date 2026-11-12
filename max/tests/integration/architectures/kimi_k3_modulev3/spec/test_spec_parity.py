@@ -123,7 +123,12 @@ def test_the_tiny_pair_decodes_the_plain_greedy_tokens(
         drafter,
         prompts,
         devices=1,
-        max_new_tokens=32,
+        # Sixteen committed tokens is many verify steps even at the random
+        # drafter's near-zero acceptance: enough for parity, the engagement
+        # counts and the teacher-forced oracle, at half the generates of
+        # the old 32 (the synthetic run below carries the fold-sensitivity
+        # depth check).
+        max_new_tokens=16,
         repeat=2,
         max_length=MAX_LENGTH,
         trust_remote_code=True,

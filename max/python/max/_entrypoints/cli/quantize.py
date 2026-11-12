@@ -16,10 +16,9 @@ import asyncio
 import contextlib
 import dataclasses
 import functools
-import json
 import logging
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -35,12 +34,18 @@ from max.nn._weight_utils import (
 )
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.moe import MoE
 from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
     QuantizedQKVLinear,
 )
-from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
+from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.common_layers.quant_tensor import (
+    MXFP4Quantizer,
+    MXFP8Quantizer,
+    NVFP4TensorQuantizer,
+)
 from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
 from max.pipelines.context import (
@@ -59,16 +64,16 @@ from max.pipelines.modeling.types import (
 from max.pipelines.weights.checkpoint_files import (
     _host_tensor,
     _SavedTensor,
-    _write_shards,
     copy_auxiliary_files,
     write_quantization_config,
+    write_shards,
 )
 from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     nvfp4_quantization_config,
 )
 from max.profiler import OneShotCapture, Tracer
-from max.tensor import Tensor, compilation
+from max.tensor import Tensor, compilation, defaults
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
@@ -80,6 +85,7 @@ MODEL_NAME = "model"
 
 _FUSED_GROUPS = (
     (MLP, ("gate_proj", "up_proj")),
+    (MoE, ("gate_proj", "up_proj")),
     (QKVLinear, ("q_proj", "k_proj", "v_proj")),
 )
 
@@ -88,40 +94,106 @@ def _child_path(parent: str, name: str) -> str:
     return f"{parent}.{name}" if parent else name
 
 
+def _projection_hits(
+    paths: list[str], patterns: list[re.Pattern[str]]
+) -> list[str]:
+    return [
+        child
+        for child in paths
+        if any(pattern.search(child) for pattern in patterns)
+    ]
+
+
+def _require_full_group(
+    names: tuple[str, ...], paths: list[str], hits: list[str]
+) -> None:
+    """Rejects a fused matmul whose members were only partly targeted."""
+    if len(hits) == len(paths):
+        return
+    missing = [child for child in paths if child not in hits]
+    joined = ", ".join(names)
+    raise ValueError(
+        f"{joined} are one matmul, so quantize all of them or "
+        f"none of them. Matched {hits}; left out {missing}."
+    )
+
+
+def _routed_experts_match(
+    path: str,
+    moe: MoE,
+    names: tuple[str, ...],
+    patterns: list[re.Pattern[str]],
+) -> bool:
+    """Whether every routed expert's fused projections match ``patterns``.
+
+    Experts live at ``experts.N.gate_proj``, not on the MoE itself. A MoE
+    becomes one :class:`QuantizedMoE`, so a pattern that hits only some
+    experts is rejected. No hits leaves the MoE unchanged.
+    """
+    matched = 0
+    for index in range(len(moe.experts)):
+        expert_path = _child_path(_child_path(path, "experts"), str(index))
+        paths = [_child_path(expert_path, name) for name in names]
+        hits = _projection_hits(paths, patterns)
+        if not hits:
+            continue
+        _require_full_group(names, paths, hits)
+        matched += 1
+    if matched == 0:
+        return False
+    if matched != len(moe.experts):
+        raise ValueError(
+            "every expert's gate_proj and up_proj are one group, so "
+            "quantize all experts or none of them. "
+            f"Matched {matched} of {len(moe.experts)}."
+        )
+    return True
+
+
 def _fused_modules_to_swap(
     module: Module[..., Any], patterns: Iterable[re.Pattern[str]]
-) -> list[MLP | QKVLinear]:
+) -> list[MLP | QKVLinear | MoE]:
     """Returns fusers whose members all match ``patterns``.
 
     Gate/up and q/k/v are each one matmul. A pattern that hits only part of
     a group has no shared global scale, so that is rejected before compile.
-    A stacked ``QKVLinear`` is already one weight and is left alone.
+    A stacked ``QKVLinear`` is already one weight and is left alone. A MoE
+    is swapped only when every routed expert's gate and up match; the MoE
+    has no projections of its own.
     """
     compiled = list(patterns)
-    swaps: list[MLP | QKVLinear] = []
+    swaps: list[MLP | QKVLinear | MoE] = []
     for cls, names in _FUSED_GROUPS:
         for path, node in tree.nodes(module, cls).items():
             if type(node) is not cls:
                 continue
             if isinstance(node, QKVLinear) and not node.name_transparent:
                 continue
+            if cls is MoE:
+                moe = cast(MoE, node)
+                if _routed_experts_match(path, moe, names, compiled):
+                    swaps.append(moe)
+                continue
             paths = [_child_path(path, name) for name in names]
-            hits = [
-                child
-                for child in paths
-                if any(pattern.search(child) for pattern in compiled)
-            ]
+            hits = _projection_hits(paths, compiled)
             if not hits:
                 continue
-            if len(hits) != len(paths):
-                missing = [child for child in paths if child not in hits]
-                joined = ", ".join(names)
-                raise ValueError(
-                    f"{joined} are one matmul, so quantize all of them or "
-                    f"none of them. Matched {hits}; left out {missing}."
-                )
+            _require_full_group(names, paths, hits)
             swaps.append(node)
     return swaps
+
+
+def _finish_quantized_moe(moe: MoE, quant_config: QuantConfig) -> None:
+    """Turns a built MoE into a QuantizedMoE without rebuilding its weights.
+
+    The class swap skips ``QuantizedMoE.__init__``, which is where the mesh
+    and the routed-expert config are stored. Forward reads both.
+    """
+    quantized = cast(QuantizedMoE, moe)
+    quantized.__class__ = QuantizedMoE
+    _, quantized.mesh = defaults()
+    quantized.quant_config = quant_config
+    quantized.swiglu_limit = 0.0
 
 
 #: Formats whose on-the-fly quantizer can decode in the graph to measure
@@ -142,7 +214,8 @@ def insert_quantized_linears(
 
     The config is supplied rather than built here: it is the caller's
     statement of intent. Gate/up and unstacked q/k/v are one matmul, so a
-    full match swaps the parent onto the quant fuser. A partial match is
+    full match swaps the parent onto the quant fuser. A MoE whose routed
+    experts all match becomes a ``QuantizedMoE``. A partial match is
     rejected.
 
     With ``quant_config.report_error``, each quantizer is built to print its
@@ -185,52 +258,59 @@ def insert_quantized_linears(
             fused.__class__ = cast(type[MLP], QuantizedMLP)
         elif type(fused) is QKVLinear:
             fused.__class__ = QuantizedQKVLinear
+        elif type(fused) is MoE:
+            _finish_quantized_moe(fused, quant_config)
     if verbose:
         print(module)
     logger.info(f"Quantizing {count} weight tensors.")
 
 
-def _checkpoint_weight_name(
-    path: str, source_of: Mapping[str, str], raw_keys: set[str]
-) -> str | None:
-    """Maps a module weight path back to the checkpoint tensor it came from.
-
-    A quantized weight is transparent in the module tree, so the quantizer's
-    path is the projection (``down_proj``) and the checkpoint key is
-    ``down_proj.weight``.
-    """
-    candidates = (
-        (path,) if path.endswith(".weight") else (f"{path}.weight", path)
-    )
-    for candidate in candidates:
-        source = source_of.get(candidate)
-        if source in raw_keys:
-            return source
-        if candidate in raw_keys:
-            return candidate
-    return None
+# Leaves each on-the-fly quantizer writes, in checkpoint order. The name is
+# the safetensors suffix: ``weight`` becomes ``{path}.weight``.
+_QUANTIZER_LEAVES: tuple[tuple[type[Any], tuple[str, ...]], ...] = (
+    (
+        NVFP4TensorQuantizer,
+        ("weight", "weight_scale", "weight_scale_2", "input_scale"),
+    ),
+    (MXFP8Quantizer, ("weight", "weight_scale")),
+    (MXFP4Quantizer, ("weight", "weight_scale")),
+)
 
 
-def _source_names(state_dict: Mapping[str, Any]) -> dict[str, str]:
-    """Maps an adapted state-dict key to the checkpoint key it was loaded as."""
-    names: dict[str, str] = {}
-    for key, value in state_dict.items():
-        source = getattr(value, "name", None)
-        names[key] = source if isinstance(source, str) and source else key
-    return names
-
-
-def _entries(
+def quantized_host_tensors(
     path: str, leaves: Mapping[str, Tensor]
 ) -> list[tuple[str, _SavedTensor]]:
-    """Packed weight and the three scale tensors, under ``path``."""
-    stem = path.removesuffix(".weight")
+    """The quantized weight and its scale tensors, under ``path``."""
     return [
-        (path, _host_tensor(leaves["weight"])),
-        (f"{path}_scale", _host_tensor(leaves["weight_scale"])),
-        (f"{path}_scale_2", _host_tensor(leaves["weight_scale_2"])),
-        (f"{stem}.input_scale", _host_tensor(leaves["input_scale"])),
+        (f"{path}.{name}", _host_tensor(tensor))
+        for name, tensor in leaves.items()
     ]
+
+
+def checkpoint_quantization_config(
+    fmt: str, ignored: Sequence[str]
+) -> dict[str, object]:
+    """The ``quantization_config`` block ``fmt``'s loader already reads.
+
+    MXFP8 is modelopt: encoding detection reads ``quantization.quant_algo``,
+    and the layer parser reads ``ignore`` from that same nested section.
+    MXFP4's parser keys only on ``quant_method`` and quantizes every MLP,
+    leaving attention in bf16.
+    """
+    if fmt == "nvfp4":
+        return nvfp4_quantization_config(FP4Format.NVFP4, ignored)
+    if fmt == "mxfp8":
+        patterns = list(ignored)
+        return {
+            "quant_method": "modelopt",
+            "quantization": {"quant_algo": "MXFP8", "ignore": patterns},
+        }
+    if fmt == "mxfp4":
+        return {"quant_method": "mxfp4"}
+    raise ValueError(
+        f"unknown quantization format {fmt!r}; this command can "
+        f"produce {', '.join(quant_formats())}"
+    )
 
 
 def _materialize_quantizers(
@@ -247,16 +327,12 @@ def _materialize_quantizers(
 
     def export_quants() -> dict[str, dict[str, Tensor]]:
         exported: dict[str, dict[str, Tensor]] = {}
-        for path, quantizer in tree.nodes(
-            declared, NVFP4TensorQuantizer
-        ).items():
-            quantized = quantizer.quant_tensor
-            exported[path] = {
-                "weight": quantized.weight,
-                "weight_scale": quantized.weight_scale,
-                "weight_scale_2": quantized.weight_scale_2,
-                "input_scale": quantized.input_scale,
-            }
+        for cls, names in _QUANTIZER_LEAVES:
+            for path, quantizer in tree.nodes(declared, cls).items():
+                quantized = quantizer.quant_tensor
+                exported[path] = {
+                    name: getattr(quantized, name) for name in names
+                }
         return exported
 
     # ``compile`` returns a function of input types. This graph takes none.
@@ -264,7 +340,9 @@ def _materialize_quantizers(
     return compiled()
 
 
-def export_quantized_checkpoint(model: Any, dest: Path) -> None:
+def export_quantized_checkpoint(
+    model: Any, dest: Path, quantization_format: str
+) -> None:
     """Writes a new sharded checkpoint from the quantizers on ``model``.
 
     Quantized tensors and the weights left beside them are written under
@@ -277,52 +355,38 @@ def export_quantized_checkpoint(model: Any, dest: Path) -> None:
             f"{type(module).__name__} is not a ModuleV3 module, so its "
             "quantizers cannot be exported"
         )
-    loaded = model._load_state_dict()
-    source_of = _source_names(loaded)
-    raw_keys = {name for name, _ in model.weights.items()}
-    state_dict = loaded
-    prepare = getattr(model, "_prepare_state_dict", None)
-    if prepare is not None:
-        state_dict = prepare(state_dict, model._create_model_config(state_dict))
+    state_dict = model.final_state_dict
     ready = _materialize_quantizers(module, state_dict)
+    if not ready:
+        logger.info("No quantizers inserted, aborting export.")
+        return
 
     saved: list[tuple[str, _SavedTensor]] = []
-    claimed: set[str] = set()
     for path, leaves in ready.items():
-        weight_name = _checkpoint_weight_name(path, source_of, raw_keys)
-        if weight_name is None:
-            raise ValueError(
-                f"cannot write {path}: no source checkpoint tensor "
-                "has that name"
-            )
-        if weight_name in claimed:
-            raise ValueError(
-                f"{path} and another quantized weight both come from "
-                f"{weight_name}"
-            )
-        claimed.add(weight_name)
-        saved.extend(_entries(weight_name, leaves))
-    for name, weight in model.weights.items():
-        if name in claimed:
-            continue
-        saved.append((name, _host_tensor(weight.data())))
+        checkpoint_path = state_dict[f"{path}.weight"].name.removesuffix(
+            ".weight"
+        )
+        saved.extend(quantized_host_tensors(checkpoint_path, leaves))
+
+    ignore = set()
+    for name, value in state_dict.items():
+        if name.removesuffix(".weight") not in ready:
+            checkpoint_name = state_dict[f"{name}"].name
+            saved.append((checkpoint_name, _host_tensor(value)))
+            if "layers" in checkpoint_name:
+                _, suffix = re.split(r"\.layers\.\d+\.", checkpoint_name)
+                suffix = suffix.split(".")[0]
+                prefix = checkpoint_name[: checkpoint_name.find(suffix)]
+                ignore.add(f"{prefix}{suffix}*")
 
     src = Path(model.pipeline_config.model.resolved_weight_paths()[0]).parent
     dest.mkdir(parents=True, exist_ok=True)
-    _write_shards(dest, saved)
-    if ready:
-        config_path = src / "config.json"
-        config = (
-            json.loads(config_path.read_text()) if config_path.exists() else {}
-        )
-        ignored = list(
-            config.get("quantization_config", {}).get("ignored_layers", [])
-        )
-        write_quantization_config(
-            src, dest, nvfp4_quantization_config(FP4Format.NVFP4, ignored)
-        )
-    elif (src / "config.json").is_file():
-        (dest / "config.json").write_text((src / "config.json").read_text())
+    write_shards(dest, saved)
+    write_quantization_config(
+        src,
+        dest,
+        checkpoint_quantization_config(quantization_format, list(ignore)),
+    )
     copy_auxiliary_files(src, dest)
     logger.info("Exported %d quantized weights to %s", len(ready), dest)
 
@@ -428,6 +492,12 @@ def _single_graph_quantizing_model(
             self.nn_module = nn_model
             return nn_model
 
+        @property
+        def final_state_dict(self) -> dict[str, Any]:
+            state_dict = self._load_state_dict()
+            model_config = self._create_model_config(state_dict)
+            return self._prepare_state_dict(state_dict, model_config)
+
         def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
             _enable_error_prints(session, error_report_dir)
             return super().load_graphs(session)
@@ -471,6 +541,11 @@ def _multi_graph_quantizing_model(
             )
             self.nn_module = language
             return spec
+
+        @property
+        def final_state_dict(self) -> dict[str, Any]:
+            _ = self._load_state_dict()
+            return self._language_weights_dict
 
         def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
             _enable_error_prints(session, error_report_dir)
@@ -619,4 +694,6 @@ def quantize_pipeline(
         logger.info(f"Wrote {error_report_dir / JSON_NAME}")
     if export_path is not None:
         assert isinstance(pipeline, TextGenerationPipelineInterface)
-        export_quantized_checkpoint(pipeline._pipeline_model, export_path)
+        export_quantized_checkpoint(
+            pipeline._pipeline_model, export_path, quantization_format
+        )

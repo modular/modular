@@ -63,6 +63,7 @@ class GptOssConfig(
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
+        "float16",
     }
 
     # GPT OSS specific parameters

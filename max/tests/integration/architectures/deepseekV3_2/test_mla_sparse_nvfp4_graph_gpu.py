@@ -652,8 +652,15 @@ def test_mla_sparse_native_capture_keys_follow_launches(
         base.max_cache_length.inplace_copy_from(
             Buffer.from_numpy(np.array([context + num_tokens], np.uint32))
         )
+        # Replay validates every staged element, so both follow the runtime
+        # path: the whole batch's count, then the decode view's (zero here).
         partitions.inplace_copy_from(
-            Buffer.from_numpy(np.array([key.num_partitions], np.int64))
+            Buffer.from_numpy(
+                np.array(
+                    [key.num_partitions, key.decode_num_partitions],
+                    dtype=np.int64,
+                )
+            )
         )
         base.max_cache_length.stream.synchronize()
         partitions.stream.synchronize()

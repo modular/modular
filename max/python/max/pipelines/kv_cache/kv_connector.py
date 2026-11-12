@@ -516,6 +516,15 @@ class KVConnector(Protocol):
         """
         return False
 
+    def routes_hint(self, hint: bytes) -> bool:
+        """Returns whether a lookup asked with ``hint`` is routed by it.
+
+        Labels the block manager's dropped-lookup counts, so they say which
+        drops a cache hint shaped. ``False`` by default, for a connector that
+        ignores hints.
+        """
+        return False
+
     def probe_is_lookup(self) -> bool:
         """Returns whether :meth:`probe` answers as :meth:`lookup` would.
 

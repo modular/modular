@@ -12,16 +12,83 @@
 # ===----------------------------------------------------------------------=== #
 """KV cache metrics and the containers that carry them."""
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from typing_extensions import Self
 
+_K = TypeVar("_K", bound=Hashable)
 _N = TypeVar("_N", int, float)
 
+ConnectorLookupDrop = Literal[
+    "poll_failed",
+    "timeout",
+    "release",
+    "hand_back",
+    "stale_reask",
+    "sync_alloc",
+    "shrink_reask",
+    "shrink_cap",
+    "shrink_at_load",
+    "covered",
+    "skip",
+    "nothing_to_load",
+    "no_room",
+    "load_refused",
+    "load_failed",
+    "exception",
+]
+"""Why the Jenga block manager dropped a connector lookup's answer.
 
-def _add_by_key(a: Mapping[str, _N], b: Mapping[str, _N]) -> dict[str, _N]:
+One value per place an answer goes back to the connector, or is discarded,
+without a load:
+
+- ``poll_failed``: polling the handle raised, so it was given up on.
+- ``timeout``: no answer within the lookup deadline.
+- ``release``: the request was released with the lookup still held.
+- ``hand_back``: the scheduler handed back a lookup past the hand back age,
+  answered or not.
+- ``stale_reask``: an answer was found past the hand back age before it was
+  loaded, and the lookup was asked again.
+- ``sync_alloc``: an alloc that cannot wait found the lookup still out and
+  asked in place instead, so the answer never came back.
+- ``shrink_reask``: the device hit shrank below where the lookup was asked,
+  so it was asked again from the shorter hit.
+- ``shrink_cap``: the same, past the request's re-asks. The rest is
+  computed, unless the connector answers in place and is asked about the gap
+  at once.
+- ``shrink_at_load``: the device hit came up short of where the lookup was
+  asked only when it was taken. The gap is then asked in place if the
+  connector answers in place, and computed otherwise.
+- ``covered``: the device hit grew over the run the answer offered, so the
+  device served it.
+- ``skip``: the request skips the connector after a failed load.
+- ``nothing_to_load``: the answer offered no block. Counted only for a
+  started lookup, since one asked in place that finds nothing leaves no
+  answer to drop.
+- ``no_room``: the pool cannot hold the run the answer serves.
+- ``load_refused``: the connector refused the load, typically evicted since.
+- ``load_failed``: the load's copy failed to post or on its first poll.
+- ``exception``: the load path raised. That includes a raise after a load
+  was posted, whose blocks may still land although the failed alloc rolls
+  the request back. Counted only for a started lookup, since a raise past a
+  lookup asked in place leaves no handle to count.
+"""
+
+ConnectorLookupAnswer = Literal["offered", "empty", "unseen"]
+"""What a dropped connector lookup's answer said.
+
+- ``offered``: it offered at least one block.
+- ``empty``: it answered with no block. A store read that failed, was shed
+  or found the store degraded answers this way too, until the connector
+  reports read failures apart from misses.
+- ``unseen``: it was dropped before an answer was seen, including one that
+  came back but was never polled, given up on, or unreadable.
+"""
+
+
+def _add_by_key(a: Mapping[_K, _N], b: Mapping[_K, _N]) -> dict[_K, _N]:
     """Sums two per-label counter maps, keeping labels either one carries."""
     total = dict(a)
     for key, value in b.items():
@@ -93,6 +160,43 @@ class KVCacheMetrics:
     Counted per leaf block. A pool starved by blocks pinned for in-flight
     transfers drops offloads before its hit rate falls.
     """
+
+    # Connector lookup answers the Jenga block manager dropped without a
+    # load. Per-window deltas, counted once per lookup rather than per leaf
+    # client, and in prompt blocks, the unit one block of every leaf shares.
+    connector_lookup_drops: dict[
+        tuple[ConnectorLookupDrop, ConnectorLookupAnswer, bool], int
+    ] = field(default_factory=dict)
+    """Dropped lookup answers, keyed by reason, by what the answer said, and
+    by whether the connector routed the lookup by a cache hint."""
+    connector_lookup_dropped_blocks: dict[
+        tuple[ConnectorLookupDrop, bool], int
+    ] = field(default_factory=dict)
+    """Blocks those drops cost, keyed by reason and by hint. For a drop at
+    the load (``no_room``, ``load_refused``, ``load_failed``) it is the run
+    past the device hit then, and ``covered`` costs none. Otherwise it is the
+    run the answer offered from where the device hit ended when it was
+    asked, which ``shrink_reask``, ``shrink_at_load``, ``hand_back`` and
+    ``stale_reask`` may get back by asking again."""
+    connector_lookup_shrink_depths: dict[int, int] = field(default_factory=dict)
+    """Answers dropped because the device hit shrank under them, by how many
+    blocks it shrank between the ask and the check."""
+    connector_lookup_shrink_cap_blocks: int = 0
+    """An estimate of the blocks requests computed because a shrink came
+    after their last re-ask: those the device hit lost plus the run the
+    dropped answer offered past them. Counted only for a connector whose
+    lookup is deferred, since one that answers in place asks about the gap
+    at once."""
+    connector_lookup_reasks_per_request: dict[int, int] = field(
+        default_factory=dict
+    )
+    """Released claims by how often their lookup was asked again after a
+    shrink, for claims that re-asked at least once."""
+    connector_lookup_hand_backs_per_request: dict[int, int] = field(
+        default_factory=dict
+    )
+    """Released claims by how many answers they handed back for age, for
+    claims that handed back at least one."""
     nixl_read_blocks: int = 0
     """Number of cache blocks read via NIXL (dKV GET)."""
     nixl_write_blocks: int = 0
@@ -507,6 +611,27 @@ class KVCacheMetrics:
             + other.connector_load_failures,
             connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
             + other.connector_offload_blocks_dropped,
+            connector_lookup_drops=_add_by_key(
+                self.connector_lookup_drops, other.connector_lookup_drops
+            ),
+            connector_lookup_dropped_blocks=_add_by_key(
+                self.connector_lookup_dropped_blocks,
+                other.connector_lookup_dropped_blocks,
+            ),
+            connector_lookup_shrink_depths=_add_by_key(
+                self.connector_lookup_shrink_depths,
+                other.connector_lookup_shrink_depths,
+            ),
+            connector_lookup_shrink_cap_blocks=self.connector_lookup_shrink_cap_blocks
+            + other.connector_lookup_shrink_cap_blocks,
+            connector_lookup_reasks_per_request=_add_by_key(
+                self.connector_lookup_reasks_per_request,
+                other.connector_lookup_reasks_per_request,
+            ),
+            connector_lookup_hand_backs_per_request=_add_by_key(
+                self.connector_lookup_hand_backs_per_request,
+                other.connector_lookup_hand_backs_per_request,
+            ),
             inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,
             nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
             nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,

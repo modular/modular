@@ -12,4 +12,5 @@
 # ===----------------------------------------------------------------------=== #
 """Provides TCP sockets."""
 
+from .listener import TCPListener
 from .socket import TCPSocket

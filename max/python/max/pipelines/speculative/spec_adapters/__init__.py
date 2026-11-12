@@ -70,6 +70,7 @@ __all__ = [
     "trailing_buffers",
     "trailing_input_tree",
     "trailing_input_types",
+    "verify_commits_long_rows",
     "verify_for",
 ]
 
@@ -89,10 +90,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "Gemma4UnifiedForConditionalGeneration_ModuleV3": (
         ".gemma4_modulev3.spec_adapters"
     ),
-    "Glm5NextForConditionalGeneration": ".glm5_next.spec_adapters",
-    "Glm5NextForConditionalGeneration_ModuleV3": (
-        ".glm5_next_modulev3.spec_adapters"
-    ),
+    "Glm5NextForConditionalGeneration_ModuleV3": ".glm5_next.spec_adapters",
     "GlmMoeDsaForCausalLM_ModuleV3": ".glm5_1_modulev3.spec_adapters",
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
@@ -108,6 +106,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
     "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
+    "NemotronHForCausalLM_ModuleV3": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_spec",
@@ -116,7 +115,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
 
 def _target_adapter(target_arch: str) -> TargetAdapter:
     # A ModuleV3 variant without an adapter of its own is its target's only
-    # variant, as Nemotron-H is, and takes the adapter named for the target.
+    # variant, and takes the adapter named for the target.
     if target_arch not in _TARGET_ADAPTERS:
         target_arch = target_arch.removesuffix("_ModuleV3")
     if target_arch not in _TARGET_ADAPTERS:
@@ -249,6 +248,16 @@ def prepares_every_batch(target_arch: str) -> bool:
     The inputs past the canonical tail count.
     """
     return _adapter(target_arch).prepares_every_batch
+
+
+def verify_commits_long_rows(target_arch: str, method: str) -> bool:
+    """Returns whether the target's verify commits a long row.
+
+    A long row is longer than one token and its drafts, and the commit must
+    happen in every recurrent leaf under ``method``. Mach's ``gen_mef``
+    writes the answer to the export's sidecar.
+    """
+    return _adapter(target_arch, method).verify_commits_long_rows
 
 
 def signal_buffer_index(target_arch: str) -> int | None:

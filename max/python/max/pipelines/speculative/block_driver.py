@@ -102,6 +102,10 @@ __all__ = [
 ]
 
 
+_MLA_DISPATCH_WIDTHS = (3, 6)
+"""An MLA dispatch record before and after its mixed-step decode view."""
+
+
 def block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
     """Rebuilds the MHA dispatch metadata at the draft block's query width.
 
@@ -147,12 +151,14 @@ def block_mla_dispatch_metadata(
 ) -> TensorValue:
     """Rebuilds the MLA dispatch metadata at the draft block's query width.
 
-    The 3-int device buffer is ``[batch_size, max_prompt_length,
-    num_partitions]``. Like the MHA one, the leaf's own metadata carries the
-    *verify* query width; the block rewrites it to its own width so no
-    consumer of the buffer sees the verify's. (On AMD the decode fold's query
-    bound comes from the collection's ``max_prompt_length`` input, which
-    :func:`block_kv_with_dispatch` also pins to the block width.)
+    The device buffer is ``[batch_size, max_prompt_length, num_partitions]``,
+    followed on a 6-int buffer by the mixed-step decode view's three, which a
+    draft block zeroes because it never splits. Like the MHA one, the
+    leaf's own metadata carries the *verify* query width; the block rewrites
+    it to its own width so no consumer of the buffer sees the verify's. (On
+    AMD the decode fold's query bound comes from the collection's
+    ``max_prompt_length`` input, which :func:`block_kv_with_dispatch` also
+    pins to the block width.)
     ``num_partitions`` is passed through as fetched rather than zeroed: AMD
     dense MLA sizes its split from the batch and cache length, not the query
     width, so the fetched count is the block's too. Elsewhere (SM100, AMD
@@ -167,23 +173,29 @@ def block_mla_dispatch_metadata(
         The rebuilt dispatch metadata buffer.
 
     Raises:
-        AssertionError: If ``meta`` is not an MLA leaf's 3-int buffer.
+        AssertionError: If ``meta`` is not an MLA leaf's 3-int or 6-int
+            buffer.
     """
     assert meta is not None
-    assert meta.shape[0] == 3, (
+    width = int(meta.shape[0])
+    assert width in _MLA_DISPATCH_WIDTHS, (
         "MLA dispatch metadata holds three device ints [batch_size, "
-        "max_prompt_length, num_partitions]; got a "
-        f"{meta.shape[0]!r}-wide buffer. An MHA leaf's four host ints are "
+        "max_prompt_length, num_partitions], or six with the decode view; got "
+        f"a {meta.shape[0]!r}-wide buffer. An MHA leaf's four host ints are "
         "rebuilt by block_dispatch_metadata."
     )
-    return ops.concat(
-        [
-            meta[0:1],
-            ops.constant(k, DType.int64, device=meta.device).reshape((1,)),
-            meta[2:3],
-        ],
-        axis=0,
-    )
+    parts = [
+        meta[0:1],
+        ops.constant(k, DType.int64, device=meta.device).reshape((1,)),
+        meta[2:3],
+    ]
+    if width > 3:
+        parts.append(
+            ops.constant(0, DType.int64, device=meta.device).broadcast_to(
+                [width - 3]
+            )
+        )
+    return ops.concat(parts, axis=0)
 
 
 def _block_kv_dispatch_metadata(
@@ -192,12 +204,12 @@ def _block_kv_dispatch_metadata(
     """Rebuilds the dispatch metadata whichever leaf packed ``meta``.
 
     The metadata's static width names its leaf: four ints are the MHA
-    kernel's host buffer, three the MLA kernel's device one. Each builder
+    kernel's host buffer, three or six the MLA kernel's device one. Each builder
     then refuses the other leaf's buffer, so a mis-routed cache fails at
     graph build instead of slicing past its metadata's end.
     """
     assert meta is not None
-    if meta.shape[0] == 3:
+    if int(meta.shape[0]) in _MLA_DISPATCH_WIDTHS:
         return block_mla_dispatch_metadata(meta, k)
     return block_dispatch_metadata(meta, k)
 
@@ -208,9 +220,9 @@ def block_kv_with_dispatch(
     """The block caches with the dispatch buffer rebuilt at width ``k``.
 
     The builder is picked per leaf: an MHA leaf packs four host ints, an MLA
-    leaf three on-device ones. The block width also becomes the caches'
-    ``max_prompt_length`` for both leaf kinds alike, since the kernel router
-    reads the query width off that input.
+    leaf three or six on-device ones. The block width also becomes the
+    caches' ``max_prompt_length`` for both leaf kinds alike, since the kernel
+    router reads the query width off that input.
     """
     return [
         replace(

@@ -193,6 +193,11 @@ def test_shared_pool_rows_do_not_collide() -> None:
             input_row_offsets=row_offsets,
         )
 
+        # These layers run the plain (non-folded) return path.
+        assert isinstance(out0_ref, Tensor)
+        assert isinstance(out1_ref, Tensor)
+        assert isinstance(out0_shared, Tensor)
+        assert isinstance(out1_shared, Tensor)
         out0_ref_np = out0_ref.to_numpy()
         out1_ref_np = out1_ref.to_numpy()
         out0_shared_np = out0_shared.to_numpy()

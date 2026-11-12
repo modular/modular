@@ -39,7 +39,7 @@ from .value_types import (
 
 VISION_CONFIG_FILE_NAME = "vision_config.json"
 
-# TODO(DISTINF-523): The resize rules are a closed set of three, mirrored in
+# TODO(DISTINF-523): The resize rules are a closed set, mirrored in
 # Mach's `multimodal::ResizeStrategy`; a model that sizes media by another rule
 # needs a new variant on both sides.
 
@@ -94,8 +94,22 @@ class VideoSmartResize:
     max_pixels: int
 
 
+@dataclass(frozen=True)
+class InklingPatchRows:
+    """Grows the long edge without shrinking and pads to whole patch rows.
+
+    Args:
+        max_upscale: The largest factor by which either side grows.
+        upscale_long_edge: The long edge up to which images grow.
+    """
+
+    rule: ClassVar[str] = "inkling_patch_rows"
+    max_upscale: int = 2
+    upscale_long_edge: int = 2048
+
+
 ResizeStrategy: TypeAlias = (
-    SmartResize | AspectRatioPreserving | VideoSmartResize
+    SmartResize | AspectRatioPreserving | VideoSmartResize | InklingPatchRows
 )
 
 
@@ -244,6 +258,8 @@ class VisionMetadata:
         max_image_bytes: int,
         max_video_bytes: int,
         prompt: PromptText,
+        max_images_per_request: int | None = None,
+        max_videos_per_request: int | None = None,
     ) -> Self:
         """Returns the metadata for a model's media layouts.
 
@@ -256,16 +272,26 @@ class VisionMetadata:
             max_video_bytes: The per-video encoded-byte cap, or ``0`` for
                 none.
             prompt: The prompt text around media.
+            max_images_per_request: The model's image count cap, or
+                ``None`` for none declared. A reader then applies its own
+                default: 16 items in Mach and its orchestrator. MAX Serve
+                reads the tokenizer's caps instead, and applies none when
+                the tokenizer declares none.
+            max_videos_per_request: The model's video count cap, or
+                ``None`` for none declared, with the same default.
         """
-        return cls(
-            {
-                "image": image.to_json(),
-                "video": None if video is None else video.to_json(),
-                "max_image_bytes": max_image_bytes,
-                "max_video_bytes": max_video_bytes,
-                "prompt": asdict(prompt),
-            }
-        )
+        config: dict[str, JsonValue] = {
+            "image": image.to_json(),
+            "video": None if video is None else video.to_json(),
+            "max_image_bytes": max_image_bytes,
+            "max_video_bytes": max_video_bytes,
+        }
+        if max_images_per_request is not None:
+            config["max_images_per_request"] = max_images_per_request
+        if max_videos_per_request is not None:
+            config["max_videos_per_request"] = max_videos_per_request
+        config["prompt"] = asdict(prompt)
+        return cls(config)
 
     def __serialize__(self) -> Mapping[str, ArtifactType]:
         """Returns the config as the ``vision_config.json`` file."""

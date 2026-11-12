@@ -15,6 +15,7 @@
 #define TARGET_LIB_CUDA_QUEUE_H
 
 #include "Error.h"
+#include "HAL/M_driver_flag.h"
 #include "Memory.h"
 
 #include <cuda.h>
@@ -57,6 +58,12 @@ struct M_driver_queue {
 
   M_driver_status_t launchHostFunc(void (*fn)(void *), void *user_data);
   M_driver_status_t waitValue64(uint64_t device_address, uint64_t value);
+
+  // The conditions cuStreamWaitValue64 supports natively.
+  static constexpr uint32_t kFlagConditions =
+      M_DRIVER_FLAG_CONDITION_GEQ | M_DRIVER_FLAG_CONDITION_EQ;
+  M_driver_status_t waitFlag(M_driver_flag_t flag, uint64_t value,
+                             M_driver_flag_condition_t condition);
 
   explicit M_driver_queue(M_driver_context &context, CUstream stream)
       : context(context), stream(stream) {}

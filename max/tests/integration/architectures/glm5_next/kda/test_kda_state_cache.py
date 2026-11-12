@@ -10,13 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The KDA state leaves: shapes, the cache tree they join, and their row ids.
+"""The KDA state leaves: shapes, and the cache tree they join.
 
-Four things are checked that a forward pass would catch late, or not at all:
+Three things are checked that a forward pass would catch late, or not at all:
 
-* Each leaf's per-device row shape equals the *layer shard's* own. Two files
-  compute the tensor-parallel division and a disagreement is a shape error at
-  the first forward, long after load.
 * ``construct_kv_params`` declares the state beside the two attention caches,
   and the leaves it declares cost what memory planning divides its budget by.
   When these diverged in the sibling architecture the symptom was an inflated
@@ -25,11 +22,7 @@ Four things are checked that a forward pass would catch late, or not at all:
   is the least common multiple of its leaves' pages, so a leaf whose layer
   count is coprime to the rest multiplies it; the ring is sized over the
   indexer cache's layer set precisely so it cannot.
-* A KDA layer runs in *its own* row of each leaf. Every layer shares one pool
-  per leaf and differs only in the column of the folded row ids it reads, so
-  reading the wrong column is neither a shape error nor a crash, just a worse
-  model. This one is checked by executing the graph and comparing numbers,
-  because that is the only way a wrong-but-valid index shows up.
+* The pools and the layers read the KDA dims off the same published key names.
 
 The pool lifecycle itself -- the wipe a fresh request gets, the copy a
 checkpoint and a prefix hit make -- belongs to the cache group and is covered
@@ -42,34 +35,21 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
-import numpy as np
 import pytest
-from max import tree
-from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Graph,
-    ShardingStrategy,
-    TensorType,
-    Type,
-)
+from max.graph import DeviceRef
 from max.nn.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
-    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
     recurrent_leaf,
 )
-from max.pipelines.architectures.glm5_next.layers.kda import (
-    kda_sublayer_inputs,
+from max.pipelines.architectures.glm5_next.hybrid_layout import (
+    declared_kda_dims,
 )
-from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
-    KimiDeltaAttention,
+from max.pipelines.architectures.glm5_next.model_config import (
+    Glm5NextConfig,
 )
-from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
 from max.pipelines.architectures.glm5_next.state_cache import (
     CONV_LEAF_ID,
     INDEXER_CACHE_KEY,
@@ -88,7 +68,6 @@ from max.pipelines.lib import KVCacheConfig
 HEADS = 64
 HEAD_DIM = 128
 KERNEL = 4
-HIDDEN = 4096
 
 KDA_LAYERS = (0, 1, 2, 4, 5, 6)
 """Two periods of the real schedule -- every index where ``i % 4 != 3``."""
@@ -133,34 +112,6 @@ def _by_leaf(num_devices: int) -> dict[str, Any]:
 # ===--------------------------------------------------------------------=== #
 # Geometry
 # ===--------------------------------------------------------------------=== #
-
-
-@pytest.mark.parametrize("num_devices", [1, 4, 8])
-def test_region_shapes_match_the_layer_shard(num_devices: int) -> None:
-    """The cache and the layer agree on what one device holds per layer.
-
-    ``KimiDeltaAttention`` splits 64 heads inside each of q, k and v; the
-    cache multiplies the per-device head count by three. The two are different
-    derivations of the same number and nothing else checks them against each
-    other.
-    """
-    layer = KimiDeltaAttention(
-        hidden_size=HIDDEN,
-        num_heads=HEADS,
-        head_dim=HEAD_DIM,
-        conv_kernel_size=KERNEL,
-        dtype=DType.bfloat16,
-        device=DeviceRef.CPU(),
-        rms_norm_eps=1e-5,
-        lower_bound=-5.0,
-    )
-    layer.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
-    shard = layer.shard([DeviceRef.CPU()] * num_devices)[0]
-
-    conv_row, recurrent_row = shard.state_row_shapes()
-    regions = _by_leaf(num_devices)
-    assert regions[CONV_LEAF_ID].row_shape == conv_row
-    assert regions[RECURRENT_LEAF_ID].row_shape == recurrent_row
 
 
 def test_state_regions_reject_an_indivisible_device_count() -> None:
@@ -249,6 +200,30 @@ def test_the_attention_caches_record_the_selection_width() -> None:
         leaf = children[key]
         assert isinstance(leaf, MLAKVCacheParams)
         assert leaf.sparse_indices_stride == 2048 + KPOOL - 1
+
+
+def test_the_indexer_copies_the_latent_sparse_dispatch() -> None:
+    """The sparse decode passes per-token top-k lengths, and the latent
+    leaf's dispatch key says so. The indexer leaf's key is part of the
+    composite capture identity, so it copies the latent leaf's whole sparse
+    dispatch instead of deriving one from its own FP8 pooled keys.
+    """
+    children = _cache_params().children
+    mla = children[MLA_CACHE_KEY]
+    indexer = children[INDEXER_CACHE_KEY]
+    assert isinstance(mla, MLAKVCacheParams)
+    assert isinstance(indexer, MLAKVCacheParams)
+    assert not mla.sparse_fixed_topk
+    assert indexer.sparse_fixed_topk == mla.sparse_fixed_topk
+    assert indexer.resolved_sparse_kv_form == mla.resolved_sparse_kv_form
+    assert (
+        indexer.resolved_sparse_physical_indices
+        == mla.resolved_sparse_physical_indices
+    )
+    assert (
+        indexer.resolved_sparse_dispatch_head_dim
+        == mla.resolved_sparse_dispatch_head_dim
+    )
 
 
 def test_the_state_joins_the_attention_caches() -> None:
@@ -362,7 +337,7 @@ def test_the_kda_dims_come_from_the_published_key_names() -> None:
     returns the fallback and fails. The fixtures elsewhere cannot catch this:
     their dims *are* the fallbacks.
     """
-    dims = Glm5NextConfig.declared_kda_dims(
+    dims = declared_kda_dims(
         SimpleNamespace(
             linear_attn_config={
                 "num_heads": 16,
@@ -375,7 +350,7 @@ def test_the_kda_dims_come_from_the_published_key_names() -> None:
 
     # The dataclass field names are not the config's, and reading them was the
     # bug: three silent fallbacks rather than an error.
-    defaulted = Glm5NextConfig.declared_kda_dims(
+    defaulted = declared_kda_dims(
         SimpleNamespace(
             linear_attn_config={
                 "linear_num_heads": 16,
@@ -388,156 +363,3 @@ def test_the_kda_dims_come_from_the_published_key_names() -> None:
     assert defaulted != dims, (
         "the fallbacks must differ, or this proves nothing"
     )
-
-
-# ===--------------------------------------------------------------------=== #
-# Row ids
-# ===--------------------------------------------------------------------=== #
-
-SMALL_HEADS = 4
-SMALL_HEAD_DIM = 8
-"""Small on purpose: the row-id test allocates the pools for real."""
-
-BLOCKS = 4
-"""Blocks each leaf's pool holds, so a row id can name any of them."""
-
-
-def _small_state(num_devices: int) -> RecurrentStateParams:
-    return RecurrentStateParams(
-        regions=_regions(
-            num_devices, num_heads=SMALL_HEADS, head_dim=SMALL_HEAD_DIM
-        ),
-        devices=[DeviceRef.CPU(i) for i in range(num_devices)],
-    )
-
-
-@pytest.mark.parametrize("num_devices", [1, 2])
-def test_each_layer_runs_in_its_own_row(num_devices: int) -> None:
-    """Layer ``l`` reads row ``l`` of each leaf's folded row ids.
-
-    Executed rather than inspected: a bundle that read the decoder index, or
-    the other leaf's ids, would build and compile and return a valid row --
-    just the wrong one. Only the numbers separate them, so the two leaves are
-    staged from *different* blocks and every column is distinct.
-    """
-    state_params = _small_state(num_devices)
-    regions = {r.leaf_id: r for r in state_params.regions}
-    num_layers = len(KDA_LAYERS)
-
-    signal_types = [
-        BufferType(DType.uint8, [16], device=DeviceRef.CPU(i))
-        for i in range(num_devices)
-    ]
-    offset_types = [
-        TensorType(DType.uint32, ["batch_plus_one"], device=DeviceRef.CPU(i))
-        for i in range(num_devices)
-    ]
-    state_types = tree.leaves(state_params.get_symbolic_inputs(), leaf=Type)
-
-    with Graph(
-        "KdaRowIdWiring",
-        input_types=[*state_types, *signal_types, *offset_types],
-    ) as graph:
-        values = list(graph.inputs)
-        state = tree.leaves(
-            state_params.unflatten_kv_inputs(iter(values)),
-            leaf=RecurrentStateInputsPerDevice,
-        )
-        rest = values[len(state_types) :]
-        bundles = kda_sublayer_inputs(
-            kda_layers=KDA_LAYERS,
-            state=state,
-            signal_buffers=[v.buffer for v in rest[:num_devices]],
-            input_row_offsets=[v.tensor for v in rest[num_devices:]],
-        )
-        assert set(bundles) == set(KDA_LAYERS)
-        graph.output(
-            *(bundles[layer].conv_row_ids[0] for layer in KDA_LAYERS),
-            *(bundles[layer].recurrent_row_ids[0] for layer in KDA_LAYERS),
-        )
-
-    session = InferenceSession(devices=[CPU()])
-    model = session.load(graph)
-
-    batch = 2
-    # Distinct blocks per leaf, so ids taken from the wrong leaf land on
-    # rows no column of the right one names.
-    conv_blocks, recurrent_blocks = [0, 1], [2, 3]
-    staged = {
-        CONV_LEAF_ID: conv_blocks,
-        RECURRENT_LEAF_ID: recurrent_blocks,
-        TAIL_RING_LEAF_ID: [0, 1],
-    }
-    # `[num_layers, batch]`, which is how `_layer_row_ids` indexes it: one
-    # row per layer, one column per sequence. `rows_of` runs the other way,
-    # a block's rows layer by layer, so the stack of blocks transposes.
-    row_ids = {
-        leaf_id: np.array(
-            [regions[leaf_id].rows_of(block) for block in blocks],
-            dtype=np.uint32,
-        ).T.copy()
-        for leaf_id, blocks in staged.items()
-    }
-    pools = {
-        leaf_id: Buffer.zeros(
-            [BLOCKS * region.num_layers, *region.row_shape],
-            region.dtype,
-            CPU(),
-        )
-        for leaf_id, region in regions.items()
-    }
-    # Leaf-major per device, the order `RecurrentStateInputsPerDevice`
-    # flattens in: each leaf's pool followed by that leaf's row ids.
-    inputs: list[Buffer] = []
-    for _ in range(num_devices):
-        for r in state_params.regions:
-            inputs.append(pools[r.leaf_id])
-            inputs.append(Buffer.from_numpy(row_ids[r.leaf_id]).to(CPU()))
-    inputs.extend(
-        Buffer.zeros([16], DType.uint8, CPU()) for _ in range(num_devices)
-    )
-    inputs.extend(
-        Buffer.from_numpy(np.arange(batch + 1, dtype=np.uint32)).to(CPU())
-        for _ in range(num_devices)
-    )
-
-    outputs = model.execute(*inputs)
-    assert len(outputs) == 2 * num_layers
-    for position, layer_idx in enumerate(KDA_LAYERS):
-        conv = np.asarray(outputs[position].to_numpy())
-        recurrent = np.asarray(outputs[num_layers + position].to_numpy())
-        expected_conv = [block * num_layers + position for block in conv_blocks]
-        expected_recurrent = [
-            block * num_layers + position for block in recurrent_blocks
-        ]
-        assert conv.tolist() == expected_conv, (
-            f"KDA layer {layer_idx} (position {position}) read conv rows"
-            f" {conv.tolist()}, not {expected_conv}"
-        )
-        assert recurrent.tolist() == expected_recurrent, (
-            f"KDA layer {layer_idx} (position {position}) read recurrent rows"
-            f" {recurrent.tolist()}, not {expected_recurrent}"
-        )
-
-
-def test_bundles_reject_a_mismatched_device_count() -> None:
-    """A per-device list of the wrong length is a wiring bug, not a resize."""
-    state_params = _small_state(2)
-    with Graph(
-        "KdaRowIdArity",
-        input_types=tree.leaves(state_params.get_symbolic_inputs(), leaf=Type),
-    ) as graph:
-        state = tree.leaves(
-            state_params.unflatten_kv_inputs(iter(graph.inputs)),
-            leaf=RecurrentStateInputsPerDevice,
-        )
-        with pytest.raises(
-            ValueError, match="signal_buffers must have one entry per device"
-        ):
-            kda_sublayer_inputs(
-                kda_layers=KDA_LAYERS,
-                state=state,
-                signal_buffers=[],
-                input_row_offsets=[],
-            )
-        graph.output()

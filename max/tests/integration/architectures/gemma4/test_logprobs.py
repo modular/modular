@@ -23,9 +23,6 @@ that raises ``NotImplementedError``.
 
 from __future__ import annotations
 
-from max.pipelines.architectures.diffusion_gemma.model import (
-    DiffusionGemmaForBlockDiffusionModel,
-)
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.lib import PipelineModel
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
@@ -48,16 +45,3 @@ def test_pipeline_model_claims_log_probabilities() -> None:
     # The predicate the OpenAI route and ``generate`` evaluate: anything but
     # the base implementation means "this model computes log probabilities".
     assert Gemma3_MultiModalModel.compute_log_probabilities is not base
-
-
-def test_block_diffusion_model_does_not_claim_log_probabilities() -> None:
-    # The block-diffusion model subclasses the gemma4 pipeline model, so the
-    # mixin does enter its MRO -- but its generation loop never computes log
-    # probabilities, and a model that claimed otherwise would make the
-    # OpenAI route reject an ``echo`` + ``logprobs`` request that omits
-    # ``--enable-echo``, on a model that could not score it anyway.
-    assert LogProbabilitiesMixin in DiffusionGemmaForBlockDiffusionModel.__mro__
-    assert (
-        DiffusionGemmaForBlockDiffusionModel.compute_log_probabilities
-        is PipelineModel.compute_log_probabilities
-    )

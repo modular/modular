@@ -14,11 +14,10 @@
 
 The image graph does for one image what the Qwen3-VL tokenizer and
 ``pack_uncached_images`` do: it drops the alpha channel, resizes the image
-with Pillow's antialiased bicubic filter, accumulating in float32 and
-rounding once to uint8, normalizes and patchifies it, and computes the
-tower's bilinear position tables, rotary positions, grid and segment
-bounds. The video graph does the same for one temporal patch of a clip,
-the frames the tower attends over together, as
+with Pillow's antialiased bicubic filter, bit for bit, normalizes and
+patchifies it, and computes the tower's bilinear position tables, rotary
+positions, grid and segment bounds. The video graph does the same for one
+temporal patch of a clip, the frames the tower attends over together, as
 ``video_processing.patchify_clip`` does. Each also returns the decoder's
 M-RoPE positions for the item's placeholder tokens, as ``get_rope_index``
 lays out a ``(1, h, w)`` grid.

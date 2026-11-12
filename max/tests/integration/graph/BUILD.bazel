@@ -30,6 +30,7 @@ _CPU_ONLY_TESTS = [
     "test_rowwise_fusion.py",
     "test_shard_and_stack.py",
     "test_symbolic_dimension_validation.py",
+    "test_view_fusion.py",
 ]
 
 # Tests with their own targets due to special configurations
@@ -226,6 +227,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -343,6 +345,7 @@ modular_py_test(
         "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -410,7 +413,7 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -531,6 +534,26 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Kept out of `cpu_tests` so it does not inherit "external-exclusive". Not
+# sharded: the file compiles all its graphs in one `load_all`, which each
+# shard would repeat.
+modular_py_test(
+    name = "test_view_fusion",
+    srcs = [
+        "conftest.py",
+        "test_view_fusion.py",
+    ],
+    deps = [
+        ":fusion_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
@@ -750,6 +773,7 @@ modular_py_test(
     # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
     # after capture; the fix this test covers is CUDA only.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -777,6 +801,7 @@ modular_py_test(
     },
     # The host wait is recorded into a captured graph on CUDA only.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -797,6 +822,7 @@ modular_py_test(
     name = "test_splitk_matmul_device_graph",
     srcs = ["test_splitk_matmul_device_graph.py"],
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -861,6 +887,7 @@ modular_py_test(
     srcs = ["test_matmul_swiglu_fusion_gpu.py"],
     gpu_constraints = ["//:b200_gpu"],
     mojo_deps = ["//max:builtin_kernels"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -947,6 +974,7 @@ modular_py_test(
     # generic Mojo via `foreach_fusion_tile` with no NVIDIA-specific branch).
     # Widen this once the path is validated on other targets.
     gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

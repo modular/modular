@@ -163,7 +163,7 @@ public:
 
   /// Extract dSummary strings from all mgp.generic.execute primitives in the
   /// model's execute function.
-  std::vector<std::string> getKernelSummaries() const;
+  MODULAR_CXX_EXPORT std::vector<std::string> getKernelSummaries() const;
 
   /// Return information about the input tensors.
   size_t getNumInputs() const { return inputSpecs.size(); }

@@ -137,3 +137,48 @@ kgen.generator @nested_extension_in_layout(%arg0: !kgen.struct<(struct<(index)>)
   %0 = kgen.call @call3(%elt) : (!kgen.struct<(index)>) -> index
   hlcf.return %0 : index
 }
+
+// -----
+
+// An extension is physically transparent, so the data layout queries on one
+// fold to its anchor's.
+
+#target5 = #kgen.target<triple="", arch="", features="", data_layout="i64:64:64", simd_bit_width=128> : !kgen.target
+
+kgen.generator @call5(%arg0: !kgen.struct<(index)>) -> index {
+  %c = kgen.param.constant : index = <1>
+  hlcf.return %c : index
+}
+
+kgen.struct.generator @make5 = struct_inst<"make5"(data: index)> {
+  kgen.conformance @"def() -> T" {
+    kgen.witness "T" : type = index
+    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = @call5
+  }
+}
+
+kgen.struct.generator @extension5<A: type> = struct_inst<"extension5"[A]<:type A>> {
+  kgen.conformance @"def() -> V" {
+    kgen.witness "V" : type = #kgen.get_witness<A, @"def() -> T", "T">
+    kgen.witness "__call__" : (!kgen.param<A>) -> index = #kgen.get_witness<A, @"def() -> T", "__call__">
+  }
+}
+
+#make5 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@make5>>, struct<(index)>> : !kgen.type
+#extension5 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@extension5<:type #make5>>>, struct<()>> : !kgen.type
+#extended5 = #kgen.extension<#make5, [#extension5]> : !kgen.type
+#chained5 = #kgen.extension<#extended5, [#extension5]> : !kgen.type
+#viewed5 = #kgen.extension<#make5, [#extension5]> : !lit.trait<@"def() -> V">
+
+// CHECK-LABEL: kgen.func @extension_datalayout
+kgen.generator @extension_datalayout() {
+  // CHECK-NEXT: <8>
+  kgen.param.constant: index = <get_sizeof(#extended5, #target5)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant: index = <get_alignof(#extended5, #target5)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant: index = <get_sizeof(#chained5, #target5)>
+  // CHECK-NEXT: <8>
+  kgen.param.constant: index = <get_sizeof(#kgen.upcast<#viewed5> : !kgen.type, #target5)>
+  hlcf.return
+}

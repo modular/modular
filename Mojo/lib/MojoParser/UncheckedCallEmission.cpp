@@ -70,13 +70,29 @@ public:
   }
 
   /// Emit IR for a single argument, according to its convention.
+  /// For a pack argument, `packEltType` replaces the element type at
+  /// `sequenceIndex` in the resolved list of the pack.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
                          ArgConvention convention, Type expectedType,
-                         size_t sequenceIndex = 0);
+                         size_t sequenceIndex = 0, TypedAttr packEltType = {});
 
   /// Emit IR for forwarding a whole variadic pack as a single argument.
   AnyValue emitWholePackForward(ASTExprAnd<AnyValue> operand,
                                 Type expectedType);
+
+  /// Emit a pack argument that has unpacked packs in its operands. The result
+  /// is the concatenation of each run of plain operands and each unpacked
+  /// pack.
+  LogicalResult
+  emitConcatenatedPack(size_t argIdx,
+                       MutableArrayRef<OperandValue> remainingOperands,
+                       ArgConvention convention, Type expectedType,
+                       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
+
+  /// Emit the `!lit.ref.pack` of an unpacked VariadicPack operand, rebound to
+  /// the element list `segmentList` and the origin `origin`.
+  Value emitUnpackedPackSegment(OperandValue &operand, TypedAttr segmentList,
+                                TypedAttr origin);
 
   /// Emit all arguments and return their values in a vector.
   /// This function iterates by expected arguments since we're building the
@@ -269,7 +285,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
 
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx, ArgConvention convention,
-                                    Type expectedType, size_t sequenceIndex) {
+                                    Type expectedType, size_t sequenceIndex,
+                                    TypedAttr packEltType) {
   // Convert to the element type of a variadic list or pack.
   if (calleeSig.isPosVarArg(argIdx)) {
     ASTType listType = RefType::stripRefConvention(expectedType, convention);
@@ -282,8 +299,10 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.  The calleeSig has the
     // pack type resolved to a concrete list of types it is expecting.
-    expectedType =
-        ASTType(refPackType.getVariadicIfResolved().getValues()[sequenceIndex]);
+    if (!packEltType)
+      packEltType =
+          refPackType.getVariadicIfResolved().getValues()[sequenceIndex];
+    expectedType = ASTType(packEltType);
     // Get the !lit.ref with the origin and other paraphernalia.
     expectedType = refPackType.getElementRefTypeFor(expectedType);
     convention = calleeSig.getVariadicConvention(argIdx);
@@ -359,6 +378,165 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("unknown argument convention");
 }
 
+Value CallEmitter::emitUnpackedPackSegment(OperandValue &operand,
+                                           TypedAttr segmentList,
+                                           TypedAttr origin) {
+  // Read the `!lit.ref.pack` from the VariadicPack. This reads the value and
+  // does not forward a reference to it. Thus, a temporary can be unpacked.
+  Location mlirLoc = callExpr->getLocation(emitter);
+  MBValue packRef = emitter.emitMBValue(operand, EC_CallArgValue);
+  if (!packRef)
+    return {};
+  Value base = emitter.emitRebindOpIfNeeded(
+      packRef,
+      cast<RefType>(packRef.getType())
+          .getWithElement(SugarAttr::strip(packRef.getRValueType())),
+      operand.expr->getLoc());
+  ASTDecl *packDecl = ASTType(packRef.getRValueType()).getDecl(emitter.shared);
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      "_value", operand.expr->getLoc(), *packDecl,
+      /*searchParentScopes=*/false);
+  auto *fieldDecl =
+      lookup.isSuccess() && lookup.getIfSuccess().size() == 1
+          ? dyn_cast_or_null<StructFieldASTDecl>(lookup.getIfSuccess()[0])
+          : nullptr;
+  assert(fieldDecl && "VariadicPack stores its !lit.ref.pack in _value");
+  auto fieldRefType = RefStructGEROp::getFieldType(
+      cast<RefType>(base.getType()), fieldDecl->getOp(),
+      &emitter.shared.getEvaluationContext());
+  Value fieldRef =
+      RefStructGEROp::create(*emitter.builder, mlirLoc, fieldRefType,
+                             fieldDecl->getOp().getNameAttr(), base);
+  Value loaded = RefLoadOp::create(*emitter.builder, mlirLoc, fieldRef);
+
+  // Rebind to the common origin, as for the elements of a plain run. The list
+  // can also be different, because ParamInf can upcast it to the trait of the
+  // callee.
+  auto loadedType = cast<RefPackType>(loaded.getType());
+  return emitter.emitRebindOpIfNeeded(
+      loaded,
+      RefPackType::get(segmentList, origin, loadedType.getAddressSpace()),
+      operand.expr->getLoc());
+}
+
+LogicalResult CallEmitter::emitConcatenatedPack(
+    size_t argIdx, MutableArrayRef<OperandValue> remainingOperands,
+    ArgConvention convention, Type expectedType,
+    SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
+  SMLoc loc = callExpr->getLoc();
+  if (!emitter.builder) {
+    emitter.emitError(loc)
+        << "concatenating variadic packs is not supported in a parameter "
+           "expression";
+    return failure();
+  }
+  Location mlirLoc = callExpr->getLocation(emitter);
+
+  ASTType packType = RefType::stripRefConvention(expectedType, convention);
+  RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
+  ArgConvention eltConvention = calleeSig.getVariadicConvention(argIdx);
+  TypedAttr eltOrigin = refPackType.getOrigin();
+
+  // Split the operands into segments. Each run of plain operands is one
+  // segment, and each unpacked pack is its own segment.
+  struct Segment {
+    size_t begin, end;
+    bool isUnpacked;
+  };
+  SmallVector<Segment> segments;
+  for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
+    bool isUnpacked = operand.unpackStyle == ArgUnpackStyle::kStar;
+    if (isUnpacked || segments.empty() || segments.back().isUnpacked)
+      segments.push_back({idx, idx + 1, isUnpacked});
+    else
+      segments.back().end = idx + 1;
+  }
+
+  // Get the element list of each segment from the bound pack type. The
+  // type was bound to a `#kgen.param_list.concat` of the segment lists.
+  auto getUnpackedList = [&](const OperandValue &operand) {
+    return operand.ir.getRValueTypeIfResolvable()
+        .getVariadicPackInfo(emitter.shared)
+        .getVariadic();
+  };
+  SmallVector<TypedAttr> segmentLists;
+  TypedAttr variadic = refPackType.getVariadic();
+  if (auto concat = sugarDynCast<ParamListConcatAttr>(variadic)) {
+    if (auto lists = sugarDynCast<ParamListAttr>(concat.getParamLists()))
+      llvm::append_range(segmentLists, lists.getValues());
+  } else if (auto flat = sugarDynCast<ParamListAttr>(variadic)) {
+    ArrayRef<TypedAttr> remaining = flat.getValues();
+    for (const Segment &segment : segments) {
+      size_t length = segment.end - segment.begin;
+      if (segment.isUnpacked) {
+        auto list = sugarDynCast<ParamListAttr>(
+            getUnpackedList(remainingOperands[segment.begin]));
+        if (!list)
+          break;
+        length = list.getValues().size();
+      }
+      if (length > remaining.size())
+        break;
+      segmentLists.push_back(
+          ParamListAttr::get(remaining.take_front(length), flat.getType()));
+      remaining = remaining.drop_front(length);
+    }
+  }
+  if (segmentLists.size() != segments.size()) {
+    emitter.emitError(loc) << "cannot determine the element types of the "
+                              "concatenated variadic pack "
+                           << packType;
+    return failure();
+  }
+
+  SmallVector<Value> packs;
+  for (auto [segment, segmentList] : llvm::zip(segments, segmentLists)) {
+    if (segment.isUnpacked) {
+      Value pack = emitUnpackedPackSegment(remainingOperands[segment.begin],
+                                           segmentList, eltOrigin);
+      if (!pack)
+        return failure();
+      packs.push_back(pack);
+      continue;
+    }
+
+    auto runList = sugarCast<ParamListAttr>(segmentList);
+    SmallVector<Value> elements;
+    for (size_t idx = segment.begin; idx != segment.end; ++idx) {
+      OperandValue &operand = remainingOperands[idx];
+      AnyValue emitted = emitOneArgVal(
+          operand, argIdx, convention, expectedType,
+          /*sequenceIndex=*/0, runList.getValues()[idx - segment.begin]);
+      if (!emitted)
+        return failure();
+      operand.ir = emitted;
+      Value element = emitPreemittedArgumentAsDynamicValue(
+          operand, /*isDefaultArgVal=*/false, eltConvention, expectedType,
+          ArrayRef<Value>());
+      if (!element)
+        return failure();
+      auto elementType = cast<RefType>(element.getType());
+      if (elementType.getOrigin() != eltOrigin) {
+        element = emitter.emitRebindOpIfNeeded(
+            element, elementType.getWithOrigin(eltOrigin), loc);
+      }
+      elements.push_back(element);
+    }
+    auto runPackType =
+        RefPackType::get(runList, eltOrigin, refPackType.getAddressSpace());
+    packs.push_back(RefPackCreateOp::create(*emitter.builder, mlirLoc,
+                                            runPackType, elements));
+  }
+
+  CValue argVal = SRValue(
+      RefPackConcatOp::create(*emitter.builder, mlirLoc, refPackType, packs));
+  argVal = emitVariadicCtor(packType, argVal, callExpr, emitter);
+  if (!argVal)
+    return failure();
+  argumentValues.push_back({argVal, remainingOperands[0].expr});
+  return success();
+}
+
 /// Emit the given (remaining) operands as a variadic or pack sequence,
 /// appending to the given argument value vector.
 LogicalResult CallEmitter::emitRemainingPosOperands(
@@ -369,10 +547,19 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
          "Must be a variadic we're emitting for");
   assert(!remainingOperands.empty() && "not called for empty lists");
 
+  // We've got at least one splatted variadic pack mixed with another argument;
+  // concatenate them.
+  if (remainingOperands.size() > 1 &&
+      llvm::any_of(remainingOperands, [](const OperandValue &operand) {
+        return operand.unpackStyle == ArgUnpackStyle::kStar;
+      })) {
+    assert(calleeSig.isPack(argIdx) &&
+           "only variadic packs accept an unpack among other operands");
+    return emitConcatenatedPack(argIdx, remainingOperands, convention,
+                                expectedType, argumentValues);
+  }
+
   if (remainingOperands.front().unpackStyle == ArgUnpackStyle::kStar) {
-    assert(remainingOperands.size() == 1 &&
-           "a positional operand after a '*' unpack should have been rejected "
-           "before emission");
     auto &operand = remainingOperands.front();
 
     // Splatting a variadic list is straight-forward, just pass the splat
@@ -1557,10 +1744,13 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     // Ignore those so we can see the actual incoming value's origin.
     argVal = RefImmutOp::stripRebinds(argVal);
 
-    // Return true if this is the origin for the argument itself.
+    // Return true if this is the origin of the argument itself. An unpacked
+    // `!lit.ref.pack` segment is a register value, not a reference. The
+    // access to its origin has the mutability of the pack.
     auto isArgOrigin = [&](TypedAttr origin) -> bool {
-      return hasAddress(convention) &&
-             isEqualCanon(cast<RefType>(argVal.getType()).getOrigin(), origin);
+      auto refType = dyn_cast<RefType>(argVal.getType());
+      return refType && hasAddress(convention) &&
+             isEqualCanon(refType.getOrigin(), origin);
     };
 
     // Find all the of the origins that are buried in the specified type.
@@ -1573,6 +1763,12 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       if (isArgOrigin(origin) && hasAddress(convention) &&
           convention != ArgConvention::Mut &&
           cast<RefType>(signature.getArgument(argIdx)).isMutableKnown(false))
+        forceToImmutOrigin = true;
+
+      // The callee mutates an unpacked pack segment only through a `mut`
+      // pack. This is also true when the pack of the caller is mutable.
+      if (isa<RefPackType>(argVal.getType()) &&
+          convention != ArgConvention::Mut)
         forceToImmutOrigin = true;
 
       // Callees marked `@__unsafe_nested_origins_read_only` promise
@@ -1686,6 +1882,15 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
   if (convention == ArgConvention::ByRefResult) {
     diag << "introduce a temporary to avoid mutating the call result while "
             "accessing it through an argument";
+    return;
+  }
+
+  // The value is an unpacked pack segment in a concatenated pack.
+  if (isa<RefPackType>(val.getType())) {
+    diag << "'" << ASTType::getOriginAsString(origin, &shared)
+         << "' value is passed through aliasing '" << getUserSyntax(convention)
+         << "' argument " << calleeType.getArgName(argIdx) << " by a '*' unpack"
+         << argumentValues[argIdx].expr->getRange();
     return;
   }
 

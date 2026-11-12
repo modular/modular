@@ -220,7 +220,9 @@ def tile_count[m: Int]() -> Int:
     comptime match m:
         case 16:
             hits += 1
-    # no case _: an unmatched subject skips the match
+        case _:
+            pass
+    # The catch-all preserves the unmatched case's zero count.
     return hits
 
 

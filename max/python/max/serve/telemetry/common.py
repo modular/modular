@@ -171,6 +171,9 @@ HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
     *log_spaced_buckets(20.0, 512.0, 1.05)[2:],  # 5% steps from 21 - 512
 )
 
+# Per-request retries a cap of a few bounds, such as connector lookup re-asks.
+HISTOGRAM_RETRY_BUCKETS: tuple[float, ...] = (0.0, 1.0, 2.0, 3.0, 4.0)
+
 # Mean speculative-decode acceptance length per batch. Because it is an average
 # it takes fractional values, so use fine 0.25-wide buckets from 0 to 16 tokens
 # (boundaries 0.25, 0.50, ..., 16.0).
@@ -274,6 +277,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.requests_awaiting_admission": HISTOGRAM_COUNT_BUCKETS,
     "max.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
     "max.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
+    "max.cache.connector_lookup_shrink_depth": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
     "max.batch.size": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Real tool inventories sit in the low tens; 512 clears all of them.
@@ -287,6 +291,10 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Exact through 20 passes, where a cordon that costs a pass or two lives.
     "max.cache.connector_cordon_passes": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    "max.cache.connector_lookup_reasks_per_request": HISTOGRAM_RETRY_BUCKETS,
+    "max.cache.connector_lookup_hand_backs_per_request": (
+        HISTOGRAM_RETRY_BUCKETS
+    ),
     # Throughput (tokens/s)
     "max.batch.prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "max.batch.generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,

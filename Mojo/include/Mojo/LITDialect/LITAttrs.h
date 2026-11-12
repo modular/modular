@@ -21,6 +21,7 @@
 #include "llvm/Support/Regex.h"
 
 namespace M::KGEN {
+class GeneratorType;
 class NoneType;
 namespace LIT {
 class ModuleType;
@@ -71,6 +72,57 @@ static inline void processOriginUnionElts(TypedAttr origin, T &&fn) {
 
   fn(origin);
 }
+
+//===----------------------------------------------------------------------===//
+// StructTypeGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a struct type: a struct referenced
+/// without all of its parameters, like `List` for `List[T]`.
+class StructTypeGenerator {
+public:
+  StructTypeGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a struct
+  /// type.
+  /*implicit*/ StructTypeGenerator(TypedAttr attr);
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a struct type.
+  static StructTypeGenerator dynCast(Attribute attr);
+  /// Wraps the parameter of `type` if `type` is a `ParamType` over a
+  /// `GeneratorAttr` wrapping a struct type.
+  static StructTypeGenerator dynCast(Type type);
+
+  /// Like `dynCast`, but asserts that the input is a struct type generator.
+  static StructTypeGenerator cast(Attribute attr);
+  static StructTypeGenerator cast(Type type);
+
+  /*implicit*/ operator Attribute() const { return storage; }
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  /*implicit*/ operator GeneratorAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  GeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  PogListAttr getMetadata() const;
+
+  /// Returns the struct type expression. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  TypedAttr getBody() const;
+  StructType getStructType() const;
+
+  /// Returns the body as seen from the scope enclosing the generator, with
+  /// each generator input left unbound.
+  TypedAttr getBodyWithUnboundInputs() const;
+
+  /// Binds `paramValues` to the generator inputs as a `BindParamsAttr` and
+  /// returns the type it forms. The type folds to the struct type when every
+  /// input is bound.
+  Type bindAll(ArrayRef<TypedAttr> paramValues,
+               ParameterEvaluationContext *evalCtx = nullptr) const;
+
+private:
+  GeneratorAttr storage;
+};
 
 } // namespace M::KGEN::LIT
 

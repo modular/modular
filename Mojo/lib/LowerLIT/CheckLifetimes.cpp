@@ -360,6 +360,21 @@ struct TypeDeclInfo {
     return &evaluationContext;
   }
 
+  /// Create a ParameterEvaluator configured with this pass's evaluation
+  /// context. Always construct evaluators through these helpers.
+  ParameterEvaluator getParameterEvaluator() const {
+    ParameterEvaluator evaluator;
+    evaluator.setEvaluationContext(getEvaluationContext());
+    return evaluator;
+  }
+  ParameterEvaluator
+  getParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
+                        ArrayRef<TypedAttr> paramValues) const {
+    ParameterEvaluator evaluator(paramDecls, paramValues);
+    evaluator.setEvaluationContext(getEvaluationContext());
+    return evaluator;
+  }
+
   /// Shared, immutable module-level state (declaration maps + anonymous-origin
   /// counter). Not owned here.
   const WholeProgramState *shared;
@@ -550,7 +565,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
       // type.
       auto selfParam = UpcastAttr::get(impDestroyTrait.getParams()[0].getType(),
                                        generic.getParam());
-      ParameterEvaluator evaluator(impDestroyTrait.getParams(), {selfParam});
+      ParameterEvaluator evaluator =
+          getParameterEvaluator(impDestroyTrait.getParams(), {selfParam});
       auto specSig = evaluator.getReboundType(delFn.getFuncTypeGenerator());
 
       // Okay, build the GetWitnessAttr.
@@ -578,9 +594,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
         return TriBool::yes(); // Unconditional conformance.
 
       auto actualStructType = sugarCast<LIT::StructType>(structType);
-      ParameterEvaluator evaluator(info.decl.getParams(),
-                                   actualStructType.getParamValues());
-      evaluator.setEvaluationContext(getEvaluationContext());
+      ParameterEvaluator evaluator = getParameterEvaluator(
+          info.decl.getParams(), actualStructType.getParamValues());
       TypedAttr conformanceCondition =
           evaluator.getReboundAttribute(constraints[i].getProposition());
       conformanceCondition = getCanonicalAttr(conformanceCondition);
@@ -649,9 +664,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     // the __del__is_trivial witness to determine this.
     auto actualStructType = sugarCast<LIT::StructType>(type);
 
-    ParameterEvaluator evaluator(info.decl.getParams(),
-                                 actualStructType.getParamValues());
-    evaluator.setEvaluationContext(getEvaluationContext());
+    ParameterEvaluator evaluator = getParameterEvaluator(
+        info.decl.getParams(), actualStructType.getParamValues());
     isTrivialAttr = evaluator.getReboundAttribute(isTrivialAttr);
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
@@ -736,10 +750,8 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
 
   // Initialize a parameter evaluator. We need to compute the resolved field
   // types to recursively compute the number of fields.
-  ParameterEvaluator evaluator;
-  for (auto [decl, value] :
-       llvm::zip(decl.getInputParams(), structType.getParamValues()))
-    evaluator.setDeclBinding(decl, value);
+  ParameterEvaluator evaluator =
+      getParameterEvaluator(decl.getInputParams(), structType.getParamValues());
 
   size_t totalFields = 0;
   for (auto field : decl.getFieldDecls()) {
@@ -783,7 +795,8 @@ TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
                                  unsigned bitIndex) const {
   LIT::StructDeclOp decl = getStructInfoForType(declRef).decl;
 
-  ParameterEvaluator evaluator(decl.getInputParams(), declRef.getParamValues());
+  ParameterEvaluator evaluator =
+      getParameterEvaluator(decl.getInputParams(), declRef.getParamValues());
   // Scan to find the field that contains this.
   unsigned startFieldIdx = 0;
   for (auto field : decl.getFieldDecls()) {
@@ -3611,10 +3624,9 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
       valueSet.getTypeDeclInfo().getStructInfoForType(valueType).decl;
 
   // Initialize an evaluator so that we can resolve the field types.
-  ParameterEvaluator evaluator;
-  for (auto [decl, value] :
-       llvm::zip(structDecl.getParams(), valueType.getParamValues()))
-    evaluator.setDeclBinding(decl, value);
+  ParameterEvaluator evaluator =
+      valueSet.getTypeDeclInfo().getParameterEvaluator(
+          structDecl.getParams(), valueType.getParamValues());
 
   assert(valueRef.isIndirect && "register values aren't field sensitive");
 

@@ -669,6 +669,8 @@ __extension SM100MLA:
                 )
             case .Empty:
                 warpgroup_reg_dealloc[num_reg_empty]()
+            case _:
+                pass
 
     @staticmethod
     @inline(.always)

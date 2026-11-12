@@ -10,62 +10,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The fused GLM-5.3-Flash MTP graph's signature and its state ops.
+"""The fused ModuleV3 GLM-5.3-Flash MTP graph's state ops.
 
-The graph is built through ``build_spec_graph``, the code a served pairing
-runs, over a tiny random-shape config. The state rides in the cache tree, so
-the verify ring adds one pool and one row table per device to the cache group
-and nothing past the canonical tail. The graph is staged, not compiled, so it
-needs none of the new kernels. The base graph is staged beside it to pin that
-it runs none of the speculative state ops.
-
-Staging constructs ``Allreduce``, which instantiates an ``Accelerator``.
+The fused module is the one a served pairing compiles, built over a tiny
+random-shape config and traced. Its verify records every KDA layer into the
+verify ring, leaves every conv window and tail seed to the rollback, and only
+a draft-free window may take ``kda_chunk``. Tracing constructs the
+accelerator the mesh names.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import replace
+from functools import partial
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
 
 import pytest
-from max import tree
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph
-from max.nn.kv_cache import (
-    KVCacheInputsPerDevice,
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-    RecurrentStateInputsPerDevice,
-    RecurrentStateParams,
-)
-from max.nn.legacy.layer import Module
-from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.graph import DeviceRef
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.outputs import ReturnHiddenStates
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
+from max.pipelines.architectures.glm5_next import hybrid_layout
 from max.pipelines.architectures.glm5_next.glm5_next import Glm5Next
-from max.pipelines.architectures.glm5_next.layers import kimi_delta_attention
-from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
+from max.pipelines.architectures.glm5_next.layers import kda
+from max.pipelines.architectures.glm5_next.model_config import (
+    Glm5NextConfig,
+)
 from max.pipelines.architectures.glm5_next.mtp import Glm5NextMTP
 from max.pipelines.architectures.glm5_next.quantization import (
     Glm5NextQuantScheme,
 )
-from max.pipelines.architectures.glm5_next.state_cache import (
-    INDEXER_CACHE_KEY,
-    MLA_CACHE_KEY,
-    STATE_CACHE_KEY,
-)
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
-    SpecGraph,
+    _driver_call,
+    _graph_name,
+    _Pairing,
+    _SpecDecodeModule,
     _with_num_draft_tokens,
-    build_spec_graph,
 )
-from max.pipelines.speculative import SpeculativeConfig, spec_adapters
+from max.pipelines.speculative import SpeculativeConfig
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 TARGET_ARCH = "Glm5NextForConditionalGeneration"
 NUM_DRAFTS = 3
@@ -81,6 +72,7 @@ HIDDEN = 256
 HEADS = 4
 KDA_HEADS = 2
 HEAD_DIM = 128
+VOCAB = 512
 
 
 def _speculative() -> SpeculativeConfig:
@@ -89,11 +81,11 @@ def _speculative() -> SpeculativeConfig:
     )
 
 
-def _kv_params(*, speculative: bool, num_devices: int) -> MultiKVCacheParams:
+def _kv_params() -> MultiKVCacheParams:
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
-    pipeline_config.speculative = _speculative() if speculative else None
-    params = Glm5NextConfig.construct_kv_params(
+    pipeline_config.speculative = _speculative()
+    params = hybrid_layout.construct_kv_params(
         huggingface_config=SimpleNamespace(
             num_hidden_layers=len(LAYER_TYPES),
             num_attention_heads=HEADS,
@@ -111,35 +103,24 @@ def _kv_params(*, speculative: bool, num_devices: int) -> MultiKVCacheParams:
             },
         ),
         pipeline_config=pipeline_config,
-        devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+        devices=[DeviceRef.GPU()],
         kv_cache_config=KVCacheConfig(state_pool_dtype="float32"),
         cache_dtype=DType.bfloat16,
     )
-    assert isinstance(params, MultiKVCacheParams)
-    return params
+    stamped = _with_num_draft_tokens(params, NUM_DRAFTS)
+    assert isinstance(stamped, MultiKVCacheParams)
+    return stamped
 
 
-def _without_ring(params: MultiKVCacheParams) -> MultiKVCacheParams:
-    """Returns ``params`` with the state child's last leaf, the ring, cut."""
-    state = params.children[STATE_CACHE_KEY]
-    assert isinstance(state, RecurrentStateParams)
-    return MultiKVCacheParams.from_params(
-        {
-            **params.children,
-            STATE_CACHE_KEY: replace(state, regions=state.regions[:-1]),
-        }
-    )
-
-
-def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
-    """A GLM-5.3-Flash config small enough to stage the whole graph."""
+def _config(kv_params: MultiKVCacheParams, mesh: DeviceMesh) -> Glm5NextConfig:
+    """A GLM-5.3-Flash config small enough to trace the whole graph."""
     num_layers = len(LAYER_TYPES)
     all_layers = frozenset(range(num_layers + 1))
-    sparse_layers = {
+    sparse = {
         i for i, kind in enumerate(LAYER_TYPES) if kind != "linear_attention"
     }
     # The MTP layer at ``num_layers`` is sparse MLA too.
-    attn_layers = frozenset({*sparse_layers, num_layers})
+    attn_layers = frozenset({*sparse, num_layers})
     quant = QuantConfig.blockscaled_fp8(
         mlp_quantized_layers=all_layers,
         attn_quantized_layers=attn_layers,
@@ -149,10 +130,9 @@ def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
         dtype=DType.float8_e4m3fn,
         kv_params=kv_params,
         devices=list(kv_params.devices),
-        use_subgraphs=False,
         max_seq_len=256,
         max_position_embeddings=256,
-        vocab_size=512,
+        vocab_size=VOCAB,
         hidden_size=HIDDEN,
         intermediate_size=256,
         moe_intermediate_size=128,
@@ -173,6 +153,7 @@ def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
         num_experts_per_tok=2,
         first_k_dense_replace=1,
         correction_bias_dtype=DType.float32,
+        graph_mode="decode",
         index_head_dim=128,
         # The checkpoint's count; gfx950's pooled scorer takes multiples of 32.
         index_n_heads=32,
@@ -183,7 +164,6 @@ def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
         linear_head_dim=HEAD_DIM,
         linear_conv_kernel_dim=4,
         mla_latent_pad_to=576,
-        kv_b_proj_dtype=DType.bfloat16,
         declared_dtype=DType.bfloat16,
         quant_config=quant,
         quant_scheme=Glm5NextQuantScheme(
@@ -192,33 +172,13 @@ def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
             attn_layers=attn_layers,
             compute_dtype=DType.bfloat16,
         ),
+        mesh=mesh,
     )
 
 
-def _name_weights(module: Module) -> None:
-    """Gives every weight its full name, which a load would otherwise do.
-
-    Without it the second sibling weight staged raises ``Weight 'weight'
-    already exists``.
-    """
-    for name, weight in module.raw_state_dict().items():
-        weight.name = name
-
-
-def _zeros(module: Module) -> dict[str, Buffer]:
-    return {
-        name: Buffer.zeros(shape=w.shape.static_dims, dtype=w.dtype)
-        for name, w in module.raw_state_dict().items()
-    }
-
-
-def _symbol_count(graph: Graph, symbol: str) -> int:
-    return len(re.findall(rf'symbol\s*=\s*"{re.escape(symbol)}"', str(graph)))
-
-
 def _pipeline_config() -> PipelineConfig:
-    """What ``build_spec_graph`` reads of a served pipeline config."""
-    text_config = SimpleNamespace(hidden_size=HIDDEN, vocab_size=512)
+    """What the pairing reads of a served config that prefers ModuleV3."""
+    text_config = SimpleNamespace(hidden_size=HIDDEN, vocab_size=VOCAB)
     return cast(
         PipelineConfig,
         SimpleNamespace(
@@ -227,7 +187,7 @@ def _pipeline_config() -> PipelineConfig:
             speculative=_speculative(),
             needs_bitmask_constraints=False,
             runtime=SimpleNamespace(
-                reasoning_parser=None, prefer_module_v3=False
+                reasoning_parser=None, prefer_module_v3=True
             ),
             model=SimpleNamespace(
                 data_parallel_degree=1,
@@ -240,121 +200,57 @@ def _pipeline_config() -> PipelineConfig:
     )
 
 
-def _stage_fused(load_weights: bool = False) -> SpecGraph:
-    """Builds the fused graph the way a served pairing does.
-
-    With ``load_weights`` every weight is zeros, enough to compile.
-    """
+def _module() -> _SpecDecodeModule:
+    """The fused module the pairing compiles, on one device."""
     register_all_models()
-    kv_params = _kv_params(speculative=True, num_devices=1)
-    target_config = _config(kv_params)
-    target_config.return_logits = ReturnLogits.VARIABLE
-    target_config.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
-    target = Glm5Next(target_config, kv_params=kv_params)
-    target.attach_layers(target.build_layers())
-    draft_config = _config(kv_params)
-    draft = Glm5NextMTP(draft_config)
-    draft_weights = None
-    if load_weights:
-        target.load_state_dict(_zeros(target), weight_alignment=1)
-        draft_weights = _zeros(draft)
-    # The draft embeds and projects through the target's embedding and head.
-    for slot in ("embed_tokens", "lm_head"):
-        setattr(draft, slot, getattr(target, slot))
-    return build_spec_graph(
-        _pipeline_config(),
-        MultiKVCacheParams.from_params(
-            {"target": _with_num_draft_tokens(kv_params, NUM_DRAFTS)}
+    mesh = DeviceMesh((Accelerator(),), (1,), ("tp",))
+    kv_params = _kv_params()
+    config = _config(kv_params, mesh)
+    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+        target = Glm5Next(config, kv_params)
+        draft = Glm5NextMTP(config)
+    return _SpecDecodeModule(
+        target,
+        draft,
+        partial(
+            _driver_call,
+            _pipeline_config(),
+            MultiKVCacheParams.from_params({"target": kv_params}),
+            list(kv_params.devices),
+            include_signal_buffers=True,
+            target_config=config,
+            draft_config=config,
+            hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
         ),
-        list(kv_params.devices),
-        include_signal_buffers=True,
-        target=target,
-        target_config=target_config,
-        draft=draft,
-        draft_config=draft_config,
-        hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
-        draft_weights=draft_weights,
     )
 
 
-def _stage_base() -> Graph:
-    """Stages the base graph the way ``Glm5NextModel`` does."""
-    kv_params = _kv_params(speculative=False, num_devices=1)
-    model = Glm5Next(_config(kv_params))
-    model.attach_layers(model.build_layers())
-    _name_weights(model)
-    with Graph("glm5_next", input_types=model.input_types(kv_params)) as g:
-        (
-            tokens,
-            image_rows,
-            image_indices,
-            offsets,
-            host_offsets,
-            return_n_logits,
-            _,
-            *rest,
-        ) = g.inputs
-        it = iter(rest)
-        signals = [next(it).buffer]
-        kv_tree = kv_params.unflatten_kv_inputs(it)
-        assert isinstance(kv_tree, dict)
-        next(it)
-        g.output(
-            model(
-                tokens.tensor,
-                [image_rows.tensor],
-                [image_indices.tensor],
-                signals,
-                tree.leaves(
-                    kv_tree[MLA_CACHE_KEY], leaf=KVCacheInputsPerDevice
-                ),
-                tree.leaves(
-                    kv_tree[INDEXER_CACHE_KEY], leaf=KVCacheInputsPerDevice
-                ),
-                return_n_logits.tensor,
-                offsets.tensor,
-                host_offsets.tensor,
-                tree.leaves(
-                    kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-                ),
-            )
-        )
-    return g
+def _graph_name_for_test() -> str:
+    register_all_models()
+    return _graph_name(_Pairing.from_pipeline_config(_pipeline_config()), "mtp")
+
+
+def _trace() -> str:
+    module = _module()
+    call = module.driver_call()
+    return str(module.trace(*call.input_types, name=_graph_name_for_test()))
+
+
+def _symbol_count(graph: str, symbol: str) -> int:
+    return len(re.findall(rf'symbol\s*=\s*"{re.escape(symbol)}"', graph))
 
 
 @pytest.fixture(scope="module")
-def fused() -> Graph:
-    return _stage_fused().graph
+def fused() -> str:
+    return _trace()
 
 
-@pytest.fixture(scope="module")
-def base() -> Graph:
-    return _stage_base()
+def test_the_fused_graph_keeps_the_graph_api_name() -> None:
+    """Checks engines that bind the fused graph by name find it."""
+    assert _graph_name_for_test() == "glm5_next_with_mtp_graph"
 
 
-def _kv_count(params: KVCacheParamInterface) -> int:
-    return len(params.flattened_kv_inputs())
-
-
-@pytest.mark.parametrize("num_devices", [1, 2])
-def test_the_ring_adds_a_pool_and_a_row_table_per_device(
-    num_devices: int,
-) -> None:
-    """Checks the state child's arity: the ring is the one leaf it adds."""
-    spec = _kv_params(speculative=True, num_devices=num_devices)
-    assert _kv_count(spec) - _kv_count(_without_ring(spec)) == 2 * num_devices
-
-
-def test_the_state_rides_in_the_cache_tree() -> None:
-    """Checks the graph declares the state among its KV inputs, so the
-    target's call takes nothing past the canonical tail."""
-    config = _config(_kv_params(speculative=True, num_devices=1))
-    assert not spec_adapters.trailing_input_types(TARGET_ARCH, "mtp", config)
-
-
-def test_the_verify_records_every_kda_layer_into_the_ring(
-    fused: Graph,
-) -> None:
+def test_the_verify_records_every_kda_layer_into_the_ring(fused: str) -> None:
     assert _symbol_count(fused, "kda_verify_ring") == NUM_KDA
     assert _symbol_count(fused, "kda_decode") == 0
     # One launch per device folds every layer.
@@ -365,24 +261,20 @@ def test_the_verify_records_every_kda_layer_into_the_ring(
 def test_only_a_draft_free_verify_takes_kda_chunk(
     monkeypatch: pytest.MonkeyPatch, servable: bool
 ) -> None:
-    """Checks ``kda_chunk`` is staged beside the ring, never in its place.
-
-    Staged as if on a GPU that runs ``kda_chunk`` and one that does not. Where
-    it runs, each KDA layer stages it once, as the draft-free branch of a
-    verify whose other branch records into the ring.
-    """
+    """Checks ``kda_chunk`` is traced beside the ring, never in its place."""
+    monkeypatch.setattr(kda, "accelerator_api", lambda: "hip")
     monkeypatch.setattr(
-        kimi_delta_attention,
+        kda,
         "kda_chunk_servable",
         lambda head_dim, gate_mode, pool_dtype: servable,
     )
-    graph = _stage_fused().graph
+    graph = _trace()
     assert _symbol_count(graph, "kda_chunk") == (NUM_KDA if servable else 0)
     assert _symbol_count(graph, "kda_verify_ring") == NUM_KDA
     assert _symbol_count(graph, "kda_decode") == 0
 
 
-def test_the_conv_window_is_left_for_the_rollback(fused: Graph) -> None:
+def test_the_conv_window_is_left_for_the_rollback(fused: str) -> None:
     # Only the verify's forward launch, one per KDA layer: the rollback places
     # the windows inside the fold's launch instead.
     assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
@@ -390,7 +282,7 @@ def test_the_conv_window_is_left_for_the_rollback(fused: Graph) -> None:
 
 
 def test_the_rollback_folds_the_conv_windows_in_the_folds_launch(
-    fused: Graph,
+    fused: str,
 ) -> None:
     """Checks the rollback holds one fold op and no per-layer conv replay."""
     assert _symbol_count(fused, "kda_state_fold") == 1
@@ -399,7 +291,7 @@ def test_the_rollback_folds_the_conv_windows_in_the_folds_launch(
     assert _symbol_count(fused, "gated_delta_conv1d_verify_fwd") == NUM_KDA
 
 
-def test_every_indexer_seeds_its_tail_twice(fused: Graph) -> None:
+def test_every_indexer_seeds_its_tail_twice(fused: str) -> None:
     """Checks each indexer over the window, the draft's included, gets a
     deferred seed and a replay."""
     indexers = NUM_SPARSE + 1
@@ -407,21 +299,17 @@ def test_every_indexer_seeds_its_tail_twice(fused: Graph) -> None:
 
 
 def test_the_fused_graph_compiles() -> None:
-    """Checks the fused graph compiles, the new state kernels included."""
-    spec = _stage_fused(load_weights=True)
-    session = InferenceSession(devices=[Accelerator()])
-    assert (
-        session.load(spec.graph, weights_registry=spec.weights_registry)
-        is not None
+    """Checks the fused graph compiles, the state kernels included."""
+    module = _module()
+    call = module.driver_call()
+    weights = {
+        name: Buffer.zeros(
+            shape=[int(d) for d in tensor.shape], dtype=tensor.dtype
+        )
+        for name, tensor in module.parameters
+    }
+    assert isinstance(next(iter(module.parameters))[1], Tensor)
+    compiled = module.compile(
+        *call.input_types, weights=weights, name=_graph_name_for_test()
     )
-
-
-def test_the_base_graph_runs_no_speculative_state_op(base: Graph) -> None:
-    for symbol in (
-        "kda_verify_ring",
-        "kda_state_fold",
-        "gated_delta_conv1d_verify_fwd",
-    ):
-        assert _symbol_count(base, symbol) == 0, symbol
-    assert _symbol_count(base, "gated_delta_conv1d_fwd") == NUM_KDA
-    assert _symbol_count(base, "attention.mla.kpool.seed_tail") == NUM_SPARSE
+    assert compiled is not None

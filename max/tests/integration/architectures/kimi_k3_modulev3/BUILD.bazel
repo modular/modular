@@ -328,6 +328,31 @@ modular_eager_py_test(
 )
 
 modular_eager_py_test(
+    name = "mla_attention_reference_tests_gpu",
+    size = "enormous",
+    srcs = ["test_mla_attention_reference.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
     name = "mla_attention_ragged_tests_gpu",
     size = "enormous",
     srcs = ["test_mla_attention_ragged.py"],
@@ -376,7 +401,7 @@ modular_py_test(
 
 # The 8-rows-per-request verify of DSpark spec decode, postsubmit only (it
 # runs past the 4-minute presubmit budget on both vendors): one GPU runs the
-# production fold arm, its RED control and the plan-extent check; the
+# production fold arm and its RED controls; the
 # 96-head prefill arm runs in its own postsubmit target below on both
 # vendors (one more kernel family to JIT, and on B200 the SM100 dispatch
 # table routes 96 heads through an entry the 12-head fold never takes),
@@ -387,7 +412,7 @@ modular_eager_py_test(
     srcs = ["test_spec_mla_verify8.py"],
     args = [
         "-k",
-        "'not tp2 and not prefill_arm_matches_stepwise'",
+        "'not tp2 and not prefill_arm_matches_stepwise and not plan_extent'",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
@@ -497,6 +522,47 @@ modular_eager_py_test(
         "//max/python/max/nn",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/support",
+    ],
+)
+
+# The plan-op extent check, split from the fold-arm target above: its eight
+# random batches each JIT a distinct plan-op shape (~95 s on MI355), which
+# on top of the fold arm's two fused-op compiles pushed the combined
+# action past the 5-minute per-action budget. Both targets are
+# postsubmit-tagged, so the check still runs exactly once.
+modular_eager_py_test(
+    name = "spec_mla_verify8_plan_extent_postsubmit_tests_gpu",
+    size = "enormous",
+    srcs = ["test_spec_mla_verify8.py"],
+    args = [
+        "-k",
+        "'plan_extent'",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":tp_model_test_utils",
+        "//max/python/max:tree",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
         "//max/python/max/support",
@@ -1015,6 +1081,28 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
+modular_eager_py_test(
+    name = "kda_bproj_bf16_matmul_tests_gpu",
+    size = "small",
+    srcs = ["test_kda_bproj_bf16_matmul.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )
 

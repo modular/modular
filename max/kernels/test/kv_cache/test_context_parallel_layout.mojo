@@ -60,11 +60,51 @@ def test_page_interleave_keeps_pages_whole() raises:
     assert_equal(layout.local_slot(6 * 128), 128)
 
 
+def _expect_local_lens[
+    size: Int
+](length: Int, expected: List[Int], bound: Int) raises:
+    comptime Layout = ContextParallelLayout[size, 128]
+    assert_equal(Layout.max_local_len(length), bound)
+    for rank in range(size):
+        assert_equal(
+            Layout(rank).local_len(length),
+            expected[rank],
+            msg=String(t"size {size} length {length} rank {rank}"),
+        )
+
+
+def test_page_interleave_local_lens() raises:
+    # Lengths around page boundaries and a ragged tail past a full lap, so
+    # ranks hold uneven shares and some hold nothing.
+    _expect_local_lens[4](1, [1, 0, 0, 0], 128)
+    _expect_local_lens[4](127, [127, 0, 0, 0], 128)
+    _expect_local_lens[4](128, [128, 0, 0, 0], 128)
+    _expect_local_lens[4](129, [128, 1, 0, 0], 128)
+    _expect_local_lens[4](1000, [256, 256, 256, 232], 256)
+    _expect_local_lens[4](2051, [515, 512, 512, 512], 640)
+    _expect_local_lens[8](1, [1, 0, 0, 0, 0, 0, 0, 0], 128)
+    _expect_local_lens[8](129, [128, 1, 0, 0, 0, 0, 0, 0], 128)
+    _expect_local_lens[8](1000, [128, 128, 128, 128, 128, 128, 128, 104], 128)
+    _expect_local_lens[8](2051, [259, 256, 256, 256, 256, 256, 256, 256], 384)
+    # Position 2050 wraps to rank 0's third page of an 8-rank lap.
+    var rank0 = ContextParallelLayout[8, 128](0)
+    assert_equal(rank0.owner(2050), 0)
+    assert_equal(rank0.local_slot(2050), 258)
+    assert_equal(rank0.global_pos(258), 2050)
+    var rank7 = ContextParallelLayout[8, 128](7)
+    assert_equal(rank7.owner(1023), 7)
+    assert_equal(rank7.local_slot(1023), 127)
+    assert_equal(rank7.global_pos(128), 1920)
+
+
 def main() raises:
     test_disabled_is_identity()
     test_page_interleave_keeps_pages_whole()
+    test_page_interleave_local_lens()
     _check[2, 1]()
     _check[8, 1]()
     _check[2, 4]()
     _check[3, 5]()
     _check[8, 16]()
+    _check[4, 128]()
+    _check[8, 128]()

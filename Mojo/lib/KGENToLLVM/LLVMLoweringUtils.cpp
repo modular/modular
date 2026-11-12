@@ -154,7 +154,7 @@ static int64_t getUnionPayloadSize(const LLVMDataLayout &dl,
 
 /// The type heading the lowered struct, chosen to carry the union's alignment.
 /// It is sized independently of the payload: whatever it does not cover is
-/// made up by the trailing byte array.
+/// made up by the trailing storage array.
 static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
                              POP::UnionType unionType,
                              ArrayRef<UnionMember> members) {
@@ -445,9 +445,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // They are resolved during monomorphization in the KGEN elaboration pass.
     assert(unionType.isResolved() &&
            "cannot lower unresolved union type to LLVM");
-    // TODO: The generated assembly is sensitive to the content type of the
-    // union type. This needs to be optimized. For now, use an array of
-    // word-size integers.
     SmallVector<UnionMember> members;
     members.reserve(unionType.getNumTypes());
     for (Type memberType : unionType.getTypes()) {
@@ -461,9 +458,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     if (payloadSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {repr, [(payloadSize - sizeof(repr)) x i8]}. The
-    // representative gives the whole structure its alignment, the trailing
-    // array covers the payload it does not span.
+    // Lower union to {repr, tail}. The representative gives the structure its
+    // alignment, and the trailing array covers the payload it does not span.
     Type reprType = getUnionReprType(*this, getTarget(), unionType, members);
 
     SmallVector<Type, 2> structElemTp;
@@ -471,8 +467,23 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
         tailLen != 0) {
-      structElemTp.push_back(LLVM::LLVMArrayType::get(
-          IntegerType::get(&getContext(), 8), tailLen));
+      // Choose integer storage that preserves the tail's size, offset, and
+      // alignment, falling back to bytes when necessary. Cap the element width
+      // at the pointer width to avoid introducing i64 tails on 32-bit targets.
+      // LLVM's SROA may scalarize byte arrays into individual byte accesses,
+      // making large union copies expensive to optimize and select.
+      unsigned tailBitWidth = std::min<unsigned>(
+          64, getTarget().getDataLayout().getPointerBitWidth());
+      Type tailType = IntegerType::get(&getContext(), tailBitWidth);
+      int64_t elementSize = getTypeAllocSize(tailType);
+      if (tailLen % elementSize != 0 ||
+          getTypeABIAlign(tailType) > getTypeABIAlign(reprType) ||
+          getTypeStoreSize(tailType) != elementSize) {
+        tailType = IntegerType::get(&getContext(), 8);
+        elementSize = 1;
+      }
+      structElemTp.push_back(
+          LLVM::LLVMArrayType::get(tailType, tailLen / elementSize));
     }
 
     auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);

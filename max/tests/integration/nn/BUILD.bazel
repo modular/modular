@@ -148,6 +148,7 @@ modular_py_test(
             "bench_row_mean_of_squares_gpu.py",
             "test_conv_transpose_gpu.py",
             "test_fused_qkv_mxfp8_matmul_gpu.py",
+            "test_grouped_matmul_row_invariance_gpu.py",
             "test_grouped_matmul_swiglu_nvfp4_gpu.py",
             "test_int8_w8a8_apple_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
@@ -280,6 +281,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -662,10 +664,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -729,6 +732,29 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "grouped_matmul_row_invariance_tests",
+    size = "large",
+    srcs = ["test_grouped_matmul_row_invariance_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
         requirement("numpy"),
         requirement("torch"),
     ],

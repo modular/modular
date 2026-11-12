@@ -577,26 +577,21 @@ struct ForceMatmulTransposeBForGPU
 struct BatchMatmulAdjBPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
                                            MO::BatchMatmulOp> {
-  DeviceRefAttr targetDevice;
-  BatchMatmulAdjBPattern(MLIRContext *ctx, DeviceRefAttr targetDevice)
-      : DeviceAwareRewritePattern(ctx, 2), targetDevice(targetDevice) {}
+  BatchMatmulAdjBPattern(MLIRContext *ctx)
+      : DeviceAwareRewritePattern(ctx, 2) {}
 
   LogicalResult
   deviceAwareMatchAndRewrite(MO::BatchMatmulOp op,
                              MO::DeviceAwareRewriter &rewriter) const override {
     Value input, weight, perm;
 
-    DeviceRefAttr device = op.getInputA().getType().getDeviceRef();
-    if (!device)
-      device = targetDevice;
-    bool runsOnGPU = device && device.getLabel() == M::kGPULabel;
-    if (runsOnGPU)
-      return rewriter.notifyMatchFailure(
-          op,
-          "Do not support GPU for batch matmul transpose_b=true at this time");
-
     if (isBMMSmall(op))
       return rewriter.notifyMatchFailure(op, "BatchedMatmul is too small");
+
+    // The rewrite sets transpose_b instead of flipping it, so folding a second
+    // transpose (for example, one behind a rebind) would drop it.
+    if (op.getTransposeB())
+      return rewriter.notifyMatchFailure(op, "transpose_b is already set");
 
     auto weightTransP = m_Op<MO::TransposeOp>(rewriter.pushOp(), m_Any(&weight),
                                               m_MOVector(m_Any(&perm)));
@@ -3723,9 +3718,9 @@ void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                LayerNormPattern, RMSNormFusedResidualAddPattern,
                RMSNormResidualAddPattern, ReduceRMSNormRoPEPattern,
                ReduceLayerNormRopeRaggedPattern, RopeRaggedSplitConcatPattern,
-               MatmulFusedPartialRMSNormPattern>(ctx);
+               MatmulFusedPartialRMSNormPattern, BatchMatmulAdjBPattern>(ctx);
 
-  patterns.add<ForceMatmulTransposeBForGPU, BatchMatmulAdjBPattern,
+  patterns.add<ForceMatmulTransposeBForGPU,
                RMSNormFusedQuantizeDynamicScaledFP8Pattern,
                FuseMatmulReduceScatterPattern>(ctx, targetDeviceRef);
 }

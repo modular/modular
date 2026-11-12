@@ -31,6 +31,28 @@ kgen.func @induction_var_not_step_advanced(%lb: index, %ub: index, %step: index)
 
 // -----
 
+// A select that stops advancing anywhere but the bound changes the trip count.
+kgen.func @induction_var_stops_before_bound() {
+  %lb = kgen.param.constant = <0>
+  %ub = kgen.param.constant = <4>
+  %step = kgen.param.constant = <1>
+  %two_s = kgen.param.constant: scalar<index> = <2>
+  %one_s = kgen.param.constant: scalar<index> = <1>
+  // expected-error @below {{failed to legalize operation 'hlcf.for'}}
+  hlcf.for [%lb to %ub step %step slt add] (%iv = %lb : index) {
+    %cur = pop.cast_from_builtin %iv : index to !kgen.scalar<index>
+    %inc = pop.add %cur, %one_s : !kgen.scalar<index>
+    %done = pop.cmp eq(%cur, %two_s) : <1, index>
+    %next = pop.select %done, %cur, %inc : !kgen.scalar<index>
+    "use"(%iv) : (index) -> ()
+    %next_idx = pop.cast_to_builtin %next : !kgen.scalar<index> to index
+    hlcf.for.yield [induction_var (%next_idx : index)] [retvals ()] [iterargs ()]
+  }
+  hlcf.return
+}
+
+// -----
+
 // A `return` inside a region would become the terminator of the `scf.if`.
 kgen.func @nested_return(%c: !kgen.scalar<bool>) {
   // expected-error @below {{failed to legalize operation 'hlcf.if'}}

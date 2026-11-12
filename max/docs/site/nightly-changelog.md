@@ -200,7 +200,7 @@ This version is still a work in progress.
   uses the filter of Pillow's `BICUBIC` and matches PyTorch's
   `interpolate(mode="bicubic", antialias=True)` to float32 rounding. The
   antialiased resize runs on the CPU, on a float32 input, or on a uint8 input
-  that it resizes to uint8, rounding and clamping once at the end.
+  that it resizes to uint8 bit for bit as Pillow's `BICUBIC` does.
   `ops.resize_bicubic()` also takes its output size as a runtime int64
   tensor, with `out_dims` declaring the output's dimensions.
 
@@ -315,6 +315,16 @@ This version is still a work in progress.
   `kv_blocks_per_layer` and `kv_scales_per_layer` fields of
   `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
   at that limit.
+
+- Added `Device.architecture_version`, which returns an `ArchitectureVersion`
+  with `major`, `minor` and `stepping` fields so code can compare architectures
+  instead of parsing `architecture_name`: the compute capability on NVIDIA
+  GPUs (`sm_100a` is 10.0.0), the processor version on AMD GPUs (`gfx950` is
+  9.5.0), and the Apple silicon generation on Apple GPUs (an M5 is 5.0.0).
+  Versions compare for equality only, since a higher version is not always a
+  newer part. A virtual device for compile-only mode whose target is an
+  architecture name, such as `sm_100a` or `gfx950`, reports the version of
+  that architecture.
 
 ## C API
 

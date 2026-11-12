@@ -1182,7 +1182,7 @@ modular_shared_library(
     hdrs = glob(["include/Support/Globals/*.h"]) + [
         "include/Support/ContextGlobal.h",
     ],
-    dynamic_deps = ["@llvm-project//llvm:LLVM"],
+    dynamic_deps = ["//bazel/internal:LLVMSupport"],
     output_name = "MSupportGlobals",
     deps = [
         ":SymbolExport",

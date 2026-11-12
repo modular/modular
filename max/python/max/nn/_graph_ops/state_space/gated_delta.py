@@ -69,6 +69,7 @@ into a long-lived pool, no per-step pool allocation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import NamedTuple, cast
 
 from max.dtype import DType
@@ -86,11 +87,12 @@ from max.graph import (
 class GatedDeltaReplayInputs(NamedTuple):
     """One layer's per-token inputs to the two state kernels.
 
-    Speculative decoding runs the verify pass over K+1 positions and then has
-    to land the pools on the accepted prefix instead. Every op feeding these
-    tensors is causal or pointwise, so re-running the two kernels over the
-    accepted rows from the pre-verify state reproduces the state the verify
-    pass held at that length. Captured only when the caller asks for it.
+    Speculative decoding runs the verify pass over the merged window and then
+    has to land the pools on the accepted prefix instead. Every op feeding
+    these tensors is causal or pointwise, so re-running the two kernels over
+    the accepted rows from the pre-verify state reproduces the state the
+    verify pass held at that length. Captured only when the caller asks for
+    it.
     """
 
     qkv: TensorValue
@@ -144,6 +146,14 @@ def verify_width_operand(num_draft_tokens: DimLike) -> TensorValue:
     )
 
 
+def _conv_parameters(
+    parameters: Mapping[str, bool], silu: bool
+) -> Mapping[str, bool]:
+    # Only a fused call names `silu`; every other graph omits it and takes the
+    # registration's default, `silu=False`.
+    return {**parameters, "silu": True} if silu else parameters
+
+
 def gated_delta_conv1d_fwd(
     qkv_input_ragged: TensorValue,
     conv_weight: TensorValue,
@@ -152,6 +162,7 @@ def gated_delta_conv1d_fwd(
     input_row_offsets: TensorValue,
     *,
     write_state: bool = True,
+    silu: bool = False,
 ) -> TensorValue:
     """Applies the causal conv1d pass.
 
@@ -173,6 +184,9 @@ def gated_delta_conv1d_fwd(
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         write_state: Whether to write the updated window back to
             ``conv_state``. ``False`` only reads it for the look-back.
+        silu: Whether the kernel applies SiLU to each output, as
+            :func:`~max.graph.ops.silu` computes it on the fp32 sum, so the
+            caller needs no separate SiLU launch.
 
     Returns:
         The conv output, ``[total_seq_len, conv_dim]``.
@@ -304,7 +318,7 @@ def gated_delta_conv1d_fwd(
             offsets_uint32,
         ],
         [conv_output_ragged_type],
-        parameters={"write_state": write_state},
+        parameters=_conv_parameters({"write_state": write_state}, silu),
     )
     return cast(TensorValue, results[0])
 
@@ -318,6 +332,7 @@ def gated_delta_conv1d_verify_fwd(
     verify_width: TensorValue,
     *,
     rollback: bool,
+    silu: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Runs :func:`gated_delta_conv1d_fwd` in a speculative verify graph.
 
@@ -325,9 +340,11 @@ def gated_delta_conv1d_verify_fwd(
     rollback launch does nothing, leaving its output unwritten. Otherwise the
     forward launch only reads the window and the rollback launch writes it.
 
-    The forward launch with drafts also copies its input for the rollback to
-    replay. Every row is then one token and its drafts, so the copy is the
-    whole input. Every other launch leaves the copy unwritten.
+    The forward launch with drafts also copies each row of at most
+    ``K + 1`` tokens, as one token and its drafts, into that row's slot of
+    the copy for the rollback to replay. A longer row, as a prompt chunk mixed
+    into the batch, is not copied: the forward writes its window at its last
+    real token instead. Every other launch leaves the copy unwritten.
 
     Args:
         qkv_input_ragged: The ``[total_seq_len, conv_dim]`` conv input.
@@ -337,6 +354,9 @@ def gated_delta_conv1d_verify_fwd(
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         verify_width: The operand :func:`verify_width_operand` returns.
         rollback: Whether this is the rollback's launch.
+        silu: Whether the forward launch applies SiLU to its output, as
+            :func:`gated_delta_conv1d_fwd` does. The copy is always the raw
+            input.
 
     Returns:
         The conv output, ``[total_seq_len, conv_dim]``, and the copy of the
@@ -368,7 +388,7 @@ def gated_delta_conv1d_verify_fwd(
                 device,
             ),
         ],
-        parameters={"rollback": rollback},
+        parameters=_conv_parameters({"rollback": rollback}, silu),
     )
     return cast(TensorValue, results[0]), cast(TensorValue, results[1])
 
@@ -452,6 +472,8 @@ def gated_delta_recurrence_verify_ring_fwd(
     ring_slot_idx: TensorValue,
     input_row_offsets: TensorValue,
     verify_width: TensorValue,
+    *,
+    skip_long_rows: bool = False,
 ) -> TensorValue:
     """Runs the recurrence over a speculative verify window into a ring.
 
@@ -474,6 +496,8 @@ def gated_delta_recurrence_verify_ring_fwd(
         ring_slot_idx: The ``[batch_size]`` ring rows.
         input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
         verify_width: The operand :func:`verify_width_operand` returns.
+        skip_long_rows: Leave a row longer than the verify window to the
+            caller: its outputs are zeros and its state is not written.
 
     Returns:
         The recurrence output, ``[total_seq_len, value_dim]``.
@@ -499,6 +523,7 @@ def gated_delta_recurrence_verify_ring_fwd(
                 DType.float32, [qkv_conv_output.shape[0], value_dim], device
             )
         ],
+        parameters={"skip_long_rows": skip_long_rows},
     )
     return cast(TensorValue, results[0])
 
@@ -526,8 +551,8 @@ def gated_delta_state_fold(
         row_ids: The ``[num_layers, batch_size]`` live pool rows.
         ring_row_ids: The ``[num_layers, batch_size]`` ring rows.
         num_accepted: The ``[batch_size]`` records to fold. A count past
-            ``RING_LEN`` names a row the verify was too long to record and
-            committed itself, and is skipped.
+            ``RING_LEN`` cannot be folded (the ring holds no more) and is
+            skipped.
         verify_width: The operand :func:`verify_width_operand` returns.
     """
     ops.inplace_custom(

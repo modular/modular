@@ -566,6 +566,8 @@ struct ConvCPU:
                 pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
                 pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
                 pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+            case _:
+                pass
 
         comptime input_shape_val = (
             input.static_spec.static_layout._shape_types[

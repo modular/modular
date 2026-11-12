@@ -20,7 +20,7 @@ from max import functional as F
 from max import tree
 from max.dtype import DType
 from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
@@ -93,7 +93,7 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
         else:
             batch_context_length = inputs.batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         # A ``MultiKVCacheParams`` tree unflattens to a dict keyed by child
         # name, so the two caches are addressed by name rather than position.
         kv_tree = self.kv_params.unflatten_kv_inputs(kv_inputs)

@@ -12,6 +12,10 @@
 ##===----------------------------------------------------------------------===##
 
 # shellcheck disable=SC2034  # Variables are used when sourced
+
+# The recipe's env: init's gate/up permute traps memory in partly used pages
+# at the default 256 MB. Sourced, so `max serve` inherits the export.
+export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB=32
 batch_size=64
 max_length=32768
 
@@ -21,7 +25,9 @@ extra_pipelines_args=(
   --speculative-method mtp
   --num-speculative-tokens 3
 )
-# no_think matches the full-test-set gsm8k comparison against vLLM.
+# no_think matches the full-test-set gsm8k comparison against vLLM. Only
+# chat completions take chat_template_kwargs; /v1/completions rejects them.
+lm_eval_model=local-chat-completions
 extra_lm_eval_args=(
   --apply_chat_template
   --fewshot_as_multiturn

@@ -878,37 +878,33 @@ LogicalResult SliceStrideOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
-// map.index.broadcast.stride -> mogg.tensor.create.broadcast.
-LogicalResult BroadcastStrideOp::lowerToMOGG(MAPToMOGGState &state) {
-  MLIRContext *ctx = getContext();
-  MAP::ViewSignatureAttr signature = getSpec().getSignature();
+// A view whose layout reads its output shape at runtime gets a real
+// `!mogg.shape` (via `buildShape`, so CSE can fold duplicates): a reshape
+// de-linearizes its strides from it, and a slice composed on a broadcast
+// clamps against it.
+template <typename CreateOpT, typename StrideOpT>
+static LogicalResult lowerShapedView(StrideOpT op, MAPToMOGGState &state) {
+  MAP::ViewSignatureAttr signature = op.getSpec().getSignature();
   Type elementType =
-      MO::castFromTensorLike(getInput().getType()).getElementType();
-  auto createBroadcast = MOGG::TensorCreateBroadcastOp::create(
-      state.builder, getLoc(), MOGG::TensorType::get(ctx), signature.getOut(),
-      TypeAttr::get(elementType),
-      state.builder.getBoolAttr(viewsMutableStorage(getInput())),
-      state.mapping.lookup(getInput()));
-  state.mapping.map(getResult(), createBroadcast.getResult());
+      MO::castFromTensorLike(op.getInput().getType()).getElementType();
+  Value shape = buildShape(op.getLoc(), signature.getOut(), state);
+  auto create = CreateOpT::create(
+      state.builder, op.getLoc(), MOGG::TensorType::get(op.getContext()),
+      signature.getOut(), TypeAttr::get(elementType),
+      state.builder.getBoolAttr(viewsMutableStorage(op.getInput())),
+      state.mapping.lookup(op.getInput()), shape);
+  state.mapping.map(op.getResult(), create.getResult());
   return success();
 }
 
-// map.index.reshape.stride -> mogg.tensor.create.reshape. Row-major
-// de-linearization needs the output shape's runtime values, so it gets a real
-// `!mogg.shape` (via `buildShape`, so CSE can fold duplicates).
+// map.index.broadcast.stride -> mogg.tensor.create.broadcast.
+LogicalResult BroadcastStrideOp::lowerToMOGG(MAPToMOGGState &state) {
+  return lowerShapedView<MOGG::TensorCreateBroadcastOp>(*this, state);
+}
+
+// map.index.reshape.stride -> mogg.tensor.create.reshape.
 LogicalResult ReshapeStrideOp::lowerToMOGG(MAPToMOGGState &state) {
-  MLIRContext *ctx = getContext();
-  MAP::ViewSignatureAttr signature = getSpec().getSignature();
-  Type elementType =
-      MO::castFromTensorLike(getInput().getType()).getElementType();
-  Value shape = buildShape(getLoc(), signature.getOut(), state);
-  auto createReshape = MOGG::TensorCreateReshapeOp::create(
-      state.builder, getLoc(), MOGG::TensorType::get(ctx), signature.getOut(),
-      TypeAttr::get(elementType),
-      state.builder.getBoolAttr(viewsMutableStorage(getInput())),
-      state.mapping.lookup(getInput()), shape);
-  state.mapping.map(getResult(), createReshape.getResult());
-  return success();
+  return lowerShapedView<MOGG::TensorCreateReshapeOp>(*this, state);
 }
 
 // map.index.reshape -> mogg.index.reshape, lowered in place since a

@@ -47,6 +47,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

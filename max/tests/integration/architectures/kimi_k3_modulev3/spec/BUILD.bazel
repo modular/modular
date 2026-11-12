@@ -77,6 +77,9 @@ modular_py_library(
 # The one capture check: replay == eager-at-aligned, bit-exact per step.
 # MI355-only: it keys on the AMD decode-branch fold predicate, and an
 # NVIDIA run would grade a different arm split.
+# No precompile_mefs: the test is compile_on_gpu-marked (the pipelines need a
+# real KV manager, which a virtual device cannot mock), so a record action
+# captures nothing and the replay compiles on the GPU anyway.
 modular_py_test(
     name = "test_spec_capture",
     size = "enormous",
@@ -94,7 +97,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
     ],
-    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -153,7 +155,10 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
     ],
-    precompile_mefs = True,
+    # No precompile_mefs: the test is compile_on_gpu-marked (the pipelines
+    # need a real KV manager, which a virtual device cannot mock), so a
+    # record action captures nothing and the replay compiles on the GPU
+    # anyway.
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [

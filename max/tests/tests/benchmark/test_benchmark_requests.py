@@ -2074,3 +2074,126 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     # Without it the server sends no usage chunk, and the warmup cannot tell a
     # special-token-only generation from an empty one.
     assert payload["stream_options"] == {"include_usage": True}
+
+
+# A GLM-5.3-Flash stream captured at ``max_tokens=1``: the one token was
+# ``</think>``, which the glm45 reasoning parser consumes, so no text reaches
+# the client.
+_DELIMITER_ONLY_STREAM = [
+    json.dumps(
+        {
+            "id": "556c1d809b74424a829ca40d270f666b",
+            "choices": [
+                {
+                    "delta": {"content": ""},
+                    "finish_reason": "length",
+                    "index": 0,
+                    "token_ids": [154842],
+                }
+            ],
+            "model": "zai-org/GLM-5.3-Flash",
+            "object": "chat.completion.chunk",
+        }
+    ),
+    json.dumps(
+        {
+            "id": "556c1d809b74424a829ca40d270f666b",
+            "choices": [],
+            "model": "zai-org/GLM-5.3-Flash",
+            "object": "chat.completion.chunk",
+            "usage": {
+                "completion_tokens": 1,
+                "prompt_tokens": 127092,
+                "total_tokens": 127093,
+                "completion_tokens_details": {"reasoning_tokens": 1},
+                "prompt_tokens_details": {"cached_tokens": 126976},
+            },
+        }
+    ),
+    "[DONE]",
+]
+
+
+def _with_completion_tokens(events: list[str], tokens: int) -> list[str]:
+    usage_chunk = json.loads(events[1])
+    usage_chunk["usage"]["completion_tokens"] = tokens
+    return [events[0], json.dumps(usage_chunk), events[2]]
+
+
+def _with_finish_reason(events: list[str], reason: str) -> list[str]:
+    choice_chunk = json.loads(events[0])
+    choice_chunk["choices"][0]["finish_reason"] = reason
+    return [json.dumps(choice_chunk), *events[1:]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("max_tokens", "events", "success"),
+    [
+        pytest.param(1, _DELIMITER_ONLY_STREAM, True, id="captured"),
+        pytest.param(
+            2,
+            _with_completion_tokens(_DELIMITER_ONLY_STREAM, 2),
+            True,
+            id="two_token_budget",
+        ),
+        pytest.param(128, _DELIMITER_ONLY_STREAM, False, id="large_budget"),
+        pytest.param(
+            128,
+            _with_completion_tokens(_DELIMITER_ONLY_STREAM, 128),
+            False,
+            id="large_budget_exhausted",
+        ),
+        pytest.param(
+            2, _DELIMITER_ONLY_STREAM, False, id="budget_not_exhausted"
+        ),
+        pytest.param(
+            1,
+            _with_finish_reason(_DELIMITER_ONLY_STREAM, "stop"),
+            False,
+            id="stopped",
+        ),
+        pytest.param(
+            1, _DELIMITER_ONLY_STREAM[:1], False, id="missing_usage_and_done"
+        ),
+        pytest.param(None, _DELIMITER_ONLY_STREAM, False, id="no_budget"),
+    ],
+)
+async def test_measured_empty_stream_succeeds_only_when_tiny_budget_is_spent(
+    max_tokens: int | None,
+    events: list[str],
+    success: bool,
+    mock_aiohttp_session: MagicMock,
+    mock_openai_env: None,
+    mocker: MockerFixture,
+) -> None:
+    request_input = RequestFuncInput(
+        model="zai-org/GLM-5.3-Flash",
+        session_id=None,
+        sampling=SamplingConfig(),
+        prompt="hi",
+        images=[],
+        api_url="http://localhost:8000/v1/chat/completions",
+        prompt_len=127092,
+        max_tokens=max_tokens,
+        ignore_eos=True,
+    )
+
+    async def stream() -> AsyncIterator[bytes]:
+        for event in events:
+            yield f"data: {event}\n\n".encode()
+
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.content = stream()
+    mock_aiohttp_session.setup_post_response(response)
+    result = await OpenAIChatCompletionsRequestDriver().request(request_input)
+
+    assert result.success == success
+    assert result.generated_text == ""
+    if success:
+        assert result.error == ""
+        assert result.server_token_stats.completion_tokens == max_tokens
+        assert 0.0 < result.ttft <= result.latency
+    else:
+        assert "No text content" in result.error

@@ -545,7 +545,7 @@ def test_fused_allreduce_rmsnorm_noquant[
 
     group_start()
 
-    comptime for i in range(ngpus):
+    for i in range(ngpus):
         allreduce_rmsnorm(
             in_tiles,
             fused_out_tile,
@@ -733,7 +733,7 @@ def test_fused_allreduce_rmsnorm_noquant_latent[
 
     group_start()
 
-    comptime for i in range(ngpus):
+    for i in range(ngpus):
         allreduce_rmsnorm[multiply_before_cast=multiply_before_cast](
             in_tiles,
             fused_out_tile,
@@ -1179,7 +1179,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 
     group_start()
 
-    comptime for i in range(ngpus):
+    for i in range(ngpus):
         allreduce_residual_rmsnorm[multiply_before_cast=multiply_before_cast](
             in_tiles,
             residual_tile.as_imm(),
@@ -1631,7 +1631,7 @@ def test_fused_allreduce_rmsnorm_zero_rows[
     var scales_tile = TileTensor(scales_dev, row_major(Coord(Idx[0], Idx[1])))
 
     group_start()
-    comptime for i in range(ngpus):
+    for i in range(ngpus):
         allreduce_rmsnorm(
             in_tiles,
             out_tile,

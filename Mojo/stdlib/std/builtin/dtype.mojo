@@ -490,8 +490,8 @@ struct DType(
 
             case .float64:
                 return writer.write_string("float64")
-
-        return writer.write_string("<<unknown>>")
+            case _:
+                return writer.write_string("<<unknown>>")
 
     @inline(.nodebug)
     def write_repr_to(self, mut writer: Some[Writer]):

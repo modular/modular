@@ -345,11 +345,30 @@ __enum ParametricExhaustivityColor[
 
 
 def match_open_enum_duplicate(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         pass
     # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
     case .red:
+        pass
+
+
+def match_open_enum_requires_catchall(color: OpenColor):
+    # Open enums may acquire cases outside the current compilation unit.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+    case _:
         pass
 
 
@@ -524,20 +543,23 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
         pass
 
 def match_exhaustivity_literal_subjects(n: Int, s: String):
-    # Int/String are open universes: covering literals never proves exhaustivity,
-    # but duplicate / already-covered literal cases are diagnosed.
+    # Int/String are open universes: literal patterns require a catch-all.
+    # Duplicate / already-covered literal cases are still diagnosed.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0:
         pass
     case 1:
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match s:
     case "a":
         pass
     case "b":
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match s:
     case "a":
         pass
@@ -545,6 +567,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case "a":
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0:
         pass
@@ -554,6 +577,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case -1:
         pass
@@ -562,6 +586,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
         pass
 
     # Or of literals covers each alternative; a later duplicate is unreachable.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0 | 1 | 2:
         pass
@@ -569,8 +594,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
-    # After a catch-all, everything else is unreachable (still no exhaustivity
-    # warning when only literals are present).
+    # A catch-all closes the open literal space.
     match n:
     case 0:
         pass
@@ -608,6 +632,7 @@ def match_exhaustivity_summarizes_many_missing_cases(
 
 
 def comptime_match_or_binding_name_mismatch[x: Tuple[Int, Int]]():
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     comptime match x:
     # expected-error @+1 {{or-pattern alternatives must bind the same names; 'y' is bound in one alternative but not the other}}
     case (0, y) | (1, 2):

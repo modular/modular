@@ -478,19 +478,21 @@ def _check_rocshmem_allocation[
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
-    if not ptr:
-        raise Error(
-            func_name,
-            " failed to allocate ",
-            requested_bytes,
-            " bytes of ",
-            dtype,
-            (
-                ". Increase allocatable bytes by setting the ROCSHMEM_HEAP_SIZE"
-                " env var"
-            ),
-        )
-    return ptr.unsafe_value()
+    match ptr:
+        case .Some(allocated):
+            return allocated
+        case .None:
+            raise Error(
+                func_name,
+                " failed to allocate ",
+                requested_bytes,
+                " bytes of ",
+                dtype,
+                (
+                    ". Increase allocatable bytes by setting the"
+                    " ROCSHMEM_HEAP_SIZE env var"
+                ),
+            )
 
 
 def rocshmem_free[

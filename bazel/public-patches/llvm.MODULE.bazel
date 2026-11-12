@@ -22,6 +22,8 @@ llvm_source.configure(
         # be bridged, so wholesale AGPR reclassification would be illegal.
         # Tracking: MOCO-4155.
         "//bazel/public-patches:llvm-mfma-allow-non-mai-users.patch",
+        # Fix Hexagon qfloat conversions: https://github.com/llvm/llvm-project/pull/240791
+        "//bazel/public-patches:llvm-hexagon-qfp-pair-refill.patch",
     ],
 )
 

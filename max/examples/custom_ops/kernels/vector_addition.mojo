@@ -19,31 +19,31 @@ from std.math import ceildiv
 
 from max.gpu import block_dim, block_idx, thread_idx
 
-from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import TileTensor
 
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 
 def _vector_addition_cpu(
-    output: ManagedTensorSlice[mut=True, ...],
-    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    output: TileTensor[mut=True, ...],
+    lhs: TileTensor[output.dtype, ...],
+    rhs: TileTensor[output.dtype, ...],
     ctx: DeviceContext,
 ):
     # Warning: This is an extremely inefficient implementation! It's merely an
     # instructional example of how a dedicated CPU-only path can be specified
     # for basic vector addition.
-    var vector_length = output.dim_size(0)
+    var vector_length = Int(output.dim[0]())
     for i in range(vector_length):
-        var idx = IndexList[output.rank](i)
-        var result = lhs.load[1](idx) + rhs.load[1](idx)
-        output.store[1](idx, result)
+        var result = lhs.load[width=1](Coord(i)) + rhs.load[width=1](Coord(i))
+        output.store[width=1](Coord(i), result)
 
 
 def _vector_addition_gpu(
-    output: ManagedTensorSlice[mut=True, ...],
-    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    output: TileTensor[mut=True, ...],
+    lhs: TileTensor[output.dtype, ...],
+    rhs: TileTensor[output.dtype, ...],
     ctx: DeviceContext,
 ) raises:
     # Note: The following has not been tuned for any GPU hardware, and is an
@@ -51,7 +51,7 @@ def _vector_addition_gpu(
     # and dispatched.
     comptime BLOCK_SIZE = 16
     var gpu_ctx = ctx
-    var vector_length = output.dim_size(0)
+    var vector_length = Int(output.dim[0]())
 
     # The closure that will be launched and distributed across GPU threads.
     # It copies the tensors and the length it needs into its captures, which
@@ -65,9 +65,10 @@ def _vector_addition_gpu(
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
-            var idx = IndexList[output.rank](tid)
-            var result = lhs.load[1](idx) + rhs.load[1](idx)
-            output.store[1](idx, result)
+            var result = lhs.load[width=1](Coord(tid)) + rhs.load[width=1](
+                Coord(tid)
+            )
+            output.store[width=1](Coord(tid), result)
 
     # The vector is divided up into blocks, making sure there's an extra
     # full block for any remainder.
@@ -84,13 +85,24 @@ def _vector_addition_gpu(
 struct VectorAddition:
     @staticmethod
     def execute(
-        output: OutputTensor[rank=1, ...],
-        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        # For a simple elementwise operation like this, the `foreach` function
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lhs), TileTensorable)
+        comptime assert conforms_to(type_of(rhs), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 1
+        comptime assert type_of(lhs).rank == 1
+        comptime assert type_of(rhs).rank == 1
+        var output_tile = output.to_tile_tensor[dtype]()
+        var lhs_tile = lhs.to_tile_tensor[dtype]().as_imm()
+        var rhs_tile = rhs.to_tile_tensor[dtype]().as_imm()
+
+        # For a simple elementwise operation like this, the `elementwise` function
         # does much more rigorous hardware-specific tuning. We recommend using
         # that abstraction, with this example serving purely as an illustration
         # of how lower-level functions can be used to program GPUs via Mojo.
@@ -98,8 +110,8 @@ struct VectorAddition:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
         comptime if ctx.target.is_cpu():
-            _vector_addition_cpu(output, lhs, rhs, ctx)
+            _vector_addition_cpu(output_tile, lhs_tile, rhs_tile, ctx)
         elif ctx.target.is_gpu():
-            _vector_addition_gpu(output, lhs, rhs, ctx)
+            _vector_addition_gpu(output_tile, lhs_tile, rhs_tile, ctx)
         else:
             raise Error("No known target:", ctx.target.device_kind_label())

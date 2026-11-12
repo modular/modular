@@ -14,7 +14,7 @@
 """Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
 
 from std.math import align_up, ceildiv, gcd
-from std.sys import size_of
+from std.sys import has_amd_rdna_gpu_accelerator, size_of
 from std.sys.info import (
     _is_amd_rdna,
     is_amd_gpu,
@@ -1095,23 +1095,47 @@ def _batched_matmul_gpu_impl[
             and a_k * size_of[a_type]() % 16 == 0
             and transpose_b
         ):
-            dispatch_sm100_batched_matmul[
-                c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
-            ](
-                c_tensor_reshaped,
-                a_tensor_reshaped,
-                b_tensor_reshaped,
-                ctx,
-            )
+            comptime if not has_epilogue_fn:
+                dispatch_sm100_batched_matmul[
+                    c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
+                ](
+                    c_tensor_reshaped,
+                    a_tensor_reshaped,
+                    b_tensor_reshaped,
+                    ctx,
+                )
 
             comptime if has_epilogue_fn:
+                # `epilogue_fn` owns every output store, so `c` supplies only
+                # the shape. This kernel has no epilogue hook and writes the
+                # whole product with TMA, so stage it in scratch for the
+                # epilogue pass to read back.
+                #
+                # TODO(GEX-4431): take this buffer through an accumulator
+                # trait bound the graph provides and memory plans, instead of
+                # allocating it on every call.
+                var scratch = ctx.enqueue_create_buffer[c_type](
+                    c_tensor_reshaped.num_elements()
+                )
+                var c_scratch = TileTensor(
+                    scratch, row_major(c_tensor_reshaped.layout.shape_coord())
+                )
+                dispatch_sm100_batched_matmul[
+                    c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
+                ](
+                    c_scratch,
+                    a_tensor_reshaped,
+                    b_tensor_reshaped,
+                    ctx,
+                )
+
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
                 def epilogue_wrapper[
                     simd_width: Int, alignment: Int = 1
                 ](idx: Coord) {var}:
-                    var c_val = c_tensor_reshaped.load[
+                    var c_val = c_scratch.load[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](idx)
@@ -1129,6 +1153,7 @@ def _batched_matmul_gpu_impl[
                     simd_size,
                     _trace_description="elementwise_batched_matmul_sm100_epilogue",
                 ](epilogue_wrapper, Coord(batch_size, m, n), ctx)
+                _ = scratch^
             elif has_compute_fn:
                 comptime simd_size = 32 // size_of[c_type]()
 
@@ -1202,7 +1227,15 @@ def _batched_matmul_gpu_impl[
             block_dim=kernels.ampere_128x128_4.block_dim(),
             shared_mem_bytes=kernels.ampere_128x128_4.shared_mem_usage(),
         )
-    elif has_static_NK and ctx.target.is_amd_gpu() and transpose_b:
+    elif (
+        has_static_NK
+        and ctx.target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+        # AMDMatmul loads K in 4-byte units and stores 4-wide along N.
+        and a_k * size_of[a_type]() % 4 == 0
+        and c_n % 4 == 0
+    ):
 
         @inline(.always)
         def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:

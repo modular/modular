@@ -47,7 +47,6 @@ def test_conv_transpose1d() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.ConvTranspose1d(
@@ -59,7 +58,6 @@ def test_conv_transpose1d() -> None:
         dilation=dilation,
         output_padding=output_padding,
         bias=False,
-        device=torch_device,
     )
 
     max_conv = ConvTranspose1d(
@@ -80,17 +78,12 @@ def test_conv_transpose1d() -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
     # load weights to max
     state_dict = {"weight": torch_conv.weight.data.detach().cpu()}
     max_conv.load_state_dict(state_dict)
-
-    # get_torch_output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
     session = InferenceSession(devices=[Accelerator()])
@@ -103,6 +96,12 @@ def test_conv_transpose1d() -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    # get_torch_output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)
@@ -138,7 +137,6 @@ def test_conv_transpose1d_bias() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.ConvTranspose1d(
@@ -171,7 +169,6 @@ def test_conv_transpose1d_bias() -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -179,7 +176,6 @@ def test_conv_transpose1d_bias() -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -190,10 +186,6 @@ def test_conv_transpose1d_bias() -> None:
     }
 
     max_conv.load_state_dict(state_dict)
-
-    # get_torch_output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
     session = InferenceSession(devices=[Accelerator()])
@@ -206,6 +198,12 @@ def test_conv_transpose1d_bias() -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    # get_torch_output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)
@@ -241,7 +239,6 @@ def test_weight_norm_conv_transpose1d() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     # Create PyTorch model with weight norm
@@ -278,21 +275,18 @@ def test_weight_norm_conv_transpose1d() -> None:
         torch.rand(
             size=torch_conv.weight_v.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     torch_conv.weight_g.data = nn.Parameter(
         torch.rand(
             size=torch_conv.weight_g.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     torch_conv.bias.data = nn.Parameter(
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -303,10 +297,6 @@ def test_weight_norm_conv_transpose1d() -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    # Get PyTorch output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # Get MAX output
     session = InferenceSession(devices=[Accelerator()])
@@ -319,6 +309,12 @@ def test_weight_norm_conv_transpose1d() -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    # Get PyTorch output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)

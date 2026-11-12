@@ -98,11 +98,10 @@ def test_inkling_gate_route_matches_graph_ops(
     hidden_states_np = rng.normal(size=(num_tokens, _HIDDEN_DIM)).astype(
         np.float32
     )
-    # The tail rows the gate pads its weight with must not reach the router:
-    # random values there would win the top-k if any did.
     n_total = padded_router_rows(n_routed_experts + n_shared)
-    gate_weight = rng.normal(size=(n_total, _HIDDEN_DIM)).astype(np.float32)
-    gate_weight[n_routed_experts + n_shared :] = 0.0
+    gate_weight = rng.normal(
+        size=(n_routed_experts + n_shared, _HIDDEN_DIM)
+    ).astype(np.float32)
     weights = {
         "weight": gate_weight,
         "bias": rng.normal(size=(n_routed_experts,)).astype(np.float32) * 0.1,
@@ -133,6 +132,15 @@ def test_inkling_gate_route_matches_graph_ops(
         # The same logits `route` builds, scored in f32 by the ops chain, so
         # a bf16 run differs only by the fused kernel's store rounding.
         weight = ops.cast(gate.weight, dtype).to(hidden_states.device)
+        weight = ops.concat(
+            (
+                weight,
+                ops.broadcast_to(
+                    ops.constant(0, dtype, hidden_states.device),
+                    [n_total - n_routed_experts - n_shared, _HIDDEN_DIM],
+                ),
+            )
+        )
         logits = ops.cast(hidden_states @ weight.T, DType.float32)
         ref_ids, ref_weights, ref_sinks = _unfused_route(gate, logits)
         g.output(

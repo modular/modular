@@ -1028,6 +1028,80 @@ bool RefPackAttr::isConstant() const {
 }
 
 //===----------------------------------------------------------------------===//
+// StructTypeGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isStructTypeGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && LIT::isTypeExpr(gen.getBody()) &&
+         sugarIsa<LIT::StructType>(ParamType::get(gen.getBody()));
+}
+
+StructTypeGenerator::StructTypeGenerator(TypedAttr attr) {
+  assert((!attr || isStructTypeGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a struct type");
+  if (attr)
+    storage = sugarCast<GeneratorAttr>(attr);
+}
+
+StructTypeGenerator StructTypeGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (typedAttr && isStructTypeGenerator(typedAttr))
+    return StructTypeGenerator(typedAttr);
+  return {};
+}
+
+StructTypeGenerator StructTypeGenerator::dynCast(Type type) {
+  if (auto paramType = sugarDynCastIfPresent<ParamType>(type))
+    return dynCast(paramType.getParam());
+  return {};
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Attribute attr) {
+  StructTypeGenerator gen = dynCast(attr);
+  assert(gen && "expected a GeneratorAttr wrapping a struct type");
+  return gen;
+}
+
+StructTypeGenerator StructTypeGenerator::cast(Type type) {
+  StructTypeGenerator gen = dynCast(type);
+  assert(gen && "expected a ParamType over a struct type generator");
+  return gen;
+}
+
+GeneratorType StructTypeGenerator::getType() const {
+  return ::cast<GeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> StructTypeGenerator::getInputParamTypes() const {
+  return storage.getInputParamTypes();
+}
+
+PogListAttr StructTypeGenerator::getMetadata() const {
+  return storage.getMetadata();
+}
+
+TypedAttr StructTypeGenerator::getBody() const { return storage.getBody(); }
+
+LIT::StructType StructTypeGenerator::getStructType() const {
+  return sugarCast<LIT::StructType>(ParamType::get(getBody()));
+}
+
+TypedAttr StructTypeGenerator::getBodyWithUnboundInputs() const {
+  ParameterEvaluator evaluator;
+  for (Type type : getInputParamTypes())
+    evaluator.appendIndexBinding(
+        UnboundAttr::get(evaluator.getReboundType(type)));
+  return evaluator.getReboundAttribute(getBody());
+}
+
+Type StructTypeGenerator::bindAll(ArrayRef<TypedAttr> paramValues,
+                                  ParameterEvaluationContext *evalCtx) const {
+  return ParamType::get(
+      BindParamsAttr::get(storage.getContext(), storage, paramValues, evalCtx));
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

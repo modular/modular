@@ -64,6 +64,7 @@ from .input_types import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
     SplitKVHeadDims,
+    _mixed_step_decode_view,
 )
 from .utils import (
     ATTN_DISPATCH_METADATA,
@@ -441,6 +442,39 @@ _SCALE_TMA_ALIGN_BYTES = 16
 
 # Recurrent-state kernels take pool row ids as int32.
 _MAX_INT32_ROW_ID = 2**31 - 1
+
+# The sparse MLA kernels on an NVFP4 cache read a key's scale-pool row as a
+# uint32 whose all-ones value marks an unused slot.
+_MAX_UINT32_SCALE_ROW_ID = 2**32 - 2
+
+
+def _check_paged_row_ids(
+    leaf_id: str, num_pages: int, rows_per_page: int, max_row_id: int
+) -> None:
+    """Raises if a paged leaf has more rows than its kernels can address.
+
+    A kernel that folds ``page * rows_per_page + row`` into a 32-bit id
+    aliases or drops rows past its limit without an error, and only once the
+    pool fills into its highest pages, so a short eval never sees it.
+
+    Args:
+        leaf_id: The leaf, for the error message.
+        num_pages: Pages the leaf's view holds on one device.
+        rows_per_page: The finest rows a kernel may fold into one page.
+        max_row_id: The highest row id those kernels address.
+
+    Raises:
+        ValueError: If the last row's id is past ``max_row_id``.
+    """
+    num_rows = num_pages * rows_per_page
+    if num_rows - 1 > max_row_id:
+        raise ValueError(
+            f"leaf {leaf_id!r} would have {num_rows} rows ({num_pages} pages"
+            f" of {rows_per_page}), but its kernels address rows up to"
+            f" {max_row_id}, so rows past it would silently alias or read as"
+            " unused; reduce the KV cache memory budget"
+        )
+
 
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
@@ -1523,6 +1557,10 @@ class KVCacheParams(KVCacheParamInterface):
 
     leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.ATTENTION
 
+    nvfp4_max_scale_row_id: ClassVar[int | None] = _MAX_UINT32_SCALE_ROW_ID
+    """The highest NVFP4 scale-pool row id this cache's kernels address, or
+    ``None`` when they address scales with 64-bit offsets."""
+
     num_layers: int
     """Number of layers in the model."""
 
@@ -2097,6 +2135,15 @@ class KVCacheParams(KVCacheParamInterface):
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         raise NotImplementedError
 
+    def _resolve_target_key(
+        self, assignment: KVCacheAssignments
+    ) -> AttnKeyInterface:
+        """Resolves the target dispatch key for one replica's assignment."""
+        bc = assignment.batch_characteristics
+        return self.resolve_attn_key(
+            bc.batch_size, bc.max_prompt_length, bc.max_cache_valid_length
+        )
+
     def build_runtime_inputs(
         self,
         assignments: Sequence[KVCacheAssignments],
@@ -2121,9 +2168,7 @@ class KVCacheParams(KVCacheParamInterface):
             batch_size = bc.batch_size
             max_cl = bc.max_cache_valid_length
 
-            target_key = self.resolve_attn_key(
-                batch_size, bc.max_prompt_length, max_cl
-            )
+            target_key = self._resolve_target_key(assignment)
             draft_key = (
                 self.resolve_attn_key(
                     batch_size, self.num_draft_tokens_per_step, max_cl
@@ -2336,6 +2381,14 @@ class KVCacheParams(KVCacheParamInterface):
         values, values_packed, values_padded = views(
             self.shape_per_block, self.dtype, values_id
         )
+        # The paged TMA and gather paths fold value rows into int32.
+        for pages in values:
+            _check_paged_row_ids(
+                values_id,
+                pages.shape[0],
+                math.prod(self.shape_per_block[:-1]),
+                _MAX_INT32_ROW_ID,
+            )
         scales, scales_packed, scales_padded = (
             views(
                 self.shape_per_scale_block,
@@ -2345,6 +2398,19 @@ class KVCacheParams(KVCacheParamInterface):
             if quantized and quant_config is not None
             else (None, None, None)
         )
+        max_scale_row_id = self.nvfp4_max_scale_row_id
+        if (
+            scales is not None
+            and self.is_nvfp4_kv_cache
+            and max_scale_row_id is not None
+        ):
+            for pages in scales:
+                _check_paged_row_ids(
+                    scales_id,
+                    pages.shape[0],
+                    math.prod(self.shape_per_scale_block[:-1]),
+                    max_scale_row_id,
+                )
         return KVCacheBuffer(
             leaf_id=values_id,
             replicates_kv_across_tp=self.replicates_kv_across_tp,
@@ -2776,6 +2842,31 @@ class MLAKVCacheParams(KVCacheParams):
             kernel_variant=int(variant),
         )
 
+    def _resolve_target_key(
+        self, assignment: KVCacheAssignments
+    ) -> AttnKeyInterface:
+        """Resolves the target key with the record's decode view filled in."""
+        bc = assignment.batch_characteristics
+        whole_batch = self.resolve_attn_key(
+            bc.batch_size, bc.max_prompt_length, bc.max_cache_valid_length
+        )
+        assert isinstance(whole_batch, MLAAttnKey)
+        record = assignment.mixed_step_split.to_numpy()
+        view = _mixed_step_decode_view(record, bc.batch_size)
+        if view is None:
+            return whole_batch
+        rows, max_query_length, max_cache_length = view
+        decode_key = self.resolve_attn_key(
+            rows, max_query_length, max_cache_length
+        )
+        assert isinstance(decode_key, MLAAttnKey)
+        return replace(
+            whole_batch,
+            decode_batch_size=decode_key.batch_size,
+            decode_max_prompt_length=decode_key.max_prompt_length,
+            decode_num_partitions=decode_key.num_partitions,
+        )
+
     def graph_capture_probe_cache_lengths(
         self, max_cache_length: int, q_max_seq_len: int = 1
     ) -> list[int]:
@@ -2865,7 +2956,8 @@ class MLAKVCacheParams(KVCacheParams):
                 scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
-                # MLA decode kernels read a 3-int dispatch buffer on the
+                # The MLA leaf declares a 6-int dispatch buffer; the decode
+                # kernels read a 3-value view of it.
                 attention_dispatch_metadata=MLAAttnKey.dispatch_metadata_spec().tensor_type(
                     device
                 ),
@@ -2875,10 +2967,10 @@ class MLAKVCacheParams(KVCacheParams):
                 if self.speculative_method is not None
                 else None,
                 mla_num_partitions=TensorType(
-                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                    DType.int64, shape=[2], device=DeviceRef.CPU()
                 ),
                 draft_mla_num_partitions=TensorType(
-                    DType.int64, shape=[1], device=DeviceRef.CPU()
+                    DType.int64, shape=[2], device=DeviceRef.CPU()
                 )
                 if self.speculative_method is not None
                 else None,
@@ -2920,10 +3012,19 @@ class MLAKVCacheParams(KVCacheParams):
             attention_dispatch_metadata=attention_dispatch_metadata,
             draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             mla_num_partitions=Buffer.from_numpy(
-                np.array([target_key.num_partitions], dtype=np.int64)
+                np.array(
+                    [
+                        target_key.num_partitions,
+                        target_key.decode_num_partitions,
+                    ],
+                    dtype=np.int64,
+                )
             ),
             draft_mla_num_partitions=Buffer.from_numpy(
-                np.array([draft_key.num_partitions], dtype=np.int64)
+                np.array(
+                    [draft_key.num_partitions, draft_key.decode_num_partitions],
+                    dtype=np.int64,
+                )
             )
             if draft_key is not None
             else None,

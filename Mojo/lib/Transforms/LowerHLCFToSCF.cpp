@@ -20,6 +20,7 @@
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Compiler/DirectConversion.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -88,6 +89,47 @@ static std::optional<int64_t> constantStep(Value step) {
   if (mlir::matchPattern(step, mlir::m_Constant(&attr)))
     return attr.getInt();
   return std::nullopt;
+}
+
+/// `v` with the `!kgen.scalar` <-> builtin casts the body wraps around its
+/// index arithmetic stripped.
+static Value stripScalarCasts(Value v) {
+  while (Operation *def = v.getDefiningOp()) {
+    if (auto c = dyn_cast<POP::CastFromBuiltinOp>(def))
+      v = c.getInput();
+    else if (auto c = dyn_cast<POP::CastToBuiltinOp>(def))
+      v = c.getInput();
+    else
+      break;
+  }
+  return v;
+}
+
+/// The integer value of a constant, builtin or `!kgen.scalar`.
+static std::optional<int64_t> constantInt(Value v) {
+  if (std::optional<int64_t> c = constantStep(v))
+    return c;
+  auto param = v.getDefiningOp<ParamConstantOp>();
+  if (!param)
+    return std::nullopt;
+  auto simd = dyn_cast<SIMDAttr>(param.getValue());
+  if (!simd || simd.getValues().empty())
+    return std::nullopt;
+  const DTypeValue &dv = simd.getValues().front();
+  KGENDType dtype = dv.getDType();
+  if (!dtype.isInt() && !dtype.isIndex() && !dtype.isUIndex())
+    return std::nullopt;
+  return dv.getIntVal().getSExtValue();
+}
+
+/// Whether `a` and `b` are the same value, through casts, or equal constants.
+static bool sameValueOrConstant(Value a, Value b) {
+  a = stripScalarCasts(a);
+  b = stripScalarCasts(b);
+  if (a == b)
+    return true;
+  std::optional<int64_t> ca = constantInt(a), cb = constantInt(b);
+  return ca && cb && *ca == *cb;
 }
 
 /// The first `continue`/`break` targeting `loop` that is not a terminator of
@@ -164,24 +206,37 @@ static HLCF::BreakOp getWhileExitBreak(HLCF::IfOp exitIf) {
 /// compute kind.
 static bool yieldsStepAdvancedInductionVar(HLCF::ForOp forOp,
                                            HLCF::ForYieldOp yield) {
-  Value next = yield.getInductionVar();
+  Value next = stripScalarCasts(yield.getInductionVar());
   Value iv = forOp.getBody().front().getArgument(0);
   // A loop that runs its induction variable straight through is fine: the
   // `scf.for` body argument already holds the right value.
   if (next == iv)
     return true;
 
+  // Mojo's range iterators stop advancing at the bound, so `raise-for-loops`
+  // yields `iv == ub ? iv : iv + step`. A half-open loop (checked by the
+  // caller) never runs its body at `ub`, so the advance is always taken.
+  if (auto select = next.getDefiningOp<POP::SelectOp>()) {
+    auto cmp = select.getCondition().getDefiningOp<POP::CmpOp>();
+    if (cmp && cmp.getPred() == KGEN::CmpPredicate::EQ &&
+        stripScalarCasts(cmp.getLhs()) == iv &&
+        sameValueOrConstant(cmp.getRhs(), forOp.getUpperBound()) &&
+        stripScalarCasts(select.getTrueValue()) == iv)
+      next = stripScalarCasts(select.getFalseValue());
+  }
+
   Operation *def = next.getDefiningOp();
   if (!def)
     return false;
-  bool isAdd = isa<mlir::index::AddOp, mlir::arith::AddIOp>(def);
-  bool isSub = isa<mlir::index::SubOp, mlir::arith::SubIOp>(def);
+  bool isAdd = isa<mlir::index::AddOp, mlir::arith::AddIOp, POP::AddOp>(def);
+  bool isSub = isa<mlir::index::SubOp, mlir::arith::SubIOp, POP::SubOp>(def);
   bool wantSub =
       forOp.getIndVarComputeType() == HLCF::ForLoopIndVarCompute::SUB;
   if ((wantSub && !isSub) || (!wantSub && !isAdd))
     return false;
-  return def->getNumOperands() == 2 && def->getOperand(0) == iv &&
-         def->getOperand(1) == forOp.getStep();
+  return def->getNumOperands() == 2 &&
+         stripScalarCasts(def->getOperand(0)) == iv &&
+         sameValueOrConstant(def->getOperand(1), forOp.getStep());
 }
 
 /// Append `values` to `out`, bridging each to its slot in `types`. The loop

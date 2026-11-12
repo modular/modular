@@ -10,55 +10,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Architecture registration for GLM-5.3-Flash (``glm5_next``).
+"""GLM-5.3-Flash on ModuleV3.
 
-Text, images and video. The decoder is assembled in
-:meth:`~.model.Glm5NextModel.graph_specs`, which calls
-``attach_layers(build_layers())``, so this resolves to GLM-5.3-Flash's own
-graph rather than to DeepSeek-V3.2's. The vision tower compiles beside it and
-its rows are scattered onto the image and video-frame placeholders after the
+Text, images and video. The vision tower compiles beside the decoder, and its
+rows are scattered onto the image and video-frame placeholders after the
 embedding.
-
-A load failure is a real failure, not bring-up noise.
-
-The architecture name is the checkpoint's, not a MAX invention:
-``zai-org/GLM-5.3-Flash`` declares ``architectures:
-["Glm5NextForConditionalGeneration"]`` and ``model_type: "glm5_next"``, which
-is what config detection keys on.
 """
 
 from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.glm5_1.reasoning import (  # noqa: F401  registers "glm45"
-    GlmReasoningParser,
-)
-from max.pipelines.architectures.glm5_1.tool_parser import (  # noqa: F401  registers "glm45"
-    GlmToolParser,
-)
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Glm5NextBatchProcessor
 from .context import Glm5NextTextAndVisionContext
 from .memory_planner import Glm5NextMemoryPlanner
-from .model import Glm5NextModel
 from .model_config import Glm5NextConfig
+from .modules import Glm5NextDecoder
+from .reasoning import GlmReasoningParser  # noqa: F401  registers "glm5_next"
 from .tokenizer import Glm5NextTokenizer
+from .tool_parser import GlmToolParser  # noqa: F401  registers "glm5_next"
+from .vision.tower import Glm5NextVisionEncoder
 from .weight_adapters import glm5_next_weight_rules
 
 __all__ = ["glm5_next_arch"]
 
 glm5_next_arch = SupportedArchitecture(
-    name="Glm5NextForConditionalGeneration",
+    # The checkpoint's name resolves here without ``prefer_module_v3``, as the
+    # only build registered for it. The suffix stays because Mach's export
+    # takes the ModuleV3 input layout from ``gen_mef --prefer-module-v3``,
+    # which refuses an architecture without it.
+    name="Glm5NextForConditionalGeneration_ModuleV3",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=[
-        "zai-org/GLM-5.3-Flash",
-    ],
+    example_repo_ids=["zai-org/GLM-5.3-Flash"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Glm5NextConfig.DEFAULT_ENCODING,
     supported_encodings=Glm5NextConfig.SUPPORTED_ENCODINGS,
-    pipeline_model=Glm5NextModel,
+    modules={
+        GraphRole.DECODER: Glm5NextDecoder,
+        GraphRole.VISION: Glm5NextVisionEncoder,
+    },
     input_modalities={
         InputModality.TEXT,
         InputModality.IMAGE,
@@ -66,35 +58,29 @@ glm5_next_arch = SupportedArchitecture(
     },
     batching=Glm5NextBatchProcessor,
     tokenizer=Glm5NextTokenizer,
+    # Every request uses the vision context, text-only ones included: the
+    # pipeline's vision seam asserts one for every request of a
+    # vision-capable architecture.
     context_type=Glm5NextTextAndVisionContext,
     weight_rules=glm5_next_weight_rules,
     use_weight_rules=True,
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
-    # A speculative pairing serves with prefix caching off: the KDA state
-    # checkpoints only at a page boundary, which a step's accepted drafts
-    # move past.
     checkpoints_recurrent_state=True,
+    # The KDA state checkpoints only at a page boundary, which a step's
+    # accepted drafts move past.
+    prefix_caching_under_spec=False,
     checkpoint_drafts={"mtp": "MTPGlm5NextDraftModel"},
+    # Mach binds the fused graph by this name, the graph-API pairing's.
     spec_decode_graph_names={"mtp": "glm5_next_with_mtp_graph"},
     multi_gpu_supported=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
-    # The wire format is the GLM-5.x family's, unchanged: `<think>` reasoning
-    # and flat `<tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>`
-    # blocks with no outer JSON. The reference engines select
-    # `--reasoning-parser glm45` and `--tool-call-parser glm47`; a competitor
-    # renaming a parser is not evidence the format changed.
-    tool_parser="glm45",
-    reasoning_parser="glm45",
+    # GLM-5.x's `<think>` reasoning and `<tool_call>` formats, as the "glm45"
+    # parsers read them, registered under this package's own name.
+    tool_parser="glm5_next",
+    reasoning_parser="glm5_next",
     default_structured_output_backend="xgrammar",
-    # Inherited from GLM-5.2 for the same measured reason: under the compact
-    # grammar GLM's content-bearing continuations are masked at the first array
-    # decision and the schema's shortest terminator wins.
     default_structured_output_any_whitespace=True,
-    # The KDA state is a leaf of the paged cache tree rather than a pool the
-    # model owns, so releasing the warmup batch's cache entries releases it
-    # too and there is nothing for `SupportsSSMStateWarmup` to do -- the same
-    # reason Qwen3.5 captures without implementing it.
     supports_device_graph_capture=True,
 )

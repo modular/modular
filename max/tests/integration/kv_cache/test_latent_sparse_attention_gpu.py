@@ -127,6 +127,39 @@ def test_latent_sparse_attention_matches_numpy(
     swa_params = _leaf_params(slots_per_page=None, window=WINDOW)
     comp_params = _leaf_params(slots_per_page=PAGE_SIZE // RATIO, window=None)
 
+    with Graph(
+        "latent_sparse_attention",
+        input_types=[
+            TensorType(
+                DType.float32, [total, NUM_HEADS, HEAD_DIM], DeviceRef.GPU()
+            ),
+            TensorType(DType.uint32, [batch + 1], DeviceRef.GPU()),
+            TensorType(DType.int32, [total, num_comp], DeviceRef.GPU()),
+            TensorType(DType.float32, [NUM_HEADS], DeviceRef.GPU()),
+            *swa_params.flattened_kv_inputs(),
+            *comp_params.flattened_kv_inputs(),
+        ],
+    ) as graph:
+        q_in, offs_in, idx_in, sink_in, *rest = graph.inputs
+        it = iter(rest)
+        swa_collection = swa_params.unflatten_kv_inputs(it)[0]
+        comp_collection = comp_params.unflatten_kv_inputs(it)[0]
+        out = latent_sparse_attention_ragged(
+            q_in.tensor,
+            offs_in.tensor,
+            idx_in.tensor,
+            sink_in.tensor,
+            swa_collection,
+            comp_collection,
+            ops.constant(layer_swa, DType.uint32, DeviceRef.CPU()),
+            ops.constant(layer_comp, DType.uint32, DeviceRef.CPU()),
+            scale=scale,
+            window=WINDOW,
+        )
+        graph.output(out)
+
+    model = InferenceSession(devices=[device]).load(graph)
+
     swa_inputs = paged_kv_cache_inputs(
         swa_params,
         prompt_lens,
@@ -174,38 +207,6 @@ def test_latent_sparse_attention_matches_numpy(
             picks = rng.choice(available, size=n, replace=False)
             comp_idx[t, : n - (t % 2)] = picks[: n - (t % 2)]
 
-    with Graph(
-        "latent_sparse_attention",
-        input_types=[
-            TensorType(
-                DType.float32, [total, NUM_HEADS, HEAD_DIM], DeviceRef.GPU()
-            ),
-            TensorType(DType.uint32, [batch + 1], DeviceRef.GPU()),
-            TensorType(DType.int32, [total, num_comp], DeviceRef.GPU()),
-            TensorType(DType.float32, [NUM_HEADS], DeviceRef.GPU()),
-            *swa_params.flattened_kv_inputs(),
-            *comp_params.flattened_kv_inputs(),
-        ],
-    ) as graph:
-        q_in, offs_in, idx_in, sink_in, *rest = graph.inputs
-        it = iter(rest)
-        swa_collection = swa_params.unflatten_kv_inputs(it)[0]
-        comp_collection = comp_params.unflatten_kv_inputs(it)[0]
-        out = latent_sparse_attention_ragged(
-            q_in.tensor,
-            offs_in.tensor,
-            idx_in.tensor,
-            sink_in.tensor,
-            swa_collection,
-            comp_collection,
-            ops.constant(layer_swa, DType.uint32, DeviceRef.CPU()),
-            ops.constant(layer_comp, DType.uint32, DeviceRef.CPU()),
-            scale=scale,
-            window=WINDOW,
-        )
-        graph.output(out)
-
-    model = InferenceSession(devices=[device]).load(graph)
     (result,) = model(
         Buffer.from_numpy(q).to(device),
         Buffer.from_numpy(row_offsets).to(device),

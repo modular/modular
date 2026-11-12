@@ -128,11 +128,9 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
-    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_4x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
-    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
-    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
@@ -598,6 +596,10 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
+        # Hy4's recipe env: its init-time gate/up permute traps memory in
+        # partly used pages at the default 256 MB.
+        if "hy4" in model.casefold():
+            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB"] = "32"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"

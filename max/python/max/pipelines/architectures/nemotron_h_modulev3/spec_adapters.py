@@ -28,6 +28,9 @@ live state. Each step therefore runs
    itself, and there is nothing to replay (see
    :mod:`.state_rollback`).
 
+A prefill row riding a mixed verify step also commits in the verify itself,
+whatever its flag says (see :mod:`.state_rollback`).
+
 Step 3 belongs to the proposer's ``materialize``: the first phase after the
 accepted count settles, and the last before anything reads the live state.
 
@@ -45,6 +48,7 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.nn._graph_ops import argmax_with_bias
+from max.nn._graph_ops.state_space import verify_width_operand
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates
@@ -116,6 +120,8 @@ class _Verified:
 
     replays: tuple[MambaReplayCapture, ...]
     window_offsets: TensorValue
+    verify_width: TensorValue
+    """The ``[K]`` operand the replay's fold reads the verify width from."""
     state: Sequence[RecurrentStateInputsPerDevice[TensorValue, Any]]
 
 
@@ -178,6 +184,8 @@ class NemotronHBlockTarget:
         window_rows, window_offsets = verify_window(
             batch.merged_offsets, batch.num_draft_tokens, batch.device0
         )
+        # A host tensor, so one operand serves every device and every layer.
+        verify_width = verify_width_operand(batch.num_draft_tokens)
         outputs, hidden, replays = self.target.verify(
             tokens=Tensor.from_graph_value(batch.merged_tokens),
             return_n_logits=Tensor.from_graph_value(batch.return_n_logits),
@@ -190,10 +198,12 @@ class NemotronHBlockTarget:
                 Tensor.from_graph_value(window_rows), self.mesh
             ),
             update_state=update_state,
+            verify_width=Tensor.from_graph_value(verify_width),
         )
         self._verified = _Verified(
             replays=replays,
             window_offsets=window_offsets,
+            verify_width=verify_width,
             state=state,
         )
         assert outputs.logits is not None
@@ -230,6 +240,8 @@ class NemotronHBlockTarget:
                 live_conv.live_row_ids,
                 live_ssm.live_row_ids,
                 bounds_per_device[device],
+                batch.merged_offsets_per_dev[device],
+                verified.verify_width,
             )
 
     def _captures(
@@ -451,5 +463,7 @@ ADAPTER = TargetAdapter(
     check=check,
     # Mach's Nemotron-H DSpark graph takes no ``in_thinking_phase``.
     relaxed_thinking_acceptance=False,
+    # The conv and scan kernels commit a prefill row's state in the verify itself.
+    verify_commits_long_rows=True,
     block_proposer=block_proposer,
 )

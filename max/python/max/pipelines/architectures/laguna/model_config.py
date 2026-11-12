@@ -417,10 +417,6 @@ class LagunaConfig(Llama3Config):
         Returns:
             A single ``KVCacheParams``, or the hybrid tree when the model has
             sliding-attention layers.
-
-        Raises:
-            ValueError: If an FP8 KV cache is requested for a model with
-                sliding layers.
         """
         # The MiniMax-M2 donor defaulted to
         # ``data_parallel_degree = len(devices)``; this couples DP
@@ -438,9 +434,9 @@ class LagunaConfig(Llama3Config):
         # ``--kv-cache-format float8_e4m3fn``; the default bf16 KV cache is the
         # validated configuration. When the resolved cache dtype is FP8, MAX
         # needs a quantization config to lay out the cache; mirror deepseekV3.
-        # MAX scales KV dynamically at runtime — the checkpoint's static
-        # ``self_attn.{k,v}_scale`` are dropped in the weight adapter (MAX never
-        # consumes them). ``scale_dtype=int8`` selects the *unscaled*
+        # MAX stores FP8 KV unscaled (a saturating cast at scale 1) and drops
+        # the checkpoint's static ``self_attn.{k,v}_scale`` in the weight
+        # adapter. ``scale_dtype=int8`` selects the *unscaled*
         # ``is_fp8_kv`` cast path (full per-block scaling / SnapMLA is still WIP
         # upstream), so this can degrade quality on longer contexts and has NOT
         # been validated against the bf16 path. ``LagunaAttention`` uses the
@@ -453,13 +449,6 @@ class LagunaConfig(Llama3Config):
 
         schedule = LagunaConfig.read_layer_schedule(huggingface_config)
         if schedule.sliding_window is not None:
-            if is_fp8_cache:
-                raise ValueError(
-                    "Laguna sliding-attention layers cannot use an FP8 KV "
-                    f"cache: the fused rope_split_store_ragged path rejects a "
-                    f"scaled quantized cache (requested {cache_dtype}). Serve "
-                    "this model with the default bfloat16 KV cache."
-                )
             return hybrid_swa_full_kv_params(
                 layer_types=schedule.layer_types,
                 sliding_window=schedule.sliding_window,

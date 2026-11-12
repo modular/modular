@@ -1995,17 +1995,19 @@ struct NVBlockScaledTokenFormat[
             output_scales_offset.layout,
         }
         comptime if Self.nvfp4_dyn_global_scales:
-            if not output_rowwise_scales:
-                abort(
-                    "nvfp4_dyn_global_scales requires an output_rowwise_scales"
-                    " buffer"
-                )
-            self.output_rowwise_scales = {
-                MutPointer[BFloat16, MutUntrackedOrigin](
-                    unsafe_from_address=Int(output_rowwise_scales.value())
-                ),
-                row_major(Int64(output_tokens.dim(0))),
-            }
+            match output_rowwise_scales:
+                case .Some(rowwise_scales):
+                    self.output_rowwise_scales = {
+                        MutPointer[BFloat16, MutUntrackedOrigin](
+                            unsafe_from_address=Int(rowwise_scales)
+                        ),
+                        row_major(Int64(output_tokens.dim(0))),
+                    }
+                case .None:
+                    abort(
+                        "nvfp4_dyn_global_scales requires an"
+                        " output_rowwise_scales buffer"
+                    )
         else:
             self.output_rowwise_scales = {
                 MutPointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),

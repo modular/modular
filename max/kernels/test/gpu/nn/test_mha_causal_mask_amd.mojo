@@ -470,11 +470,24 @@ def test_fold_eligibility() raises:
     assert_false(
         _mha_decode_fold_ok[bf16, 128, 16, 1, 4, use_valid_length=True]()
     )
-    # A mask needing a per-tile decode check reads an S-row span that underflows.
+    # A mask needing a per-tile decode check folds only if it declares it can
+    # serve the folded span (`SlidingWindowCausalMask` does).
     assert_false(
         _mha_decode_fold_ok[
             bf16, 128, 16, 1, 4, check_mask_during_decoding=True
         ]()
+    )
+    assert_equal(
+        _mha_decode_fold_ok[
+            bf16,
+            128,
+            16,
+            1,
+            4,
+            check_mask_during_decoding=True,
+            mask_supports_fold=True,
+        ](),
+        available,
     )
 
 

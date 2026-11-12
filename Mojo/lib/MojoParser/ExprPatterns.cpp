@@ -506,8 +506,10 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                           const PatternPath *path,
                           SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
+  // TODO: kill `getWithoutParameters` as well.
   ASTType tupleType =
-      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc());
+      builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc())
+          .getWithoutParameters(builder.shared);
 
   if (!tupleType.isEqualCanon(
           subjectType.getWithoutParameters(builder.shared))) {
@@ -1893,8 +1895,8 @@ struct CoveredLiteralNode {
 /// `False,False` as total. Applies to tuples and structs of EnumLike fields.
 ///
 /// LiteralSet tracks root Equal spellings (`4`, `"foo"`) for duplicate /
-/// unreachability only — the domain is open, so covering literals never
-/// proves exhaustivity (only a catch-all closes the space).
+/// unreachability. The domain is open, so covering literals never proves
+/// exhaustivity; only a catch-all closes the space.
 struct MatchCoveringSpace {
   enum class Kind : uint8_t {
     Opaque,
@@ -2006,7 +2008,8 @@ static bool isTupleType(PatternMatchBuilder &builder, ASTType type, SMLoc loc) {
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, loc);
   if (!tupleType)
     return false;
-  return tupleType.isEqualCanon(type.getWithoutParameters(builder.shared));
+  return tupleType.getWithoutParameters(builder.shared)
+      .isEqualCanon(type.getWithoutParameters(builder.shared));
 }
 
 /// Append EnumLike leaf dimensions under `path`. Returns false if any leaf is
@@ -2132,7 +2135,8 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   }
 
   // Everything else: open Equal-literal universe (Int, String, …). Track
-  // covered spellings for duplicate / unreachability; never prove exhaustivity.
+  // covered spellings for duplicate / unreachability; only a catch-all can
+  // prove exhaustivity.
   space->kind = MatchCoveringSpace::Kind::LiteralSet;
   return space;
 }
@@ -2672,11 +2676,12 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     SMLoc matchLoc, bool offerMissingCases) {
   // Covering model (see MatchCoveringSpace):
   //   - Closed EnumLike root → FiniteCtors bitset.
-  //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
+  //   - Open EnumLike root → OpenCtors bitset for duplicate detection and
+  //     require a catch-all because additional constructors may exist.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
-  //   - Else LiteralSet: track root Equal spellings for duplicates only
-  //     (no exhaustivity — Int/String/… are open universes).
+  //   - Else LiteralSet: track root Equal spellings for duplicates and require
+  //     a catch-all because Int/String/… are open universes.
   //   - Irrefutable unguarded cases close the space.
   //   - Or patterns expand to a union of alternatives; each is covered
   //     independently (guards never shrink the remaining space).
@@ -2758,6 +2763,15 @@ std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     // A catch-all would have closed the space via alwaysMatches().
     emitWarning(matchLoc, "'match' is too complex to check for exhaustivity; "
                           "add a '_' case");
+    return {};
+  }
+
+  if (space->kind == MatchCoveringSpace::Kind::OpenCtors ||
+      space->kind == MatchCoveringSpace::Kind::LiteralSet) {
+    emitWarning(matchLoc, "'match' is not exhaustive; add a '_' case");
+    if (offerMissingCases)
+      return formatCaseArms({"_"}, caseEntries.back().caseIndent,
+                            caseEntries.back().bodyIndent);
     return {};
   }
 

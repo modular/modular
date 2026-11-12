@@ -29,7 +29,7 @@ from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
@@ -280,7 +280,7 @@ class Laguna(Module[[DecoderInputs], DecoderOutputs]):
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the KV leaves, then runs the text model."""
         tokens = inputs.tokens
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         kv_by_type: dict[str, PagedCacheValues] = {}
         if isinstance(self.kv_params, MultiKVCacheParams):
             # The tree's declaration order is the unflattening order, and a

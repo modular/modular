@@ -37,9 +37,11 @@ from max._artifact.vision import VisionMetadata
 from max.pipelines.architectures.gemma4.image_processor import (
     Gemma4ImageProcessor,
 )
-from max.pipelines.architectures.gemma4.model import gemma4_vision_metadata
 from max.pipelines.architectures.gemma4.video_processor import (
     Gemma4VideoProcessor,
+)
+from max.pipelines.architectures.gemma4.vision_model.vision_spec import (
+    gemma4_vision_metadata,
 )
 from max.pipelines.architectures.qwen3_5.model import qwen3_5_vision_metadata
 

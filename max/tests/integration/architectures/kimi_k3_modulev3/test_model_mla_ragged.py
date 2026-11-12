@@ -44,6 +44,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     KimiK3Model,
     KimiK3ModelConfig,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
@@ -95,9 +98,14 @@ def _config(
 
 
 def _assign_weights(model: KimiK3Model, rng: np.random.Generator) -> None:
-    def bf16(*shape: int) -> Tensor:
-        arr = (rng.standard_normal(shape) * 0.02).astype(np.float32)
+    def draw(*shape: int) -> np.ndarray:
+        return (rng.standard_normal(shape) * 0.02).astype(np.float32)
+
+    def as_bf16(arr: np.ndarray) -> Tensor:
         return Tensor(arr, dtype=DType.float32).cast(DType.bfloat16)
+
+    def bf16(*shape: int) -> Tensor:
+        return as_bf16(draw(*shape))
 
     def ones(*shape: int) -> Tensor:
         return Tensor(
@@ -121,17 +129,19 @@ def _assign_weights(model: KimiK3Model, rng: np.random.Generator) -> None:
         attn = layer.attention
         assert isinstance(attn, KimiK3MLAAttention)
         q_head_dim = _QK_NOPE_HEAD_DIM + _QK_ROPE_HEAD_DIM
-        attn.q_a_proj.weight = bf16(_Q_LORA_RANK, _HIDDEN)
+        q_a = draw(_Q_LORA_RANK, _HIDDEN)
         attn.q_a_layernorm.weight = ones(_Q_LORA_RANK)
         attn.q_b_proj.weight = bf16(_NUM_HEADS * q_head_dim, _Q_LORA_RANK)
-        attn.kv_a_proj_with_mqa.weight = bf16(
-            _KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN
-        )
+        kv_a = draw(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN)
         attn.kv_a_layernorm.weight = ones(_KV_LORA_RANK)
         attn.kv_b_proj.weight = bf16(
             _NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK
         )
-        attn.g_proj.weight = bf16(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN)
+        attn.qkv_a_g_proj.weight = as_bf16(
+            fuse_qkv_a_g_for_tp(
+                q_a, kv_a, draw(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
+            )
+        )
         attn.o_proj.weight = bf16(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM)
 
         ffn = layer.ffn

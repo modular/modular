@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_library", "modular_cc_test", "mojo_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -632,7 +632,9 @@ modular_cc_test(
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
@@ -710,6 +712,49 @@ modular_cc_test(
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+# The architecture-name parser. Needs no GPU.
+modular_cc_test(
+    name = "ArchitectureVersionTest",
+    size = "small",
+    srcs = ["ArchitectureVersionTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/ArchitectureVersion",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The driver C API on a virtual HIP device. Needs no GPU and no driver plugin,
+# so the mojo-hal presubmit job also runs it under the HAL device context.
+modular_cc_test(
+    name = "CAPIVirtualDeviceTest",
+    size = "small",
+    srcs = ["CAPIVirtualDeviceTest.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
     ],
 )
 
@@ -837,7 +882,9 @@ modular_cc_test(
     dynamic_deps = [
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
@@ -1369,6 +1416,39 @@ modular_cc_test(
     ],
 )
 
+# A virtual device configured for the real accelerator's target must report
+# that accelerator's identity. Runs on the NVIDIA and AMD GPU lanes in the
+# default config; under --config=hal-device-context, run it through
+# CAPIHALTests. Metal has no virtual device (MOCO-2411).
+modular_cc_test(
+    name = "VirtualDeviceParityTest",
+    size = "small",
+    srcs = ["VirtualDeviceParityTest.cpp"],
+    data = _CAPI_TEST_PLUGINS,
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "@llvm-project//mlir:MLIR",
+    ],
+    env = _CAPI_TEST_PLUGIN_ENV,
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//MLRT:Driver/ArchitectureVersion",
+        "//MLRT:Driver/CompilationDeviceImpl",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # The cases that need two accelerators, which are peer access and peer copies.
 modular_cc_test(
     name = "CAPIPeerTest",
@@ -1390,9 +1470,57 @@ modular_cc_test(
     ],
 )
 
-# The C API tests under --config=hal-device-context, which no CI lane runs on
-# a GPU. Run with that config plus a remote GPU config, for example
-# `--config=hal-device-context --config=remote-b200`.
+# Metal gets its own target because //:has_gpu does not include Metal yet.
+[
+    modular_cc_test(
+        name = name,
+        size = "small",
+        srcs = ["CompletionFlagTest.cpp"],
+        data = _CAPI_TEST_PLUGINS,
+        env = _CAPI_TEST_PLUGIN_ENV,
+        gpu_constraints = [gpu],
+        tags = ["gpu"],
+        target_compatible_with = select({
+            incompatible: ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/DeviceContextAPI",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+        ],
+    )
+    for name, gpu, incompatible in [
+        ("CompletionFlagTest", "//:has_gpu", "@platforms//os:macos"),
+        ("MetalCompletionFlagTest", "//:apple_gpu", "//:asan"),
+    ]
+]
+
+# Meant for --config=hal-device-context; also passes under the legacy driver.
+mojo_test(
+    name = "test_completion_flag_graph_handle.mojo.test",
+    srcs = ["test_completion_flag_graph_handle.mojo"],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# The C API and virtual device parity tests under --config=hal-device-context,
+# which no CI lane runs on a GPU. Run with that config plus a remote GPU
+# config, for example `--config=hal-device-context --config=remote-b200`.
 test_suite(
     name = "CAPIHALTests",
     tags = ["manual"],
@@ -1400,6 +1528,7 @@ test_suite(
         ":CAPIConcurrencyTest",
         ":CAPIPeerTest",
         ":CAPITest",
+        ":VirtualDeviceParityTest",
     ],
 )
 

@@ -606,7 +606,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             ep_buffers: The exchange's graph buffers.
 
         Returns:
-            ``[T, hidden_size]``.
+            ``[T, hidden_size]``, replicated.
         """
         if ep_config is not None:
             assert ep_buffers is not None
@@ -817,7 +817,8 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             ep_buffers: This block's own dispatch/combine exchange buffers.
 
         Returns:
-            ``[T, hidden_size]``, replicated, placed as ``hidden_states`` was.
+            ``[T, hidden_size]``, replicated, placed as ``hidden_states``
+            was.
         """
         topk_idx, topk_weight = self.gate(hidden_states)
         latent = self.routed_expert_down_proj(hidden_states)

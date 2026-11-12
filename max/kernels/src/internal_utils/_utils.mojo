@@ -138,6 +138,8 @@ def bench_compile_time[
                         # Ensure that the compilation step is not optimized away.
                         keep(Pointer(to=func))
                         clobber_memory()
+                case _:
+                    pass
 
         b.iter(bench_iter)
 
@@ -260,6 +262,8 @@ def arg_parse(handle: String, default: Bool) raises -> Bool:
                 return True
             case "False":
                 return False
+            case _:
+                pass
     return default
 
 
@@ -298,6 +302,8 @@ struct Mode(TrivialRegisterPassable, Writable):
                     self.append(Self.BENCHMARK)
                 case == (String(Self.VERIFY.handle)):
                     self.append(Self.VERIFY)
+                case _:
+                    pass
 
     def append(mut self, other: Self):
         self._value |= other._value
@@ -431,6 +437,8 @@ def init_vector_gpu[
                 UInt64(tid + 2 * stride).cast[dtype](),
                 UInt64(tid + 3 * stride).cast[dtype](),
             )
+        case _:
+            pass
     apply(values)
 
 

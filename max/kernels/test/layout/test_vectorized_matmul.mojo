@@ -70,7 +70,7 @@ def test_tiled_and_vectorized_matmul():
                     for n_i in range(BN // TN):
                         for k_i in range(BK):
                             var lhs = SIMD[.float32, TM]()
-                            comptime for tm in range(TM):
+                            for tm in range(TM):
                                 lhs[tm] = tile_a[m_i * TM + tm, k_i]
                             var product = outer_product[TM, TN](
                                 lhs, vec_b[k_i, n_i]

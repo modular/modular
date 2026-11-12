@@ -41,12 +41,12 @@ def models() -> dict[tuple[int, ...], Model]:
             summed = x + residual
             normalized = ops.rms_norm(summed, gamma, epsilon=_EPSILON)
             graph.output(normalized, summed)
-        model = session.load(graph)
+        compiled[shape] = session.load(graph)
+    for model in compiled.values():
         assert any(
             "mo.composite.rms_norm_residual_add" in summary
             for summary in model.kernel_summaries
         ), model.kernel_summaries
-        compiled[shape] = model
     return compiled
 
 

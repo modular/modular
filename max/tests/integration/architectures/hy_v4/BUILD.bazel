@@ -41,3 +41,18 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
     ],
 )
+
+# Guards the shared `Buffer.view` and `WeightData` path the adapter relies on
+# to pass the routed experts through without a host copy, in checkpoint order.
+modular_py_test(
+    name = "test_weight_adapters",
+    size = "small",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/hy_v4",
+        requirement("numpy"),
+    ],
+)

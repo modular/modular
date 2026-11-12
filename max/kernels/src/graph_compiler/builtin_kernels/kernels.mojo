@@ -81,6 +81,7 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
+from nn.ihc import ihc_collapse_rms_norm, ihc_mix_gemv
 from nn.mhc import (
     hyper_connection_gates,
     mhc_post,
@@ -151,6 +152,7 @@ from state_space.mamba2_ssd_scan import (
     ssd_scan_tile_channels,
     ssd_scan_tile_split,
 )
+from state_space.row_rule import is_mixed_launch
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_fwd_gpu,
@@ -177,9 +179,6 @@ from extensibility import (
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
     unsafe_fused_view,
-)
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
 )
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -2258,44 +2257,66 @@ struct Struct_moe_create_indices_packed:
         expert_offset: Int,
         local_experts: Int,
     ](
-        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        weights: OutputTensor[dtype=DType.float32, rank=2, ...],
-        routing: InputTensor[dtype=DType.float32, rank=2, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        weights: Some[Output & Tensor],
+        routing: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(weights), TileTensorable)
+        comptime assert conforms_to(type_of(routing), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(weights).rank == 2
+        comptime assert type_of(routing).rank == 2
         comptime assert (
             context.target.is_gpu()
         ), "moe.create.indices.packed is GPU only"
         moe_indices_packed[top_k, local_experts](
             PackedIndicesArgs(
-                routing.unsafe_ptr()
-                .unsafe_mut_cast[False]()
+                routing.to_tile_tensor[.float32]()
+                .ptr.unsafe_mut_cast[False]()
                 .unsafe_origin_cast[ImmUntrackedOrigin](),
-                token_expert_order.unsafe_ptr().unsafe_origin_cast[
+                token_expert_order.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                expert_start_indices.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                restore_token_order.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                expert_ids.to_tile_tensor[.int32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                expert_start_indices.unsafe_ptr().unsafe_origin_cast[
+                expert_usage_stats.to_tile_tensor[
+                    .uint32
+                ]().ptr.unsafe_origin_cast[MutUntrackedOrigin](),
+                scales_offset.to_tile_tensor[.uint32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                restore_token_order.unsafe_ptr().unsafe_origin_cast[
+                weights.to_tile_tensor[.float32]().ptr.unsafe_origin_cast[
                     MutUntrackedOrigin
                 ](),
-                expert_ids.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                expert_usage_stats.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                scales_offset.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                weights.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
-                Int64(routing.dim_size[0]()),
+                Int64(routing.shape()[0].value()),
                 Int64(expert_offset),
             ),
             context,
@@ -2456,29 +2477,47 @@ struct Struct_moe_single_group_router_packed:
     @inline(.always)
     @staticmethod
     def execute[
-        scores_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
-        packed: OutputTensor[dtype=scores_type, rank=2, ...],
-        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        packed: Some[Output & Tensor],
+        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime scores_type = type_of(expert_scores).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(expert_scores).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(expert_weights).dtype == scores_type
+        comptime assert type_of(packed).dtype == scores_type
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(expert_scores), UnsafeFusedView)
+        var scores_view = unsafe_fused_view(expert_scores)
+        comptime assert conforms_to(type_of(scores_view), Loadable)
+
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: Coord) {var expert_scores} -> SIMD[scores_type, width]:
+        ](coords: Coord) {var scores_view} -> SIMD[scores_type, width]:
             comptime assert (
                 coords.rank == 2
             ), "the expert-scores lambda contract is rank 2"
-            return expert_scores._lambda_load[width=width](coords)
+            return rebind[SIMD[scores_type, width]](
+                scores_view.load[width=width](coords)
+            )
 
         single_group_router[
             n_routed_experts,
@@ -2486,14 +2525,14 @@ struct Struct_moe_single_group_router_packed:
             norm_weights=norm_weights,
             packed=True,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            expert_scores.runtime_layout(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor[scores_type](),
+            row_major(expert_scores.shape()),
             scores_input_fn,
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor().as_imm(),
             routed_scaling_factor,
             context,
-            packed.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr,
+            packed.to_tile_tensor[scores_type]().as_unsafe_any_origin().ptr,
         )
 
 
@@ -2762,6 +2801,98 @@ struct Struct_hyper_connection_gates:
             pre_post_comb_b.to_tile_tensor[.float32, mut=False](),
             pre_post_comb_scale.to_tile_tensor[.float32, mut=False](),
             hc_eps,
+            context,
+        )
+
+
+@extensibility.register("hyper_connection.ihc.mix_gemv")
+struct Struct_ihc_mix_gemv:
+    """Registers the `hyper_connection.ihc.mix_gemv` graph op with the graph
+    compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        k: Int,
+        num_mix: Int,
+    ](
+        partials: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(partials), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert type_of(partials).rank == 3
+        comptime assert type_of(streams).rank == 2
+        comptime assert type_of(weight).rank == 2
+        ihc_mix_gemv[k=k, num_mix=num_mix](
+            partials.to_tile_tensor[.float32](),
+            streams.to_tile_tensor[.bfloat16, mut=False](),
+            weight.to_tile_tensor[.float32, mut=False](),
+            context,
+        )
+
+
+@extensibility.register("hyper_connection.ihc.collapse_rms_norm")
+struct Struct_ihc_collapse_rms_norm:
+    """Registers the `hyper_connection.ihc.collapse_rms_norm` graph op with the graph
+    compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hc_mult: Int,
+        num_mix: Int,
+        num_splits: Int,
+        hidden: Int,
+    ](
+        output: Some[Output & Tensor],
+        gates: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        partials: Some[Input & Tensor],
+        base: Some[Input & Tensor],
+        scale: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
+        hc_magnitude: Float32,
+        hc_eps: Float32,
+        streams_eps: Float32,
+        norm_eps: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(gates), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(partials), TileTensorable)
+        comptime assert conforms_to(type_of(base), TileTensorable)
+        comptime assert conforms_to(type_of(scale), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(gates).rank == 2
+        comptime assert type_of(streams).rank == 3
+        comptime assert type_of(partials).rank == 3
+        comptime assert type_of(base).rank == 1
+        comptime assert type_of(scale).rank == 1
+        comptime assert type_of(gamma).rank == 1
+        ihc_collapse_rms_norm[
+            hc_mult=hc_mult,
+            num_mix=num_mix,
+            num_splits=num_splits,
+            hidden=hidden,
+        ](
+            output.to_tile_tensor[dtype](),
+            gates.to_tile_tensor[.float32](),
+            streams.to_tile_tensor[dtype, mut=False](),
+            partials.to_tile_tensor[.float32, mut=False](),
+            base.to_tile_tensor[.float32, mut=False](),
+            scale.to_tile_tensor[.float32, mut=False](),
+            gamma.to_tile_tensor[dtype, mut=False](),
+            hc_magnitude,
+            hc_eps,
+            streams_eps,
+            norm_eps,
             context,
         )
 
@@ -3822,7 +3953,7 @@ def tpool_patch_merger_shape(
 
 
 @extensibility.register("gated_delta_conv1d_fwd")
-struct GatedDeltaConv1dFwd[write_state: Bool = True]:
+struct GatedDeltaConv1dFwd[write_state: Bool = True, silu: Bool = False]:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
     Reads/writes a single mutable conv-state pool of shape
@@ -3835,6 +3966,8 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     Parameters:
         write_state: Whether to write the updated window back to
             `conv_state`. False only reads it for the look-back.
+        silu: Whether each output is `silu` of the fp32 convolution sum,
+            applied before the store rounds it to the output dtype.
 
     Tensor Shapes:
         - conv_output_ragged : [total_seq_len, conv_dim]                  (OUT)
@@ -3876,6 +4009,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             slot_idx.to_tile_tensor[.uint32](),
             input_row_offsets.to_tile_tensor[.uint32](),
             conv_output_ragged.to_tile_tensor(),
+            0,
             ctx,
         )
 
@@ -3893,11 +4027,15 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         slot_idx: TileTensor[DType.uint32, ...],
         input_row_offsets: TileTensor[DType.uint32, ...],
         qkv_window: TileTensor[mut=True, work_dtype, ...],
+        num_draft_tokens: Int,
         ctx: DeviceContext,
     ) raises:
-        """Launches the conv, also copying its input to `qkv_window` when
-        `capture_input`. `qkv_window` then has the output's shape and is
-        otherwise never touched.
+        """Launches the conv. With `capture_input`, a verify's forward
+        launch at `num_draft_tokens` drafts, it copies each row that fits a
+        slot of `qkv_window` to that slot and writes the window of every
+        longer row at the row's last real token (see
+        `gated_delta_conv1d_fwd_gpu`). `qkv_window` holds `batch_size` slots
+        of equal length and is otherwise never touched.
         """
         comptime assert conv_output_ragged.rank == 2
         comptime assert qkv_input_ragged.rank == 2
@@ -3954,18 +4092,39 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         if batch_size == 0 or total_seq_len == 0:
             return
 
-        # The kernel addresses the ragged input and output with 32-bit linear
-        # offsets (the conv_state pool keeps 64-bit offsets).
+        var window_row_len = 0
+        comptime if capture_input:
+            window_row_len = Int(qkv_window.dim[0]()) // batch_size
+            debug_assert(
+                window_row_len * batch_size == Int(qkv_window.dim[0]()),
+                "gated_delta_conv1d_fwd: qkv_window must hold one slot per row",
+            )
+            if num_draft_tokens + 1 > window_row_len:
+                raise Error(
+                    t"gated_delta_conv1d_fwd: a verify of {num_draft_tokens}"
+                    t" drafts needs slots of at least {num_draft_tokens + 1}"
+                    t" tokens, got {window_row_len}"
+                )
+
+        # The kernel addresses the ragged input, the output and the copy with
+        # 32-bit linear offsets (the conv_state pool keeps 64-bit offsets).
         var max_input_offset = (total_seq_len - 1) * Int(
             qkv_input_ragged.dynamic_stride(0)
         ) + (conv_dim - 1) * Int(qkv_input_ragged.dynamic_stride(1))
         var max_output_offset = (total_seq_len - 1) * Int(
             conv_output_ragged.dynamic_stride(0)
         ) + (conv_dim - 1) * Int(conv_output_ragged.dynamic_stride(1))
-        if max(max_input_offset, max_output_offset) > Int(UInt32.MAX):
+        var max_window_offset = 0
+        comptime if capture_input:
+            max_window_offset = (Int(qkv_window.dim[0]()) - 1) * Int(
+                qkv_window.dynamic_stride(0)
+            ) + (conv_dim - 1) * Int(qkv_window.dynamic_stride(1))
+        if max(
+            max(max_input_offset, max_output_offset), max_window_offset
+        ) > Int(UInt32.MAX):
             raise Error(
-                t"gated_delta_conv1d_fwd: ragged input/output linear offsets"
-                t" must be below 2**32 elements, got"
+                t"gated_delta_conv1d_fwd: ragged input, output and copy linear"
+                t" offsets must be below 2**32 elements, got"
                 t" total_seq_len={total_seq_len}, conv_dim={conv_dim}"
             )
 
@@ -3999,12 +4158,15 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     qkv_input_ragged.Engine,
                     capture_input,
                     qkv_window.LayoutType,
+                    Self.silu,
                 ]
             ](
                 Int32(batch_size),
                 Int32(total_seq_len),
                 Int32(conv_dim),
                 Int32(tokens_per_block),
+                Int32(window_row_len),
+                Int32(num_draft_tokens),
                 qkv_input_ragged,
                 conv_weight,
                 conv_state,
@@ -4071,7 +4233,7 @@ def gated_delta_conv1d_fwd_shape(
 
 
 @extensibility.register("gated_delta_conv1d_verify_fwd")
-struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
+struct GatedDeltaConv1dVerifyFwd[rollback: Bool, silu: Bool = False]:
     """`gated_delta_conv1d_fwd` in a speculative verify graph.
 
     The verify width `K` is the length of `verify_width`, whose contents are
@@ -4080,21 +4242,24 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
     forward launch only reads it and the rollback launch places it at the
     accepted length.
 
-    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten. At
-    `K > 0` the forward launch raises unless every row is one token and its
-    `K` drafts.
+    A rollback launch at `K == 0` leaves `conv_output_ragged` unwritten.
 
-    The forward launch at `K > 0` also copies its input to `qkv_window`,
-    which the rollback replays from; with every row one token and its
-    drafts, the copy is the whole input. Every other launch leaves
-    `qkv_window` unwritten.
+    The forward launch at `K > 0` also copies each row that fits a slot of
+    `qkv_window`, as one token and its `K` drafts do, into that slot for the
+    rollback to replay. A longer row, as a prompt chunk mixed into the batch,
+    is not copied: the forward writes its window at its last real token, so
+    the copy stays `batch_size` slots long whatever the chunk. Every other
+    launch leaves `qkv_window` unwritten.
 
     Parameters:
         rollback: Whether this is the rollback's launch.
+        silu: Whether the forward launch stores its output through SiLU, as
+            `gated_delta_conv1d_fwd`'s `silu` does. The rollback launch's
+            output is never read, so it ignores this.
 
     Tensor Shapes:
         As `gated_delta_conv1d_fwd`, plus
-        - qkv_window         : [batch_size * (K + 1), conv_dim]       (OUT)
+        - qkv_window         : [batch_size * slot_len, conv_dim]     (OUT)
         - verify_width       : [K]                                   int64
     """
 
@@ -4132,27 +4297,10 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
         var committed = num_draft_tokens == 0
         if Self.rollback and committed:
             return
-        # The rollback's replay plan is sized to one token plus its drafts
-        # per row, so a wider row would take it out of bounds.
-        var batch_size = Int(slot_idx.shape()[0].value())
-        if (
-            not Self.rollback
-            and not committed
-            and Int(qkv_input_ragged.shape()[0].value())
-            != batch_size * (num_draft_tokens + 1)
-        ):
-            raise Error(
-                "gated_delta_conv1d_verify_fwd: a verify of ",
-                num_draft_tokens,
-                " drafts takes one token and its drafts per row, ",
-                batch_size * (num_draft_tokens + 1),
-                " rows for ",
-                batch_size,
-                " requests, got ",
-                Int(qkv_input_ragged.shape()[0].value()),
-            )
         if committed or Self.rollback:
-            GatedDeltaConv1dFwd[write_state=True].execute(
+            GatedDeltaConv1dFwd[
+                write_state=True, silu=Self.silu and not Self.rollback
+            ].execute(
                 conv_output_ragged,
                 qkv_input_ragged,
                 conv_weight,
@@ -4162,7 +4310,9 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 ctx,
             )
         else:
-            GatedDeltaConv1dFwd[write_state=False].launch[capture_input=True,](
+            GatedDeltaConv1dFwd[write_state=False, silu=Self.silu].launch[
+                capture_input=True
+            ](
                 conv_output_ragged.to_tile_tensor(),
                 qkv_input_ragged.to_tile_tensor[work_dtype](),
                 conv_weight.to_tile_tensor[work_dtype](),
@@ -4170,6 +4320,7 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 slot_idx.to_tile_tensor[.uint32](),
                 input_row_offsets.to_tile_tensor[.uint32](),
                 qkv_window.to_tile_tensor[work_dtype](),
+                num_draft_tokens,
                 ctx,
             )
 
@@ -4495,8 +4646,12 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     The verify width `K` is the length of `verify_width`, whose contents are
     never read. At `K == 0` there is no draft to reject, so this runs
     `gated_delta_recurrence_fwd` on `recurrent_state` instead and writes no
-    ring record. The fold skips at the same width. At `K > 0` every row's
-    window of `K + 1` tokens must fit `RING_LEN`.
+    ring record. The fold skips at the same width. At `K > 0` a row of at
+    most one token and its drafts records; a longer row, as a prompt mixed
+    into a verify batch, records nothing and commits its state at its last
+    real token, so the graph folds it with zero. With `skip_long_rows` such
+    a row writes zeros over its outputs and leaves the state to the
+    caller's chunked forward.
 
     Tensor Shapes:
         - recurrence_output  : [total_seq_len, value_dim]                 (OUT)
@@ -4513,7 +4668,9 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
     """
 
     @staticmethod
-    def execute(
+    def execute[
+        skip_long_rows: Bool = False,
+    ](
         recurrence_output: Some[Output & Tensor],
         qkv_conv_output: Some[Input & Tensor],
         decay_per_token: Some[Input & Tensor],
@@ -4614,6 +4771,12 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             ctx.target.is_gpu()
         ), "gated_delta_recurrence_verify_ring_fwd is only supported on GPU."
 
+        # Every verify row holds at least one token and its drafts, so a
+        # window of exactly that many tokens per row has no long row.
+        var total_seq_len = Int(qkv_conv_output_tt.dim[0]())
+        var records_only = total_seq_len == shape.batch_size * (
+            num_draft_tokens + 1
+        )
         var dispatched = False
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
             _check_ring_record_stride[128, 128](
@@ -4623,50 +4786,63 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             )
             comptime for shift in range(1, 4):
                 comptime kRING_LEN = 1 << shift
-                if ring_len == kRING_LEN:
-                    dispatched = True
-                    ctx.enqueue_function[
-                        gated_delta_recurrence_verify_ring_gpu[
-                            work_dtype,
-                            state_dtype,
-                            ring_dtype,
-                            128,
-                            128,
-                            kRING_LEN,
-                            recurrence_output_tt.LayoutType,
-                            qkv_conv_output_tt.LayoutType,
-                            decay_per_token_tt.LayoutType,
-                            beta_per_token_tt.LayoutType,
-                            recurrent_state_tt.LayoutType,
-                            slot_idx_tt.LayoutType,
-                            input_row_offsets_tt.LayoutType,
-                            ring_tt.LayoutType,
-                            ring_slot_idx_tt.LayoutType,
-                            recurrence_output_tt.Engine,
-                            # RECORDS_ONLY: the draft-window check above
-                            # bounds every row by ring_len; the kernel's
-                            # safe assert still traps a caller that slips
-                            # a longer ragged row through input_row_offsets.
-                            True,
-                        ]
-                    ](
-                        Int32(shape.batch_size),
-                        Int32(shape.num_value_heads),
-                        Int32(shape.num_key_heads),
-                        Int32(shape.key_dim),
-                        recurrence_output_tt,
-                        recurrent_state_tt,
-                        slot_idx_tt,
-                        qkv_conv_output_tt,
-                        decay_per_token_tt,
-                        beta_per_token_tt,
-                        input_row_offsets_tt,
-                        ring_tt,
-                        ring_slot_idx_tt,
-                        grid_dim=(shape.batch_size * shape.num_value_heads,),
-                        block_dim=(128,),
-                        attributes=pdl_launch_attributes(PDLLevel.ON),
-                    )
+                # The three named variants; (False, False) is the plain
+                # verify, which a mixed batch with skip off still takes.
+                comptime for kRECORDS_ONLY, kSKIP in [
+                    (True, False),
+                    (False, True),
+                    (False, False),
+                ]:
+                    # A records-only batch has no long row, so it runs the
+                    # plain records-only kernel.
+                    if (
+                        ring_len == kRING_LEN
+                        and records_only == kRECORDS_ONLY
+                        and (skip_long_rows and not records_only) == kSKIP
+                    ):
+                        dispatched = True
+                        ctx.enqueue_function[
+                            gated_delta_recurrence_verify_ring_gpu[
+                                work_dtype,
+                                state_dtype,
+                                ring_dtype,
+                                128,
+                                128,
+                                kRING_LEN,
+                                recurrence_output_tt.LayoutType,
+                                qkv_conv_output_tt.LayoutType,
+                                decay_per_token_tt.LayoutType,
+                                beta_per_token_tt.LayoutType,
+                                recurrent_state_tt.LayoutType,
+                                slot_idx_tt.LayoutType,
+                                input_row_offsets_tt.LayoutType,
+                                ring_tt.LayoutType,
+                                ring_slot_idx_tt.LayoutType,
+                                recurrence_output_tt.Engine,
+                                kRECORDS_ONLY,
+                                kSKIP,
+                            ]
+                        ](
+                            Int32(shape.batch_size),
+                            Int32(shape.num_value_heads),
+                            Int32(shape.num_key_heads),
+                            Int32(shape.key_dim),
+                            Int32(num_draft_tokens),
+                            recurrence_output_tt,
+                            recurrent_state_tt,
+                            slot_idx_tt,
+                            qkv_conv_output_tt,
+                            decay_per_token_tt,
+                            beta_per_token_tt,
+                            input_row_offsets_tt,
+                            ring_tt,
+                            ring_slot_idx_tt,
+                            grid_dim=(
+                                shape.batch_size * shape.num_value_heads,
+                            ),
+                            block_dim=(128,),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
+                        )
         if not dispatched:
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: unsupported",
@@ -4947,185 +5123,298 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         xbc: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert conforms_to(type_of(y), TileTensorable)
-        comptime assert conforms_to(type_of(A), TileTensorable)
-        comptime assert conforms_to(type_of(D), TileTensorable)
-        comptime assert conforms_to(type_of(dt_bias), TileTensorable)
-        comptime assert conforms_to(type_of(ssm_pool), TileTensorable)
-        comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
-        comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
-        comptime assert conforms_to(type_of(update_state), TileTensorable)
-        comptime assert conforms_to(type_of(xbc), TileTensorable)
-        comptime dtype = type_of(x).dtype
-        comptime state_dtype = type_of(ssm_pool).dtype
-        comptime xbc_dtype = type_of(xbc).dtype
-        comptime cache_indices_rank = type_of(cache_indices).rank
-        comptime assert type_of(y).dtype == dtype
-        comptime assert type_of(dt).dtype == dtype
-        comptime assert type_of(A).dtype == dtype
-        comptime assert type_of(B).dtype == dtype
-        comptime assert type_of(C).dtype == dtype
-        comptime assert type_of(D).dtype == dtype
-        comptime assert type_of(dt_bias).dtype == dtype
-        comptime assert type_of(query_start_loc).dtype == .int32
-        comptime assert type_of(has_initial_state).dtype == .bool
-        comptime assert type_of(cache_indices).dtype == .uint32
-        comptime assert type_of(update_state).dtype == .bool
-        comptime assert type_of(y).rank == 3
-        comptime assert type_of(x).rank == 3
-        comptime assert type_of(dt).rank == 2
-        comptime assert type_of(A).rank == 1
-        comptime assert type_of(B).rank == 3
-        comptime assert type_of(C).rank == 3
-        comptime assert type_of(D).rank == 1
-        comptime assert type_of(dt_bias).rank == 1
-        comptime assert type_of(ssm_pool).rank == 4
-        comptime assert type_of(query_start_loc).rank == 1
-        comptime assert type_of(has_initial_state).rank == 1
-        comptime assert type_of(update_state).rank == 1
-        comptime assert type_of(xbc).rank == 2
+        _mamba2_ssd_scan_launch[Self.dt_softplus, MIXED=False](
+            y,
+            x,
+            dt,
+            A,
+            B,
+            C,
+            D,
+            dt_bias,
+            ssm_pool,
+            query_start_loc,
+            has_initial_state,
+            cache_indices,
+            update_state,
+            xbc,
+            0,
+            ctx,
+        )
 
-        comptime assert conforms_to(type_of(x), UnsafeFusedView)
-        var x_view = unsafe_fused_view(x)
-        comptime assert conforms_to(type_of(x_view), Loadable)
-        comptime assert conforms_to(type_of(dt), UnsafeFusedView)
-        var dt_view = unsafe_fused_view(dt)
-        comptime assert conforms_to(type_of(dt_view), Loadable)
-        comptime assert conforms_to(type_of(B), UnsafeFusedView)
-        var B_view = unsafe_fused_view(B)
-        comptime assert conforms_to(type_of(B_view), Loadable)
-        comptime assert conforms_to(type_of(C), UnsafeFusedView)
-        var C_view = unsafe_fused_view(C)
-        comptime assert conforms_to(type_of(C_view), Loadable)
-        comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
-        var cache_indices_view = unsafe_fused_view(cache_indices)
-        comptime assert conforms_to(type_of(cache_indices_view), Loadable)
 
-        comptime if cache_indices_rank == 2:
-            if Int(cache_indices.shape()[0].value()) != 1:
-                raise Error(
-                    String(
-                        t"cache_indices must be [batch] or [1, batch], got"
-                        t" leading extent"
-                        t" {Int(cache_indices.shape()[0].value())}"
-                    )
-                )
-        # fp16 can overflow on the unbounded state, so only the two validated
-        # storage dtypes are accepted.
-        comptime assert (
-            state_dtype == .float32 or state_dtype == .bfloat16
-        ), "ssm_pool must be float32 or bfloat16"
+@extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows")
+struct Mamba2SSDChunkScanVarlenFwdInplaceRows[dt_softplus: Bool = True]:
+    """`mamba2_ssd_chunk_scan_varlen_fwd_inplace` in a mixed verify graph.
 
-        var y_tt = y.to_tile_tensor[dtype]()
-        var A_tt = A.to_tile_tensor[dtype]()
-        var D_tt = D.to_tile_tensor[dtype]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[dtype]()
-        var ssm_pool_tt = ssm_pool.to_tile_tensor[state_dtype]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
-        var update_state_tt = update_state.to_tile_tensor[.bool]()
-        var xbc_tt = xbc.to_tile_tensor[xbc_dtype]()
+    The verify width `K` is the length of `verify_width`, whose contents
+    are never read. A row longer than `K + 1` tokens is a prefill row: it
+    commits its state at its last real token whatever `update_state`
+    says; the flag keeps its meaning for shorter rows. A mixed launch
+    whose prefill rows reach the chunked floor runs the serial scan with
+    `SKIP_LONG_ROWS` and the chunked scan; any other launch runs one
+    serial scan with the row rule alone.
 
-        # The kernels move each dstate run of the pool as one SIMD access. B
-        # and C are fused inputs, so their loads handle any stride.
-        if Int(ssm_pool_tt.layout.stride[3]().value()) != 1:
+    Parameters:
+        dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
+
+    Tensor shapes:
+        As `mamba2_ssd_chunk_scan_varlen_fwd_inplace`, plus
+        - verify_width       : [K]                                   int64
+    """
+
+    @staticmethod
+    def execute(
+        y: Some[Output & Tensor],
+        x: Some[Input & Fused & LoadAccess],
+        dt: Some[Input & Fused & LoadAccess],
+        A: Some[Input & Tensor],
+        B: Some[Input & Fused & LoadAccess],
+        C: Some[Input & Fused & LoadAccess],
+        D: Some[Input & Tensor],
+        dt_bias: Some[Input & Tensor],
+        # The caller owns this pool and the kernel writes it in place.
+        ssm_pool: Some[MutableInput & Tensor],
+        query_start_loc: Some[Input & Tensor],
+        has_initial_state: Some[Input & Tensor],
+        cache_indices: Some[Input & Fused & LoadAccess],
+        update_state: Some[Input & Tensor],
+        xbc: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        _mamba2_ssd_scan_launch[Self.dt_softplus, MIXED=True](
+            y,
+            x,
+            dt,
+            A,
+            B,
+            C,
+            D,
+            dt_bias,
+            ssm_pool,
+            query_start_loc,
+            has_initial_state,
+            cache_indices,
+            update_state,
+            xbc,
+            Int(verify_width.shape()[0].value()),
+            ctx,
+        )
+
+
+def _mamba2_ssd_scan_launch[
+    dt_softplus: Bool, MIXED: Bool
+](
+    y: Some[Output & Tensor],
+    x: Some[Input & Fused & LoadAccess],
+    dt: Some[Input & Fused & LoadAccess],
+    A: Some[Input & Tensor],
+    B: Some[Input & Fused & LoadAccess],
+    C: Some[Input & Fused & LoadAccess],
+    D: Some[Input & Tensor],
+    dt_bias: Some[Input & Tensor],
+    ssm_pool: Some[MutableInput & Tensor],
+    query_start_loc: Some[Input & Tensor],
+    has_initial_state: Some[Input & Tensor],
+    cache_indices: Some[Input & Fused & LoadAccess],
+    update_state: Some[Input & Tensor],
+    xbc: Some[Input & Tensor],
+    num_draft_tokens: Int,
+    ctx: DeviceContext,
+) raises:
+    comptime assert conforms_to(type_of(y), TileTensorable)
+    comptime assert conforms_to(type_of(A), TileTensorable)
+    comptime assert conforms_to(type_of(D), TileTensorable)
+    comptime assert conforms_to(type_of(dt_bias), TileTensorable)
+    comptime assert conforms_to(type_of(ssm_pool), TileTensorable)
+    comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
+    comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
+    comptime assert conforms_to(type_of(update_state), TileTensorable)
+    comptime assert conforms_to(type_of(xbc), TileTensorable)
+    comptime dtype = type_of(x).dtype
+    comptime state_dtype = type_of(ssm_pool).dtype
+    comptime xbc_dtype = type_of(xbc).dtype
+    comptime cache_indices_rank = type_of(cache_indices).rank
+    comptime assert type_of(y).dtype == dtype
+    comptime assert type_of(dt).dtype == dtype
+    comptime assert type_of(A).dtype == dtype
+    comptime assert type_of(B).dtype == dtype
+    comptime assert type_of(C).dtype == dtype
+    comptime assert type_of(D).dtype == dtype
+    comptime assert type_of(dt_bias).dtype == dtype
+    comptime assert type_of(query_start_loc).dtype == .int32
+    comptime assert type_of(has_initial_state).dtype == .bool
+    comptime assert type_of(cache_indices).dtype == .uint32
+    comptime assert type_of(update_state).dtype == .bool
+    comptime assert type_of(y).rank == 3
+    comptime assert type_of(x).rank == 3
+    comptime assert type_of(dt).rank == 2
+    comptime assert type_of(A).rank == 1
+    comptime assert type_of(B).rank == 3
+    comptime assert type_of(C).rank == 3
+    comptime assert type_of(D).rank == 1
+    comptime assert type_of(dt_bias).rank == 1
+    comptime assert type_of(ssm_pool).rank == 4
+    comptime assert type_of(query_start_loc).rank == 1
+    comptime assert type_of(has_initial_state).rank == 1
+    comptime assert type_of(update_state).rank == 1
+    comptime assert type_of(xbc).rank == 2
+
+    comptime assert conforms_to(type_of(x), UnsafeFusedView)
+    var x_view = unsafe_fused_view(x)
+    comptime assert conforms_to(type_of(x_view), Loadable)
+    comptime assert conforms_to(type_of(dt), UnsafeFusedView)
+    var dt_view = unsafe_fused_view(dt)
+    comptime assert conforms_to(type_of(dt_view), Loadable)
+    comptime assert conforms_to(type_of(B), UnsafeFusedView)
+    var B_view = unsafe_fused_view(B)
+    comptime assert conforms_to(type_of(B_view), Loadable)
+    comptime assert conforms_to(type_of(C), UnsafeFusedView)
+    var C_view = unsafe_fused_view(C)
+    comptime assert conforms_to(type_of(C_view), Loadable)
+    comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
+    var cache_indices_view = unsafe_fused_view(cache_indices)
+    comptime assert conforms_to(type_of(cache_indices_view), Loadable)
+
+    comptime if cache_indices_rank == 2:
+        if Int(cache_indices.shape()[0].value()) != 1:
             raise Error(
-                "the Mamba-2 SSD scan needs a unit stride on the dstate axis"
-                " of ssm_pool"
-            )
-
-        var nheads = Int(x.shape()[1].value())
-        var head_dim = Int(x.shape()[2].value())
-        var ngroups = Int(B.shape()[1].value())
-        var batch = Int(query_start_loc.shape()[0].value()) - 1
-        var total_len = Int(x.shape()[0].value())
-
-        # x, dt, B, C and the slot indices are fused inputs: a slice feeding
-        # one is folded into its loads instead of being copied.
-        @inline(.always)
-        def x_fn[
-            width: Int, alignment: Int
-        ](t: Int, h: Int, p: Int) {var x_view} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                x_view.load[width=width, element_alignment=alignment](
-                    Coord(t, h, p)
+                String(
+                    t"cache_indices must be [batch] or [1, batch], got"
+                    t" leading extent"
+                    t" {Int(cache_indices.shape()[0].value())}"
                 )
             )
+    # fp16 can overflow on the unbounded state, so only the two validated
+    # storage dtypes are accepted.
+    comptime assert (
+        state_dtype == .float32 or state_dtype == .bfloat16
+    ), "ssm_pool must be float32 or bfloat16"
 
-        @inline(.always)
-        def dt_fn[
-            width: Int, alignment: Int
-        ](t: Int, h: Int) {var dt_view} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                dt_view.load[width=width, element_alignment=alignment](
-                    Coord(t, h)
-                )
+    var y_tt = y.to_tile_tensor[dtype]()
+    var A_tt = A.to_tile_tensor[dtype]()
+    var D_tt = D.to_tile_tensor[dtype]()
+    var dt_bias_tt = dt_bias.to_tile_tensor[dtype]()
+    var ssm_pool_tt = ssm_pool.to_tile_tensor[state_dtype]()
+    var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+    var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
+    var update_state_tt = update_state.to_tile_tensor[.bool]()
+    var xbc_tt = xbc.to_tile_tensor[xbc_dtype]()
+
+    # The kernels move each dstate run of the pool as one SIMD access. B
+    # and C are fused inputs, so their loads handle any stride.
+    if Int(ssm_pool_tt.layout.stride[3]().value()) != 1:
+        raise Error(
+            "the Mamba-2 SSD scan needs a unit stride on the dstate axis"
+            " of ssm_pool"
+        )
+
+    var nheads = Int(x.shape()[1].value())
+    var head_dim = Int(x.shape()[2].value())
+    var ngroups = Int(B.shape()[1].value())
+    var batch = Int(query_start_loc.shape()[0].value()) - 1
+    var total_len = Int(x.shape()[0].value())
+
+    debug_assert(
+        num_draft_tokens == 0 or total_len >= batch * (num_draft_tokens + 1),
+        "each row needs one real token plus its drafts",
+    )
+    var row_rule = MIXED and is_mixed_launch(num_draft_tokens, batch, total_len)
+
+    # x, dt, B, C and the slot indices are fused inputs: a slice feeding
+    # one is folded into its loads instead of being copied.
+    @inline(.always)
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x_view} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            x_view.load[width=width, element_alignment=alignment](
+                Coord(t, h, p)
+            )
+        )
+
+    @inline(.always)
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt_view} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            dt_view.load[width=width, element_alignment=alignment](Coord(t, h))
+        )
+
+    @inline(.always)
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B_view} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            B_view.load[width=width, element_alignment=alignment](
+                Coord(t, g, n)
+            )
+        )
+
+    @inline(.always)
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C_view} -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
+            C_view.load[width=width, element_alignment=alignment](
+                Coord(t, g, n)
+            )
+        )
+
+    @inline(.always)
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices_view} -> SIMD[DType.uint32, width]:
+        comptime if cache_indices_rank == 2:
+            return rebind[SIMD[DType.uint32, width]](
+                cache_indices_view.load[
+                    width=width, element_alignment=alignment
+                ](Coord(0, b))
+            )
+        else:
+            return rebind[SIMD[DType.uint32, width]](
+                cache_indices_view.load[
+                    width=width, element_alignment=alignment
+                ](Coord(b))
             )
 
-        @inline(.always)
-        def b_fn[
-            width: Int, alignment: Int
-        ](t: Int, g: Int, n: Int) {var B_view} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                B_view.load[width=width, element_alignment=alignment](
-                    Coord(t, g, n)
-                )
-            )
-
-        @inline(.always)
-        def c_fn[
-            width: Int, alignment: Int
-        ](t: Int, g: Int, n: Int) {var C_view} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                C_view.load[width=width, element_alignment=alignment](
-                    Coord(t, g, n)
-                )
-            )
-
-        @inline(.always)
-        def slot_fn[
-            width: Int, alignment: Int
-        ](b: Int) {var cache_indices_view} -> SIMD[DType.uint32, width]:
-            comptime if cache_indices_rank == 2:
-                return rebind[SIMD[DType.uint32, width]](
-                    cache_indices_view.load[
-                        width=width, element_alignment=alignment
-                    ](Coord(0, b))
-                )
-            else:
-                return rebind[SIMD[DType.uint32, width]](
-                    cache_indices_view.load[
-                        width=width, element_alignment=alignment
-                    ](Coord(b))
-                )
-
-        @inline(.always)
-        def launch[DSTATE: Int]() raises {imm}:
-            comptime if ctx.target.is_cpu():
-                mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
-                    DSTATE, dt_softplus=Self.dt_softplus
-                ](
-                    ngroups,
-                    A_tt,
-                    D_tt,
-                    dt_bias_tt,
-                    y_tt,
-                    ssm_pool_tt,
-                    query_start_loc_tt,
-                    has_initial_state_tt,
-                    update_state_tt,
-                    x_fn,
-                    dt_fn,
-                    b_fn,
-                    c_fn,
-                    slot_fn,
-                    Optional(ctx.assert_cpu_target()),
-                )
-            elif not ctx.target.is_gpu():
-                raise Error("Unsupported target device")
-            elif ctx.target.is_apple_gpu():
-                # One thread per channel; see the kernel docstring.
-                comptime BLOCK_SIZE = 64
+    @inline(.always)
+    def launch[DSTATE: Int]() raises {imm}:
+        comptime if ctx.target.is_cpu():
+            comptime for rule_i in range(1 + Int(MIXED)):
+                comptime rule = rule_i == 1
+                if rule == row_rule:
+                    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
+                        DSTATE, dt_softplus=dt_softplus, ROW_RULE=rule
+                    ](
+                        ngroups,
+                        Int32(num_draft_tokens),
+                        A_tt,
+                        D_tt,
+                        dt_bias_tt,
+                        y_tt,
+                        ssm_pool_tt,
+                        query_start_loc_tt,
+                        has_initial_state_tt,
+                        update_state_tt,
+                        x_fn,
+                        dt_fn,
+                        b_fn,
+                        c_fn,
+                        slot_fn,
+                        Optional(ctx.assert_cpu_target()),
+                    )
+        elif not ctx.target.is_gpu():
+            raise Error("Unsupported target device")
+        elif ctx.target.is_apple_gpu():
+            # One thread per channel; see the kernel docstring.
+            comptime BLOCK_SIZE = 64
+            comptime for rule_i in range(1 + Int(MIXED)):
+                comptime rule = rule_i == 1
                 comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
                     dtype,
                     state_dtype,
@@ -5144,107 +5433,216 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     type_of(b_fn),
                     type_of(c_fn),
                     type_of(slot_fn),
-                    Self.dt_softplus,
+                    dt_softplus,
+                    ROW_RULE=rule,
                 ]
-                ctx.enqueue_function[kernel](
-                    Int32(ngroups),
-                    A_tt,
-                    D_tt,
-                    dt_bias_tt,
-                    y_tt,
-                    ssm_pool_tt,
-                    query_start_loc_tt,
-                    has_initial_state_tt,
-                    update_state_tt,
-                    host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
-                    grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
-            else:
-                # DSTATE_SPLIT threads cooperate on each channel, and each
-                # thread carries CH_PER_THREAD channels so every B/C vector it
-                # reads feeds several channels. Decode-shape sweep on B200
-                # (bf16, dstate=128), us per launch at batch 1: split1=46.8,
-                # split4=22.5, split8=16.6. For dstate 128 on B200, split 16
-                # with 4 channels per thread cut the batch-64 speculative
-                # verify (8 rows per sequence) from 68.6 to 44.0 us and the
-                # replay (5 rows) from 56.4 to 42.0 us. On MI355X split8 is
-                # within 20% of the best split for batch-64 decode and
-                # 8 x 512 prefill; the wider tile is not tuned there.
-                #
-                # Single-token decode reads no B/C row twice, so its tile is
-                # tuned apart. `ssd_scan_tile_split` holds both choices,
-                # shared with the benchmark.
-                # The staged long-sequence path costs decode registers and
-                # shared memory, so only a launch with a multi-token sequence
-                # uses it.
-                var has_prefill = total_len > batch
-                # A long prefill takes the chunked algorithm, which turns the
-                # token-serial recurrence into matmuls; see
-                # `state_space.mamba2_ssd_chunked`. On AMD only MI355 has its
-                # chunk state and output kernels.
-                comptime if (
-                    DSTATE == 128
-                    and dtype == .bfloat16
-                    and (
-                        ctx.target._is_sm_8x_or_newer()
-                        or ctx.target.is_amd_gpu["gfx950"]()
+                if rule == row_rule:
+                    ctx.enqueue_function[kernel](
+                        Int32(ngroups),
+                        Int32(num_draft_tokens),
+                        A_tt,
+                        D_tt,
+                        dt_bias_tt,
+                        y_tt,
+                        ssm_pool_tt,
+                        query_start_loc_tt,
+                        has_initial_state_tt,
+                        update_state_tt,
+                        host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
+                        grid_dim=(
+                            ceildiv(head_dim, BLOCK_SIZE),
+                            nheads,
+                            batch,
+                        ),
+                        block_dim=(BLOCK_SIZE, 1, 1),
                     )
-                ):
-                    if use_chunked_ssd(
-                        total_len,
-                        batch,
+        else:
+            # DSTATE_SPLIT threads cooperate on each channel, and each
+            # thread carries CH_PER_THREAD channels so every B/C vector it
+            # reads feeds several channels. Decode-shape sweep on B200
+            # (bf16, dstate=128), us per launch at batch 1: split1=46.8,
+            # split4=22.5, split8=16.6. For dstate 128 on B200, split 16
+            # with 4 channels per thread cut the batch-64 speculative
+            # verify (8 rows per sequence) from 68.6 to 44.0 us and the
+            # replay (5 rows) from 56.4 to 42.0 us. On MI355X split8 is
+            # within 20% of the best split for batch-64 decode and
+            # 8 x 512 prefill; the wider tile is not tuned there.
+            #
+            # Single-token decode reads no B/C row twice, so its tile is
+            # tuned apart. `ssd_scan_tile_split` holds both choices,
+            # shared with the benchmark.
+            # The staged long-sequence path costs decode registers and
+            # shared memory, so only a launch with a multi-token sequence
+            # uses it.
+            var has_prefill = total_len > batch
+            # The chunked launch owns a prefill row's real tokens, so the
+            # serial launch zeroes only its draft rows.
+            var skip_long_rows = False
+            # A long prefill takes the chunked algorithm, which turns the
+            # token-serial recurrence into matmuls; see
+            # `state_space.mamba2_ssd_chunked`. On AMD only MI355 has its
+            # chunk state and output kernels.
+            comptime if (
+                DSTATE == 128
+                and dtype == .bfloat16
+                and (
+                    ctx.target._is_sm_8x_or_newer()
+                    or ctx.target.is_amd_gpu["gfx950"]()
+                )
+            ):
+                if use_chunked_ssd(
+                    total_len,
+                    batch,
+                    head_dim,
+                    _ssd_chunked_min_tokens(),
+                ) or (
+                    row_rule
+                    and use_chunked_ssd(
+                        total_len - batch * (num_draft_tokens + 1),
+                        1,
                         head_dim,
                         _ssd_chunked_min_tokens(),
-                    ):
-                        # The sm100 kernels read x, B and C by TMA, and the
-                        # MI355 ones 16 bytes a lane, so they need the rows of
-                        # the tensor those slice: the conv output
-                        # `[total_len, x | B | C]`, when the caller passes it.
-                        var xbc_ld = Int(xbc_tt.layout.stride[0]().value())
-                        var rows_ok = (
-                            xbc_dtype == dtype
-                            and Int(xbc.shape()[0].value()) == total_len
-                            and Int(xbc.shape()[1].value())
-                            == nheads * head_dim + 2 * ngroups * DSTATE
-                            and Int(xbc_tt.layout.stride[1]().value()) == 1
-                        )
-                        var xbc_addr = Int(xbc_tt.unsafe_ptr())
-                        var b_off = 2 * nheads * head_dim
-                        var c_off = 2 * (nheads * head_dim + ngroups * DSTATE)
-                        var take = True
-                        comptime if ctx.target.is_amd_gpu():
-                            # MI355's kernels are the chunked scan's only
-                            # path on AMD; any other launch stays serial.
-                            take = rows_ok and use_mi355_ssd(
-                                nheads,
-                                ngroups,
-                                head_dim,
-                                DSTATE,
-                                Int(y_tt.unsafe_ptr()),
-                                xbc_addr,
-                                xbc_ld,
-                                xbc_addr + b_off,
-                                xbc_addr + c_off,
-                                xbc_ld,
-                                Int(D_tt.layout.stride[0]().value()) if Int(
-                                    D.shape()[0].value()
-                                )
-                                > 0 else 1,
-                                Int(y_tt.layout.stride[0]().value())
-                                == nheads * head_dim
-                                and Int(y_tt.layout.stride[1]().value())
-                                == head_dim
-                                and Int(y_tt.layout.stride[2]().value()) == 1,
+                    )
+                ):
+                    # The sm100 kernels read x, B and C by TMA, and the
+                    # MI355 ones 16 bytes a lane, so they need the rows of
+                    # the tensor those slice: the conv output
+                    # `[total_len, x | B | C]`, when the caller passes it.
+                    var xbc_ld = Int(xbc_tt.layout.stride[0]().value())
+                    var rows_ok = (
+                        xbc_dtype == dtype
+                        and Int(xbc.shape()[0].value()) == total_len
+                        and Int(xbc.shape()[1].value())
+                        == nheads * head_dim + 2 * ngroups * DSTATE
+                        and Int(xbc_tt.layout.stride[1]().value()) == 1
+                    )
+                    var xbc_addr = Int(xbc_tt.unsafe_ptr())
+                    var b_off = 2 * nheads * head_dim
+                    var c_off = 2 * (nheads * head_dim + ngroups * DSTATE)
+                    var take = True
+                    comptime if ctx.target.is_amd_gpu():
+                        # MI355's kernels are the chunked scan's only
+                        # path on AMD; any other launch stays serial.
+                        take = rows_ok and use_mi355_ssd(
+                            nheads,
+                            ngroups,
+                            head_dim,
+                            DSTATE,
+                            Int(y_tt.unsafe_ptr()),
+                            xbc_addr,
+                            xbc_ld,
+                            xbc_addr + b_off,
+                            xbc_addr + c_off,
+                            xbc_ld,
+                            Int(D_tt.layout.stride[0]().value()) if Int(
+                                D.shape()[0].value()
                             )
-                        if take:
-                            mamba2_ssd_chunked_fwd_inplace_gpu[
-                                DSTATE, dt_softplus=Self.dt_softplus
-                            ](
-                                ctx,
-                                total_len,
-                                batch,
-                                ngroups,
+                            > 0 else 1,
+                            Int(y_tt.layout.stride[0]().value())
+                            == nheads * head_dim
+                            and Int(y_tt.layout.stride[1]().value()) == head_dim
+                            and Int(y_tt.layout.stride[2]().value()) == 1,
+                        )
+                    if take:
+                        comptime for rule_i in range(1 + Int(MIXED)):
+                            comptime rule = rule_i == 1
+                            if rule == row_rule:
+                                mamba2_ssd_chunked_fwd_inplace_gpu[
+                                    DSTATE,
+                                    dt_softplus=dt_softplus,
+                                    ROW_RULE=rule,
+                                ](
+                                    ctx,
+                                    total_len,
+                                    batch,
+                                    ngroups,
+                                    A_tt,
+                                    D_tt,
+                                    dt_bias_tt,
+                                    y_tt,
+                                    ssm_pool_tt,
+                                    query_start_loc_tt,
+                                    has_initial_state_tt,
+                                    update_state_tt,
+                                    x_fn,
+                                    dt_fn,
+                                    b_fn,
+                                    c_fn,
+                                    slot_fn,
+                                    x_addr=xbc_addr if rows_ok else 0,
+                                    x_ld=xbc_ld,
+                                    b_addr=(
+                                        xbc_addr
+                                        + 2
+                                        * nheads
+                                        * head_dim if rows_ok else 0
+                                    ),
+                                    c_addr=(
+                                        xbc_addr
+                                        + 2
+                                        * (
+                                            nheads * head_dim + ngroups * DSTATE
+                                        ) if rows_ok else 0
+                                    ),
+                                    bc_ld=xbc_ld,
+                                    num_draft_tokens=num_draft_tokens,
+                                )
+                        if not row_rule:
+                            return
+                        skip_long_rows = True
+            comptime for mode in range(2):
+                comptime prefill = mode == 1
+                comptime DSTATE_SPLIT = ssd_scan_tile_split(
+                    DSTATE,
+                    prefill,
+                    ctx.target.is_nvidia_gpu(),
+                    ctx.target.is_amd_gpu(),
+                )
+                comptime CH_PER_THREAD = ssd_scan_tile_channels(
+                    DSTATE,
+                    prefill,
+                    ctx.target.is_nvidia_gpu(),
+                    ctx.target.is_amd_gpu(),
+                )
+                comptime ROWS = 128 // DSTATE_SPLIT
+                comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
+                comptime for rule_i in range(1 + Int(MIXED)):
+                    comptime rule = rule_i == 1
+                    comptime for skip_i in range(1 + Int(rule)):
+                        comptime skip = skip_i == 1
+                        comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+                            dtype,
+                            state_dtype,
+                            DSTATE,
+                            DSTATE_SPLIT,
+                            A_tt.LayoutType,
+                            D_tt.LayoutType,
+                            dt_bias_tt.LayoutType,
+                            y_tt.LayoutType,
+                            ssm_pool_tt.LayoutType,
+                            query_start_loc_tt.LayoutType,
+                            has_initial_state_tt.LayoutType,
+                            update_state_tt.LayoutType,
+                            y_tt.Engine,
+                            type_of(x_fn),
+                            type_of(dt_fn),
+                            type_of(b_fn),
+                            type_of(c_fn),
+                            type_of(slot_fn),
+                            dt_softplus,
+                            prefill,
+                            CH_PER_THREAD=CH_PER_THREAD,
+                            ROW_RULE=rule,
+                            SKIP_LONG_ROWS=skip,
+                        ]
+                        if (
+                            has_prefill == prefill
+                            and rule == row_rule
+                            and skip == skip_long_rows
+                        ):
+                            ctx.enqueue_function[kernel](
+                                Int32(ngroups),
+                                Int32(num_draft_tokens),
                                 A_tt,
                                 D_tt,
                                 dt_bias_tt,
@@ -5253,104 +5651,33 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                                 query_start_loc_tt,
                                 has_initial_state_tt,
                                 update_state_tt,
-                                x_fn,
-                                dt_fn,
-                                b_fn,
-                                c_fn,
-                                slot_fn,
-                                x_addr=xbc_addr if rows_ok else 0,
-                                x_ld=xbc_ld,
-                                b_addr=(
-                                    xbc_addr
-                                    + 2 * nheads * head_dim if rows_ok else 0
+                                host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
+                                grid_dim=(
+                                    ceildiv(head_dim, CH_PER_BLOCK),
+                                    nheads,
+                                    batch,
                                 ),
-                                c_addr=(
-                                    xbc_addr
-                                    + 2
-                                    * (
-                                        nheads * head_dim + ngroups * DSTATE
-                                    ) if rows_ok else 0
-                                ),
-                                bc_ld=xbc_ld,
+                                block_dim=(DSTATE_SPLIT, ROWS, 1),
+                                attributes=pdl_launch_attributes(PDLLevel.ON),
                             )
-                            return
-                comptime for mode in range(2):
-                    comptime prefill = mode == 1
-                    comptime DSTATE_SPLIT = ssd_scan_tile_split(
-                        DSTATE,
-                        prefill,
-                        ctx.target.is_nvidia_gpu(),
-                        ctx.target.is_amd_gpu(),
-                    )
-                    comptime CH_PER_THREAD = ssd_scan_tile_channels(
-                        DSTATE,
-                        prefill,
-                        ctx.target.is_nvidia_gpu(),
-                        ctx.target.is_amd_gpu(),
-                    )
-                    comptime ROWS = 128 // DSTATE_SPLIT
-                    comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
-                    comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
-                        dtype,
-                        state_dtype,
-                        DSTATE,
-                        DSTATE_SPLIT,
-                        A_tt.LayoutType,
-                        D_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        y_tt.LayoutType,
-                        ssm_pool_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        update_state_tt.LayoutType,
-                        y_tt.Engine,
-                        type_of(x_fn),
-                        type_of(dt_fn),
-                        type_of(b_fn),
-                        type_of(c_fn),
-                        type_of(slot_fn),
-                        Self.dt_softplus,
-                        prefill,
-                        CH_PER_THREAD=CH_PER_THREAD,
-                    ]
-                    if has_prefill == prefill:
-                        ctx.enqueue_function[kernel](
-                            Int32(ngroups),
-                            A_tt,
-                            D_tt,
-                            dt_bias_tt,
-                            y_tt,
-                            ssm_pool_tt,
-                            query_start_loc_tt,
-                            has_initial_state_tt,
-                            update_state_tt,
-                            host_args=(x_fn, dt_fn, b_fn, c_fn, slot_fn),
-                            grid_dim=(
-                                ceildiv(head_dim, CH_PER_BLOCK),
-                                nheads,
-                                batch,
-                            ),
-                            block_dim=(DSTATE_SPLIT, ROWS, 1),
-                            attributes=pdl_launch_attributes(PDLLevel.ON),
-                        )
 
-        var dstate = Int(B.shape()[2].value())
-        match dstate:
-            case 16:
-                launch[16]()
-            case 64:
-                launch[64]()
-            case 128:
-                launch[128]()
-            case 256:
-                launch[256]()
-            case _:
-                raise Error(
-                    String(
-                        t"Unsupported dstate: {dstate}. Expected 16, 64, 128, "
-                        t"or 256."
-                    )
+    var dstate = Int(B.shape()[2].value())
+    match dstate:
+        case 16:
+            launch[16]()
+        case 64:
+            launch[64]()
+        case 128:
+            launch[128]()
+        case 256:
+            launch[256]()
+        case _:
+            raise Error(
+                String(
+                    t"Unsupported dstate: {dstate}. Expected 16, 64, 128, "
+                    t"or 256."
                 )
+            )
 
 
 @extensibility.register_shape_function(
@@ -5459,7 +5786,8 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
     state, in one launch with no output. The SSM state lands bit-identical to
     replaying the rows through `mamba2_ssd_chunk_scan_varlen_fwd_inplace`;
     see `state_space.mamba2_replay_fold`. Every request continues its live
-    state. GPU only.
+    state. A row longer than `K + 1` tokens is a prefill row and folds
+    nothing: the verify committed its state itself. GPU only.
 
     Parameters:
         dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
@@ -5471,6 +5799,8 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
         - ssm_rows: (num_layers, batch) uint32
         - replay_bounds: (2 * batch,) int32, each request's accepted
           `(start, end)` rows
+        - merged_offsets: (batch + 1,) uint32 cumulative row offsets
+        - verify_width: (K,) int64, read for its length only
         - layers: `4 * num_layers` tensors, in four runs of `num_layers`:
           each layer's `in_proj` output rows `(rows, nheads * head_dim +
           conv_dim + nheads)`, its conv output rows `(rows, conv_dim)`, its
@@ -5488,6 +5818,8 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
         conv_rows: Some[Input & Tensor],
         ssm_rows: Some[Input & Tensor],
         replay_bounds: Some[Input & Tensor],
+        merged_offsets: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         layers: TensorTuple[*Layers],
         ctx: DeviceContext,
     ) raises:
@@ -5499,6 +5831,8 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
             comptime assert conforms_to(type_of(conv_rows), TileTensorable)
             comptime assert conforms_to(type_of(ssm_rows), TileTensorable)
             comptime assert conforms_to(type_of(replay_bounds), TileTensorable)
+            comptime assert conforms_to(type_of(merged_offsets), TileTensorable)
+            comptime assert conforms_to(type_of(verify_width), TileTensorable)
             comptime dtype = Layers[0].dtype
             comptime conv_dtype = type_of(conv_pool).dtype
             comptime state_dtype = type_of(ssm_pool).dtype
@@ -5507,9 +5841,13 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
             comptime assert type_of(conv_rows).dtype == .uint32
             comptime assert type_of(ssm_rows).dtype == .uint32
             comptime assert type_of(replay_bounds).dtype == .int32
+            comptime assert type_of(merged_offsets).dtype == .uint32
+            comptime assert type_of(verify_width).dtype == .int64
             comptime assert type_of(conv_rows).rank == 2
             comptime assert type_of(ssm_rows).rank == 2
             comptime assert type_of(replay_bounds).rank == 1
+            comptime assert type_of(merged_offsets).rank == 1
+            comptime assert type_of(verify_width).rank == 1
             comptime assert (
                 len(Layers) % 4 == 0
             ), "layers holds four tensors per layer"
@@ -5529,6 +5867,13 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
                         t"conv_rows and ssm_rows need one row per layer, "
                         t"{NUM_LAYERS}"
                     )
+                )
+            if (
+                Int(merged_offsets.shape()[0].value())
+                != Int(replay_bounds.shape()[0].value()) // 2 + 1
+            ):
+                raise Error(
+                    "merged_offsets must hold one offset per request plus one"
                 )
             var conv_pool_tt = conv_pool.to_tile_tensor[conv_dtype]()
             var ssm_pool_tt = ssm_pool.to_tile_tensor[state_dtype]()
@@ -5629,6 +5974,8 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
                 conv_rows.to_tile_tensor[.uint32](),
                 ssm_rows.to_tile_tensor[.uint32](),
                 replay_bounds.to_tile_tensor[.int32](),
+                merged_offsets.to_tile_tensor[.uint32](),
+                verify_width.to_tile_tensor[.int64](),
                 ctx,
             )
 
@@ -5685,130 +6032,216 @@ struct CausalConv1DVarlenFwd[
         update_state: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert conforms_to(type_of(output), TileTensorable)
-        comptime assert conforms_to(type_of(weight), TileTensorable)
-        comptime assert conforms_to(type_of(bias), TileTensorable)
-        comptime assert conforms_to(type_of(conv_states), TileTensorable)
-        comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
-        comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
-        comptime assert conforms_to(type_of(update_state), TileTensorable)
-        comptime dtype = type_of(x).dtype
-        comptime conv_states_dtype = type_of(conv_states).dtype
-        comptime cache_indices_rank = type_of(cache_indices).rank
-        comptime assert type_of(output).dtype == dtype
-        comptime assert type_of(weight).dtype == dtype
-        comptime assert type_of(bias).dtype == dtype
-        comptime assert type_of(query_start_loc).dtype == .int32
-        comptime assert type_of(cache_indices).dtype == .uint32
-        comptime assert type_of(has_initial_state).dtype == .bool
-        comptime assert type_of(update_state).dtype == .bool
-        comptime assert type_of(output).rank == 2
-        comptime assert type_of(x).rank == 2
-        comptime assert type_of(weight).rank == 2
-        comptime assert type_of(bias).rank == 1
-        comptime assert type_of(conv_states).rank == 3
-        comptime assert type_of(query_start_loc).rank == 1
-        comptime assert type_of(has_initial_state).rank == 1
-        comptime assert type_of(update_state).rank == 1
-
-        comptime assert conforms_to(type_of(x), UnsafeFusedView)
-        var x_view = unsafe_fused_view(x)
-        comptime assert conforms_to(type_of(x_view), Loadable)
-        comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
-        var cache_indices_view = unsafe_fused_view(cache_indices)
-        comptime assert conforms_to(type_of(cache_indices_view), Loadable)
-
-        comptime if cache_indices_rank == 2:
-            if Int(cache_indices.shape()[0].value()) != 1:
-                raise Error(
-                    String(
-                        t"cache_indices must be [batch] or [1, batch], got"
-                        t" leading extent"
-                        t" {Int(cache_indices.shape()[0].value())}"
-                    )
-                )
-        comptime silu_activation = Self.activation == "silu"
-
-        var output_tt = output.to_tile_tensor[dtype]()
-        var weight_tt = weight.to_tile_tensor[dtype]()
-        var bias_tt = bias.to_tile_tensor[dtype]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
-        var update_state_tt = update_state.to_tile_tensor[.bool]()
-        var conv_states_tt = conv_states.to_tile_tensor[conv_states_dtype]()
-
-        # x and the slot indices are fused inputs: a slice feeding one is
-        # folded into its loads instead of being copied.
-        @inline(.always)
-        def x_fn[
-            width: Int, _alignment: Int
-        ](i: Int, j: Int) {var x_view} -> SIMD[dtype, width]:
-            # A fused load applies its slice offset inside the functor. The
-            # slice pointer is the backing base, so a wide load can be
-            # misaligned even when that base is not. Read one element at a
-            # time; bias, SiLU and the store can still be vectors.
-            var v = SIMD[dtype, width]()
-            comptime for c in range(width):
-                v[c] = rebind[Scalar[dtype]](
-                    x_view.load[width=1, element_alignment=1](Coord(i, j + c))
-                )
-            return v
-
-        # An empty `cache_indices` maps sequence `b` to slot `b`.
-        var has_cache_indices = (
-            Int(cache_indices.shape()[cache_indices_rank - 1].value()) > 0
+        _causal_conv1d_varlen_fwd_launch[
+            Self.activation,
+            Self.channels_last,
+            Self.use_residual,
+            MIXED=False,
+        ](
+            output,
+            x,
+            weight,
+            bias,
+            conv_states,
+            query_start_loc,
+            cache_indices,
+            has_initial_state,
+            update_state,
+            0,
+            ctx,
         )
 
-        @inline(.always)
-        def slot_fn[
-            width: Int, alignment: Int
-        ](b: Int) {var cache_indices_view, var has_cache_indices} -> SIMD[
-            DType.uint32, width
-        ]:
-            if not has_cache_indices:
-                return SIMD[DType.uint32, width](UInt32(b))
-            comptime if cache_indices_rank == 2:
-                return rebind[SIMD[DType.uint32, width]](
-                    cache_indices_view.load[
-                        width=width, element_alignment=alignment
-                    ](Coord(0, b))
-                )
-            else:
-                return rebind[SIMD[DType.uint32, width]](
-                    cache_indices_view.load[
-                        width=width, element_alignment=alignment
-                    ](Coord(b))
-                )
 
-        comptime if ctx.target.is_cpu():
-            causal_conv1d_varlen_fwd_cpu[
-                silu_activation,
-                use_residual=Self.use_residual,
-                channels_last=Self.channels_last,
-            ](
-                weight_tt,
-                bias_tt,
-                query_start_loc_tt,
-                has_initial_state_tt,
-                update_state_tt,
-                conv_states_tt,
-                output_tt,
-                x_fn,
-                slot_fn,
+@extensibility.register("causal_conv1d_varlen_fwd_rows")
+struct CausalConv1DVarlenFwdRows[
+    activation: StaticString,
+    channels_last: Bool = False,
+    use_residual: Bool = False,
+]:
+    """`causal_conv1d_varlen_fwd` in a mixed verify graph.
+
+    The verify width `K` is the length of `verify_width`, whose contents
+    are never read. A row longer than `K + 1` tokens is a prefill row: it
+    writes its state window ending at its last real token whatever
+    `update_state` says; the flag keeps its meaning for shorter rows. A
+    launch with no prefill row runs main's convolution.
+
+    Parameters:
+        activation: Activation function - "none" or "silu".
+        channels_last: If True, `x` and `output` are tokens-major
+            (total_seqlen, dim) instead of (dim, total_seqlen).
+        use_residual: If True, adds `x[d, s]` to the convolution sum at each
+            output position, before `activation`.
+
+    Tensor Shapes:
+        As `causal_conv1d_varlen_fwd`, plus
+        - verify_width       : [K]                                   int64
+    """
+
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Fused & LoadAccess],
+        weight: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
+        # The caller owns this pool and the kernel writes it in place.
+        conv_states: Some[MutableInput & Tensor],
+        query_start_loc: Some[Input & Tensor],
+        cache_indices: Some[Input & Fused & LoadAccess],
+        has_initial_state: Some[Input & Tensor],
+        update_state: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        _causal_conv1d_varlen_fwd_launch[
+            Self.activation,
+            Self.channels_last,
+            Self.use_residual,
+            MIXED=True,
+        ](
+            output,
+            x,
+            weight,
+            bias,
+            conv_states,
+            query_start_loc,
+            cache_indices,
+            has_initial_state,
+            update_state,
+            Int(verify_width.shape()[0].value()),
+            ctx,
+        )
+
+
+def _causal_conv1d_varlen_fwd_launch[
+    activation: StaticString,
+    channels_last: Bool,
+    use_residual: Bool,
+    MIXED: Bool,
+](
+    output: Some[Output & Tensor],
+    x: Some[Input & Fused & LoadAccess],
+    weight: Some[Input & Tensor],
+    bias: Some[Input & Tensor],
+    conv_states: Some[MutableInput & Tensor],
+    query_start_loc: Some[Input & Tensor],
+    cache_indices: Some[Input & Fused & LoadAccess],
+    has_initial_state: Some[Input & Tensor],
+    update_state: Some[Input & Tensor],
+    num_draft_tokens: Int,
+    ctx: DeviceContext,
+) raises:
+    comptime assert conforms_to(type_of(output), TileTensorable)
+    comptime assert conforms_to(type_of(weight), TileTensorable)
+    comptime assert conforms_to(type_of(bias), TileTensorable)
+    comptime assert conforms_to(type_of(conv_states), TileTensorable)
+    comptime assert conforms_to(type_of(query_start_loc), TileTensorable)
+    comptime assert conforms_to(type_of(has_initial_state), TileTensorable)
+    comptime assert conforms_to(type_of(update_state), TileTensorable)
+    comptime dtype = type_of(x).dtype
+    comptime conv_states_dtype = type_of(conv_states).dtype
+    comptime cache_indices_rank = type_of(cache_indices).rank
+    comptime assert type_of(output).dtype == dtype
+    comptime assert type_of(weight).dtype == dtype
+    comptime assert type_of(bias).dtype == dtype
+    comptime assert type_of(query_start_loc).dtype == .int32
+    comptime assert type_of(cache_indices).dtype == .uint32
+    comptime assert type_of(has_initial_state).dtype == .bool
+    comptime assert type_of(update_state).dtype == .bool
+    comptime assert type_of(output).rank == 2
+    comptime assert type_of(x).rank == 2
+    comptime assert type_of(weight).rank == 2
+    comptime assert type_of(bias).rank == 1
+    comptime assert type_of(conv_states).rank == 3
+    comptime assert type_of(query_start_loc).rank == 1
+    comptime assert type_of(has_initial_state).rank == 1
+    comptime assert type_of(update_state).rank == 1
+
+    comptime assert conforms_to(type_of(x), UnsafeFusedView)
+    var x_view = unsafe_fused_view(x)
+    comptime assert conforms_to(type_of(x_view), Loadable)
+    comptime assert conforms_to(type_of(cache_indices), UnsafeFusedView)
+    var cache_indices_view = unsafe_fused_view(cache_indices)
+    comptime assert conforms_to(type_of(cache_indices_view), Loadable)
+
+    comptime if cache_indices_rank == 2:
+        if Int(cache_indices.shape()[0].value()) != 1:
+            raise Error(
+                String(
+                    t"cache_indices must be [batch] or [1, batch], got"
+                    t" leading extent"
+                    t" {Int(cache_indices.shape()[0].value())}"
+                )
             )
-        elif ctx.target.is_gpu():
+    comptime silu_activation = activation == "silu"
 
-            @inline(.always)
-            def launch_gpu[WIDTH: Int]() raises {imm}:
-                # `x` is a fused input. Its tile pointer is not the address
-                # `_fused_load` uses, and the prologue stamps the device's
-                # preferred alignment rather than the view's, so that metadata
-                # is not a proof. `x_fn` loads scalars; pass no x address.
-                causal_conv1d_varlen_fwd_gpu[
-                    WIDTH,
+    var output_tt = output.to_tile_tensor[dtype]()
+    var weight_tt = weight.to_tile_tensor[dtype]()
+    var bias_tt = bias.to_tile_tensor[dtype]()
+    var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+    var has_initial_state_tt = has_initial_state.to_tile_tensor[.bool]()
+    var update_state_tt = update_state.to_tile_tensor[.bool]()
+    var conv_states_tt = conv_states.to_tile_tensor[conv_states_dtype]()
+
+    var batch = Int(query_start_loc.shape()[0].value()) - 1
+    var total_len = Int(x.shape()[0 if channels_last else 1].value())
+    var row_rule = MIXED and is_mixed_launch(num_draft_tokens, batch, total_len)
+
+    # x and the slot indices are fused inputs: a slice feeding one is
+    # folded into its loads instead of being copied.
+    @inline(.always)
+    def x_fn[
+        width: Int, _alignment: Int
+    ](i: Int, j: Int) {var x_view} -> SIMD[dtype, width]:
+        # A fused load applies its slice offset inside the functor. The
+        # slice pointer is the backing base, so a wide load can be
+        # misaligned even when that base is not. Read one element at a
+        # time; bias, SiLU and the store can still be vectors.
+        var v = SIMD[dtype, width]()
+        comptime for c in range(width):
+            v[c] = rebind[Scalar[dtype]](
+                x_view.load[width=1, element_alignment=1](Coord(i, j + c))
+            )
+        return v
+
+    # An empty `cache_indices` maps sequence `b` to slot `b`.
+    var has_cache_indices = (
+        Int(cache_indices.shape()[cache_indices_rank - 1].value()) > 0
+    )
+
+    @inline(.always)
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices_view, var has_cache_indices} -> SIMD[
+        DType.uint32, width
+    ]:
+        if not has_cache_indices:
+            return SIMD[DType.uint32, width](UInt32(b))
+        comptime if cache_indices_rank == 2:
+            return rebind[SIMD[DType.uint32, width]](
+                cache_indices_view.load[
+                    width=width, element_alignment=alignment
+                ](Coord(0, b))
+            )
+        else:
+            return rebind[SIMD[DType.uint32, width]](
+                cache_indices_view.load[
+                    width=width, element_alignment=alignment
+                ](Coord(b))
+            )
+
+    comptime if ctx.target.is_cpu():
+        comptime for rule_i in range(1 + Int(MIXED)):
+            comptime rule = rule_i == 1
+            if rule == row_rule:
+                causal_conv1d_varlen_fwd_cpu[
                     silu_activation,
-                    Self.use_residual,
-                    Self.channels_last,
+                    use_residual=use_residual,
+                    channels_last=channels_last,
+                    ROW_RULE=rule,
                 ](
                     weight_tt,
                     bias_tt,
@@ -5817,36 +6250,66 @@ struct CausalConv1DVarlenFwd[
                     update_state_tt,
                     conv_states_tt,
                     output_tt,
-                    0,
-                    0,
                     x_fn,
                     slot_fn,
-                    ctx,
-                    x_vector_loads=False,
+                    num_draft_tokens,
                 )
+    elif ctx.target.is_gpu():
 
-            match Int(weight.shape()[1].value()):
-                case 1:
-                    launch_gpu[1]()
-                case 2:
-                    launch_gpu[2]()
-                case 3:
-                    launch_gpu[3]()
-                case 4:
-                    launch_gpu[4]()
-                case 7:
-                    launch_gpu[7]()
-                # A 4-tap conv at dilation 3, passed as zero-padded dense
-                # taps.
-                case 10:
-                    launch_gpu[10]()
-                case _:
-                    raise Error(
-                        "Unsupported kernel width: only widths 1, 2, 3, 4, 7,"
-                        " 10 are supported"
+        @inline(.always)
+        def launch_gpu[WIDTH: Int]() raises {imm}:
+            # `x` is a fused input. Its tile pointer is not the address
+            # `_fused_load` uses, and the prologue stamps the device's
+            # preferred alignment rather than the view's, so that metadata
+            # is not a proof. `x_fn` loads scalars; pass no x address.
+            comptime for rule_i in range(1 + Int(MIXED)):
+                comptime rule = rule_i == 1
+                if rule == row_rule:
+                    causal_conv1d_varlen_fwd_gpu[
+                        WIDTH,
+                        silu_activation,
+                        use_residual,
+                        channels_last,
+                        ROW_RULE=rule,
+                    ](
+                        weight_tt,
+                        bias_tt,
+                        query_start_loc_tt,
+                        has_initial_state_tt,
+                        update_state_tt,
+                        conv_states_tt,
+                        output_tt,
+                        0,
+                        0,
+                        x_fn,
+                        slot_fn,
+                        ctx,
+                        x_vector_loads=False,
+                        num_draft_tokens=num_draft_tokens,
                     )
-        else:
-            raise Error("Unsupported target device")
+
+        match Int(weight.shape()[1].value()):
+            case 1:
+                launch_gpu[1]()
+            case 2:
+                launch_gpu[2]()
+            case 3:
+                launch_gpu[3]()
+            case 4:
+                launch_gpu[4]()
+            case 7:
+                launch_gpu[7]()
+            # A 4-tap conv at dilation 3, passed as zero-padded dense
+            # taps.
+            case 10:
+                launch_gpu[10]()
+            case _:
+                raise Error(
+                    "Unsupported kernel width: only widths 1, 2, 3, 4, 7,"
+                    " 10 are supported"
+                )
+    else:
+        raise Error("Unsupported target device")
 
 
 @extensibility.register_shape_function("causal_conv1d_varlen_fwd")
@@ -5945,19 +6408,26 @@ struct GatedGroupRMSNorm[group_size: Int]:
     """
 
     @staticmethod
-    def execute[
-        dtype: DType,
-        gate_dtype: DType,
-    ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        y: InputTensor[dtype=dtype, rank=2, ...],
-        gate: FusedInputTensor[dtype=gate_dtype, rank=2, ...],
-        weight: InputTensor[dtype=.float32, rank=1, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        y: Some[Input & Tensor],
+        gate: Some[Input & Fused & LoadAccess],
+        weight: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,
     ) raises:
-        var n_rows = y.dim_size(0)
-        var intermediate = y.dim_size(1)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(y).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(weight).rank == 1
+        comptime dtype = type_of(output).dtype
+        comptime gate_dtype = type_of(gate).dtype
+        comptime assert type_of(y).dtype == dtype
+        var n_rows = Int(y.shape()[0].value())
+        var intermediate = Int(y.shape()[1].value())
         comptime gs = Self.group_size
         # The kernel floor-divides `intermediate // gs`; a non-multiple would
         # silently drop the tail columns of the last (partial) group. The
@@ -5973,18 +6443,24 @@ struct GatedGroupRMSNorm[group_size: Int]:
         )
         var num_groups = intermediate // gs
 
-        var output_tt = output.to_tile_tensor[.int32]()
-        var y_tt = y.to_tile_tensor[.int32]()
-        var weight_tt = weight.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var y_tt = y.to_tile_tensor[dtype]()
+        var weight_tt = weight.to_tile_tensor[.float32]()
+
+        comptime assert conforms_to(type_of(gate), UnsafeFusedView)
+        var gate_view = unsafe_fused_view(gate)
+        comptime assert conforms_to(type_of(gate_view), Loadable)
 
         # The gate is often a slice of the in-projection output, fused into
         # this input instead of being copied.
         @inline(.always)
         def gate_fn[
             width: Int, alignment: Int
-        ](n: Int, col: Int) {var gate} -> SIMD[gate_dtype, width]:
-            return gate._fused_load[width, element_alignment=alignment](
-                (n, col)
+        ](n: Int, col: Int) {var gate_view} -> SIMD[gate_dtype, width]:
+            return rebind[SIMD[gate_dtype, width]](
+                gate_view.load[width=width, element_alignment=alignment](
+                    Coord(n, col)
+                )
             )
 
         comptime if ctx.target.is_cpu():
@@ -6278,8 +6754,7 @@ struct LaunchHostFunc:
 struct WaitHostValue:
     """Stalls the stream until a host-visible flag reaches a given value.
 
-    Lowers to CUDA's `cuStreamWaitValue64` via
-    `DeviceStream.wait_for_flag`. Accepts a 1-D int64 buffer of
+    Waits through `DeviceStream.wait_for_flag`. Accepts a 1-D int64 buffer of
     shape `[2]`, mirroring `runtime.launch_host_func`'s payload shape:
 
     - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
@@ -6290,13 +6765,13 @@ struct WaitHostValue:
     - `payload[1]`: the 64-bit value to wait for (the int64 element is
       reinterpreted as a u64).
 
-    Records into a captured device graph as a wait-value / batch-mem-op
-    node, so this op can sit inside a captured forward graph just before
-    the sampling kernel to gate the sampler on the bitmask compute
-    finishing while the rest of the forward body runs concurrently. On
-    HIP that node is recorded explicitly by the driver layer, because
-    ROCm's stream capture does not record `hipStreamWaitValue64` itself.
-    Supported on CUDA and HIP streams; other backends raise at runtime.
+    On CUDA and HIP it records into a captured device graph as a wait-value /
+    batch-mem-op node, so this op can sit inside a captured forward graph just
+    before the sampling kernel to gate the sampler on the bitmask compute
+    finishing while the rest of the forward body runs concurrently. On HIP that
+    node is recorded explicitly by the driver layer, because ROCm's stream
+    capture does not record `hipStreamWaitValue64` itself. Supported on CUDA,
+    HIP and Metal streams; other backends raise at runtime.
     """
 
     @staticmethod

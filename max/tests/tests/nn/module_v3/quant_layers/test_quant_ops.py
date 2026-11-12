@@ -125,18 +125,16 @@ def test_only_nvfp4_needs_dispatch_scales_and_offsets(
 def test_dispatch_predicates_refuse_on_the_fly_weights(
     nvfp4_fake_quant_config: QuantConfig,
 ) -> None:
-    """A quantize-on-load config is refused rather than silently answered.
+    """EP dispatch refuses a quantize-on-load config.
 
-    Returning ``False`` would decide by default a case nobody has reasoned
-    about, and would surface as a wrong unpack arity in ``from_dispatch``
-    well below the decision that caused it.
+    The MoE index kernel does not. An on-the-fly NVFP4 weight is an
+    ``NVFP4Tensor``, and the grouped matmul requires the scale offsets.
+    Answering the EP predicate would decide ``from_dispatch``'s unpack
+    arity for weights that are still native precision at dispatch.
     """
-    for predicate in (
-        quant_ops.ep_requires_dispatch_scales,
-        quant_ops.moe_requires_scales_offsets,
-    ):
-        with pytest.raises(NotImplementedError, match="quantized on load"):
-            predicate(nvfp4_fake_quant_config)
+    with pytest.raises(NotImplementedError, match="quantized on load"):
+        quant_ops.ep_requires_dispatch_scales(nvfp4_fake_quant_config)
+    assert quant_ops.moe_requires_scales_offsets(nvfp4_fake_quant_config)
 
 
 def test_dispatch_predicates_answer_checkpoint_weights(
@@ -979,7 +977,7 @@ def _swiglu_route(
             "NVFP4Activation",
         ),
         # deepseekV3_2_modulev3 accumulates the gate/up in float32 off the EP
-        # dispatch; glm5_next_modulev3 does too, and clamps the activation.
+        # dispatch; glm5_next does too, and clamps the activation.
         ("deepseekV3_2 TP", "fp8", False, DType.float32, 0.0, "Tensor"),
         ("deepseekV3_2 EP", "fp8", True, None, 0.0, "FP8BlockActivation"),
         ("glm5_next TP", "fp8", False, DType.float32, 10.0, "Tensor"),
@@ -1338,3 +1336,14 @@ def test_matmul_mxfp4_builds_the_amd_graph(
 
         assert out.dtype == DType.bfloat16
         assert list(out.shape) == [8, 128]
+
+
+def test_interleave_grouped_scales_passes_interleaved_scales_through() -> None:
+    """Scales already in the rank-6 TCGEN layout come back unchanged."""
+    with F.lazy():
+        scales = Tensor.zeros(
+            (_NUM_EXPERTS, 1, _HIDDEN_DIM // 64, 32, 4, 4),
+            dtype=DType.float8_e4m3fn,
+        )
+
+        assert quant_ops.interleave_grouped_scales(scales) is scales

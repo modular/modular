@@ -10,51 +10,52 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""KDA prefill routing in both GLM-5.3-Flash pipelines, read off the graph.
+"""GLM-5.3-Flash's KDA prefill routing, read off the graph.
 
 The graphs are only built, never compiled, so every accelerator is checked
 from any host with the driver queries patched. They are patched in every
-module that reads them: the layer, ModuleV3's core and the op-wrapper module
-that owns the routing helpers each ask on their own, and an unpatched one
-answers for the host GPU.
+module that reads them: the KDA core and the op-wrapper module that owns the
+routing helpers each ask on their own, and an unpatched one answers for the
+host GPU. The core takes traced tensors, whose GPU inputs resolve to a
+virtual device of the patched accelerator, so no GPU is needed either.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import numpy as np
 import pytest
-from max.driver import CPU, Buffer
+from max import functional as F
+from max.driver import (
+    CPU,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn._graph_ops.state_space import kimi_delta, verify_width_operand
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
+from max.nn._graph_ops.state_space import kda_ring_record_elements, kimi_delta
 from max.nn._graph_ops.state_space.kimi_delta import (
     KdaGateMode,
     amd_kda_chunk_workspace_bytes,
     kda_chunk_predicate,
     kda_chunk_workspace_bytes,
-    kda_ring_record_elements,
 )
-from max.nn.legacy.layer import Module
-from max.pipelines.architectures.glm5_next.layers import (
-    kimi_delta_attention,
-)
-from max.pipelines.architectures.glm5_next.layers.kda import KdaRing
-from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
-    KimiDeltaAttention,
-)
-from max.pipelines.architectures.glm5_next_modulev3.layers import (
-    kda as modulev3_kda,
-)
+from max.pipelines.architectures.glm5_next.layers import kda
 from max.pipelines.modeling.config_enums import PipelineRole
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 GPU = DeviceRef.GPU()
-HIDDEN = 4096
 HEADS = 32
 HEAD_DIM = 128
 KERNEL = 4
+RING_LEN = 4
 QKV_DIM = HEADS * HEAD_DIM
 SLOTS = 4
 
@@ -62,136 +63,103 @@ SLOTS = 4
 def _patch_accelerator(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
 ) -> None:
-    for module in (kimi_delta_attention, kimi_delta, modulev3_kda):
+    for module in (kimi_delta, kda):
         monkeypatch.setattr(module, "accelerator_api", lambda: api)
     monkeypatch.setattr(
         kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
 
 
-def _qualify_weight_names(layer: Module, prefix: str = "kda") -> None:
-    """Gives every weight its module path, as the enclosing model would.
+@contextmanager
+def _virtual_gpu() -> Iterator[None]:
+    """One virtual GPU of the patched accelerator, for the traced inputs."""
+    set_virtual_device_api(kda.accelerator_api())
+    set_virtual_device_target_arch(kimi_delta.accelerator_architecture_name())
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
 
-    Standalone, the projections are all named "weight", and the graph refuses
-    a duplicate.
-    """
-    for name, weight in layer.layer_weights.items():
-        weight.name = f"{prefix}.{name}"
-    for name, sub in layer.sublayers.items():
-        _qualify_weight_names(sub, f"{prefix}.{name}")
 
-
-def _layer_mlir(
-    lower_bound: float | None = -5.0,
+def _core_mlir(
+    gate_mode: KdaGateMode = "safe",
     pool_dtype: DType = DType.float32,
     verify: bool = False,
-) -> str:
-    layer = KimiDeltaAttention(
-        hidden_size=HIDDEN,
-        num_heads=HEADS,
-        head_dim=HEAD_DIM,
-        conv_kernel_size=KERNEL,
-        dtype=DType.bfloat16,
-        device=GPU,
-        rms_norm_eps=1e-5,
-        lower_bound=lower_bound,
-    )
-    _qualify_weight_names(layer)
-    with Graph(
-        "glm_kda_routing",
-        input_types=[
-            TensorType(DType.bfloat16, ["total_tokens", HIDDEN], device=GPU),
-            BufferType(
-                DType.float32, [SLOTS, 3 * QKV_DIM, KERNEL - 1], device=GPU
-            ),
-            TensorType(DType.int32, ["batch"], device=GPU),
-            BufferType(pool_dtype, [SLOTS, HEADS, HEAD_DIM, HEAD_DIM], GPU),
-            TensorType(DType.uint32, ["batch_plus_one"], device=GPU),
-            BufferType(
-                DType.float32,
-                [
-                    SLOTS,
-                    HEADS,
-                    4,
-                    kda_ring_record_elements(HEAD_DIM, HEAD_DIM),
-                ],
-                GPU,
-            ),
-        ],
-    ) as graph:
-        x, conv_pool, row, rec_pool, offsets, ring = graph.inputs
-        graph.output(
-            layer(
-                x.tensor,
-                conv_pool.buffer,
-                row.tensor,
-                rec_pool.buffer,
-                row.tensor,
-                offsets.tensor,
-                replay_capture=[] if verify else None,
-                ring=KdaRing(ring.buffer, row.tensor) if verify else None,
-                verify_width=(verify_width_operand(3) if verify else None),
-            )
-        )
-    return str(graph)
-
-
-def _modulev3_mlir(
-    gate_mode: KdaGateMode = "safe", pool_dtype: DType = DType.float32
 ) -> str:
     act = TensorType(DType.float32, ["total_tokens", QKV_DIM], device=GPU)
     conv = TensorType(DType.float32, [QKV_DIM, KERNEL], device=GPU)
     rows = TensorType(DType.int32, [1, "batch"], device=GPU)
-    with Graph(
-        "glm_kda_modulev3_routing",
-        input_types=[
-            act,
-            act,
-            act,
-            conv,
-            conv,
-            conv,
-            BufferType(
-                DType.float32, [SLOTS, 3 * QKV_DIM, KERNEL - 1], device=GPU
-            ),
-            rows,
-            act,
-            TensorType(DType.float32, ["total_tokens", HEADS], device=GPU),
-            act,
-            TensorType(DType.float32, [HEADS], device=GPU),
-            TensorType(DType.float32, [QKV_DIM], device=GPU),
-            TensorType(DType.float32, [HEAD_DIM], device=GPU),
-            BufferType(pool_dtype, [SLOTS, HEADS, HEAD_DIM, HEAD_DIM], GPU),
-            rows,
-            TensorType(DType.uint32, ["batch_plus_one"], device=GPU),
-        ],
-    ) as graph:
-        i = graph.inputs
-        graph.output(
-            modulev3_kda._kda_core_graph(
-                q=i[0].tensor,
-                k=i[1].tensor,
-                v=i[2].tensor,
-                q_conv=i[3].tensor,
-                k_conv=i[4].tensor,
-                v_conv=i[5].tensor,
-                conv_pool=i[6].buffer,
-                conv_rows=i[7].tensor,
-                raw_gate=i[8].tensor,
-                beta_logits=i[9].tensor,
-                output_gate=i[10].tensor,
-                a_log=i[11].tensor,
-                dt_bias=i[12].tensor,
-                norm_weight=i[13].tensor,
-                recurrent_pool=i[14].buffer,
-                recurrent_rows=i[15].tensor,
-                input_row_offsets=i[16].tensor,
-                layer=ops.constant(0, DType.int64, device=DeviceRef.CPU()),
-                head_dim=HEAD_DIM,
-                norm_eps=1e-5,
-                gate_mode=gate_mode,
+    ring = BufferType(
+        DType.float32,
+        [SLOTS, HEADS, RING_LEN, kda_ring_record_elements(HEAD_DIM, HEAD_DIM)],
+        GPU,
+    )
+    with (
+        Graph(
+            "glm_kda_routing",
+            input_types=[
+                act,
+                act,
+                act,
+                conv,
+                conv,
+                conv,
+                BufferType(
+                    DType.float32, [SLOTS, 3 * QKV_DIM, KERNEL - 1], device=GPU
+                ),
+                rows,
+                act,
+                TensorType(DType.float32, ["total_tokens", HEADS], device=GPU),
+                act,
+                TensorType(DType.float32, [HEADS], device=GPU),
+                TensorType(DType.float32, [QKV_DIM], device=GPU),
+                TensorType(DType.float32, [HEAD_DIM], device=GPU),
+                BufferType(pool_dtype, [SLOTS, HEADS, HEAD_DIM, HEAD_DIM], GPU),
+                rows,
+                TensorType(DType.uint32, ["batch_plus_one"], device=GPU),
+                ring,
+            ],
+        ) as graph,
+        ensure_context(),
+        _virtual_gpu(),
+    ):
+        i = [
+            Tensor.from_graph_value(
+                value.buffer
+                if isinstance(value.type, BufferType)
+                else value.tensor
             )
+            for value in graph.inputs
+        ]
+        out = kda.kda_core(
+            qkv=F.concat([i[0], i[1], i[2]], axis=-1),
+            q_conv=i[3],
+            k_conv=i[4],
+            v_conv=i[5],
+            conv_pool=i[6],
+            conv_rows=i[7],
+            raw_gate=i[8],
+            beta_logits=i[9],
+            output_gate=i[10],
+            a_log=i[11],
+            dt_bias=i[12],
+            norm_weight=i[13],
+            recurrent_pool=i[14],
+            recurrent_rows=i[15],
+            input_row_offsets=i[16],
+            layer=F.constant(0, DType.int64, device=CPU()),
+            head_dim=HEAD_DIM,
+            norm_eps=1e-5,
+            gate_mode=gate_mode,
+            ring_pool=i[17] if verify else None,
+            ring_rows=i[15] if verify else None,
+            verify_width=(
+                kda.verify_width_operand(RING_LEN - 1) if verify else None
+            ),
+            capture=kda.CaptureSink([]) if verify else None,
         )
+        graph.output(TensorValue(out))
     return str(graph)
 
 
@@ -229,8 +197,7 @@ def test_gfx950_prefill_takes_bf16_chunk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_accelerator(monkeypatch, "hip", "gfx950")
-    _assert_routed(_layer_mlir(), "bf16")
-    _assert_routed(_modulev3_mlir(), "bf16")
+    _assert_routed(_core_mlir(), "bf16")
 
 
 @pytest.mark.parametrize("architecture", ["sm_100a", "sm_103"])
@@ -239,18 +206,9 @@ def test_sm100_prefill_takes_float32_chunk(
 ) -> None:
     """NVIDIA keeps float32 q/k/v and ignores the AMD-only conditions."""
     _patch_accelerator(monkeypatch, "cuda", architecture)
-    _assert_routed(_layer_mlir(), "f32")
-    _assert_routed(_layer_mlir(lower_bound=None), "f32")
-    _assert_routed(_layer_mlir(pool_dtype=DType.bfloat16), "f32")
-
-
-@pytest.mark.parametrize("architecture", ["sm_100a", "sm_103"])
-def test_sm100_modulev3_prefill_stays_sequential(
-    monkeypatch: pytest.MonkeyPatch, architecture: str
-) -> None:
-    """ModuleV3's NVIDIA chunk path has no numerics coverage yet."""
-    _patch_accelerator(monkeypatch, "cuda", architecture)
-    _assert_sequential(_modulev3_mlir())
+    _assert_routed(_core_mlir(), "f32")
+    _assert_routed(_core_mlir(gate_mode="original"), "f32")
+    _assert_routed(_core_mlir(pool_dtype=DType.bfloat16), "f32")
 
 
 @pytest.mark.parametrize(
@@ -261,8 +219,7 @@ def test_unsupported_accelerator_stays_sequential(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
 ) -> None:
     _patch_accelerator(monkeypatch, api, architecture)
-    _assert_sequential(_layer_mlir())
-    _assert_sequential(_modulev3_mlir())
+    _assert_sequential(_core_mlir())
 
 
 @pytest.mark.parametrize(
@@ -274,8 +231,7 @@ def test_unregistered_chunk_op_stays_sequential(
     """A build without the closed-source kernels lacks ``kda_chunk``."""
     _patch_accelerator(monkeypatch, api, architecture)
     monkeypatch.setattr(kimi_delta, "kda_chunk_is_registered", lambda: False)
-    _assert_sequential(_layer_mlir())
-    _assert_sequential(_modulev3_mlir())
+    _assert_sequential(_core_mlir())
 
 
 def test_gfx950_original_gate_stays_sequential(
@@ -283,8 +239,7 @@ def test_gfx950_original_gate_stays_sequential(
 ) -> None:
     """The AMD chunk kernels implement only the bounded ``"safe"`` gate."""
     _patch_accelerator(monkeypatch, "hip", "gfx950")
-    _assert_sequential(_layer_mlir(lower_bound=None))
-    _assert_sequential(_modulev3_mlir(gate_mode="original"))
+    _assert_sequential(_core_mlir(gate_mode="original"))
 
 
 def test_gfx950_bf16_pool_stays_sequential(
@@ -292,43 +247,81 @@ def test_gfx950_bf16_pool_stays_sequential(
 ) -> None:
     """The AMD chunk kernels take only a float32 state pool."""
     _patch_accelerator(monkeypatch, "hip", "gfx950")
-    _assert_sequential(_layer_mlir(pool_dtype=DType.bfloat16))
-    _assert_sequential(_modulev3_mlir(pool_dtype=DType.bfloat16))
+    _assert_sequential(_core_mlir(pool_dtype=DType.bfloat16))
 
 
-@pytest.mark.parametrize(
-    ("api", "architecture"), [("hip", "gfx950"), ("cuda", "sm_100a")]
-)
-def test_verify_keeps_drafts_on_the_ring(
-    monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
+def test_gfx950_verify_keeps_drafts_on_the_ring(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A batch with drafts records into the ring the rollback folds.
 
     Only a draft-free prefill, which has nothing to roll back, takes
     ``kda_chunk``, behind the same conditional as the forward's.
     """
-    _patch_accelerator(monkeypatch, api, architecture)
-    mlir = _layer_mlir(verify=True)
+    _patch_accelerator(monkeypatch, "hip", "gfx950")
+    mlir = _core_mlir(verify=True)
     assert "kda_verify_ring" in mlir
     assert "mo.if" in mlir
+    assert _chunk_lines(mlir)
     assert "kda_decode" not in mlir
+
+
+def test_sm100_verify_stays_on_the_ring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On NVIDIA every verify, draft-free prefill included, uses the ring."""
+    _patch_accelerator(monkeypatch, "cuda", "sm_100a")
+    mlir = _core_mlir(verify=True)
+    assert "kda_verify_ring" in mlir
+    assert not _chunk_lines(mlir)
+    assert "mo.if" not in mlir
+    assert "kda_decode" not in mlir
+
+
+def _legacy_predicate(
+    tokens: TensorValue, seqs: TensorValue, num_heads: int
+) -> TensorValue:
+    return kda_chunk_predicate(tokens, seqs, num_heads, HEAD_DIM)
+
+
+def _layer_predicate(
+    tokens: TensorValue, seqs: TensorValue, num_heads: int
+) -> TensorValue:
+    taken = kda._chunk_predicate(
+        Tensor.from_graph_value(tokens),
+        Tensor.from_graph_value(seqs),
+        num_heads,
+        HEAD_DIM,
+    )
+    return TensorValue(taken)
+
+
+_Predicate = Callable[[TensorValue, TensorValue, int], TensorValue]
+
+PREDICATES = pytest.mark.parametrize(
+    "predicate", [_legacy_predicate, _layer_predicate], ids=["op", "layer"]
+)
+"""The op module's predicate, which the AMD launch mirrors, and the layer's
+``F.functional`` wrapper of it, called on Tensors."""
 
 
 def _takes_chunk(
     monkeypatch: pytest.MonkeyPatch,
+    predicate: _Predicate,
     api: str,
     total_tokens: int,
     batch_size: int,
     num_heads: int = HEADS,
 ) -> bool:
-    """Evaluates :func:`kda_chunk_predicate` on concrete counts."""
+    """Evaluates a chunk predicate on concrete counts."""
     monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
     scalar = TensorType(DType.int64, [], device=DeviceRef.CPU())
-    with Graph("kda_chunk_predicate", input_types=[scalar, scalar]) as graph:
+    with (
+        Graph("kda_chunk_predicate", input_types=[scalar, scalar]) as graph,
+        ensure_context(),
+    ):
         tokens, seqs = graph.inputs
-        graph.output(
-            kda_chunk_predicate(tokens.tensor, seqs.tensor, num_heads, HEAD_DIM)
-        )
+        graph.output(predicate(tokens.tensor, seqs.tensor, num_heads))
     model = InferenceSession(devices=[CPU()]).load(graph)
     (taken,) = model.execute(
         Buffer.from_numpy(np.array(total_tokens, dtype=np.int64)),
@@ -338,16 +331,18 @@ def _takes_chunk(
     return bool(taken.to_numpy())
 
 
+@PREDICATES
 @pytest.mark.parametrize("api", ["hip", "cuda"])
 def test_decode_batch_skips_chunk(
-    monkeypatch: pytest.MonkeyPatch, api: str
+    monkeypatch: pytest.MonkeyPatch, predicate: _Predicate, api: str
 ) -> None:
-    assert not _takes_chunk(monkeypatch, api, 8, 8)
-    assert _takes_chunk(monkeypatch, api, 9, 8)
+    assert not _takes_chunk(monkeypatch, predicate, api, 8, 8)
+    assert _takes_chunk(monkeypatch, predicate, api, 9, 8)
 
 
+@PREDICATES
 def test_amd_chunk_past_32_bit_indexing_falls_back(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, predicate: _Predicate
 ) -> None:
     """The AMD launch raises once ``kg_t`` passes 2^31 elements.
 
@@ -355,9 +350,9 @@ def test_amd_chunk_past_32_bit_indexing_falls_back(
     sequence fits up to ``T = 2^19 - 64`` under the predicate's bound.
     """
     limit = (1 << 31) // (HEADS * HEAD_DIM) - 64
-    assert _takes_chunk(monkeypatch, "hip", limit, 1)
-    assert not _takes_chunk(monkeypatch, "hip", limit + 1, 1)
-    assert _takes_chunk(monkeypatch, "cuda", limit + 1, 1)
+    assert _takes_chunk(monkeypatch, predicate, "hip", limit, 1)
+    assert not _takes_chunk(monkeypatch, predicate, "hip", limit + 1, 1)
+    assert _takes_chunk(monkeypatch, predicate, "cuda", limit + 1, 1)
 
 
 def _reserved(

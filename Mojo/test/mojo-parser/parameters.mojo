@@ -1848,7 +1848,7 @@ def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
 
 # Make sure default inferred value is installed.
 
-# CHECK-LABEL: lit.alias.decl *"ImmOrigin{{.*}}": meta<!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> ?>, <"_mlir_origin": origin<false>, +>>>
+# CHECK-LABEL: lit.alias.decl *"ImmOrigin{{.*}}": !lit.generator<<"_mlir_origin": origin<false>, +>meta<!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>>>>
 comptime ImmOrigin = Origin[mut=False]
 # CHECK-LABEL: lit.alias.decl *"ImmAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> #lit.any.origin>>
 comptime ImmAnyOrigin = AnyOrigin[mut=False]
@@ -1863,3 +1863,43 @@ def upcast_typelist_caller[x: TypeList[Trait=Movable, ...]]():
     # TODO(MOCO-3712): Causes segfault.
     #comptime a: TypeList[Trait=AnyType, ...] = x
     upcast_typelist_callee[x]()
+
+
+def depends_on_a[a: Int]() -> Int:
+    return a
+
+
+struct NestedDeps[a: Int, b: Int = depends_on_a[a]()](Movable where False):
+    pass
+
+
+# The default for `b` depends on the unbound `a`, so it stays a function of it.
+# CHECK-LABEL: lit.alias.decl *"nested_deps_unbound{{.*}}": !lit.generator<<"a": !Int>meta<!lit.struct<#NestedDeps <:!Int *(0,0), :!Int apply(:!lit.generator<() -> !Int> @parameters::@"depends_on_a{{.*}}"<:!Int *(1,0)>)>>>>
+comptime nested_deps_unbound = NestedDeps[_]
+# CHECK-LABEL: lit.alias.decl *"nested_deps_bound{{.*}}": meta<!lit.struct<#NestedDeps <:!Int {:scalar<index> 3}, :!Int apply(:!lit.generator<() -> !Int> @parameters::@"depends_on_a{{.*}}"<:!Int {:scalar<index> 3}>)>>>
+comptime nested_deps_bound = nested_deps_unbound[3]
+
+
+struct VecOfParams[dtype: Int, length: Int](TrivialRegisterPassable):
+    def add(self, rhs: Self) -> Self:
+        return self
+
+
+def apply_width_generic[
+    dtype: Int,
+    //,
+    func: def[width: Int](
+        a: VecOfParams[dtype, width], b: VecOfParams[dtype, width]
+    ) thin -> VecOfParams[dtype, width],
+]():
+    pass
+
+
+# A method taken from a partially bound struct keeps the bound parameters and
+# stays generic only over the unbound ones.
+# CHECK-LABEL: lit.fn @"use_partial_method_ref
+# CHECK:       lit.call tail @parameters::@"apply_width_generic
+# CHECK-SAME:  rebind(:!lit.generator<<"length": !Int, +>("self": !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>, "rhs": !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>) -> !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>>
+# CHECK-SAME:  @parameters::@VecOfParams::@"add({{.*}})"<:!Int dtype, :!Int *(0,0)>)
+def use_partial_method_ref[dtype: Int]():
+    apply_width_generic[dtype=dtype, VecOfParams[dtype, _].add]()

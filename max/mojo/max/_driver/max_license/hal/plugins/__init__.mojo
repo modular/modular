@@ -145,6 +145,10 @@ struct M_driver_runtime_bundle:
     pass
 
 
+struct M_driver_flag:
+    pass
+
+
 # ===-----------------------------------------------------------------------===#
 # Version negotiation struct — must match C layout of M_driver_version.
 # ===-----------------------------------------------------------------------===#
@@ -171,6 +175,7 @@ comptime EventHandle = ExternalHandle[M_driver_event]
 comptime FunctionHandle = ExternalHandle[M_driver_function]
 comptime MemoryHandle = ExternalHandle[M_driver_memory]
 comptime RuntimeBundleHandle = ExternalHandle[M_driver_runtime_bundle]
+comptime FlagHandle = ExternalHandle[M_driver_flag]
 
 
 @fieldwise_init

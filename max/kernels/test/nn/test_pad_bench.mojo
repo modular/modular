@@ -91,6 +91,8 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
             case 4:
                 in_shape = [n, n, n, n]
                 out_shape = [n + d, n + d, n + d, n + d]
+            case _:
+                pass
         return [in_shape, out_shape]
 
     comptime in_out_shape = get_in_out_shapes[rank]()
@@ -162,6 +164,8 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
             case 4:
                 in_shape = [n, n, n, n]
                 out_shape = [n + d, n + d, n + d, n + d]
+            case _:
+                pass
         return [in_shape, out_shape]
 
     comptime in_out_shape = get_in_out_shapes[rank]()

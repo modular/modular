@@ -94,10 +94,11 @@ trait UnsafeFusedView(Fused, TrivialRegisterPassable):
     it exists to keep that one host-built-closure construction compiling
     while kernels migrate. Prefer the supported pattern in new accelerator
     kernels: pass the fused trait arg straight through `enqueue_function`
-    to a device kernel parameterized by `XHost: DevicePassable`, where the
-    capability is reached via `downcast[XHost.device_type, ...]`. The
-    canonical exemplars in `GraphCompiler/test/kernels/testing_kernels.mojo`
-    follow that shape:
+    to a device kernel parameterized by `XHost: DevicePassable`. The kernel
+    takes the argument as `XHost.device_type` and starts its body with
+    `comptime assert conforms_to(XHost.device_type, ...)`, which checks the
+    capability and makes its methods available. The canonical exemplars in
+    `GraphCompiler/test/kernels/testing_kernels.mojo` follow that shape:
 
     - `TraitFusedLoadNegate` (`_gpu_fused_load_negate_kernel`).
     - `TraitFusedStoreDouble` (`_gpu_fused_store_double_kernel`).

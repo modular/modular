@@ -34,6 +34,7 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
+    Device,
     accelerator_architecture_name,
 )
 from max.dtype import DType
@@ -41,6 +42,7 @@ from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import (
     MIXED_STEP_SPLIT_SIZE,
+    MLAAttnKey,
     MLAKVCacheParams,
     padded_lut_cols,
 )
@@ -48,6 +50,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     kimi_k3_mla_prefill_plan,
     kimi_k3_nope_freqs_cis,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
 )
 from max.tensor import Tensor, compilation, default_device
 from max.tensor.sharding import BufferLayout, TensorLayout
@@ -99,9 +104,7 @@ def _weighted_latent_layer(
         ),
         layer_idx=0,
     )
-    layer.q_a_proj.weight = Tensor(
-        arr(_Q_LORA_RANK, _HIDDEN), dtype=DType.float32
-    ).cast(DType.bfloat16)
+    q_a = arr(_Q_LORA_RANK, _HIDDEN)
     layer.q_a_layernorm.weight = Tensor(
         np.ones(_Q_LORA_RANK, dtype=np.float32), dtype=DType.float32
     ).cast(DType.bfloat16)
@@ -112,9 +115,7 @@ def _weighted_latent_layer(
         ),
         dtype=DType.float32,
     ).cast(DType.bfloat16)
-    layer.kv_a_proj_with_mqa.weight = Tensor(
-        arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN), dtype=DType.float32
-    ).cast(DType.bfloat16)
+    kv_a = arr(_KV_LORA_RANK + _QK_ROPE_HEAD_DIM, _HIDDEN)
     layer.kv_a_layernorm.weight = Tensor(
         np.ones(_KV_LORA_RANK, dtype=np.float32), dtype=DType.float32
     ).cast(DType.bfloat16)
@@ -122,8 +123,11 @@ def _weighted_latent_layer(
         arr(_NUM_HEADS * (_QK_NOPE_HEAD_DIM + _V_HEAD_DIM), _KV_LORA_RANK),
         dtype=DType.float32,
     ).cast(DType.bfloat16)
-    layer.g_proj.weight = Tensor(
-        arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), dtype=DType.float32
+    layer.qkv_a_g_proj.weight = Tensor(
+        fuse_qkv_a_g_for_tp(
+            q_a, kv_a, arr(_NUM_HEADS * _V_HEAD_DIM, _HIDDEN), 1
+        ),
+        dtype=DType.float32,
     ).cast(DType.bfloat16)
     layer.o_proj.weight = Tensor(
         arr(_HIDDEN, _NUM_HEADS * _V_HEAD_DIM), dtype=DType.float32
@@ -137,6 +141,32 @@ def _weighted_latent_layer(
 # `kimi_k3/model_config.py`'s `KimiK3Config._MLA_KERNEL_LATENT_DIM`.
 _KV_LORA_RANK = 512
 _QK_ROPE_HEAD_DIM = 64
+
+
+def _cache_layouts(
+    params: MLAKVCacheParams, device: Device
+) -> dict[str, BufferLayout | TensorLayout]:
+    """Returns the layouts both graphs take, matching what the cache stages."""
+    spec = MLAAttnKey.dispatch_metadata_spec()
+    return {
+        "kv_blocks": BufferLayout(
+            params.dtype, [3, *params.shape_per_block], device
+        ),
+        "cache_lengths": TensorLayout(DType.uint32, [1], device),
+        "lookup_table": TensorLayout(
+            DType.uint32, [1, padded_lut_cols(2)], device
+        ),
+        "max_prompt_length": TensorLayout(DType.uint32, [1], CPU()),
+        "max_cache_length": TensorLayout(DType.uint32, [1], CPU()),
+        "page_stride": TensorLayout(DType.int64, [1], CPU()),
+        "attention_dispatch_metadata": TensorLayout(
+            spec.dtype, list(spec.shape), device
+        ),
+        "mla_num_partitions": TensorLayout(DType.int64, [2], CPU()),
+        "mixed_step_split": TensorLayout(
+            DType.uint32, [MIXED_STEP_SPLIT_SIZE], CPU()
+        ),
+    }
 
 
 @pytest.mark.compile_on_gpu(
@@ -210,23 +240,7 @@ def test_prefill_plan_capture_replays_across_page_boundaries() -> None:
         devices=[DeviceRef.from_device(device)],
         page_size=_PAGE_SIZE,
     )
-    cache_types = {
-        "kv_blocks": BufferLayout(
-            params.dtype, [3, *params.shape_per_block], device
-        ),
-        "cache_lengths": TensorLayout(DType.uint32, [1], device),
-        "lookup_table": TensorLayout(
-            DType.uint32, [1, padded_lut_cols(2)], device
-        ),
-        "max_prompt_length": TensorLayout(DType.uint32, [1], CPU()),
-        "max_cache_length": TensorLayout(DType.uint32, [1], CPU()),
-        "page_stride": TensorLayout(DType.int64, [1], CPU()),
-        "attention_dispatch_metadata": TensorLayout(DType.int64, [3], device),
-        "mla_num_partitions": TensorLayout(DType.int64, [1], CPU()),
-        "mixed_step_split": TensorLayout(
-            DType.uint32, [MIXED_STEP_SPLIT_SIZE], CPU()
-        ),
-    }
+    cache_types = _cache_layouts(params, device)
 
     def plan(
         row_offsets: Tensor, host_length: Tensor, *values: Tensor
@@ -344,25 +358,7 @@ def prefill_arm_harness() -> _PrefillArmHarness:
         # One request holding 254 cached tokens and 2 new ones: the plan's
         # real total is align_up(254 + 2, 128) = 256 rows, exactly one
         # buffer, and every extent below it undersizes the window.
-        cache_types = {
-            "kv_blocks": BufferLayout(
-                params.dtype, [3, *params.shape_per_block], device
-            ),
-            "cache_lengths": TensorLayout(DType.uint32, [1], device),
-            "lookup_table": TensorLayout(
-                DType.uint32, [1, padded_lut_cols(2)], device
-            ),
-            "max_prompt_length": TensorLayout(DType.uint32, [1], CPU()),
-            "max_cache_length": TensorLayout(DType.uint32, [1], CPU()),
-            "page_stride": TensorLayout(DType.int64, [1], CPU()),
-            "attention_dispatch_metadata": TensorLayout(
-                DType.int64, [3], device
-            ),
-            "mla_num_partitions": TensorLayout(DType.int64, [1], CPU()),
-            "mixed_step_split": TensorLayout(
-                DType.uint32, [MIXED_STEP_SPLIT_SIZE], CPU()
-            ),
-        }
+        cache_types = _cache_layouts(params, device)
         freqs_cis = kimi_k3_nope_freqs_cis(
             max_seq_len=_BUFFER_SIZE,
             qk_rope_head_dim=_QK_ROPE_HEAD_DIM,

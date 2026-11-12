@@ -162,6 +162,11 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
       else
         state.builder.importAs(package, as);
     }
+    if (moduleOp
+            ->walk([](MOGG::GraphBlobOp) { return WalkResult::interrupt(); })
+            .wasInterrupted())
+      state.builder.importAs(MOGG::kGraphBlobModule,
+                             MOGG::kGraphBlobModuleAlias);
 
     // Import mojo packages for the custom kernel libraries.
     for (const auto &kernelLibraryPath : kernelLibraryPaths) {

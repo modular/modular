@@ -573,6 +573,18 @@ private:
 
 static constexpr StringLiteral kAnnotationDecorator = "__annotation";
 
+/// Return true if `decorator` is `@__address_space`, in either the bare or the
+/// called form. It only applies to a `var` statement in a function body, which
+/// the statement parser handles, so declarations diagnose it themselves rather
+/// than letting it reach the emitter as an unknown name.
+static bool isAddressSpaceDecorator(ExprNode *decorator) {
+  const ExprNode *callee = decorator;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    callee = callNode->callee;
+  auto declRef = dyn_cast<DeclRefNode>(callee);
+  return declRef && declRef->spelling == "__address_space";
+}
+
 bool StructDecorators::isAnnotationDecorator(ExprNode *decorator) {
   const ExprNode *callee = decorator;
   if (auto callNode = dyn_cast<CallNode>(decorator))
@@ -731,9 +743,16 @@ void Decorators::applyBodyDecorators(
     return;
 
   SmallVector<ExprNode *> exprDecorators;
-  for (auto decorator : decl.getBodyDecorators())
+  for (auto decorator : decl.getBodyDecorators()) {
+    if (isAddressSpaceDecorator(decorator)) {
+      emitError(decorator->getLoc(),
+                "@__address_space only applies to a 'var' in a function body")
+          << decorator->getRange();
+      continue;
+    }
     if (failed(process(decorator)))
       exprDecorators.push_back(decorator);
+  }
 
   // Emit the expressions and persist the resulting PValue into the IR.
   // TODO: Emit an attempt to call the decorator value.
@@ -4704,6 +4723,13 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
             UnitAttr::get(fieldOp.getContext()));
         continue;
       }
+    }
+    if (isAddressSpaceDecorator(decorator)) {
+      shared.emitError(decorator->getLoc(),
+                       "struct fields can't have an address space; put "
+                       "@__address_space on the 'var' that holds the struct")
+          << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
+      continue;
     }
     if (succeeded(structDecorators.processFieldDecorator(decorator, fieldOp)))
       continue;

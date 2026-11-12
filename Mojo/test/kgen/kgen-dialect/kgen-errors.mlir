@@ -476,3 +476,27 @@ kgen.generator @get_target_plugin_type_mismatch() {
       : !kgen.param_list<!kgen.type>>
   hlcf.return
 }
+
+// -----
+
+kgen.func @struct_concat_wrong_count(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op operands have 3 elements but the result has 2}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_wrong_type(%a: !kgen.struct<(index)>, %b: !kgen.struct<(f32, f64)>) {
+  // expected-error @below {{'kgen.struct.concat' op element #2 has type 'f64' but the result has 'f32'}}
+  %0 = kgen.struct.concat(%a, %b) : !kgen.struct<(index)>, !kgen.struct<(f32, f64)> -> !kgen.struct<(index, f32, f32)>
+  hlcf.return
+}
+
+// -----
+
+kgen.func @struct_concat_no_operands() {
+  // expected-error @below {{'kgen.struct.concat' op expected at least one operand}}
+  %0 = "kgen.struct.concat"() : () -> !kgen.struct<()>
+  hlcf.return
+}

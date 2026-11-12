@@ -184,16 +184,26 @@ class MLAAttnKey(AttnKey):
     single-CTA 128-key launches, respectively. This is part of the capture
     identity only; :meth:`pack_into` does not write it.
     """
+    decode_batch_size: int = 0
+    """Rows of the record's decode view, zero when the record does not split."""
+    decode_max_prompt_length: int = 0
+    """Per-step query width of the decode view, zero when it does not split."""
+    decode_num_partitions: int = 0
+    """Partition count of the decode view, zero when it does not split."""
 
     @classmethod
     def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
-        """MLA decode kernels read three ints, on the accelerator."""
+        """MLA decode kernels read six ints, on the accelerator.
+
+        Values 0-2 are the whole batch's; values 3-5 the decode view's,
+        zero when the record does not split.
+        """
         return DispatchMetadataSpec(
-            shape=(3,), dtype=DType.int64, on_device=True
+            shape=(6,), dtype=DType.int64, on_device=True
         )
 
     def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
-        """Writes batch size, prompt width and partition count.
+        """Writes the whole batch's and the decode view's dispatch values into ``into``.
 
         The cache length is not part of the MLA dispatch buffer; it is carried
         separately in ``max_cache_length``.
@@ -202,6 +212,9 @@ class MLAAttnKey(AttnKey):
             self.batch_size,
             self.max_prompt_length,
             self.num_partitions,
+            self.decode_batch_size,
+            self.decode_max_prompt_length,
+            self.decode_num_partitions,
         )
 
 

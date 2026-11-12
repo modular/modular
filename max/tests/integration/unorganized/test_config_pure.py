@@ -868,6 +868,85 @@ class TestFloat32WeightFallbackScoping:
         assert config.quantization_encoding == "bfloat16"
 
 
+_BF16_SAFETENSORS = [Path("model-bf16.safetensors")]
+_F16_SAFETENSORS = [Path("model-f16.safetensors")]
+
+
+def _make_repo(files: dict[SupportedEncoding, list[Path]]) -> Mock:
+    """Build a fake ``HuggingFaceRepo`` with safetensors per encoding."""
+
+    def files_for_encoding(
+        encoding: SupportedEncoding,
+        weights_format: WeightsFormat | None = None,
+    ) -> dict[WeightsFormat, list[Path]]:
+        if encoding in files:
+            return {WeightsFormat.safetensors: list(files[encoding])}
+        return {}
+
+    repo = Mock()
+    repo.repo_id = "test/float-repo"
+    repo.repo_type = "online"
+    repo.supported_encodings = list(files)
+    repo.files_for_encoding = Mock(side_effect=files_for_encoding)
+    return repo
+
+
+class TestFloat16WeightCast:
+    """Load-time casts into a float16 model."""
+
+    @mock_hf_repo_access
+    def test_bfloat16_repo_casts_to_requested_float16(self) -> None:
+        config = MAXModelConfig(
+            model_path="test/float-repo", quantization_encoding="float16"
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_repo({"bfloat16": _BF16_SAFETENSORS}),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
+
+        assert encoding == "float16"
+        assert cast_from == "bfloat16"
+        assert cast_to == "float16"
+
+    @mock_hf_repo_access
+    def test_files_in_requested_encoding_win_over_cast(self) -> None:
+        # bfloat16 is listed first, so a first-match search would cast it.
+        config = MAXModelConfig(
+            model_path="test/float-repo", quantization_encoding="float16"
+        )
+        repo = _make_repo(
+            {"bfloat16": _BF16_SAFETENSORS, "float16": _F16_SAFETENSORS}
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=repo,
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
+
+        assert encoding == "float16"
+        assert cast_from is None
+        assert cast_to is None
+
+
 @prepare_registry
 @mock_plan_from_sizes
 def test_validate_model_path__bad_repo_provided() -> None:
@@ -2266,6 +2345,14 @@ def test_config__fp4_kv_cache_needs_an_opted_in_architecture() -> None:
         _validate_kv_cache_format(
             KVCacheConfig(kv_cache_format=fmt), DUMMY_LLAMA_ARCH
         )
+
+
+def test_config__float16_kv_cache_format_overrides_encoding() -> None:
+    """A quantized checkpoint can keep its KV cache in float16."""
+    assert cache_dtype_for_encoding("float4_e2m1fnx2", None) == DType.bfloat16
+    assert (
+        cache_dtype_for_encoding("float4_e2m1fnx2", "float16") == DType.float16
+    )
 
 
 def test_config__fp4_kv_cache_format_maps_to_packed_uint8() -> None:

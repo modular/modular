@@ -168,10 +168,11 @@ struct _KVCacheTestTensor[dtype: DType, rank: Int](Copyable):
         self.host_ptr.unsafe_free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:
-        self.device_buf = ctx.enqueue_create_buffer[Self.dtype](
+        var buf = ctx.enqueue_create_buffer[Self.dtype](
             self.shape.flattened_length()
         )
-        ctx.enqueue_copy(self.device_buf.value(), self.host_ptr)
+        ctx.enqueue_copy(buf, self.host_ptr)
+        self.device_buf = buf^
 
     def host_tensor(self) -> Self.tensor_type:
         return self._tensor(self.host_ptr)

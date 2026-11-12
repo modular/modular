@@ -27,7 +27,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
@@ -41,6 +41,7 @@ from max.nn.norm import RMSNorm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, NamedMapping
 
@@ -165,6 +166,7 @@ class NemotronHBackbone(
         input_row_offsets: Tensor,
         capture_rows: Tensor | None = None,
         update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[Tensor, tuple[Tensor, ...], tuple[MambaReplayCapture, ...]]:
         """Runs the layer stack.
 
@@ -181,6 +183,8 @@ class NemotronHBackbone(
                 requests write their new Mamba state back to their rows. A
                 request with the flag false only reads its state. ``None``
                 updates every request.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The final pre-norm hidden states, the hidden states selected by
@@ -228,6 +232,9 @@ class NemotronHBackbone(
                     assert capture_rows is not None, (
                         "capture_mamba_replay needs the rows to capture"
                     )
+                    assert verify_width is not None, (
+                        "capture_mamba_replay needs the verify width"
+                    )
                     h, replay = call(
                         h,
                         access,
@@ -235,6 +242,7 @@ class NemotronHBackbone(
                         has_initial_state,
                         update_state,
                         capture_rows,
+                        verify_width,
                     )
                     replays.append(replay)
                 else:
@@ -257,8 +265,12 @@ class NemotronHBackbone(
         )
 
 
-class NemotronH(Module[..., ModuleV3Outputs]):
-    """Nemotron-H for causal language modeling."""
+class NemotronH(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
+    """Nemotron-H for causal language modeling, registered as the decoder."""
+
+    # The graph keeps the input order it had before registration, which the
+    # bare MEFs Mach boots from its registry are compiled with.
+    input_layout = ("tokens", "return_n_logits", "input_row_offsets", "kv")
 
     def __init__(self, config: NemotronHConfig) -> None:
         if any(
@@ -307,14 +319,12 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             )
         return tokens.to(mesh), input_row_offsets.to(mesh)
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *kv_inputs: Tensor,
-    ) -> ModuleV3Outputs:
+    def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
         """Runs the decoder stack over the tokens."""
+        tokens = inputs.tokens
+        return_n_logits = inputs.return_n_logits
+        input_row_offsets = inputs.input_row_offsets
+        kv_inputs = tree.leaves(inputs.kv)
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which
@@ -327,7 +337,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         row_offsets = input_row_offsets
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         kv_tree = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in kv_inputs)
+            iter(kv_input_values(kv_inputs))
         )
         kv_collection = PagedCacheValues.from_upstream(
             tree.leaves(kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),
@@ -359,6 +369,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor,
         update_state: Tensor,
+        verify_width: Tensor,
     ) -> tuple[ModuleV3Outputs, Tensor, tuple[MambaReplayCapture, ...]]:
         """Runs a speculative verify pass on the given Mamba state.
 
@@ -373,6 +384,8 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             update_state: The ``[batch_size]`` bool flags selecting which
                 requests advance their state. A request with drafts must not,
                 since its accepted prefix is not known until the replay.
+            verify_width: The verify's ``[K]`` width operand; required when
+                the config sets ``capture_mamba_replay``.
 
         Returns:
             The model outputs, the selected hidden states as one tensor
@@ -390,6 +403,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             state,
             capture_rows,
             update_state,
+            verify_width,
         )
         assert hidden is not None, "a verify pass returns hidden states"
         return outputs, hidden, replays
@@ -404,6 +418,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         capture_rows: Tensor | None,
         update_state: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[
         ModuleV3Outputs,
         Tensor | None,
@@ -417,6 +432,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
             input_row_offsets,
             capture_rows,
             update_state,
+            verify_width,
         )
 
         # One projection and one gather serve both outputs when ALL logits

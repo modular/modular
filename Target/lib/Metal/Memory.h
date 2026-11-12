@@ -29,6 +29,21 @@ struct M_driver_memory {
   // allocs.
   uint64_t offset = 0;
 
+  // The CPU-visible address of this handle's first byte. Metal allocations use
+  // shared storage, so contents() is host-dereferenceable; gpuAddress() is not.
+  char *hostAddress() const {
+    return static_cast<char *>(mBuffer->contents()) + offset;
+  }
+
+  // Whether `size` bytes at `rangeOffset` past hostAddress() stay inside
+  // `mBuffer`. Written as subtractions so a huge offset cannot wrap past the
+  // check.
+  bool containsRange(uint64_t rangeOffset, uint64_t size) const {
+    uint64_t length = mBuffer->length();
+    return offset <= length && rangeOffset <= length - offset &&
+           size <= length - offset - rangeOffset;
+  }
+
   M_driver_status_t getProperty(llvm::StringRef name, void *value);
 };
 

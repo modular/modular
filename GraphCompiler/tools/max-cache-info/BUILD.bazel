@@ -12,6 +12,8 @@ modular_cc_binary(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/Runtime",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],

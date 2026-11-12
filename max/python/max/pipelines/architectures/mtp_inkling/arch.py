@@ -24,7 +24,7 @@ from .model_config import (
     MTPInklingDraftArchConfig,
     inkling_mtp_draft_width,
 )
-from .weight_adapters import convert_inkling_mtp_state_dict
+from .weight_adapters import inkling_mtp_weight_rules
 
 __all__ = ["mtp_inkling_draft_arch"]
 
@@ -45,9 +45,8 @@ mtp_inkling_draft_arch = SupportedArchitecture(
     tokenizer=InklingTokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_inkling_mtp_state_dict,
-    },
+    weight_rules=inkling_mtp_weight_rules,
+    use_weight_rules=True,
     config=MTPInklingDraftArchConfig,
     checkpoint_draft_width=inkling_mtp_draft_width,
     # Its pairing caps the context a batch keeps resident.

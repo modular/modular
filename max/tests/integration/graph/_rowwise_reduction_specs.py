@@ -123,8 +123,14 @@ _INNER_CASES = (
 # GPU's tiled tier holds one output per lane. `rms_norm_spelled` is rms_norm
 # written as graph ops, which fuses into a fold and a per-element phase;
 # `rms_norm_of_product` normalizes x * s, which the kernel's load computes once
-# per element.
-FUSED_OPS = ("sum_plus_bias", "rms_norm_spelled", "rms_norm_of_product")
+# per element. `softmax_spelled` is softmax written as graph ops, which fuses
+# into two dependent folds and a per-element phase.
+FUSED_OPS = (
+    "sum_plus_bias",
+    "rms_norm_spelled",
+    "rms_norm_of_product",
+    "softmax_spelled",
+)
 _FUSED_CASES = [
     (op, dtype) for op in FUSED_OPS for dtype in (DType.float32, DType.bfloat16)
 ]
@@ -218,9 +224,16 @@ GPU_SUBWORD_SPECS = [
 # into the field the emit reads, so a finish that skips it returns a
 # real-but-not-extreme index -- a wrong answer that still looks like a plausible
 # one. reduce_max rides the same call with an exactly representable result, so
-# it pins the non-arg monoids on that path too. rms_norm_spelled splits its row
-# across blocks and writes every element in the last pass.
-_SPLITK_OPS = ["argmax", "argmin", "reduce_max", "rms_norm_spelled"]
+# it pins the non-arg monoids on that path too. rms_norm_spelled and
+# softmax_spelled split their rows across blocks and write every element in the
+# last pass.
+_SPLITK_OPS = [
+    "argmax",
+    "argmin",
+    "reduce_max",
+    "rms_norm_spelled",
+    "softmax_spelled",
+]
 
 GPU_SPLITK_SPECS = [_spec(op, DType.float32, -1, "gpu") for op in _SPLITK_OPS]
 
@@ -380,4 +393,8 @@ def _build_fused(
         xf = ops.cast(x, DType.float32)
         inv = ops.rsqrt(ops.mean(xf * xf, axis=axis) + RMS_NORM_EPS)
         return ops.cast(xf * inv * ops.cast(gamma, DType.float32), x.dtype)
+    if op == "softmax_spelled":
+        xf = ops.cast(x, DType.float32)
+        e = ops.exp(xf - ops.max(xf, axis=axis))
+        return ops.cast(e * (1.0 / ops.sum(e, axis=axis)), x.dtype)
     raise ValueError(f"unknown fused graph {op!r}")

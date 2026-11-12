@@ -125,10 +125,11 @@ def _compile(
         model = model_cls(
             weight=Tensor.zeros(list(w_host.shape), dtype=DType.bfloat16)
         )
-    weight = Tensor.from_dlpack(w_host).to(device)
+    # The host weight reaches the device when the compiled model binds it,
+    # so the compile needs no device.
     return model.compile(
         TensorType(DType.bfloat16, [rows, w_host.shape[1]], device=device),
-        weights={"weight": weight.driver_tensor},
+        weights={"weight": w_host},
         session=session,
     )
 

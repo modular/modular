@@ -289,6 +289,12 @@ public:
                                             uint64_t handle);
   // Unmap [va, va+byteSize); the handle remains valid for reuse.
   virtual ErrorOrSuccess vmmUnmap(void *va, size_t byteSize);
+  // Map `handle` into [va, va+byteSize), leaving access to a later
+  // vmmSetAccess over a range that may span several mappings, so a caller
+  // mapping many granules grants access once. The defaults fall back to
+  // vmmMapAndSetAccess and a no-op, for backends that do not split the two.
+  virtual ErrorOrSuccess vmmMap(void *va, size_t byteSize, uint64_t handle);
+  virtual ErrorOrSuccess vmmSetAccess(void *va, size_t byteSize);
 
   virtual ErrorOr<Device::MemInfo> getMemoryInfo() const = 0;
 
@@ -1241,6 +1247,26 @@ public:
   stopTimer(const DeviceTimer &timer) = 0;
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const;
+
+  // Allocation statistics of this device's memory manager, for an embedder
+  // that sizes its own pools from what its forwards really allocate (mach's
+  // memory ledger, MAX Serve's memory_ledger.py). See
+  // MemoryManager::AllocationStats for the definitions. All zero when the
+  // memory manager is disabled.
+  struct MemoryManagerStats {
+    uint64_t liveBytes = 0;
+    uint64_t peakLiveBytes = 0;
+    uint64_t maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0;
+    uint64_t driverFallbackBytes = 0;
+    // Distinct request sizes of at least 256 MiB since the last reset,
+    // ascending.
+    std::vector<uint64_t> requestSizes;
+  };
+  MemoryManagerStats getMemoryManagerStats() const;
+  // Restarts the peaks from the live bytes and clears the largest request,
+  // the request sizes and the fallback counts.
+  void resetMemoryManagerPeaks() const;
 
   // Context-level attribute query. Subclasses override to provide
   // context-specific values (e.g. CpuDeviceContext returns the cpuDevice's

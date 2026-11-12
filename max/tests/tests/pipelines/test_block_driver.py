@@ -29,7 +29,9 @@ from max.pipelines.speculative.block_driver import (
     BlockBatch,
     BlockDriver,
     DraftSampler,
+    _block_kv_dispatch_metadata,
     block_dispatch_metadata,
+    block_mla_dispatch_metadata,
 )
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
@@ -65,6 +67,44 @@ def test_block_dispatch_metadata_is_rebuilt_at_block_width() -> None:
     )
     assert isinstance(out, Buffer)
     np.testing.assert_array_equal(out.to_numpy(), [3, 8, 0, 4321])
+
+
+def test_block_mla_dispatch_metadata_zeroes_the_decode_view() -> None:
+    """A 6-int MLA record keeps its batch size and split-K count, takes the
+    block width, and zeroes the decode view, since a draft block never
+    splits; a 3-int record keeps its width.
+    """
+    for width, values, expected in (
+        (3, [3, 129, 5], [3, 8, 5]),
+        (6, [3, 129, 5, 2, 4, 7], [3, 8, 5, 0, 0, 0]),
+    ):
+        with Graph(
+            f"block_mla_dispatch_metadata_{width}",
+            input_types=(TensorType(DType.int64, [width], DeviceRef.CPU()),),
+        ) as graph:
+            (meta,) = graph.inputs
+            graph.output(block_mla_dispatch_metadata(meta.tensor, 8))
+
+        compiled = InferenceSession(devices=[CPU()]).load(graph)
+        (out,) = compiled.execute(
+            Buffer.from_numpy(np.array(values, dtype=np.int64))
+        )
+        assert isinstance(out, Buffer)
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+def test_block_kv_dispatch_metadata_routes_records_by_width() -> None:
+    """The router picks the builder from the record's width."""
+    for width in (3, 6, 4):
+        with Graph(
+            f"block_kv_dispatch_metadata_{width}",
+            input_types=(TensorType(DType.int64, [width], DeviceRef.CPU()),),
+        ) as graph:
+            (meta,) = graph.inputs
+            out = _block_kv_dispatch_metadata(meta.tensor, 8)
+            assert out.shape == [width]
+            assert out.dtype == DType.int64
+            graph.output(out)
 
 
 class _AcceptOnlyProposer:

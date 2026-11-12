@@ -18,6 +18,7 @@
 #include "Device.h"
 #include "Driver.h"
 #include "Event.h"
+#include "Flag.h"
 #include "Function.h"
 #include "Memory.h"
 #include "llvm/ADT/SmallVector.h"
@@ -299,6 +300,8 @@ M_driver_status_t M_driver_queue::setMemory(M_driver_memory_t dst,
   void *dstPtr = static_cast<char *>(dstContents) + dstOffset;
 
   // A host memset into shared memory (see copyToDevice): drain, then write.
+  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
+  // flag wait; port the legacy blit/compute fill.
   if (M_driver_status_t status = drainPriorWork();
       status != M_DRIVER_STATUS_SUCCESS)
     return status;
@@ -345,6 +348,8 @@ M_driver_status_t M_driver_queue::fillMemory(M_driver_memory_t dst,
         "destination buffer not properly aligned");
 
   // A host fill into shared memory (see copyToDevice): drain, then write.
+  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
+  // flag wait; port the legacy blit/compute fill.
   if (M_driver_status_t status = drainPriorWork();
       status != M_DRIVER_STATUS_SUCCESS)
     return status;
@@ -463,8 +468,12 @@ M_driver_queue::execute(M_driver_function_t function,
 
   // Set resources that might be used by the kernel
   // FIXME: only set resources that are used by the kernel
-  for (const auto &it : context->allocations)
-    encoder->useResource(it.second.get(), MTL::ResourceUsageWrite);
+  {
+    // Another thread may alloc or free on this context mid-walk.
+    std::lock_guard<std::mutex> allocationsLock(context->mutex);
+    for (const auto &it : context->allocations)
+      encoder->useResource(it.second.get(), MTL::ResourceUsageWrite);
+  }
 
   // Bind dynamic threadgroup (shared) memory if the kernel requested it.
   if (sharedMemBytes > 0)
@@ -484,6 +493,42 @@ M_driver_queue::execute(M_driver_function_t function,
 }
 
 M_driver_status_t M_driver_queue::synchronize() { return drainPriorWork(); }
+
+M_driver_status_t M_driver_queue::freeAsync(M_driver_memory_t memory) {
+  // A non-owning handle wraps a buffer something else frees.
+  if (!memory->owning)
+    return context->free(memory);
+
+  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
+      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+
+  std::lock_guard<std::mutex> lock(mMutex);
+
+  MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
+  if (cmdBuffer == nullptr)
+    return context->device->driver->status.create(
+        "Failed to create command buffer for free_async");
+  encodeDonatedWaits(cmdBuffer);
+  MTL::BlitCommandEncoder *blit = cmdBuffer->blitCommandEncoder();
+  if (blit == nullptr)
+    return context->device->driver->status.create(
+        "Failed to create blit encoder for free_async");
+  blit->waitForFence(mOrderingFence.get());
+  blit->endEncoding();
+
+  // Untracking drops the context's reference, so later launches stop making
+  // the buffer resident; this one keeps it alive until the work queued ahead
+  // of the free, which may still read it, has completed.
+  MTL::Buffer *buffer = memory->mBuffer;
+  buffer->retain();
+  cmdBuffer->addCompletedHandler(^(MTL::CommandBuffer *) {
+    buffer->release();
+  });
+  M_driver_status_t status = context->free(memory);
+  commitWithTimeline(cmdBuffer);
+  mCommitSeq += 1;
+  return status;
+}
 
 M_driver_status_t M_driver_queue::recordEvent(M_driver_event_t event) {
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
@@ -577,6 +622,29 @@ M_driver_status_t M_driver_queue::waitForEvents(M_driver_event_t *events,
   return M_DRIVER_STATUS_SUCCESS;
 }
 
+M_driver_status_t
+M_driver_queue::waitFlag(M_driver_flag_t flag, uint64_t value,
+                         M_driver_flag_condition_t condition) {
+  if (condition != M_DRIVER_FLAG_CONDITION_GEQ)
+    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  NS::SharedPtr<MTL::SharedEvent> event = flag->currentEvent();
+  // An event's value only rises, so a satisfied wait can never gate again.
+  if (event->signaledValue() >= value)
+    return M_DRIVER_STATUS_SUCCESS;
+
+  std::lock_guard<std::mutex> lock(mMutex);
+  // Every later command buffer encodes the wait until a signal satisfies it.
+  // The entry's reference keeps the event alive past M_driver_flag_destroy
+  // and M_driver_flag_reset.
+  DonatedWait wait;
+  wait.event = NS::SharedPtr<MTL::Event>(event);
+  wait.sharedView = event.get();
+  wait.value = value;
+  mDonatedWaits.push_back(std::move(wait));
+  mCommitSeq += 1;
+  return M_DRIVER_STATUS_SUCCESS;
+}
+
 M_driver_status_t M_driver_queue_create(M_driver_context_t context,
                                         M_driver_queue_t *queue) {
   if (context == nullptr)
@@ -629,12 +697,17 @@ M_driver_status_t M_driver_queue_copy_intra_device(M_driver_queue_t queue,
                                 src->offset, dst->size);
 }
 
-M_driver_status_t M_driver_queue_copy_inter_device(
-    [[maybe_unused]] M_driver_queue_t queue,
-    [[maybe_unused]] M_driver_memory_view_t dst,
-    [[maybe_unused]] M_driver_memory_view_t src,
-    [[maybe_unused]] M_driver_context_t src_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+// Apple silicon exposes a single GPU, so there is no peer to copy from.
+M_driver_status_t
+M_driver_queue_copy_inter_device(M_driver_queue_t queue,
+                                 [[maybe_unused]] M_driver_memory_view_t dst,
+                                 [[maybe_unused]] M_driver_memory_view_t src,
+                                 M_driver_context_t src_context) {
+  if (queue == nullptr)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  if (src_context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_UNSUPPORTED;
 }
 
 M_driver_status_t M_driver_queue_set_memory(M_driver_queue_t queue,
@@ -666,8 +739,13 @@ M_driver_queue_execute(M_driver_queue_t queue, M_driver_function_t function,
     return M_DRIVER_STATUS_BAD_QUEUE;
   if (function == nullptr)
     return M_DRIVER_STATUS_BAD_FUNCTION;
-  if (config != nullptr && config->config.gpu.num_attributes > 0)
-    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  if (config == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  // Launch attributes are a `CUlaunchAttribute` passthrough (clusters,
+  // programmatic dependent launch, ...), none of which Metal can express.
+  if (config->mode == M_DRIVER_QUEUE_EXECUTE_MODE_GPU &&
+      config->config.gpu.num_attributes > 0)
+    return M_DRIVER_STATUS_UNSUPPORTED;
   return queue->execute(function, config, args, arg_sizes, num_args);
 }
 
@@ -688,6 +766,16 @@ M_driver_status_t M_driver_queue_wait_for_events(M_driver_queue_t queue,
   if (events == nullptr)
     return M_DRIVER_STATUS_BAD_EVENT;
   return queue->waitForEvents(events, num_events);
+}
+
+M_driver_status_t
+M_driver_queue_wait_flag(M_driver_queue_t queue, M_driver_flag_t flag,
+                         uint64_t value, M_driver_flag_condition_t condition) {
+  if (queue == nullptr)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  if (flag == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  return queue->waitFlag(flag, value, condition);
 }
 
 M_driver_status_t M_driver_queue_synchronize(M_driver_queue_t queue) {

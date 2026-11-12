@@ -173,6 +173,20 @@ single_version_override(
 )
 
 single_version_override(
+    module_name = "jemalloc",
+    patch_strip = 1,
+    patches = [
+        # As part of building this, jemalloc expects an `nm` from the
+        # cc toolchain, but plumbing it through requires a rules_cc fix.
+        # Without it, the action just gives us "/bin/bash: line 1: -a: command not found"
+        # since `{nm}` expands to nothing. Unless/until we want to fix it,
+        # just disable the feature. This is not a flag but just a setting,
+        # so annoyingly we have to patch it.
+        "//bazel/public-patches:jemalloc-no-private-namespace.patch",
+    ],
+)
+
+single_version_override(
     module_name = "with_cfg.bzl",
     patch_strip = 1,
     patches = [
@@ -264,6 +278,8 @@ use_repo(compat, "cc_compatibility_proxy")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+libkineto_repository = use_repo_rule("//bazel/public-patches:libkineto.bzl", "libkineto_repository")
 
 # ......................... NIXL (KV transfer) ................................
 #
@@ -532,16 +548,16 @@ http_archive(
 )
 
 # libkineto is the on-demand CPU+GPU profiler MAX uses to emit Chrome trace
-# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). We pin to the exact SHA
-# bundled with torch==2.12.0+cu130 because the PyTorch/HTA/libkineto/Dynolog
-# compatibility chain at that pairing is empirically validated end-to-end
-# (see MXTOOLS-190 initial spike). The accompanying
-# bazel/public-patches/libkineto.BUILD wires up the CUPTI / CUDA Toolkit deps
-# and exposes the cc_library target.
-http_archive(
+# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). github.com/pytorch/kineto
+# is archived; libkineto now lives in pytorch/pytorch (copied in by #198648,
+# moved to torch/csrc/profiler/kineto after the 2.15 branch cut). We pin the
+# v2.15.0 tag, the first torch release that ships libkineto in-tree, so the
+# libkineto we build is the one bundled with torch==2.15.0. The commit and the
+# per-file sha256 manifest live in bazel/public-patches/libkineto.bzl; bump
+# them with `update-libkineto <pytorch ref>`.
+libkineto_repository(
     name = "libkineto",
     build_file = "//bazel/public-patches:libkineto.BUILD",
-    patch_args = ["-p1"],
     patches = [
         # Emit "Record Window End" on the (-1, 0) overhead track with thread
         # scope so it stops spawning an Unnamed SliceTrack in Perfetto. Covers
@@ -549,14 +565,11 @@ http_archive(
         # in max/internal/profiler/lib/Range.cpp (MXTOOLS-266).
         "//bazel/public-patches:libkineto-record-window-end-track.patch",
     ],
-    sha256 = "7615b3c028b3148d046ba7a34b890d9bf90e5178024c7b749b5018366fc9e631",
-    strip_prefix = "kineto-b2103f78d13fde4937af010c0ef8e24313568bc5",
-    url = "https://github.com/pytorch/kineto/archive/b2103f78d13fde4937af010c0ef8e24313568bc5.tar.gz",
 )
 
 # dynolog supplies the IPC fabric headers libkineto includes under
-# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why the kineto
-# tarball can't provide them. Pinned to b32376d, validated against Dynolog
+# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why we don't
+# use libkineto's vendored copy. Pinned to b32376d, validated against Dynolog
 # 0.6.0 + libkineto's IPC protocol.
 http_archive(
     name = "dynolog",

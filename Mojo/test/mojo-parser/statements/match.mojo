@@ -50,6 +50,7 @@ def match_trivial(i: Int):
     # CHECK:       } else {
     # CHECK:         hlcf.yield
     # CHECK:       }
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match i:
     case _ if i > 0:
         case_callee[1]()
@@ -209,6 +210,7 @@ def match_tuple_subject(point: Tuple[Int, Int]):
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 def match_initializer_list(value: InitPattern):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case == {}:
         case_callee[0]()
@@ -283,6 +285,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
 def match_with_guard(x: Int, c: Int):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match x:
     case _ if c != 0:
         case_callee[0]()
@@ -453,10 +456,11 @@ __enum OpenColor(ImplicitlyCopyable):
     comptime _enum_is_exhaustive = False
 
 
-# An open enum does not require every known case to appear.
+# An open enum requires a catch-all for cases that may be added later.
 # CHECK-LABEL: lit.fn @"match_open_enum_partial
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
 def match_open_enum_partial(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         case_callee[0]()
@@ -569,6 +573,7 @@ def match_color(c: Color):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_color_complex(tc: Tuple[Color, Int]):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match tc:
     case (Color.red, 0):
         case_callee[0]()
@@ -637,6 +642,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[T:%.*]] = lit.var.decl "t" ref
     # CHECK:       lit.ref.store %value, [[T]]
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case "hello" as t:
         _ = t.byte_length()
@@ -660,6 +666,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.ref.store %point, [[P]]
     # CHECK:       lit.var.decl "x" var
     var point: Tuple[Int, Int] = (0, 0)
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, 0) as origin:
         _ = origin
@@ -680,6 +687,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE0]])
     # CHECK:       hlcf.if [[B0]] {
     # CHECK:       lit.call {{.*}}@"byte_length(
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case _ as s if s.byte_length() != 0:
         _ = s.byte_length()
@@ -746,6 +754,7 @@ def match_as_pattern(value: String):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.match.complete
 def match_or_pattern_int(x: Int):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match x:
     case 0 | 1:
         case_callee[0]()
@@ -793,6 +802,7 @@ def match_or_pattern_int(x: Int):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:         hlcf.match.complete
 def match_or_pattern_tup(point: Tuple[Int, Int]):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, 0) | (1, 1):
         case_callee[2]()
@@ -807,6 +817,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[X]]
     # CHECK:       lit.var.decl "x" var
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, var x) | (var x, 1):
         _ = x
@@ -819,6 +830,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[RX]]
     # CHECK:       lit.var.decl "x" ref
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 4
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (2, ref x) | (ref x, 3):
         _ = x
@@ -887,6 +899,7 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       lit.ref.struct.ger {{.*}}[z]
     # CHECK:       lit.call {{.*}}@"__eq__(
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match v:
     case Vec3(x=0, y=0, z=0):
         case_callee[0]()
@@ -897,6 +910,7 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[X:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.ref.store {{.*}}, [[X]]
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match v:
     case Vec3(x=var x, y=0, z=_):
         _ = x

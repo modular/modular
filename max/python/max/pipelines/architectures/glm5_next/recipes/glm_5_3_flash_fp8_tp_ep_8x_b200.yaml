@@ -13,32 +13,32 @@
 # 8x B200 recipe for GLM-5.3-Flash: text, image and video input. A video's
 # decoded frames are charged to the server's per-request media budget
 # (MAX_SERVE_MAX_MEDIA_BYTES, 100 MiB by default), and a clip whose frames do
-# not fit is sampled more sparsely: keeping the checkpoint's 2 fps on a
-# ten-minute 1080p clip takes about 7.5 GB.
+# not fit is sampled more sparsely.
 #
 # quantization_encoding is left unset so it resolves from the checkpoint's own
-# blockwise-FP8 quantization_config, and max_length unset so the checkpoint's
-# own value applies.
+# blockwise-FP8 quantization_config.
 #
-# The KV cache stays at its default dtype rather than float8_e4m3fn, unlike
-# the GLM-5.3 NVFP4 recipe beside it. This checkpoint ships `kv_b_proj`
-# unquantized, and the absorbed-scale pairing an FP8 latent cache needs does
-# not exist for a BF16 `kv_b_proj` -- `Glm5NextSparseMLASublayer._attend`
-# raises rather than run it.
+# max_length is pinned well below the checkpoint's own 1048576. Uncapped, a
+# request that never stops may generate until the host pinned-memory cache is
+# exhausted and the worker dies, which ended two AutoExacto GPQA runs; the
+# eval harness sends no max_tokens of its own, so the bound has to come from
+# the server.
 #
-# data_parallel_degree is 1, matching the rest of the GLM family here. That
-# makes attention tensor-parallel, which is the configuration the residual's
-# token sharding exists for: every per-token stage runs on one eighth of the
-# batch and the EP dispatch buffers are sized from the same shard.
+# The KV cache stays at its default dtype rather than float8_e4m3fn: this
+# checkpoint ships `kv_b_proj` unquantized, and the absorbed-scale pairing an
+# FP8 latent cache needs does not exist for a BF16 `kv_b_proj`.
+#
+# data_parallel_degree must be 1: the model config rejects any other value,
+# since attention is tensor-parallel only.
 model:
   model_path: zai-org/GLM-5.3-Flash
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
   data_parallel_degree: 1
+  max_length: 131072
   kv_cache:
     device_memory_utilization: 0.78
 
 runtime:
-  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 8192
   # Well below the point where the gated-delta state-pool offsets stop fitting

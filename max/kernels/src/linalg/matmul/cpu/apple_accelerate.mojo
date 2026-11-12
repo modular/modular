@@ -323,15 +323,14 @@ def apple_gemv[
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = (Int(b.dim[1]()), Int(b.dim[0]()))
-        transposed_b_alloc = alloc[Scalar[b.dtype]](
+        var managed = alloc[Scalar[b.dtype]](
             {length = b.num_elements()}
         ).into_managed()
         transposed_b = TileTensor(
-            transposed_b_alloc.unsafe_value()
-            .unsafe_ptr()
-            .unsafe_origin_cast[MutUntrackedOrigin](),
+            managed.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
             row_major(transposed_b_shape[0], transposed_b_shape[1]),
         )
+        transposed_b_alloc = managed^
 
         var _kernel_type_m = 0
         comptime if a.static_shape[0] > -1:

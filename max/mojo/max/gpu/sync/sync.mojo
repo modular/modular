@@ -17,6 +17,7 @@ The module includes:
 - Warp-level synchronization (syncwarp())
 - Memory barriers (mbarrier) for NVIDIA GPUs
 - Instruction scheduling controls for AMD GPUs
+- CDNA5 per-counter waits, split barriers and wave priority
 - Asynchronous copy and bulk transfer synchronization
 
 The synchronization primitives help coordinate execution between threads within
@@ -26,7 +27,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 from std.os import abort
 from std.sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
-from std.sys.info import CompilationTarget, _is_amd_cdna
+from std.sys.info import CompilationTarget, _cdna_5_or_newer, _is_amd_cdna
 
 from max._plugin import CurrentMaxPlugin
 from max.gpu.intrinsics import Scope
@@ -177,6 +178,14 @@ struct AMDScheduleBarrierMask(
     comptime TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
+    comptime LDSDMA = Self(1 << 11)
+    """Allows reordering of LDS direct-memory-access instructions.
+
+    LLVM documents bit 11 as "All LDSDMA instructions". Whether gfx1250 counts
+    `tensor_load_to_lds` as an LDSDMA instruction for this mask is unconfirmed,
+    so do not rely on this mask to pin a TDM copy until a test shows it does.
+    """
+
     def __init__(out self, value: Int):
         """Initializes an `AMDScheduleBarrierMask` from an integer value.
 
@@ -232,6 +241,8 @@ struct AMDScheduleBarrierMask(
                 return writer.write_string("DS_WRITE")
             case .TRANS:
                 return writer.write_string("TRANS")
+            case .LDSDMA:
+                return writer.write_string("LDSDMA")
             case _:
                 abort("invalid AMDScheduleBarrierMask value")
 
@@ -414,6 +425,283 @@ def s_waitcnt_barrier[
     ), "s_waitcnt_barrier is only supported on AMD CDNA GPUs"
     s_waitcnt[vmcnt=vmcnt, expcnt=expcnt, lgkmcnt=lgkmcnt]()
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
+
+
+# ===-----------------------------------------------------------------------===#
+# CDNA5 counter waits, split barriers and wave priority
+# ===-----------------------------------------------------------------------===#
+
+comptime _MAX_WAIT_COUNT = 63
+"""Largest counter value the `s_wait_*cnt` wrappers accept (6 bits).
+
+The counter is 6 bits wide, but the instruction's immediate field is wider and
+the assembler does not range-check it, so the bound is asserted here.
+"""
+
+comptime _MAX_SETPRIO_LEVEL = 3
+"""Largest wave-priority level `s_setprio` accepts: the immediate is 2 bits."""
+
+# gfx1250 replaces the single `s_waitcnt` with one counter per operation class.
+# The immediates are not range-checked by the assembler (`llvm-mc` accepts
+# `s_wait_tensorcnt 0xff`), so each wrapper asserts its own range at compile
+# time. CDNA4 and older have no such instruction: the LLVM backend fails with
+# "Cannot select" there, which is why every wrapper asserts the architecture
+# first.
+
+
+@inline(.always)
+def s_wait_loadcnt[count: Int]():
+    """Waits until at most `count` global loads from this wave are outstanding.
+
+    `s_wait_loadcnt` waits for the load counter to drop to `count`, not for
+    `count` operations to complete: a count of 0 waits for every global load
+    issued by this wave.
+
+    Parameters:
+        count: The load counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_wait_loadcnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_loadcnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.loadcnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_wait_storecnt[count: Int]():
+    """Waits until at most `count` global stores from this wave are outstanding.
+
+    Parameters:
+        count: The store counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_wait_storecnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_storecnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.storecnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_wait_dscnt[count: Int]():
+    """Waits until at most `count` LDS operations from this wave are outstanding.
+
+    Parameters:
+        count: The LDS counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert _cdna_5_or_newer(), "s_wait_dscnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_dscnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.dscnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_wait_kmcnt[count: Int]():
+    """Waits until at most `count` constant and message operations are outstanding.
+
+    The KM counter covers constant-memory traffic (scalar and buffer loads from
+    constant memory) and message operations.
+
+    Parameters:
+        count: The KM counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert _cdna_5_or_newer(), "s_wait_kmcnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_kmcnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.kmcnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_wait_asynccnt[count: Int]():
+    """Waits until at most `count` per-lane async copies are outstanding.
+
+    This counter tracks the `global_load_async_to_lds` family; bulk TDM copies
+    are tracked by the tensor counter instead (`s_wait_tensorcnt`).
+
+    Parameters:
+        count: The async counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_wait_asynccnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_asynccnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.asynccnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_wait_tensorcnt[count: Int]():
+    """Waits until at most `count` TDM tensor operations are outstanding.
+
+    A tensor load counts against this counter until its data has landed in LDS,
+    so an `s_wait_tensorcnt[0]()` before reading a stage is what makes the LDS
+    contents visible to this wave.
+
+    Parameters:
+        count: The tensor counter value to wait for, in `[0, 63]`.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_wait_tensorcnt requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= count <= _MAX_WAIT_COUNT
+    ), "s_wait_tensorcnt count must be in [0, 63]"
+    llvm_intrinsic["llvm.amdgcn.s.wait.tensorcnt", NoneType](UInt16(count))
+
+
+@inline(.always)
+def s_barrier_signal[barrier_id: Int = -1]():
+    """Signals arrival at the workgroup barrier without waiting for the others.
+
+    CDNA5 has no plain `s_barrier`; a workgroup-wide barrier is the pair
+    `s_barrier_signal[-1]()` followed by `s_barrier_wait[-1]()`, with the work
+    to be overlapped scheduled between the two calls. Named barriers are a
+    different mechanism (`s_barrier_init`/`s_barrier_join`/`s_barrier_leave`
+    plus a signal and wait that name an id), so they are rejected here rather
+    than signalled as a workgroup barrier would be.
+
+    Parameters:
+        barrier_id: The barrier to signal. Only -1, the workgroup barrier, is
+            supported; any other value is a compile-time error.
+
+    Note:
+        This pair provides no memory ordering and emits no fence. Neither
+        intrinsic touches memory, so LLVM neither orders this wave's LDS and
+        global accesses against the other waves of the workgroup nor inserts a
+        wait that would. `barrier()` gets its ordering from the workgroup
+        release and acquire fences the HIP plugin puts around `s.barrier`, and
+        this pair has none of them. A wave that produces data for another wave
+        therefore has to publish it itself by draining its own LDS writes with
+        `s_wait_dscnt[0]()` before it signals, and a wave that reads that data
+        cannot assume the wait ordered those reads.
+
+        The window between this call and `s_barrier_wait` is not preserved by
+        the compiler: the wait is not a scheduling fence, so the machine
+        scheduler may sink work that has no data dependence on it -- a WMMA on
+        register fragments, for instance -- below the wait, which collapses the
+        split barrier back into a plain one. When the overlap is what a region
+        exists for, keep the work above the wait with
+        `schedule_barrier(AMDScheduleBarrierMask.NONE)`.
+
+        This has no effect when targeting anything but CDNA5 (gfx1250) or newer;
+        on other targets it raises a compile-time error. The gfx950 backend
+        accepts the intrinsic but emits no instruction for it, so the
+        architecture is asserted here instead of silently dropping the barrier.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_barrier_signal requires CDNA5 (gfx1250)"
+    comptime assert (
+        barrier_id == -1
+    ), "s_barrier_signal only supports the workgroup barrier (barrier_id == -1)"
+    llvm_intrinsic["llvm.amdgcn.s.barrier.signal", NoneType](Int32(barrier_id))
+
+
+@inline(.always)
+def s_barrier_wait[barrier_id: Int = -1]():
+    """Waits until every wave of the workgroup has signalled the barrier.
+
+    Paired with `s_barrier_signal`; a `barrier_id` other than -1 is a
+    compile-time error, because named barriers need their own initialisation and
+    join protocol.
+
+    Parameters:
+        barrier_id: The barrier to wait on. Only -1, the workgroup barrier, is
+            supported; any other value is a compile-time error.
+
+    Note:
+        Like `s_barrier_signal`, this emits no fence and provides no memory
+        ordering, so it does not by itself make another wave's LDS writes
+        visible here. The producing wave publishes its data by draining its own
+        writes with `s_wait_dscnt[0]()` before it signals; the backend will not
+        insert that wait for it.
+
+        Only has an effect when targeting CDNA5 (gfx1250) or newer. The gfx950
+        backend accepts the intrinsic but emits no instruction for it, so the
+        architecture is asserted here instead of silently dropping the wait.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_barrier_wait requires CDNA5 (gfx1250)"
+    comptime assert (
+        barrier_id == -1
+    ), "s_barrier_wait only supports the workgroup barrier (barrier_id == -1)"
+    llvm_intrinsic["llvm.amdgcn.s.barrier.wait", NoneType](Int16(barrier_id))
+
+
+@inline(.always)
+def s_setprio[level: Int]():
+    """Sets the issue priority of this wave.
+
+    A higher priority wave is picked for issue ahead of the other waves on the
+    same SIMD. Restore the default with `s_setprio[0]()` before leaving the
+    region, so the rest of this wave runs at the default priority again.
+
+    Parameters:
+        level: The priority level, in `[0, 3]`; 0 is the hardware default.
+
+    Note:
+        Only has an effect on AMD GPUs, where every generation since GCN has
+        `s_setprio`.
+    """
+    comptime assert is_amd_gpu(), "s_setprio is only supported on AMD GPUs"
+    comptime assert (
+        0 <= level <= _MAX_SETPRIO_LEVEL
+    ), "s_setprio level must be in [0, 3]"
+    llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](Int16(level))
+
+
+@inline(.always)
+def s_setprio_inc_wg[level: Int]():
+    """Sets the issue priority of this wave and increments its workgroup's.
+
+    The gfx1250 variant of `s_setprio`; it pairs with `sched.group.barrier`
+    when interleaving the waves of one workgroup by role.
+
+    Parameters:
+        level: The priority level, in `[0, 3]`; 0 is the hardware default.
+
+    Note:
+        Only has an effect when targeting CDNA5 (gfx1250) or newer; on other
+        targets this raises a compile-time error.
+    """
+    comptime assert (
+        _cdna_5_or_newer()
+    ), "s_setprio_inc_wg requires CDNA5 (gfx1250)"
+    comptime assert (
+        0 <= level <= _MAX_SETPRIO_LEVEL
+    ), "s_setprio_inc_wg level must be in [0, 3]"
+    llvm_intrinsic["llvm.amdgcn.s.setprio.inc.wg", NoneType](Int16(level))
 
 
 # ===-----------------------------------------------------------------------===#

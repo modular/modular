@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Fuses the kernels around a `map.iter.rowwise` into it, so a reduction and
-// the elementwise work before and after it run as one kernel. Three fusers:
+// the elementwise work before and after it run as one kernel. Four fusers:
 //
 // A producer only the rowwise reads is cloned where the rowwise loads it:
 //
@@ -50,6 +50,21 @@
 //     store %y[%i] = mul(%x[%i], %b)       }
 //   }
 //
+// A rowwise kernel whose per-row results only a later rowwise kernel over the
+// same rows, with a map phase, reads at its own row runs at the start of that
+// kernel's row:
+//
+//   %m = map.iter.rowwise {                %y = map.iter.rowwise {
+//     %a = map.iter.reduce ...               %a = map.iter.reduce ...
+//     store %m[%row] = %a          =>        %b = map.iter.reduce index (%i) {
+//   }                                          ... sub(%x[%i], %a) ...
+//   %y = map.iter.rowwise {                  }
+//     %b = map.iter.reduce index (%i) {      map.iter.map index (%j) { ... }
+//       ... sub(%x[%i], %m[bcast(%i)]) ... }
+//     }
+//     map.iter.map index (%j) { ... }
+//   }
+//
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
@@ -64,6 +79,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 
 using namespace M;
@@ -80,18 +96,16 @@ bool isPlainForeach(IterElementwiseOp op) {
   return op.getNumResults() == 1 && !op.getInputChain() && !op.getOutputChain();
 }
 
-bool sameDevice(IterElementwiseOp foreachOp, IterRowwiseOp rowwiseOp) {
-  return MO::getDeviceOrDefault(
-             cast<MO::MOHasDeviceInterface>(foreachOp.getOperation())) ==
-         MO::getDeviceOrDefault(
-             cast<MO::MOHasDeviceInterface>(rowwiseOp.getOperation()));
+bool sameDevice(Operation *a, Operation *b) {
+  return MO::getDeviceOrDefault(cast<MO::MOHasDeviceInterface>(a)) ==
+         MO::getDeviceOrDefault(cast<MO::MOHasDeviceInterface>(b));
 }
 
 // Records `src` as fused into `dst`, in dataflow order: a producer before the
 // rowwise, a consumer after it.
-void stampFusion(IterRowwiseOp dst, IterElementwiseOp src, bool isProducer) {
+void stampFusion(IterRowwiseOp dst, IterOpInterface src, bool isProducer) {
   MLIRContext *ctx = dst->getContext();
-  SmallVector<Operation *, 2> ops = {src, dst};
+  SmallVector<Operation *, 2> ops = {src.getOperation(), dst};
   if (!isProducer)
     std::swap(ops[0], ops[1]);
   dst.setFusionInfoAttr(
@@ -122,11 +136,13 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
 }
 
 // Leaves `dst` with unique inputs, as `fuseConsumer` does.
-void fuseProducer(IterRowwiseOp dst, IterElementwiseOp src,
-                  RewriterBase &rewriter) {
+IterRowwiseOp fuseProducer(IterRowwiseOp dst, IterElementwiseOp src,
+                           RewriterBase &rewriter) {
   spliceProducer(dst, src, rewriter);
   stampFusion(dst, src, /*isProducer=*/true);
   IterOpInterface(dst).dedupeInputs(rewriter);
+  rewriter.eraseOp(src);
+  return dst;
 }
 
 // The only store to output `outputIdx`, if it writes at the row index.
@@ -514,6 +530,105 @@ IterRowwiseOp fuseFullRowConsumer(IterRowwiseOp dst, IterElementwiseOp consumer,
   return rebuildResults(newDst, kept, TypeRange{}, rewriter);
 }
 
+// Whether `consumer` reads `dst`'s per-row results only at its own row: at
+// its row index, or through a broadcast in one of its phases.
+bool readsOnlyOwnRow(IterRowwiseOp dst, IterRowwiseOp consumer) {
+  int64_t rank = consumer.getShape().getRank(), axis = consumer.getAxis();
+  for (auto [input, arg] :
+       llvm::zip(consumer.getInputs(), consumer.getInputBlockArgs())) {
+    if (input.getDefiningOp() != dst)
+      continue;
+    for (Operation *user : arg.getUsers()) {
+      auto load = dyn_cast<LoadOp>(user);
+      if (!load)
+        return false;
+      if (load.getIndex() == consumer.getRowArg())
+        continue;
+      auto phase = load->getParentOfType<RowwisePhaseOpInterface>();
+      std::optional<SmallVector<int64_t>> dims =
+          phase ? traceLoopDims(load.getIndex(), phase.getIndexArg())
+                : std::nullopt;
+      if (!dims || !readsOwnRow(*dims, rank, axis))
+        return false;
+    }
+  }
+  return true;
+}
+
+// Whether `dst` can run at the start of `consumer`'s row. `dst` only folds
+// and writes per-row results, which `consumer` alone reads, at its own row.
+// `consumer` writes every element: a row that writes one value per row
+// launches as one phase, which holds one fold.
+bool canFuseRowwiseConsumer(IterRowwiseOp dst, IterRowwiseOp consumer) {
+  if (consumer == dst || consumer->getBlock() != dst->getBlock() ||
+      !sameDevice(consumer, dst) || dst.getInputChain() ||
+      dst.getOutputChain() || consumer.getInputChain() ||
+      consumer.getShape() != dst.getShape() ||
+      consumer.getAxis() != dst.getAxis() || !lastMapPhase(consumer))
+    return false;
+  if (llvm::any_of(dst.getBody().front(), llvm::IsaPred<IterMapOp>))
+    return false;
+  for (auto [idx, result] : llvm::enumerate(dst.getResults()))
+    if (!perRowStore(dst, idx) ||
+        llvm::any_of(result.getUsers(),
+                     [&](Operation *user) { return user != consumer; }))
+      return false;
+  return readsOnlyOwnRow(dst, consumer);
+}
+
+// Moves `dst`'s row to the start of `consumer`'s, which then reads the
+// values `dst` stored instead of loading them.
+IterRowwiseOp fuseRowwiseConsumer(IterRowwiseOp dst, IterRowwiseOp consumer,
+                                  RewriterBase &rewriter) {
+  IRMapping mapping;
+  for (auto [input, arg] :
+       llvm::zip(dst.getInputs(), dst.getInputBlockArgs())) {
+    unsigned idx = consumer.getInputs().size();
+    consumer.insertInputsAt(idx, input);
+    mapping.map(arg, consumer.getInputBlockArgs()[idx]);
+  }
+  mapping.map(dst.getRowArg(), consumer.getRowArg());
+
+  Block &body = consumer.getBody().front();
+  rewriter.setInsertionPointToStart(&body);
+  SmallVector<Value> stored(dst.getNumResults());
+  for (Operation &op : dst.getBody().front()) {
+    if (auto store = dyn_cast<StoreOp>(op)) {
+      auto arg = cast<BlockArgument>(store.getTensor());
+      stored[arg.getArgNumber() - dst.getInputs().size()] =
+          mapping.lookupOrDefault(store.getValue());
+      continue;
+    }
+    rewriter.clone(op, mapping);
+  }
+
+  // Loads of `dst`'s results read the stored values, and those inputs go.
+  for (int64_t idx = consumer.getInputs().size() - 1; idx >= 0; --idx) {
+    auto result = dyn_cast<OpResult>(consumer.getInputs()[idx]);
+    if (!result || result.getOwner() != dst)
+      continue;
+    BlockArgument arg = consumer.getInputBlockArgs()[idx];
+    for (Operation *user : llvm::make_early_inc_range(arg.getUsers()))
+      rewriter.replaceOp(user, stored[result.getResultNumber()]);
+    rewriter.modifyOpInPlace(consumer, [&] { consumer.eraseInputsAt(idx, 1); });
+  }
+
+  stampFusion(consumer, dst, /*isProducer=*/true);
+  rewriter.eraseOp(dst);
+  IterOpInterface(consumer).dedupeInputs(rewriter);
+  return consumer;
+}
+
+// A rowwise kernel `dst` can run at the start of.
+IterRowwiseOp findRowwiseConsumer(IterRowwiseOp dst) {
+  for (Value result : dst.getResults())
+    for (Operation *user : result.getUsers())
+      if (auto consumer = dyn_cast<IterRowwiseOp>(user))
+        if (canFuseRowwiseConsumer(dst, consumer))
+          return consumer;
+  return nullptr;
+}
+
 IterElementwiseOp findProducer(IterRowwiseOp dst) {
   for (Value input : dst.getInputs())
     if (auto src = input.getDefiningOp<IterElementwiseOp>())
@@ -542,39 +657,48 @@ IterElementwiseOp findFullRowConsumer(IterRowwiseOp dst) {
   return nullptr;
 }
 
+// Drops each erased kernel from the worklist: a merge moves on to a later
+// entry, which a consumer fusion may then replace.
+struct WorklistListener : RewriterBase::Listener {
+  explicit WorklistListener(SetVector<Operation *> &worklist)
+      : worklist(worklist) {}
+  void notifyOperationErased(Operation *op) override { worklist.remove(op); }
+  SetVector<Operation *> &worklist;
+};
+
 struct FuseReductionsPass
     : public MAP::impl::FuseReductionsBase<FuseReductionsPass> {
   using Base::Base;
 
   void runOnOperation() override {
     MO::GraphOp graphOp = getOperation();
-    IRRewriter rewriter(graphOp.getContext());
-    SmallVector<IterRowwiseOp> rowwiseOps;
+    SetVector<Operation *> worklist;
     graphOp.getBody().walk([&](IterRowwiseOp op) {
-      rowwiseOps.push_back(op);
+      worklist.insert(op);
       return WalkResult::skip();
     });
+    WorklistListener listener(worklist);
+    IRRewriter rewriter(graphOp.getContext(), &listener);
 
-    for (IterRowwiseOp dst : rowwiseOps) {
+    while (!worklist.empty()) {
+      auto dst = cast<IterRowwiseOp>(worklist.front());
+      worklist.remove(dst);
+      auto fuseWith = [&](auto find, auto fuse) {
+        auto other = find(dst);
+        if (!other)
+          return false;
+        dst = fuse(dst, other, rewriter);
+        ++numKernelsFused;
+        return true;
+      };
       bool changed = true;
       while (changed) {
         changed = false;
-        while (IterElementwiseOp src = findProducer(dst)) {
-          fuseProducer(dst, src, rewriter);
-          rewriter.eraseOp(src);
-          ++numKernelsFused;
+        while (fuseWith(findProducer, fuseProducer))
           changed = true;
-        }
-        if (IterElementwiseOp consumer = findConsumer(dst)) {
-          dst = fuseConsumer(dst, consumer, rewriter);
-          ++numKernelsFused;
-          changed = true;
-        }
-        if (IterElementwiseOp consumer = findFullRowConsumer(dst)) {
-          dst = fuseFullRowConsumer(dst, consumer, rewriter);
-          ++numKernelsFused;
-          changed = true;
-        }
+        changed |= fuseWith(findConsumer, fuseConsumer);
+        changed |= fuseWith(findFullRowConsumer, fuseFullRowConsumer);
+        changed |= fuseWith(findRowwiseConsumer, fuseRowwiseConsumer);
       }
     }
   }

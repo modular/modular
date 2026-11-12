@@ -38,6 +38,7 @@ from std.sys import size_of
 from std.utils.static_tuple import StaticTuple
 from layout import TensorLayout, TensorEngine, TileTensor
 from state_space.mamba2_ssd_scan import LOG2E, _HeadScalars
+from state_space.row_rule import is_prefill_row
 
 comptime PAD_SLOT_ID: Int32 = -1
 """A conv-state row id that marks a padded request, which is skipped."""
@@ -82,6 +83,8 @@ def mamba2_replay_fold_gpu[
     conv_rows_LT: TensorLayout,
     ssm_rows_LT: TensorLayout,
     bounds_LT: TensorLayout,
+    offsets_LT: TensorLayout,
+    width_LT: TensorLayout,
     Engine: TensorEngine,
     dt_softplus: Bool = True,
 ](
@@ -110,6 +113,12 @@ def mamba2_replay_fold_gpu[
     ],
     replay_bounds: TileTensor[
         .int32, bounds_LT, ImmUntrackedOrigin, Engine=Engine
+    ],
+    merged_offsets: TileTensor[
+        .uint32, offsets_LT, ImmUntrackedOrigin, Engine=Engine
+    ],
+    verify_width: TileTensor[
+        .int64, width_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
     """GPU kernel: folds each request's accepted rows into every layer's state.
@@ -147,6 +156,8 @@ def mamba2_replay_fold_gpu[
         conv_rows_LT: Tensor layout of `conv_rows`.
         ssm_rows_LT: Tensor layout of `ssm_rows`.
         bounds_LT: Tensor layout of `replay_bounds`.
+        offsets_LT: Tensor layout of `merged_offsets`.
+        width_LT: Tensor layout of `verify_width`.
         Engine: Engine shared by all tile operands.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
 
@@ -170,6 +181,12 @@ def mamba2_replay_fold_gpu[
             batch)`.
         replay_bounds: Each request's accepted `(start, end)` rows, `(2 *
             batch,)`.
+        merged_offsets: The batch's cumulative row offsets, `(batch + 1,)`.
+        verify_width: The verify width `K`, `(K,)`; read for its length
+            only.
+
+    A row longer than `K + 1` tokens is a prefill row and folds nothing:
+    the verify committed its state itself.
     """
     comptime L = DSTATE // DSTATE_SPLIT
     comptime P = CH_PER_THREAD
@@ -183,7 +200,7 @@ def mamba2_replay_fold_gpu[
     var head_dim = Int(ssm_pool.dim[2]())
     var conv_dim = Int(conv_pool.dim[1]())
     var intermediate = nheads * head_dim
-    var batch = Int(replay_bounds.dim[0]()) // 2
+    var batch = Int(merged_offsets.dim[0]()) - 1
     var head_chunks = ceildiv(head_dim, CH)
     var columns = nheads + ceildiv(
         ceildiv(conv_dim, _BLOCK_THREADS), head_chunks
@@ -191,6 +208,14 @@ def mamba2_replay_fold_gpu[
     var rest, chunk = divmod(block_idx.x, head_chunks)
     var lb, column = divmod(rest, columns)
     var layer, b = divmod(lb, batch)
+    # A prefill row committed its state in the verify itself.
+    var k = Int(verify_width.dim[0]())
+    if is_prefill_row(
+        Int(merged_offsets.load[width=1]((b + 1,)))
+        - Int(merged_offsets.load[width=1]((b,))),
+        k,
+    ):
+        return
     var start = Int(replay_bounds.load[width=1]((2 * b,)))
     var end = Int(replay_bounds.load[width=1]((2 * b + 1,)))
     if end <= start:
@@ -295,6 +320,8 @@ def mamba2_replay_fold_launch[
     conv_rows_LT: TensorLayout,
     ssm_rows_LT: TensorLayout,
     bounds_LT: TensorLayout,
+    offsets_LT: TensorLayout,
+    width_LT: TensorLayout,
     Engine: TensorEngine,
     //,
     dt_softplus: Bool = True,
@@ -315,6 +342,8 @@ def mamba2_replay_fold_launch[
     conv_rows: TileTensor[.uint32, conv_rows_LT, _, Engine=_],
     ssm_rows: TileTensor[.uint32, ssm_rows_LT, _, Engine=_],
     replay_bounds: TileTensor[.int32, bounds_LT, _, Engine=_],
+    merged_offsets: TileTensor[.uint32, offsets_LT, _, Engine=_],
+    verify_width: TileTensor[.int64, width_LT, _, Engine=_],
     ctx: DeviceContext,
 ) raises:
     """Launches `mamba2_replay_fold_gpu` for every layer and request.
@@ -329,6 +358,8 @@ def mamba2_replay_fold_launch[
         conv_rows_LT: Tensor layout of `conv_rows`.
         ssm_rows_LT: Tensor layout of `ssm_rows`.
         bounds_LT: Tensor layout of `replay_bounds`.
+        offsets_LT: Tensor layout of `merged_offsets`.
+        width_LT: Tensor layout of `verify_width`.
         Engine: Engine of `conv_pool`. The launched kernel takes one engine
             for every tile operand, so the others must match it.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
@@ -346,6 +377,8 @@ def mamba2_replay_fold_launch[
         conv_rows: See `mamba2_replay_fold_gpu`.
         ssm_rows: See `mamba2_replay_fold_gpu`.
         replay_bounds: See `mamba2_replay_fold_gpu`.
+        merged_offsets: See `mamba2_replay_fold_gpu`.
+        verify_width: See `mamba2_replay_fold_gpu`.
         ctx: The device context to launch on.
     """
     var batch = Int(replay_bounds.dim[0]()) // 2
@@ -379,6 +412,8 @@ def mamba2_replay_fold_launch[
             conv_rows_LT,
             ssm_rows_LT,
             bounds_LT,
+            offsets_LT,
+            width_LT,
             Engine,
             dt_softplus,
         ]
@@ -409,6 +444,8 @@ def mamba2_replay_fold_launch[
             conv_rows,
             ssm_rows,
             replay_bounds,
+            merged_offsets,
+            verify_width,
             grid_dim=(
                 batch * NUM_LAYERS * (nheads + conv_blocks) * head_chunks,
                 1,

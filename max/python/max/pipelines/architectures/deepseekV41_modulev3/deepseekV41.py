@@ -26,7 +26,7 @@ from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn import Module
 from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
@@ -1128,7 +1128,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             rest = rest[2:]
         n_kv = len(self.kv_params.flattened_kv_inputs())
         upstream = self.kv_params.unflatten_kv_inputs(
-            iter(x._graph_value for x in rest[:n_kv])
+            iter(kv_input_values(rest[:n_kv]))
         )
         # Replicas serve different requests, so their caches vary; under
         # tensor parallelism the devices all store the same latent cache.

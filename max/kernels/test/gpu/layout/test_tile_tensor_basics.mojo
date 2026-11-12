@@ -278,7 +278,7 @@ def test_unaligned_load() raises:
     for row in range(2):
         for column in range(1, 4):
             var expected = SIMD[.float32, 4]()
-            comptime for lane in range(4):
+            for lane in range(4):
                 expected[lane] = Float32(row * 16 + column + lane)
             var value = tensor.load[width=4, alignment=4]((row, column))
             assert_equal(value, expected)

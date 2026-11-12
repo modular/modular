@@ -8,8 +8,8 @@
 // `device_passable = True` and `access_enabled = False`, so the host proxy can
 // cross to the device but cannot store directly. `_to_device_type` projects the
 // store functor field-by-field and the projected device value has access enabled.
-// The kernel's GPU arm binds that projected value by its `Storable` capability
-// via `downcast[ZHost.device_type, Storable]`, computes `2 * x[i]`, and hands it
+// The kernel's GPU arm binds that projected value as `ZHost.device_type`,
+// asserts its `Storable` capability, computes `2 * x[i]`, and hands it
 // to the fused store, which runs the consumer epilogue and writes on-device.
 //
 // The input/output must live on the GPU for a real device-launch kernel, so the

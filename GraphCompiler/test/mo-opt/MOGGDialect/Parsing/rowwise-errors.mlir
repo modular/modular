@@ -118,6 +118,25 @@ func.func @foldAfterMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tens
 
 // -----
 
+// Without a map phase the body launches as one phase, which holds one fold.
+func.func @twoFoldsNoMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
+  // expected-error @below{{has several folds and no map phase}}
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
+    %a = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    %b = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceMax (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.tensor.store %co[%row] = %b : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+  }
+  return
+}
+
+// -----
+
 // A per-row store can't follow a map phase yet.
 func.func @emitAndMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor, %sum: !mogg.tensor) {
   // expected-error @below{{has both per-row stores and a map phase}}

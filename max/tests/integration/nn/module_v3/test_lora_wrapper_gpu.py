@@ -27,6 +27,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.nn import (
@@ -96,7 +97,10 @@ def _end_carrier(lora_end: int) -> npt.NDArray[np.int64]:
 
 def test_wrap_stacked_qkv_per_projection_sgmv() -> None:
     device = Accelerator()
-    model = MyModel().to(device)
+    # The parameters realize when the compiled model binds them, so the
+    # compile needs no device.
+    with F.lazy():
+        model = MyModel().to(device)
 
     # Serving swap: wrap the fused-QKV QKVLinear in place.
     assert isinstance(model.block.qkv, QKVLinear)
@@ -122,7 +126,6 @@ def test_wrap_stacked_qkv_per_projection_sgmv() -> None:
     assert isinstance(wrapped, LoRA)
     base = wrapped.module
     assert isinstance(base, QKVLinear)
-    w = torch.from_dlpack(base.weight.to(CPU()))
 
     compiled = model.compile(
         TensorType(DType.bfloat16, ["tokens", IN_DIM], device=device),
@@ -131,6 +134,7 @@ def test_wrap_stacked_qkv_per_projection_sgmv() -> None:
         TensorType(DType.int64, ["end_idx"], device=CPU()),
         *(slot.type for _, slot in lora_parameters(model)),
     )
+    w = torch.from_dlpack(base.weight.to(CPU()))
 
     # Ragged batch: two adapter groups (12 + 8 rows), then a base-only tail.
     tokens = 30

@@ -240,7 +240,6 @@ def test_ep_manifest_records_forked_stream() -> None:
         torch.randn(hidden, moe_dim) * 0.01
     )
     moe.load_state_dict({k: v.to(torch.bfloat16) for k, v in weights.items()})
-    ep_comm_init.ep_init(session)
 
     in_types = [
         TensorType(dtype, [32, hidden], DeviceRef.GPU(i))
@@ -254,6 +253,7 @@ def test_ep_manifest_records_forked_stream() -> None:
         ep_batch_manager.fetch_buffers(graph.inputs[N_DEVICES:])
         graph.output(*forward_moe_sharded_layers(shards, xs))
     model = session.load(graph, weights_registry=moe.state_dict())
+    ep_comm_init.ep_init(session)
     inputs = [
         Buffer.from_dlpack(torch.randn(32, hidden, dtype=torch.bfloat16)).to(d)
         for d in devices

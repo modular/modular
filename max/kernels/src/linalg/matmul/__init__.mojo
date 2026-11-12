@@ -16,6 +16,7 @@
 from std.collections import OptionalReg
 from std.collections.string.string_span import get_static_string
 from std.math import align_up, ceildiv
+from std.os import abort
 from std.sys.info import align_of, simd_width_of
 
 from max.gpu.host import DeviceContext
@@ -26,7 +27,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from max.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import Index
 
@@ -239,7 +240,6 @@ def _matmul_impl[
         # GPU path: call _matmul_gpu directly with tracing. CPU-only params
         # (b_packed, saturated_vnni) are intentionally not forwarded here.
         comptime assert not transpose_a, "transpose_a not yet supported"
-        assert Bool(ctx), "expected DeviceContext for GPU target"
 
         if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:
             return
@@ -260,32 +260,38 @@ def _matmul_impl[
             )
             # fmt: on
 
-        with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
-            get_static_string[
-                "matmul",
-                _trace_description if _trace_description else "",
-            ](),
-            Trace[TraceLevel.OP]._get_detail_str(description_fn),
-            task_id=OptionalReg(Int(ctx.value().device().id)),
-        ):
-            comptime if has_epilogue_fn:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    use_tf32=use_tf32,
-                ](c, a, b, epilogue_fn, ctx.value())
-            elif has_compute_fn:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    use_tf32=use_tf32,
-                ](c, a, b, compute_fn, ctx.value())
-            else:
-                _matmul_gpu[
-                    use_tensor_core=True,
-                    transpose_b=transpose_b,
-                    use_tf32=use_tf32,
-                ](c, a, b, ctx.value())
+        match ctx:
+            case .Some(gpu_ctx):
+                with Trace[
+                    TraceLevel.OP, target=ctx.T.target.device_kind_label()
+                ](
+                    get_static_string[
+                        "matmul",
+                        _trace_description if _trace_description else "",
+                    ](),
+                    Trace[TraceLevel.OP]._get_detail_str(description_fn),
+                    task_id=OptionalReg(Int(gpu_ctx.device().id)),
+                ):
+                    comptime if has_epilogue_fn:
+                        _matmul_gpu[
+                            use_tensor_core=True,
+                            transpose_b=transpose_b,
+                            use_tf32=use_tf32,
+                        ](c, a, b, epilogue_fn, gpu_ctx)
+                    elif has_compute_fn:
+                        _matmul_gpu[
+                            use_tensor_core=True,
+                            transpose_b=transpose_b,
+                            use_tf32=use_tf32,
+                        ](c, a, b, compute_fn, gpu_ctx)
+                    else:
+                        _matmul_gpu[
+                            use_tensor_core=True,
+                            transpose_b=transpose_b,
+                            use_tf32=use_tf32,
+                        ](c, a, b, gpu_ctx)
+            case .None:
+                abort("expected DeviceContext for GPU target")
     else:
         # CPU path: handle tracing and compute lambda wrapping, then
         # delegate to TileTensor cpu.matmul overload.
@@ -317,7 +323,7 @@ def _matmul_impl[
                 _trace_description if _trace_description else "",
             ](),
             Trace[TraceLevel.OP]._get_detail_str(cpu_description_fn),
-            task_id=OptionalReg(Int(ctx.value().device().id)) if ctx else None,
+            task_id=get_safe_task_id(ctx),
         ):
             var kernel_type_m = (
                 a.static_shape[0] if a.static_shape[0] > -1 else 0

@@ -2047,6 +2047,21 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    # Beam first shipped in transformers 5.20.1, newer than MAX's pin, so the
+    # reference is a vLLM golden. Beam runs its experts expert parallel over
+    # every device, so ep_size is the device count: this entry runs on 4 GPUs.
+    # In-process generation never chunks prefill, and the EP dispatch buffers
+    # are sized to max_batch_input_tokens, so it covers the longest prompt.
+    "reflection/Beam-1.0-501B-A23B-NVFP4": GenericOracle(
+        model_path="reflection/Beam-1.0-501B-A23B-NVFP4",
+        config_params={
+            "max_length": 1024,
+            "max_batch_input_tokens": 1024,
+            "ep_size": 4,
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the
     # reference logits were generated from.

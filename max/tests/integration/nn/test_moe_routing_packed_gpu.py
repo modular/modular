@@ -88,10 +88,10 @@ def test_packed_routing_matches_the_router_and_a_stable_sort(
     expert_offset: int,
     local_experts: int,
 ) -> None:
+    compiled = gpu_session.load(_build_graph(expert_offset, local_experts))
     torch.manual_seed(0)
     scores = torch.rand(num_tokens, N_EXPERTS, device="cuda")
     bias = 0.1 * torch.randn(N_EXPERTS, device="cuda")
-    compiled = gpu_session.load(_build_graph(expert_offset, local_experts))
     (
         ids,
         weights,

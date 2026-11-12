@@ -1,4 +1,8 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
+load(
+    "//max/python/max/pipelines/architectures:all_arches.bzl",
+    "ALL_ARCHITECTURES",
+)
 
 package(default_visibility = [
     "//:__pkg__",
@@ -84,6 +88,20 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
     ],
+)
+
+modular_py_test(
+    name = "test_spec_adapter_long_rows",
+    size = "small",
+    srcs = ["test_spec_adapter_long_rows.py"],
+    ignore_extra_deps = ALL_ARCHITECTURES,
+    deps = [
+        # The registry imports each architecture's module and adapter by name.
+        "//max/python/max/pipelines/architectures",
+        # The guard test materializes every registered architecture.
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ] + ALL_ARCHITECTURES,
 )
 
 modular_py_test(

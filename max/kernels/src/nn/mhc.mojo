@@ -2027,9 +2027,9 @@ def mhc_post[
     var num_cus = gpu_ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
-    var non_temporal = mhc_post_non_temporal(num_rows, num_cus)
-    if force_non_temporal:
-        non_temporal = force_non_temporal.value()
+    var non_temporal = force_non_temporal.or_else(
+        mhc_post_non_temporal(num_rows, num_cus)
+    )
 
     with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "hyper_connection.mhc.post", task_id=Int(gpu_ctx.device().id)

@@ -27,9 +27,11 @@
 
 #include "MLRT/Driver/CAPI/DriverCAPI.h"
 
+#include "MLRT/Driver/CAPI/ArchitectureVersion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -252,15 +254,6 @@ M_DriverStatus mixedBackends(const char *what) {
   return fail(M_DRIVER_INVALID_ARGUMENT, message);
 }
 
-#if MODULAR_HAL_DEVICE_CONTEXT
-/// Only the CUDA and HIP HAL plugins can wait on a flag.
-// TODO(DRIV-688): Metal, once its plugin gets the completion-flag extension.
-bool halSupportsCompletionFlags(const DeviceContext &context) {
-  const Device::API api = context.device().api();
-  return api == Device::cudaAPI || api == Device::hipAPI;
-}
-#endif
-
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -360,6 +353,37 @@ size_t M_DriverDeviceArchitectureName(const M_DriverDevice *device,
   }
   return copyOutDeviceString("M_DriverDeviceArchitectureName", name.get(),
                              buffer, capacity);
+}
+
+M_DriverStatus M_DriverDeviceArchitectureVersion(const M_DriverDevice *device,
+                                                 uint32_t *out_major,
+                                                 uint32_t *out_minor,
+                                                 uint32_t *out_stepping) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+  const Device &d = contextOf(*device).device();
+  if (d.api() == Device::cpuAPI)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverDeviceArchitectureVersion: the CPU device has no "
+                "architecture version");
+  // Failing to read the name is a driver error. A name that does not parse is
+  // a gap in this library, so it is NOT_SUPPORTED.
+  ErrorOr<const char *> name = d.getArchName();
+  if (name.isError())
+    return fail(name, "M_DriverDeviceArchitectureVersion");
+  ErrorOr<M::Driver::ArchitectureVersion> version =
+      M::Driver::parseArchitectureVersion(d.api(), name.get());
+  if (version.isError())
+    return fail(version, "M_DriverDeviceArchitectureVersion",
+                M_DRIVER_NOT_SUPPORTED);
+  const M::Driver::ArchitectureVersion &v = version.get();
+  if (out_major != nullptr)
+    *out_major = v.major;
+  if (out_minor != nullptr)
+    *out_minor = v.minor;
+  if (out_stepping != nullptr)
+    *out_stepping = v.stepping;
+  return succeed();
 }
 
 size_t M_DriverDeviceModelName(const M_DriverDevice *device, char *buffer,
@@ -500,6 +524,81 @@ M_DriverStatus M_DriverDeviceAllocatorMemoryInfo(const M_DriverDevice *device,
                                         : M_DRIVER_MEMORY_UNKNOWN;
   }
   return succeed();
+}
+
+M_DriverStatus
+M_DriverDeviceAllocatorStats(const M_DriverDevice *device, uint64_t *out_live,
+                             uint64_t *out_peak, uint64_t *out_max_request,
+                             uint64_t *out_driver_fallbacks,
+                             uint64_t *out_driver_fallback_bytes) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)out_live;
+  (void)out_peak;
+  (void)out_max_request;
+  (void)out_driver_fallbacks;
+  (void)out_driver_fallback_bytes;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorStats is not available in a HAL device "
+              "context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (out_live != nullptr)
+    *out_live = stats.liveBytes;
+  if (out_peak != nullptr)
+    *out_peak = stats.peakLiveBytes;
+  if (out_max_request != nullptr)
+    *out_max_request = stats.maxRequestBytes;
+  if (out_driver_fallbacks != nullptr)
+    *out_driver_fallbacks = stats.driverFallbacks;
+  if (out_driver_fallback_bytes != nullptr)
+    *out_driver_fallback_bytes = stats.driverFallbackBytes;
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceAllocatorRequestSizes(const M_DriverDevice *device,
+                                                   uint64_t *sizes,
+                                                   size_t capacity,
+                                                   size_t *out_count) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  (void)sizes;
+  (void)capacity;
+  (void)out_count;
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceAllocatorRequestSizes is not available in a HAL "
+              "device context build");
+#else
+  const DeviceContext::MemoryManagerStats stats =
+      contextOf(*device).getMemoryManagerStats();
+  if (sizes != nullptr) {
+    const size_t n = std::min(capacity, stats.requestSizes.size());
+    std::copy_n(stats.requestSizes.begin(), n, sizes);
+  }
+  if (out_count != nullptr)
+    *out_count = stats.requestSizes.size();
+  return succeed();
+#endif
+}
+
+M_DriverStatus M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device) {
+  if (device == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device is null");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  // The HAL shim has no memory manager statistics.
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverDeviceResetAllocatorPeaks is not available in a HAL "
+              "device context build");
+#else
+  contextOf(*device).resetMemoryManagerPeaks();
+  return succeed();
+#endif
 }
 
 M_DriverStatus M_DriverDeviceGetAttribute(const M_DriverDevice *device,
@@ -990,10 +1089,10 @@ M_DriverStatus M_DriverCompletionFlagCreate(const M_DriverDevice *device,
     return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
   *out = nullptr;
 #if MODULAR_HAL_DEVICE_CONTEXT
-  if (!halSupportsCompletionFlags(contextOf(*device)))
+  if (!contextOf(*device).supportsCompletionFlags())
     return fail(M_DRIVER_NOT_SUPPORTED,
-                "M_DriverCompletionFlagCreate: a HAL device context build "
-                "supports completion flags on CUDA and HIP devices only");
+                "M_DriverCompletionFlagCreate: this device's HAL plugin has "
+                "no completion flags");
 #endif
   ErrorOr<M::Driver::CompletionFlagRef> flag =
       contextOf(*device).allocateCompletionFlag();
@@ -1014,6 +1113,11 @@ M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
                                             uint64_t value) {
   if (flag == nullptr)
     return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  // HAL Metal aborts on a lower value, and this entry point can report it.
+  if (value < flag->flag->load())
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverCompletionFlagSignal: value is lower than the flag's "
+                "current value");
   flag->flag->signal(value);
   return succeed();
 }
@@ -1026,10 +1130,10 @@ M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
   if (!sameApi(*stream->ctx, *flag->ctx))
     return mixedBackends("M_DriverStreamWaitFlag");
 #if MODULAR_HAL_DEVICE_CONTEXT
-  if (!halSupportsCompletionFlags(*stream->ctx))
+  if (!stream->ctx->supportsCompletionFlags())
     return fail(M_DRIVER_NOT_SUPPORTED,
-                "M_DriverStreamWaitFlag: a HAL device context build supports "
-                "completion flags on CUDA and HIP streams only");
+                "M_DriverStreamWaitFlag: this stream's HAL plugin has no "
+                "completion flags");
 #endif
   if (isExternal(*stream))
     return reportIfError(

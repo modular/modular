@@ -56,7 +56,7 @@ func.func @view_copy(%ptr: !mogg.pointer, %ctx: !mogg.context) {
   %s_out = mogg.shape.create() <shape = #mosh<ape[16, 8]> : !mosh.ape>
   %in = mogg.tensor.create(%ptr, %s_in) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[8]> : !mosh.ape> : !mogg.tensor
   %out = mogg.tensor.create(%ptr, %s_out) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
-  %bcast = mogg.tensor.create.broadcast(%in) <elementType = f32, mut = false, outShape = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
+  %bcast = mogg.tensor.create.broadcast(%in, %s_out) <elementType = f32, mut = false, staticOutShape = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
   // CHECK: mogg.call.view_copy @builtin_primitives.primitives.view_copy_impl(%{{.*}}, %{{.*}} : !mogg.tensor, !mogg.tensor) context(%{{.*}}) device = "gpu"
   mogg.call.view_copy @builtin_primitives.primitives.view_copy_impl(%out, %bcast : !mogg.tensor, !mogg.tensor) context(%ctx) device = "gpu"
   return

@@ -259,9 +259,9 @@ design's non-gating → gating rollout:
   section recommended), one matrix lane per oracle
   (`memcheck/initcheck/redzone/ref/determinism/contract`), driving
   `run_nightly_fuzz.sh <oracle>` over a curated per-oracle target list with a
-  fresh `${{ github.run_number }}` seed. It notifies #kernel-team-notifications
-  on a scheduled failure, mirroring the allocator-sweep and compute-sanitizer
-  nightlies.
+  fresh `${{ github.run_number }}` seed. The nightly CI monitor reports a
+  scheduled failure to #dev-max-kernels, with the failed lanes, as it does for
+  the allocator-sweep and compute-sanitizer nightlies.
 
   `synccheck`/`racecheck` are deliberately NOT nightly lanes: `synccheck`
   false-positives on warp-specialized SM100 kernels (block-wide `__syncthreads`

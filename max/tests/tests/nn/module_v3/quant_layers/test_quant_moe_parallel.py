@@ -52,6 +52,9 @@ from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe import (
+    DeepseekV3_2TensorParallelMoE,
+)
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe_gate import (
     DeepseekV3_2TopKRouter,
 )
@@ -71,6 +74,7 @@ from max.tensor.sharding import (
     Partial,
     Replicated,
     Sharded,
+    ShardingError,
 )
 
 _HIDDEN_DIM = 256
@@ -224,6 +228,33 @@ def test_tensor_parallel_moe_bf16_shared_experts(
         # summed with the routed experts, so the layer output is a single
         # Partial sum (one all-reduce resolves both, in the transformer block).
         assert out.mapping.placements == (Partial(),)
+
+
+def test_tensor_parallel_moe_float32_combine_is_refused(
+    mock_accelerator: MagicMock,
+) -> None:
+    """A float32 combine would round each device's partial sum before the
+    caller's all-reduce sums them, so casting the partial sum raises."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        with default_dtype(DType.bfloat16):
+            with default_device(mesh):
+                layer = DeepseekV3_2TensorParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            with pytest.raises(ShardingError):
+                layer(x)
 
 
 def test_tensor_parallel_moe_fp8_weights(

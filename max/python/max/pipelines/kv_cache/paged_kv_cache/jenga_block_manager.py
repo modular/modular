@@ -26,7 +26,7 @@ import logging
 import os
 import time
 from bisect import bisect_left
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 
@@ -35,7 +35,11 @@ from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
 from max.nn.kv_cache.cache_params import KVCacheMemory
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import (
+    ConnectorLookupAnswer,
+    ConnectorLookupDrop,
+    KVCacheMetrics,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -67,7 +71,12 @@ from ._common import (
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
-from .jenga_block_pool import JengaBlockPool, _pristine_pool_can_satisfy
+from .jenga_block_pool import (
+    _TOP_BLOCK_FRACTION,
+    JengaBlockPool,
+    _pristine_pool_can_satisfy,
+    min_huge_bid_for_top_fraction,
+)
 from .kv_group_coordinator import (
     FullKVGroupCoordinator,
     KVGroupCoordinatorInterface,
@@ -224,6 +233,10 @@ class _PendingLookup:
     last two hand the handle back at once and read as a miss, so a request
     is never held out of the batch for good and an idle engine does not
     keep polling a lookup that will never answer.
+
+    ``on_drop`` counts the drop when the handle goes back, including a
+    give-up inside a poll. ``hint`` is the cache hint the lookup was asked
+    with, kept to label that count.
     """
 
     def __init__(
@@ -232,11 +245,19 @@ class _PendingLookup:
         handle: KVLookup,
         first_block: int,
         started_at: float,
+        hint: bytes | None,
+        on_drop: Callable[
+            [_PendingLookup, ConnectorLookupDrop, int | None], None
+        ],
     ) -> None:
         self.handle = handle
         self.first_block = first_block
+        self.hint = hint
         self.missed = False
+        # The run the answer offered, once a drop count has read it.
+        self.answer_run: int | None = None
         self._connector = connector
+        self._on_drop = on_drop
         self._started_at = started_at
         self._answered = False
         self._returned = False
@@ -269,7 +290,7 @@ class _PendingLookup:
                 "cache miss",
                 self._connector.name,
             )
-            self._give_up()
+            self._give_up("poll_failed")
             return True
 
         if complete:
@@ -281,7 +302,7 @@ class _PendingLookup:
                 self._connector.name,
                 _CONNECTOR_LOOKUP_TIMEOUT_S,
             )
-            self._give_up()
+            self._give_up("timeout")
         return self._answered
 
     def age_s(self) -> float:
@@ -299,18 +320,44 @@ class _PendingLookup:
             and self.age_s() >= _LOOKUP_HAND_BACK_AGE_S
         )
 
-    def abandon(self) -> None:
-        """Hands the handle back, once however often this is called."""
+    def known_masks(self) -> Mapping[str, Sequence[bool]] | None:
+        """Returns the answer if it is in hand, or ``None``.
+
+        Never polls the handle, so counting a drop cannot change when an
+        answer is seen. ``None`` for a lookup given up on and for one not
+        yet seen to answer.
+        """
+        if self.missed:
+            return None
+        if (
+            self._masks is None
+            and not self._answered
+            and not isinstance(self.handle, CompletedLookup)
+        ):
+            return None
+        return self.masks()
+
+    def abandon(
+        self, reason: ConnectorLookupDrop, blocks: int | None = None
+    ) -> None:
+        """Hands the handle back, once however often this is called.
+
+        Only the call that hands it back counts the drop, under ``reason``,
+        costing ``blocks`` when the caller measured them.
+        """
         if self._returned:
             return
         self._returned = True
-        self._connector.abandon_lookup(self.handle)
+        try:
+            self._on_drop(self, reason, blocks)
+        finally:
+            self._connector.abandon_lookup(self.handle)
 
-    def _give_up(self) -> None:
+    def _give_up(self, reason: ConnectorLookupDrop) -> None:
         """Hands the handle back and reads as a miss from now on."""
         self.missed = True
         self._answered = True
-        self.abandon()
+        self.abandon(reason)
 
 
 class _PendingProbe:
@@ -449,8 +496,21 @@ def create_pools(
 ) -> list[JengaBlockPool]:
     """Returns one pool per replica, each tiling the same huge blocks."""
     ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
+    min_huge_bid = min_huge_bid_for_top_fraction(
+        num_huge_blocks, _TOP_BLOCK_FRACTION
+    )
+    if min_huge_bid:
+        logger.warning(
+            "MODULAR_KV_JENGA_DEBUG_TOP_BLOCK_FRACTION=%s: allocating only"
+            " huge blocks %d..%d, so KV capacity is cut to that share. For"
+            " tests only.",
+            _TOP_BLOCK_FRACTION,
+            min_huge_bid,
+            num_huge_blocks - 1,
+        )
     return [
-        JengaBlockPool(num_huge_blocks, ratios) for _ in range(num_replicas)
+        JengaBlockPool(num_huge_blocks, ratios, min_huge_bid=min_huge_bid)
+        for _ in range(num_replicas)
     ]
 
 
@@ -792,6 +852,9 @@ class JengaBlockManager:
 
         # State for the KVConnector.
         self._connector = connector
+        # One bound method every lookup shares, so starting one allocates
+        # nothing to count its drop.
+        self._on_lookup_drop = self._count_lookup_drop
         # Admission recency touches, applied once the forward has launched so
         # they stay off the allocation path. Only recency: a block being loaded
         # is pinned by the load. A device hit's host copy is not, so one at
@@ -923,7 +986,8 @@ class JengaBlockManager:
         state = self._requests.pop(req_id)
         self._pending_probes.pop(req_id, None)
         self._priced_hashes.pop(req_id, None)
-        self._abandon_pending_lookup(state)
+        self._abandon_pending_lookup(state, "release")
+        self._record_lookup_retries(state)
 
     def abandon_presence(self, ctx: TextContext) -> None:
         """Drops the request's pricing probe, for one released unclaimed."""
@@ -935,11 +999,107 @@ class JengaBlockManager:
         probe = self._pending_probes.get(ctx.request_id)
         return probe is not None and not probe.is_answered()
 
-    def _abandon_pending_lookup(self, state: RequestCacheState) -> None:
+    def _abandon_pending_lookup(
+        self, state: RequestCacheState, reason: ConnectorLookupDrop
+    ) -> None:
         """Hands back a lookup the request started and will never load from."""
         pending, state.pending_lookup = state.pending_lookup, None
         if pending is not None:
-            pending.abandon()
+            pending.abandon(reason)
+
+    def _count_lookup_drop(
+        self,
+        pending: _PendingLookup,
+        reason: ConnectorLookupDrop,
+        blocks: int | None,
+    ) -> None:
+        """Counts a lookup whose handle goes back without a load.
+
+        ``blocks`` is what a drop at the load measured past the device hit
+        then. Elsewhere the drop costs the run the answer offered.
+        """
+        run = self._answer_run(pending)
+        answer: ConnectorLookupAnswer = (
+            "unseen" if run is None else "offered" if run else "empty"
+        )
+        self._record_lookup_drop(
+            reason,
+            answer,
+            (run or 0) if blocks is None else blocks,
+            hinted=self._routes_hint(pending.hint),
+        )
+
+    def _answer_run(self, pending: _PendingLookup) -> int | None:
+        """Returns the run a lookup's answer offered, in prompt blocks.
+
+        Counted from the lookup's ``first_block``, which is where the device
+        hit ended when it was asked. ``None`` without an answer in hand, or
+        with one too broken to read, which the load could not have used
+        either. Read once per lookup, and never raises, because it runs on
+        paths that are already unwinding.
+        """
+        if pending.answer_run is not None:
+            return pending.answer_run
+        try:
+            masks = pending.known_masks()
+            if masks is None:
+                return None
+            pending.answer_run = self._longest_connector_hit(masks)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            # BaseException because a pyo3 PanicException is not an Exception.
+            logger.debug(
+                "counting a dropped lookup could not read its answer",
+                exc_info=True,
+            )
+            return None
+        return pending.answer_run
+
+    def _routes_hint(self, hint: bytes | None) -> bool:
+        """Returns whether a lookup asked with ``hint`` was routed by it."""
+        return (
+            hint is not None
+            and self._connector is not None
+            and self._connector.routes_hint(hint)
+        )
+
+    def _record_lookup_drop(
+        self,
+        reason: ConnectorLookupDrop,
+        answer: ConnectorLookupAnswer,
+        blocks: int,
+        *,
+        hinted: bool,
+    ) -> None:
+        """Counts one dropped lookup answer and the ``blocks`` it cost."""
+        drops = self._metrics.connector_lookup_drops
+        key = (reason, answer, hinted)
+        drops[key] = drops.get(key, 0) + 1
+        if blocks:
+            dropped = self._metrics.connector_lookup_dropped_blocks
+            blocks_key = (reason, hinted)
+            dropped[blocks_key] = dropped.get(blocks_key, 0) + blocks
+
+    def _record_lookup_shrink(self, depth: int) -> None:
+        """Counts a device hit that shrank ``depth`` blocks under a lookup."""
+        shrinks = self._metrics.connector_lookup_shrink_depths
+        shrinks[depth] = shrinks.get(depth, 0) + 1
+
+    def _record_lookup_retries(self, state: RequestCacheState) -> None:
+        """Records a released claim's re-asks and hand backs, when it had any.
+
+        Claims with none are skipped, so the common release costs two
+        compares and the distributions describe the claims that retried.
+        """
+        if state.connector_lookup_reasks:
+            reasks = self._metrics.connector_lookup_reasks_per_request
+            count = state.connector_lookup_reasks
+            reasks[count] = reasks.get(count, 0) + 1
+        if state.connector_lookup_hand_backs:
+            hand_backs = self._metrics.connector_lookup_hand_backs_per_request
+            count = state.connector_lookup_hand_backs
+            hand_backs[count] = hand_backs.get(count, 0) + 1
 
     def _apply_deferred_touches(self) -> None:
         """Sends the connector the admission touches queued since the last."""
@@ -1210,7 +1370,7 @@ class JengaBlockManager:
             return False
 
         state.connector_lookup_hand_backs += 1
-        self._abandon_pending_lookup(state)
+        self._abandon_pending_lookup(state, "hand_back")
         return True
 
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
@@ -1906,7 +2066,7 @@ class JengaBlockManager:
             )
         except BaseException:
             if pending is not None:
-                pending.abandon()
+                pending.abandon("exception")
             raise
 
     def _load_connector_prefix_cache_hit(
@@ -1932,7 +2092,10 @@ class JengaBlockManager:
         state = self._requests[request_id]
         if connector is None or not desired or state.skips_connector:
             if pending is not None:
-                pending.abandon()
+                if desired:
+                    pending.abandon("skip")
+                else:
+                    pending.abandon("covered", blocks=0)
             return miss
         # Already handed back, because polling it raised or it ran past its
         # deadline.
@@ -1945,7 +2108,8 @@ class JengaBlockManager:
         # only when the connector answers in place, and otherwise serves it
         # as a miss with the hit kept.
         if pending is not None and num_device_blocks < pending.first_block:
-            pending.abandon()
+            self._record_lookup_shrink(pending.first_block - num_device_blocks)
+            pending.abandon("shrink_at_load")
             pending = None
 
         lookup: KVLookup | None = None
@@ -1976,7 +2140,25 @@ class JengaBlockManager:
         # the request owns.
         if aligned == 0 or not pool.can_satisfy_demand(held):
             if pending is not None:
-                pending.abandon()
+                # A run the device hit grew over is covered, so
+                # nothing_to_load always means the answer was empty.
+                reason: ConnectorLookupDrop = (
+                    "no_room"
+                    if aligned
+                    else "covered"
+                    if self._answer_run(pending)
+                    else "nothing_to_load"
+                )
+                pending.abandon(reason, blocks=aligned)
+            elif aligned:
+                # A lookup asked in place that found nothing is a miss with
+                # no answer to drop, so only a run the pool refused counts.
+                self._record_lookup_drop(
+                    "no_room",
+                    "offered",
+                    aligned,
+                    hinted=self._routes_hint(hint),
+                )
             return miss
 
         rows = {
@@ -2016,10 +2198,16 @@ class JengaBlockManager:
             # remaining run no longer ends where the prefix does.
             if isinstance(err, KVLoadFailed):
                 self._skip_connector_after_failure(request_id, err)
+                reason = "load_failed"
             else:
                 logger.warning("serving a request as a cache miss: %s", err)
+                reason = "load_refused"
             if pending is not None:
-                pending.abandon()
+                pending.abandon(reason, blocks=aligned)
+            else:
+                self._record_lookup_drop(
+                    reason, "offered", aligned, hinted=self._routes_hint(hint)
+                )
             for blocks in rows.values():
                 for block in blocks:
                     pool.free_block(block)
@@ -2845,7 +3033,7 @@ class JengaBlockManager:
             and pending.is_answered()
             and state.lookup_is_stale()
         ):
-            self._abandon_pending_lookup(state)
+            self._abandon_pending_lookup(state, "stale_reask")
             state.connector_lookup_hand_backs += 1
             pending = None
         if pending is None:
@@ -2884,6 +3072,9 @@ class JengaBlockManager:
                     ),
                     first_block=num_device_blocks,
                     started_at=time.monotonic() - probe.age_s(),
+                    # The probe was asked with the same hint.
+                    hint=ctx.dkv_cache_hint,
+                    on_drop=self._on_lookup_drop,
                 )
                 return True
             if probed == 0:
@@ -2897,7 +3088,7 @@ class JengaBlockManager:
             if start:
                 return False
             state.pending_lookup = None
-            pending.abandon()
+            pending.abandon("sync_alloc")
             return True
         if not start or pending.missed:
             return True
@@ -2915,9 +3106,22 @@ class JengaBlockManager:
         )
         if num_device_blocks >= pending.first_block:
             return True
-        self._abandon_pending_lookup(state)
+        shrink = pending.first_block - num_device_blocks
+        self._record_lookup_shrink(shrink)
         if state.connector_lookup_reasks >= _MAX_CONNECTOR_LOOKUP_REASKS:
+            # The blocks the device lost plus the run the answer offered past
+            # them estimate what asking again would have saved. A connector
+            # that answers in place is asked about the gap at once, so it
+            # loses none of them. The run is read once, and the drop count
+            # below reuses it.
+            run = self._answer_run(pending)
+            if connector is not None and connector.defers_lookup(replica_idx):
+                self._metrics.connector_lookup_shrink_cap_blocks += shrink + (
+                    run or 0
+                )
+            self._abandon_pending_lookup(state, "shrink_cap")
             return True
+        self._abandon_pending_lookup(state, "shrink_reask")
 
         state.connector_lookup_reasks += 1
         replacement = self._start_connector_lookup(
@@ -2969,6 +3173,8 @@ class JengaBlockManager:
             ),
             first_block=first_block,
             started_at=started_at,
+            hint=ctx.dkv_cache_hint,
+            on_drop=self._on_lookup_drop,
         )
         self._state_of(ctx).pending_lookup = pending
         return pending

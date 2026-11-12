@@ -298,6 +298,7 @@ def _mha_decode_fold_ok[
     use_valid_length: Bool = False,
     ragged: Bool = False,
     check_mask_during_decoding: Bool = False,
+    mask_supports_fold: Bool = False,
 ]() -> Bool:
     """Return whether AMD decode can fold `S` query tokens into the M dimension.
 
@@ -317,6 +318,8 @@ def _mha_decode_fold_ok[
         ragged: Whether query rows are packed by `input_row_offsets`.
         check_mask_during_decoding: Whether the mask needs a per-tile status
             check during decode.
+        mask_supports_fold: Whether such a mask stays correct when asked about
+            the span of a folded step (`MHAMask.supports_decode_token_fold`).
 
     Returns:
         `True` when the token fold applies to this shape.
@@ -347,11 +350,11 @@ def _mha_decode_fold_ok[
         # is exempt: pad rows are the next sequence's, written by its own CTA.
         # TODO: skip pad rows in `mha_splitk_reduce` to lift this.
         and not (use_valid_length and not ragged)
-        # `Attention.mask_status` bases its S-row span at `num_keys - S`, which
-        # underflows for a sequence holding fewer than S keys (a mixed ragged
-        # batch can). Only `check_mask_during_decoding` masks consult it.
-        # TODO: clamp that span to the runtime seq_len and widen this.
-        and not check_mask_during_decoding
+        # A mask that needs the per-tile decode check must size its row span
+        # from the runtime query length (`Attention.mask_status`) and name its
+        # first visible key (`decode_first_key`); only masks that declare they
+        # do so are admitted.
+        and (not check_mask_during_decoding or mask_supports_fold)
         # `mha_decode_streaming` carries no fold geometry, and dispatch routes the
         # same `Attention` to it under this flag; instantiating a fold arm would
         # turn an opt-in perf flag into a build break on its `comptime assert`.
@@ -771,6 +774,7 @@ def _flash_attention_kv_cache[
                     use_valid_length=True,
                     ragged=ragged,
                     check_mask_during_decoding=mask_t.check_mask_during_decoding,
+                    mask_supports_fold=mask_t.supports_decode_token_fold,
                 ]():
                     if max_prompt_len == S:
                         fold_seq_len_ok = True
@@ -1645,9 +1649,8 @@ def flash_attention_dispatch[
                 # launches with BM = num_heads*S. That only shifts the partition
                 # COUNT below, not any address or bound: the kernel derives its
                 # tiling from the `BM_S`/`BN_S` it was instantiated with, and
-                # `get_start_and_end_for_partitions` divides `num_keys` by
-                # whatever count it is handed. (`check_mask_during_decoding`
-                # masks are excluded from the fold anyway.)
+                # `get_start_and_end_for_partitions` divides the keys the mask
+                # shows by whatever count it is handed.
                 comptime if mask_t.check_mask_during_decoding:
                     if partition_num_keys > 0:
                         partition_num_keys -= Int(
@@ -1689,6 +1692,28 @@ def flash_attention_dispatch[
                             batch_size, partition_num_keys, ctx
                         )
                     )
+
+                # The single-KV-head fold CTA stacks `num_heads*S` rows and
+                # holds a CU's LDS alone, so the heuristic's two waves (tuned on
+                # the 256-thread single-token CTA) leave a tail wave over a
+                # windowed key range this short.
+                comptime if (
+                    ctx.target.is_amd_gpu()
+                    and mask_t.supports_decode_token_fold
+                    and group == num_heads
+                ):
+                    if max_prompt_len > 1 and not num_partitions:
+                        var one_wave = max(
+                            1,
+                            ctx.default_device_info.sm_count
+                            // (batch_size * num_blocks_y),
+                        )
+                        num_partitions_value = min(
+                            num_partitions_value, one_wave
+                        )
+                        max_num_partitions_value = min(
+                            max_num_partitions_value, one_wave
+                        )
 
                 # The launched (max) count must bound the actual count, else the
                 # over-launched SM100 1Q grid would under-launch and silently
@@ -1767,6 +1792,7 @@ def flash_attention_dispatch[
                                 use_valid_length=_use_valid_length,
                                 ragged=ragged,
                                 check_mask_during_decoding=mask_t.check_mask_during_decoding,
+                                mask_supports_fold=mask_t.supports_decode_token_fold,
                             ]():
                                 if max_prompt_len == S:
                                     # `group == 1` folds only the S token rows,
@@ -2344,6 +2370,7 @@ def _flash_attention_dense[
             use_valid_length=_use_valid_length,
             ragged=False,
             check_mask_during_decoding=mask_t.check_mask_during_decoding,
+            mask_supports_fold=mask_t.supports_decode_token_fold,
         ]():
             if seq_len == S:
                 fold_seq_len_ok = True
@@ -4361,16 +4388,6 @@ def mha_decoding[
     comptime tile_q_seq_len = mha_decode_fold_tile_q_seq_len[
         q_type, num_heads, group, q_seq_len
     ]()
-    # `Attention.mask_status` re-derives the fold width from the TILE and uses
-    # it as the decode span base `num_keys - fold_seq_len`, which a padded tile
-    # overstates. `_mha_decode_fold_ok` excludes such masks today; this keeps
-    # lifting that exclusion a build break rather than a wrong span.
-    comptime assert not (
-        tile_q_seq_len != q_seq_len and mask_t.check_mask_during_decoding
-    ), (
-        "a padded fold tile and check_mask_during_decoding are mutually"
-        " exclusive: mask_status would span the tile's slots, not the tokens"
-    )
     # `_mha_decode_fold_ok` checks that ceiling against the width a sequence
     # CARRIES, and the pad raises the tile above it — so the height that really
     # launches gets its own check, read off `BM` rather than re-derived.

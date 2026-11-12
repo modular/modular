@@ -45,6 +45,12 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 _SHAPE = [256, 256]
 
 
+def _constant(shape: list[int]) -> np.ndarray:
+    # Seeded because the values are part of the graph: the CPU record and the
+    # GPU run must build the same one.
+    return np.random.default_rng(0).standard_normal(shape, dtype=np.float32)
+
+
 def _tile_store_ops_path() -> Path:
     return Path(os.environ["MODULAR_TILE_STORE_OPS_PATH"])
 
@@ -63,7 +69,7 @@ def _run_tile_based_fusion(
     session: InferenceSession, graph: Graph, *inputs: np.ndarray
 ) -> np.ndarray:
     """Compile ``graph`` with tile_based_fusion, execute on GPU, return output."""
-    compiled = session.compile(graph, tile_based_fusion=True)
+    compiled = session.compile_reusing_mefs(graph, tile_based_fusion=True)
     model = session.init(compiled)
     device_inputs = [
         Buffer.from_numpy(arr).to(model.input_devices[i])
@@ -317,7 +323,7 @@ def test_tile_based_fusion_add_constant() -> None:
 
     session = InferenceSession(devices=[Accelerator()])
     gpu = DeviceRef.GPU(0)
-    b = np.random.randn(*_SHAPE).astype(np.float32)
+    b = _constant(_SHAPE)
     with Graph(
         "tile_based_fusion_add_constant",
         input_types=[TensorType(DType.float32, _SHAPE, device=gpu)],
@@ -339,7 +345,7 @@ def test_tile_based_fusion_add_mul_constant() -> None:
 
     session = InferenceSession(devices=[Accelerator()])
     gpu = DeviceRef.GPU(0)
-    c = np.random.randn(*_SHAPE).astype(np.float32)
+    c = _constant(_SHAPE)
     with Graph(
         "tile_based_fusion_add_mul_constant",
         input_types=[
@@ -366,7 +372,7 @@ def test_tile_based_fusion_matmul_add_constant() -> None:
     session = InferenceSession(devices=[Accelerator()])
     gpu = DeviceRef.GPU(0)
     bias_shape = [1, _SHAPE[1]]
-    bias_np = np.random.randn(*bias_shape).astype(np.float32)
+    bias_np = _constant(bias_shape)
     with Graph(
         "tile_based_fusion_matmul_add_constant",
         input_types=[

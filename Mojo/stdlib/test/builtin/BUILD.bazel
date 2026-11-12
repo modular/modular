@@ -28,7 +28,6 @@ _FILECHECK_TESTS = [
     "test_debug_assert_mode_none.mojo",
     "test_debug_assert_no_message.mojo",
     "test_debug_assert_warning.mojo",
-    "test_pow_negative_exponent_abort.mojo",
     "test_range_len_overflow_abort.mojo",
     "test_simd_length_pow_negative_exponent_abort.mojo",
 ]
@@ -47,6 +46,7 @@ _LIT_TESTS = [
     "test_issue_3908.mojo",
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
+    "test_simd_list_literal_compile_fail.mojo",
     "test_simd_pow_compile_fail.mojo",
     "test_simd_to_endian_compile_fail.mojo",
     "test_stdin.mojo",
@@ -70,7 +70,6 @@ _DISABLED_ASSERTIONS = [
 
 _EXPECT_CRASH = [
     "test_debug_assert_default_error.mojo",
-    "test_pow_negative_exponent_abort.mojo",
     "test_debug_assert_mode_all_error.mojo",
     "test_debug_assert_location.mojo",
     "test_debug_assert_no_message.mojo",
@@ -84,6 +83,13 @@ _EXTRA_DEPS = {
 
 _MANUAL_TESTS = [
     "test_bool.mojo",  # MODELS-1704: slow in CI
+]
+
+# Crash tests that time out in external CI after the crash handler prints its
+# trace. Temporary, until crash-test slowness is fixed.
+_SKIP_EXTERNAL_CI = [
+    "test_pow_large_negative_exponent_abort.mojo",
+    "test_pow_negative_exponent_abort.mojo",
 ]
 
 [
@@ -114,7 +120,9 @@ _MANUAL_TESTS = [
             "full",
         ],
         data = _DATA + [src],  # NOTE: some tests attempt to read their source files
-        tags = ["manual"] if src in _MANUAL_TESTS else [],
+        tags = (["manual"] if src in _MANUAL_TESTS else []) + (
+            ["skip-external-ci"] if src in _SKIP_EXTERNAL_CI else []
+        ),
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",

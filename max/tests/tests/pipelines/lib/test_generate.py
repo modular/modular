@@ -41,6 +41,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import numpy.typing as npt
 import pytest
+from max import _validation_hooks as hooks
 from max._entrypoints.cli.generate import _with_debug_defaults, stream_context
 from max.driver import CPU, Buffer, DeviceSpec
 from max.dtype import DType
@@ -66,8 +67,12 @@ from max.pipelines.lib.generate import (
     GenerateResult,
     generate,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces import PipelineModel
 from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
+from max.pipelines.lib.module_registration import (
+    BlockDiffusionPipelineModel,
+)
 from max.pipelines.lib.pipeline_args import PipelineArgs
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import (
@@ -91,6 +96,7 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.sampling import SamplingConfig, request_row_seed
 from max.pipelines.speculative import SpeculativeConfig
+from max.tensor.validation import EagerUsageValidator
 from PIL import Image
 
 EOS = 2
@@ -108,7 +114,7 @@ TOKEN_ID_BOUND = 1000
 class FakeArch:
     name: str = "TextModel"
     task: PipelineTask = PipelineTask.TEXT_GENERATION
-    pipeline_cls: type | None = None
+    modules: dict[GraphRole, type] = dataclasses.field(default_factory=dict)
     input_modalities: set[InputModality] = dataclasses.field(
         default_factory=lambda: {InputModality.TEXT}
     )
@@ -906,7 +912,7 @@ def test_block_diffusion_models_point_to_serve(
         "architecture_for_config",
         lambda pipeline_config: FakeArch(
             name="DiffusionGemmaForBlockDiffusion",
-            pipeline_cls=BlockDiffusionTextGenerationPipeline,
+            modules={GraphRole.BLOCK_DIFFUSION: object},
         ),
     )
     pipeline = FakePipeline()
@@ -920,11 +926,14 @@ def test_block_diffusion_models_point_to_serve(
 def test_block_diffusion_canvas_batches_are_chunked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The denoise loop bounds the decoder step's transient memory by
-    # splitting large canvas batches (vmm_oom in execute_decoder_step at
+    # The denoise loop bounds the denoise step's transient memory by
+    # splitting large canvas batches (vmm_oom in the denoise step at
     # num_concurrent=64, MAX-1079): _generate_canvas feeds _denoise_canvas
     # at most _MAX_CANVAS_BATCH requests at a time and merges the results.
     pipeline: Any = object.__new__(BlockDiffusionTextGenerationPipeline)
+    model = MagicMock(spec=BlockDiffusionPipelineModel)
+    model.max_canvas_batch = None
+    monkeypatch.setattr(pipeline, "_pipeline_model", model, raising=False)
     chunk_sizes: list[int] = []
 
     def record_chunk(chunk: list[TextContext]) -> dict[Any, Any]:
@@ -948,6 +957,45 @@ def test_block_diffusion_canvas_batches_are_chunked(
     assert chunk_sizes == [_MAX_CANVAS_BATCH]
 
 
+@pytest.mark.parametrize("cap", [1, 4, 8])
+def test_block_diffusion_canvas_cap_follows_the_denoiser(
+    monkeypatch: pytest.MonkeyPatch, cap: int
+) -> None:
+    # A registered denoiser that sets max_canvas_batch denoises at most that
+    # many canvases per step; the pipeline never splits above its own bound.
+    pipeline: Any = object.__new__(BlockDiffusionTextGenerationPipeline)
+    model = MagicMock(spec=BlockDiffusionPipelineModel)
+    model.max_canvas_batch = cap
+    monkeypatch.setattr(pipeline, "_pipeline_model", model, raising=False)
+    chunk_sizes: list[int] = []
+
+    def record_chunk(chunk: list[TextContext]) -> dict[Any, Any]:
+        chunk_sizes.append(len(chunk))
+        return {id(ctx): ctx for ctx in chunk}
+
+    monkeypatch.setattr(pipeline, "_denoise_canvas", record_chunk)
+
+    n = 2 * cap + 3
+    contexts = [object.__new__(TextContext) for _ in range(n)]
+    pipeline._generate_canvas(contexts)
+    expected = [cap] * (n // cap) + ([n % cap] if n % cap else [])
+    assert chunk_sizes == expected
+
+    contexts = [
+        object.__new__(TextContext) for _ in range(_MAX_CANVAS_BATCH + 2)
+    ]
+    model.max_canvas_batch = _MAX_CANVAS_BATCH * 2
+    chunk_sizes.clear()
+    pipeline._generate_canvas(contexts)
+    assert chunk_sizes == [_MAX_CANVAS_BATCH, 2]
+
+    # A denoiser without a bound keeps the pipeline's.
+    model.max_canvas_batch = None
+    chunk_sizes.clear()
+    pipeline._generate_canvas(contexts)
+    assert chunk_sizes == [_MAX_CANVAS_BATCH, 2]
+
+
 class _StepOutput(Buffer):
     """A denoise step output the test can hold weakly."""
 
@@ -959,18 +1007,21 @@ def _step_output(values: npt.NDArray[Any], dtype: DType) -> _StepOutput:
     return out
 
 
+@pytest.mark.parametrize("validate", [False, True])
 def test_block_diffusion_denoise_steps_release_their_outputs(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, validate: bool
 ) -> None:
     # A compiled denoise step's outputs are slices of the one block the step's
     # activations are planned into, and a live slice keeps the whole block.
     # Feeding a step's self-conditioning logits back to the next step as they
     # are holds that block through the next step's, which doubles the step's
     # peak device memory (MAX-1079). The loop copies them into a buffer it
-    # owns and lets the step's output go.
+    # owns and lets the step's output go. The eager usage validator, which
+    # smoke tests enable per request, holds every compiled output it hasn't
+    # seen read, so the loop also reports the outputs it read on the host.
     canvas_len, vocab, steps = 4, 8, 3
     pipeline: Any = object.__new__(BlockDiffusionTextGenerationPipeline)
-    model = MagicMock()
+    model = MagicMock(spec=BlockDiffusionPipelineModel)
     model.config = SimpleNamespace(
         canvas_length=canvas_len, text_config=SimpleNamespace(vocab_size=vocab)
     )
@@ -991,8 +1042,9 @@ def test_block_diffusion_denoise_steps_release_their_outputs(
     logits_out: list[weakref.ref[_StepOutput]] = []
     previous_alive: list[bool] = []
     fed_back: list[set[int]] = []
+    engine = MagicMock()
 
-    def decoder_step(
+    def denoise_step(
         *, canvas_tokens: Buffer, sc_logits: Buffer, **_: object
     ) -> tuple[_StepOutput, ...]:
         if logits_out:
@@ -1006,15 +1058,18 @@ def test_block_diffusion_denoise_steps_release_their_outputs(
         )
         logits_out.append(weakref.ref(logits))
         # Entropy stays high, so no canvas stops before the last step.
-        return (
+        step = (
             logits,
             _step_output(np.zeros(n, np.int64), DType.int64),
             _step_output(np.full((n, 2), 0.5, np.float32), DType.float32),
             _step_output(np.zeros((n, 2), np.int64), DType.int64),
             _step_output(np.ones(n, np.float32), DType.float32),
         )
+        # As CompiledCallable.execute_raw reports each call.
+        hooks.compiled_call(engine, (canvas_tokens, sc_logits), step)
+        return step
 
-    model.execute_decoder_step = decoder_step
+    model.execute_denoise_step = denoise_step
     contexts = [
         SimpleNamespace(
             tokens=SimpleNamespace(all=np.arange(3, dtype=np.int64))
@@ -1022,7 +1077,8 @@ def test_block_diffusion_denoise_steps_release_their_outputs(
         for _ in range(2)
     ]
 
-    pipeline._generate_canvas(contexts)
+    with EagerUsageValidator(enabled=validate, label="execution"):
+        pipeline._denoise_canvas(contexts)
 
     # Each step reads the logits the step before it wrote...
     assert fed_back == [{0}, {1}, {2}]

@@ -691,6 +691,8 @@ struct AMDPingPongMatmul[
                     s_setprio[Int16(entry.op.wait_value)]()
                 case .SCHEDULE_BARRIER:
                     schedule_barrier()
+                case _:
+                    pass
 
         # Prologue.
         comptime for i in range(schedule.warp_stagger_index):

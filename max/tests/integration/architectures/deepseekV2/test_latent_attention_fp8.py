@@ -318,13 +318,6 @@ def generate_max_outputs_fp8(
     )
     latent_attention.load_state_dict(quantized_weights, strict=True)
 
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     hidden_state_type = TensorType(
         DType.bfloat16, ["total_seq_len", config.hidden_size], DeviceRef.GPU()
     )
@@ -359,6 +352,12 @@ def generate_max_outputs_fp8(
 
     g = construct()
     compiled = session.load(g, weights_registry=latent_attention.state_dict())
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
     batch_size = 1
     total_tokens = input_tensor.shape[1]
     prompt_lens = [total_tokens] if use_prefill else [1]

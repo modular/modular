@@ -213,6 +213,7 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
             indexer_rope_interleave=config.indexer_rope_interleave,
             indexer_quant_config=config.quant_config,
             dcp_size=config.decode_context_parallel_degree,
+            dcp_interleave=config.decode_context_parallel_interleave,
             dcp_q_replicate=config.dcp_q_replicate,
         )
         if self.mode is not ParallelismMode.DP_EP:

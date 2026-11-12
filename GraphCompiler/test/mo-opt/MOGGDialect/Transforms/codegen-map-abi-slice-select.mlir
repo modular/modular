@@ -22,12 +22,12 @@
 // CHECK:      def __{{.*}}, [[B:arg__[0-9]+]]: Int, {{arg__[0-9]+}}: Int, [[T:arg__[0-9]+]]: Int,
 // CHECK:      var [[OUT_COORD:var__+[0-9]+]] = layout.Coord(Scalar[DType.int]([[B]]), layout.Idx[8], layout.Idx[16])
 // CHECK:      var [[IN_COORD:var__+[0-9]+]] = layout.Coord(Scalar[DType.int]([[B]]), Scalar[DType.int]([[T]]), layout.Idx[16])
-// CHECK:      var {{var__+[0-9]+}} = EpilogueStoreFunctor_{{[0-9]+}}[{{.*}}]({{.*}}, [[IN_COORD]], [[OUT_COORD]])
+// CHECK:      var {{var__+[0-9]+}} = OutputStoreFunctor_{{[0-9]+}}[{{.*}}]({{.*}}, [[IN_COORD]], [[OUT_COORD]])
 
-// CHECK:      struct EpilogueStoreFunctor_{{[0-9]+}}[spec__0: {{.*}}, spec__1: {{.*}}]
+// CHECK:      struct OutputStoreFunctor_{{[0-9]+}}[spec__0: {{.*}}, spec__1: {{.*}}]
 // CHECK:      var [[IN_FIELD:var__[0-9]+]]: layout.Coord[Int, Int, layout.ComptimeInt[16]]
 // CHECK-NEXT: var [[OUT_FIELD:var__[0-9]+]]: layout.Coord[Int, layout.ComptimeInt[8], layout.ComptimeInt[16]]
-// CHECK:      managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = Self.spec__0, simd_width = simd_width, element_alignment = element_alignment](self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, rebind[{{.*}}](std.utils.coord.coord_to_index_list([[IDX:var__+[0-9]+]])), rebind[{{.*}}]([[VAL:var__+[0-9]+]]))
+// CHECK:      managed_tensor_slice.simd_store_into_tensor_pointer[static_spec = Self.spec__0, simd_width = simd_width, element_alignment = element_alignment](self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, self.{{var__[0-9]+}}, rebind[{{.*}}](std.utils.coord.coord_to_index_list([[IDX:[a-zA-Z0-9_]+]])), rebind[{{.*}}]([[VAL:var__+[0-9]+]]))
 // CHECK-NEXT: var [[IDX_LIST:var__+[0-9]+]] = rebind[std.utils.IndexList[3]](std.utils.coord.coord_to_index_list([[IDX]]))
 // CHECK-NEXT: comptime [[STARTS:param___[0-9]+]] = layout.Coord(layout.Idx[0], layout.Idx[-8], layout.Idx[0])
 // CHECK-NEXT: comptime [[STEPS:param___[0-9]+]] = layout.Coord(layout.Idx[1], layout.Idx[1], layout.Idx[1])

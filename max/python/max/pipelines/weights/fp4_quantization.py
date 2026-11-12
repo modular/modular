@@ -398,5 +398,5 @@ def nvfp4_quantization_config(
         "quant_algo": "NVFP4",
         "activation_scheme": "dynamic",
         "weight_block_size": [1, fmt.block_size],
-        "ignored_layers": list(ignored),
+        "ignore": list(ignored),
     }

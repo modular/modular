@@ -35,6 +35,7 @@ from max.nn.kv_cache import (
     recurrent_leaf,
 )
 from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
+from max.pipelines.architectures.glm5_next.ring import RING_DTYPE
 from max.pipelines.architectures.glm5_next.state_cache import (
     CONV_LEAF_ID,
     RECURRENT_LEAF_ID,
@@ -43,7 +44,6 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     VERIFY_RING_LEAF_ID,
     with_verify_ring,
 )
-from max.pipelines.architectures.qwen3_5.state_cache import RING_DTYPE
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )

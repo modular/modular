@@ -1009,7 +1009,6 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_out_dtype: DType,
     freq_dtype: DType,
     QInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1105,7 +1104,6 @@ def fused_qk_rms_norm_rope_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     QInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1315,13 +1313,11 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     MainQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     IndexQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -1488,13 +1484,11 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     index_page_size: Int,
     index_cache_dtype: DType,
     MainQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     IndexQInputFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -2036,31 +2030,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -2542,31 +2531,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_warp_gpu[
     q_index_out_dtype: DType,
     freq_dtype: DType,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -2782,31 +2766,26 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
     main_collection_t: KVCollectionT,
     index_collection_t: KVCollectionT,
     QMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     VMainFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     QIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
     ],
     KIndexFnType: ImplicitlyCopyable
-    & DevicePassable
     & RegisterPassable
     & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
         dtype, width
@@ -3902,7 +3881,9 @@ def generic_get_paged_cache_with_scales(
 
 
 @inline(.always)
-def paged_cache_rows(
+def paged_cache_rows[
+    v_head_size: Int = -1,
+](
     blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
     page_stride: TileTensor[DType.int64, address_space=.GENERIC, ...],
     cache_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
@@ -3913,10 +3894,11 @@ def paged_cache_rows(
     max_lengths_slot: Int,
     out result: PagedKVCacheCollection[
         blocks.dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             blocks.static_shape[4],
             blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
+            blocks.static_shape[1],
+            v_head_size,
         ),
         blocks.static_shape[3],
         MutAnyOrigin,
@@ -3931,16 +3913,19 @@ def paged_cache_rows(
     Same type as the `generic_get_paged_cache` collection of the whole batch;
     only the per-row tables move and the max lengths change. The caller
     checks that the lookup table and `split_args` (a
-    `kv_cache.mixed_step_split` record) are packed.
+    `kv_cache.mixed_step_split` record) are packed. Use it to build a
+    collection from operands; `rows_view` views an existing collection and
+    keeps its scales.
     """
     var lut_cols = Int(lookup_table.dim[1]())
     var lengths = split_args.unsafe_ptr().unsafe_offset(max_lengths_slot)
     return generic_get_paged_cache[
         blocks.dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             blocks.static_shape[4],
             blocks.static_shape[5],
-            blocks.static_shape[1] == 1,
+            blocks.static_shape[1],
+            v_head_size,
         ),
         blocks.static_shape[3],
     ](

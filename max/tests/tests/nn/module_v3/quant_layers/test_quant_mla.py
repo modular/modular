@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -33,6 +34,7 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
+from max.nn.common_layers.context_parallel import dcp_view
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_mla import (
@@ -530,6 +532,7 @@ def _make_sparse_layer(
     graph_mode: str = "decode",
     kv_params: MLAKVCacheParams | None = None,
     indexer_quant_config: QuantConfig | None = None,
+    **kwargs: Any,
 ) -> QuantizedSparseLatentAttentionWithRope:
     if kv_params is None:
         kv_params = _make_sparse_kv_params(devices)
@@ -552,6 +555,7 @@ def _make_sparse_layer(
         index_head_dim=128,
         index_topk=_SPARSE_TOPK,
         indexer_quant_config=indexer_quant_config,
+        **kwargs,
     )
 
 
@@ -654,6 +658,55 @@ def test_sparse_mla_fp8_tensor_parallel_ragged_scale_values(
             np.testing.assert_array_equal(
                 shard.to_numpy(), expected[i * heads : (i + 1) * heads]
             )
+
+
+@pytest.mark.parametrize("dcp", [2, 4, 8])
+def test_sparse_mla_dcp_replicates_the_query_within_each_group(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    fp8_quant_config: QuantConfig,
+    dcp: int,
+) -> None:
+    """TP8 x DCP: ``q_b`` and ``kv_b`` shard by group, ``o_proj`` by rank.
+
+    With a replicated query each DCP group computes its own ``16 * dcp / 8``
+    heads, so the Q and KV up-projections sit on the mesh's DCP view,
+    sharded along its ``tp`` axis of groups and replicated along ``dcp``;
+    with one group spanning TP (``dcp == 8``) they stay whole. ``o_proj``
+    shards over all eight ranks, whose merged heads are their TP heads.
+    """
+    n_devices = 8
+    with F.lazy(), default_dtype(DType.bfloat16):
+        devices = [mock_accelerator(i) for i in range(n_devices)]
+        mesh = DeviceMesh(tuple(devices), (n_devices,), (TP,))
+        with default_device(mesh):
+            layer = tensor_parallel_sparse_latent_attention_with_rope(
+                _make_sparse_layer(
+                    devices,
+                    nvfp4_quant_config,
+                    indexer_quant_config=fp8_quant_config,
+                    dcp_size=dcp,
+                ),
+                n_devices,
+            )
+        view = dcp_view(mesh, dcp)
+        group_heads = _SPARSE_N_HEADS * dcp // n_devices
+        for name in ("q_b_proj", "kv_b_proj"):
+            weight = getattr(layer, name)
+            assert isinstance(weight, Tensor), name
+            assert weight.mesh == view, name
+            assert weight.placements == (Sharded(0), Replicated()), name
+            rows = int(weight.shape[0]) * dcp // n_devices
+            for shard in weight.local_shards:
+                assert int(shard.shape[0]) == rows, name
+        w_uk, _ = layer.w_uk
+        assert w_uk.mesh == view
+        for shard in w_uk.local_shards:
+            assert int(shard.shape[0]) == group_heads
+        o_proj = layer.o_proj.weight
+        assert isinstance(o_proj, NVFP4Tensor)
+        assert o_proj.weight.mesh == mesh
+        assert o_proj.weight.placements == (Sharded(1),)
 
 
 # --------------------------------------------------------------------------- #

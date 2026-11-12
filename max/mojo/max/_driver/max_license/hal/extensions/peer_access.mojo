@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections import OptionalReg
-from std.ffi import _DLHandle
 from std.memory import MaybeUninit
 
 from ..plugin import RawDriver
@@ -23,7 +21,7 @@ from ..plugins import (
     PluginResultCode,
     RawPluginComponent,
 )
-from ..status import STATUS_SUCCESS, STATUS_UNKNOWN_SYMBOL, HALError
+from ..status import STATUS_SUCCESS, HALError
 from .traits import PeerAccessV1
 
 
@@ -47,19 +45,6 @@ struct RawPluginPeerAccess(PeerAccessV1, RawPluginComponent):
         ) thin abi("C") -> PluginResultCode,
         required=True,
     ]
-
-    @staticmethod
-    def load(
-        lib: _DLHandle, so_path: StringSpan
-    ) raises HALError -> OptionalReg[Self]:
-        """Resolves the group, or None when `lib` exports neither symbol."""
-        # TODO(DRIV-4): drop once a `Device`'s spec follows its loaded plugin.
-        try:
-            return Self(lib, so_path)
-        except e:
-            if e.status == STATUS_UNKNOWN_SYMBOL:
-                return None
-            raise e^
 
     def can_access_peer(
         self, driver: RawDriver, device: DeviceHandle, peer: DeviceHandle

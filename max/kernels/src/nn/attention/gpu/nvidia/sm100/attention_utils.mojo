@@ -2776,7 +2776,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
     # most 7 predicates are live; ptxas folds the 7 `setp` into `R2P ...,0x7f`.
     var asm = String("{\n.reg .pred %p<7>;\n.reg .b32 %t<7>;\n")
 
-    comptime for j in range(7):
+    for j in range(7):
         asm += String(
             "and.b32 %t",
             j,
@@ -2789,7 +2789,7 @@ def _mask_select8_asm[byte_idx: Int]() -> String:
             ", 0;\n",
         )
 
-    comptime for j in range(7):
+    for j in range(7):
         asm += String("selp.f32 $", j, ", ", mv, ", $", 8 + j, ", %p", j, ";\n")
 
     # Bit 7 (the 8th lane): reuse %p0/%t0, free after the selps above, so this

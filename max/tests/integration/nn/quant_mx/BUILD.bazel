@@ -62,7 +62,10 @@ modular_py_test(
     },
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/_entrypoints",
@@ -86,7 +89,11 @@ modular_py_test(
     },
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
-    tags = ["gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -111,7 +118,10 @@ modular_py_test(
     },
     gpu_constraints = ["//:mi355_gpu"],
     imports = ["."],
-    tags = ["gpu"],
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",

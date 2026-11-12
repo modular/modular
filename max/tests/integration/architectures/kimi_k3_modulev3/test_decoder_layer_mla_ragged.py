@@ -41,6 +41,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
+)
 from max.tensor import Tensor, default_device
 
 _RNG = np.random.default_rng(20261022)
@@ -84,13 +87,15 @@ def _build_layer(
     def bf16(arr: np.ndarray) -> Tensor:
         return Tensor(arr, dtype=DType.float32).cast(DType.bfloat16)
 
-    attention.q_a_proj.weight = bf16(_arr(q_lora, hidden))
+    q_a = _arr(q_lora, hidden)
     attention.q_a_layernorm.weight = bf16(np.ones(q_lora, dtype=np.float32))
     attention.q_b_proj.weight = bf16(_arr(heads * q_head_dim, q_lora))
-    attention.kv_a_proj_with_mqa.weight = bf16(_arr(kv_lora + qk_rope, hidden))
+    kv_a = _arr(kv_lora + qk_rope, hidden)
     attention.kv_a_layernorm.weight = bf16(np.ones(kv_lora, dtype=np.float32))
     attention.kv_b_proj.weight = bf16(_arr(heads * (qk_nope + v_head), kv_lora))
-    attention.g_proj.weight = bf16(_arr(heads * v_head, hidden))
+    attention.qkv_a_g_proj.weight = bf16(
+        fuse_qkv_a_g_for_tp(q_a, kv_a, _arr(heads * v_head, hidden), 1)
+    )
     attention.o_proj.weight = bf16(_arr(hidden, heads * v_head))
 
     ffn = KimiK3DenseMLP(
@@ -166,6 +171,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
             for c in block_residual_np
         ]
         out_padded, _ = layer(x, block_residual)
+        assert isinstance(out_padded, Tensor)
         out_padded_np = out_padded.cast(DType.float32).to_numpy()
 
         layer.attention.kv_params = kv_params
@@ -179,6 +185,7 @@ def test_decoder_layer_mla_decompressed_ragged_matches_padded() -> None:
             input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
         )
+        assert isinstance(out_ragged, Tensor)
         out_ragged_np = out_ragged.cast(DType.float32).to_numpy()
 
     err = _rel_error(out_ragged_np, out_padded_np)
@@ -224,6 +231,7 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             for c in block_residual_np
         ]
         out_padded, _ = layer(x, block_residual)
+        assert isinstance(out_padded, Tensor)
         out_padded_np = out_padded.cast(DType.float32).to_numpy()
 
         layer.attention.kv_params = kv_params
@@ -254,6 +262,7 @@ def test_decoder_layer_mla_latent_ragged_matches_padded() -> None:
             mla_prefill_plan=prefill_plan,
             mla_freqs_cis=freqs_cis,
         )
+        assert isinstance(out_ragged, Tensor)
         out_ragged_np = out_ragged.cast(DType.float32).to_numpy()
 
     err = _rel_error(out_ragged_np, out_padded_np)

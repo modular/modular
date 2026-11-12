@@ -561,14 +561,15 @@ class TensorParallelMoE(QuantizedMoE):
         distributed = _stack_experts(down_list, shard_axis=-1, mesh=self.mesh)
         return list(distributed.local_shards)
 
-    def forward(self, x: Tensor) -> Tensor:
-        """Forward pass for the tensor-parallel MoE layer.
+    def routed_partial_sums(self, x: Tensor) -> Tensor:
+        """Runs the routed experts, without the shared experts.
 
         Args:
             x: ``(seq_len, hidden_dim)``, replicated.
 
         Returns:
-            ``(seq_len, hidden_dim)``, each device's partial sum.
+            ``(seq_len, hidden_dim)``, each device's partial sum, in the
+            combine dtype.
         """
         router_idx, router_weight = self.gate(x)
         gate_up = quant_ops.stack_device_shards(
@@ -579,11 +580,22 @@ class TensorParallelMoE(QuantizedMoE):
         )
         # Each device's experts cover its slice of ``moe_dim``, so its outputs
         # are partial sums; the combine is linear, so they stay partial.
-        routed_expert_out = F.call_on_mesh(
+        return F.call_on_mesh(
             self._routed_experts,
             self.mesh,
             out_specs=DeviceMapping(self.mesh, (Partial(),)),
         )(x, router_idx, router_weight, gate_up, down)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Forward pass for the tensor-parallel MoE layer.
+
+        Args:
+            x: ``(seq_len, hidden_dim)``, replicated.
+
+        Returns:
+            ``(seq_len, hidden_dim)``, each device's partial sum.
+        """
+        routed_expert_out = self.routed_partial_sums(x)
 
         if self.shared_experts is not None:
             shared_out = self.shared_experts(x)

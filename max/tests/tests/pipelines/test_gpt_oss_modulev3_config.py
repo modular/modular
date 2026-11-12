@@ -85,6 +85,10 @@ def test_arch_registers_the_decoder_module() -> None:
     assert model.decoder_cls is GptOss
 
 
+def test_arch_accepts_float16() -> None:
+    assert "float16" in gpt_oss_modulev3_arch.supported_encodings
+
+
 def test_finalize_returns_a_finalized_copy() -> None:
     config = _config()
     finalized = config.finalize(

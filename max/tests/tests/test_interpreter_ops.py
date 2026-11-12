@@ -84,6 +84,7 @@ from max.tensor.sharding import (
     Sharded,
 )
 from max.tensor.tensor import Tensor, realization_context
+from PIL import Image
 
 
 @pytest.fixture(autouse=True)
@@ -9728,8 +9729,7 @@ class TestResizeBicubicOp:
         )
 
     def test_antialias_uint8(self) -> None:
-        """A uint8 input resizes eagerly to uint8: the float32 resize rounded
-        half to even and clamped to [0, 255]."""
+        """A uint8 input resizes eagerly to uint8 as Pillow's BICUBIC does."""
         rng = np.random.default_rng(202)
         x_np = rng.integers(0, 256, (1, 3, 9, 23), dtype=np.uint8)
         out_shape = [1, 3, 20, 7]
@@ -9741,16 +9741,15 @@ class TestResizeBicubicOp:
             out = F.resize_bicubic(
                 Tensor.from_dlpack(x_np), out_shape, antialias=True
             )
-            as_f32 = F.resize_bicubic(
-                Tensor.from_dlpack(x_np.astype(np.float32)),
-                out_shape,
-                antialias=True,
-            )
 
         got = np.from_dlpack(out)
         assert got.dtype == np.uint8
-        want = np.clip(np.rint(np.from_dlpack(as_f32)), 0, 255)
-        np.testing.assert_array_equal(got, want.astype(np.uint8))
+        want = np.asarray(
+            Image.fromarray(
+                np.ascontiguousarray(x_np[0].transpose(1, 2, 0))
+            ).resize(out_shape[:1:-1], Image.Resampling.BICUBIC)
+        ).transpose(2, 0, 1)
+        np.testing.assert_array_equal(got[0], want)
 
     @pytest.mark.parametrize("antialias", [False, True])
     def test_rejects_an_empty_input_to_a_non_empty_size(

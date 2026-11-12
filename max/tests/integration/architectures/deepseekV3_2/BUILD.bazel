@@ -60,6 +60,7 @@ modular_py_library(
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
     ],
 )
@@ -91,6 +92,9 @@ modular_py_test(
             "precompile_mla_sparse.py",
             "test_mla_sparse_prefill_graph_gpu.py",
             "test_mla_sparse_nvfp4_graph_gpu.py",
+            "test_mla_sparse_mixed_split_gpu.py",
+            "test_mla_dense_mixed_split_gpu.py",
+            "test_mla_indexer_mixed_split_gpu.py",
             "precompile_hadamard.py",
             "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
@@ -204,6 +208,7 @@ modular_py_test(
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:mixed_step_split_ops",
     ],
 )
 
@@ -288,6 +293,11 @@ precompiled_mefs(
         "prefill_fp8_fp8kv_16h",
         "prefill_fp8_fp8kv_32h",
         "prefill_fp8_fp8kv_64h",
+        # Packed NVFP4 latent cache, for the mixed-batch split test.
+        "prefill_nvfp4_8h",
+        # Wide sparse top-k, so a prefill view of a split runs more than one
+        # split-K partition.
+        "prefill_fp8_fp8kv_8h_topk256",
         # Disaggregated prefill_only variants for the auto-vs-prefill test.
         "prefill_only_fp8_128h",
         "prefill_only_fp8_8h",
@@ -321,9 +331,104 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:mef_precompile",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the mixed-batch split: same MEFs, a decode row plus a
+# prefill row, so it runs beside the fresh-prefill target on the same data.
+modular_py_test(
+    name = "test_mla_sparse_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_sparse_mixed_split_gpu.py"],
+    data = [":mla_sparse_prefill_mefs"],
+    env = {
+        "MLA_MEF_RLOCATIONS": "$(rlocationpaths :mla_sparse_prefill_mefs)",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":mla_sparse_graphs",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:mef_precompile",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the dense arms' mixed-batch split: a decode row plus a
+# prefill row, each compared with the same row run alone. The graphs compile
+# in a CPU record action, so the GPU only runs them.
+modular_py_test(
+    name = "test_mla_dense_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_dense_mixed_split_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_graphs",
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# GPU consumer for the indexer ops' mixed-batch split: one decode row and one
+# prefill row through both remap arms, each row compared with the same row run
+# alone. The graphs compile in a CPU record action, so the GPU only runs them.
+modular_py_test(
+    name = "test_mla_indexer_mixed_split_gpu",
+    size = "large",
+    srcs = ["test_mla_indexer_mixed_split_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        ":mla_sparse_test_utils",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
         requirement("torch"),
     ],

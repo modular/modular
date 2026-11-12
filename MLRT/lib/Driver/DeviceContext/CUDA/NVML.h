@@ -20,6 +20,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/Preprocessor.h"
+#include "Support/SymbolExport.h"
 #include "Support/max_license/Tracy/Tracy.h"
 
 #include "llvm/Support/Process.h"
@@ -98,7 +99,7 @@ public:
 
   ~NVML();
 
-  ErrorOr<std::string> GetDriverVersion() const;
+  MODULAR_CXX_EXPORT ErrorOr<std::string> GetDriverVersion() const;
 
 // Define wrapper member function with runtime logging.
 #define NVML_FUNC(name, ret, ...)                                              \
@@ -126,7 +127,7 @@ public:
 #undef NVML_FUNC_NO_PARAMS
 #undef NVML_FUNC
 
-  static ErrorOr<const NVML &> get();
+  MODULAR_CXX_EXPORT static ErrorOr<const NVML &> get();
 
 private:
   static ErrorOr<std::unique_ptr<NVML>> allocAndInitNVML();

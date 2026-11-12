@@ -70,11 +70,11 @@ def test_matmul_swiglu_inputs(bias: bool, input_kind: str) -> None:
     weight_cpu = (torch.randn((2 * _H, _K), generator=generator) / _K**0.5).to(
         torch.bfloat16
     )
-    weight = Buffer.from_dlpack(weight_cpu).to(device)
-    model = session.load(
-        _graph(bias=bias, sliced=input_kind == "graph_slice"),
-        weights_registry={"weight": weight},
+    compiled = session.compile_reusing_mefs(
+        _graph(bias=bias, sliced=input_kind == "graph_slice")
     )
+    weight = Buffer.from_dlpack(weight_cpu).to(device)
+    model = session.init(compiled, weights_registry={"weight": weight})
     expected_op = (
         "mo.composite.matmul_swiglu_bias"
         if bias
@@ -159,11 +159,11 @@ def test_matmul_swiglu_constant_expression_weight() -> None:
     weight_cpu = (torch.randn((2 * _H, _K), generator=generator) / _K**0.5).to(
         torch.bfloat16
     )
-    weight = Buffer.from_dlpack(weight_cpu).to(device)
-    model = session.load(
-        _graph(bias=False, sliced=False, constant_expr=True),
-        weights_registry={"weight": weight},
+    compiled = session.compile_reusing_mefs(
+        _graph(bias=False, sliced=False, constant_expr=True)
     )
+    weight = Buffer.from_dlpack(weight_cpu).to(device)
+    model = session.init(compiled, weights_registry={"weight": weight})
     assert any(
         "mo.composite.matmul_swiglu" in summary
         for summary in model.kernel_summaries

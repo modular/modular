@@ -128,6 +128,7 @@ from ..interfaces.pipeline_model import (
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
     WeightLoad,
+    _cast_to_parameter_dtypes,
 )
 from ..memory_estimation import MemoryPlan
 from ..module_registration import (
@@ -1387,8 +1388,6 @@ class SpecDecodePipelineModel(
     weights, when the target's adapter enables one."""
     _weight_loads: list[WeightLoad]
     """The weight loads the modules deferred to the compile."""
-    _target_config: Any = None
-    """The target's model config, which describes its media for export."""
 
     def __init__(
         self,
@@ -1538,6 +1537,20 @@ class SpecDecodePipelineModel(
         """Returns the target and draft architectures this config pairs."""
         return _Pairing.from_pipeline_config(self.pipeline_config)
 
+    @property
+    def verify_commits_long_rows(self) -> bool:
+        """Whether the verify commits a long row in every recurrent leaf.
+
+        A long row is longer than the verify window. An export's sidecar carries
+        this (Mach's ``gen_mef`` reads it).
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        assert speculative.speculative_method is not None
+        return spec_adapters.verify_commits_long_rows(
+            self.pairing.adapter_arch, speculative.speculative_method
+        )
+
     @cached_property
     def takes_signal_buffers(self) -> bool:
         """Returns whether the graph takes signal buffers.
@@ -1570,7 +1583,6 @@ class SpecDecodePipelineModel(
         )
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
-        self._target_config = modules.target_config
         target, draft = modules.target, modules.draft
         self._compiled_routed_expert_row_bound = next(
             (
@@ -2355,25 +2367,27 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
     def vision_metadata(self) -> VisionMetadata | None:
         """Returns the target's vision metadata.
 
-        The fused graph takes the target's images.
+        The fused graph takes the target's images. The target's hooks read
+        the config it was built with, so they answer once the model loads.
         """
         target = _pipeline_model(self.pairing.target)
-        return target.vision_metadata_for(
-            self.pipeline_config, self._target_config
-        )
+        config = self.arch_config_as(SpecDecodeArchConfig)
+        return target.vision_metadata_for(self.pipeline_config, config.target)
 
     def vision_preprocess_spec(self) -> GraphSpec | None:
         """Returns the target's image preprocessing graph."""
         target = _pipeline_model(self.pairing.target)
+        config = self.arch_config_as(SpecDecodeArchConfig)
         return target.vision_preprocess_spec_for(
-            self.pipeline_config, self._target_config
+            self.pipeline_config, config.target
         )
 
     def vision_preprocess_video_spec(self) -> GraphSpec | None:
         """Returns the target's video preprocessing graph."""
         target = _pipeline_model(self.pairing.target)
+        config = self.arch_config_as(SpecDecodeArchConfig)
         return target.vision_preprocess_video_spec_for(
-            self.pipeline_config, self._target_config
+            self.pipeline_config, config.target
         )
 
     @traced
@@ -2532,9 +2546,10 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
             ),
         )
         call = module.driver_call()
+        # Weights that weight entries name come from the checkpoints uncast.
         compiled = module.compile(
             *call.input_types,
-            weights=modules.weights,
+            weights=_cast_to_parameter_dtypes(module, modules.weights),
             name=_graph_name(self.pairing, call.method),
             signal_buffer_index=call.driver.input_spec.signal_buffer_index,
             signals_group=tp_signals,

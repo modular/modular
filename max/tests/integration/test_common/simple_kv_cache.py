@@ -208,7 +208,13 @@ def paged_kv_cache_inputs(
         ),
         # MLA carries its grid split as a separate CPU scalar as well.
         mla_num_partitions=Buffer.from_numpy(
-            np.array([attn_key.num_partitions], np.int64)
+            np.array(
+                [
+                    attn_key.num_partitions,
+                    attn_key.decode_num_partitions,
+                ],
+                np.int64,
+            )
         )
         if isinstance(attn_key, MLAAttnKey)
         else None,

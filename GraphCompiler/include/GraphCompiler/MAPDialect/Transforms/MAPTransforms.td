@@ -150,7 +150,10 @@ def FuseReductions : Pass<"map-fuse-reductions", "MO::GraphOp"> {
     reads is cloned at each load of its result. A consumer over the per-row
     shape that reads a per-row result at its own index becomes row-level
     ops, and its result a rowwise output. A consumer over the rowwise shape
-    that reads per-row results at its own row becomes a map phase.
+    that reads per-row results at its own row becomes a map phase. A rowwise
+    kernel whose per-row results only a later rowwise kernel over the same
+    rows, with a map phase, reads at its own row runs at the start of that
+    kernel's row.
   }];
 
   let dependentDialects = [
@@ -288,6 +291,29 @@ def RaiseBackContiguousViews
               "Number of contiguous slice kernels raised back">,
     Statistic<"numReshapesRaised", "num-reshapes-raised",
               "Number of reshape kernels raised back">
+  ];
+}
+
+def FuseContiguousViews : Pass<"map-fuse-contiguous-views", "MO::GraphOp"> {
+  let summary = "Fuse reshapes and contiguous slices into the kernels that read "
+                "them as stride views.";
+  let description = [{
+    Replaces each kernel input that a `mo.static.reshape` or `mogg.slice`
+    produces with a `map.index.reshape.stride` or `map.index.slice.stride` of
+    the view's input, at the top of the kernel's body. Assumes every kernel is
+    a `map.iter.opaque`.
+
+    Fuses only a slice with static shapes and constant bounds.
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
+    "M::MO::MODialect",
+  ];
+
+  let statistics = [
+    Statistic<"numViewsFused", "num-views-fused",
+              "Number of kernel inputs read through a fused view">
   ];
 }
 

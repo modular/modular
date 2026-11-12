@@ -24,14 +24,14 @@ pointer to rewind:
   state cache. The accepted records are folded into the live pool once the
   accepted count is known, with ``kda_state_fold`` -- whose record count is
   the TOKENS to fold, anchor included, not the accepted drafts
-  (:func:`~max.pipelines.speculative.gated_delta_rollback.accepted_lengths`
+  (:func:`~max.pipelines.speculative.gated_delta_rollback.ring_accepted_lengths`
   converts). A fold is the recurrence's own update over the same operands,
   so it lands bit for bit where the pinned-``fma`` ``kda_decode`` the base
   graph runs would have.
 - **KDA conv.** The verify leaves the window unwritten and the rollback
-  re-runs the conv kernel over the accepted rows of the copy the verify
-  keeps of its input, through
-  :func:`~max.pipelines.speculative.gated_delta_rollback.replay_conv_pools`.
+  places it from the copy the verify keeps of its input, inside the same
+  ``kda_state_fold`` launch that folds the recurrent pool -- a copy of the
+  last ``kernel_size - 1`` raw inputs, no conv re-run.
 
 K3 has no indexer tail ring to seed; that leaf is GLM-5.3-Flash's sparse-MLA
 business. A window with no drafts has nothing to reject, so its verify lands
@@ -45,7 +45,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue
+from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
 from max.nn._graph_ops.state_space import verify_width_operand
 from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
@@ -53,9 +53,7 @@ from max.nn._graph_ops.state_space.kimi_delta import (
 )
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
-    accepted_row_plan,
-    replay_conv_pools,
+    ring_accepted_lengths,
 )
 from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
@@ -117,17 +115,31 @@ def fold_kda_state_pools(
     row_offsets: Sequence[TensorValue | Tensor],
     signal_buffers: Sequence[BufferValue],
     verify_width: TensorValue,
+    *,
+    live_conv_pools: Sequence[BufferValue | Tensor] | None = None,
+    conv_row_ids: Sequence[TensorValue | Tensor] | None = None,
+    kda_captures: Sequence[Sequence[KdaConvReplayInputs]] | None = None,
+    window_row_len: TensorValue | None = None,
 ) -> None:
-    """Applies the verify's accepted ring records to the live KDA pool.
+    """Applies the verify's accepted records to the live KDA pools.
 
-    One launch per device covers every layer, and none at a verify width of
-    zero.
+    One launch per device folds the ring into the recurrent pool and places
+    each request's conv window at its accepted length from the captured
+    windows, and none runs at a verify width of zero.
 
     Args:
         live_recurrent_pools: Per-device recurrent pool, still pre-verify.
         recurrent_row_ids: Per-device ``[num_layers, batch_size]`` state rows.
         ring_pools: Per-device verify ring.
         ring_row_ids: Per-device ``[num_layers, batch_size]`` ring rows.
+        live_conv_pools: Per-device conv pool, still pre-verify.
+        conv_row_ids: Per-device ``[num_layers, batch_size]`` conv rows.
+        kda_captures: Per-device, per-layer verify captures; the fold reads
+            each layer's ``qkv_window``.
+        window_row_len: ``[1]`` int32 scalar: the capture's rows per request,
+            the stride the conv kernel wrote each row's tokens at (``K + 1``).
+            Zero reads each request's window at its own offset in
+            ``row_offsets``; omitted, the caller keeps that layout.
         fold_accepted: ``[batch]`` records to fold -- tokens, anchor
             included; see the module docstring.
         row_offsets: Per-device ``[batch + 1]`` offsets of the verified
@@ -135,13 +147,22 @@ def fold_kda_state_pools(
         signal_buffers: Used only to place ``fold_accepted`` on each device.
         verify_width: The verify's width operand.
     """
+    window_row_len_per_dev = (
+        None
+        if window_row_len is None
+        else broadcast_per_device(
+            ops.reshape(window_row_len, [1]),
+            list(signal_buffers),
+            len(live_recurrent_pools),
+        )
+    )
     accepted_per_dev = broadcast_per_device(
         fold_accepted.cast(DType.uint32),
         list(signal_buffers),
         len(live_recurrent_pools),
     )
     for device_idx, state_pool in enumerate(live_recurrent_pools):
-        kda_state_fold(
+        fold_args = (
             _pool_value(state_pool),
             _pool_value(ring_pools[device_idx]),
             _value(recurrent_row_ids[device_idx]),
@@ -149,8 +170,25 @@ def fold_kda_state_pools(
             accepted_per_dev[device_idx],
             _value(row_offsets[device_idx]),
             verify_width,
-            state_layout=STATE_LAYOUT,
         )
+        if (
+            live_conv_pools is not None
+            and conv_row_ids is not None
+            and kda_captures is not None
+            and window_row_len_per_dev is not None
+        ):
+            kda_state_fold(
+                *fold_args,
+                conv_pool=_pool_value(live_conv_pools[device_idx]),
+                conv_row_ids=_value(conv_row_ids[device_idx]),
+                qkv_windows=[
+                    capture.qkv_window for capture in kda_captures[device_idx]
+                ],
+                window_row_len=window_row_len_per_dev[device_idx],
+                state_layout=STATE_LAYOUT,
+            )
+        else:
+            kda_state_fold(*fold_args, state_layout=STATE_LAYOUT)
 
 
 class KimiK3RecurrentState:
@@ -278,20 +316,17 @@ class KimiK3RecurrentState:
         )
         merged_offsets = _value(merged_offsets)
         num_accepted = _value(num_accepted)
-        num_draft_tokens = shape_to_scalar(self.num_draft_tokens, device)
-        # The verify copied its rows whenever it had drafts, which is whenever
-        # the rollback runs. Clamping to the copy keeps the gathers in bounds
-        # when it does not.
-        row_indices, replay_offsets = accepted_row_plan(
-            merged_offsets,
+        drafts = self.num_draft_tokens
+        assert drafts is not None
+        num_draft_tokens = shape_to_scalar(drafts, device)
+        # A mixed verify's prompt rows were committed by the verify itself,
+        # so the accept counts below zero them: no record is folded and no
+        # window is re-placed for such a row.
+        accepted = ring_accepted_lengths(
+            ops.rebind(merged_offsets.cast(DType.int64)[1:], ["batch_size"])
+            - ops.rebind(merged_offsets.cast(DType.int64)[:-1], ["batch_size"]),
             num_accepted,
             num_draft_tokens,
-            self.captures[0][0].qkv_window.shape[0],
-            device,
-            # Each row is one token and its drafts whenever the rollback
-            # runs, and the plan shrinks to a row per request when it does
-            # not.
-            plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
         )
         conv = [
             leaf_inputs(device_state, CONV_LEAF_ID) for device_state in state
@@ -301,26 +336,33 @@ class KimiK3RecurrentState:
             for device_state in state
         ]
         ring = [verify_ring_leaf(device_state) for device_state in state]
-        # The captures satisfy the conv replay's protocol directly: the
-        # window and weight are graph values, one entry per layer.
-        replay_conv_pools(
-            self.captures,
-            [_pool_value(leaf.pool) for leaf in conv],
-            [_value(leaf.live_row_ids) for leaf in conv],
-            row_indices,
-            replay_offsets,
-            signal_buffers,
-            self.verify_width,
-        )
-        fold_kda_state_pools(
+        # The fold places each layer's conv window from the captured copy in
+        # the same launch that folds the ring, so no per-layer conv replay
+        # runs: the window is the last kernel_size - 1 raw inputs, a copy of
+        # at most that many rows of the capture, read at the capture's own
+        # row stride -- one verify window per request -- so a mixed verify's
+        # wider prompt row lands its decode neighbours in the right slot.
+        #
+        fold_args = (
             [_pool_value(leaf.pool) for leaf in recurrent],
             [_value(leaf.live_row_ids) for leaf in recurrent],
             [_pool_value(leaf.pool) for leaf in ring],
             [_value(leaf.live_row_ids) for leaf in ring],
-            accepted_lengths(merged_offsets, num_accepted, num_draft_tokens),
+            accepted,
             [_value(offsets) for offsets in merged_offsets_per_dev],
             signal_buffers,
             self.verify_width,
+        )
+        # The fold places the windows in the same launch. The stride is the
+        # draft width plus one, as a runtime scalar: a served graph declares
+        # that width symbolically, so it is the one form that works whether
+        # the extent is static or not.
+        fold_kda_state_pools(
+            *fold_args,
+            live_conv_pools=[_pool_value(leaf.pool) for leaf in conv],
+            conv_row_ids=[_value(leaf.live_row_ids) for leaf in conv],
+            kda_captures=self.captures,
+            window_row_len=shape_to_scalar(drafts + 1, device, DType.int32),
         )
         # The rollback spends the capture; clearing it keeps a later build
         # that skips `capturing` on the contract asserts above.

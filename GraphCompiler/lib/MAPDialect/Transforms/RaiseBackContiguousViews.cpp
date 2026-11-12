@@ -87,15 +87,6 @@ SmallVector<Operation *> matchViewChain(IterElementwiseOp op) {
   return transforms;
 }
 
-// The sliced dimension is the first input dim of size != 1, or the input rank
-// if there is none.
-int64_t findSliceDim(ArrayRef<int64_t> inDims) {
-  for (auto [i, dim] : llvm::enumerate(inDims))
-    if (dim != 1)
-      return i;
-  return inDims.size();
-}
-
 // Returns the sliced dimension `k` if `slice` is a contiguous slice: every
 // dimension but `k` keeps its input's full extent, and `k`'s start/stop/step
 // are static with step 1. A slice with any symbolic dim takes the general
@@ -108,7 +99,7 @@ std::optional<int64_t> matchContiguousSliceDim(SliceIndexOp slice) {
       llvm::any_of(outDims, ShapedType::isDynamic))
     return std::nullopt;
 
-  int64_t k = findSliceDim(inDims);
+  int64_t k = findContiguousSliceDim(inDims);
   for (auto [i, inDim] : llvm::enumerate(inDims))
     if (static_cast<int64_t>(i) != k && inDim != outDims[i])
       return std::nullopt;
@@ -205,6 +196,13 @@ struct RaiseBackContiguousViewsPass
 
 bool isRaisableViewChain(IterElementwiseOp op) {
   return !matchViewChain(op).empty();
+}
+
+int64_t findContiguousSliceDim(ArrayRef<int64_t> inDims) {
+  for (auto [i, dim] : llvm::enumerate(inDims))
+    if (dim != 1)
+      return i;
+  return inDims.size();
 }
 
 } // namespace M::MAP

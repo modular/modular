@@ -84,7 +84,6 @@ def generate_max_outputs(
     device: Device,
 ) -> torch.Tensor:
     is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
 
     moe_dim = config.moe_intermediate_size
     hidden_dim = config.hidden_size
@@ -155,6 +154,7 @@ def generate_max_outputs(
         ),
     )
     compiled = session.load(graph, weights_registry=moe.state_dict())
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     return compiled.execute(input_tensor)
 
 
@@ -168,15 +168,6 @@ def test_moe(
 ) -> None:
     torch_dtype = torch.bfloat16
     max_dtype = DType.bfloat16
-    torch_output = generate_torch_outputs(
-        config,
-        input_tensor,
-        gate_weight,
-        gate_up_proj,
-        down_proj,
-        shared_expert_weights,
-        torch.device("cuda"),
-    )
     max_output = generate_max_outputs(
         config,
         input_tensor.squeeze(),
@@ -186,6 +177,15 @@ def test_moe(
         shared_expert_weights,
         max_dtype,
         Accelerator(),
+    )
+    torch_output = generate_torch_outputs(
+        config,
+        input_tensor,
+        gate_weight,
+        gate_up_proj,
+        down_proj,
+        shared_expert_weights,
+        torch.device("cuda"),
     )
 
     torch.testing.assert_close(
