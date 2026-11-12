@@ -136,5 +136,3 @@ module {}
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'VariadicTensors'
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of '_FusedInputVariadicTensors'
 // CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of '_FusedOutputVariadicTensors'
-// CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'StableTensor'
-// CHECK-DAG: error: shape-function tensor arguments must use tensor traits instead of 'StableVariadicTensors'

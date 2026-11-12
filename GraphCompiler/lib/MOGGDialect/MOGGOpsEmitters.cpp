@@ -99,67 +99,6 @@ resolveKernelCallee(Operation *op, EmitMojoState &state,
                       std::move(params->functionParameters)};
 }
 
-namespace {
-
-/// Check if input value is a mutable tensor
-bool isMutableInputTensor(Value input) {
-  auto tensorType = dyn_cast<MO::TensorType>(input.getType());
-  if (!tensorType)
-    return false;
-  auto ioKindAttr = tensorType.getIOKindAttr();
-  auto isMutableAttr = tensorType.getIsMutableAttr();
-  return ioKindAttr && isMutableAttr && isMutableAttr.getValue();
-}
-
-/// Generate mogg_tensor_init to transform MutableInputTensor to InputTensor
-MojoValue generateMutableTensorInit(Value input, EmitMojoState &state) {
-  auto tensorType = cast<MO::TensorType>(input.getType());
-  MojoValue inputValue = state.getMojoValueFor(input);
-
-  // A slot-backed view re-inits as an immutable `StableTensor` over the same
-  // slot and layout; there is no data pointer to hand to the init primitive.
-  if (tensorType.isStable()) {
-    StableTensorRef stable(inputValue);
-    MojoValue ctor = MojoValue(kComptimeStableInputTensor)[{
-        MojoValue(kParameterStaticSpec)
-            .equal(MojoValue("type_of")({}, {inputValue})
-                       .get(StableTensorRef::kStaticSpec))}];
-    return state.file->var(ctor({}, {stable.addr(), stable.runtimeLayout()}));
-  }
-
-  // Extract dtype
-  ErrorOr<DType> dTypeOr = M::MO::fromMLIRType(tensorType.getElementType());
-  ASSERT_STREAM(!dTypeOr.isError(),
-                "Failed to extract dtype from mutable input tensor");
-  MojoValue dtype = state.mlirDTypeToMojoType(*dTypeOr);
-
-  ASSERT_STREAM(tensorType.hasRank(),
-                "Mutable input tensor must have statically known rank");
-  MojoValue rank(static_cast<int64_t>(tensorType.getRankNonZero()));
-
-  ManagedTensorSliceRef mts(inputValue);
-  StaticTensorSpecRef staticSpec(mts.staticSpec());
-
-  // Build template parameters. The static layout is conveyed through the
-  // layout argument's type (below), so no separate layout param.
-  SmallVector<MojoValue> templateParams = {dtype, rank, MojoValue(false),
-                                           MojoValue(kEnumIoInput),
-                                           staticSpec.alignment()};
-
-  // Build runtime arguments: the slice already carries its layout (shape and
-  // strides as static-aware Coords), so forward it directly.
-  SmallVector<MojoValue> runtimeArgs = {
-      OpaquePointerRef(mts.rawPtr())
-          .bitcast(MojoValue(kComptimeDTypeNoneType))(),
-      inputValue.get("runtime_layout")()};
-
-  auto tensorInitPrimDecl =
-      state.registry.lookupPrimitive(TensorInitOp::getOperationName());
-  MojoValue moggTensorInit(primitiveMojoName(tensorInitPrimDecl));
-  return state.file->var(moggTensorInit(templateParams, runtimeArgs));
-}
-} // namespace
-
 LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
   // Mirrors CallExecuteOp::emitMojo, but selects the kernel's `build_graph`
   // function, appends the device-graph builder as the launch argument (in place
@@ -172,28 +111,13 @@ LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
   if (!buildGraphAdaptor.buildGraphFunction)
     return emitOpError("kernel '")
            << getKernelSymName() << "' has no 'build_graph' function";
-  const KernelDeclFunctionAdaptor &buildGraphFnAdaptor =
-      *buildGraphAdaptor.buildGraphFunction;
 
   // Collect kernel I/Os: DPS outputs, then inputs (mirroring `execute`).
   auto kernelOperands = llvm::map_to_vector(
       getOutputs(), [&](Value val) { return state.getMojoValueFor(val); });
 
-  auto inputs = getInputs();
-  for (auto [i, input] : llvm::enumerate(inputs)) {
-    MojoValue inputValue = state.getMojoValueFor(input);
-
-    // Transform mutable inputs if the kernel expects an InputTensor.
-    if (isMutableInputTensor(input) &&
-        i < buildGraphFnAdaptor.inputArguments.size()) {
-      const auto *tensorInfo = std::get_if<KernelDeclTensorAdaptor>(
-          &buildGraphFnAdaptor.inputArguments[i].underlyingType);
-      if (tensorInfo && tensorInfo->ioSpec == MOGG::IOSpec::InputTensor)
-        inputValue = generateMutableTensorInit(input, state);
-    }
-
-    kernelOperands.push_back(inputValue);
-  }
+  for (Value input : getInputs())
+    kernelOperands.push_back(state.getMojoValueFor(input));
 
   // The launch argument is the device-graph builder (not a context).
   kernelOperands.push_back(state.getMojoValueFor(getGraphBuilder()));
@@ -534,15 +458,12 @@ LogicalResult TensorCreateOp::emitMojo(EmitMojoState &state) {
   auto layoutVar = state.file->var(
       MojoValue(kFnRowMajor)({}, {state.getMojoValueFor(getShape())}));
 
-  // Reuse the legacy `mogg.tensor.__init__` primitives: the two ops build the
-  // same `ManagedTensorSlice` (or, for a slot-backed operand, the same
-  // `StableTensor` over the slot address).
-  StringRef primitiveName = getStable()
-                                ? StringRef(kMoggPrimitiveStableTensorInit)
-                                : TensorInitOp::getOperationName();
-  auto tensorInitPrimDecl = state.registry.lookupPrimitive(primitiveName);
+  // Reuse the legacy `mogg.tensor.__init__` primitive: the two ops build the
+  // same `ManagedTensorSlice`.
+  auto tensorInitPrimDecl =
+      state.registry.lookupPrimitive(TensorInitOp::getOperationName());
   ASSERT_STREAM(tensorInitPrimDecl,
-                "Primitive not found for " << primitiveName.str());
+                "Primitive not found for " << TensorInitOp::getOperationName());
   MojoValue moggTensorInit(primitiveMojoName(tensorInitPrimDecl));
   state.setMojoValueFor(
       getTensor(),
@@ -1050,29 +971,23 @@ LogicalResult ScalarCreateOp::emitMojo(EmitMojoState &state) {
 namespace {
 
 /// The aggregate a variadic run of tensor operands packs into.
-enum class VariadicPackKind { Plain, Stable, FusedInput, FusedOutput };
+enum class VariadicPackKind { Plain, FusedInput, FusedOutput };
 
-/// Emits the aggregate for a variadic run of tensor values. A pointer-backed
-/// element contributes its data pointer, a slot-backed (`StableTensor`)
-/// element its slot address; shapes, static specs and `io_spec` are spelled
-/// identically on both. `fusionValues` / `fusionTypeParams` are consumed only
-/// by the fused kinds (one functor and its type per element).
+/// Emits the aggregate for a variadic run of tensor values. `fusionValues` /
+/// `fusionTypeParams` are consumed only by the fused kinds (one functor and its
+/// type per element).
 MojoValue emitVariadicTensorPack(EmitMojoState &state,
                                  ArrayRef<MojoValue> inputValues,
                                  VariadicPackKind kind,
                                  ArrayRef<MojoValue> fusionValues,
                                  ArrayRef<MojoValue> fusionTypeParams) {
-  const bool stable = kind == VariadicPackKind::Stable;
-
   SmallVector<MojoValue> runtimeStorage =
       llvm::map_to_vector(inputValues, [&](const MojoValue &val) {
-        return stable ? StableTensorRef(val).addr()
-                      : ManagedTensorSliceRef(val).rawPtr();
+        return ManagedTensorSliceRef(val).rawPtr();
       });
   SmallVector<MojoValue> runtimeShapes =
       llvm::map_to_vector(inputValues, [&](const MojoValue &val) {
-        return stable ? StableTensorRef(val).shape()
-                      : ManagedTensorSliceRef(val).shape();
+        return ManagedTensorSliceRef(val).shape();
       });
 
   MojoValue inputTupleConstructor = MojoValue(kStructStaticTuple)[{
@@ -1089,9 +1004,7 @@ MojoValue emitVariadicTensorPack(EmitMojoState &state,
   // `strides_tuple` are comptime members of the `StaticTensorSpec` itself,
   // distinct from its `get_internals()` result.
   auto staticSpecOf = [&](const MojoValue &val) {
-    return StaticTensorSpecRef(stable
-                                   ? StableTensorRef(val).staticSpec()
-                                   : ManagedTensorSliceRef(val).staticSpec());
+    return StaticTensorSpecRef(ManagedTensorSliceRef(val).staticSpec());
   };
   MojoValue rank = staticSpecOf(inputValues.front()).rank();
   SmallVector<MojoValue> staticSpecInternals;
@@ -1118,12 +1031,9 @@ MojoValue emitVariadicTensorPack(EmitMojoState &state,
   MojoValue staticSpecsParam =
       MojoValue(kParameterStaticSpecs).equal(inputSpecsComptime);
 
-  if (kind == VariadicPackKind::Plain || stable) {
-    MojoValue ioSpec = stable ? StableTensorRef(inputValues[0]).ioSpec()
-                              : ManagedTensorSliceRef(inputValues[0]).ioSpec();
-    StringRef structName =
-        stable ? kStructStableVariadicTensors : kStructVariadicTensors;
-    MojoValue ctor = MojoValue(structName)[{
+  if (kind == VariadicPackKind::Plain) {
+    MojoValue ioSpec = ManagedTensorSliceRef(inputValues[0]).ioSpec();
+    MojoValue ctor = MojoValue(kStructVariadicTensors)[{
         MojoValue(kParameterIOSpec).equal(ioSpec), staticSpecsParam}];
     return state.file->var(ctor({}, {runtimeStorageTuple, runtimeShapesTuple}));
   }
@@ -1183,16 +1093,11 @@ LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
     return success();
   }
 
-  // Plain: a `VariadicTensors` over the raw pointers/shapes. Stable: a
-  // `StableVariadicTensors` over the elements' slot addresses; the elements
-  // are `StableTensor`s, built by stable `mogg.tensor.create`s.
-  if (getVariadicAbi() == VariadicABI::Plain ||
-      getVariadicAbi() == VariadicABI::Stable) {
-    VariadicPackKind kind = getVariadicAbi() == VariadicABI::Stable
-                                ? VariadicPackKind::Stable
-                                : VariadicPackKind::Plain;
+  // Plain: a `VariadicTensors` over the raw pointers/shapes.
+  if (getVariadicAbi() == VariadicABI::Plain) {
     state.setMojoValueFor(getTuple(),
-                          emitVariadicTensorPack(state, inputValues, kind,
+                          emitVariadicTensorPack(state, inputValues,
+                                                 VariadicPackKind::Plain,
                                                  /*fusionValues=*/{},
                                                  /*fusionTypeParams=*/{}));
     return success();
@@ -3248,14 +3153,8 @@ static void emitTensorInitPrimitiveCall(EmitMojoState &state, Operation *op,
 }
 
 LogicalResult TensorInitOp::emitMojo(EmitMojoState &state) {
-  // The result type, not the op, decides the kernel-facing tensor: a stable
-  // `!mo.tensor` is a `StableTensor` that reads the slot the buffer points at.
-  auto tensorTy = MO::dynCastFromTensorLike(getType());
-  StringRef primitiveName = tensorTy.isStable()
-                                ? StringRef(kMoggPrimitiveStableTensorInit)
-                                : getOperationName();
-  emitTensorInitPrimitiveCall(state, *this, primitiveName, getType(), getMut(),
-                              getIo(), getDims(),
+  emitTensorInitPrimitiveCall(state, *this, getOperationName(), getType(),
+                              getMut(), getIo(), getDims(),
                               bufferDataPointer(state, getBuffer()));
   return success();
 }
@@ -3359,36 +3258,18 @@ LogicalResult TraitCreateOp::emitMojo(EmitMojoState &state) {
   // Re-present the codegen tensor (a `ManagedTensorSlice` from
   // `mogg.tensor.create`, or a view) as the trait argument, sourcing pointer
   // and layout off the slice so any producer works, including a non-row-major
-  // view.
+  // view. A slice over a stable `!mgp.tensor` holds the slot address as its
+  // pointer, which is what a `Stable` argument wraps.
   MojoValue slice = state.getMojoValueFor(getTensor());
   MOGG::TensorArgContractAttr contract = getContract();
 
-  // A stable `mogg.tensor.create` yields a `StableTensor` rather than a
-  // slice: its layout is a field, and the pointer to hand on is the slot
-  // address (`unsafe_ptr()` would read the data pointer, on the device only).
-  // That address is the create's own pointer operand, typed as the legacy
-  // `mogg_stable_tensor_init` receives it; the `StableTensor`'s slot field is
-  // a pointer to pointer and does not convert to the wrapper's `ptr`.
-  auto createOp = getTensor().getDefiningOp<TensorCreateOp>();
-  bool stableSource = createOp && createOp.getStable();
-
   MojoValue dTypeParam(llvm::formatv("type_of({0}).dtype", slice.text).str());
-  MojoValue layoutArg =
-      state.file->var(stableSource ? StableTensorRef(slice).runtimeLayout()
-                                   : slice.get("runtime_layout")());
+  MojoValue layoutArg = state.file->var(slice.get("runtime_layout")());
   MojoValue layoutType = MojoValue("type_of")({}, {layoutArg});
   MojoValue ptrArg = state.file->var(
-      stableSource
-          ? llvm::formatv(
-                "{0}.as_unsafe_any_origin()",
-                OpaquePointerRef(state.getMojoValueFor(createOp.getPtr()))
-                    .bitcast(MojoValue(kComptimeDTypeNoneType))()
-                    .text)
-                .str()
-          : llvm::formatv(
-                "{0}.unsafe_bitcast[NoneType]().as_unsafe_any_origin()",
-                ManagedTensorSliceRef(slice).unsafePtr().text)
-                .str());
+      llvm::formatv("{0}.unsafe_bitcast[NoneType]().as_unsafe_any_origin()",
+                    ManagedTensorSliceRef(slice).unsafePtr().text)
+          .str());
 
   // Device is on the op (like `mogg.tensor.create`), so alignment and the
   // device-passable / tile-projection flavors are picked locally.
@@ -3425,8 +3306,6 @@ LogicalResult TraitCreateOp::emitMojo(EmitMojoState &state) {
     }
     llvm_unreachable("unhandled TensorArgRoleKind");
   }();
-  // A `Stable` argument wraps the slice's pointer as the slot address (the
-  // slice over a stable `!mgp.tensor` carries the slot, not the data).
   if (contract.getStable()) {
     if (deviceLabel == kCPULabel)
       return emitOpError("Stable trait argument requires a device kernel; a "

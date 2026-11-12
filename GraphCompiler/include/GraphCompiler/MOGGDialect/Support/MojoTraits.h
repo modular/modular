@@ -586,10 +586,9 @@ struct _MoggTensorArg[
 
     # `ptr` is whatever the stub received as the buffer's data pointer, and the
     # engine decides what that is: the data itself under `DefaultEngine`, the
-    # slot's address under `StableAddrEngine` (the same reinterpretation
-    # `mogg_stable_tensor_init` performs for the legacy lane). The storage
-    # field's type is opaque behind the `TensorEngine` bound, hence the
-    # `rebind` once the engine is pinned.
+    # slot's address under `StableAddrEngine`. The storage field's type is
+    # opaque behind the `TensorEngine` bound, hence the `rebind` once the
+    # engine is pinned.
     @inline(.always)
     def __init__(
         out self,

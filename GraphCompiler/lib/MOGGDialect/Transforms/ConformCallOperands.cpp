@@ -130,9 +130,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
       // Record the ABI the callee's variadic parameter wants, so emit picks the
       // aggregate without inspecting the run's producing ops. For the legacy
       // lane, the variant's own IOSpec (not store mutability -- a fused output
-      // is not a `MutableInputTensor`) distinguishes the fused cases; a
-      // slot-backed (`StableVariadicTensors`) parameter packs its
-      // `StableTensor` elements.
+      // is not a `MutableInputTensor`) distinguishes the fused cases.
       VariadicABI abi = VariadicABI::Plain;
       if (arg.isTraitTensorTupleType()) {
         abi = VariadicABI::TensorTuple;
@@ -140,9 +138,7 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
           element = asTraitArg(element, *arg.getTraitContract());
       } else if (const auto *v = std::get_if<KernelDeclVariadicTensorAdaptor>(
                      &arg.underlyingType)) {
-        if (v->stable)
-          abi = VariadicABI::Stable;
-        else if (v->ioSpec == IOSpec::FusedInputTensor)
+        if (v->ioSpec == IOSpec::FusedInputTensor)
           abi = VariadicABI::FusedInput;
         else if (v->ioSpec == IOSpec::FusedOutputTensor)
           abi = VariadicABI::FusedOutput;

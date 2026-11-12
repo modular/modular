@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Kernel stubs that break a device-graph rule the kernel verifier enforces:
-# stable arguments where they are forbidden, and `build_graph` signatures that
-# disagree with `execute` on which tensors are fused or stable, and in which
-# form. Each violates exactly one rule; `mogg-verify-kernels` must reject every
+# legacy tensor structs on `build_graph`, stable arguments where they are
+# forbidden, and `build_graph` signatures that disagree with `execute` on which
+# tensors are fused or stable, and in which form. Each violates exactly one rule; `mogg-verify-kernels` must reject every
 # one. Kept apart from the valid testing kernels because the package as a
 # whole fails verification.
 #
@@ -24,27 +24,35 @@ import extensibility
 from extensibility import (
     Fused,
     Input,
+    InputTensor,
     LoadAccess,
     Output,
-    OutputTensor,
     Stable,
-    StableInputVariadicTensors,
     StoreAccess,
     Tensor,
     _LegacyComputeOutput,
 )
 
 
-# A stable argument on `execute`: only `build_graph` receives slot addresses.
-@extensibility.register("stable_on_execute")
-struct StableOnExecute:
+# A `ManagedTensorSlice` on `build_graph`: the graph compiler routes only
+# tensor trait arguments through stable address slots.
+@extensibility.register("mts_on_build_graph")
+struct MtsOnBuildGraph:
     @staticmethod
-    def execute[
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ):
+        pass
+
+    @staticmethod
+    def build_graph[
         dtype: DType, rank: Int
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
+        output: Some[Output & Tensor],
+        x: InputTensor[dtype=dtype, rank=rank, ...],
+        builder: DeviceGraphBuilder,
     ):
         pass
 

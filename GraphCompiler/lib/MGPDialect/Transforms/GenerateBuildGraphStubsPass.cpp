@@ -74,11 +74,10 @@ ProducerDispatch findProducerDispatch(FuncOp stub, WithTraceOp &withTrace) {
 /// Re-stamps the operands feeding the recording dispatch from the
 /// `build_graph` parameter each one satisfies. `ConformCallOperands` packed the
 /// run against `execute`, which cannot declare a slot-backed argument;
-/// `build_graph` can, and this stub is what calls it. A legacy
-/// `StableVariadicTensors` parameter re-stamps its `mogg.tuple.create` ABI; a
-/// trait parameter re-stamps the contract of each `mogg.trait.create` (alone or
-/// packed in a `TensorTuple`), which differs from `execute`'s only in its
-/// `stable` bit. Packed operands sit 1:1 with the signature's arguments, as
+/// `build_graph` can, and this stub is what calls it. Each parameter re-stamps
+/// the contract of the `mogg.trait.create`s it receives (alone or packed in a
+/// `TensorTuple`), which differs from `execute`'s only in its `stable` bit.
+/// Packed operands sit 1:1 with the signature's arguments, as
 /// `CallBuildGraphOp::emitMojo` already relies on.
 void stampBuildGraphOperands(KernelDeclOp decl, ValueRange inputs,
                              ValueRange outputs) {
@@ -94,15 +93,13 @@ void stampBuildGraphOperands(KernelDeclOp decl, ValueRange inputs,
                    ArrayRef<KernelDeclOperandAdaptor> parameters) {
     for (auto [operand, parameter] : llvm::zip(operands, parameters)) {
       std::optional<TensorArgContract> contract = parameter.getTraitContract();
-      auto tuple = operand.getDefiningOp<TupleCreateOp>();
-      if (contract && tuple) {
+      if (!contract)
+        continue;
+      if (auto tuple = operand.getDefiningOp<TupleCreateOp>()) {
         for (Value element : tuple.getElements())
           stampContract(element, *contract);
-      } else if (contract) {
+      } else {
         stampContract(operand, *contract);
-      } else if (tuple && parameter.isVariadicTensorType() &&
-                 parameter.isStableTensorType()) {
-        tuple.setVariadicAbi(VariadicABI::Stable);
       }
     }
   };

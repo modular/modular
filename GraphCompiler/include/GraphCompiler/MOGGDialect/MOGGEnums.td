@@ -42,8 +42,6 @@ def MOGG_VariadicABI
   // A `TensorTuple` (`xs: TensorTuple[*Ts]`): the elements are already trait
   // arguments, and emit builds a `TensorTuple` holding them.
   I32EnumAttrCase<"TensorTuple", 3, "tensor_tuple">,
-  // A slot-backed (`Stable`) run: emit packs `StableTensor` elements.
-  I32EnumAttrCase<"Stable", 4, "stable">,
 ]> {
   let cppNamespace = "::M::MOGG";
   // Use `MOGG_VariadicABIAttr` (MOGGAttrs.td) rather than a bare `i32`.

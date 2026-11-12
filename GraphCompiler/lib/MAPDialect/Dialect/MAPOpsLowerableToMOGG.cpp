@@ -116,8 +116,7 @@ Value buildTensor(Location loc, Value ptr, Type tensorType, MO::IOKind io,
       state.builder, loc, resultType, ptr, shape, shapeAttr,
       state.builder.getStringAttr(state.device.getLabel()),
       TypeAttr::get(tensorTy.getElementType()),
-      state.builder.getBoolAttr(isMut), MO::IOKindAttr::get(ctx, io),
-      state.builder.getBoolAttr(tensorTy.isStable()));
+      state.builder.getBoolAttr(isMut), MO::IOKindAttr::get(ctx, io));
 }
 
 } // namespace

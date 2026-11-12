@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """`allreduce` recorded into a `DeviceGraph.create_collective` graph over
-`StableTensor` inputs.
+stable address slots.
 
 Each device's graph publishes its own input pointer into its stable address
-slot and reads every device's input through a `StableTensor` over the
-corresponding slot, converted with `to_tile_tensor()` on the host while the
-graph records. The graphs are then published, replayed, and verified; replayed
+slot and reads every device's input through a `StableAddrEngine` tile over the
+corresponding slot, built on the host while the graph records. The graphs are then published, replayed, and verified; replayed
 a second time; and finally the collective is rebuilt with a cache key that
 changes only for rank 0. Rank 0's new graph publishes a different buffer,
 while the other ranks' graphs come straight from the cache, so a correct third
@@ -29,11 +28,9 @@ from std.sys import size_of
 from comm import Signal
 from comm.allreduce import allreduce
 from comm.sync import enable_p2p, init_signal_buffer
-from extensibility import (
-    IOSpec,
-    StableTensor,
+from extensibility.stable_addr_engine import (
     StableTileTensor,
-    get_row_major_tensor_spec_static,
+    stable_tile_tensor,
 )
 from layout import TileTensor, row_major
 from max.gpu.host import (
@@ -47,10 +44,10 @@ from std.testing import assert_almost_equal, assert_true
 
 comptime dtype = DType.float32
 
-# Lengths are compile-time so the `StableTensor` can carry a fully static
-# spec, as the graph compiler's specs do. They cover the Lamport path, the
-# 1-stage path with a scalar tail, and the bandwidth regime just past the
-# four-GPU 1-stage limit: 1-stage on two GPUs, 2-stage on four.
+# Lengths are compile-time so the slot-backed tiles carry a fully static
+# layout, as the graph compiler's do. They cover the Lamport path, the 1-stage
+# path with a scalar tail, and the bandwidth regime just past the four-GPU
+# 1-stage limit: 1-stage on two GPUs, 2-stage on four.
 comptime test_lengths = (8 * 1024, 8 * 1024 + 7, 1024 * 1024 + 8)
 comptime test_gpu_counts = (2, 4)
 
@@ -123,9 +120,7 @@ def device_graph_allreduce_test[
     # reads it by reference, so the flip below is visible to later rebuilds.
     var publish_alt = False
 
-    comptime spec = get_row_major_tensor_spec_static[dtype, 1, length]()
-    comptime StableIn = StableTensor[io_spec=IOSpec.Input, static_spec=spec]
-    comptime InType = StableTileTensor[dtype, StableIn.RuntimeLayout]
+    comptime InType = StableTileTensor[dtype, type_of(row_major(length))]
 
     def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
         _ = builder.place_stable(
@@ -134,21 +129,17 @@ def device_graph_allreduce_test[
         )
 
         # Every input, this device's included, is read through its slot. The
-        # conversion happens here on the host; the slot is dereferenced only
+        # tiles are built here on the host; the slot is dereferenced only
         # inside the recorded kernels.
         var in_tensors = Array[InType, ngpus](uninitialized=True)
         for j in range(ngpus):
-            in_tensors[j] = StableIn(
-                builder.get_stable(j), StableIn.RuntimeLayout()
-            ).to_tile_tensor()
-
-        var out_tensor = TileTensor(
-            out_dev[n], row_major(length)
-        ).as_unsafe_any_origin()
+            in_tensors[j] = stable_tile_tensor[dtype](
+                builder.get_stable(j), row_major(length)
+            )
 
         allreduce[ngpus=ngpus](
             in_tensors,
-            out_tensor,
+            TileTensor(out_dev[n], row_major(length)),
             rank_sigs,
             builder.recording_context(),
             my_rank=n,

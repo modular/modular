@@ -45,10 +45,6 @@ static constexpr std::array<llvm::StringLiteral, 3>
     kMaxFusedOutputVariadicTensors = {kPackageExtensibility,
                                       kPackageManagedTensorSlice,
                                       kLeafFusedOutputVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxStableTensor = {
-    kPackageExtensibility, kPackageStableTensor, kLeafStableTensor};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxStableVariadicTensors =
-    {kPackageExtensibility, kPackageStableTensor, kLeafStableVariadicTensors};
 
 // Dict keys shared by `tensorArgContractToDict` (writer) and
 // `dictToTensorArgContract` (reader).
@@ -102,14 +98,10 @@ getIOSpecFromStructType(KGEN::LIT::StructType structType) {
   if (symbolMatches(structType.getSymbol(), kMaxFusedOutputVariadicTensors))
     return IOSpec::FusedOutputTensor;
 
-  // All other tensors (including the slot-backed `StableTensor` /
-  // `StableVariadicTensors`) encode mut and input as the first two param
-  // values.
+  // All other tensors encode mut and input as the first two param values.
   auto sym = structType.getSymbol();
   bool isTensorStruct = symbolMatches(sym, kMaxManagedTensorSlice) ||
-                        symbolMatches(sym, kMaxVariadicTensors) ||
-                        symbolMatches(sym, kMaxStableTensor) ||
-                        symbolMatches(sym, kMaxStableVariadicTensors);
+                        symbolMatches(sym, kMaxVariadicTensors);
   if (!isTensorStruct)
     return std::nullopt;
 
@@ -222,8 +214,8 @@ recoverTraitArgContract(mlir::Type argType) {
 /// contract, so isTensorType/isMutableTensorType/isDpsOutput behave as for the
 /// equivalent `IOSpec`: `output -> OutputTensor`, `mutable_input ->
 /// MutableInputTensor`, `input -> InputTensor`. Fusion isn't modeled
-/// (dense-only); `fused` stays false. `stable` follows the contract, so a
-/// `Stable` argument is marked and checked like a `StableTensor`.
+/// (dense-only); `fused` stays false. `stable` follows the contract, which is
+/// what stable marking and the stable-argument checks read.
 static KernelDeclTensorAdaptor
 traitContractToTensorAdaptor(const TensorArgContract &contract) {
   KernelDeclTensorAdaptor adaptor;
@@ -324,26 +316,6 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
 
   if (symbolMatches(sym, kMaxFusedOutputVariadicTensors))
     return KernelDeclVariadicTensorAdaptor{IOSpec::FusedOutputTensor};
-
-  // Slot-backed views: same adaptor kinds as their pointer-backed siblings,
-  // flagged `stable` so emit and the verifier can tell them apart.
-  if (symbolMatches(sym, kMaxStableTensor)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    KernelDeclTensorAdaptor adaptor{*ioSpec};
-    adaptor.stable = true;
-    return adaptor;
-  }
-
-  if (symbolMatches(sym, kMaxStableVariadicTensors)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    KernelDeclVariadicTensorAdaptor adaptor{*ioSpec};
-    adaptor.stable = true;
-    return adaptor;
-  }
 
   // --- Scalar ---
   // SIMD may be re-exported at different depths (e.g. @std::@builtin::@SIMD vs
@@ -1166,9 +1138,7 @@ KGEN::LIT::StructType getLegacyTensorArgType(mlir::Type argType) {
   if (symbolMatches(sym, kMaxManagedTensorSlice) ||
       symbolMatches(sym, kMaxVariadicTensors) ||
       symbolMatches(sym, kMaxFusedInputVariadicTensors) ||
-      symbolMatches(sym, kMaxFusedOutputVariadicTensors) ||
-      symbolMatches(sym, kMaxStableTensor) ||
-      symbolMatches(sym, kMaxStableVariadicTensors))
+      symbolMatches(sym, kMaxFusedOutputVariadicTensors))
     return structType;
   return {};
 }

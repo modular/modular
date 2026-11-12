@@ -30,8 +30,6 @@ from extensibility import (
     InputTensor,
     InputVariadicTensors,
     ManagedTensorSlice,
-    StableInputTensor,
-    StableInputVariadicTensors,
     VariadicTensors,
     _FusedInputVariadicTensors as FusedInputVariadicTensors,
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
@@ -317,12 +315,5 @@ def legacy_shape_variadic(
 @extensibility.register_shape_function("legacy_shape_fused_variadic")
 def legacy_shape_fused_variadic(
     x: FusedInputVariadicTensors, y: FusedOutputVariadicTensors
-) -> IndexList[1]:
-    return IndexList[1]()
-
-
-@extensibility.register_shape_function("legacy_shape_stable")
-def legacy_shape_stable(
-    x: StableInputTensor, y: StableInputVariadicTensors
 ) -> IndexList[1]:
     return IndexList[1]()

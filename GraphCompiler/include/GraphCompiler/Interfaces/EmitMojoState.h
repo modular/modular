@@ -331,25 +331,16 @@ public:
     bool mutableInput = ioKind && ioKind.getValue() == MO::IOKind::Input &&
                         isMutable && isMutable.getValue();
 
-    // A stable tensor is a `StableTensor`; its aliases mirror the
-    // `ManagedTensorSlice` ones, minus an output form, since the kernel
-    // verifier rejects stable outputs.
-    bool stable = tensorType.isStable();
     auto tensorTypeName = [&]() {
       if (!ioKind)
-        return stable ? kStructStableTensor : kStructManagedTensorSlice;
-      if (ioKind.getValue() == MO::IOKind::Input) {
-        if (stable)
-          return mutableInput ? kComptimeStableMutableInputTensor
-                              : kComptimeStableInputTensor;
+        return kStructManagedTensorSlice;
+      if (ioKind.getValue() == MO::IOKind::Input)
         return mutableInput ? kComptimeMutableInputTensor
                             : kComptimeInputTensor;
-      }
-      if (ioKind.getValue() == MO::IOKind::Output && !stable)
+      if (ioKind.getValue() == MO::IOKind::Output)
         return kComptimeOutputTensor;
-      ASSERT_STREAM(false, << "Unsupported ioKind " << ioKind
-                           << (stable ? " on a stable tensor" : ""));
-      return stable ? kStructStableTensor : kStructManagedTensorSlice;
+      ASSERT_STREAM(false, << "Unsupported ioKind " << ioKind);
+      return kStructManagedTensorSlice;
     }();
     return llvm::formatv("{}[dtype = {}, rank = {}, ...]", tensorTypeName,
                          dtype, rank)

@@ -11,7 +11,7 @@
 
 mogg.func @consume_single_build_graph_cpu private dispatch(deferred) (%px: !mogg.pointer, %po: !mogg.pointer, %builder: !mgp.device_graph.builder) attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "cpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"imposter_stable_single_build_graph">>} {
   %s = mogg.shape.create() <shape = #mosh<ape[4]> : !mosh.ape>
-  %x = mogg.tensor.create(%px, %s) <device = "cpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape, stable = true> : !mogg.tensor
+  %x = mogg.tensor.create(%px, %s) <device = "cpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape> : !mogg.tensor
   %out = mogg.tensor.create(%po, %s) <device = "cpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[4]> : !mosh.ape> : !mogg.tensor
   %x1 = mogg.trait.create(%x) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>, device = "cpu" : (!mogg.tensor) -> !mogg.tensor
   %out1 = mogg.trait.create(%out) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "cpu" : (!mogg.tensor) -> !mogg.tensor

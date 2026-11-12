@@ -86,7 +86,6 @@ from extensibility import register_internal
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
-    StableTensor,
 )
 from extensibility import IO
 from extensibility import (
@@ -1755,46 +1754,6 @@ def mogg_tensor_init[
         ptr.unsafe_bitcast[Scalar[dtype]](),
         layout.shape_coord(),
         layout.stride_coord(),
-    }
-
-
-@register_internal("mogg.tensor.__init__.stable")
-@inline(.always)
-def mogg_stable_tensor_init[
-    LayoutType: TensorLayout,
-    //,
-    dtype: DType,
-    rank: Int,
-    mut: Bool,
-    input: IO,
-    alignment: Int,
-](
-    ptr: Pointer[mut=True, NoneType, _],
-    layout: LayoutType,
-    out result: StableTensor[
-        io_spec=IOSpec[mut, input](),
-        static_spec=StaticTensorSpec[
-            dtype,
-            rank,
-            static_layout=LayoutType,
-        ](alignment, .GENERIC),
-    ],
-):
-    """
-    Helper for constructing a StableTensor from a layout and the data pointer
-    of a stable `mgp.tensor`, which is the address of its slot. Selected by
-    `mogg.tensor.__init__` when its result `!mo.tensor` is marked `stable`.
-    """
-    var addr = StableAddr(
-        ptr.unsafe_bitcast[
-            Pointer[NoneType, MutUntrackedOrigin]
-        ]().unsafe_origin_cast[MutUntrackedOrigin]()
-    )
-    result = {
-        addr,
-        type_of(result).RuntimeLayout(
-            layout.shape_coord(), layout.stride_coord()
-        ),
     }
 
 

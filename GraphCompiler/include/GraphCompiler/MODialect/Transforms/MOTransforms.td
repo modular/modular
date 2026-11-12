@@ -476,8 +476,8 @@ def MarkStableTensorsPass : Pass<"mo-mark-stable-tensors", "GraphOp"> {
     In a `mo.graph` carrying the `isDeviceGraph` attribute, resolves every
     kernel-backed op to its `mogg.kernel.decl` and maps the op's operands onto
     the kernel's `build_graph` signature. Each operand that lands on a
-    `StableTensor` / `StableVariadicTensors` argument is rewritten to go
-    through `mo.stable.create`, so the operand type carries the `stable` bit
+    `Stable` tensor trait argument is rewritten to go through
+    `mo.stable.create`, so the operand type carries the `stable` bit
     that kernel-stub setup and emission key off.
 
     Beforehand, every distributed collective with a per-device form is

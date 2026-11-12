@@ -198,8 +198,8 @@ std::optional<TensorArgContract> dictToTensorArgContract(mlir::Attribute attr);
 // Type predicates and IOSpec helpers
 //===----------------------------------------------------------------------===//
 
-/// Returns the underlying legacy tensor struct, including fused and stable
-/// aliases, or null for other argument types. Does not require bound IO params.
+/// Returns the underlying legacy tensor struct, including fused aliases, or
+/// null for other argument types. Does not require bound IO params.
 KGEN::LIT::StructType getLegacyTensorArgType(mlir::Type argType);
 
 /// Check whether a symbol has the given root and leaf, ignoring intermediate

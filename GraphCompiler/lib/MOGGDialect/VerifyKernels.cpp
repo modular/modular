@@ -97,9 +97,8 @@ static std::string capitalize(llvm::StringRef s) {
 /// `MutableInputTensor` and the rhs side has a non-mutable tensor (shape /
 /// build_graph cannot mutate their inputs, so a relaxed match is allowed).
 /// Adaptor equality ignores the `stable` flag on purpose, so a build_graph
-/// `StableTensor` / `StableVariadicTensors` argument aligns with the plain
-/// shape-function argument at the same position;
-/// `declVerifyStableTensorArguments` owns the rules for where stable
+/// `Stable` argument aligns with the plain shape-function argument at the same
+/// position; `declVerifyStableTensorArguments` owns the rules for where stable
 /// arguments may appear.
 LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
                                         const KernelDeclFunctionAdaptor &lhs,
@@ -217,11 +216,10 @@ LogicalResult declVerifyShapeFunctionInputsMatchExecuteFunction(
 /// - The `DeviceContext` of `execute` is a `DeviceGraphBuilder` on
 ///   `build_graph`.
 ///
-/// - And a `build_graph` tensor may be the slot-backed
-///   (`StableTensor` / `StableVariadicTensors`) form of the `execute` tensor
-///   at the same position, as long as that tensor is not fused: a slot
-///   publishes the address of a tensor in memory, and a fused input is a
-///   compute lambda with no address.
+/// - And a `build_graph` tensor may add `Stable` to the `execute` tensor at the
+///   same position, as long as that tensor is not fused: a slot publishes the
+///   address of a tensor in memory, and a fused input is a compute lambda with
+///   no address.
 LogicalResult
 declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
                                    const KernelDeclAdaptor &adaptor) {
@@ -248,8 +246,7 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
       os << (arg.isVariadicTensorType() ? "variadic " : "") << "trait "
          << tensorArgContractToAttr(decl.getContext(), *contract);
     else if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
-      os << (arg.isStableTensorType() ? "stable " : "")
-         << (arg.isVariadicTensorType() ? "variadic " : "")
+      os << (arg.isVariadicTensorType() ? "variadic " : "")
          << toString(*ioSpec);
     else
       os << arg.underlyingType;
@@ -318,83 +315,65 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
                  adaptor.buildGraphFunction->outputArguments);
 }
 
-/// Slot-backed tensor arguments (`StableTensor` / `StableVariadicTensors`)
-/// are a device-graph recording concept: the slot is populated by the graph
-/// builder, so only `build_graph` may declare them, and only as inputs (a
-/// kernel writes its outputs through live addresses). The pack never carries
-/// fusion functors, so a fused stable argument is rejected too. A trait
-/// `Stable` argument follows the same rules: only `build_graph` operands are
-/// routed through a slot, so on any other entry point it would read a data
-/// pointer as a slot address. Import already rejects a trait `Stable` output
-/// or one alongside `Fused`.
+/// A `Stable` trait argument is a device-graph recording concept: only
+/// `build_graph` operands are routed through a slot, so on any other entry
+/// point it would read a data pointer as a slot address. Import already
+/// rejects a `Stable` output or one alongside `Fused`, and trait arguments on
+/// the elementwise entry points.
 LogicalResult
 declVerifyStableTensorArguments(KernelDeclOp decl,
                                 const KernelDeclAdaptor &adaptor) {
-  auto positionOf = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
-    return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
-  };
-
   auto rejectStable = [&](const std::optional<KernelDeclFunctionAdaptor> &func,
                           KernelFunctionKind kind) -> LogicalResult {
     if (!func.has_value())
       return success();
     for (const auto &args : {func->inputArguments, func->outputArguments})
-      for (const auto &arg : args) {
-        if (!arg.isStableTensorType())
-          continue;
-        if (!arg.isTraitTensorType())
+      for (const auto &arg : args)
+        if (arg.isStableTensorType())
           return decl->emitError()
-                 << "stable tensor arguments (StableTensor / "
-                    "StableVariadicTensors) are only supported on "
+                 << "Stable trait arguments are only supported on "
                  << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
-                 << " functions (argument at position " << positionOf(arg)
+                 << " functions (argument at position "
+                 << (arg.sourceDescriptor ? arg.sourceDescriptor->position : 0)
                  << " of the " << stringifyKernelFunctionKind(kind)
                  << " function)";
-        return decl->emitError()
-               << "Stable trait arguments are only supported on "
-               << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
-               << " functions (argument at position " << positionOf(arg)
-               << " of the " << stringifyKernelFunctionKind(kind)
-               << " function)";
-      }
     return success();
   };
 
   // A declarative kernel's `executeFunction` is its `execute_device`.
-  if (rejectStable(adaptor.executeFunction,
-                   adaptor.isDeclarative() ? KernelFunctionKind::ExecuteDevice
-                                           : KernelFunctionKind::Execute)
-          .failed() ||
-      rejectStable(adaptor.executeConfigurationFunction,
-                   KernelFunctionKind::ExecuteConfiguration)
-          .failed() ||
-      rejectStable(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise)
-          .failed() ||
-      rejectStable(adaptor.tileElementwiseFunction,
-                   KernelFunctionKind::TileElementwise)
-          .failed())
+  if (failed(rejectStable(adaptor.executeFunction,
+                          adaptor.isDeclarative()
+                              ? KernelFunctionKind::ExecuteDevice
+                              : KernelFunctionKind::Execute)))
     return failure();
+  return rejectStable(adaptor.executeConfigurationFunction,
+                      KernelFunctionKind::ExecuteConfiguration);
+}
 
+/// `build_graph` is the device-graph entry point, and the graph compiler only
+/// routes operands through stable address slots for tensor trait arguments,
+/// so its tensors must be trait-bound rather than the legacy tensor structs.
+LogicalResult
+declVerifyBuildGraphTakesTraitArguments(KernelDeclOp decl,
+                                        const KernelDeclAdaptor &adaptor) {
   if (!adaptor.buildGraphFunction.has_value())
     return success();
-
-  for (const auto &arg : adaptor.buildGraphFunction->outputArguments)
-    if (arg.isStableTensorType())
-      return decl->emitError()
-             << "a stable tensor argument cannot be an output (argument at "
-                "position "
-             << positionOf(arg)
-             << " of the build_graph function); a device graph writes "
-                "through live addresses, not stable address slots";
-
-  for (const auto &arg : adaptor.buildGraphFunction->inputArguments)
-    if (arg.isStableTensorType() && arg.isFusedTensorType())
-      return decl->emitError()
-             << "stable tensor arguments cannot be fused (argument at "
-                "position "
-             << positionOf(arg) << " of the build_graph function)";
-
-  return success();
+  auto sig = adaptor.buildGraphFunction->attr.getSignature();
+  bool ok = true;
+  for (size_t i = 0, n = sig.getNumArguments(); i < n; ++i) {
+    KGEN::LIT::StructType legacyType =
+        getLegacyTensorArgType(sig.getArgument(i));
+    if (!legacyType)
+      continue;
+    mlir::emitError(decl.getMojoArgLocation(KernelFunctionKind::BuildGraph, i))
+        << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+        << " functions take tensor trait arguments; argument at position " << i
+        << " is a '" << legacyType.getSymbol().getLeafReference().getValue()
+        << "'; use a trait bound such as 'Some[Input & Tensor]', or "
+           "'TensorTuple' for variadic operands";
+    ok = false;
+  }
+  return success(ok);
 }
 
 LogicalResult declVerifyBuildGraphHasBuilder(KernelDeclOp decl,
@@ -1283,6 +1262,11 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
           continue;
         continue;
       }
+
+      if (setFlagIfFailed(failed, declVerifyBuildGraphTakesTraitArguments, decl,
+                          adaptor)
+              .failed())
+        continue;
 
       if (setFlagIfFailed(failed, declVerifyShapeFunctionReturnsShape, decl,
                           shapeFnAdaptor)

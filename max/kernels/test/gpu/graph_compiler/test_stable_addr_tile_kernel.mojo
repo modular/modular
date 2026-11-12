@@ -16,8 +16,8 @@ A `TileTensor` over a stable address slot is built and tiled on the host, then
 passed to a kernel that writes through it. The kernel resolves the slot at the
 point of use, so retargeting the slot at a different buffer and relaunching
 the very same host-side tile writes the second buffer. That is the property
-the engine exists for: host-side views of a `StableTensor` that a device graph
-can still redirect per replay.
+the engine exists for: host-side views of a stable address slot that a device
+graph can still redirect per replay.
 
 The slot is a one-element `uint64` device buffer, as the `DeviceGraphCache`
 slot table uses; the test writes the target buffer's address into it with a

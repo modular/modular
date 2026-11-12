@@ -244,7 +244,7 @@ struct LegacyStableAddr(TrivialRegisterPassable):
     `DeviceGraph.replay_collective()` published with
     `DeviceGraphBuilder.place_stable()`. A view over a slot must therefore read
     the data pointer when it is used rather than when it is constructed; see
-    `StableTensor` in the `extensibility` package.
+    `stable_tile_tensor()` in the `extensibility` package.
 
     Both pointer layers are device addresses. The slot lives in device memory
     so that graphs on other devices can read it, and it holds a device data
