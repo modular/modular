@@ -401,6 +401,14 @@ class JengaBlockPool:
         for its cache. Touching the null block does nothing.
         """
 
+    def refresh(self, block: LittleKVCacheBlock) -> None:
+        """Moves an unreferenced block to the recently used end of eviction.
+
+        Reorders the pool as :meth:`touch` then :meth:`free_block` would,
+        without claiming back a parked huge block. A referenced block and the
+        null block are left alone.
+        """
+
     def uncommit_block(self, block: LittleKVCacheBlock) -> None:
         """Drops a block from its cache's prefix cache, if it is committed."""
 

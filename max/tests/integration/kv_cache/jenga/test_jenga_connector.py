@@ -2655,6 +2655,259 @@ def test_a_synchronous_alloc_hands_back_an_outstanding_lookup() -> None:
     assert ctx.tokens.processed_length == len(held) - 1
 
 
+def _set_refresh(monkeypatch: pytest.MonkeyPatch, refresh: bool | None) -> None:
+    """Sets the refresh flag, or leaves it unset for ``None``."""
+    name = jenga_block_manager.REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR
+    if refresh is None:
+        monkeypatch.delenv(name, raising=False)
+    else:
+        monkeypatch.setenv(name, "1" if refresh else "0")
+
+
+def _ask_past_a_device_hit(
+    monkeypatch: pytest.MonkeyPatch,
+    refresh: bool | None,
+    deferred_lookups: bool = True,
+) -> tuple[JengaBlockManager, FakeConnector, TextContext, list[bytes]]:
+    """Holds a prompt in the connector with its first 3 blocks on device.
+
+    Another prompt's 6 blocks are committed after them, so the device hit is
+    the least recently used. The request is claimed but not allocated, so a
+    test can read the hit's pages before its lookup starts. Returns the
+    hashes the lookup asks about, device hit included.
+    """
+    _set_refresh(monkeypatch, refresh)
+    connector = FakeConnector(
+        [FULL], asynchronous=False, deferred_lookups=deferred_lookups
+    )
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    newer = make_ctx([20, 21, 22, 23, 24, 25])
+    manager.claim(newer)
+    manager.alloc(newer)
+    newer.update(9)
+    manager.step(newer)
+    manager.release(newer)
+    for transfer in connector.transfers:
+        transfer.synchronize()
+    manager.poll_transfers()
+    manager.take_metrics()
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    return manager, connector, ctx, held[:-1]
+
+
+def _evict_least_recent(manager: JengaBlockManager, num_commits: int) -> None:
+    """Evicts the ``num_commits`` least recently used commits no request holds.
+
+    Allocation takes every page holding no commit first, then commits
+    oldest first.
+    """
+    pool = manager.pools[0]
+    empty = manager.occupancy(0).leaves[FULL].empty
+    taken = [pool.alloc_block(FULL) for _ in range(empty + num_commits)]
+    for block in taken:
+        pool.free_block(block)
+
+
+def _evict_until(
+    manager: JengaBlockManager,
+    leaf_id: str,
+    num_left: int,
+    replica_idx: int = 0,
+) -> set[bytes]:
+    """Evicts a leaf's least recently used commits until ``num_left`` remain.
+
+    Returns the hashes still committed.
+    """
+    pool = manager.pools[replica_idx]
+    cache = pool.prefix_caches[leaf_id]
+    taken = []
+    while len(cache) > num_left:
+        taken.append(pool.alloc_block(leaf_id))
+    for block in taken:
+        pool.free_block(block)
+    return set(cache.keys())
+
+
+def _commit_prompt(
+    manager: JengaBlockManager,
+    connector: FakeConnector,
+    tokens: Sequence[int],
+    replica_idx: int = 0,
+) -> set[bytes]:
+    """Runs ``tokens`` through one forward and releases them committed.
+
+    Returns the hashes the forward added to the replica's full leaf.
+    """
+    cache = manager.pools[replica_idx].prefix_caches[FULL]
+    before = set(cache.keys())
+    ctx = make_ctx(list(tokens))
+    manager.claim(ctx, replica_idx=replica_idx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    manager.release(ctx)
+    for transfer in connector.transfers:
+        transfer.synchronize()
+    manager.poll_transfers()
+    return set(cache.keys()) - before
+
+
+@pytest.mark.parametrize(
+    "refresh", [None, False, True], ids=["unset", "off", "refresh"]
+)
+def test_a_refreshed_device_hit_outlasts_the_churn_its_lookup_waits_through(
+    monkeypatch: pytest.MonkeyPatch, refresh: bool | None
+) -> None:
+    """A refresh moves the hit past the commits eviction takes first.
+
+    The hit is the least recently used commit when its lookup starts, and
+    three commits are evicted while the lookup is out. Off, which is also
+    what an unset flag means, those are the hit's, and the lookup is asked
+    again from the start, as it always has been. Refreshed, the start moved
+    the hit to the recently used end while holding nothing, so the churn
+    takes older commits and the answer loads from where the lookup started.
+    """
+    manager, connector, ctx, asked = _ask_past_a_device_hit(
+        monkeypatch, refresh
+    )
+    hit = [manager.pools[0].prefix_caches[FULL][h] for h in asked[:3]]
+    before = manager.occupancy(0)
+    manager.alloc(ctx, defer_lookup=True)
+    (first,) = connector.started
+    assert connector.lookups[-1][0] == asked[3:]
+    assert [block.ref_cnt for block in hit] == [0, 0, 0]
+    assert manager.occupancy(0) == before, "the refresh holds nothing"
+
+    _evict_least_recent(manager, 3)
+    first.answer()
+
+    if not refresh:
+        assert manager.starts_lookup(ctx)
+        assert not manager.alloc(ctx, defer_lookup=True).is_complete()
+        assert connector.abandoned == [first]
+        assert connector.lookups[-1][0] == asked
+        metrics = manager.take_metrics()
+        assert metrics.connector_lookup_drops == {
+            ("shrink_reask", "offered", False): 1
+        }
+        assert metrics.connector_lookup_shrink_depths == {3: 1}
+        return
+
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.abandoned == []
+    assert connector.loaded_from == [first]
+    assert connector.loads[-1][1][FULL] == asked[3:]
+    assert ctx.cached_prefix_length == len(asked)
+    assert ctx.cached_prefix_external_length == len(asked) - 3
+    metrics = manager.take_metrics()
+    assert metrics.connector_lookup_drops == {}
+    assert metrics.connector_lookup_shrink_depths == {}
+
+
+def test_a_refresh_leaves_the_head_of_the_hit_most_recent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refresh frees the hit tail first, as a released row is freed.
+
+    So eviction past every older commit takes the hit's tail before its
+    head, and a shorter hit is still a hit.
+    """
+    manager, _, ctx, asked = _ask_past_a_device_hit(monkeypatch, True)
+    manager.alloc(ctx, defer_lookup=True)
+    cache = manager.pools[0].prefix_caches[FULL]
+
+    _evict_least_recent(
+        manager, manager.occupancy(0).leaves[FULL].evictable - 2
+    )
+
+    assert [h in cache for h in asked[:3]] == [True, True, False]
+
+
+def test_a_reask_refreshes_the_shorter_hit_it_is_asked_past(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hit that shrinks anyway is refreshed again when it is asked again.
+
+    Churn past every older commit takes the hit's tail despite the refresh,
+    so the answer is dropped and the lookup restarts past the two blocks
+    left. A newer commit overtook those two meanwhile, and the restart moves
+    them back past it.
+    """
+    manager, connector, ctx, asked = _ask_past_a_device_hit(monkeypatch, True)
+    manager.alloc(ctx, defer_lookup=True)
+    (first,) = connector.started
+    _evict_least_recent(
+        manager, manager.occupancy(0).leaves[FULL].evictable - 2
+    )
+    _commit_prompt(manager, connector, [40, 41, 42, 43])
+    first.answer()
+
+    assert not manager.alloc(ctx, defer_lookup=True).is_complete()
+    assert connector.abandoned == [first]
+    assert connector.lookups[-1][0] == asked[2:]
+    assert manager.take_metrics().connector_lookup_drops == {
+        ("shrink_reask", "offered", False): 1
+    }
+    assert _evict_until(manager, FULL, 2) == set(asked[:2])
+
+
+def test_a_connector_answering_in_place_is_not_refreshed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lookup that answers in place is not worth a refresh.
+
+    In production the alloc that asks reads the answer before anything else
+    allocates, so the hit cannot shrink in between and refreshing it costs
+    the scheduler thread for nothing. The lookup is started through
+    ``start_lookup`` here
+    because the request then takes no pages, which leaves the hit's place in
+    the LRU to read, still at the front.
+    """
+    manager, connector, ctx, asked = _ask_past_a_device_hit(
+        monkeypatch, True, deferred_lookups=False
+    )
+    cache = manager.pools[0].prefix_caches[FULL]
+
+    manager.start_lookup(ctx)
+    assert manager.awaits_lookup(ctx)
+    assert connector.lookups[-1][0] == asked[3:]
+    _evict_least_recent(manager, 3)
+
+    assert [h in cache for h in asked[:3]] == [False, False, False]
+
+
+def test_a_deferred_alloc_asking_in_place_does_not_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scheduler's alloc starts a lookup for an in-place connector too.
+
+    It passes ``defer_lookup`` whenever lookups may wait, whatever the
+    connector, so this is the path that reaches the guard in production.
+    """
+    manager, connector, ctx, asked = _ask_past_a_device_hit(
+        monkeypatch, True, deferred_lookups=False
+    )
+    refreshed: list[Sequence[bytes]] = []
+
+    def record(hit_hashes: Sequence[bytes], replica_idx: int) -> None:
+        refreshed.append(hit_hashes)
+
+    monkeypatch.setattr(manager, "_refresh_device_hit", record)
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.lookups[-1][0] == asked[3:]
+    assert transfer.is_complete()
+    assert ctx.cached_prefix_length == len(asked)
+    assert refreshed == []
+
+
 def make_dp_manager(
     connector: FakeConnector, copies_across_replicas: bool = False
 ) -> JengaBlockManager:
@@ -2831,6 +3084,173 @@ def test_a_shrunken_peer_hit_is_asked_again_before_anything_is_copied() -> None:
     assert connector.blocking_lookups == 0
     assert ctx.tokens.processed_length == len(asked)
     assert ctx.cached_prefix_external_length == len(asked) - 1
+
+
+def _pages_and_refs(
+    manager: JengaBlockManager, replica_idx: int = 0
+) -> tuple[object, dict[str, list[tuple[int, int]]]]:
+    """Returns a replica's occupancy and each committed page's refcount."""
+    pool = manager.pools[replica_idx]
+    refs = {
+        leaf_id: sorted(
+            (block.bid, block.ref_cnt)
+            for _, block in pool.prefix_caches[leaf_id].items()
+        )
+        for leaf_id in pool.prefix_caches
+    }
+    return manager.occupancy(replica_idx), refs
+
+
+def test_a_refresh_moves_the_window_of_a_windowed_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A windowed leaf's hit is its window, with null slots below it.
+
+    The refresh moves the window past a newer prompt's commits and leaves
+    every count and refcount as it found them.
+    """
+    _set_refresh(monkeypatch, True)
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups, asynchronous=False, deferred_lookups=True)
+    manager = make_manager(
+        connector,
+        num_huge_blocks=64,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    tokens = list(range(1, 13))
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 6)
+    _commit_prompt(manager, connector, list(range(30, 42)))
+    before = _pages_and_refs(manager)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert manager.awaits_lookup(ctx)
+    assert connector.lookups[-1][0] == held[6:-1]
+    assert _pages_and_refs(manager) == before
+    window = manager._cacheable_groups[SLIDING].claimable_hashes(held[:6])
+    assert 0 < len(window) < 6
+    assert _evict_until(manager, SLIDING, len(window)) == set(window)
+
+
+def test_a_refresh_moves_the_state_of_a_state_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A state leaf's hit is one state, with null slots behind it.
+
+    As for a windowed leaf, the refresh moves that state past a newer
+    prompt's and leaves every count and refcount as it found them.
+    """
+    _set_refresh(monkeypatch, True)
+    connector = FakeConnector(
+        {FULL: KVCacheGroupId.full(), STATE: KVCacheGroupId.recurrent()},
+        asynchronous=False,
+        deferred_lookups=True,
+    )
+    manager = make_hybrid_manager(connector)
+    for tokens in (
+        list(range(1, 2 * PAGE + 1)),
+        list(range(100, 100 + 2 * PAGE + 1)),
+    ):
+        device = make_ctx(tokens)
+        manager.claim(device)
+        forward_to_boundary(manager, device)
+        manager.release(device)
+        for pending in connector.transfers:
+            pending.synchronize()
+        manager.poll_transfers()
+    before = _pages_and_refs(manager)
+
+    ctx = make_ctx(list(range(1, 4 * PAGE + 2)))
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert manager.awaits_lookup(ctx)
+    assert connector.chain_starts[-1] == 2, "asked past a two-page device hit"
+    assert _pages_and_refs(manager) == before
+    hit_state = manager._state_of(ctx).hashes[1]
+    assert _evict_until(manager, STATE, 1) == {hit_state}
+
+
+@pytest.mark.parametrize(
+    "num_local_blocks", [2, 0], ids=["partly_local", "all_on_the_peer"]
+)
+def test_a_refresh_leaves_a_peer_replicas_part_of_the_hit_alone(
+    monkeypatch: pytest.MonkeyPatch, num_local_blocks: int
+) -> None:
+    """Only the pages this replica holds are refreshed.
+
+    The hit is counted ``num_local_blocks`` into this replica and four into
+    the other, and the lookup is asked past all four. A newer prompt is
+    committed on both replicas before it starts. The refresh moves this
+    replica's part of the hit past that prompt and leaves the peer's behind
+    it, and neither replica is left holding anything.
+    """
+    _set_refresh(monkeypatch, True)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_dp_manager(connector, copies_across_replicas=True)
+    tokens = [1, 2, 3, 4, 5, 6, 7]
+    hits = [
+        _commit_prompt(manager, connector, tokens[:num_blocks], replica_idx)
+        if num_blocks
+        else set()
+        for replica_idx, num_blocks in ((0, num_local_blocks), (1, 4))
+    ]
+    newer = [
+        _commit_prompt(manager, connector, [50, 51, 52], replica_idx)
+        for replica_idx in (0, 1)
+    ]
+    before = [_pages_and_refs(manager, idx) for idx in (0, 1)]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert manager.awaits_lookup(ctx)
+    assert connector.chain_starts[-1] == 4
+    assert [_pages_and_refs(manager, idx) for idx in (0, 1)] == before
+    assert len(hits[0]) == num_local_blocks
+    assert _evict_until(manager, FULL, num_local_blocks, 0) == hits[0]
+    assert _evict_until(manager, FULL, len(newer[1]), 1) == newer[1]
+
+
+def test_a_refresh_moves_local_pages_past_a_gap_a_peer_fills(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local page past the local run is refreshed when a peer fills the gap.
+
+    This replica holds blocks 0, 1 and 3 and the peer holds all four, so the
+    hit is counted four deep. Taking it copies block 2 from the peer and
+    reuses the local block 3, so the refresh moves block 3 with the others.
+    """
+    _set_refresh(monkeypatch, True)
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_dp_manager(connector, copies_across_replicas=True)
+    tokens = [1, 2, 3, 4, 5, 6, 7]
+    _commit_prompt(manager, connector, tokens[:4], 1)
+    _commit_prompt(manager, connector, tokens[:4], 0)
+    pool = manager.pools[0]
+    cache = pool.prefix_caches[FULL]
+    ctx = make_ctx(tokens)
+    hashes = manager._compute_block_hashes(ctx, [])[:4]
+    assert set(hashes) <= set(cache.keys())
+    pool.uncommit_block(cache[hashes[2]])
+    _commit_prompt(manager, connector, [50, 51, 52], 0)
+
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert manager.awaits_lookup(ctx)
+    assert connector.chain_starts[-1] == 4
+    local = {hashes[0], hashes[1], hashes[3]}
+    assert _evict_until(manager, FULL, len(local), 0) == local
 
 
 def _price_setup(
@@ -3033,9 +3453,10 @@ def test_probed_miss_skip_off_still_leases_a_probed_miss(
     [
         jenga_block_manager.ASYNC_PRESENCE_ENV_VAR,
         jenga_block_manager.PROBED_MISS_SKIP_ENV_VAR,
+        jenga_block_manager.REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR,
     ],
 )
-def test_presence_switches_reject_anything_but_0_or_1(
+def test_connector_switches_reject_anything_but_0_or_1(
     monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
     monkeypatch.setenv(name, "yes")

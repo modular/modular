@@ -333,6 +333,12 @@ impl PyJengaBlockPool {
         Ok(())
     }
 
+    fn refresh(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {
+        let (cache, bid) = self.locate(block)?;
+        self.shared.lock(py).refresh(cache, bid);
+        Ok(())
+    }
+
     fn uncommit_block(&self, py: Python<'_>, block: &Bound<'_, PyLittleBlock>) -> PyResult<()> {
         let (cache, bid) = self.locate(block)?;
         self.shared.lock(py).uncommit_block(cache, bid);

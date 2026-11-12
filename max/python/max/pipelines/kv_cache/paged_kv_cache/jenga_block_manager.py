@@ -162,9 +162,25 @@ such as the tiered one, from loading from the probe's answer, so its first
 allocation looks up again.
 """
 
+# TODO(sgarcia): Make this the default or remove it once a dKV workload
+# shows what it does to the shrink_reask drops, connector_lookup_shrink_depths
+# and connector_lookup_shrink_cap_blocks.
+REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR = (
+    "MAX_SERVE_CONNECTOR_LOOKUP_REFRESH_DEVICE_HIT"
+)
+"""Whether a deferred lookup refreshes the device hit it was asked past.
 
-def _env_flag(name: str) -> bool:
-    value = os.getenv(name, "1")
+0 by default, which only counts the hit, so eviction can shrink it while the
+connector answers and the answer is then asked again or dropped. 1 moves
+this replica's pages of the hit to the recently used end of the LRU as each
+lookup starts and holds none of them, so eviction reaches the hit after
+every older commit. The hit can still shrink under enough pressure, and the
+re-ask path still covers that.
+"""
+
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    value = os.getenv(name, "1" if default else "0")
     if value not in ("0", "1"):
         raise ValueError(f"{name} must be 0 or 1, got {value!r}")
     return value == "1"
@@ -849,6 +865,9 @@ class JengaBlockManager:
         self._priced_hashes: dict[RequestID, list[bytes]] = {}
         self._async_presence = _env_flag(ASYNC_PRESENCE_ENV_VAR)
         self._probed_miss_skip = _env_flag(PROBED_MISS_SKIP_ENV_VAR)
+        self._refresh_lookup_device_hit = _env_flag(
+            REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR, default=False
+        )
 
         # State for the KVConnector.
         self._connector = connector
@@ -3161,6 +3180,19 @@ class JengaBlockManager:
         """
         assert self._connector is not None
         committed_blocks = self._state_of(ctx).committed_idx // self._block_size
+        # A connector that answers in place reaches here too, through
+        # alloc(defer_lookup=True), and that same alloc reads its answer
+        # before anything else allocates, so a refresh would buy nothing.
+        if self._refresh_lookup_device_hit and self._connector.defers_lookup(
+            replica_idx
+        ):
+            self._refresh_device_hit(
+                self._state_of(ctx).hashes[
+                    committed_blocks : committed_blocks + first_block
+                ],
+                replica_idx,
+            )
+
         # Taken before the store is asked, so the age never trails the lease.
         started_at = time.monotonic()
         pending = _PendingLookup(
@@ -3178,6 +3210,29 @@ class JengaBlockManager:
         )
         self._state_of(ctx).pending_lookup = pending
         return pending
+
+    def _refresh_device_hit(
+        self, hit_hashes: Sequence[bytes], replica_idx: int
+    ) -> None:
+        """Moves the device hit a lookup is asked past to the recent end.
+
+        Refreshes the pages each leaf would take for the hit from this
+        replica's pool, tail first as a released row is freed, so eviction
+        reaches the hit after every older commit and its tail before its
+        head. Nothing is held. A block only a peer replica holds is copied
+        from it when the hit is taken, and reordering the peer would move
+        pages for a replica that does not run the request, so that part of
+        the hit can still shrink and the re-ask path covers it. A take whose
+        copy fails falls back to the local run, and a windowed or state
+        leaf's pages at the end of that run may not have been refreshed.
+        """
+        pool = self.pools[replica_idx]
+        for leaf_id, group in self._cacheable_groups.items():
+            cache = pool.prefix_caches[leaf_id]
+            for block_hash in reversed(group.claimable_hashes(hit_hashes)):
+                block = cache.get(block_hash)
+                if block is not None:
+                    pool.refresh(block)
 
     def _rollback_prefix_reuse(
         self, ctx: TextContext, replica_idx: int, committed_idx: int
