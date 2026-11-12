@@ -28,8 +28,18 @@ if [[ "$(uname)" == "Linux" ]]; then
         fi
         # We assume all GPUs are the same, so just grab the first
         mem_mib="$(echo "$output" | head -n 1)"
-        # We specify GiB for local memory
-        mem_gib=$(( mem_mib / 1024 ))
+        if [[ ! "$mem_mib" =~ ^[0-9]+$ ]]; then
+            # Unified-memory parts (GB10 / DGX Spark, Jetson) have no dedicated
+            # GPU memory: nvidia-smi answers [N/A] and the pool is system RAM,
+            # so use MemTotal.
+            mem_gib=$(awk '/^MemTotal:/ {printf "%d", $2 / 1048576}' /proc/meminfo)
+            echo "warning: nvidia-smi reported '$mem_mib' as total GPU memory;" \
+                "assuming unified memory and using ${mem_gib} GiB of system" \
+                "RAM" >&2
+        else
+            # We specify GiB for local memory
+            mem_gib=$(( mem_mib / 1024 ))
+        fi
 
         gpu_count=$(echo "$output" | wc -l)
     elif command -v amd-smi > /dev/null; then
