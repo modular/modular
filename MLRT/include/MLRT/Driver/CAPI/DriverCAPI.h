@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 6
+#define M_DRIVER_CAPI_VERSION_MINOR 7
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -662,8 +662,10 @@ M_DRIVER_API M_DriverStatus M_DriverStreamRecordEvent(
 ///
 /// `fn` must not call into this interface or a vendor API, must not block on
 /// the stream's work, and must not unwind; the usual body hands `user_data`
-/// to a thread of the caller's and returns. When this call fails, `fn` never
-/// runs, so the caller still owns `user_data`. On a stream that is capturing
+/// to a thread of the caller's and returns. The one exception is
+/// `M_DriverCompletionFlagReset`, which `fn` may call to reset a flag in
+/// stream order. When this call fails, `fn` never runs, so the caller still
+/// owns `user_data`. On a stream that is capturing
 /// (`M_DriverStreamIsCapturing`), the call is recorded and runs at each
 /// replay instead.
 ///
@@ -751,13 +753,29 @@ M_DRIVER_API M_DriverStatus
 M_DriverCompletionFlagDestroy(M_DriverCompletionFlag *flag);
 
 /// Stores `value` in the flag with release ordering. The value must not
-/// decrease, and this interface has no reset: a value lower than the flag's
-/// current one is `M_DRIVER_INVALID_ARGUMENT` and leaves the flag unchanged.
+/// decrease until `M_DriverCompletionFlagReset`: a value lower than the
+/// flag's current one is `M_DRIVER_INVALID_ARGUMENT` and leaves the flag
+/// unchanged.
 ///
 /// Signal from a thread that does not first block on a stream waiting on the
 /// flag (see `M_DriverStreamWaitFlag`); otherwise the signal never comes.
 M_DRIVER_API M_DriverStatus
 M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag, uint64_t value);
+
+/// Stores 0 in the flag, so a later signal may start low again and a later
+/// wait for a value above 0 holds until the next signal reaches it.
+///
+/// Don't reset while a wait on the flag is pending: the wait may pass, or on
+/// Metal it never passes. To reset in stream order, after the work that waits
+/// on the flag, call this from a function enqueued with
+/// `M_DriverStreamEnqueueHostFunction`. That is the one call into this
+/// interface such a function may make: on CUDA and HIP the reset is a store
+/// to host memory, with no vendor call, lock or wait. A null `flag` is
+/// `M_DRIVER_INVALID_ARGUMENT`. A reset that leaves the flag nonzero, such as a
+/// signal racing the reset or a Metal failure to create a fresh event, is
+/// `M_DRIVER_RUNTIME_ERROR`.
+M_DRIVER_API M_DriverStatus
+M_DriverCompletionFlagReset(M_DriverCompletionFlag *flag);
 
 /// Orders work after this call on `stream` to start only once `flag` holds at
 /// least `value`. Keep values below 2^63: HIP compares them as signed. Does

@@ -153,6 +153,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
       M_DriverCompletionFlagDestroy;
   M_DriverStatus (*completion_flag_signal)(M_DriverCompletionFlag *, uint64_t) =
       M_DriverCompletionFlagSignal;
+  M_DriverStatus (*completion_flag_reset)(M_DriverCompletionFlag *) =
+      M_DriverCompletionFlagReset;
   M_DriverStatus (*stream_wait_flag)(const M_DriverStream *,
                                      const M_DriverCompletionFlag *, uint64_t) =
       M_DriverStreamWaitFlag;
@@ -253,17 +255,17 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          event_destroy != NULL && event_synchronize != NULL &&
          event_is_ready != NULL && event_elapsed_ms != NULL &&
          completion_flag_create != NULL && completion_flag_destroy != NULL &&
-         completion_flag_signal != NULL && stream_wait_flag != NULL &&
-         completion_flag_graph_handle != NULL && buffer_allocate != NULL &&
-         buffer_from_pointer != NULL && buffer_destroy != NULL &&
-         buffer_pointer != NULL && buffer_byte_size != NULL &&
-         buffer_is_host != NULL && memory_register != NULL &&
-         mapping_destroy != NULL && mapping_destroy_sync != NULL &&
-         mapping_pointer != NULL && mapping_byte_size != NULL &&
-         host_region_create != NULL && host_region_destroy != NULL &&
-         host_region_chunk_count != NULL && host_region_chunk_address != NULL &&
-         host_region_chunk_bytes != NULL && copy_host_to_device != NULL &&
-         copy_device_to_host != NULL && copy_batch != NULL &&
-         copy_device_to_device != NULL && copy_peer_to_peer != NULL &&
-         copy_peer_to_peer_unordered != NULL;
+         completion_flag_signal != NULL && completion_flag_reset != NULL &&
+         stream_wait_flag != NULL && completion_flag_graph_handle != NULL &&
+         buffer_allocate != NULL && buffer_from_pointer != NULL &&
+         buffer_destroy != NULL && buffer_pointer != NULL &&
+         buffer_byte_size != NULL && buffer_is_host != NULL &&
+         memory_register != NULL && mapping_destroy != NULL &&
+         mapping_destroy_sync != NULL && mapping_pointer != NULL &&
+         mapping_byte_size != NULL && host_region_create != NULL &&
+         host_region_destroy != NULL && host_region_chunk_count != NULL &&
+         host_region_chunk_address != NULL && host_region_chunk_bytes != NULL &&
+         copy_host_to_device != NULL && copy_device_to_host != NULL &&
+         copy_batch != NULL && copy_device_to_device != NULL &&
+         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL;
 }

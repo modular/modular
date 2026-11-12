@@ -30,10 +30,14 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <dlfcn.h>
@@ -105,7 +109,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 6u);
+  EXPECT_EQ((version >> 16) & 0xffu, 7u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -1440,6 +1444,229 @@ TEST(DriverCApi, CompletionFlagSignalRejectsLowerValue) {
   EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 4), M_DRIVER_INVALID_ARGUMENT);
   EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 6), M_DRIVER_OK) << lastError();
   EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
+}
+
+TEST(DriverCApi, CompletionFlagResetLetsSignalsStartLowAgain) {
+  EXPECT_EQ(M_DriverCompletionFlagReset(nullptr), M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_FALSE(lastError().empty());
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK);
+  M_DriverCompletionFlag *flag = nullptr;
+  const M_DriverStatus created =
+      M_DriverCompletionFlagCreate(device.get(), &flag);
+  if (MODULAR_HAL_DEVICE_CONTEXT && created == M_DRIVER_NOT_SUPPORTED)
+    GTEST_SKIP() << "no HAL completion flags on this backend: " << lastError();
+  ASSERT_EQ(created, M_DRIVER_OK) << lastError();
+
+  ASSERT_EQ(M_DriverCompletionFlagSignal(flag, 5), M_DRIVER_OK);
+  EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 1), M_DRIVER_INVALID_ARGUMENT);
+  ASSERT_EQ(M_DriverCompletionFlagReset(flag), M_DRIVER_OK) << lastError();
+  EXPECT_TRUE(lastError().empty());
+  EXPECT_EQ(M_DriverCompletionFlagSignal(flag, 1), M_DRIVER_OK) << lastError();
+  EXPECT_EQ(M_DriverCompletionFlagDestroy(flag), M_DRIVER_OK);
+}
+
+namespace {
+
+/// Bounds every wait in the gate tests, so a callback that deadlocks fails
+/// the test rather than hanging it.
+constexpr auto kGateTimeout = std::chrono::seconds(30);
+
+/// How long a closed gate must stay closed, and how soon an open one must
+/// pass in the control.
+constexpr auto kHoldWindow = std::chrono::milliseconds(500);
+
+/// Polls `event` until it fires or `timeout` passes; returns whether it fired.
+bool firesWithin(const M_DriverEvent *event,
+                 std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (true) {
+    bool ready = false;
+    if (M_DriverEventIsReady(event, &ready) != M_DRIVER_OK) {
+      ADD_FAILURE() << "M_DriverEventIsReady failed: " << lastError();
+      return false;
+    }
+    if (ready)
+      return true;
+    if (std::chrono::steady_clock::now() >= deadline)
+      return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
+/// The stream cannot be torn down while it is stuck, so a deadlock ends the
+/// process instead of letting the test hang in a destructor.
+void exitIfStuck(bool fired, const char *what) {
+  if (fired)
+    return;
+  ADD_FAILURE() << what << " did not happen within the timeout";
+  std::fflush(stdout);
+  std::fflush(stderr);
+  std::_Exit(EXIT_FAILURE);
+}
+
+struct GateStep {
+  M_DriverCompletionFlag *flag = nullptr;
+  bool reset = false;
+  std::atomic<int> calls{0};
+  std::atomic<M_DriverStatus> status{M_DRIVER_OK};
+};
+
+/// Runs on the driver's host-function thread.
+void gateStep(void *userData) {
+  auto *step = static_cast<GateStep *>(userData);
+  if (step->reset)
+    step->status.store(M_DriverCompletionFlagReset(step->flag));
+  step->calls.fetch_add(1);
+}
+
+bool ranWithin(const GateStep &step, std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (step.calls.load() == 0) {
+    if (std::chrono::steady_clock::now() >= deadline)
+      return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+/// A flag gating a stream, with an event recorded after each of two waits.
+struct Gate {
+  DeviceHandle device;
+  StreamHandle stream;
+  M_DriverCompletionFlag *flag = nullptr;
+  M_DriverEvent *first = nullptr;
+  M_DriverEvent *second = nullptr;
+
+  ~Gate() {
+    // A failed assertion can leave a wait pending, and destroying the flag
+    // then hangs the device sync. Open the gate for any wait first.
+    if (flag != nullptr) {
+      M_DriverCompletionFlagSignal(flag, UINT64_MAX / 2);
+      if (stream.get() != nullptr)
+        M_DriverStreamSynchronize(stream.get());
+    }
+    if (first != nullptr)
+      M_DriverEventDestroy(first);
+    if (second != nullptr)
+      M_DriverEventDestroy(second);
+    if (flag != nullptr)
+      M_DriverCompletionFlagDestroy(flag);
+  }
+};
+
+/// Opens the gate on accelerator 0 once, enqueues `step` behind the opening,
+/// then a second wait for the same value. Sets `skip` instead when the
+/// backend has no host functions or no flags.
+void openGateOnceThen(Gate &gate, GateStep &step, std::string &skip) {
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, gate.device.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamCreate(gate.device.get(), gate.stream.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  const M_DriverStatus created =
+      M_DriverCompletionFlagCreate(gate.device.get(), &gate.flag);
+  if (MODULAR_HAL_DEVICE_CONTEXT && created == M_DRIVER_NOT_SUPPORTED) {
+    skip = "no HAL completion flags on this backend: " + lastError();
+    return;
+  }
+  ASSERT_EQ(created, M_DRIVER_OK) << lastError();
+  step.flag = gate.flag;
+
+  char api[32] = {};
+  ASSERT_GT(M_DriverDeviceApi(gate.device.get(), api, sizeof(api)), 1u);
+  if (std::strcmp(api, "cuda") != 0 && std::strcmp(api, "hip") != 0) {
+    EXPECT_EQ(
+        M_DriverStreamEnqueueHostFunction(gate.stream.get(), gateStep, &step),
+        M_DRIVER_NOT_SUPPORTED);
+    // The reset still works from the host where host functions do not.
+    ASSERT_EQ(M_DriverCompletionFlagSignal(gate.flag, 5), M_DRIVER_OK);
+    EXPECT_EQ(M_DriverCompletionFlagReset(gate.flag), M_DRIVER_OK)
+        << lastError();
+    EXPECT_EQ(M_DriverCompletionFlagSignal(gate.flag, 1), M_DRIVER_OK)
+        << lastError();
+    skip = "host functions run on CUDA and HIP only";
+    return;
+  }
+
+  ASSERT_EQ(M_DriverStreamWaitFlag(gate.stream.get(), gate.flag, 1),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamRecordNewEvent(gate.stream.get(), &gate.first),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_FALSE(firesWithin(gate.first, std::chrono::milliseconds(0)))
+      << "the stream ran past an unsatisfied wait";
+  ASSERT_EQ(M_DriverCompletionFlagSignal(gate.flag, 1), M_DRIVER_OK);
+  exitIfStuck(firesWithin(gate.first, kGateTimeout), "the first opening");
+
+  ASSERT_EQ(
+      M_DriverStreamEnqueueHostFunction(gate.stream.get(), gateStep, &step),
+      M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamWaitFlag(gate.stream.get(), gate.flag, 1),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamRecordNewEvent(gate.stream.get(), &gate.second),
+            M_DRIVER_OK)
+      << lastError();
+}
+
+} // namespace
+
+// The property a stream-ordered gate depends on: a host function behind the
+// first opening resets the flag, so the next wait for the same value holds
+// until the host signals again.
+TEST(DriverCApi, CompletionFlagResetInHostFunctionClosesTheGate) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  Gate gate;
+  GateStep step;
+  step.reset = true;
+  std::string skip;
+  openGateOnceThen(gate, step, skip);
+  if (HasFatalFailure())
+    return;
+  if (!skip.empty())
+    GTEST_SKIP() << skip;
+
+  exitIfStuck(ranWithin(step, kGateTimeout), "the resetting host function");
+  EXPECT_EQ(step.status.load(), M_DRIVER_OK);
+
+  EXPECT_FALSE(firesWithin(gate.second, kHoldWindow))
+      << "the second wait passed without a signal after the reset";
+  ASSERT_EQ(M_DriverCompletionFlagSignal(gate.flag, 1), M_DRIVER_OK)
+      << lastError();
+  exitIfStuck(firesWithin(gate.second, kGateTimeout), "the second opening");
+  EXPECT_EQ(M_DriverStreamSynchronize(gate.stream.get()), M_DRIVER_OK)
+      << lastError();
+}
+
+// The control for the test above: the same sequence with a host function that
+// does not reset, so the second wait passes on the first signal alone.
+TEST(DriverCApi, CompletionFlagGateStaysOpenWithoutReset) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  Gate gate;
+  GateStep step;
+  std::string skip;
+  openGateOnceThen(gate, step, skip);
+  if (HasFatalFailure())
+    return;
+  if (!skip.empty())
+    GTEST_SKIP() << skip;
+
+  exitIfStuck(ranWithin(step, kGateTimeout), "the host function");
+  const bool prompt = firesWithin(gate.second, kHoldWindow);
+  exitIfStuck(prompt || firesWithin(gate.second, kGateTimeout),
+              "the second opening without a reset");
+  EXPECT_TRUE(prompt) << "the second wait held although nothing reset the flag";
+  EXPECT_EQ(step.calls.load(), 1);
+  EXPECT_EQ(M_DriverStreamSynchronize(gate.stream.get()), M_DRIVER_OK)
+      << lastError();
 }
 
 //===----------------------------------------------------------------------===//

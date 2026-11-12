@@ -1130,6 +1130,21 @@ M_DriverStatus M_DriverCompletionFlagSignal(M_DriverCompletionFlag *flag,
   return succeed();
 }
 
+// Callers reset from host-function callbacks, so nothing is added around the
+// driver's reset: no context binding, no lock, no pending-error check.
+M_DriverStatus M_DriverCompletionFlagReset(M_DriverCompletionFlag *flag) {
+  if (flag == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "flag is null");
+  flag->flag->reset();
+  // Legacy Metal returns from a failed reset with the old value in place and
+  // only records a pending context error. A plain load is cheap on every
+  // backend and safe in a callback.
+  if (flag->flag->load() != 0)
+    return fail(M_DRIVER_RUNTIME_ERROR,
+                "M_DriverCompletionFlagReset: the flag was not reset");
+  return succeed();
+}
+
 M_DriverStatus M_DriverStreamWaitFlag(const M_DriverStream *stream,
                                       const M_DriverCompletionFlag *flag,
                                       uint64_t value) {
