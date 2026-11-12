@@ -600,7 +600,7 @@ def rope_split_store_ragged(
             interleaved=interleaved,
         )
 
-    parameters: dict[str, bool | int | str | DType] = {
+    parameters: dict[str, bool | int | float | str | DType] = {
         "interleaved": interleaved,
     }
 
@@ -643,14 +643,12 @@ def rope_split_store_ragged(
         ]
     elif q_norm_weight is not None:
         # Fused per-head Q/K/V RMS-norm folded into the RoPE+store op: q/k use
-        # the learned gammas, v is a bare norm. `eps` is passed as its integer
-        # reciprocal (custom-op params reject float; eps is negligible vs
-        # mean(x^2), so this is ample precision).
+        # the learned gammas, v is a bare norm.
         assert k_norm_weight is not None
         if rms_norm_eps is None:
             raise ValueError("rms_norm_eps is required with q_norm_weight")
         op_name = "kv_cache.rope_split_store.ragged.paged.with_qk_norm"
-        parameters["eps_recip"] = round(1.0 / rms_norm_eps)
+        parameters["epsilon"] = float(rms_norm_eps)
         # When `k_eq_v`, V has no projection: `qkv` is `[q|k]` and the kernel
         # reads the K region for both K and V (sharing one norm reduction)
         # rather than a duplicated V region.
