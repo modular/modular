@@ -45,7 +45,6 @@ from structured_kernels.tile_types import (
     static_row_major,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -243,13 +242,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        IndexList[2](
-            Self.SmemType.Core.BM, Self.SmemType.Core.BK
-        ),  # A tile shape
-        IndexList[2](
-            Self.SmemType.Core.BN, Self.SmemType.Core.BK
-        ),  # B tile shape
-        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        (Self.SmemType.Core.BM, Self.SmemType.Core.BK),  # A tile shape
+        (Self.SmemType.Core.BN, Self.SmemType.Core.BK),  # B tile shape
+        (1, Self.SmemType.Core.BM),  # A-scales shape
         Self.SmemType.Core.num_pipeline_stages,
     ]
 

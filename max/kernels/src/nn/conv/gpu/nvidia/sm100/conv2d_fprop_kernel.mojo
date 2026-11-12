@@ -57,7 +57,6 @@ from structured_kernels.tile_types import (
     static_row_major,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -257,8 +256,8 @@ struct Conv2dFpropKernel[
     comptime TilePayload = StandardTilePayload[
         Self.act_type,
         Self.filter_type,
-        IndexList[2](Self.BM, Self.BK),
-        IndexList[2](Self.BN, Self.BK),
+        (Self.BM, Self.BK),
+        (Self.BN, Self.BK),
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipelineType = InputTilePipeline[

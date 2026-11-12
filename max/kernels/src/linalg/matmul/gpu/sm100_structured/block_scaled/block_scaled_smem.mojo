@@ -25,7 +25,6 @@ Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 from std.math import align_up
 
 from layout.tensor_core_async import tile_sf_layout_k_major_typed
-from std.utils.index import IndexList
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -123,12 +122,12 @@ struct BlockScaledTileCore[
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
         Self.OutputM,
         Self.OutputN,
-        IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
-        IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
+        (Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+        (Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -146,10 +145,10 @@ struct BlockScaledTileCore[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
-        IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
-        IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
+        (Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+        (Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
         Self.num_pipeline_stages,
     ]
 

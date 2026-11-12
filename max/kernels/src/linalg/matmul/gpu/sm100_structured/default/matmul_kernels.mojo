@@ -83,7 +83,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import SharedMemBarrier
 
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -224,8 +224,8 @@ struct B200MatmulSmem[
     comptime InputTiles = StandardTileStorage[
         Self.a_type,
         Self.b_type,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
         Self.num_pipeline_stages,
     ]
     # Output tiles: C matrix (different stage count)
@@ -302,8 +302,8 @@ struct B200MatmulSmem[
         StandardTilePayload[
             Self.a_type,
             Self.b_type,
-            IndexList[2](Self.BM, Self.BK),  # A tile shape
-            IndexList[2](Self.BN, Self.BK),  # B tile shape
+            (Self.BM, Self.BK),  # A tile shape
+            (Self.BN, Self.BK),  # B tile shape
             Self.num_pipeline_stages,
         ],
         Self.num_epilogue_load_stages,
@@ -543,8 +543,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime TilePayload = StandardTilePayload[
         Self.a_type,
         Self.b_type,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[

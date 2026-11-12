@@ -67,7 +67,6 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major_typed,
 )
 
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
@@ -444,18 +443,10 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](
-            Self.SmemType.Core.BM, Self.SmemType.Core.BK
-        ),  # A tile shape
-        IndexList[2](
-            Self.SmemType.Core.BN, Self.SmemType.Core.BK
-        ),  # B tile shape
-        IndexList[2](
-            Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1
-        ),  # SFA shape
-        IndexList[2](
-            Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1
-        ),  # SFB shape
+        (Self.SmemType.Core.BM, Self.SmemType.Core.BK),  # A tile shape
+        (Self.SmemType.Core.BN, Self.SmemType.Core.BK),  # B tile shape
+        (Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1),  # SFA shape
+        (Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1),  # SFB shape
         Self.SmemType.Core.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[

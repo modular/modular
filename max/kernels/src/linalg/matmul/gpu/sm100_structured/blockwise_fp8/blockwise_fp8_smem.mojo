@@ -26,7 +26,6 @@ BlockwiseFP8TileCore and shared with BlockwiseFP8_1D2DSmem. Each SMEM struct
 is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
-from std.utils.index import IndexList
 
 from ..structured_kernels.config import MatmulConfig
 from structured_kernels.pipeline_storage import (
@@ -92,11 +91,11 @@ struct BlockwiseFP8TileCore[
         Self.b_type,
         Self.c_type,
         Self.a_scales_type,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
         Self.OutputM,
         Self.OutputN,
-        IndexList[2](1, Self.BM),  # A-scales shape
+        (1, Self.BM),  # A-scales shape
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -112,9 +111,9 @@ struct BlockwiseFP8TileCore[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
-        IndexList[2](1, Self.BM),  # A-scales shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
+        (1, Self.BM),  # A-scales shape
         Self.num_pipeline_stages,
     ]
 
