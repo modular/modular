@@ -30,6 +30,9 @@ namespace {
 static Value createEntryAlloca(ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
                                Type allocType, Type storeType,
                                const M::KGEN::LLVMDataLayout &dl) {
+  // Allocate the larger of the two types. A coercion may round the size up.
+  if (dl.getTypeAllocSize(storeType) > dl.getTypeAllocSize(allocType))
+    allocType = storeType;
   uint64_t align =
       std::max(dl.getTypeABIAlign(allocType), dl.getTypeABIAlign(storeType));
   Value count = ConstantOp::create(b, b.getI32IntegerAttr(1));
