@@ -1157,6 +1157,25 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
                        SmallVectorImpl<ConstraintAttr> *unprovenConstraints) {
   if (sugaredFromType.isEqualCanon(sugaredToType))
     return TriBool::yes(); // No rebind needed!
+
+  // A conditional type `A if c else B` is the same type as the arm that the
+  // scope's assumptions select, so converting to or from that arm is free.
+  if (sugarIsa<ParamType>(sugaredFromType) ||
+      sugarIsa<ParamType>(sugaredToType)) {
+    SmallVector<ConstraintAttr> assumptions =
+        ASTDecl::getAssumptionsFromScope(&declScope);
+    llvm::append_range(assumptions, additionalAssumptions);
+    Type refinedFrom = maybeRefineCondTypeWithAssumptions(
+        sugaredFromType.mlirType, assumptions);
+    Type refinedTo =
+        maybeRefineCondTypeWithAssumptions(sugaredToType.mlirType, assumptions);
+    if (refinedFrom != sugaredFromType.mlirType ||
+        refinedTo != sugaredToType.mlirType)
+      return canZeroCostConvertImpl(ASTType(refinedFrom), ASTType(refinedTo),
+                                    shared, declScope, additionalAssumptions,
+                                    unprovenConstraints);
+  }
+
   ASTType toType = getCanonicalType(sugaredToType);
   ASTType fromType = getCanonicalType(sugaredFromType);
 
