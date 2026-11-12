@@ -146,10 +146,6 @@ def _tile_store_consumer(
         consumer that copies into `output` directly.
     """
     comptime if type_of(output)._has_output_fusion_tile:
-        result = rebind[type_of(result)](
-            _OutputFusionTileConsumer(output.output_fusion_tile)
-        )
+        result = _OutputFusionTileConsumer(output.output_fusion_tile)
     else:
-        result = rebind[type_of(result)](
-            _TileStoreConsumer(output.to_tile_tensor())
-        )
+        result = _TileStoreConsumer(output.to_tile_tensor())

@@ -663,13 +663,9 @@ struct AppleM5MatMul[
         (full K), then the K-loop tiles only the K axis; no pointer arithmetic.
         """
         comptime if Self.transpose_b:
-            return rebind[type_of(result)](
-                Layout(Coord(k, n), Coord(Idx[1], k))
-            )
+            return Layout(Coord(k, n), Coord(Idx[1], k))
         else:
-            return rebind[type_of(result)](
-                Layout(Coord(k, n), Coord(n, Idx[1]))
-            )
+            return Layout(Coord(k, n), Coord(n, Idx[1]))
 
     # === Shared simdgroup-tiled GEMM body ================================== #
     # `run` and `run_conv` share this whole body; the comptime
