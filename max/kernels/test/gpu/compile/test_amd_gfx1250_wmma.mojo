@@ -463,12 +463,14 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
         ".sgpr_spill_count",
         ".private_segment_fixed_size",
     ]:
-        var at = asm.find(directive + ":")
+        var found = asm.find(directive + ":")
         assert_true(
-            at >= 0, String(t"assembly metadata is missing {directive}")
+            found is not None,
+            String(t"assembly metadata is missing {directive}"),
         )
-        var rest = asm[byte = at + directive.byte_length() + 1 :]
-        var value = Int(String(rest[byte = 0 : rest.find("\n")]).strip())
+        var rest = asm[byte = found.value() + directive.byte_length() + 1 :]
+        var line_end = rest.find("\n").or_else(rest.byte_length())
+        var value = Int(String(rest[byte=0:line_end]).strip())
         if directive == ".private_segment_fixed_size":
             private_bytes = value
         else:
@@ -500,7 +502,7 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
                 body = candidate
             start = -1
     assert_true(
-        body.byte_length() > 0 and body.find("scratch_") < 0,
+        body.byte_length() > 0 and "scratch_" not in body,
         String(t"{label}: no scratch-free kernel function in the dump"),
     )
 
@@ -792,10 +794,9 @@ def _modifier_tail(asm: String, opcode: StaticString) -> Optional[String]:
     for line in asm.splitlines():
         if opcode in line:
             var text = String(line).strip()
-            var at = text.find(" matrix_")
-            if at < 0:
-                return String("")
-            return String(text[byte = at + 1 :])
+            if case .Some(at) = text.find(" matrix_"):
+                return String(text[byte = at + 1 :])
+            return String("")
     return None
 
 

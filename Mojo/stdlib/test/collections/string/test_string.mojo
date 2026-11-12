@@ -733,24 +733,39 @@ def test_contains() raises:
 def test_find() raises:
     var str = "Hello world"
 
-    assert_equal(0, str.find(""))
-    assert_equal(0, str.find("Hello"))
-    assert_equal(2, str.find("llo"))
-    assert_equal(6, str.find("world"))
-    assert_equal(-1, str.find("universe"))
+    assert_equal(str.find(""), 0)
+    assert_equal(str.find("Hello"), 0)
+    assert_equal(str.find("llo"), 2)
+    assert_equal(str.find("world"), 6)
+    assert_true(str.find("universe") is None)
 
     # Test find() offset is absolute, not relative (issue mojo/#1355)
     var str2 = "...a"
-    assert_equal(3, str2.find("a", 0))
-    assert_equal(3, str2.find("a", 1))
-    assert_equal(3, str2.find("a", 2))
-    assert_equal(3, str2.find("a", 3))
+    assert_equal(str2.find("a", 0), 3)
+    assert_equal(str2.find("a", 1), 3)
+    assert_equal(str2.find("a", 2), 3)
+    assert_equal(str2.find("a", 3), 3)
+    assert_true(str2.find("a", 4) is None)
 
     # Test find() support for negative start positions
-    assert_equal(4, str.find("o", -10))
-    assert_equal(7, str.find("o", -5))
+    assert_equal(str.find("o", -10), 4)
+    assert_equal(str.find("o", -5), 7)
 
-    assert_equal(-1, String("abc").find("abcd"))
+    assert_true(String("abc").find("abcd") is None)
+    assert_true(String().find("a") is None)
+
+    # Offsets are in bytes: each of these CJK codepoints is 3 bytes.
+    var cjk = String("世界你好世界")
+    assert_equal(cjk.find("世界"), 0)
+    assert_equal(cjk.find("好"), 9)
+    assert_equal(cjk.find("世", 1), 12)
+    assert_true(cjk.find("日") is None)
+
+    # The idiomatic way to use the result.
+    if case .Some(index) = str.find(" "):
+        assert_equal(String(str[byte=:index]), "Hello")
+    else:
+        assert_true(False, "expected to find a space")
 
 
 def test_replace() raises:
@@ -777,23 +792,30 @@ def test_rfind() raises:
     var s1 = "hello world"
     # Basic usage.
     assert_equal(s1.rfind("world"), 6)
-    assert_equal(s1.rfind("bye"), -1)
+    assert_true(s1.rfind("bye") is None)
 
     # Repeated substrings.
     assert_equal(String("ababab").rfind("ab"), 4)
 
     # Empty string and substring.
-    assert_equal(String().rfind("ab"), -1)
+    assert_true(String().rfind("ab") is None)
     assert_equal(String("foo").rfind(""), 3)
 
     # Test that rfind(start) returned pos is absolute, not relative to specified
     # start. Also tests positive and negative start offsets.
     assert_equal(s1.rfind("l", 5), 9)
     assert_equal(s1.rfind("l", -5), 9)
-    assert_equal(s1.rfind("w", -3), -1)
+    assert_true(s1.rfind("w", -3) is None)
     assert_equal(s1.rfind("w", -5), 6)
 
-    assert_equal(-1, String("abc").rfind("abcd"))
+    assert_true(String("abc").rfind("abcd") is None)
+
+    # Offsets are in bytes: each of these CJK codepoints is 3 bytes.
+    var cjk = String("世界你好世界")
+    assert_equal(cjk.rfind("世界"), 12)
+    assert_equal(cjk.rfind("你"), 6)
+    assert_true(cjk.rfind("你", 9) is None)
+    assert_true(cjk.rfind("日") is None)
 
     # Special characters.
     # TODO(#26444): Support unicode strings.

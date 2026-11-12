@@ -89,8 +89,8 @@ def test_name_is_qualified_where_base_name_is_not() raises:
     comptime full = reflect[Optional[Float64]].name()
     comptime base = reflect[Optional[Float64]].base_name()
     assert_true(full != base)
-    assert_true(full.find(base) >= 0)
-    assert_true(full.find(".") >= 0)
+    assert_true(base in full)
+    assert_true("." in full)
 
 
 def test_name_applies_parameters() raises:
@@ -115,7 +115,7 @@ struct Config(Equatable):
 def test_type_name() raises:
     """Check `name()` returns the compiler-resolved name."""
     comptime name = reflect[Config].name()
-    assert_true(name.find("Config") >= 0)
+    assert_true("Config" in name)
 
 
 def test_field_count() raises:
@@ -299,7 +299,7 @@ def test_multitype_write_to() raises:
     var rendered = String(MultiType("Hello", 1, True, 2.5))
     assert_true(rendered.startswith("["))
     assert_true(rendered.endswith("]"))
-    assert_true(rendered.find("Hello") >= 0)
+    assert_true("Hello" in rendered)
 
 
 @fieldwise_init
@@ -427,7 +427,8 @@ def test_source_location_prefix() raises:
     var loc = source_location()
     var msg = loc.prefix("test message")
     # A position past 0 means location context precedes the message.
-    assert_true(msg.find("test message") > 0)
+    var index = msg.find("test message")
+    assert_true(index is not None and index.value() > 0)
 
 
 def helper_source_line() -> Int:
@@ -520,7 +521,7 @@ def test_require_carries_the_caller_message() raises:
         require(False, "x must be > 10")
     except e:
         caught = String(e)
-    assert_true(caught.find("x must be > 10") >= 0)
+    assert_true("x must be > 10" in caught)
 
 
 # --- Function names ---

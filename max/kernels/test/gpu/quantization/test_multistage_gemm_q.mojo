@@ -802,15 +802,15 @@ def test_pdl_release_sites() raises:
         assert_true(release in end_asm)
         # After the MMA loop: nothing in the loop reads an input from below the
         # release, so the release cannot be hoisted above every `mma.sync`.
-        assert_true(end_asm.rfind(mma) < end_asm.find(release))
+        assert_true(end_asm.rfind(mma).value() < end_asm.find(release).value())
 
         assert_true(wait in beginning_asm)
         assert_true(release in beginning_asm)
-        var wait_at = beginning_asm.find(wait)
-        var release_at = beginning_asm.find(release)
+        var wait_at = beginning_asm.find(wait).value()
+        var release_at = beginning_asm.find(release).value()
         assert_true(wait_at < release_at)
         # On entry, before the MMA loop starts.
-        assert_true(release_at < beginning_asm.find(mma))
+        assert_true(release_at < beginning_asm.find(mma).value())
     else:
         # Below SM90 the levels change nothing in the emitted code, so neither
         # instruction may appear at any level. `mma.sync` above still has to be

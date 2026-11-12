@@ -70,9 +70,7 @@ def _get_lstat_st_mode(var path: String) raises -> Int:
 
 
 def _user_home_path(path: String) -> String:
-    var user_end = path.find(sep, 1)
-    if user_end < 0:
-        user_end = path.byte_length()
+    var user_end = path.find(sep, 1).or_else(path.byte_length())
     # Special POSIX syntax for ~[user-name]/path
     if path.byte_length() > 1 and user_end > 1:
         try:
@@ -251,7 +249,10 @@ def dirname[PathLike: stdPathLike, //](path: PathLike) -> String:
     ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head = String(fspath[byte=:i])
     if head and head != sep * head.byte_length():
         return String(head.rstrip(sep))
@@ -501,7 +502,10 @@ def split[PathLike: stdPathLike, //](path: PathLike) -> Tuple[String, String]:
     ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head, tail = fspath[byte=:i], fspath[byte=i:]
     if head and head != String(sep) * head.byte_length():
         head = head.rstrip(sep)
@@ -527,7 +531,10 @@ def basename[PathLike: stdPathLike, //](path: PathLike) -> String:
         The basename from the path.
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head = fspath[byte=i:]
     if head and head != sep * head.byte_length():
         return String(head.rstrip(sep))
@@ -582,15 +589,18 @@ def _split_extension(
     Returns:
         A tuple containing two strings: (root, extension).
     """
-    # Find the last extension separator after the last separator.
-    var head_end = path.rfind(sep)
+    # The last path component starts just past the last separator, or at 0.
+    var file_start = 0
+    if case .Some(last_sep) = path.rfind(sep):
+        file_start = last_sep + 1
     if alt_sep:
-        head_end = max(head_end, path.rfind(alt_sep))
+        if case .Some(last_alt_sep) = path.rfind(alt_sep):
+            file_start = max(file_start, last_alt_sep + 1)
 
-    var file_end = path.rfind(extension_sep)
-    if file_end > head_end:
+    # Find the last extension separator after the last separator.
+    # If it comes before `file_start`, the loop below doesn't run.
+    if case .Some(file_end) = path.rfind(extension_sep):
         # skip all leading dots
-        var file_start = head_end + 1
         while file_start < file_end:
             if StringSpan(path[byte=file_start]) != extension_sep:
                 return String(path[byte=:file_end]), String(

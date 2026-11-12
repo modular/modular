@@ -22,10 +22,10 @@ def _assert_ordered(text: String, first: String, second: String) raises:
     occurs before `second`."""
     var first_pos = text.find(first)
     var second_pos = text.find(second)
-    assert_true(first_pos >= 0, String(t"expected to find {first}"))
-    assert_true(second_pos >= 0, String(t"expected to find {second}"))
+    assert_true(first_pos is not None, String(t"expected to find {first}"))
+    assert_true(second_pos is not None, String(t"expected to find {second}"))
     assert_true(
-        first_pos < second_pos,
+        first_pos.value() < second_pos.value(),
         String(t"{first} must precede {second}"),
     )
 

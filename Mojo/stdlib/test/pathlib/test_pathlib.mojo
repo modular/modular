@@ -13,6 +13,7 @@
 
 import std.os
 from std.pathlib import DIR_SEPARATOR, Path, cwd
+from std.pathlib.path import _dir_of_current_file, _dir_of_current_file_impl
 from std.tempfile import NamedTemporaryFile
 
 from std.reflection import source_location
@@ -28,6 +29,18 @@ from std.testing import (
 
 def test_cwd() raises:
     assert_true(String(cwd()).startswith("/"))
+
+
+def test_dir_of_current_file() raises:
+    assert_true(String(_dir_of_current_file()).endswith("/pathlib"))
+
+    assert_equal(String(_dir_of_current_file_impl("/a/b/c.mojo")), "/a/b")
+    assert_equal(String(_dir_of_current_file_impl("a/c.mojo")), "a")
+    # A file at the root keeps the separator.
+    assert_equal(String(_dir_of_current_file_impl("/c.mojo")), "/")
+    # A bare file name used to slice with a -1 end index when `rfind`
+    # returned -1 for "not found"; it's now the current directory.
+    assert_equal(String(_dir_of_current_file_impl("c.mojo")), ".")
 
 
 def test_path() raises:

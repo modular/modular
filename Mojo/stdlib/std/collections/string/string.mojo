@@ -186,8 +186,7 @@ struct String(
     if "World" in text:
         print("Found 'World' in text")
 
-    var pos = text.find("World")
-    if pos != -1:
+    if case .Some(pos) = text.find("World"):
         print("'World' found at position:", pos)
 
     # String replacement
@@ -1690,32 +1689,58 @@ struct String(
         """
         return substr in StringSpan(self)
 
-    def find(self, substr: StringSpan, start: Int = 0) -> Int:
+    def find(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
         """Finds the offset in bytes of the first occurrence of `substr`
-        starting at `start`. If not found, returns `-1`.
+        starting at `start`.
 
         Args:
           substr: The substring to find.
-          start: The offset in bytes from which to find.
+          start: The offset in bytes from which to find. A negative value
+            counts back from the end of the string.
 
         Returns:
-          The offset in bytes of `substr` relative to the beginning of the
-          string.
+          An `Optional` holding the offset in bytes of `substr` relative to the
+          beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var text = String("héllo, wörld")
+        print(text.find("l"))  # 3 (offsets are in bytes; "é" is 2 bytes)
+        print(text.find("l", start=4))  # 4
+        print(text.find("xyz"))  # None
+
+        if case .Some(index) = text.find(","):
+            print(text[byte=:index])  # héllo
+        ```
         """
 
         return StringSpan(self).find(substr, start)
 
-    def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
+    def rfind(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
         """Finds the offset in bytes of the last occurrence of `substr` starting
-        at `start`. If not found, returns `-1`.
+        at `start`.
 
         Args:
           substr: The substring to find.
-          start: The offset in bytes from which to find.
+          start: The offset in bytes from which to find. A negative value
+            counts back from the end of the string.
 
         Returns:
-          The offset in bytes of `substr` relative to the beginning of the
-          string.
+          An `Optional` holding the offset in bytes of `substr` relative to the
+          beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var path = String("/home/user/notes.txt")
+        print(path.rfind("/"))  # 10
+        print(path.rfind("."))  # 16
+        print(path.rfind(":"))  # None
+
+        if case .Some(index) = path.rfind("/"):
+            print(path[byte=index + 1 :])  # notes.txt
+        ```
         """
 
         return StringSpan(self).rfind(substr, start=start)
