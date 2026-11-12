@@ -65,7 +65,7 @@ Thread mapping (GPU)
   tokens, so long prefill rows spread across the whole GPU.
 """
 
-from std.bit import count_leading_zeros
+from std.bit import count_leading_zeros, next_power_of_two
 from std.sys.info import is_nvidia_gpu
 
 import max.gpu.primitives.warp as warp
@@ -96,6 +96,49 @@ def _activate[apply_silu: Bool](conv_sum: Float32) -> Float32:
         return silu(conv_sum)
     else:
         return conv_sum
+
+
+@always_inline
+def _row_of_token[
+    LT: TensorLayout, Engine: TensorEngine
+](
+    input_row_offsets: TileTensor[
+        .uint32, LT, ImmUntrackedOrigin, Engine=Engine
+    ],
+    batch_size: Int,
+    flat_token_idx: Int,
+) -> Int:
+    """Returns the rightmost row `b` with `input_row_offsets[b] <=
+    flat_token_idx`, which skips zero-length rows.
+
+    Every lane of the warp must pass the same token: the lookup is one ballot
+    over the warp.
+    """
+    if batch_size == 1:
+        return 0
+    # The 32-bit ballot does not lower on 64-lane AMD wavefronts.
+    comptime if is_nvidia_gpu():
+        comptime assert WARP_SIZE == 32, "ballot is 32 bits wide"
+        if batch_size <= WARP_SIZE:
+            # One parallel load instead of a dependent-load chain.
+            var lane = lane_id()
+            var found = False
+            if lane < batch_size:
+                found = (
+                    Int(input_row_offsets.load[width=1]((lane,)))
+                    <= flat_token_idx
+                )
+            var ballot = warp.vote[.uint32](found)
+            return max(0, WARP_SIZE - 1 - Int(count_leading_zeros(ballot)))
+    var lo = 0
+    var hi = batch_size - 1
+    while lo < hi:
+        var mid = (lo + hi + 1) >> 1
+        if Int(input_row_offsets.load[width=1]((mid,))) <= flat_token_idx:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo
 
 
 def gated_delta_conv1d_fwd_gpu[
@@ -242,56 +285,80 @@ def gated_delta_conv1d_fwd_gpu[
         row_major(Int(qkv_window.layout(qkv_window.layout.product() - 1)) + 1)
     )
 
-    # Cached across the consecutive tokens this thread owns.
-    var batch_item_idx = 0
-    var sequence_start_flat_idx = 0
-    var sequence_end_flat_idx = 0
-
     var first_flat_token_idx = block_idx.x * _tokens_per_block
-    for flat_token_idx in range(
-        first_flat_token_idx,
-        min(first_flat_token_idx + _tokens_per_block, _total_seq_len),
-    ):
-        if flat_token_idx >= sequence_end_flat_idx:
-            # Rightmost b with input_row_offsets[b] <= flat_token_idx, which
-            # skips zero-length sequences.
-            if _batch_size == 1:
-                batch_item_idx = 0
-            else:
-                var looked_up = False
-                # The 32-bit ballot does not lower on 64-lane AMD wavefronts.
-                comptime if is_nvidia_gpu():
-                    comptime assert WARP_SIZE == 32, "ballot is 32 bits wide"
-                    if _batch_size <= WARP_SIZE:
-                        # One parallel load instead of a dependent-load chain.
-                        var lane = lane_id()
-                        var found = False
-                        if lane < _batch_size:
-                            found = (
-                                Int(input_row_offsets.load[width=1]((lane,)))
-                                <= flat_token_idx
+
+    # Cached across the consecutive tokens this thread owns.
+    var batch_item_idx = _row_of_token(
+        input_row_offsets, _batch_size, first_flat_token_idx
+    )
+    var sequence_start_flat_idx = Int(
+        input_row_offsets.load[width=1]((batch_item_idx,))
+    )
+    var sequence_end_flat_idx = Int(
+        input_row_offsets.load[width=1]((batch_item_idx + 1,))
+    )
+
+    # A full tile inside one row, past the row's first KERNEL_SIZE - 1
+    # tokens, reads only the ragged input, so it issues all of its loads
+    # before its first store. In the per-token loop each token's loads wait
+    # behind the previous token's store, which keeps one token's loads in
+    # flight per thread.
+    var whole_tile_in_row = (
+        _tokens_per_block == CONV1D_TOKENS_PER_BLOCK
+        and first_flat_token_idx - sequence_start_flat_idx
+        >= KERNEL_SIZE_MINUS_ONE
+        and first_flat_token_idx + CONV1D_TOKENS_PER_BLOCK
+        <= sequence_end_flat_idx
+    )
+    comptime if CAPTURE_INPUT:
+        # Rows of at most window_row_len tokens also copy their input.
+        whole_tile_in_row = whole_tile_in_row and (
+            sequence_end_flat_idx - sequence_start_flat_idx
+            > Int(window_row_len)
+        )
+    var per_token_end_flat_idx = min(
+        first_flat_token_idx + _tokens_per_block, _total_seq_len
+    )
+    if whole_tile_in_row:
+        comptime TILE_TAPS = CONV1D_TOKENS_PER_BLOCK + KERNEL_SIZE_MINUS_ONE
+        var taps = SIMD[DType.float32, Int(next_power_of_two(TILE_TAPS))](0)
+        comptime for tap in range(TILE_TAPS):
+            taps[tap] = Float32(
+                rebind[Scalar[work_dtype]](
+                    qkv_input_flat.load(
+                        Coord(
+                            UInt32(
+                                first_flat_token_idx
+                                - KERNEL_SIZE_MINUS_ONE
+                                + tap
                             )
-                        var ballot = warp.vote[.uint32](found)
-                        var warp_lookup = (
-                            WARP_SIZE - 1 - Int(count_leading_zeros(ballot))
+                            * input_row_stride
+                            + input_channel_offset
                         )
-                        if warp_lookup < 0:
-                            warp_lookup = 0
-                        batch_item_idx = warp_lookup
-                        looked_up = True
-                if not looked_up:
-                    var lo = 0
-                    var hi = _batch_size - 1
-                    while lo < hi:
-                        var mid = (lo + hi + 1) >> 1
-                        if (
-                            Int(input_row_offsets.load[width=1]((mid,)))
-                            <= flat_token_idx
-                        ):
-                            lo = mid
-                        else:
-                            hi = mid - 1
-                    batch_item_idx = lo
+                    )
+                )
+            )
+        comptime for token in range(CONV1D_TOKENS_PER_BLOCK):
+            var conv_sum = Float32(0.0)
+            comptime for kernel_offset_k in range(KERNEL_SIZE):
+                conv_sum += taps[token + kernel_offset_k] * Float32(
+                    weight_register[kernel_offset_k]
+                )
+            if active:
+                conv_output_flat.store(
+                    (
+                        UInt32(first_flat_token_idx + token) * output_row_stride
+                        + output_channel_offset,
+                    ),
+                    Scalar[work_dtype](_activate[APPLY_SILU](conv_sum)),
+                )
+        per_token_end_flat_idx = first_flat_token_idx
+
+    for flat_token_idx in range(first_flat_token_idx, per_token_end_flat_idx):
+        if flat_token_idx >= sequence_end_flat_idx:
+            batch_item_idx = _row_of_token(
+                input_row_offsets, _batch_size, flat_token_idx
+            )
             sequence_start_flat_idx = Int(
                 input_row_offsets.load[width=1]((batch_item_idx,))
             )
