@@ -30,16 +30,22 @@ The sum runs over the heads this op is given. Under tensor parallelism each
 device passes its share of the heads and the partial scores are all-reduced
 before the top-k.
 
-GPU: one block per (query row, ``block_size`` columns), one thread per
-column. The row's query and weights sit in shared memory; each thread streams
-its entry once and keeps one accumulator per head. Blocks with no live column
-only write zeros. The CPU path is the same arithmetic in the same order.
+GPU: one block per (query row, ``block_size // lanes`` columns), ``lanes``
+threads per column, each holding the accumulators of ``num_heads // lanes``
+heads; the column's first thread adds the heads up in order. The row's query
+and weights sit in shared memory; each thread streams its entry once. Blocks
+with no live column only write zeros. Column tiles past grid y's limit fold
+onto the same blocks, which loop over them. Up to 4 rows, when the heads
+split into eighths, the few live columns are spread over more blocks and
+threads (64 threads, 8 per column); otherwise one thread per column. The
+CPU path is the same arithmetic in the same order.
 """
 
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 
-from max.gpu import block_idx, thread_idx
+import max.gpu.primitives.warp as warp
+from max.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.primitives.grid_controls import (
@@ -51,6 +57,9 @@ from max.gpu.sync import barrier
 
 from kv_cache.types import KVCacheT
 from layout import TileTensor
+
+comptime MAX_GRID_Y = 65535
+"""The largest grid y a CUDA or HIP launch takes."""
 
 
 @inline(.always)
@@ -200,92 +209,220 @@ def indexer_score_ragged_paged[
             num_cand,
         )
     else:
-        comptime block_size = 128
-        var num_batches_i32 = Int32(num_batches)
-        var num_cand_i32 = Int32(num_cand)
+        comptime if num_heads % 8 == 0:
+            if num_rows <= 4:
+                _indexer_score_gpu[
+                    num_heads=num_heads,
+                    head_dim=head_dim,
+                    chunk=chunk,
+                    block_size=64,
+                    lanes=8,
+                ](
+                    output,
+                    q,
+                    weights,
+                    input_row_offsets,
+                    base,
+                    cutoff,
+                    cache,
+                    num_rows,
+                    num_batches,
+                    num_cand,
+                    ctx,
+                )
+                return
+        _indexer_score_gpu[
+            num_heads=num_heads,
+            head_dim=head_dim,
+            chunk=chunk,
+            block_size=128,
+            lanes=1,
+        ](
+            output,
+            q,
+            weights,
+            input_row_offsets,
+            base,
+            cutoff,
+            cache,
+            num_rows,
+            num_batches,
+            num_cand,
+            ctx,
+        )
 
-        def kernel() {
-            var output,
-            var q,
-            var weights,
-            var input_row_offsets,
-            var base,
-            var cutoff,
-            var cache,
-            var num_batches_i32,
-            var num_cand_i32,
-        }:
+
+def indexer_score_grid(
+    num_rows: Int, num_cand: Int, cols: Int, max_col_blocks: Int = MAX_GRID_Y
+) -> Tuple[Int, Int]:
+    """The ``(rows, column blocks)`` grid of a launch of ``cols``-wide tiles.
+
+    Args:
+        num_rows: Query rows, one per grid x.
+        num_cand: Candidate columns.
+        cols: Columns per tile.
+        max_col_blocks: The cap on grid y; the tiles past it fold.
+
+    Returns:
+        The grid's x and y.
+    """
+    return (num_rows, min(ceildiv(num_cand, cols), max_col_blocks))
+
+
+def _indexer_score_gpu[
+    cache_t: KVCacheT,
+    q_type: DType,
+    //,
+    num_heads: Int,
+    head_dim: Int,
+    chunk: Int,
+    block_size: Int,
+    lanes: Int,
+    max_col_blocks: Int = MAX_GRID_Y,
+](
+    output: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    weights: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    base: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    cutoff: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    cache: cache_t,
+    num_rows: Int,
+    num_batches: Int,
+    num_cand: Int,
+    ctx: DeviceContext,
+) raises:
+    comptime cols = block_size // lanes
+    comptime heads_per_lane = num_heads // lanes
+    comptime staged = num_heads * head_dim // (block_size * chunk)
+    comptime assert heads_per_lane * lanes == num_heads
+    comptime assert WARP_SIZE % lanes == 0
+    comptime assert output.flat_rank == 2 and q.flat_rank == 3
+    var num_batches_i32 = Int32(num_batches)
+    var num_cand_i32 = Int32(num_cand)
+    var grid = indexer_score_grid(num_rows, num_cand, cols, max_col_blocks)
+
+    def kernel() {
+        var output,
+        var q,
+        var weights,
+        var input_row_offsets,
+        var base,
+        var cutoff,
+        var cache,
+        var num_batches_i32,
+        var num_cand_i32,
+    }:
+        with PDL():
             var t = block_idx.x
             var tid = thread_idx.x
-            var c0 = block_idx.y * block_size
+            var part = tid % lanes
             var n = Int(num_cand_i32)
             var cap = n // 2
 
-            with PDL():
-                var b = _batch_of_row(
-                    t, input_row_offsets, Int(num_batches_i32)
-                )
-                var base_b = Int(rebind[Int32](base.load((b,))))
-                var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
-                var c = c0 + tid
+            var b = _batch_of_row(t, input_row_offsets, Int(num_batches_i32))
+            var base_b = Int(rebind[Int32](base.load((b,))))
+            var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
+
+            var sq = unsafe_stack_allocation[
+                num_heads * head_dim, Float32, address_space=.SHARED
+            ]()
+            var sw = unsafe_stack_allocation[
+                num_heads, Float32, address_space=.SHARED
+            ]()
+            var query_staged = False
+            for tile in range(block_idx.y, ceildiv(n, cols), grid_dim.y):
+                var c0 = tile * cols
+                var c = c0 + tid // lanes
 
                 # Live columns are [0, base) and [cap, cap + cutoff - base); a
-                # block that misses both skips the query load. The branch is
-                # block-uniform, so the early return cannot strand a barrier.
-                var c1 = c0 + block_size
+                # tile that misses both skips the query load. The branches are
+                # block-uniform, so no barrier is stranded.
+                var c1 = c0 + cols
                 if not (
                     c0 < base_b or (c1 > cap and c0 < cap + cutoff_t - base_b)
                 ):
-                    if c < n:
+                    if part == 0 and c < n:
                         output.store((t, c), Float32(0))
-                    return
+                    continue
 
-                var sq = unsafe_stack_allocation[
-                    num_heads * head_dim, Float32, address_space=.SHARED
-                ]()
-                var sw = unsafe_stack_allocation[
-                    num_heads, Float32, address_space=.SHARED
-                ]()
-                for i in range(tid, num_heads * head_dim, block_size):
-                    var h = i // head_dim
-                    var d = i - h * head_dim
-                    sq.unsafe_store(
-                        i, rebind[Float32](q.load((t, h, d)).cast[.float32]())
-                    )
-                for h in range(tid, num_heads, block_size):
-                    sw.unsafe_store(h, rebind[Float32](weights.load((t, h))))
-                barrier()
+                if not query_staged:
+                    comptime if staged * block_size * chunk == (
+                        num_heads * head_dim
+                    ):
+                        # Every query load is issued before the first store.
+                        var qs = Array[SIMD[q_type, chunk], staged](fill=0)
+                        comptime for j in range(staged):
+                            var i = (j * block_size + tid) * chunk
+                            var h = i // head_dim
+                            qs[j] = rebind[SIMD[q_type, chunk]](
+                                q.load[width=chunk]((t, h, i - h * head_dim))
+                            )
+                        comptime for j in range(staged):
+                            sq.unsafe_store(
+                                (j * block_size + tid) * chunk,
+                                qs[j].cast[.float32](),
+                            )
+                    else:
+                        for i in range(tid, num_heads * head_dim, block_size):
+                            var h = i // head_dim
+                            sq.unsafe_store(
+                                i,
+                                rebind[Float32](
+                                    q.load((t, h, i - h * head_dim)).cast[
+                                        .float32
+                                    ]()
+                                ),
+                            )
+                    for h in range(tid, num_heads, block_size):
+                        sw.unsafe_store(
+                            h, rebind[Float32](weights.load((t, h)))
+                        )
+                    barrier()
+                    query_staged = True
 
-                if c >= n:
-                    return
-                var e: Int
-                var live: Bool
+                var e = 0
+                var live = False
                 if c < cap:
                     e = c
                     live = c < base_b
-                else:
+                elif c < n:
                     e = base_b + c - cap
                     live = e < cutoff_t
 
-                var score = Float32(0)
+                var acc = Array[Float32, heads_per_lane](fill=Float32(0))
                 if live:
-                    var acc = Array[Float32, num_heads](fill=Float32(0))
-                    for d0 in range(0, head_dim, chunk):
+                    comptime for d0 in range(0, head_dim, chunk):
                         var k = cache.load[width=chunk, output_dtype=.float32](
                             b, 0, e, d0
                         )
-                        comptime for h in range(num_heads):
+                        comptime for hh in range(heads_per_lane):
                             var qv = sq.unsafe_load[width=chunk](
-                                h * head_dim + d0
+                                (part * heads_per_lane + hh) * head_dim + d0
                             )
-                            acc[h] += (qv * k).reduce_add()
-                    comptime for h in range(num_heads):
-                        score += max(acc[h], Float32(0)) * sw.unsafe_load(h)
-                output.store((t, c), score)
+                            acc[hh] += (qv * k).reduce_add()
 
-        ctx.enqueue_function(
-            kernel,
-            grid_dim=(num_rows, ceildiv(num_cand, block_size)),
-            block_dim=block_size,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
-        )
+                # The column's first lane adds every head's term in head order.
+                var score = Float32(0)
+                comptime for p in range(lanes):
+                    comptime for hh in range(heads_per_lane):
+                        var a: Float32
+                        comptime if lanes == 1:
+                            a = acc[hh]
+                        else:
+                            a = warp.shuffle_down(acc[hh], UInt32(p))
+                        if live:
+                            score += max(a, Float32(0)) * sw.unsafe_load(
+                                p * heads_per_lane + hh
+                            )
+                if part == 0 and c < n:
+                    output.store((t, c), score)
+
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=(grid[0], grid[1]),
+        block_dim=block_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )

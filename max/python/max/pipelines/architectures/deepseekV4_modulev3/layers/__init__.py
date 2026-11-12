@@ -18,9 +18,13 @@ from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .hadamard import hadamard_rotate
 from .hyper_connection import (
+    PendingPost,
+    Streams,
     expand_copies,
     hc_head,
+    hc_merge,
     hc_post,
+    hc_pre_norm,
     hyper_connection,
 )
 from .indexer import DeepseekV4Indexer
@@ -59,7 +63,9 @@ __all__ = [
     "DeepseekV4RoutedExperts",
     "DeepseekV4SharedExpert",
     "LayerIndex",
+    "PendingPost",
     "RaggedRows",
+    "Streams",
     "WindowRows",
     "apply_rope_tail",
     "block_scale",
@@ -70,7 +76,9 @@ __all__ = [
     "fp8_qat_quantize",
     "hadamard_rotate",
     "hc_head",
+    "hc_merge",
     "hc_post",
+    "hc_pre_norm",
     "hyper_connection",
     "linear_for",
     "rope_for_layer",

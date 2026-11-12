@@ -30,10 +30,13 @@ from .layers import (
     DeepseekV4MoE,
     DeepseekV4RMSNorm,
     LayerIndex,
+    PendingPost,
     RaggedRows,
+    Streams,
     expand_copies,
     hc_head,
-    hc_post,
+    hc_merge,
+    hc_pre_norm,
     hyper_connection,
 )
 from .model_config import DeepseekV4Config
@@ -41,7 +44,7 @@ from .model_config import DeepseekV4Config
 __all__ = ["DeepseekV4", "DeepseekV4Block"]
 
 
-class DeepseekV4Block(Module[..., Tensor]):
+class DeepseekV4Block(Module[..., PendingPost]):
     """One decoder block: mHC-wrapped attention, then mHC-wrapped MoE."""
 
     def __init__(
@@ -63,26 +66,29 @@ class DeepseekV4Block(Module[..., Tensor]):
 
     def forward(
         self,
-        x: Tensor,
+        x: Streams,
         rows: RaggedRows,
         token_ids: Tensor,
         cache: DeepseekV4Cache,
         index: LayerIndex,
-    ) -> Tensor:
-        """``[T, hc, d]`` in and out; ``token_ids`` ``[T]`` feed hash routing.
+    ) -> PendingPost:
+        """Streams in, this block's FFN write-back out, still pending.
 
-        ``post`` and ``comb`` are read off the stream before each sublayer
-        runs, so they describe the incoming stream, not the outgoing one.
+        ``x`` is ``[T, hc, d]`` or the previous block's pending write-back,
+        which this block's first site fuses. ``post`` and ``comb`` are read
+        off the stream before each sublayer runs, so they describe the
+        incoming stream, not the outgoing one. ``token_ids`` ``[T]`` feed
+        hash routing.
         """
-        post, comb, h = self.hc_attn(x)
-        h = self.attn(self.attn_norm(h), rows, cache, index)
+        residual, h, post, comb = hc_pre_norm(x, self.hc_attn, self.attn_norm)
+        h = self.attn(h, rows, cache, index)
         # The heads' partial sums, completed before the (whole) mHC merge.
         h = h.to(DeviceMapping.replicated(h.mesh))
-        x = hc_post(h, x, post, comb)
-
-        post, comb, h = self.hc_ffn(x)
-        h = self.ffn(self.ffn_norm(h), token_ids)
-        return hc_post(h, x, post, comb)
+        residual, h, post, comb = hc_pre_norm(
+            PendingPost(h, residual, post, comb), self.hc_ffn, self.ffn_norm
+        )
+        h = self.ffn(h, token_ids)
+        return PendingPost(h, residual, post, comb)
 
 
 # Extracted from deepseekV3_modulev3/deepseekV3.py at dfc8109fc0c.
@@ -165,11 +171,11 @@ class DeepseekV4(Module[..., ModuleV3Outputs]):
             self.config.window_ratios,
         )
 
-        h = expand_copies(self.embed(tokens), self.config.hc_mult)
+        h: Streams = expand_copies(self.embed(tokens), self.config.hc_mult)
         for block in self.layers:
             h = block(h, rows, tokens, cache, block.attn.layer_index())
         h = hc_head(
-            h,
+            hc_merge(h),
             self.hc_head_fn,
             self.hc_head_scale,
             self.hc_head_base,
