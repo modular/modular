@@ -147,6 +147,13 @@ This version is still a work in progress.
 
 ## Python API
 
+- `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
+  run the decoder op by op instead of as a compiled graph, so `pdb` stopped
+  inside a module's `forward()` sees real values on every step. It is for
+  debugging and much slower than the compiled graph. It runs ModuleV3 text
+  generation architectures that register a `DECODER` module, on one device.
+  See the [pdb guide](/develop/debugging/#step-through-a-model-with-pdb).
+
 - The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,
   and the graph-based layers that `max.nn` held moved to `max.nn.legacy`.
   `max.nn.legacy` is deprecated and will be removed in MAX 27.1. Code that

@@ -73,6 +73,7 @@ def _load_cpu(model_path: str, **overrides: object) -> AutoPipeline:
         max_batch_size=len(PROMPTS),
         device_graph_capture=False,
         prefer_module_v3=False,
+        eager=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,

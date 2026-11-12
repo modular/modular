@@ -79,6 +79,7 @@ def _load_cpu(
         max_batch_size=max_batch_size,
         device_graph_capture=False,
         prefer_module_v3=False,
+        eager=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,
@@ -94,6 +95,7 @@ def _load_accelerator(
         max_batch_size=1,
         device_graph_capture=device_graph_capture,
         prefer_module_v3=False,
+        eager=False,
         devices="gpu",
         **overrides,
     )
@@ -429,6 +431,7 @@ def test_signature_defaults(
     assert config.runtime.enable_overlap_scheduler is False
     assert config.runtime.force is False
     assert config.runtime.prefer_module_v3 is True
+    assert config.runtime.eager is False
 
 
 @pytest.mark.parametrize("prefer_module_v3", [False, True])
@@ -445,6 +448,15 @@ def test_prefer_module_v3_reaches_the_config(
         )
     [config] = built_configs
     assert config.runtime.prefer_module_v3 is prefer_module_v3
+
+
+def test_eager_reaches_the_config(
+    model_path: str, built_configs: list[PipelineConfig]
+) -> None:
+    with pytest.raises(_StopBeforeBuild):
+        AutoModel(model_path, devices="cpu", eager=True)
+    [config] = built_configs
+    assert config.runtime.eager is True
 
 
 def test_prefer_module_v3_loads_and_generates(model_path: str) -> None:

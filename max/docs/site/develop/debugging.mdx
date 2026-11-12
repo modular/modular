@@ -124,6 +124,66 @@ See the [Debugging section](/environment-variables/#debugging) of the
 environment variables reference for every option you can pass to
 `MODULAR_DEBUG`.
 
+## Step through a model with Python's debugger (pdb) {#step-through-a-model-with-pdb}
+
+`max generate`, [`AutoModel`](/api/python/generated/max.pipelines.AutoModel/)
+and [`AutoPipeline`](/api/python/generated/max.pipelines.AutoPipeline/) compile
+the model into a graph. A
+`breakpoint()` in a module's `forward()` then stops only once, while the graph
+is built, and the tensors there have shapes but no values.
+
+To stop on every step with real values, run the decoder eagerly. It then runs
+op by op, so pdb, `print()` and [`Tensor.to_numpy()`][to-numpy] work inside
+`forward()`. The decoder isn't traced at load, so a breakpoint in
+it stops only on the steps.
+
+For example, add `breakpoint()` to
+[`Llama3TextModel.forward()`](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3_modulev3)
+(find the installed source with `python -c "import max; print(max.__path__)"`),
+then pass `eager=True` to `AutoModel`:
+
+```python
+from max.pipelines import AutoModel, AutoTokenizer
+
+model_path = "HuggingFaceTB/SmolLM2-135M"
+tokenizer = AutoTokenizer(model_path)
+model = AutoModel(model_path, eager=True)
+result = model.generate(
+    **tokenizer(["The capital of France is"]), max_new_tokens=4
+)
+```
+
+Or pass `--eager` to `max generate`. Keep `--max-new-tokens` small, since the
+breakpoint stops on every step:
+
+```bash
+max generate --model HuggingFaceTB/SmolLM2-135M --eager \
+  --max-new-tokens 4 --prompt "The capital of France is"
+```
+
+Eager mode is for debugging, and it has these limits:
+
+- Each step is much slower than the compiled graph. The slowdown depends on
+  the model, input shape and device.
+- The first step for each new input shape compiles the ops the interpreter
+  can't run, such as the paged attention kernels, which takes a minute or
+  more on a GPU. On a machine that hasn't run `max warm-interpreter-cache`,
+  the first step also builds the interpreter's op models, which takes several
+  minutes.
+- Only the decoder runs eagerly. The sampler and any vision encoder stay
+  compiled.
+- Logits differ a little from the compiled graph's, since eager mode rounds
+  after every op instead of fusing ops. In bfloat16, a token that is a near tie
+  can come out differently.
+- It runs ModuleV3 text generation architectures that register a `DECODER`
+  module, on one device. Any other model fails before anything loads, with a
+  message that says why. It can't be combined with device graph capture, the
+  overlap scheduler, LoRA, speculative decoding or expert parallelism, and
+  `max serve`, `max export` and `max warm-cache` refuse it.
+- The interpreter logs a warning that asks you to file a bug for each op it
+  hands to the compiler. For the paged attention and KV cache ops, that's
+  expected.
+
 ## Next steps
 
 Now that you know how to set up debugging in MAX, review the full list of
@@ -131,3 +191,5 @@ debugging options in the
 [`DebugConfig`](/api/python/generated/max.engine.DebugConfig/) class.
 You'll find detailed specifications for each option (property) including the
 type and accepted values.
+
+[to-numpy]: /api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy

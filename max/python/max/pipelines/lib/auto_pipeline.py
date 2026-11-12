@@ -92,6 +92,8 @@ class AutoPipeline:
             for :class:`~max.pipelines.AutoModel`.
         prefer_module_v3: Whether to load the architecture's ModuleV3
             version, as for :class:`~max.pipelines.AutoModel`.
+        eager: Whether the decoder runs op by op instead of compiled, as for
+            :class:`~max.pipelines.AutoModel`.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names. A text model's tokenizer loads with the revision and
             ``trust_remote_code`` of the resolved config.
@@ -109,6 +111,7 @@ class AutoPipeline:
         devices: str | None = None,
         device_graph_capture: bool = False,
         prefer_module_v3: bool = True,
+        eager: bool = False,
         **config_overrides: object,
     ) -> None:
         model = AutoModel(
@@ -117,6 +120,7 @@ class AutoPipeline:
             devices=devices,
             device_graph_capture=device_graph_capture,
             prefer_module_v3=prefer_module_v3,
+            eager=eager,
             **config_overrides,
         )
         self._model = model
