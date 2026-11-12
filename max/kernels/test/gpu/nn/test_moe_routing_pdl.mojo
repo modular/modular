@@ -852,8 +852,8 @@ def _redzone_allocator() -> Bool:
 def test_indices_release_on_entry(ctx: DeviceContext) raises:
     """A grid behind `moe_create_indices` is resident while its scan runs.
 
-    The scan is a single block and takes about as long as its token count, so
-    a probe launched behind it stamps the device clock before and after its
+    At this size the index build takes the multi-CTA path, whose scatter
+    launch runs about as long as its token count, so a probe launched behind it stamps the device clock before and after its
     own wait. With the release right after the kernel's wait the probe starts
     early and the two stamps are far apart; released at exit it would start
     only as the scan ends and they would nearly coincide.
