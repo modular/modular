@@ -137,6 +137,11 @@ def test_unpack_varargs(*args: Int):
     test_unpack(*args)
 
 
+def test_unpack_varargs_after_value(*args: Int):
+    # expected-error @+1 {{invalid call to 'takes_varargs': cannot unpack a value into a variadic argument}}
+    takes_varargs(1, *args)
+
+
 # Double-star unpacking a real **kwargs pack.
 def takes_kwargs(var **kwargs: Int):
     pass

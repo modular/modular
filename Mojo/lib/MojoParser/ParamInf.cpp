@@ -2038,9 +2038,10 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       SmallVector<TypedAttr> argOrigins;
       for (auto operandIdx : pogAssignment.posVariadicIdxs) {
         auto &operand = callOperands[operandIdx];
+        assert(operand.unpackStyle != ArgUnpackStyle::kStarStar &&
+               "`assignToPogs` never assigns a '**' unpack to a variadic");
 
-        if (operand.unpackStyle == ArgUnpackStyle::kStar ||
-            operand.unpackStyle == ArgUnpackStyle::kStarStar) {
+        if (operand.unpackStyle == ArgUnpackStyle::kStar) {
           getMojoDiag(operand.expr->getLoc())
               << "cannot unpack a value into a variadic argument";
           return {};
@@ -2188,12 +2189,8 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     const ExprNode *packArgExpr = nullptr;
     for (auto operandIdx : pogAssignment.posVariadicIdxs) {
       const auto &operand = callOperands[operandIdx];
-
-      if (operand.unpackStyle == ArgUnpackStyle::kStarStar) {
-        getMojoDiag(operand.expr->getLoc())
-            << "cannot unpack keyword arguments into a variadic pack";
-        return {};
-      }
+      assert(operand.unpackStyle != ArgUnpackStyle::kStarStar &&
+             "`assignToPogs` never assigns a '**' unpack to a pack");
 
       // Remember the first argument expression for the pack.
       if (packArgExpr == nullptr)
