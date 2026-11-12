@@ -404,6 +404,7 @@ def quantize_dynamic_scaled_fp8[
     num_cols: Int,
     pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
     row_bounded: Bool = False,
+    pow2_scales: Bool = False,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -421,6 +422,10 @@ def quantize_dynamic_scaled_fp8[
     keep near-zero activation groups on the scale grid the checkpoint was
     trained against. It is only honored on the `float8_e8m0fnu` scale path;
     `0` (the default) leaves the scale unchanged.
+
+    `pow2_scales` derives each scale as the `float8_e8m0fnu` path does and
+    stores it widened to `scales_dtype`, which a consumer that wants float32
+    UE8M0 scales would otherwise get from a separate cast.
 
     When `row_bounded`, `row_limit` points at a device-resident count of live
     rows and the kernel grid-strides over `[0, row_limit)` instead of covering
@@ -454,6 +459,9 @@ def quantize_dynamic_scaled_fp8[
     comptime assert (scales_dtype != .float8_e8m0fnu) or (
         out_dtype == .float8_e4m3fn
     ), "float8_e8m0fnu is only supported for float8_e4m3fn output dtype"
+    comptime assert not pow2_scales or (
+        scales_dtype == .float32 and out_dtype == .float8_e4m3fn
+    ), "pow2_scales widens UE8M0 scales to float32 for float8_e4m3fn output"
 
     comptime group_size = num_cols if group_size_or_per_token == -1 else group_size_or_per_token
     comptime simd_width = 16 if group_size % 16 == 0 else 8 if group_size % 8 == 0 else 4
@@ -512,6 +520,7 @@ def quantize_dynamic_scaled_fp8[
                 simd_width=simd_width,
                 row_bounded=row_bounded,
                 pdl_level=pdl_level,
+                pow2_scales=pow2_scales,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -588,6 +597,7 @@ struct _QuantizeFp8Kernel[
     simd_width: Int,
     pdl_level: PDLLevel,
     row_bounded: Bool = False,
+    pow2_scales: Bool = False,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -627,12 +637,16 @@ struct _QuantizeFp8Kernel[
         """Derives a group's scale and its reciprocal from the group max-abs."""
         comptime fp8_max = Scalar[Self.out_type].MAX_FINITE
 
-        comptime if Self.scales_type == .float8_e8m0fnu:
-            var scale_factor = max(
-                max(group_max, amax_floor.cast[accum_type]())
-                / fp8_max.cast[accum_type](),
-                Scalar[accum_type](1e-10),
-            ).cast[Self.scales_type]()
+        comptime if Self.scales_type == .float8_e8m0fnu or Self.pow2_scales:
+            var scale_factor = (
+                max(
+                    max(group_max, amax_floor.cast[accum_type]())
+                    / fp8_max.cast[accum_type](),
+                    Scalar[accum_type](1e-10),
+                )
+                .cast[.float8_e8m0fnu]()
+                .cast[Self.scales_type]()
+            )
             var scale_factor_recip = (
                 0.0 if group_max
                 == 0.0 else 1.0 / scale_factor.cast[accum_type]()

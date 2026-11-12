@@ -11866,6 +11866,7 @@ def quantize_dynamic_scaled_float8(
     scales_type: DType = DType.bfloat16,
     amax_floor: float = 0.0,
     row_offsets: TensorValue | None = None,
+    pow2_scales: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Dynamically quantize the input tensor to fp8.
 
@@ -11887,19 +11888,33 @@ def quantize_dynamic_scaled_float8(
         amax_floor: Lower bound applied to a group's max-abs before the scale
             is derived. QAT recipes that floor the activation amax
             (DeepSeek-V4's ``act_quant`` uses 1e-4) need it to stay on the
-            scale grid the checkpoint was trained against. Supported only when
-            ``scales_type`` is ``float8_e8m0fnu``; ``0.0`` (the default) leaves
-            the scale unchanged.
+            scale grid the checkpoint was trained against. Supported only with
+            ``float8_e8m0fnu`` scales or ``pow2_scales``; ``0.0`` (the default)
+            leaves the scale unchanged.
+        pow2_scales: Derive the scales as ``float8_e8m0fnu`` does (powers of
+            two) and return them as ``float32`` (``scales_type`` must be
+            ``float32``), what a block-scaled fp8 matmul reads.
 
     Returns:
         The quantized tensor and the scales.
     """
+    if pow2_scales and (
+        scales_type != DType.float32 or row_offsets is not None
+    ):
+        raise ValueError(
+            "pow2_scales needs float32 scales and no row_offsets, got"
+            f" {scales_type}"
+        )
     if not math.isfinite(amax_floor) or amax_floor < 0.0:
         raise ValueError(
             f"amax_floor must be finite and non-negative, got {amax_floor}"
         )
 
-    if amax_floor > 0.0 and scales_type != DType.float8_e8m0fnu:
+    if (
+        amax_floor > 0.0
+        and scales_type != DType.float8_e8m0fnu
+        and not pow2_scales
+    ):
         raise ValueError(
             "amax_floor is only supported with float8_e8m0fnu scales, got"
             f" {scales_type}"
@@ -11935,6 +11950,23 @@ def quantize_dynamic_scaled_float8(
             values=[input, scale_ub_value, row_offsets],
             out_types=out_types,
             parameters={"group_size_or_per_token": group_size},
+        )
+        return result[0].tensor, result[1].tensor
+
+    if pow2_scales:
+        # A custom op, as for row_offsets: the typed op carries no such
+        # attribute, so its fusions never see this variant.
+        parameters: dict[str, bool | int | float | str | DType] = {
+            "group_size_or_per_token": group_size,
+        }
+        if amax_floor > 0.0:
+            parameters["amax_floor"] = amax_floor
+        result = ops.custom(
+            "quantization.quantize_dynamic_scaled_float8.pow2_scales",
+            device=input.device,
+            values=[input, scale_ub_value],
+            out_types=out_types,
+            parameters=parameters,
         )
         return result[0].tensor, result[1].tensor
 

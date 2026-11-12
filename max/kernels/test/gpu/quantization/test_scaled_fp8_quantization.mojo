@@ -471,6 +471,97 @@ def test_dynamic_fp8_quant_amax_floor[
     base_scales_host_ptr.unsafe_free()
 
 
+def test_dynamic_fp8_quant_pow2_scales[
+    in_dtype: DType,
+    group_size: Int,
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType) raises:
+    """Checks that `pow2_scales` writes the `float8_e8m0fnu` path's scales
+    widened to float32 and the same fp8 values, bit for bit."""
+    comptime out_dtype = DType.float8_e4m3fn
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
+    var total_size = Int(m) * Int(n)
+    var scales_size = (Int(n) // group_size) * Int(m)
+
+    var in_host_ptr = unsafe_alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var e8_out_host_ptr = unsafe_alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = unsafe_alloc[Float32](scales_size)
+    var e8_scales_host_ptr = unsafe_alloc[Scalar[.float8_e8m0fnu]](scales_size)
+    for i in range(total_size):
+        # Groups of very different magnitudes, signs mixed.
+        var magnitude = Float32(1 << ((i // group_size) % 12)) * 1e-3
+        in_host_ptr[i] = (Float32((i * 7919) % 2001 - 1000) * magnitude).cast[
+            in_dtype
+        ]()
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
+    var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var e8_out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var scales_device = ctx.enqueue_create_buffer[DType.float32](scales_size)
+    var e8_scales_device = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+        scales_size
+    )
+    ctx.enqueue_copy(in_device, in_host_ptr)
+
+    var in_tensor = TileTensor(in_device, shape)
+
+    @inline(.always)
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
+
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+        pow2_scales=True,
+    ](
+        input_fn,
+        TileTensor(out_device, shape),
+        TileTensor(scales_device, scales_shape),
+        1200.0,
+        ctx,
+        Int(m),
+        1e-4,
+    )
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
+        TileTensor(e8_out_device, shape),
+        TileTensor(e8_scales_device, scales_shape),
+        1200.0,
+        ctx,
+        Int(m),
+        1e-4,
+    )
+    ctx.enqueue_copy(out_host_ptr, out_device)
+    ctx.enqueue_copy(e8_out_host_ptr, e8_out_device)
+    ctx.enqueue_copy(scales_host_ptr, scales_device)
+    ctx.enqueue_copy(e8_scales_host_ptr, e8_scales_device)
+    ctx.synchronize()
+
+    for i in range(scales_size):
+        assert_equal(scales_host_ptr[i], e8_scales_host_ptr[i].cast[.float32]())
+    for i in range(total_size):
+        assert_equal(
+            out_host_ptr[i].cast[.float32](),
+            e8_out_host_ptr[i].cast[.float32](),
+        )
+
+    in_host_ptr.unsafe_free()
+    out_host_ptr.unsafe_free()
+    e8_out_host_ptr.unsafe_free()
+    scales_host_ptr.unsafe_free()
+    e8_scales_host_ptr.unsafe_free()
+
+
 def test_batched_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
@@ -1288,3 +1379,9 @@ def main() raises:
                 DType.float32,
                 128,
             ](ctx, Int(1), Idx[256], 1e-4)
+            test_dynamic_fp8_quant_pow2_scales[DType.bfloat16, 128](
+                ctx, Int(1), Idx[4096]
+            )
+            test_dynamic_fp8_quant_pow2_scales[DType.bfloat16, 128](
+                ctx, Int(43), Idx[1024]
+            )

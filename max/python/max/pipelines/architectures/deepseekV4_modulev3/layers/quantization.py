@@ -222,8 +222,9 @@ class DeepseekV4Fp8Linear(Module[[Tensor], Tensor]):
 
     Not ``QuantizedLinear``: that quantizes activations with ``amax / 448``
     float32 scales, where the checkpoint was trained on power-of-two (e8m0)
-    ones. So the activation is quantized with e8m0 scales, widened to float32
-    for ``mo.matmul_dynamic_scaled_fp8``, exactly as the V2 layer does.
+    ones. So the activation is quantized with e8m0 scales, which the quantizer
+    writes widened to float32 for ``mo.matmul_dynamic_scaled_fp8``: the V2
+    layer's values, without its separate cast.
     """
 
     weight: Tensor
@@ -258,12 +259,13 @@ class DeepseekV4Fp8Linear(Module[[Tensor], Tensor]):
             qc.weight_scale,
             group_size_or_per_token=LINEAR_QUANT_BLOCK,
             out_type=DType.float8_e4m3fn,
-            scales_type=DType.float8_e8m0fnu,
+            scales_type=DType.float32,
+            pow2_scales=True,
         )
         out = quant_ops.dynamic_scaled_matmul(
             quantized,
             self.weight,
-            scales.cast(DType.float32),
+            scales,
             self.weight_scale,
             qc.input_scale,
             qc.weight_scale,

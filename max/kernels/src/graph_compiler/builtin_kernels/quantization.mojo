@@ -2699,3 +2699,71 @@ struct QuantizeDynamicScaledFloat8RowBounded:
             num_rows=Int(input.shape()[0].value()),
             row_limit=Optional[Pointer[UInt32, ImmUntrackedOrigin]](row_limit),
         )
+
+
+@extensibility.register(
+    "quantization.quantize_dynamic_scaled_float8.pow2_scales"
+)
+struct QuantizeDynamicScaledFloat8Pow2Scales:
+    """Registers the `quantization.quantize_dynamic_scaled_float8.pow2_scales` graph op.
+
+    Same numerics as `mo.composite.quantize_dynamic_scaled_fp8` with
+    `float8_e8m0fnu` scales, but the power-of-two scales are written widened
+    to float32, the layout a blockwise fp8 matmul reads. This saves the
+    separate cast kernel after each quantize.
+
+    A custom op rather than an attribute on the composite, as with
+    `row_bounded`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        group_size_or_per_token: Int,
+        amax_floor: Float32 = 0,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        scale_ub: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
+            )
+
+        quantize_dynamic_scaled_fp8[
+            in_dtype=input_type,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols=type_of(input)._shape_types[1].static_value,
+            pow2_scales=True,
+        ](
+            input_fn,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            scale_ub,
+            ctx,
+            num_rows=Int(input.shape()[0].value()),
+            amax_floor=amax_floor,
+        )
