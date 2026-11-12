@@ -245,7 +245,7 @@ We want to allocate a 1.8MB block on the pictured DeviceContext:
 #### Device Memory Configuration
 
 - **`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE`**: Maximum memory manager size
-  in KB (default: uses percentage). A value of 0 disables the memory manager.
+  in bytes (default: uses percentage). A value of 0 disables the memory manager.
 - **`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT`**: Percentage of GPU
   memory to use, after the driver has taken its memory (default: 90%). Ignored
   when absolute size (above) is specified. Otherwise, a value of 0 disables the
@@ -286,7 +286,7 @@ succeeds. This eliminates the "plenty free but no contiguous block" OOM.
 #### Host Memory Configuration
 
 - **`MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_SIZE`**: Host memory manager
-  size in KB
+  size in bytes
 - **`MODULAR_DEVICE_CONTEXT_HOST_MEMORY_MANAGER_CHUNK_PERCENT`**: Host chunk
   percentage
 
@@ -443,8 +443,8 @@ mv /tmp/poison-select.new /tmp/poison-select
 export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=75
 export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT=10
 
-# Fixed memory manager size of 1GB
-export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=1048576  # KB
+# Fixed memory manager size of 1 GB
+export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE=1073741824  # bytes
 
 # Enable debugging
 export MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG=true
