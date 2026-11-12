@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test", "mojo_shared_library", "mojo_test", "requirement")
+load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_py_test", "mojo_shared_library", "mojo_test", "requirement")
 
 package(
     default_visibility = ["//MLRT:consumers"],
@@ -285,6 +285,56 @@ mojo_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# The typed `Queue.execute`, which packs the kernel's arguments itself.
+mojo_test(
+    name = "test_e2e_driver_ukl.mojo.test",
+    srcs = ["test_e2e_driver_ukl.mojo"],
+    data = select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:nvidia_gpu": [],
+        "//:apple_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Launches the typed `Queue.execute` rejects at compile time. The accelerator is
+# pinned in each RUN line, so they need no device.
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = [
+        "test_execute_int_arg_fail.mojo",
+        "test_execute_vendor_config_fail.mojo",
+    ],
+    mojo_deps = [
         "//max:max_mojo",
         "@mojo//:std",
     ],

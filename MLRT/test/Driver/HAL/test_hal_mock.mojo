@@ -22,7 +22,11 @@ from std.os import getenv
 from std.memory import alloc
 from max._driver import Driver, copy, fill, set_memory
 from max._driver.max_license.hal.context import Context
-from max._driver.max_license.hal.device import Device, get_device_spec
+from max._driver.max_license.hal.device import (
+    Device,
+    DeviceSpec,
+    get_device_spec,
+)
 from max._driver.max_license.hal.queue import Queue
 from max._driver.max_license.hal.stream import Stream
 from max._driver.max_license.hal.event import Event, EVENT_FLAG_CPU_VISIBLE
@@ -30,6 +34,8 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsCompletionFlagV1,
     SupportsPeerAccessV1,
 )
+from max._driver.max_license.hal.kernel_args import DenseArgPacker
+from max.gpu.host._launch_args import _IdentityWrapper
 from max._driver.max_license.hal.status import (
     STATUS_SUCCESS,
     STATUS_INCOMPATIBLE_VERSION,
@@ -166,6 +172,114 @@ def test_memory_wrap_unwrap() raises:
     # owns the allocation.
     _ = wrapped^
     assert_equal(ctx[].memory_get_address(buf), addr)
+
+
+def _layout_kernel(
+    data: ImmPointer[Float32, ImmUntrackedOrigin],
+    scale: Float32,
+    n: Int64,
+    flag: UInt8,
+    tail: MutPointer[Float32, MutUntrackedOrigin],
+):
+    pass
+
+
+def _pack[
+    spec: DeviceSpec,
+    declared: TypeList[Trait=AnyType, ...],
+    //,
+    kernel: def(*args: *declared) thin -> None,
+    *Ts: AnyType,
+](context: Context[spec], *args: *Ts) raises -> DenseArgPacker.Packed[
+    spec, _IdentityWrapper, declared, Ts
+]:
+    return DenseArgPacker.pack[_IdentityWrapper, declared](context, *args)
+
+
+def _slot[T: TrivialRegisterPassable](address: ImmOpaquePointer[_]) -> T:
+    return address.unsafe_bitcast[T]()[]
+
+
+def test_dense_arg_packer_slot_layout() raises:
+    # The default packer resolves handles to device addresses and encodes
+    # everything else as the kernel declares it, one 8-byte-aligned slot per
+    # argument; nothing is launched, so the mock's addresses suffice.
+    var driver = Driver.create(_get_plugin_spec())
+    var device = driver[].get_device[Int64(0)]()
+    var ctx = device[].get_context()
+    var buf = ctx[].alloc_sync(64)
+    var address = ctx[].memory_get_address(buf)
+
+    var packed = _pack[_layout_kernel](
+        ctx[],
+        buf,
+        Float32(1.5),
+        Int64(7),
+        UInt8(1),
+        buf.view(byte_offset=16, byte_size=16),
+    )
+    assert_equal(packed.num_slots(), 5)
+    var slots = packed.slots()
+    assert_equal(slots.sizes[0], 8)
+    assert_equal(slots.sizes[1], 4)
+    assert_equal(slots.sizes[2], 8)
+    assert_equal(slots.sizes[3], 1)
+    assert_equal(slots.sizes[4], 8)
+    assert_equal(_slot[UInt64](slots.addrs[0]), address)
+    assert_equal(_slot[Float32](slots.addrs[1]), 1.5)
+    assert_equal(_slot[Int64](slots.addrs[2]), 7)
+    assert_equal(_slot[UInt8](slots.addrs[3]), 1)
+    assert_equal(_slot[UInt64](slots.addrs[4]), address + 16)
+    for i in range(1, 5):
+        assert_equal(
+            Int(slots.addrs[i]) - Int(slots.addrs[i - 1]),
+            8,
+            "every slot is 8-byte aligned",
+        )
+    ctx[].free_sync(buf^)
+
+
+def _two_pointer_kernel(
+    a: ImmPointer[Float32, ImmUntrackedOrigin],
+    b: ImmPointer[Float32, ImmUntrackedOrigin],
+):
+    pass
+
+
+def test_dense_arg_packer_refuses_other_context() raises:
+    # A buffer, or a view of one, resolves its address only on the context it
+    # was allocated from. The mock gives a device one context, so the other
+    # context comes from a second device with the same spec.
+    var driver = Driver.create(_get_plugin_spec())
+    comptime spec = get_device_spec[Int64(0)]()
+    var device = Device[spec]._create(driver[], Int64(0))
+    var other_device = Device[spec]._create(driver[], Int64(1))
+    var ctx = device[].get_context()
+    var other = other_device[].get_context()
+    var buf = ctx[].alloc_sync(64)
+    var mine = ctx[].alloc_sync(64)
+    with assert_raises(contains="belongs to another context"):
+        _ = _pack[_two_pointer_kernel](other[], buf, mine.view())
+    with assert_raises(contains="belongs to another context"):
+        _ = _pack[_two_pointer_kernel](other[], buf.view(), mine.view())
+    _ = _pack[_two_pointer_kernel](ctx[], buf, mine.view())
+    ctx[].free_sync(mine^)
+    ctx[].free_sync(buf^)
+
+
+def _no_args_kernel():
+    pass
+
+
+def test_dense_arg_packer_no_args() raises:
+    # A kernel with no arguments reads no slots, but the slot arrays keep one
+    # entry so they're never empty.
+    var driver = Driver.create(_get_plugin_spec())
+    var device = driver[].get_device[Int64(0)]()
+    var ctx = device[].get_context()
+    var packed = _pack[_no_args_kernel](ctx[])
+    assert_equal(packed.num_slots(), 0)
+    assert_equal(type_of(packed).max_slots, 1)
 
 
 def test_queue_native_handle() raises:
@@ -785,6 +899,9 @@ def main() raises:
     test_context_create()
     test_invalid_device_error_message()
     test_memory_wrap_unwrap()
+    test_dense_arg_packer_slot_layout()
+    test_dense_arg_packer_refuses_other_context()
+    test_dense_arg_packer_no_args()
     test_queue_native_handle()
     test_queue_create_and_sync()
     test_queue_record_event()

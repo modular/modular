@@ -252,69 +252,13 @@ def _validate_encodable_arguments[
     var num_translated_args = 0
 
     comptime for i in range(ActualArgTypes.length):
-        comptime declared_arg_type = DeclaredArgTypes[i]
         comptime actual_arg_type = ActualArgTypes[i]
-
-        def declared_arg_type_name() -> String:
-            comptime if conforms_to(declared_arg_type, DevicePassable):
-                return declared_arg_type.get_type_name()
-            else:
-                return reflect[declared_arg_type].name()
-
-        # Check that the given argument can occupy the kernel's declared
-        # argument slot after device encoding.
-        comptime declared_slot = _declared_slot[
-            actual_arg_type, declared_arg_type, target
+        check_encodable_argument[
+            target,
+            index=i,
+            declared_arg_type=DeclaredArgTypes[i],
+            actual_arg_type=actual_arg_type,
         ]()
-
-        comptime assert declared_slot, String(
-            "argument #",
-            i,
-            " of type '",
-            actual_arg_type.get_type_name(),
-            "' is not encodable as the declared function argument type '",
-            declared_arg_type_name(),
-            "'",
-        )
-
-        # The kernel reads the slot as `declared_arg_type`, but the bytes
-        # written are `actual_arg_type.device_type`. Field-wise encodability
-        # compares field types, not layouts, so check the layouts agree.
-        comptime if case .Some(declared) = declared_slot:
-            comptime host_args_hint = (
-                ". If the argument's host bytes are already valid on the"
-                " device, pass it via `host_args=` to skip encoding"
-            )
-            comptime device = SlotLayout.of[
-                actual_arg_type.device_type, target
-            ]()
-            comptime assert declared.size == device.size, String(
-                "argument #",
-                i,
-                " of type '",
-                actual_arg_type.get_type_name(),
-                "' encodes to ",
-                device.size,
-                " bytes but the declared function argument type '",
-                declared_arg_type_name(),
-                "' is ",
-                declared.size,
-                " bytes",
-                host_args_hint,
-            )
-            comptime assert declared.align == device.align, String(
-                "argument #",
-                i,
-                " of type '",
-                actual_arg_type.get_type_name(),
-                "' encodes with alignment ",
-                device.align,
-                " but the declared function argument type '",
-                declared_arg_type_name(),
-                "' has alignment ",
-                declared.align,
-                host_args_hint,
-            )
 
         var aligned_type_size = align_up(
             size_of[actual_arg_type.device_type, target=target](), 8
@@ -328,3 +272,82 @@ def _validate_encodable_arguments[
             translated_arg_offsets[i] = -1
 
     return (num_translated_args, translated_arg_offsets^)
+
+
+@inline(.always)
+def check_encodable_argument[
+    target: CompilationTarget,
+    *,
+    index: Int,
+    declared_arg_type: AnyType,
+    actual_arg_type: DevicePassable,
+]():
+    """Checks at compile time that an argument of type `actual_arg_type` can
+    occupy the kernel argument at `index`, declared as `declared_arg_type`,
+    once it's encoded for `target`.
+
+    Parameters:
+        target: The device the argument is encoded for.
+        index: The argument's position, for the error message.
+        declared_arg_type: The type the kernel declares the argument as.
+        actual_arg_type: The type of the value passed.
+    """
+
+    def declared_arg_type_name() -> String:
+        comptime if conforms_to(declared_arg_type, DevicePassable):
+            return declared_arg_type.get_type_name()
+        else:
+            return reflect[declared_arg_type].name()
+
+    # Check that the given argument can occupy the kernel's declared
+    # argument slot after device encoding.
+    comptime declared_slot = _declared_slot[
+        actual_arg_type, declared_arg_type, target
+    ]()
+
+    comptime assert declared_slot, String(
+        "argument #",
+        index,
+        " of type '",
+        actual_arg_type.get_type_name(),
+        "' is not encodable as the declared function argument type '",
+        declared_arg_type_name(),
+        "'",
+    )
+
+    # The kernel reads the slot as `declared_arg_type`, but the bytes
+    # written are `actual_arg_type.device_type`. Field-wise encodability
+    # compares field types, not layouts, so check the layouts agree.
+    comptime if case .Some(declared) = declared_slot:
+        comptime host_args_hint = (
+            ". If the argument's host bytes are already valid on the"
+            " device, pass it via `host_args=` to skip encoding"
+        )
+        comptime device = SlotLayout.of[actual_arg_type.device_type, target]()
+        comptime assert declared.size == device.size, String(
+            "argument #",
+            index,
+            " of type '",
+            actual_arg_type.get_type_name(),
+            "' encodes to ",
+            device.size,
+            " bytes but the declared function argument type '",
+            declared_arg_type_name(),
+            "' is ",
+            declared.size,
+            " bytes",
+            host_args_hint,
+        )
+        comptime assert declared.align == device.align, String(
+            "argument #",
+            index,
+            " of type '",
+            actual_arg_type.get_type_name(),
+            "' encodes with alignment ",
+            device.align,
+            " but the declared function argument type '",
+            declared_arg_type_name(),
+            "' has alignment ",
+            declared.align,
+            host_args_hint,
+        )

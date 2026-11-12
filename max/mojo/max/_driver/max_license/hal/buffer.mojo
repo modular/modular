@@ -16,22 +16,29 @@ from .plugin import M_driver_memory_view, MemoryHandle
 from max._plugin import MaxPluginForTarget
 from .device import DeviceSpec
 from .context import Context
+from .kernel_args import DeviceMemoryHandle
+from .status import STATUS_INVALID_ARG, HALError
 
 from std.memory import ArcPointer, Pointer
 
 
-struct BufferView(Copyable, Movable):
+struct BufferView(Copyable, DeviceMemoryHandle, Movable):
     """A non-owning view over a (sub-range of a) device allocation."""
 
     var _view: M_driver_memory_view
+    var _context_handle: Int
+    """The handle of the context the viewed allocation belongs to."""
 
     def __init__(
         out self,
         handle: MemoryHandle,
         byte_offset: UInt64,
         byte_size: UInt64,
+        *,
+        context_handle: Int,
     ):
         self._view = M_driver_memory_view(handle, byte_offset, byte_size)
+        self._context_handle = context_handle
 
     def byte_offset(self) -> UInt64:
         return self._view.offset
@@ -39,9 +46,37 @@ struct BufferView(Copyable, Movable):
     def byte_size(self) -> UInt64:
         return self._view.size
 
+    def memory_view[
+        spec: DeviceSpec
+    ](self, context: Context[spec]) raises HALError -> M_driver_memory_view:
+        """Returns the allocation and byte range this view covers.
+
+        Parameters:
+            spec: The device the launch runs on.
+
+        Args:
+            context: The context of the queue the launch runs on, which must
+                be the context the viewed allocation belongs to.
+
+        Returns:
+            This view's memory handle, offset and size.
+
+        Raises:
+            If the viewed allocation belongs to another context.
+        """
+        if self._context_handle != Int(context._handle):
+            raise HALError(
+                STATUS_INVALID_ARG,
+                message=(
+                    "a kernel argument's buffer view belongs to another context"
+                    " than the launch's queue"
+                ),
+            )
+        return self._view.copy()
+
 
 @fieldwise_init
-struct Buffer[device_spec: DeviceSpec](Movable):
+struct Buffer[device_spec: DeviceSpec](DeviceMemoryHandle, Movable):
     """A memory allocation tied to the context it was allocated from.
 
     Tracks the allocation handle, its byte size, its residency, and a strong
@@ -89,7 +124,12 @@ struct Buffer[device_spec: DeviceSpec](Movable):
 
     def view(self) -> BufferView:
         """Returns a view over the whole allocation."""
-        return BufferView(self._handle, 0, self.byte_size)
+        return BufferView(
+            self._handle,
+            0,
+            self.byte_size,
+            context_handle=Int(self._context[]._handle),
+        )
 
     def view(self, *, byte_offset: UInt64, byte_size: UInt64) -> BufferView:
         """Returns a view over a sub-range of the allocation."""
@@ -97,8 +137,33 @@ struct Buffer[device_spec: DeviceSpec](Movable):
             byte_offset + byte_size <= self.byte_size,
             "BufferView range exceeds Buffer bounds",
         )
-        return BufferView(self._handle, byte_offset, byte_size)
+        return BufferView(
+            self._handle,
+            byte_offset,
+            byte_size,
+            context_handle=Int(self._context[]._handle),
+        )
 
     def _device_id(self) -> Int64:
         """Returns the runtime id of the device this buffer resides on."""
         return self._context[]._device[].id
+
+    def memory_view[
+        spec: DeviceSpec
+    ](self, context: Context[spec]) raises HALError -> M_driver_memory_view:
+        """Returns a view over the whole allocation.
+
+        Parameters:
+            spec: The device the launch runs on.
+
+        Args:
+            context: The context of the queue the launch runs on, which must
+                be the context this buffer was allocated from.
+
+        Returns:
+            This allocation's memory handle, offset 0 and byte size.
+
+        Raises:
+            If this buffer belongs to another context.
+        """
+        return self.view().memory_view(context)

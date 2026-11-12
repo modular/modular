@@ -19,12 +19,13 @@ from .plugin import (
     ContextHandle,
 )
 from max._plugin import MaxPluginForTarget
+from ._machine import DeviceRef
 from .buffer import Buffer, BufferView
 from .context import Context
 from .memory import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
-from .status import STATUS_SUCCESS, HALError
+from .status import STATUS_SUCCESS, STATUS_UNSUPPORTED, HALError
 from std.collections import Array, OptionalReg
 from std.memory import (
     ArcPointer,
@@ -33,13 +34,19 @@ from std.memory import (
     MaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
+from std.builtin.rebind import downcast
+from std.reflection import SourceLocation, call_location, reflect
 from max.gpu.host import (
     ClusterExecutionConfig,
+    ExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
 from max.gpu.host import LaunchAttribute
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
+from max.gpu.host._launch_args import DeviceFunctionWrapper
+from .execution_config import check_config_fields_launchable
+from .kernel_args import _is_kernel_arg
 
 
 @fieldwise_init
@@ -60,6 +67,14 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     ].HalHooks.extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
+
+    comptime _HALHooks = MaxPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].HalHooks
+
+    comptime _FunctionWrapper = MaxPluginForTarget[
+        DeviceSpec.target[Self.device_spec]()
+    ].FunctionWrapper
 
     @staticmethod
     def _create(
@@ -115,6 +130,318 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
         # derived from and that `self` keeps alive
         # through `self._context`.
         return self._extensions.unsafe_origin_cast[origin_of(self)]()[]
+
+    @inline(.always)
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin -> None,
+        *Ts: AnyType,
+    ](
+        self,
+        *args: *Ts,
+        function: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        """Enqueues `function`, the loaded `kernel`, with `args` as
+        `execution_config` describes.
+
+        `function` must be loaded from `kernel` compiled behind the plugin's
+        `FunctionWrapper`, and stay loaded until the launch completes. Every
+        argument must already be on this queue's device: a
+        `DeviceMemoryHandle`, such as a `Buffer` or `BufferView`, fills a
+        pointer argument with its device address, and any other argument is
+        a `DevicePassable` value, such as a fixed-width scalar, a device
+        pointer or a `TileTensor`, encoded as `kernel` declares it. `Int` and
+        `UInt` are a compile-time error, since their width differs between
+        host and device.
+
+        The plugin's `ArgPacker` packs the arguments. A grid/block config
+        launches through the plugin's launcher when it takes grid/block
+        launches, and otherwise with the packed slots. Any other config
+        launches through the plugin's launcher, and is a compile-time error
+        for a plugin whose launcher doesn't take one. A grid/block config
+        that can hold constant memory mappings is a compile-time error too,
+        since they don't reach the launch, and so is a cluster config on a
+        device that can't launch clusters. A plugin launcher that only takes
+        the grid and block raises on launch attributes, clusters or shared
+        memory.
+
+        Totally ordered with respect to other operations within this queue
+        if backed by a stream.
+
+        Parameters:
+            declared_arg_types: The kernel's declared argument types.
+            ExecutionConfigType: The type of `execution_config`.
+            kernel: The kernel `function` was compiled from.
+            Ts: The argument types.
+
+        Args:
+            args: The kernel's arguments.
+            function: The loaded function.
+            execution_config: How to launch it.
+            location: Where the launch was requested, for errors; the
+                caller's location by default.
+
+        Raises:
+            If an argument can't be packed or the launch fails.
+        """
+        comptime assert Ts.length == declared_arg_types.length, String(
+            "the kernel takes ",
+            declared_arg_types.length,
+            " arguments but the launch passes ",
+            Ts.length,
+        )
+        comptime for i in range(Ts.length):
+            comptime assert _is_kernel_arg[Ts[i]](), String(
+                "argument #",
+                i,
+                " of type '",
+                reflect[Ts[i]].name(),
+                "' is neither a `DeviceMemoryHandle` nor `DevicePassable`",
+            )
+            comptime assert not (Ts[i] == Int or Ts[i] == UInt), String(
+                "argument #",
+                i,
+                (
+                    " is an `Int` or `UInt`, whose width differs between host"
+                    " and device; use a fixed-width type such as `Int32` or"
+                    " `Int64`"
+                ),
+            )
+
+        try:
+            self._launch[
+                Self._FunctionWrapper,
+                declared_arg_types,
+                "HAL `Queue.execute`",
+            ](function, execution_config, *args)
+        except e:
+            raise HALError(
+                e.status,
+                message=location.or_else(call_location()).prefix(e.message),
+            )
+
+    @doc_hidden
+    @inline(.always)
+    def _launch[
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        Wrapper: DeviceFunctionWrapper,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        api_name: StringLiteral,
+        *Ts: AnyType,
+    ](
+        self,
+        func: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+    ) raises HALError:
+        """Packs `args` with the plugin's `ArgPacker` and launches `func` as
+        `execution_config` describes.
+
+        Every typed launch ends here: `execute`, and the DeviceContext and
+        plugin launches that reach the plugin's launcher, so the launch-support
+        checks and the packed bytes' lifetime live in one place.
+
+        Parameters:
+            ExecutionConfigType: The type of `execution_config`.
+            Wrapper: The wrapper `func`'s kernel was compiled behind.
+            declared_arg_types: The kernel's declared argument types.
+            api_name: The launch API, for error messages.
+            Ts: The argument types.
+
+        Args:
+            func: The loaded function.
+            execution_config: How to launch it.
+            args: The kernel's arguments.
+
+        Raises:
+            If an argument can't be packed, the config asks for shared memory,
+            launch attributes or clusters the plugin's grid/block launcher
+            can't grant, or the launch fails.
+        """
+        comptime Hooks = Self._HALHooks
+        comptime is_grid_block = conforms_to(
+            ExecutionConfigType, GridBlockExecutionConfig
+        )
+        comptime assert is_grid_block or Hooks.Launcher.launches_config, String(
+            api_name,
+            (
+                ": the active HAL plugin's launcher doesn't take this"
+                " execution config"
+            ),
+        )
+        comptime if is_grid_block:
+            check_config_fields_launchable[ExecutionConfigType, api_name]()
+        comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
+            comptime assert conforms_to(
+                Hooks.ExecutionConfigType[
+                    DeviceRef(Self.device_spec, 0, private=())
+                ],
+                ClusterExecutionConfig,
+            ), "cluster launch is not supported on this device"
+
+        var packed = Hooks.ArgPacker.pack[Wrapper, declared_arg_types](
+            self._context[], *args
+        )
+        comptime if not is_grid_block:
+            Hooks.Launcher.enqueue(
+                self, func, packed, execution_config=execution_config
+            )
+        else:
+            ref config = rebind[
+                downcast[ExecutionConfigType, GridBlockExecutionConfig]
+            ](execution_config)
+            comptime if Hooks.Launcher.overrides_grid_block:
+                # It only gets the grid and block, so refuse anything else
+                # rather than drop it.
+                comptime if conforms_to(
+                    ExecutionConfigType,
+                    NearComputeGeneralPurposeScratchpadExecutionConfig,
+                ):
+                    if execution_config.get_near_compute_scratchpad_usage():
+                        raise HALError(
+                            STATUS_UNSUPPORTED,
+                            message=(
+                                "the active HAL plugin's launcher doesn't take"
+                                " shared memory"
+                            ),
+                        )
+                comptime if conforms_to(
+                    ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+                ):
+                    if execution_config.get_launch_attributes():
+                        raise HALError(
+                            STATUS_UNSUPPORTED,
+                            message=(
+                                "the active HAL plugin's launcher doesn't take"
+                                " launch attributes"
+                            ),
+                        )
+                comptime if conforms_to(
+                    ExecutionConfigType, ClusterExecutionConfig
+                ):
+                    var cluster_dim = execution_config.get_cluster_dim()
+                    if (
+                        cluster_dim.x() != 1
+                        or cluster_dim.y() != 1
+                        or cluster_dim.z() != 1
+                    ):
+                        raise HALError(
+                            STATUS_UNSUPPORTED,
+                            message=(
+                                "the active HAL plugin's launcher doesn't take"
+                                " cluster dims"
+                            ),
+                        )
+                Hooks.Launcher.enqueue_grid_block(
+                    self,
+                    func,
+                    packed,
+                    grid_dim=config.get_grid_dim(),
+                    block_dim=config.get_block_dim(),
+                )
+            else:
+                var slots = packed.slots()
+                self.execute(
+                    func,
+                    config,
+                    args=slots.addrs.unsafe_ptr(),
+                    arg_sizes=slots.sizes.unsafe_ptr(),
+                    num_args=UInt32(packed.num_slots()),
+                )
+                _ = slots^
+        # The launcher may only have queued the launch; keep the packed
+        # bytes alive until it returns.
+        _ = packed^
+
+    @doc_hidden
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin raises -> None,
+        *Ts: AnyType,
+    ](
+        self,
+        *args: *Ts,
+        function: FunctionHandle,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        # Only a raising kernel lands here; the overload above takes the rest.
+        comptime assert False, "a kernel launched by `execute` can't raise"
+
+    @inline(.always)
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin -> None,
+        *Ts: AnyType,
+    ](
+        self,
+        *args: *Ts,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        """Compiles `kernel` for this queue's device, loads it, and enqueues
+        it with `args` as `execution_config` describes.
+
+        The context compiles and loads `kernel` behind the plugin's
+        `FunctionWrapper` on first use and keeps it loaded, so later launches
+        reuse it. See the overload that takes a loaded function for what
+        `args` and `execution_config` must be.
+
+        Parameters:
+            declared_arg_types: The kernel's declared argument types.
+            ExecutionConfigType: The type of `execution_config`.
+            kernel: The kernel to launch.
+            Ts: The argument types.
+
+        Args:
+            args: The kernel's arguments.
+            execution_config: How to launch it.
+            location: Where the launch was requested, for errors; the
+                caller's location by default.
+
+        Raises:
+            If `kernel` can't be loaded, an argument can't be packed or the
+            launch fails.
+        """
+        var loc = location.or_else(call_location())
+        var func: FunctionHandle
+        try:
+            func = self._context[].compile_function_inline[
+                Self._FunctionWrapper.wrap[kernel]
+            ]()
+        except e:
+            raise HALError(e.status, message=loc.prefix(e.message))
+        self.execute[kernel](
+            *args,
+            function=func,
+            execution_config=execution_config,
+            location=loc,
+        )
+
+    @doc_hidden
+    def execute[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        kernel: def(*args: *declared_arg_types) thin raises -> None,
+        *Ts: AnyType,
+    ](
+        self,
+        *args: *Ts,
+        execution_config: ExecutionConfigType,
+        location: Optional[SourceLocation] = None,
+    ) raises HALError:
+        # Only a raising kernel lands here; the overload above takes the rest.
+        comptime assert False, "a kernel launched by `execute` can't raise"
 
     # TODO: revisit all of these when we get to queue dependency ordering
     def execute[

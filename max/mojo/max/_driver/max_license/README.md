@@ -254,11 +254,11 @@ comptime if conforms_to(ctx.ExecutionConfigType, GridBlockExecutionConfig):
     var config = GridBlockLaunchConfig(
         grid_dim=(4, 1, 1), block_dim=(1024, 1, 1)
     )
-    queue.execute[vec_add](config, dev_a, dev_b, dev_c, size)
+    queue.execute[vec_add](dev_a, dev_b, dev_c, size, execution_config=config)
 # Asking only for cores covers CPUs and NPUs.
 elif conforms_to(ctx.ExecutionConfigType, CoresExecutionConfig):
     var config = ctx.ExecutionConfigType(num_cores=num_cores)
-    queue.execute[vec_add](config^, dev_a, dev_b, dev_c, size)
+    queue.execute[vec_add](dev_a, dev_b, dev_c, size, execution_config=config^)
 else:
     comptime assert False, "no launch configuration for this device"
 ```

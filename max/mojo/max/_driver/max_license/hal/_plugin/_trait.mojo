@@ -21,7 +21,10 @@ from max.gpu.host._legacy.func_attribute import FuncAttribute
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 
 from ..device import DeviceSpec
+from ..kernel_args import DenseArgPacker, HalArgPacker, HalKernelArgs
 from ..plugins import FunctionHandle
+from ..status import STATUS_UNSUPPORTED, HALError
+from ..queue import Queue
 from ..stream import Stream
 
 from .._machine import DeviceRef
@@ -33,12 +36,14 @@ from ..extensions.traits import DefaultHALExtensions, HALExtensions
 trait HalLauncher:
     """Launches kernels for a plugin whose launches aren't grid/block shaped.
 
-    The HAL DeviceContext hands a launch to the launcher with the compiled
-    function's wrapper and declared argument types, so the launcher can pack
-    the arguments its runtime expects. A launch from the plugin's own
-    execution config goes to `enqueue` when `launches_config` is set, and a
-    grid/block launch goes to `enqueue_grid_block` when `overrides_grid_block`
-    is set.
+    The HAL DeviceContext and a typed `Queue.execute` pack a launch's
+    arguments with the plugin's `ArgPacker` and hand the packed arguments to
+    the launcher, which reads their slots and launches. A launch from the
+    plugin's own execution config goes to `enqueue` when `launches_config` is
+    set, and a grid/block launch goes to `enqueue_grid_block` when
+    `overrides_grid_block` is set. Both launch on a queue; a stream orders
+    the launch after its earlier work before handing its queue over. The
+    caller keeps the packed arguments alive until the hook returns.
     """
 
     comptime launches_config: Bool = False
@@ -49,19 +54,20 @@ trait HalLauncher:
     def enqueue[
         spec: DeviceSpec,
         ExecutionConfigType: ExecutionConfig,
+        Args: HalKernelArgs,
         //,
-        Wrapper: DeviceFunctionWrapper,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
     ](
-        mut stream: Stream[spec],
+        queue: Queue[spec],
         func: FunctionHandle,
-        *args: *Ts,
+        args: Args,
         execution_config: ExecutionConfigType,
-    ) raises:
-        """Launches `func` on `stream` with `args` as `execution_config`
-        describes."""
-        raise Error("the active HAL plugin has no execution config launcher")
+    ) raises HALError:
+        """Launches `func` on `queue` with the packed `args` as
+        `execution_config` describes."""
+        raise HALError(
+            STATUS_UNSUPPORTED,
+            message="the active HAL plugin has no execution config launcher",
+        )
 
     comptime overrides_grid_block: Bool
     """Whether `enqueue_grid_block` replaces grid/block launches."""
@@ -69,17 +75,16 @@ trait HalLauncher:
     @staticmethod
     def enqueue_grid_block[
         spec: DeviceSpec,
-        Wrapper: DeviceFunctionWrapper,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
+        Args: HalKernelArgs,
+        //,
     ](
-        mut stream: Stream[spec],
+        queue: Queue[spec],
         func: FunctionHandle,
-        *args: *Ts,
+        args: Args,
         grid_dim: Dim,
         block_dim: Dim,
-    ) raises:
-        """Launches `func` on `stream` with `args`."""
+    ) raises HALError:
+        """Launches `func` on `queue` with the packed `args`."""
         ...
 
 
@@ -91,17 +96,19 @@ struct DefaultHalLauncher(HalLauncher):
     @staticmethod
     def enqueue_grid_block[
         spec: DeviceSpec,
-        Wrapper: DeviceFunctionWrapper,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
+        Args: HalKernelArgs,
+        //,
     ](
-        mut stream: Stream[spec],
+        queue: Queue[spec],
         func: FunctionHandle,
-        *args: *Ts,
+        args: Args,
         grid_dim: Dim,
         block_dim: Dim,
-    ) raises:
-        raise Error("the active HAL plugin has no grid/block launcher")
+    ) raises HALError:
+        raise HALError(
+            STATUS_UNSUPPORTED,
+            message="the active HAL plugin has no grid/block launcher",
+        )
 
 
 @fieldwise_init
@@ -125,6 +132,12 @@ trait HalEnqueuer:
     anything itself, so nothing is compiled, checked or packed unless the
     plugin does it. `launch` is the caller's execution config, or a
     `HalLaunchOptions` holding its grid/block arguments.
+
+    Its hooks take the caller's stream rather than a queue, as
+    `HalLauncher`'s do: only a DeviceContext or DeviceStream reaches them,
+    always with a stream, and an enqueuer that issues more than one
+    operation for a call can order all of them after the stream's earlier
+    work through it.
     """
 
     comptime overrides: Bool
@@ -273,6 +286,10 @@ trait HalPluginHooks:
 
     comptime Launcher: HalLauncher = DefaultHalLauncher
     """Launches `enqueue_function` calls the plugin takes over."""
+
+    comptime ArgPacker: HalArgPacker = DenseArgPacker
+    """Packs a launch's arguments into the slots the plugin's runtime reads,
+    for a typed `Queue.execute` and for every launch the `Launcher` takes."""
 
     comptime Enqueuer: HalEnqueuer = DefaultHalEnqueuer
     """Replaces `enqueue_function` outright, before anything is compiled."""

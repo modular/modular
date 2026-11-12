@@ -106,7 +106,7 @@ from max.gpu.host import (
 )
 from ..hal.execution_config import (
     GPUExecutionConfiguration,
-    ConstantMemoryMappingExecutionConfig,
+    check_config_fields_launchable,
 )
 from max.gpu.host.nvidia import (
     ClusterAttributeLaunchConfig,
@@ -172,14 +172,9 @@ def _check_exec_config_launch_support[
             ContextT.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
         ), "this target does not support launch attributes"
 
-    # Constant memory held by a config is not plumbed yet; refuse it rather
-    # than drop it.
-    comptime assert not conforms_to(
-        ExecutionConfigType, ConstantMemoryMappingExecutionConfig
-    ), (
-        "HAL DeviceContext.enqueue_function does not support"
-        " `constant_memory` mappings."
-    )
+    check_config_fields_launchable[
+        ExecutionConfigType, "HAL DeviceContext.enqueue_function"
+    ]()
 
 
 def _check_config_dims[
@@ -3373,50 +3368,23 @@ struct HALDeviceFunction[
                     "the active HAL plugin's launcher doesn't take cluster"
                     " dims or launch attributes"
                 )
-
-        comptime if launcher_takes_config:
-            _HALHooks.Launcher.enqueue[Self.Wrapper, Self.declared_arg_types](
-                ctx._hal_stream()[],
-                self._inner[]._func_handle,
-                *args,
-                execution_config=execution_config,
-            )
+            var stream = ctx._hal_stream()
+            stream[]._launch[
+                Self.Wrapper,
+                Self.declared_arg_types,
+                "HAL DeviceContext.enqueue_function",
+            ](self._inner[]._func_handle, execution_config, *args)
         elif is_grid_block:
-            ref grid_block_config = rebind[
-                downcast[ExecutionConfigType, GridBlockExecutionConfig]
-            ](execution_config)
-            comptime if launcher_takes_grid_block:
-                # It only gets the grid and block, so refuse shared memory
-                # rather than drop it.
-                comptime if conforms_to(
-                    ExecutionConfigType,
-                    NearComputeGeneralPurposeScratchpadExecutionConfig,
-                ):
-                    if execution_config.get_near_compute_scratchpad_usage():
-                        raise Error(
-                            "the active HAL plugin's launcher doesn't take"
-                            " shared memory"
-                        )
-                _HALHooks.Launcher.enqueue_grid_block[
-                    get_device_spec[0](),
-                    Self.Wrapper,
-                    Self.declared_arg_types,
-                ](
-                    ctx._hal_stream()[],
-                    self._inner[]._func_handle,
-                    *args,
-                    grid_dim=grid_block_config.get_grid_dim(),
-                    block_dim=grid_block_config.get_block_dim(),
-                )
-            else:
-                self._do_call_grid_block_with_pack_checked(
-                    ctx,
-                    grid_block_config,
-                    *args,
-                    host_args=host_args,
-                    attributes=attributes^,
-                    location=location,
-                )
+            self._do_call_grid_block_with_pack_checked(
+                ctx,
+                rebind[downcast[ExecutionConfigType, GridBlockExecutionConfig]](
+                    execution_config
+                ),
+                *args,
+                host_args=host_args,
+                attributes=attributes^,
+                location=location,
+            )
         else:
             comptime assert False, (
                 "the active HAL plugin's launcher doesn't take this execution"

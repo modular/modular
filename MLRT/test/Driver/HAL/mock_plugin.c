@@ -24,6 +24,7 @@
 #include "HAL/M_driver_api.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +39,7 @@
 
 static int g_driver_sentinel;
 static int g_device_sentinels[MOCK_MAX_DEVICE_COUNT];
-static int g_context_sentinel;
+static int g_context_sentinels[MOCK_MAX_DEVICE_COUNT];
 static int g_queue_sentinel;
 static int g_event_sentinel;
 static int g_bundle_sentinel;
@@ -313,10 +314,14 @@ M_DRIVER_API_EXPORT
 M_driver_status_t M_driver_context_create(M_driver_device_t device,
                                           M_driver_context_t *context) {
   mock_maybe_stall(__func__);
-  (void)device;
   if (!context)
     return M_DRIVER_STATUS_INVALID_ARG;
-  *context = (M_driver_context_t)&g_context_sentinel;
+  // One handle per device, so tests can tell contexts on different devices
+  // apart.
+  ptrdiff_t device_id = (int *)device - g_device_sentinels;
+  if (device_id < 0 || device_id >= MOCK_MAX_DEVICE_COUNT)
+    return M_DRIVER_STATUS_BAD_DEVICE;
+  *context = (M_driver_context_t)&g_context_sentinels[device_id];
   return M_DRIVER_STATUS_SUCCESS;
 }
 

@@ -324,3 +324,21 @@ trait OptionalMatrixUnitExecutionConfig(ExecutionConfig):
             usage: Whether to use matrix units.
         """
         ...
+
+
+def check_config_fields_launchable[
+    ExecutionConfigType: ExecutionConfig, api_name: StringLiteral
+]():
+    """Fails to compile if `ExecutionConfigType` can hold constant memory
+    mappings.
+
+    No HAL launch plumbs them yet, so a launch refuses a config that can hold
+    them rather than drop what it holds.
+
+    Parameters:
+        ExecutionConfigType: The config a launch was given.
+        api_name: The launch API, for the error message.
+    """
+    comptime assert not conforms_to(
+        ExecutionConfigType, ConstantMemoryMappingExecutionConfig
+    ), String(api_name, " does not support `constant_memory` mappings.")
