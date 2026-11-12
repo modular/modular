@@ -463,12 +463,12 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
         ".sgpr_spill_count",
         ".private_segment_fixed_size",
     ]:
-        var found = asm.find(directive + ":")
-        assert_true(
-            found is not None,
-            String(t"assembly metadata is missing {directive}"),
-        )
-        var rest = asm[byte = found.value() + directive.byte_length() + 1 :]
+        var at: Int
+        if case .Some(found) = asm.find(directive + ":"):
+            at = found
+        else:
+            raise Error(t"assembly metadata is missing {directive}")
+        var rest = asm[byte = at + directive.byte_length() + 1 :]
         var line_end = rest.find("\n").or_else(rest.byte_length())
         var value = Int(String(rest[byte=0:line_end]).strip())
         if directive == ".private_segment_fixed_size":

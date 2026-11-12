@@ -68,13 +68,17 @@ def _single_mfma_kernel[
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:
-    var start = asm.find(directive)
-    assert_true(start is not None, "assembly is missing " + directive)
-    var line_end = asm.find("\n", start.value()).or_else(asm.byte_length())
-    var line = asm[byte = start.value() : line_end]
-    var colon = line.find(":")
-    assert_true(colon is not None, "expected a value after " + directive)
-    return Int(line[byte = colon.value() + 1 :].strip())
+    match asm.find(directive):
+        case .None:
+            raise Error("assembly is missing " + directive)
+        case .Some(start):
+            var line_end = asm.find("\n", start).or_else(asm.byte_length())
+            var line = asm[byte=start:line_end]
+            match line.find(":"):
+                case .None:
+                    raise Error("expected a value after " + directive)
+                case .Some(colon):
+                    return Int(line[byte = colon + 1 :].strip())
 
 
 def _register_span(operand: StringSpan) raises -> Int:

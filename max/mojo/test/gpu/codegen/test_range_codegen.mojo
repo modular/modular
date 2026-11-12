@@ -95,23 +95,24 @@ def grid_stride_reversed(data: Pointer[Float32, MutAnyOrigin], count: Int):
         data[unsafe_offset=i] = data[unsafe_offset=i] + 1.0
 
 
+def _branch_label(line: StringSpan) -> Optional[String]:
+    """Returns the label a branch on `line` jumps to, followed by `:`."""
+    if case .Some(branch) = line.find("bra"):
+        if case .Some(label_start) = line.find("$", branch):
+            if case .Some(label_end) = line.find(";", label_start):
+                return String(line[byte=label_start:label_end].strip(), ":")
+    return None
+
+
 def _innermost_loop_body(asm: String) raises -> String:
     """Returns the instructions between a backward branch and its label."""
     var lines = asm.split("\n")
     for i in range(len(lines)):
-        var line = lines[i].strip()
-        var branch = line.find("bra")
-        if branch is None:
+        var label: String
+        if case .Some(found) = _branch_label(lines[i].strip()):
+            label = found
+        else:
             continue
-        var label_start = line.find("$", branch.value())
-        if label_start is None:
-            continue
-        var label_end = line.find(";", label_start.value())
-        if label_end is None:
-            continue
-        var label = String(
-            line[byte = label_start.value() : label_end.value()].strip(), ":"
-        )
         for j in range(i):
             if String(lines[j].strip()) != label:
                 continue
@@ -223,13 +224,17 @@ def test_signed_ranges_never_divide[target: CompilationTarget]() raises:
 
 
 def _amd_directive(asm: String, directive: String) raises -> Int:
-    var start = asm.find(directive)
-    assert_true(start is not None, String("no `", directive, "` in:\n", asm))
-    var line_end = asm.find("\n", start.value()).or_else(asm.byte_length())
-    var line = asm[byte = start.value() : line_end]
-    var colon = line.find(":")
-    assert_true(colon is not None, String("no value after `", directive, "`"))
-    return Int(String(line[byte = colon.value() + 1 :].strip()))
+    match asm.find(directive):
+        case .None:
+            raise Error(String("no `", directive, "` in:\n", asm))
+        case .Some(start):
+            var line_end = asm.find("\n", start).or_else(asm.byte_length())
+            var line = asm[byte=start:line_end]
+            match line.find(":"):
+                case .None:
+                    raise Error(String("no value after `", directive, "`"))
+                case .Some(colon):
+                    return Int(String(line[byte = colon + 1 :].strip()))
 
 
 def test_amd_register_pressure() raises:

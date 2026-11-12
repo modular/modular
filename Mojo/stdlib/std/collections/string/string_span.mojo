@@ -959,7 +959,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
           True if the string contains the substring.
         """
-        return self.find(substr) is not None
+        return Bool(self.find(substr))
 
     @inline(.always)
     def __int__(self) raises -> Int:
@@ -1103,17 +1103,19 @@ struct StringSpan[origin: ImmOrigin](
         var current_pos = 0
 
         for _ in range(occurrences):
-            var found = self.find(old, current_pos)
-            assert found is not None, "expected to find occurrence during find"
-            var idx = found.unsafe_value()
+            match self.find(old, current_pos):
+                case .Some(idx):
+                    # Copy preceding unchanged chars
+                    res += StringSpan(
+                        unsafe_from_utf8=self.as_bytes()[current_pos:idx]
+                    )
 
-            # Copy preceding unchanged chars
-            res += StringSpan(unsafe_from_utf8=self.as_bytes()[current_pos:idx])
+                    # Insert a copy of the new replacement string
+                    res += new
 
-            # Insert a copy of the new replacement string
-            res += new
-
-            current_pos = idx + old_len
+                    current_pos = idx + old_len
+                case .None:
+                    assert False, "expected to find occurrence during find"
 
         # Copy remaining chars
         if current_pos < self_len:

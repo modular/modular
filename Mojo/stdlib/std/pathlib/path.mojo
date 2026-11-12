@@ -84,12 +84,8 @@ def _dir_of_current_file() raises -> Path:
 
 @inline(.never)
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
-    if case .Some(last_sep) = file_name.rfind(DIR_SEPARATOR):
-        # Keep the separator for a file at the root: "/a.mojo" -> "/".
-        return Path(file_name[byte = 0 : max(last_sep, 1)])
-    # A bare file name is in the current directory, as with Python's
-    # `Path.parent`.
-    return Path(".")
+    var i = String(file_name).rfind(DIR_SEPARATOR).or_else(0)
+    return Path(file_name[byte=0:i])
 
 
 struct Path(

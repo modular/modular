@@ -30,20 +30,15 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
 
 
 def parse_directive_value(asm: String, directive: String) -> Int:
-    var directive_idx = asm.find(directive)
-    if directive_idx is None:
-        return 0
-    var line_end = asm.find("\n", directive_idx.value())
-    if line_end is None:
-        return 0
-    var line = asm[byte = directive_idx.value() : line_end.value()]
-    var colon_idx = line.find(":")
-    if colon_idx is None:
-        return 0
-    try:
-        return Int(line[byte = colon_idx.value() + 1 :].strip())
-    except:
-        return 0
+    if case .Some(directive_idx) = asm.find(directive):
+        if case .Some(line_end) = asm.find("\n", directive_idx):
+            var line = asm[byte=directive_idx:line_end]
+            if case .Some(colon_idx) = line.find(":"):
+                try:
+                    return Int(line[byte = colon_idx + 1 :].strip())
+                except:
+                    pass
+    return 0
 
 
 def main() raises:

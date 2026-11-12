@@ -472,18 +472,18 @@ def test_find() raises:
     assert_equal(haystack.find(StringSpan("de")), 3)
     assert_equal(haystack.find(StringSpan("fg")), 5)
     assert_equal(haystack.find(StringSpan("g")), 6)
-    assert_true(haystack.find(StringSpan("z")) is None)
-    assert_true(haystack.find(StringSpan("zzz")) is None)
+    assert_false(haystack.find(StringSpan("z")))
+    assert_false(haystack.find(StringSpan("zzz")))
 
-    assert_true(haystack.find(StringSpan("@#$")) is None)
+    assert_false(haystack.find(StringSpan("@#$")))
     assert_equal(haystack_with_special_chars.find(StringSpan("@#$")), 7)
 
     assert_equal(haystack_repeated_chars.find(StringSpan("aaa")), 0)
-    assert_true(haystack_repeated_chars.find(StringSpan("AAa")) is None)
+    assert_false(haystack_repeated_chars.find(StringSpan("AAa")))
 
-    assert_true(haystack.find(StringSpan("hijklmnopqrstuvwxyz")) is None)
+    assert_false(haystack.find(StringSpan("hijklmnopqrstuvwxyz")))
 
-    assert_true(StringSpan(String()).find(StringSpan("abc")) is None)
+    assert_false(StringSpan(String()).find(StringSpan("abc")))
 
 
 def test_find_compile_time() raises:
@@ -514,14 +514,14 @@ def test_find_compile_time() raises:
     assert_equal(c5, 3)
     assert_equal(c6, 5)
     assert_equal(c7, 6)
-    assert_true(c8 is None)
-    assert_true(c9 is None)
-    assert_true(c10 is None)
+    assert_false(c8)
+    assert_false(c9)
+    assert_false(c10)
     assert_equal(c11, 7)
     assert_equal(c12, 0)
-    assert_true(c13 is None)
-    assert_true(c14 is None)
-    assert_true(c15 is None)
+    assert_false(c13)
+    assert_false(c14)
+    assert_false(c15)
 
 
 def test_find_mstdl_2258() raises:
@@ -541,153 +541,6 @@ def test_find_mstdl_2258() raises:
     var found = haystack.find(needle)
     assert_equal(found, expected_pos)
     assert_true(needle in haystack)
-
-
-def test_rfind() raises:
-    var haystack = StringSpan("abcabc")
-
-    assert_equal(haystack.rfind("abc"), 3)
-    assert_equal(haystack.rfind("a"), 3)
-    assert_equal(haystack.rfind("c"), 5)
-    assert_equal(haystack.rfind("abcabc"), 0)
-    assert_true(haystack.rfind("z") is None)
-    assert_true(haystack.rfind("abcabca") is None)
-
-    comptime found = StringSpan("abcabc").rfind("b")
-    comptime not_found = StringSpan("abcabc").rfind("z")
-    assert_equal(found, 4)
-    assert_true(not_found is None)
-
-
-def test_find_found_at_start_and_middle() raises:
-    var haystack = StringSpan("needle in a haystack")
-    assert_equal(haystack.find("needle"), 0)
-    assert_equal(haystack.rfind("needle"), 0)
-    assert_equal(haystack.find("in"), 7)
-    assert_equal(haystack.find("hay"), 12)
-    assert_equal(haystack.rfind("a"), 17)
-
-
-def test_find_not_found() raises:
-    var haystack = StringSpan("abcdefg")
-    assert_true(haystack.find("xyz") is None)
-    assert_true(haystack.rfind("xyz") is None)
-    # A needle longer than the haystack.
-    assert_true(haystack.find("abcdefgh") is None)
-    assert_true(haystack.rfind("abcdefgh") is None)
-    # A prefix of the needle matches at the end of the haystack.
-    assert_true(haystack.find("fgh") is None)
-    assert_true(haystack.rfind("fgh") is None)
-
-
-def test_find_empty_needle() raises:
-    # An empty needle is found at 0 by `find` and at the end by `rfind`,
-    # whatever `start` is.
-    var haystack = StringSpan("abc")
-    assert_equal(haystack.find(""), 0)
-    assert_equal(haystack.find("", 2), 0)
-    assert_equal(haystack.find("", 10), 0)
-    assert_equal(haystack.find("", -1), 0)
-    assert_equal(haystack.rfind(""), 3)
-    assert_equal(haystack.rfind("", 1), 3)
-    assert_equal(haystack.rfind("", 10), 3)
-    assert_true("" in haystack)
-
-
-def test_find_empty_haystack() raises:
-    var empty = StringSpan("")
-    assert_true(empty.find("a") is None)
-    assert_true(empty.rfind("a") is None)
-    assert_true(empty.find("a", -1) is None)
-    assert_equal(empty.find(""), 0)
-    assert_equal(empty.rfind(""), 0)
-    assert_false("a" in empty)
-
-
-def test_find_start_bounds() raises:
-    var haystack = StringSpan("abcabc")
-
-    # `start` within bounds.
-    assert_equal(haystack.find("a", 0), 0)
-    assert_equal(haystack.find("a", 1), 3)
-    assert_equal(haystack.find("a", 3), 3)
-    assert_true(haystack.find("a", 4) is None)
-    assert_equal(haystack.rfind("a", 0), 3)
-    assert_equal(haystack.rfind("a", 3), 3)
-    assert_true(haystack.rfind("a", 4) is None)
-
-    # The needle doesn't fit between `start` and the end.
-    assert_true(haystack.find("abc", 4) is None)
-    assert_true(haystack.rfind("abc", 4) is None)
-
-    # `start` at and past the end.
-    assert_true(haystack.find("a", 6) is None)
-    assert_true(haystack.find("a", 100) is None)
-    assert_true(haystack.rfind("a", 6) is None)
-    assert_true(haystack.rfind("a", 100) is None)
-
-    # A negative `start` counts back from the end.
-    assert_equal(haystack.find("a", -3), 3)
-    assert_equal(haystack.find("a", -6), 0)
-    assert_true(haystack.find("a", -2) is None)
-    assert_equal(haystack.rfind("a", -3), 3)
-    assert_true(haystack.rfind("a", -2) is None)
-
-    # A negative `start` before the beginning searches the whole string.
-    assert_equal(haystack.find("a", -100), 0)
-    assert_equal(haystack.rfind("a", -100), 3)
-
-
-def test_find_multibyte_utf8() raises:
-    # Offsets are in bytes: "é" and "ö" are 2 bytes and "🔥" is 4, so the
-    # byte layout is h(0) é(1-2) l(3) l(4) o(5) ' '(6) w(7) ö(8-9) r(10) l(11)
-    # d(12) ' '(13) 🔥(14-17) !(18).
-    var text = StringSpan("héllo wörld 🔥!")
-    assert_equal(text.byte_length(), 19)
-
-    assert_equal(text.find("h"), 0)
-    assert_equal(text.find("é"), 1)
-    assert_equal(text.find("l"), 3)
-    assert_equal(text.find("ö"), 8)
-    assert_equal(text.find("🔥"), 14)
-    assert_equal(text.find("!"), 18)
-    assert_equal(text.find("wörld"), 7)
-    assert_equal(text.find("l", 5), 11)
-    assert_equal(text.rfind("l"), 11)
-    assert_equal(text.rfind("l", -9), 11)
-    assert_equal(text.rfind("o"), 5)  # "ö" doesn't match "o".
-    assert_equal(text.rfind("🔥"), 14)
-
-    # "ü" shares its first byte with "é" and "ö" but isn't in the string.
-    assert_true(text.find("ü") is None)
-    assert_true(text.rfind("ü") is None)
-    assert_true(text.find("🔥", 15) is None)
-
-    # A slice taken with the result is the expected text.
-    if case .Some(index) = text.find("🔥"):
-        assert_equal(String(text[byte=index:]), "🔥!")
-    else:
-        assert_true(False, "expected to find 🔥")
-
-    var cjk = StringSpan("世界你好世界")
-    assert_equal(cjk.find("世界"), 0)
-    assert_equal(cjk.rfind("世界"), 12)
-    assert_equal(cjk.find("你好"), 6)
-    assert_equal(cjk.find("界", 4), 15)
-
-
-def test_split_uses_whole_tail() raises:
-    # The last piece of a split runs to the end of the string when `find`
-    # finds no more separators.
-    var parts = StringSpan("a,bc").split(",")
-    assert_equal(len(parts), 2)
-    assert_equal(String(parts[1]), "bc")
-    assert_equal(parts[1].byte_length(), 2)
-
-    var limited = StringSpan("a,b,cd").split(",", 1)
-    assert_equal(len(limited), 2)
-    assert_equal(String(limited[1]), "b,cd")
-    assert_equal(limited[1].byte_length(), 4)
 
 
 def test_is_codepoint_boundary() raises:

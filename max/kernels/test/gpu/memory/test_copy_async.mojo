@@ -224,50 +224,58 @@ def test_async_copy_with_zero_fill_kernel[
     )
 
 
+def _find_required(
+    text: StringSpan, needle: StaticString, start: Int = 0
+) raises -> Int:
+    """Returns where `needle` first occurs in `text`, at or after `start`."""
+    match text.find(needle, start):
+        case .Some(index):
+            return index
+        case .None:
+            raise Error(t"expected to find {needle}")
+
+
+def _rfind_required(text: StringSpan, needle: StaticString) raises -> Int:
+    """Returns where `needle` last occurs in `text`."""
+    match text.rfind(needle):
+        case .Some(index):
+            return index
+        case .None:
+            raise Error(t"expected to find {needle}")
+
+
 def _verify_test_async_copy_with_zero_fill(asm: StringSpan) raises -> None:
     # Should contain something like:
     #     cp.async.ca.shared.global.L2::128B [%r1], [%rd2], 4, %r2;
     # Regex would be nice here, but alas...
-    var cp128_begin = asm.find("cp.async.ca.shared.global.L2::128B")
-    assert_true(cp128_begin is not None)
-    var cp128_end = asm.find(";", cp128_begin.value())
-    assert_true(cp128_end is not None)
-    var cp128_str = asm[byte = cp128_begin.value() : cp128_end.value()]
+    var cp128_begin = _find_required(asm, "cp.async.ca.shared.global.L2::128B")
+    var cp128_end = _find_required(asm, ";", cp128_begin)
+    var cp128_str = asm[byte=cp128_begin:cp128_end]
     # Find various parts of the string we expect to be there
-    var cp128_first_reg32_pos = cp128_str.find("[%r")
-    assert_true(cp128_first_reg32_pos is not None)
-    var cp128_reg64_pos = cp128_str.find("[%rd")
-    assert_true(cp128_reg64_pos is not None)
-    var cp128_bytes_pos = cp128_str.find(", 4,")
-    assert_true(cp128_bytes_pos is not None)
-    var cp128_last_reg32_pos = cp128_str.rfind(", %r")
-    assert_true(cp128_last_reg32_pos is not None)
+    var cp128_first_reg32_pos = _find_required(cp128_str, "[%r")
+    var cp128_reg64_pos = _find_required(cp128_str, "[%rd")
+    var cp128_bytes_pos = _find_required(cp128_str, ", 4,")
+    var cp128_last_reg32_pos = _rfind_required(cp128_str, ", %r")
     # Assert they're in the right order
-    assert_true(cp128_first_reg32_pos.value() < cp128_reg64_pos.value())
-    assert_true(cp128_reg64_pos.value() < cp128_bytes_pos.value())
-    assert_true(cp128_bytes_pos.value() < cp128_last_reg32_pos.value())
+    assert_true(cp128_first_reg32_pos < cp128_reg64_pos)
+    assert_true(cp128_reg64_pos < cp128_bytes_pos)
+    assert_true(cp128_bytes_pos < cp128_last_reg32_pos)
 
     # Should contain something like:
     #     cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r4;
     # Regex would be nice here, but alas...
-    var cp64_begin = asm.find("cp.async.ca.shared.global.L2::64B")
-    assert_true(cp64_begin is not None)
-    var cp64_end = asm.find(";", cp64_begin.value())
-    assert_true(cp64_end is not None)
-    var cp64_str = asm[byte = cp64_begin.value() : cp64_end.value()]
+    var cp64_begin = _find_required(asm, "cp.async.ca.shared.global.L2::64B")
+    var cp64_end = _find_required(asm, ";", cp64_begin)
+    var cp64_str = asm[byte=cp64_begin:cp64_end]
     # Find various parts of the string we expect to be there
-    var cp64_first_reg32_pos = cp64_str.find("[%r")
-    assert_true(cp64_first_reg32_pos is not None)
-    var cp64_reg64_pos = cp64_str.find("[%rd")
-    assert_true(cp64_reg64_pos is not None)
-    var cp64_bytes_pos = cp64_str.find(", 16,")
-    assert_true(cp64_bytes_pos is not None)
-    var cp64_last_reg32_pos = cp64_str.rfind(", %r")
-    assert_true(cp64_last_reg32_pos is not None)
+    var cp64_first_reg32_pos = _find_required(cp64_str, "[%r")
+    var cp64_reg64_pos = _find_required(cp64_str, "[%rd")
+    var cp64_bytes_pos = _find_required(cp64_str, ", 16,")
+    var cp64_last_reg32_pos = _rfind_required(cp64_str, ", %r")
     # Assert they're in the right order
-    assert_true(cp64_first_reg32_pos.value() < cp64_reg64_pos.value())
-    assert_true(cp64_reg64_pos.value() < cp64_bytes_pos.value())
-    assert_true(cp64_bytes_pos.value() < cp64_last_reg32_pos.value())
+    assert_true(cp64_first_reg32_pos < cp64_reg64_pos)
+    assert_true(cp64_reg64_pos < cp64_bytes_pos)
+    assert_true(cp64_bytes_pos < cp64_last_reg32_pos)
 
 
 def test_async_copy_with_zero_fill() raises:
