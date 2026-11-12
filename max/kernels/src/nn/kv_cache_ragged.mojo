@@ -4050,6 +4050,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
     # See flare_mla_decoding.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # Whether this launch is the row-invariant pin's own verify; see
+    # `flare_mla_decoding` and `_mla_decode_split`.
+    row_invariant_verify: Bool = False,
 ) raises:
     """Dispatches MLA decode attention over a ragged batch against a paged KV cache.
 
@@ -4119,6 +4122,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
             base 2; see `flare_mla_decoding`.
         split_len_bound: With `lse_out`, the split-K sizing bound; see
             `flare_mla_decoding`.
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify, which the SM100 dispatcher sizes at the pin's count
+            instead of from the live cache; see `_mla_decode_split`.
     """
 
     @inline(.always)
@@ -4181,6 +4187,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             selection_lag,
             lse_out=lse_out,
             split_len_bound=split_len_bound,
+            row_invariant_verify=row_invariant_verify,
         )
 
 
@@ -4245,6 +4252,9 @@ def _flare_mla_decode_kv_cache_ragged[
     # See flare_mla_decoding.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # Whether this launch is the row-invariant pin's own verify; see
+    # `flare_mla_decoding` and `_mla_decode_split`.
+    row_invariant_verify: Bool = False,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -4280,6 +4290,9 @@ def _flare_mla_decode_kv_cache_ragged[
             base 2; see `flare_mla_decoding`.
         split_len_bound: With `lse_out`, the split-K sizing bound; see
             `flare_mla_decoding`.
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify, which the SM100 dispatcher sizes at the pin's count
+            instead of from the live cache; see `_mla_decode_split`.
     """
     comptime assert context.target.is_gpu(), "MLA is only supported on GPU"
 
@@ -4365,6 +4378,7 @@ def _flare_mla_decode_kv_cache_ragged[
             selection_lag=selection_lag,
             lse_out=lse_out,
             split_len_bound=split_len_bound,
+            row_invariant_verify=row_invariant_verify,
         )
 
     dispatch_mask[

@@ -1482,6 +1482,101 @@ def _compute_num_partitions[
         )
 
 
+def _dispatch_split_page_size(length: Int, batch_size: Int) -> Int:
+    """The split page size the dispatcher routes by, before the KV page caps it.
+
+    One expression for the three places that size a split outside
+    `mla_decode_sm100_dispatch`: the shape-pure verify count a caller pins, the
+    capture key's scalar pre-compute, and the dispatcher's own routing.
+
+    Args:
+        length: The launch's split length (its effective length, or a sparse
+            launch's top-k stride).
+        batch_size: Requests in the batch.
+
+    Returns:
+        64 for a short length on a wide batch, else 128.
+    """
+    return 64 if length <= 512 and batch_size >= 32 else 128
+
+
+def sparse_decode_partitions_for_rows[
+    num_heads: Int, rows_per_request: Int, half_sms: Int
+](batch_size: Int, indices_stride: Int, sm_count: Int,) -> Int:
+    """Returns the shape-pure split-K count a sparse FP8 verify of
+    `rows_per_request` rows per request shares with the one-row decode step.
+
+    The dispatcher sizes a one-row sparse decode's split from the page floor
+    and a multi-row verify's from its cost records, so the two disagree and a
+    row's partial sums reduce in a different order in each. A caller that
+    needs a decode step and a verify of the same batch to agree bit for bit
+    passes this count to both: it depends only on the request count and the
+    top-k stride, never on how many rows a request carries nor on the context
+    length, so a captured decode graph replays it unchanged as the cache grows.
+
+    Where the dispatcher itself reaches this bucket, it picks the same count at
+    every context length: an in-scope verify over a unit-scale FP8 cache on the
+    cost-optimal route. A Layout-G head count and any nonzero
+    `_sparse_cost_family` route first, so there the pinned count replaces the
+    dispatcher's fitted record instead of agreeing with it. It is shape-pure
+    either way, so a verify and its decode steps still agree with each other,
+    which is what the pin is for.
+
+    The split *boundaries* follow each launch's own effective length
+    (`min(topk, cache + q)` keys, page-aligned; `OffsetPosition`), so a verify
+    and a step do not partition a row's keys identically in general. They do
+    wherever both launches hold the same pages per split, which at this count
+    means one page per split: a 2048-key stride's 16 pages are covered exactly
+    at the batch 1-2 count, and every case `test_mla_sparse_verify_rows_graph`
+    runs sits there, so a pinned verify row and its decode step are bit for
+    bit. Outside that regime the page-to-split map can differ between the two
+    arms and the rows match only up to the reduction order.
+
+    The count is the legacy cost-optimal bucket for an unfolded sparse FP8
+    launch with no extra indices, `rows_per_request` in the fold range and at
+    most 64 query rows per head group (`mla_decode_sm100_dispatch`); the
+    compile-time checks below reject a head count or height outside it, where
+    the pinned decode would silently stop sharing a count with the verify. They
+    do not reject a Layout-G head count: the dispatcher routes those to its
+    fitted Layout-G record before this bucket, so there the pin overrides the
+    dispatcher instead of agreeing with it. The split length is the top-k
+    stride because the caller excludes extra indices and NVFP4 index rows,
+    whose stride counts the scale rows too.
+
+    Parameters:
+        num_heads: Query heads per device (compile-time).
+        rows_per_request: The verify height to size the split for
+            (compile-time).
+        half_sms: Half the SM count, the largest bucket value (compile-time).
+
+    Args:
+        batch_size: Requests in the batch.
+        indices_stride: The top-k stride of the sparse selection.
+        sm_count: Number of SMs on the target GPU.
+
+    Returns:
+        The number of split-K partitions.
+    """
+    comptime assert (
+        MIN_FOLD_Q <= rows_per_request <= MAX_FOLD_Q
+    ), "the verify takes the cost-optimal split only within the fold range"
+    comptime assert num_heads * rows_per_request <= 64, (
+        "the verify takes the cost-optimal split only for at most 64 query"
+        " rows per head group"
+    )
+    # The dispatcher's own split-page routing; a sparse launch's split length
+    # is its top-k stride.
+    var split_page_size = _dispatch_split_page_size(indices_stride, batch_size)
+    return _compute_num_partitions[num_heads, True, half_sms](
+        batch_size,
+        indices_stride,
+        rows_per_request,
+        split_page_size,
+        sm_count,
+        cost_optimal_split=True,
+    )
+
+
 # ------------------------------------------------------------------------------
 # Public pre-compute function for MOGG ops
 # ------------------------------------------------------------------------------
@@ -1512,7 +1607,7 @@ def compute_mla_dispatch_scalars[
     comptime if not _is_cache_length_accurate:
         effective += q_max_seq_len
 
-    var split_page_size = 64 if (effective <= 512 and batch_size >= 32) else 128
+    var split_page_size = _dispatch_split_page_size(effective, batch_size)
     var num_partitions = _compute_num_partitions[
         num_heads, is_fp8_kv, half_sms, fold_shared_index
     ](batch_size, effective, q_max_seq_len, split_page_size, sm_count)
@@ -1661,6 +1756,7 @@ def _sparse_graph_launch[
     indices_stride: Int,
     page_size: Int,
     sm_count: Int,
+    row_invariant_verify: Bool = False,
 ) -> Tuple[Int, Int]:
     """Returns the split count and kernel a sparse graph op's decode launches.
 
@@ -1692,6 +1788,9 @@ def _sparse_graph_launch[
         indices_stride: The sparse index row stride.
         page_size: The KV cache page size.
         sm_count: Number of SMs on the target GPU.
+        row_invariant_verify: Whether the key is for the row-invariant pin's
+            own verify, which the dispatcher sizes at the pin's count; see
+            `_mla_decode_split`.
 
     Returns:
         The split count and variant: 0 single64, 1 pair128, 2 single128.
@@ -1721,6 +1820,7 @@ def _sparse_graph_launch[
         0,
         page_size,
         sm_count,
+        row_invariant_verify,
     )
     return _select_sparse_layout_e_launch[
         q_type,
@@ -1762,6 +1862,7 @@ def _sparse_graph_launch_fixed_impl[
     indices_stride: Int,
     page_size: Int,
     sm_count: Int,
+    row_invariant_verify: Bool,
 ) -> Tuple[Int, Int]:
     """Returns `_sparse_graph_launch` with `fixed_topk` bound at runtime."""
     if fixed_topk:
@@ -1781,6 +1882,7 @@ def _sparse_graph_launch_fixed_impl[
             indices_stride,
             page_size,
             sm_count,
+            row_invariant_verify,
         )
     return _sparse_graph_launch[
         num_heads,
@@ -1798,6 +1900,7 @@ def _sparse_graph_launch_fixed_impl[
         indices_stride,
         page_size,
         sm_count,
+        row_invariant_verify,
     )
 
 
@@ -1817,6 +1920,7 @@ def _sparse_graph_launch_fixed[
     sm_count: Int,
     physical_indices: Bool,
     depth: Int,
+    row_invariant_verify: Bool,
 ) -> Tuple[Int, Int]:
     # Row form and depth reach only the Layout E records, which serve FP8 Q
     # over a unit-scale FP8 or packed NVFP4 cache at 64 or 128 heads; every
@@ -1837,6 +1941,7 @@ def _sparse_graph_launch_fixed[
             indices_stride,
             page_size,
             sm_count,
+            row_invariant_verify,
         )
     comptime for form in range(4):
         comptime physical = (form & 1) != 0
@@ -1860,6 +1965,7 @@ def _sparse_graph_launch_fixed[
                 indices_stride,
                 page_size,
                 sm_count,
+                row_invariant_verify,
             )
     return (0, 0)
 
@@ -1878,6 +1984,7 @@ def _sparse_graph_launch_cache_form[
     fixed_topk: Bool,
     physical_indices: Bool,
     depth: Int,
+    row_invariant_verify: Bool,
 ) raises -> Tuple[Int, Int]:
     def launch_as[
         q_type: DType, kv_type: DType, kv_quantized: Bool, kv_nvfp4: Bool
@@ -1894,6 +2001,7 @@ def _sparse_graph_launch_cache_form[
             sm_count,
             physical,
             depth,
+            row_invariant_verify,
         )
 
     if kv_form == MLA_SPARSE_KV_FORM_NVFP4:
@@ -1932,6 +2040,7 @@ def compute_mla_dispatch_key_runtime(
     fixed_topk: Bool = True,
     physical_indices: Bool = False,
     depth: Int = 0,
+    row_invariant_verify: Bool = False,
 ) raises -> Tuple[Int, Int, Int, Int]:
     """Returns `(batch_size, q_max_seq_len, num_partitions, kernel_variant)`,
     the capture key of a decode dispatch.
@@ -1967,6 +2076,11 @@ def compute_mla_dispatch_key_runtime(
             physical rows; plain FP8 defaults to logical rows.
         depth: Logical KV head dimension; zero (unknown) disables the 576-only
             Layout E records.
+        row_invariant_verify: Whether the launch this key describes is the
+            row-invariant pin's own verify, whose count the dispatcher sizes
+            from the shape rather than the live cache; see
+            `_mla_decode_split`. The key has to follow the launch, so a caller
+            that pins its split passes this on both sides.
 
     Returns:
         The dispatch metadata and the kernel variant.
@@ -1992,6 +2106,7 @@ def compute_mla_dispatch_key_runtime(
                     fixed_topk,
                     physical_indices,
                     depth,
+                    row_invariant_verify,
                 )
                 return (batch_size, q_max_seq_len, launch[0], launch[1])
     var scalars = compute_mla_dispatch_scalars_runtime(
@@ -2126,6 +2241,11 @@ def _mla_decode_split[
     extra_indices_stride: Int,
     kv_page_size: Int,
     sm_count: Int,
+    # Whether this launch is the row-invariant pin's own verify, whose split
+    # must be the count `sparse_decode_partitions_for_rows` pins rather than
+    # the Layout-G record's cache-keyed one. False, every other caller, keeps
+    # the fitted routing.
+    row_invariant_verify: Bool = False,
 ) -> Tuple[Int, Int]:
     """Returns the split count and split page size `mla_decode_sm100_dispatch`
     picks, before a caller's `num_partitions_in` overrides the split.
@@ -2167,6 +2287,15 @@ def _mla_decode_split[
         extra_indices_stride: The extra KV's index row stride.
         kv_page_size: The KV operand's page size, 0 if not paged.
         sm_count: Number of SMs on the target GPU.
+        row_invariant_verify: Whether this launch belongs to the row-invariant
+            pin's verify, which takes the shape-pure cost-optimal bucket the
+            pin mirrors instead of the Layout-G record's cache-keyed count; see
+            `sparse_decode_partitions_for_rows`. On the graph-op path the pin
+            overrides the launch anyway, so the flag's load-bearing consumer is
+            the capture key: `compute_mla_dispatch_key_runtime` takes its count
+            from this function and applies no pin, so key and launch agree only
+            while the flag reaches both. False keeps the fitted routing, which
+            is every other caller's.
 
     Returns:
         The split count, and the split page size before the KV page caps it
@@ -2208,8 +2337,9 @@ def _mla_decode_split[
             sw_cap = 2048
         effective_split_len = min(effective_split_len, sw_cap)
 
-    var use_small_split_pages = effective_split_len <= 512 and batch_size >= 32
-    var split_page_size = 64 if use_small_split_pages else 128
+    var split_page_size = _dispatch_split_page_size(
+        effective_split_len, batch_size
+    )
     comptime _is_fp8_kv = (kv_type == DType.float8_e4m3fn or kv_nvfp4)
 
     # q_len=1 sparse FP8 split-K tuning (KERN-3217): the single-token sparse
@@ -2296,8 +2426,24 @@ def _mla_decode_split[
             _family_split_len = effective_split_len
     # The page the kernel splits on (see `launch_impl` below).
     var cost_page = _launched_split_page(split_page_size, kv_page_size)
+    # The launch whose split count the row-invariant pin
+    # (`sparse_decode_partitions_for_rows`) mirrors: an in-scope verify the
+    # Layout-G record would otherwise size from the live cache. The pin's
+    # callers need the dispatcher to pick the pin for the verify on its own
+    # too, at every context length, or a verify left to the dispatcher stops
+    # reproducing the decode steps the pin holds at this count. Only a caller
+    # that asks for it gets it (`row_invariant_verify`, the graph op's
+    # `split_rows_per_request`): the reroute moves the split count, so every
+    # other caller keeps the fitted routing.
+    var pin_mirrored_verify = (
+        row_invariant_verify and _layout_g_cost_route and not kv_nvfp4
+    )
     var num_partitions: Int
-    if _layout_g_cost_route and _unfolded_verify:
+    if (
+        _layout_g_cost_route
+        and _unfolded_verify
+        and not (_cost_optimal_split and pin_mirrored_verify)
+    ):
         comptime _top_k_record = (
             num_heads == 8 and fixed_topk and not has_extra_k
         )
@@ -2474,6 +2620,10 @@ def _mla_decode_split[
         if (
             effective_split_len >= 2048
             and effective_max_cache_len >= effective_split_len
+            # The row-invariant pin's verify keeps the shape-pure split the
+            # routing above picked for it: this fill is keyed on the cache
+            # length, and the pin mirrors the count it would shrink.
+            and not (_cost_optimal_split and pin_mirrored_verify)
         ):
             var production_ctas = (
                 ceildiv(num_heads, 64) * q_max_seq_len * batch_size
@@ -2590,6 +2740,9 @@ def mla_decode_sm100_dispatch[
     # the stride). Correctness comes from the per-token lengths, so a loose
     # bound only costs performance.
     split_len_bound: Int = 0,
+    # Whether this launch belongs to the row-invariant pin's verify, whose count
+    # the capture key needs; see `_mla_decode_split`.
+    row_invariant_verify: Bool = False,
 ) raises:
     comptime if not LseOutPtrType.is_null:
         comptime assert sparse and skip_masked_tiles, (
@@ -2676,6 +2829,7 @@ def mla_decode_sm100_dispatch[
         extra_indices_stride,
         k_t.page_size,
         sm_count,
+        row_invariant_verify,
     )
     var num_partitions = _split[0]
     var use_small_split_pages = _split[1] == 64

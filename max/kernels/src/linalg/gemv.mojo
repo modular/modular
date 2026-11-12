@@ -2401,6 +2401,135 @@ def router_gate_mixed_gemv[
                     return
 
 
+def mixed_gemv_store_epilogue[
+    static_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+](
+    c: TileTensor[.float32, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[.float32, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    m: Int,
+    n: Int,
+    k: Int,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launches the mixed GEMV with its output stored through `epilogue_fn`.
+
+    The bf16 activation is widened to fp32 in registers and dotted against the
+    unchanged fp32 weight in one launch, as `router_gate_mixed_gemv` does, and
+    every output element goes through `epilogue_fn` instead of a plain store.
+    That is what lets a caller whose projection carries elementwise work -- a
+    scale chain the graph would otherwise stage as a launch of its own -- keep
+    one launch for the whole projection. `gemv_split_k_epilogue_fn` is the same
+    kernel `gemv_split_k` is, so an epilogue that stores the untouched value
+    reproduces the plain launch bit for bit, and the fp32 form of the same
+    kernel over a pre-cast activation is the reference both are compared to.
+
+    The B200 bands are `router_gate_mixed_gemv`'s: `tile_m` and `tile_n` move
+    with the row count, and neither reorders the K reduction. Only the SM100
+    launch is served here -- the `[896, 7168]` cold-weight table and the gfx950
+    `[128, 6144]` sweep are expressed through `gemv_split_k` parameters
+    (`small_m_static_k`, `small_m_k_chunk`, `expert_major_grid`, `act_wide_k`)
+    that this kernel variant does not take, and a non-SM100 NVIDIA target's fp32
+    matmuls take a dispatch of its own -- so a caller on another target stages
+    its own chain instead.
+
+    Parameters:
+        static_N: Static output width (weight rows); selects the
+            `check_bounds_n` guard at compile time.
+        c_layout: Layout of the fp32 output tensor. Only its shape is read: the
+            epilogue owns every store.
+        a_layout: Layout of the bf16 activation tensor.
+        b_layout: Layout of the fp32 weight tensor.
+        c_engine: Engine of the fp32 output tensor.
+        a_engine: Engine of the bf16 activation tensor.
+        b_engine: Engine of the fp32 weight tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+
+    Args:
+        c: Output `[M, N]` fp32 tensor, read for its shape alone.
+        a: Activation `[M, K]` bf16 tensor.
+        b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+        m: Runtime row count (`M`).
+        n: Output width (`N`).
+        k: Contraction dim (`K`).
+        epilogue_fn: Stores each output element, carrying the graph's epilogue.
+        ctx: The device context.
+    """
+    # `ctx.target`, not `is_nvidia_gpu()`: the latter reads the compiler's
+    # target triple, which is the host's while this graph-compiler side
+    # elaborates. The gate is the Blackwell check, because on a non-SM100 NVIDIA
+    # target the fp32 matmul this launch must reproduce is not served by
+    # `gemv_split_k`; those targets stage the cast and the matmul instead.
+    comptime assert ctx.target._has_blackwell_tcgen05(), (
+        "the store-epilogue mixed GEMV is launched on SM100 only; other"
+        " targets stage the cast and the matmul instead"
+    )
+    # A 16 B fp32 vector load is 4 elements, the same element count the fp32
+    # GEMV's K tiling uses; `router_gate_mixed_gemv` sets it the same way.
+    comptime simd_width = 16 // size_of[DType.float32]()
+    # Empty-launch guard, as in `router_gate_mixed_gemv`: a graph-capture
+    # warmup can reach here with M == 0.
+    if m == 0 or n == 0:
+        return
+    # The M-major grid walks the weight rows in grid.y, capped at 65535 blocks
+    # on every supported target.
+    comptime assert (
+        static_N <= 65535
+    ), "mixed GEMV N exceeds the grid.y block limit"
+
+    def _launch[tile_m: Int, tile_n: Int, unroll_factor: Int]() raises {imm}:
+        comptime kernel = gemv_split_k_epilogue_fn[
+            DType.float32,
+            DType.bfloat16,
+            DType.float32,
+            c_layout,
+            a_layout,
+            b_layout,
+            c_engine,
+            a_engine,
+            b_engine,
+            EpilogueFnType,
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=256,
+            unroll_factor=unroll_factor,
+            weight_non_temporal=False,
+            check_bounds_m=tile_m > 1,
+            check_bounds_n=static_N % tile_n != 0,
+            pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            Int32(m),
+            Int32(n),
+            Int32(k),
+            host_args=(epilogue_fn,),
+            grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+            block_dim=256,
+            attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_BEGINNING),
+        )
+
+    if m <= 8:
+        _launch[1, 1, 1]()
+    elif m <= 24:
+        _launch[4, 1, 1]()
+    elif m <= 32:
+        _launch[4, 2, 2]()
+    else:
+        _launch[8, 2, 2]()
+
+
 # Row Vector-Matrix multiplication
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))

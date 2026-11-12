@@ -14,11 +14,15 @@
 variants) built on the `algorithm.rowwise` scaffolder and the
 `builtin_kernels.monoids` monoid library."""
 
-from std.math import rsqrt
+from std.math import ceildiv, rsqrt
+from std.memory import stack_allocation
 from std.sys import size_of
 from std.sys.info import align_of
 
+from max.gpu import WARP_SIZE, lane_id, warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
+from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, CoordLike, TileTensor
 from std.utils.coord import DynamicCoord
@@ -27,7 +31,7 @@ from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from algorithm import rowwise
 from algorithm.rowwise import strided_load
-from algorithm.rowwise_types import at_axis
+from algorithm.rowwise_types import ReduceTier, at_axis
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.rope import _rope
 
@@ -1413,4 +1417,663 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         simd_width=simd_width,
         num_phases=3,
         computationally_expensive=True,
+    ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based layer_norm + group-scaled (blockwise-FP8) dynamic quantization: the
+# Welford statistics and the FP8 scale of every group in one launch, so a
+# normalized row is never written to HBM only to be read back by the
+# quantizer.
+#
+# Bit-exactness with the unfused pair is a property of the construction, not a
+# tolerance: the statistics come from `rowwise.Row.reduce` with the same
+# `Welford` monoid, the same lane width and the same launch parameters
+# `layer_norm` picks, so the fp32 mean and inverse deviation are the same bits;
+# the normalized value is formed in `layer_norm`'s own expression order and
+# rounded to the input dtype once, exactly where `layer_norm` stores it; and
+# the scale and the quantized bytes come from `compute_dynamic_fp8_scale` and
+# `fp8_quantize`, the same two functions `quantize_dynamic_scaled_fp8` uses.
+# The group maximum is a maximum, so the lane grouping it uses cannot change
+# the result.
+# ===----------------------------------------------------------------------=== #
+
+comptime _LNQ_GROUP_LANE_WIDTH = 8
+"""Columns one lane covers in the group pass.
+
+Fixed rather than the rowwise body's `simd_width`, because the tier picks that
+width from the dtype and can drop it to 1, which would leave a 128-column
+scale group spanning more lanes than a warp has. Eight lanes is one 128-bit load
+of bf16 input, and it tiles a 128-column group into sixteen lanes of one
+warp. Sixteen lanes was measured and is worse: the group pass then runs
+larger-vector accesses over the same bytes, but the pass is dominated by the
+row's second read, not by the access width."""
+
+
+def layer_norm_quantize_dynamic_scaled_fp8[
+    dtype: DType,
+    rounded: DType,
+    gamma_dtype: DType,
+    beta_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
+    Fp8Fn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[out_dtype, width]) -> None
+    ),
+    ScaleFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def(Coord, Scalar[scales_dtype]) -> None),
+    AxisSizeT: CoordLike,
+    /,
+    group_size: Int,
+    num_cols: Int,
+    reduce_dim: Int = rank - 1,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+](
+    input_fn: InputFn,
+    fp8_fn: Fp8Fn,
+    scale_fn: ScaleFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, gamma_dtype, ...],
+    beta: TileTensor[mut=False, beta_dtype, ...],
+    epsilon: Scalar[dtype],
+    scale_ub: Float32,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
+    """Fused `layer_norm` + `quantize_dynamic_scaled_fp8` for group (blockwise)
+    activation scales: one launch, no normalized round trip through HBM.
+
+    Produces the outputs of `layer_norm` followed by
+    `quantize_dynamic_scaled_fp8[group_size_or_per_token=group_size]`: `fp8_fn`
+    receives `[rows, num_cols]` float8 and `scale_fn` the
+    `[num_cols // group_size, rows]` float32 group scales (the blockwise
+    activation layout the block-scaled matmuls take).
+
+    The group-scale epilogue is the one
+    ``Kernels/test/gpu/Moka/kernels/normq/normq_plan.mojo`` specifies, but
+    this kernel's statistics half has no component: Welford's state is joined
+    by `algorithm.rowwise`'s generic reducer, a Chan merge with no regime where
+    its rounding is exact, so a component would have no inputs on which it
+    could be verified bit-for-bit against this kernel. The RMSNorm sibling
+    above carries the component.
+
+    Parameters:
+        dtype: The layer norm's working dtype; its statistics run here.
+        rounded: The dtype the normalized row is rounded to before the
+            quantize reads it -- the dtype `layer_norm` writes, which is the
+            quantize's input dtype.
+        gamma_dtype: The normalization scale weight's dtype. Cast up to the
+            working dtype in the load, which is what the chain's own cast of
+            the weight does and costs nothing, as a bf16-to-float32 cast is
+            exact.
+        beta_dtype: The normalization bias weight's dtype.
+        out_dtype: The FP8 output dtype.
+        scales_dtype: The group scale dtype.
+        rank: Input rank; must be 2.
+        InputFn: The primary-input loader.
+        Fp8Fn: The quantized-value writer.
+        ScaleFn: The group-scale writer.
+        AxisSizeT: The reduce axis length's `CoordLike` type.
+        group_size: Columns per scale.
+        num_cols: The row width.
+        reduce_dim: The reduced axis.
+        pdl_level: The tier kernels' programmatic dependent launch level.
+
+    Args:
+        input_fn: Loads a tile of the unnormalized input.
+        fp8_fn: Stores a tile of the quantized output.
+        scale_fn: Stores one group's scale.
+        shape: Tensor shape.
+        axis_size: Length of the reduce axis.
+        gamma: The `[num_cols]` layer-norm scale weight.
+        beta: The `[num_cols]` layer-norm bias weight.
+        epsilon: The layer norm's epsilon.
+        scale_ub: Upper bound of the dynamic scale.
+        context: Device context.
+
+    Raises:
+        On launch or worker failure.
+    """
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "layer_norm requires fp accum"
+    comptime assert rank == 2, "the fused quantize writes rank-2 block scales"
+    comptime assert reduce_dim == rank - 1, "the reduced axis must be the row"
+    # `layer_norm`'s own width selection, including the 96-byte budget that
+    # keeps Welford's 12-byte state at the natural width. The tier picks the
+    # block size and the reduction tree from this width, so matching it is what
+    # makes the fused statistics the unfused ones.
+    comptime simd_width = rowwise.pick_simd_width[
+        Welford[accum, 1], context.T.target, 96, dtype, accum
+    ]()
+    comptime gw = _LNQ_GROUP_LANE_WIDTH
+    comptime lanes_per_group = group_size // gw
+    comptime num_groups = num_cols // group_size
+    comptime assert group_size % gw == 0, "a scale group must tile whole lanes"
+    comptime assert (
+        lanes_per_group.is_power_of_two() and lanes_per_group <= WARP_SIZE
+    ), "a scale group must be a power-of-two lane segment of one warp"
+    comptime assert (
+        num_cols % group_size == 0
+    ), "the row must tile whole scale groups"
+    var scale_ub_scaled = Scalar[scales_dtype](scale_ub)
+
+    @inline(.always)
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var gamma,
+        var beta,
+        var epsilon,
+        var scale_ub_scaled,
+        var input_fn,
+        var fp8_fn,
+        var scale_fn,
+    }:
+        comptime row_rank = row_coords.rank
+
+        @inline(.always)
+        def load[
+            width: Int, alignment: Int
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
+
+        var row = rowwise.Row[
+            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        # The row is staged in shared memory as the reduce walks it, so the
+        # group pass below normalizes it from there instead of reading it out
+        # of HBM a second time. Staging from inside the reduce's contribution
+        # keeps the reduction itself untouched -- the statistics are still the
+        # unfused `layer_norm`'s own tree.
+        #
+        # Only the block tier stages, because only it owns a whole row: it runs
+        # one row per block, so one strip serves it. The warp tier owns one row
+        # per warp and re-reads, which is what the chain does -- and it keeps
+        # that instantiation (elaborated at every width, because the tier pick
+        # is a runtime `if` on the row size) from declaring one strip per warp
+        # of never-launched shared memory.
+        comptime staged = params._tier == ReduceTier.Block
+        comptime warp_tier = params._tier == ReduceTier.Warp
+        # Split-K stripes one row across blocks, so no block sees the whole row
+        # and reading the strip there would fuse garbage. It is dead for a
+        # normalize-shaped body -- `rowwise.launch` passes `supports_splitk=
+        # False` for `num_phases > 1` -- so state the invariant it rests on.
+        comptime assert params._tier != ReduceTier.Splitk, (
+            "the fused norm+quantize needs one row per block; the split-K tier"
+            " stripes a row across blocks"
+        )
+        # The group pass loads `gw` wide, so the strip has to carry that
+        # promise, not the narrower one the reduce's tiles give.
+        comptime stage_align = max(
+            align_of[SIMD[dtype, params.simd_width]](),
+            align_of[SIMD[dtype, gw]](),
+        )
+        # A row wider than this would fail to compile with ptxas's own message
+        # about a kernel the caller never wrote; refuse with the real limit.
+        comptime assert num_cols * size_of[dtype]() <= 48 * 1024, (
+            "the staged row does not fit the 48 KiB of shared memory every"
+            " target allows without opting in"
+        )
+        var x_row = stack_allocation[
+            num_cols,
+            Scalar[dtype],
+            alignment=stage_align,
+            address_space=.SHARED,
+        ]()
+        var x_addr = Int(x_row)
+
+        # The previous grid-stride row's group pass reads this strip, so it has
+        # to finish before this row overwrites it -- `Row.cache`'s own pre-sync.
+        comptime if staged:
+            barrier()
+
+        @inline(.always)
+        def cast_to_accum[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
+            var x_addr
+        } -> SIMD[accum, width]:
+            comptime if staged:
+                comptime al = align_of[SIMD[dtype, width]]()
+                MutPointer[
+                    Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
+                ](unsafe_from_address=x_addr).unsafe_store[alignment=al](
+                    Int(idx[reduce_dim]), tile
+                )
+            return tile.cast[accum]()
+
+        var stats = row.reduce[Welford[accum, params.simd_width]](
+            cast_to_accum, load
+        )
+        comptime if staged:
+            barrier()
+        # Every lane holds the row's statistics after the cross-thread join, so
+        # one lane's copy splats; `layer_norm` reads the same value through
+        # `.slice`, which on this tier is the state unchanged.
+        var mean = SIMD[accum, gw](stats.mean[0])
+        var inv = SIMD[accum, gw](
+            rsqrt(stats.M2[0] / stats.count[0] + epsilon.cast[accum]())
+        )
+        var row_idx = Int(row_coords[0])
+
+        # The group pass walks one scale group per lane segment of a warp, in
+        # as many passes as the row needs; its input is the strip the reduce
+        # just filled, or the row itself on a tier that did not stage it. Every
+        # warp of a block covers the same row on the block tier, so the warps
+        # split the pass between them; on the warp tier each warp owns a row of
+        # its own and walks all of it.
+        comptime warps = params.BLOCK_SIZE // WARP_SIZE
+        comptime groups_per_warp = WARP_SIZE // lanes_per_group
+        comptime groups_per_pass = (
+            groups_per_warp if warp_tier else warps * groups_per_warp
+        )
+        comptime warp_group_stride = 0 if warp_tier else groups_per_warp
+        comptime passes = ceildiv(num_groups, groups_per_pass)
+        comptime gw_align = align_of[SIMD[dtype, gw]]()
+        comptime gamma_align = align_of[SIMD[gamma_dtype, gw]]()
+        comptime beta_align = align_of[SIMD[beta_dtype, gw]]()
+        comptime fp8_align = align_of[SIMD[out_dtype, gw]]()
+        var lane_in_group = Int(lane_id()) % lanes_per_group
+        # A `use_simd_full=false` instantiation carries a one-wide body; the
+        # group pass keeps its own width, which is what `gw` is for.
+        for p in range(passes):
+            var group = (
+                p * groups_per_pass
+                + Int(warp_id()) * warp_group_stride
+                + Int(lane_id()) // lanes_per_group
+            )
+            var live = group < num_groups
+            # The rounds past the last group recompute the last one and store
+            # nothing, so every lane of the warp reaches the group maximum
+            # together. A branch here would split the warp.
+            var clamped = group if live else num_groups - 1
+            var col = clamped * group_size + lane_in_group * gw
+
+            var x: SIMD[accum, gw]
+            comptime if staged:
+                x = (
+                    MutPointer[
+                        Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
+                    ](unsafe_from_address=x_addr)
+                    .unsafe_load[width=gw, alignment=gw_align](col)
+                    .cast[accum]()
+                )
+            else:
+                # The loader's second parameter is an element alignment, not
+                # the byte alignment the shared strip's load above takes; `col`
+                # is a whole number of `gw` tiles into the row.
+                x = input_fn[gw, gw](Coord(row_idx, col)).cast[accum]()
+            var gamma_val = gamma.load[width=gw, alignment=gamma_align](
+                Coord(col)
+            ).cast[accum]()
+            var beta_val = beta.load[width=gw, alignment=beta_align](
+                Coord(col)
+            ).cast[accum]()
+            # `layer_norm`'s expression order, rounded to `rounded` exactly
+            # where it writes the row: that rounding is the quantize's input,
+            # and quantizing the unrounded float32 value moves every scale.
+            var out = ((x - mean) * inv * gamma_val + beta_val).cast[rounded]()
+            var values = out.cast[accum]()
+
+            var group_max = warp.lane_group_max[num_lanes=lanes_per_group](
+                abs(values).reduce_max()
+            )
+            var scale: Scalar[scales_dtype]
+            var recip: Scalar[accum]
+            scale, recip = compute_dynamic_fp8_scale[out_dtype](
+                group_max, scale_ub_scaled
+            )
+            if live and lane_in_group == 0:
+                scale_fn(Coord(group, row_idx), scale)
+            if live:
+                fp8_fn[gw, fp8_align](
+                    Coord(row_idx, col),
+                    fp8_quantize[out_dtype](values, recip),
+                )
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        num_phases=2,
+        computationally_expensive=True,
+        name="layer_norm_quantize",
+        pdl_level=pdl_level,
+    ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based rms_norm + group-scaled (blockwise-FP8) dynamic quantization, with
+# the normalized row kept: both outputs of the unfused pair, one launch.
+#
+# A norm whose reader needs the normalized activation in the input dtype as
+# well as the quantized form cannot use the single-output fused op above --
+# the quantize would have to be a second launch. This one writes both: on the
+# block tier the reduce's contribution stages the row in shared memory and the
+# group pass normalizes it from there, so the row is read out of HBM once.
+#
+# Bit-exactness with `rms_norm` followed by `quantize_dynamic_scaled_fp8` is a
+# property of the construction: the sum of squares comes from
+# `rowwise.Row.reduce` with the same `ReduceSum` monoid, the same lane width
+# and the same launch parameters `rms_norm` picks, so the inverse deviation is
+# the same bits; the normalized value is formed in `rms_norm`'s own expression
+# order for either `multiply_before_cast`, and rounded to the input dtype once;
+# and the scale and quantized bytes come from `compute_dynamic_fp8_scale` and
+# `fp8_quantize`, the same two functions the standalone quantize uses.
+# ===----------------------------------------------------------------------=== #
+
+comptime _RNQ_GROUP_LANE_WIDTH = 8
+"""Columns one lane covers in the group pass; see
+`_LNQ_GROUP_LANE_WIDTH` for why it is fixed rather than the body's width."""
+
+
+def rms_norm_quantize_dynamic_scaled_fp8_dual[
+    dtype: DType,
+    rounded: DType,
+    gamma_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
+    NormedFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[rounded, width]) -> None
+    ),
+    Fp8Fn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, alignment: Int
+        ](Coord, SIMD[out_dtype, width]) -> None
+    ),
+    ScaleFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def(Coord, Scalar[scales_dtype]) -> None),
+    AxisSizeT: CoordLike,
+    /,
+    group_size: Int,
+    num_cols: Int,
+    weight_offset: Float32 = 0.0,
+    multiply_before_cast: Bool = False,
+    reduce_dim: Int = rank - 1,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+](
+    input_fn: InputFn,
+    normed_fn: NormedFn,
+    fp8_fn: Fp8Fn,
+    scale_fn: ScaleFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, gamma_dtype, ...],
+    epsilon: Float32,
+    scale_ub: Float32,
+    context: DeviceContext.Optional = DeviceContext.NoneValue,
+) raises:
+    """Fused `rms_norm` + `quantize_dynamic_scaled_fp8` for group (blockwise)
+    activation scales, emitting the normalized row as well.
+
+    Produces both outputs of `rms_norm` and then the outputs of
+    `quantize_dynamic_scaled_fp8[group_size_or_per_token=group_size]` applied
+    to it: `normed_fn` receives the `[rows, num_cols]` normalized row in
+    `rounded`, `fp8_fn` the same row in `out_dtype`, and `scale_fn` the
+    `[num_cols // group_size, rows]` group scales.
+
+    The Moka component for this kernel is
+    ``Kernels/test/gpu/Moka/kernels/normq/normq_plan.mojo`` (one CTA per row,
+    a sum-of-squares rendezvous, then the group-scale epilogue), with its ops
+    in ``kernels/normq/block_ops_normq.mojo`` and its oracle test in
+    ``test/test_normq_plan.mojo``. ``ptx/ptx_normq.mojo`` dumps the plan the
+    sync certificate checks.
+
+    Parameters:
+        dtype: The normalization's working dtype; its reduction runs here.
+        rounded: The dtype the normalized row is written in, which is the
+            quantize's input dtype.
+        gamma_dtype: The scale weight's dtype, cast up in the load.
+        out_dtype: The FP8 output dtype.
+        scales_dtype: The group scale dtype.
+        rank: Input rank; must be 2.
+        InputFn: The primary-input loader.
+        NormedFn: The normalized-row writer.
+        Fp8Fn: The quantized-value writer.
+        ScaleFn: The group-scale writer.
+        AxisSizeT: The reduce axis length's `CoordLike` type.
+        group_size: Columns per scale.
+        num_cols: The row width.
+        weight_offset: Constant added to `gamma`.
+        multiply_before_cast: `rms_norm`'s gamma-multiply order.
+        reduce_dim: The reduced axis.
+        pdl_level: The tier kernels' programmatic dependent launch level.
+
+    Args:
+        input_fn: Loads a tile of the input.
+        normed_fn: Stores a tile of the normalized row.
+        fp8_fn: Stores a tile of the quantized output.
+        scale_fn: Stores one group's scale.
+        shape: Tensor shape.
+        axis_size: Length of the reduce axis.
+        gamma: The `[num_cols]` normalization weight.
+        epsilon: The normalization epsilon. Float32, as `rms_norm` takes it:
+            rounding it to the input dtype moves the rsqrt argument for every
+            row.
+        scale_ub: Upper bound of the dynamic scale.
+        context: Device context.
+
+    Raises:
+        On launch or worker failure.
+    """
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
+    comptime assert rank == 2, "the fused quantize writes rank-2 block scales"
+    comptime assert reduce_dim == rank - 1, "the reduced axis must be the row"
+    # `rms_norm`'s own width selection: the tier picks the block size and the
+    # reduction tree from it, so matching it is what makes the fused sum of
+    # squares the unfused one.
+    comptime simd_width = rowwise.pick_simd_width[
+        ReduceSum[accum, 1], context.T.target, 64, dtype, accum
+    ]()
+    comptime gw = _RNQ_GROUP_LANE_WIDTH
+    comptime lanes_per_group = group_size // gw
+    comptime num_groups = num_cols // group_size
+    comptime assert group_size % gw == 0, "a scale group must tile whole lanes"
+    comptime assert (
+        lanes_per_group.is_power_of_two() and lanes_per_group <= WARP_SIZE
+    ), "a scale group must be a power-of-two lane segment of one warp"
+    comptime assert (
+        num_cols % group_size == 0
+    ), "the row must tile whole scale groups"
+    var axis_size_accum = Scalar[accum](Int(axis_size))
+    var scale_ub_scaled = Scalar[scales_dtype](scale_ub)
+
+    @inline(.always)
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var axis_size_accum,
+        var gamma,
+        var epsilon,
+        var scale_ub_scaled,
+        var input_fn,
+        var normed_fn,
+        var fp8_fn,
+        var scale_fn,
+    }:
+        comptime row_rank = row_coords.rank
+
+        @inline(.always)
+        def load[
+            width: Int, alignment: Int
+        ](idx: DynamicCoord[DType.int, row_rank]) {var input_fn} -> SIMD[
+            dtype, width
+        ]:
+            return input_fn[width, alignment](idx)
+
+        var row = rowwise.Row[
+            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        # The row is staged in shared memory as the reduce walks it (see the
+        # layer_norm body above): the group pass normalizes it from there
+        # rather than reading it out of HBM again. Only the block tier stages
+        # -- it owns one row per block, so one strip serves it; the warp tier
+        # owns one row per warp and re-reads.
+        comptime staged = params._tier == ReduceTier.Block
+        comptime warp_tier = params._tier == ReduceTier.Warp
+        comptime assert params._tier != ReduceTier.Splitk, (
+            "the fused norm+quantize needs one row per block; the split-K tier"
+            " stripes a row across blocks"
+        )
+        comptime stage_align = max(
+            align_of[SIMD[dtype, params.simd_width]](),
+            align_of[SIMD[dtype, gw]](),
+        )
+        comptime assert num_cols * size_of[dtype]() <= 48 * 1024, (
+            "the staged row does not fit the 48 KiB of shared memory every"
+            " target allows without opting in"
+        )
+        var x_row = stack_allocation[
+            num_cols,
+            Scalar[dtype],
+            alignment=stage_align,
+            address_space=.SHARED,
+        ]()
+        var x_addr = Int(x_row)
+
+        # See the layer_norm body: the previous grid-stride row's readers must
+        # finish before this row overwrites the strip.
+        comptime if staged:
+            barrier()
+
+        @inline(.always)
+        def square[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
+            var x_addr
+        } -> SIMD[accum, width]:
+            comptime if staged:
+                comptime al = align_of[SIMD[dtype, width]]()
+                MutPointer[
+                    Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
+                ](unsafe_from_address=x_addr).unsafe_store[alignment=al](
+                    Int(idx[reduce_dim]), tile
+                )
+            var tile_accum = tile.cast[accum]()
+            return tile_accum * tile_accum
+
+        var ssq = row.reduce[ReduceSum[accum, params.simd_width]](
+            square, load
+        ).acc
+        comptime if staged:
+            barrier()
+        var inv = SIMD[accum, gw](
+            rsqrt(ssq[0] / axis_size_accum + epsilon.cast[accum]())
+        )
+        var row_idx = Int(row_coords[0])
+        comptime normalized_offset = Scalar[rounded](weight_offset)
+        comptime gamma_offset = Scalar[gamma_dtype](weight_offset)
+
+        # One pass writes both outputs and the group scales: a group is one
+        # lane segment of a warp, so its maximum is a `lane_group_max` and its
+        # lanes keep their normalized values in registers across it.
+        comptime warps = params.BLOCK_SIZE // WARP_SIZE
+        comptime groups_per_warp = WARP_SIZE // lanes_per_group
+        comptime groups_per_pass = (
+            groups_per_warp if warp_tier else warps * groups_per_warp
+        )
+        comptime warp_group_stride = 0 if warp_tier else groups_per_warp
+        comptime passes = ceildiv(num_groups, groups_per_pass)
+        comptime gw_align = align_of[SIMD[dtype, gw]]()
+        comptime gamma_align = align_of[SIMD[gamma_dtype, gw]]()
+        comptime normed_align = align_of[SIMD[rounded, gw]]()
+        comptime fp8_align = align_of[SIMD[out_dtype, gw]]()
+        var lane_in_group = Int(lane_id()) % lanes_per_group
+        for p in range(passes):
+            var group = (
+                p * groups_per_pass
+                + Int(warp_id()) * warp_group_stride
+                + Int(lane_id()) // lanes_per_group
+            )
+            var live = group < num_groups
+            # Rounds past the last group recompute it and store nothing, so
+            # every lane of the warp reaches the maximum together.
+            var clamped = group if live else num_groups - 1
+            var col = clamped * group_size + lane_in_group * gw
+
+            var x: SIMD[accum, gw]
+            comptime if staged:
+                x = (
+                    MutPointer[
+                        Scalar[dtype], MutUntrackedOrigin, address_space=.SHARED
+                    ](unsafe_from_address=x_addr)
+                    .unsafe_load[width=gw, alignment=gw_align](col)
+                    .cast[accum]()
+                )
+            else:
+                # The loader's second parameter is an element alignment, not
+                # the byte alignment the shared strip's load above takes; `col`
+                # is a whole number of `gw` tiles into the row.
+                x = input_fn[gw, gw](Coord(row_idx, col)).cast[accum]()
+            var gamma_val = gamma.load[width=gw, alignment=gamma_align](
+                Coord(col)
+            )
+            # `rms_norm`'s expression for either gamma-multiply order, rounded
+            # once: that rounding is the quantize's input and the caller's
+            # normalized row.
+            var out: SIMD[rounded, gw]
+            comptime if multiply_before_cast:
+                out = (
+                    (x * inv)
+                    * (
+                        gamma_val.cast[accum]()
+                        + SIMD[accum, gw](normalized_offset.cast[accum]())
+                    )
+                ).cast[rounded]()
+            else:
+                out = (x * inv).cast[rounded]() * (
+                    gamma_val + SIMD[gamma_dtype, gw](gamma_offset)
+                ).cast[rounded]()
+            var values = out.cast[accum]()
+
+            var group_max = warp.lane_group_max[num_lanes=lanes_per_group](
+                abs(values).reduce_max()
+            )
+            var scale: Scalar[scales_dtype]
+            var recip: Scalar[accum]
+            scale, recip = compute_dynamic_fp8_scale[out_dtype](
+                group_max, scale_ub_scaled
+            )
+            if live and lane_in_group == 0:
+                scale_fn(Coord(group, row_idx), scale)
+            if live:
+                normed_fn[gw, normed_align](Coord(row_idx, col), out)
+                fp8_fn[gw, fp8_align](
+                    Coord(row_idx, col),
+                    fp8_quantize[out_dtype](values, recip),
+                )
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        num_phases=2,
+        computationally_expensive=True,
+        name="rms_norm_quantize",
+        pdl_level=pdl_level,
     ](body, shape, context)

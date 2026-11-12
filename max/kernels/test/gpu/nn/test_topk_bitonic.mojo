@@ -2032,6 +2032,56 @@ def test_bounded_histsel_select_all_tail(ctx: DeviceContext) raises:
 # rather than to the exact oracle, which is all that contract promises.
 
 
+def test_bounded_unordered_deterministic(ctx: DeviceContext) raises:
+    """The FP8 indexer's opt-in contract, `ordered=False, deterministic=True`.
+
+    Its two streaming arms, each against the reference set with poisoned
+    bounds: fewer rows than SMs over a capture-frozen stride (the ranked
+    streaming kernel a captured decode runs, with live counts on both sides
+    of `K`), and more rows than SMs (prefill).
+    """
+    comptime K = 2048
+    comptime N_DECODE = 65537
+    var decode_bounds: List[Int] = [
+        N_DECODE,
+        30000,
+        8192,
+        2049,
+        2048,
+        2047,
+        100,
+        0,
+    ]
+    var B = len(decode_bounds)
+    comptime N_PREFILL = 8193
+    comptime B_PREFILL = 192
+    var prefill_bounds = List[Int](capacity=B_PREFILL)
+    for b in range(B_PREFILL):
+        prefill_bounds.append([N_PREFILL, 4096, 2049, 1500][b % 4])
+    comptime for dt in [DType.bfloat16, DType.float32]:
+        _run_and_check_bounded[dt, ordered=False, deterministic=True](
+            ctx,
+            _poisoned_bounded_scores(B, N_DECODE, decode_bounds, 0xDE7E0001),
+            N_DECODE,
+            K,
+            B,
+            decode_bounds,
+            String("unord_det_decode_", dt),
+        )
+        _run_and_check_bounded[dt, ordered=False, deterministic=True](
+            ctx,
+            _poisoned_bounded_scores(
+                B_PREFILL, N_PREFILL, prefill_bounds, 0xDE7E0002
+            ),
+            N_PREFILL,
+            K,
+            B_PREFILL,
+            prefill_bounds,
+            String("unord_det_prefill_", dt),
+        )
+    print("PASS test_bounded_unordered_deterministic")
+
+
 def _check_split_bf16[
     ordered: Bool = False, in_dtype: DType = .bfloat16
 ](
@@ -3831,6 +3881,7 @@ def main() raises:
         test_bounded_histsel_prefetch(ctx)
         test_bounded_histsel_fills_gpu(ctx)
         test_bounded_histsel_select_all_tail(ctx)
+        test_bounded_unordered_deterministic(ctx)
         test_bf16_block_multirow(ctx)
         test_bf16_resident(ctx)
         test_bf16_histsel(ctx)

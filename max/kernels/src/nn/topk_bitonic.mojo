@@ -4929,6 +4929,61 @@ def _choose_split_factor(rows: Int, num_tiles: Int, sm_count: Int) -> Int:
     return S
 
 
+def topk_det_cluster_route[
+    in_dtype: DType, *, ordered: Bool, deterministic: Bool
+](ctx: DeviceContext, N: Int, K: Int, total_seq_len: Int, bounded: Bool) -> Int:
+    """The cluster size at which `persistent_topk_block_split` hands these
+    rows to the deterministic cluster top-k, or 0 where it keeps its other
+    kernels.
+
+    The dispatch decides by calling this, so a test that asserts on it
+    asserts on the route itself. The cluster kernel takes the rows the ranked
+    streaming select would otherwise take under `ordered=False,
+    deterministic=True`: bounded bf16 rows past the widest resident row, and
+    only where every row gets a cluster of at least two CTAs in one wave
+    (`topk_cluster_det_cluster_size`), which also keeps the rows below the
+    SM count. At one CTA a long row is slower than the ranked select.
+
+    Parameters:
+        in_dtype: Element type of the score buffer.
+        ordered: The launch's `ordered` contract.
+        deterministic: The launch's `deterministic` contract.
+
+    Args:
+        ctx: Device context.
+        N: Score columns per row (the row stride).
+        K: Top-k count per row.
+        total_seq_len: Number of rows.
+        bounded: Whether the launch passes per-row bounds.
+
+    Returns:
+        The cluster size, or 0.
+    """
+    comptime if (
+        ctx.target._is_sm_9x_or_newer()
+        and not ctx.target._is_sm_120x_or_newer()
+    ):
+        comptime if (
+            (not ordered) and deterministic and in_dtype == DType.bfloat16
+        ):
+            from nn.attention.gpu.nvidia.topk_cluster_det import (
+                topk_cluster_det_cluster_size,
+            )
+
+            var cs = topk_cluster_det_cluster_size[
+                ctx.default_device_info.sm_count
+            ](total_seq_len)
+            if (
+                bounded
+                and N > _HSEL_RES_MAX_WIDE
+                and N % _elems_per_16b[in_dtype]() == 0
+                and K <= PERSISTENT_TOPK_MAX_N
+                and cs >= 2
+            ):
+                return cs
+    return 0
+
+
 def persistent_topk_block_split[
     in_dtype: DType,
     //,
@@ -4962,8 +5017,12 @@ def persistent_topk_block_split[
     (`nn/attention/gpu/nvidia/topk_cluster.mojo`), which spreads each row over
     a thread-block cluster — and only under the
     `ordered=False, deterministic=False` contract, which is all that kernel
-    promises; every stronger contract keeps the kernels this docstring
-    otherwise describes.
+    promises. Under `ordered=False, deterministic=True`, bounded bf16 rows
+    past the widest resident row, few enough that each gets a cluster of at
+    least two CTAs, take `nn/attention/gpu/nvidia/topk_cluster_det.mojo`
+    instead, which writes the same output as the ranked select it replaces,
+    slot for slot. Every other contract and shape keeps the kernels this
+    docstring otherwise describes.
 
     On AMD gfx950, bounded rows of the same contract that under-fill the GPU and are
     wider than the resident select take the row-split select
@@ -4978,20 +5037,20 @@ def persistent_topk_block_split[
         in_dtype: Element type of the score buffer, f32 or bf16 (inferred).
         ordered: Whether slot `q` must hold the `q`-th largest score. `True` is the
             strong contract: descending score, ties by ascending column.
-            `False` promises the same `K` columns, deterministically, in an
-            unspecified order -- which lets the short-row path skip its ranking
-            pass, most of its work. The set does not depend on this, because the
-            tie-break lives in the key the select already compares. Only shapes
-            that have a cheaper path take one; the rest stay ordered, which
-            satisfies the weaker promise too.
-        deterministic: Whether one input must always give one output. `True`, the
-            default, is the guarantee above: the same `K` columns every run.
-            `False` drops it, and drops the *set* guarantee with it -- when more
-            columns tie at the threshold than there are slots left, which of them
-            survive is decided by the order the block's warps reach a cursor. In
-            exchange the cheap contract's tail needs no ordering scan at all.
-            Only meaningful together with `ordered=False`; the ordered path is
-            deterministic by construction.
+            `False` promises the `K` columns in an unspecified order, and leaves
+            whether that order and set repeat from run to run to
+            `deterministic`. Only shapes that have a cheaper path take one; the
+            rest stay ordered, which satisfies the weaker promise too.
+        deterministic: Whether one input must always give one output: the same
+            `K` columns in the same slots on every run (defaults to `False`).
+            With `True` the set is the ordered contract's, since the tie-break
+            lives in the key the select already compares. `False` drops the
+            guarantee: slots are filled in the order threads arrive, and when
+            more columns tie at the threshold than there are slots left, which
+            of them survive is decided by the order the block's warps reach a
+            cursor. In exchange the tail needs no ranking pass and few rows may
+            take the cluster-cooperative kernel. Only meaningful together with
+            `ordered=False`; the ordered path is deterministic by construction.
         sig_bits: How many of a key half's register a score can occupy, which is
             what sets the radix select's round count. Defaults to
             `_hsel_sig_bits[in_dtype]()` -- 16 at bf16 and 32 at f32 -- so a
@@ -5082,6 +5141,34 @@ def persistent_topk_block_split[
                     ),
                 )
                 return
+        # The reproducible contract's cluster kernel writes the ranked
+        # streaming select's output slot for slot, for the rows
+        # `topk_det_cluster_route` names.
+        comptime if (
+            (not ordered) and deterministic and in_dtype == DType.bfloat16
+        ):
+            from nn.attention.gpu.nvidia.topk_cluster_det import (
+                topk_cluster_det,
+            )
+
+            if case .Some(rb) = row_bounds:
+                var cs = topk_det_cluster_route[
+                    in_dtype, ordered=ordered, deterministic=deterministic
+                ](ctx, N, K, total_seq_len, True)
+                if cs > 0:
+                    topk_cluster_det(
+                        ctx,
+                        rebind[ImmPointer[BFloat16, ImmUntrackedOrigin]](
+                            in_scores
+                        ),
+                        rebind[MutPointer[Int32, MutUntrackedOrigin]](out_idxs),
+                        N,
+                        K,
+                        total_seq_len,
+                        rb,
+                        cs,
+                    )
+                    return
 
     if N >= _HSEL_MIN_N:
         # Both selects below want the same question answered: do the rows fill

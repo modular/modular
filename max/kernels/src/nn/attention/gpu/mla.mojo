@@ -308,6 +308,11 @@ trait MLAKernels:
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the vendor's kernels.
 
@@ -438,6 +443,9 @@ trait MLAKernels:
             split_len_bound: With `lse_out`, an upper bound on the per-token
                 lengths that sizes split-K in place of `indices_stride` (0 keeps
                 the stride).
+            row_invariant_verify: Whether this launch is the row-invariant pin's
+                own verify, which the SM100 dispatcher sizes at the pin's count
+                instead of from the live cache; the other targets ignore it.
         """
         ...
 
@@ -602,6 +610,11 @@ struct AMDMLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the AMD kernels."""
         comptime num_heads = config.num_heads
@@ -1352,6 +1365,11 @@ struct SM100MLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the SM100 kernels."""
         comptime num_heads = config.num_heads
@@ -1460,6 +1478,7 @@ struct SM100MLA(MLAKernels):
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -1532,6 +1551,7 @@ struct SM100MLA(MLAKernels):
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
             _ = local_args^
 
@@ -1692,6 +1712,11 @@ struct LegacyNVMLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decode to the pre-Blackwell NVIDIA kernels."""
         comptime num_heads = config.num_heads
@@ -2171,6 +2196,9 @@ def flare_mla_decoding[
     # with it; see `mla_decode_sm100_dispatch`.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # Whether this launch is the row-invariant pin's own verify; forwarded to
+    # the SM100 dispatcher and ignored elsewhere.
+    row_invariant_verify: Bool = False,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -2306,6 +2334,9 @@ def flare_mla_decoding[
         split_len_bound: With `lse_out`, an upper bound on the per-token
             lengths that sizes split-K in place of `indices_stride` (0 keeps
             the stride).
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify, which the SM100 dispatcher sizes at the pin's count
+            instead of from the live cache; other targets ignore it.
     """
     comptime assert (
         ragged or rank == 4
@@ -2407,6 +2438,7 @@ def flare_mla_decoding[
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -2454,6 +2486,7 @@ def flare_mla_decoding[
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
 
 

@@ -40,7 +40,11 @@ from layout import (
 )
 from nn.activations import relu
 from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
-from .rowwise_normalization import rms_norm_fused_quantize_dynamic_scaled_fp8
+from .rowwise_normalization import (
+    layer_norm_quantize_dynamic_scaled_fp8,
+    rms_norm_fused_quantize_dynamic_scaled_fp8,
+    rms_norm_quantize_dynamic_scaled_fp8_dual,
+)
 from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
 from linalg.fp8_quantization import (
@@ -332,6 +336,222 @@ struct RMSNormQuantizeDynamicScaledFloat8:
             scale_ub,
             ctx,
             Int(input.shape()[0].value()),
+        )
+
+
+@extensibility.register("mo.layer_norm_quantize_dynamic_scaled_float8")
+struct LayerNormQuantizeDynamicScaledFloat8:
+    """Registers the `mo.layer_norm_quantize_dynamic_scaled_float8` graph op:
+    a biased `layer_norm` (float32 statistics, rounded to the input dtype)
+    fused with a group-scaled (blockwise-FP8)
+    `mo.quantize_dynamic_scaled_float8`. Same outputs and scale layout as the
+    unfused pair; `group_size_or_per_token` must be a proper divisor of the
+    row, and the row width must be static.
+    """
+
+    @staticmethod
+    def execute[
+        group_size_or_per_token: Int,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        beta: Some[Input & Tensor],
+        epsilon: Float32,
+        scale_ub: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert conforms_to(type_of(beta), TileTensorable)
+        comptime output_dtype = type_of(output).dtype
+        comptime scales_dtype = type_of(scales).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(beta).rank == 1
+        # The checkpoint keeps both weights in the block's dtype; the fused
+        # op casts them up in its load, as `keep_dtype=False` does.
+        comptime gamma_dtype = type_of(gamma).dtype
+        comptime beta_dtype = type_of(beta).dtype
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+        comptime num_cols = type_of(input)._shape_types[1].static_value
+        comptime assert (
+            num_cols != UNKNOWN_VALUE
+        ), "layer_norm_quantize_dynamic_scaled_float8 needs a static row width"
+
+        # The layer norm runs in float32 whatever the row's dtype, as
+        # `keep_dtype=False` does: `max.nn.norm.layer_norm` casts the input and
+        # both weights up, normalizes, and rounds the result back. Only the
+        # rounding back is visible to the quantize, so the cast up happens in
+        # this load and costs no launch.
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) {var input_view} -> SIMD[DType.float32, width]:
+            return rebind[SIMD[type_of(input_view).dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
+            ).cast[DType.float32]()
+
+        var out_t = output.to_tile_tensor()
+        var scales_t = scales.to_tile_tensor()
+
+        @inline(.always)
+        def fp8_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
+            out_t.store[alignment=alignment](coords, val)
+
+        @inline(.always)
+        def scale_fn(coords: Coord, val: Scalar[scales_dtype]) {var scales_t}:
+            scales_t.store[width=1, alignment=1](coords, val)
+
+        layer_norm_quantize_dynamic_scaled_fp8[
+            DType.float32,
+            type_of(input_view).dtype,
+            gamma_dtype,
+            beta_dtype,
+            output_dtype,
+            scales_dtype,
+            2,
+            group_size=group_size_or_per_token,
+            num_cols=num_cols,
+        ](
+            input_fn,
+            fp8_fn,
+            scale_fn,
+            input.shape().flatten(),
+            ComptimeInt[num_cols](),
+            gamma.to_tile_tensor[gamma_dtype](),
+            beta.to_tile_tensor[beta_dtype](),
+            epsilon,
+            scale_ub,
+            ctx,
+        )
+
+
+@extensibility.register("mo.rms_norm_quantize_dynamic_scaled_float8.dual")
+struct RMSNormQuantizeDynamicScaledFloat8Dual:
+    """Registers the `mo.rms_norm_quantize_dynamic_scaled_float8.dual` graph
+    op: `mo.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
+    `mo.quantize_dynamic_scaled_float8`, keeping the normalized row as a
+    third output for the norm's other readers. Same outputs and scale layout
+    as the unfused pair; `group_size_or_per_token` must be a proper divisor of
+    the row.
+    """
+
+    @staticmethod
+    def execute[
+        group_size_or_per_token: Int,
+        multiply_before_cast: Bool,
+        weight_offset: Float32,
+    ](
+        normed: Some[Output & Tensor],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
+        epsilon: Float32,
+        scale_ub: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(normed), TileTensorable)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(normed).rank == 2
+        comptime assert type_of(gamma).rank == 1
+        comptime gamma_dtype = type_of(gamma).dtype
+        comptime output_dtype = type_of(output).dtype
+        comptime scales_dtype = type_of(scales).dtype
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        comptime input_type = type_of(input_view).dtype
+        comptime assert type_of(input).dtype == input_type
+        comptime assert type_of(normed).dtype == input_type
+
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+        comptime num_cols = type_of(input)._shape_types[1].static_value
+        comptime assert num_cols != UNKNOWN_VALUE, (
+            "rms_norm_quantize_dynamic_scaled_float8.dual needs a static row"
+            " width"
+        )
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[type_of(input_view).dtype, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    coords
+                )
+            ).cast[input_type]()
+
+        var normed_t = normed.to_tile_tensor()
+        var out_t = output.to_tile_tensor()
+        var scales_t = scales.to_tile_tensor()
+
+        @inline(.always)
+        def normed_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[input_type, width]) {var normed_t}:
+            normed_t.store[alignment=alignment](
+                coords, rebind[SIMD[type_of(normed_t).dtype, width]](val)
+            )
+
+        @inline(.always)
+        def fp8_fn[
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
+            out_t.store[alignment=alignment](coords, val)
+
+        @inline(.always)
+        def scale_fn(coords: Coord, val: Scalar[scales_dtype]) {var scales_t}:
+            scales_t.store[width=1, alignment=1](coords, val)
+
+        rms_norm_quantize_dynamic_scaled_fp8_dual[
+            input_type,
+            input_type,
+            gamma_dtype,
+            output_dtype,
+            scales_dtype,
+            2,
+            group_size=group_size_or_per_token,
+            num_cols=num_cols,
+            weight_offset=weight_offset,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input_fn,
+            normed_fn,
+            fp8_fn,
+            scale_fn,
+            input.shape().flatten(),
+            ComptimeInt[num_cols](),
+            gamma.to_tile_tensor[gamma_dtype](),
+            # Float32, as `rms_norm` takes it: rounding it to the input dtype
+            # moves the rsqrt argument on every row.
+            epsilon,
+            scale_ub,
+            ctx,
         )
 
 

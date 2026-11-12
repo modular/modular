@@ -4628,6 +4628,9 @@ def mla_decode_branch_bf16[
     # flare_mla_decoding.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # Whether this launch belongs to the row-invariant pin's verify, whose count
+    # the capture key needs; see `_mla_decode_split`.
+    row_invariant_verify: Bool = False,
 ) raises:
     """BF16 MLA decode path.
 
@@ -4708,6 +4711,9 @@ def mla_decode_branch_bf16[
             only); see `flare_mla_decoding`.
         split_len_bound: With `lse_out`, an upper bound on the per-token
             lengths that sizes split-K (0 keeps `indices_stride`).
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify, which the SM100 dispatcher sizes at the pin's count
+            instead of from the live cache; see `_mla_decode_split`.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -4937,6 +4943,7 @@ def mla_decode_branch_bf16[
             selection_lag=selection_lag,
             lse_out=lse_out,
             split_len_bound=split_len_bound,
+            row_invariant_verify=row_invariant_verify,
         )
 
     # Create a view of the raw output tensor with logical shape
@@ -5662,6 +5669,9 @@ def mla_prefill_decode_graph_bf16[
     selection_lag: Int = 0,
     mixed_split: Optional[MixedSplit] = None,
     decode_num_partitions: Optional[Int] = None,
+    # Whether this launch belongs to the row-invariant pin's verify, whose count
+    # the capture key needs; see `_mla_decode_split`.
+    row_invariant_verify: Bool = False,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -5753,6 +5763,9 @@ def mla_prefill_decode_graph_bf16[
             caller checks the record against the batch before passing one.
         decode_num_partitions: The decode view's split-K count, overriding
             the heuristic for that view only (defaults to None).
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify; forwarded to the decode branch, see
+            `_mla_decode_split`.
     """
     var seq_len = q.dim(0)
 
@@ -5855,6 +5868,7 @@ def mla_prefill_decode_graph_bf16[
                         args.num_partitions,
                         args.prefill_d_indices,
                         selection_lag,
+                        row_invariant_verify=row_invariant_verify,
                     )
                     _ = args^
                 return
@@ -5889,6 +5903,7 @@ def mla_prefill_decode_graph_bf16[
             attn_sink_ptr,
             num_partitions_in,
             selection_lag=selection_lag,
+            row_invariant_verify=row_invariant_verify,
         )
 
     comptime num_heads = q.static_shape[1]

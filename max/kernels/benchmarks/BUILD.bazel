@@ -202,6 +202,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
+    # Thread-block clusters, sized for B200's GPC layout.
+    "gpu/nn/bench_topk_det_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "gpu/nn/trace_topk_bitonic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

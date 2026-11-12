@@ -123,6 +123,9 @@ from nn.topk_filtered import FilteredTopk
 from nn.attention.compress_windows import compress_windows_ragged_paged
 from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.gpu.mla_common import SparseRowLayout
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    sparse_decode_partitions_for_rows,
+)
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor
 from extensibility import Fused, Input, LoadAccess, TensorTuple
@@ -821,7 +824,7 @@ def _split_record_pointer(
 @inline(.always)
 def _mla_indexer_ragged_float8_paged_execute[
     R: SparseIndexRemap,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
     //,
     *,
     num_heads: Int,
@@ -1077,6 +1080,7 @@ struct MLAIndexerRaggedFloat8Paged:
         quantization_granularity: Int,
         mask_str: StaticString,
         kpool: Int = 1,
+        deterministic: Bool = False,
     ](
         output_indices: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -1114,6 +1118,10 @@ struct MLAIndexerRaggedFloat8Paged:
             kpool: Tokens per pooled cache row. `1` scores one row per token;
                 `k > 1` scores one pooled key per `kpool` consecutive tokens,
                 so the K cache holds pooled keys and `k` counts pools.
+            deterministic: Whether the top-k must place the same columns in
+                the same slots on every launch (defaults to `False`). A
+                consumer that sums over the slots in order, like the sparse
+                MLA softmax, is then bit-reproducible too.
 
         Args:
             output_indices: Output tensor [total_seq_len, top_k] containing
@@ -1174,6 +1182,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime assert type_of(k_scales_lookup_table).rank == 2
         comptime assert type_of(mixed_step_split).rank == 1
         _mla_indexer_ragged_float8_paged_execute[
+            Topk=BlockSplitTopk[deterministic],
             num_heads=num_heads,
             depth=depth,
             k=k,
@@ -1221,6 +1230,7 @@ struct MLAIndexerRaggedFloat8PagedRemap:
         quantization_granularity: Int,
         mask_str: StaticString,
         write_logical: Bool = False,
+        deterministic: Bool = False,
     ](
         output_indices: Some[Output & Tensor],
         physical_indices: Some[Output & Tensor],
@@ -1253,6 +1263,8 @@ struct MLAIndexerRaggedFloat8PagedRemap:
             write_logical: Whether to write `output_indices` (defaults to
                 `False`). With `False` only the physical rows are written, and
                 `output_indices` may have no rows.
+            deterministic: Whether the top-k must place the same columns in
+                the same slots on every launch (defaults to `False`).
 
         Args:
             output_indices: Logical top-k key positions `[total_seq_len, k]`,
@@ -1332,6 +1344,7 @@ struct MLAIndexerRaggedFloat8PagedRemap:
             UInt32(Int(mla_kv_blocks.shape()[0].value())),
         )
         _mla_indexer_ragged_float8_paged_execute[
+            Topk=BlockSplitTopk[deterministic],
             num_heads=num_heads,
             depth=depth,
             k=k,
@@ -1716,6 +1729,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
         dcp_size: Int,
         dcp_interleave: Int,
         write_logical: Bool = False,
+        deterministic: Bool = False,
     ](
         output_indices: Some[Output & Tensor],
         physical_indices: Some[Output & Tensor],
@@ -1753,6 +1767,8 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
             dcp_interleave: Consecutive positions a rank owns in turn.
             write_logical: Whether to write `output_indices`, the selected
                 local slots (defaults to `False`, which allows no rows).
+            deterministic: Whether the top-k must place the same columns in
+                the same slots on every launch (defaults to `False`).
 
         Args:
             output_indices: Selected local slots `[total_seq_len, k]`.
@@ -1896,6 +1912,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
             dcp_size,
             dcp_interleave,
             write_logical=write_logical,
+            Topk=BlockSplitTopk[deterministic],
         ](
             _mut_pointer_tile(output_indices.to_tile_tensor[.int32]()),
             _mut_pointer_tile(scores.to_tile_tensor[.bfloat16]()),
@@ -5682,6 +5699,61 @@ def _amd_sparse_decode_partitions(
     return None
 
 
+def _row_invariant_sparse_decode_partitions[
+    num_heads: Int,
+    cache_dtype: DType,
+    rows_per_request: Int,
+    has_topk_lengths: Bool,
+    mask_str: StaticString,
+](
+    input_row_offsets: Some[Input & Tensor],
+    indices_stride: Int,
+    ctx: DeviceContext,
+) -> Optional[Int]:
+    """Returns the split-K count a sparse decode op forwards, or `None` to
+    leave it to the dispatcher.
+
+    With `rows_per_request` set, the count is the shape-pure one a decode step
+    and an unfolded verify of that many rows per request share, so both pin one
+    split count regardless of how many rows a request carries or how long the
+    cache is (see `sparse_decode_partitions_for_rows`, which also records
+    where the split boundaries still follow each launch's own length). For the
+    FP8 form the op's verify runs, a verify left unpinned picks the same count
+    too, because the op forwards its opt-in to the dispatcher with the pin
+    (`row_invariant_verify`); the other in-scope forms keep the dispatcher's
+    fitted records. Zero keeps
+    the dispatcher's own choice. The op's decode arm never folds and takes no
+    extra indices; an FP8 cache excludes NVFP4 index rows, and a fixed top-k
+    keeps every row's split length the stride the count is sized for. A
+    sliding-window mask would cap the dispatcher's split length below the
+    stride, so it is rejected too.
+    """
+    comptime if rows_per_request == 0:
+        return None
+    else:
+        comptime assert (
+            ctx.target._has_blackwell_tcgen05()
+        ), "a row-invariant sparse MLA split is sized for the SM100 decode"
+        comptime assert (
+            cache_dtype == DType.float8_e4m3fn
+        ), "a row-invariant sparse MLA split needs the FP8 cache's verify split"
+        comptime assert (
+            not has_topk_lengths
+        ), "a row-invariant sparse MLA split needs a fixed top-k"
+        comptime assert (
+            mask_str != "sliding_window_causal"
+            and mask_str != "sliding_window_noncausal"
+        ), "a sliding-window mask caps the split length the count is sized for"
+        comptime sm_count = ctx.default_device_info.sm_count
+        return sparse_decode_partitions_for_rows[
+            num_heads, rows_per_request, sm_count // 2
+        ](
+            Int(input_row_offsets.shape()[0].value()) - 1,
+            indices_stride,
+            sm_count,
+        )
+
+
 trait _MLADecodeGraphPagedFP8SparseOp:
     """Implements `attention.mla.graph.decode.paged.fp8.sparse`.
 
@@ -8300,6 +8372,11 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         index_kpool: Int = 1,
         index_pool_topk: Int = 0,
         index_kpool_select_tail: Bool = True,
+        # Verify height whose split-K count every decode launch of this op
+        # takes, so a row's result does not depend on how many rows its
+        # request carries; see `_row_invariant_sparse_decode_partitions`.
+        # Zero leaves the split to the dispatcher.
+        split_rows_per_request: Int = 0,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
@@ -8511,8 +8588,17 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
-                # Sparse path: let kernel use its own mask-aware computation.
-                num_partitions_in=None,
+                num_partitions_in=_row_invariant_sparse_decode_partitions[
+                    num_heads,
+                    cache_dtype,
+                    split_rows_per_request,
+                    has_topk_lengths,
+                    mask_str,
+                ](input_row_offsets, indices_stride, context),
+                # The pin's own verify is the one launch whose split the
+                # dispatcher sizes from the shape rather than the cache; see
+                # `_mla_decode_split`.
+                row_invariant_verify=split_rows_per_request > 0,
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
                 mixed_split=split,

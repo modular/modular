@@ -416,6 +416,16 @@ struct DistributedAllReduceSum:
                     ),
                 )
 
+            # `allreduce` keeps its own PDL default (`ON` up to two GPUs, `OFF`
+            # wider), so no model's launch changes here: every kernel this op
+            # can select opens with `with PDL()` and releases its dependent only
+            # once every CTA has written its output, but the attribute that
+            # turns those instructions into overlap is the caller's to grant.
+            # TODO(DISTINF-832): the Lamport decode path measures faster with
+            # the attribute at eight B200s. Granting it needs a scope this op
+            # cannot express -- the kernel is picked from the message size at
+            # run time, so an opt-in here would also enable the 1-stage and
+            # 2-stage paths, whose prefill win is unmeasured.
             allreduce[ngpus=num_devices, group_size=effective_group_size](
                 in_tensors,
                 out_layout,

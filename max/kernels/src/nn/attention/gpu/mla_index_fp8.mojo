@@ -124,7 +124,8 @@ trait IndexerTopk:
     `r` scans its first `row_bounds.row(r)[0]` columns, a row with at most `k`
     of them takes them all with `-1` in the slots past them, and the order of
     the `k` columns, and which columns tied at the k-th score survive, are
-    unspecified.
+    unspecified. An implementation may promise more: `BlockSplitTopk[True]`
+    makes both reproducible, the same columns in the same slots on every run.
     """
 
     @staticmethod
@@ -157,8 +158,22 @@ trait IndexerTopk:
         ...
 
 
-struct BlockSplitTopk(IndexerTopk):
-    """`persistent_topk_block_split`, the indexers' default top-k."""
+struct BlockSplitTopk[deterministic: Bool = False](IndexerTopk):
+    """`persistent_topk_block_split`, the indexers' default top-k.
+
+    `deterministic=True` keeps a row's column order unspecified but makes it
+    reproducible: one input always gives the same columns in the same slots.
+    A consumer that reduces over the slots in order needs that, the sparse MLA
+    softmax among them; without it the slots are filled in atomic arrival
+    order, so that consumer's fp32 sum order, and the low bits of its output,
+    change from launch to launch. The price is that few-row, long-row shapes
+    give up the cluster-cooperative kernel, which only the default contract
+    allows.
+
+    Parameters:
+        deterministic: Whether one input must always give one output, passed
+            to `persistent_topk_block_split`.
+    """
 
     @staticmethod
     def select[
@@ -187,7 +202,7 @@ struct BlockSplitTopk(IndexerTopk):
             rows: Score rows.
             row_bounds: Per-row live column counts and output sinks.
         """
-        persistent_topk_block_split[RB=RB](
+        persistent_topk_block_split[deterministic=Self.deterministic, RB=RB](
             ctx, scores, out_idxs, n, k, rows, Optional(row_bounds)
         )
 
@@ -1203,7 +1218,7 @@ def mla_indexer_ragged_float8_paged[
     mask_str: StaticString,
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -1286,7 +1301,7 @@ def mla_indexer_ragged_float8_paged[
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
     write_logical: Bool = False,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
@@ -1411,7 +1426,7 @@ def mla_indexer_ragged_float8_paged_cp[
     cp_size: Int,
     cp_interleave: Int,
     write_logical: Bool = False,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     output_scores: MutTileTensor[.bfloat16, os_layout, _],
@@ -1737,7 +1752,7 @@ def mla_indexer_ragged_mxfp4_paged[
     page_size: Int,
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[.uint8, q_layout, _],
@@ -1815,7 +1830,7 @@ def mla_indexer_ragged_mxfp4_paged[
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
     write_logical: Bool = False,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[.uint8, q_layout, _],
@@ -1911,7 +1926,7 @@ def mla_indexer_ragged_mxfp4_paged[
     scores_dtype: DType = _SCORES_DTYPE,
     kpool: Int = 1,
     write_logical: Bool = False,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     output_indices: MutTileTensor[.int32, oi_layout, _],
     q: ImmTileTensor[.uint8, q_layout, _],
@@ -2002,7 +2017,7 @@ def _mla_indexer_paged_impl[
     scores_dtype: DType,
     kpool: Int,
     write_logical: Bool,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
     emit_scores: Bool = False,
     cp_size: Int = 1,
     cp_interleave: Int = 1,

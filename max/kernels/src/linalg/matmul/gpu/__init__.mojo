@@ -761,6 +761,7 @@ def _matmul_gpu[
     transpose_b: Bool = False,
     use_tf32: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -774,6 +775,12 @@ def _matmul_gpu[
     of TF32 tensor-core truncation; it is implemented for the SM100 dispatch
     only, and only for shapes the fp32 split-K GEMV supports (compile-time
     error otherwise).
+
+    `row_invariant=True` keeps a one-row BF16 `transpose_b` matmul off the
+    GEMV and on the multi-row dispatch; it applies to the SM100 dispatch only.
+    It removes that one arm: the heuristic below still picks its kernel and its
+    `num_split_k` from tables bucketed in `m`, so rows in different buckets
+    reduce K in a different order. See `mo.matmul.row_invariant`.
     """
     _matmul_gpu_impl[
         use_tensor_core=use_tensor_core,
@@ -782,6 +789,7 @@ def _matmul_gpu[
         pdl_level=pdl_level,
         has_epilogue_fn=False,
         has_compute_fn=False,
+        row_invariant=row_invariant,
     ](c, a, b, no_epilogue_fn, no_compute_fn, ctx)
 
 
@@ -881,6 +889,7 @@ def _matmul_gpu_impl[
     pdl_level: PDLLevel,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -889,6 +898,9 @@ def _matmul_gpu_impl[
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
+    comptime assert not row_invariant or not (
+        has_epilogue_fn or has_compute_fn
+    ), "row_invariant covers the plain matmul only"
     comptime assert not (
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"
@@ -1128,6 +1140,7 @@ def _matmul_gpu_impl[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
                 pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
+                row_invariant=row_invariant,
             ](c, a, b, ctx)
 
     comptime if ctx.default_device_info == H100:

@@ -385,6 +385,7 @@ def matmul_dispatch_sm100[
     transpose_b: Bool = False,
     use_tf32: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -405,7 +406,14 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
+            dispatched kernel (defaults to `PDLLevel()`).
+        row_invariant: Whether a one-row BF16 matmul with `transpose_b`
+            stays off the GEMV and takes the multi-row dispatch, which
+            makes a one-row launch and a multi-row one agree wherever the
+            heuristic picks the same kernel and split count (defaults to
+            `False`). It pins no configuration: `m` still selects the
+            tuning-table bucket, so rows either side of a bucket edge
+            reduce K in a different order.
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -420,6 +428,7 @@ def matmul_dispatch_sm100[
         pdl_level=pdl_level,
         has_epilogue_fn=False,
         has_compute_fn=False,
+        row_invariant=row_invariant,
     ](c, a, b, no_epilogue_fn, identity_compute_fn, ctx)
 
 
@@ -555,6 +564,7 @@ def _matmul_dispatch_sm100_impl[
     pdl_level: PDLLevel,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    row_invariant: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -567,8 +577,13 @@ def _matmul_dispatch_sm100_impl[
 
     `epilogue_fn` stores the output when `has_epilogue_fn` is set, and
     `compute_fn` is applied before the store when `has_compute_fn` is set;
-    each is ignored otherwise.
+    each is ignored otherwise. `row_invariant` keeps a one-row launch off
+    the GEMV and does nothing else; see the plain `matmul_dispatch_sm100`
+    overload for what that does and does not promise.
     """
+    comptime assert not row_invariant or (
+        a_type == .bfloat16 and c_type == .bfloat16 and transpose_b
+    ), "row_invariant covers BF16 matmuls with transpose_b only"
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
@@ -639,10 +654,13 @@ def _matmul_dispatch_sm100_impl[
             > 0 else None,
         ](c, a, b, ctx)
 
-    # M = 1(or N = 1) : dispatch to GEMV or SM100 based on(N, K).
-    # For certain large(N, K) shapes SM100 GEMM outperforms GEMV even at M = 1.
+    # M = 1 (or N = 1): dispatch to the GEMV, which routes the (N, K) shapes
+    # in `SM100_GEMV_SHAPES` back to the SM100 GEMM.
     comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
-        if static_N == 1 or m == 1:
+        # A row-invariant launch takes the multi-row path below at M = 1 as
+        # well: the GEMV reduces K in another order, so a speculative verify's
+        # row would differ from the decode step's. N = 1 still takes the GEMV.
+        if static_N == 1 or (m == 1 and not row_invariant):
             dispatch_gemv[
                 transpose_b=transpose_b,
                 pdl_level=pdl_level,
