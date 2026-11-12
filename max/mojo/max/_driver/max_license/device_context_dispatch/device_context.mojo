@@ -50,10 +50,13 @@ from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext,
     _LegacyDeviceContextScope,
 )
-from max.gpu.host._driver_common import StreamPriorityRange, _DumpPath
-from max.gpu.host._driver_handles import _DeviceContextPtr
+from max.gpu.host._driver_common import _DumpPath
 from max.gpu.host._launch_args import DeviceFunctionWrapper
 from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
+from max.gpu.host._driver_common import (
+    StreamPriorityRange as _OverlayStreamPriorityRange,
+)
+from max.gpu.host._driver_handles import _DeviceContextPtr
 from max.gpu.host.info import default_accelerator
 from max.gpu.host.launch_config import (
     ExecutionConfig,
@@ -284,13 +287,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ```
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(device_id=device_id, api=api^)
-            )
+            self._impl = Self._Legacy(device_id=device_id, api=api^)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(device_id=device_id, api=api^)
-            )
+            self._impl = Self._HAL(device_id=device_id, api=api^)
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -331,13 +330,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             )
         comptime if use_legacy_backend():
-            return rebind_var[DeviceContext.CPU](
-                rebind[Self._Legacy](self._impl).assert_cpu_target()
-            )
+            return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
         else:
-            return rebind_var[DeviceContext.CPU](
-                rebind[Self._HAL](self._impl).assert_cpu_target()
-            )
+            return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
 
     @staticmethod
     def _map_assert_cpu_target(
@@ -364,13 +359,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             This device context cast to the default target.
         """
         comptime if use_legacy_backend():
-            return rebind[DeviceContext[]](
-                rebind[Self._Legacy](self._impl).assert_default_target()
-            )
+            return DeviceContext[](_impl=self._impl.assert_default_target())
         else:
-            return rebind[DeviceContext[]](
-                rebind[Self._HAL](self._impl).assert_default_target()
-            )
+            return DeviceContext[](_impl=self._impl.assert_default_target())
 
     @inline(.always)
     def into_unknown_target(self) -> DeviceContext.Unknown:
@@ -383,13 +374,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             This device context with an unknown target.
         """
         comptime if use_legacy_backend():
-            return rebind_var[DeviceContext.Unknown](
-                rebind[Self._Legacy](self._impl).into_unknown_target()
-            )
+            return DeviceContext.Unknown(_impl=self._impl.into_unknown_target())
         else:
-            return rebind_var[DeviceContext.Unknown](
-                rebind[Self._HAL](self._impl).into_unknown_target()
-            )
+            return DeviceContext.Unknown(_impl=self._impl.into_unknown_target())
 
     # ===-------------------------------------------------------------------===#
     # Escape hatches
@@ -412,9 +399,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             ctx_ptr: The native handle of the context.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](Self._Legacy(ctx_ptr))
+            self._impl = Self._Legacy(ctx_ptr)
         else:
-            self._impl = rebind_var[Self._Impl](Self._HAL(ctx_ptr))
+            self._impl = Self._HAL(ctx_ptr)
 
     @doc_hidden
     def __init__(out self, handle: OpaquePointer[MutUntrackedOrigin]):
@@ -424,13 +411,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             handle: The opaque pointer to the native context.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[OpaquePointer[UntrackedOrigin[mut=True]]](handle)
-                )
+            self._impl = Self._Legacy(
+                rebind[OpaquePointer[UntrackedOrigin[mut=True]]](handle)
             )
         else:
-            self._impl = rebind_var[Self._Impl](Self._HAL(handle))
+            self._impl = Self._HAL(handle)
 
     def unwrap_legacy(self) -> Self._Legacy:
         """Returns the underlying legacy context.
@@ -444,7 +429,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL context.
@@ -458,7 +443,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     @doc_hidden
     def _handle_ptr(self) -> _DeviceContextPtr[mut=True]:
@@ -471,9 +456,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The handle of the backend context this wrapper holds.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl)._handle
+            return self._impl._handle
         else:
-            return rebind[Self._HAL](self._impl)._handle
+            return self._impl._handle
 
     # ===-------------------------------------------------------------------===#
     # Function enqueuer
@@ -486,13 +471,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "this context is not on the legacy backend"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def _hal_enqueuer(self) -> Self._HALEnqueuer:
         comptime assert (
             not use_legacy_backend()
         ), "this context is not on the HAL backend"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -536,9 +521,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the synchronization operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).synchronize()
+            self._impl.synchronize()
         else:
-            rebind[Self._HAL](self._impl).synchronize()
+            self._impl.synchronize()
 
     @deprecated("Use `DeviceContext.device().id` instead.")
     def id(self) raises -> Int64:
@@ -562,9 +547,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If querying the device memory fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).get_memory_info()
+            return self._impl.get_memory_info()
         else:
-            return rebind[Self._HAL](self._impl).get_memory_info()
+            return self._impl.get_memory_info()
 
     @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
@@ -591,9 +576,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If querying the compute capability fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).compute_capability()
+            return self._impl.compute_capability()
         else:
-            return rebind[Self._HAL](self._impl).compute_capability()
+            return self._impl.compute_capability()
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be
@@ -612,9 +597,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If there's an error setting the current device.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).set_as_current()
+            self._impl.set_as_current()
         else:
-            rebind[Self._HAL](self._impl).set_as_current()
+            self._impl.set_as_current()
 
     def api(self) -> String:
         """Returns the name of the API used to program the device.
@@ -635,9 +620,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The name of the API.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).api()
+            return self._impl.api()
         else:
-            return rebind[Self._HAL](self._impl).api()
+            return self._impl.api()
 
     @deprecated("Use `DeviceContext.device().get_name()` instead.")
     def name(self) -> String:
@@ -661,9 +646,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If querying the API version fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).get_api_version()
+            return self._impl.get_api_version()
         else:
-            return rebind[Self._HAL](self._impl).get_api_version()
+            return self._impl.get_api_version()
 
     @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     def arch_name(self) raises -> String:
@@ -688,9 +673,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             True if the device is compatible with MAX, False otherwise.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).is_compatible()
+            return self._impl.is_compatible()
         else:
-            return rebind[Self._HAL](self._impl).is_compatible()
+            return self._impl.is_compatible()
 
     @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     def is_host_unified(self) raises -> Bool:
@@ -714,9 +699,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).is_graph_capturing()
+            return self._impl.is_graph_capturing()
         else:
-            return rebind[Self._HAL](self._impl).is_graph_capturing()
+            return self._impl.is_graph_capturing()
 
     @staticmethod
     def number_of_devices(*, var api: String = Self._default_api()) -> Int:
@@ -747,16 +732,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the stream cannot be created.
         """
         comptime if use_legacy_backend():
-            return DeviceStream(
-                _impl=rebind_var[DeviceStream._Impl](
-                    rebind[Self._Legacy](self._impl).stream()
-                )
-            )
+            return DeviceStream(_impl=self._impl.stream())
         else:
             return DeviceStream(
-                _impl=rebind_var[DeviceStream._Impl](
-                    rebind[Self._HAL](self._impl).stream()
-                )
+                _impl=rebind_var[DeviceStream._Impl](self._impl.stream())
             )
 
     def create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
@@ -773,18 +752,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         """
         comptime if use_legacy_backend():
             return DeviceStream(
-                _impl=rebind_var[DeviceStream._Impl](
-                    rebind[Self._Legacy](self._impl).create_stream(
-                        priority=priority
-                    )
-                )
+                _impl=self._impl.create_stream(priority=priority)
             )
         else:
             return DeviceStream(
                 _impl=rebind_var[DeviceStream._Impl](
-                    rebind[Self._HAL](self._impl).create_stream(
-                        priority=priority
-                    )
+                    self._impl.create_stream(priority=priority)
                 )
             )
 
@@ -798,17 +771,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the event cannot be created.
         """
         comptime if use_legacy_backend():
-            return DeviceEvent(
-                _impl=rebind_var[DeviceEvent._Impl](
-                    rebind[Self._Legacy](self._impl).create_event()
-                )
-            )
+            return DeviceEvent(_impl=self._impl.create_event())
         else:
-            return DeviceEvent(
-                _impl=rebind_var[DeviceEvent._Impl](
-                    rebind[Self._HAL](self._impl).create_event()
-                )
-            )
+            return DeviceEvent(_impl=self._impl.create_event())
 
     def allocate_completion_flag(self) raises -> CompletionFlag:
         """Allocates a device-side completion flag.
@@ -820,17 +785,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails.
         """
         comptime if use_legacy_backend():
-            return CompletionFlag(
-                _impl=rebind_var[CompletionFlag._Impl](
-                    rebind[Self._Legacy](self._impl).allocate_completion_flag()
-                )
-            )
+            return CompletionFlag(_impl=self._impl.allocate_completion_flag())
         else:
-            return CompletionFlag(
-                _impl=rebind_var[CompletionFlag._Impl](
-                    rebind[Self._HAL](self._impl).allocate_completion_flag()
-                )
-            )
+            return CompletionFlag(_impl=self._impl.allocate_completion_flag())
 
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports waiting on a completion flag.
@@ -839,9 +796,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             True when flag waits are supported.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).supports_flag_wait()
+            return self._impl.supports_flag_wait()
         else:
-            return rebind[Self._HAL](self._impl).supports_flag_wait()
+            return self._impl.supports_flag_wait()
 
     def num_streams(self) -> Int:
         """Returns the number of streams available on this device context.
@@ -852,7 +809,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "num_streams is only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl).num_streams()
+        return self._impl.num_streams()
 
     def select_stream(
         self, stream_id: Int
@@ -871,8 +828,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "select_stream is only available on the legacy DeviceContext"
-        return rebind_var[DeviceContext[Self.target]](
-            rebind[Self._Legacy](self._impl).select_stream(stream_id)
+        return DeviceContext[Self.target](
+            _impl=self._impl.select_stream(stream_id)
         )
 
     def create_external_stream(
@@ -894,14 +851,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             " DeviceContext"
         )
         return DeviceStream(
-            _impl=rebind_var[DeviceStream._Impl](
-                rebind[Self._Legacy](self._impl).create_external_stream(
-                    external_stream
-                )
-            )
+            _impl=self._impl.create_external_stream(external_stream)
         )
 
-    def stream_priority_range(self) raises -> StreamPriorityRange:
+    def stream_priority_range(self) raises -> _OverlayStreamPriorityRange:
         """Returns the range of stream priorities this device supports.
 
         Returns:
@@ -911,9 +864,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).stream_priority_range()
+            return self._impl.stream_priority_range()
         else:
-            return rebind[Self._HAL](self._impl).stream_priority_range()
+            return self._impl.stream_priority_range()
 
     def push_context(self) raises -> _DeviceContextScope[Self.target]:
         """Returns a context manager that makes this device's driver context
@@ -939,9 +892,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "== is only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl) == rebind[Self._Legacy](
-            other._impl
-        )
+        return self._impl == other._impl
 
     def __ne__(self, other: Self) -> Bool:
         """Compares two contexts for identity.
@@ -955,9 +906,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "!= is only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl) != rebind[Self._Legacy](
-            other._impl
-        )
+        return self._impl != other._impl
 
     # ===-------------------------------------------------------------------===#
     # Device views
@@ -973,13 +922,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
-                ](rebind[Self._Legacy](self._impl).device())
+                ](self._impl.device())
             )
         else:
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
-                ](rebind[Self._HAL](self._impl).device())
+                ](self._impl.device())
             )
 
     # ===-------------------------------------------------------------------===#
@@ -1004,24 +953,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails.
         """
         comptime if use_legacy_backend():
-            return rebind_var[DeviceBuffer[dtype]](
-                DeviceBuffer[dtype](
-                    _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                        rebind[Self._Legacy](self._impl).enqueue_create_buffer[
-                            dtype
-                        ](size)
-                    )
-                )
+            return DeviceBuffer[dtype](
+                _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
         else:
-            return rebind_var[DeviceBuffer[dtype]](
-                DeviceBuffer[dtype](
-                    _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                        rebind[Self._HAL](self._impl).enqueue_create_buffer[
-                            dtype
-                        ](size)
-                    )
-                )
+            return DeviceBuffer[dtype](
+                _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
 
     def create_buffer_sync[
@@ -1042,24 +979,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails.
         """
         comptime if use_legacy_backend():
-            return rebind_var[DeviceBuffer[dtype]](
-                DeviceBuffer[dtype](
-                    _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                        rebind[Self._Legacy](self._impl).create_buffer_sync[
-                            dtype
-                        ](size)
-                    )
-                )
+            return DeviceBuffer[dtype](
+                _impl=self._impl.create_buffer_sync[dtype](size)
             )
         else:
-            return rebind_var[DeviceBuffer[dtype]](
-                DeviceBuffer[dtype](
-                    _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                        rebind[Self._HAL](self._impl).create_buffer_sync[dtype](
-                            size
-                        )
-                    )
-                )
+            return DeviceBuffer[dtype](
+                _impl=self._impl.create_buffer_sync[dtype](size)
             )
 
     def enqueue_create_host_buffer[
@@ -1080,24 +1005,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails.
         """
         comptime if use_legacy_backend():
-            return rebind_var[HostBuffer[dtype]](
-                HostBuffer[dtype](
-                    _impl=rebind_var[HostBuffer[dtype]._Impl](
-                        rebind[Self._Legacy](
-                            self._impl
-                        ).enqueue_create_host_buffer[dtype](size)
-                    )
-                )
+            return HostBuffer[dtype](
+                _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
         else:
-            return rebind_var[HostBuffer[dtype]](
-                HostBuffer[dtype](
-                    _impl=rebind_var[HostBuffer[dtype]._Impl](
-                        rebind[Self._HAL](
-                            self._impl
-                        ).enqueue_create_host_buffer[dtype](size)
-                    )
-                )
+            return HostBuffer[dtype](
+                _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
 
     def wrap_host_memory[
@@ -1133,14 +1046,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "wrap_host_memory is only available on the legacy DeviceContext"
-        return rebind_var[DeviceBuffer[dtype]](
-            DeviceBuffer[dtype](
-                _impl=rebind_var[DeviceBuffer[dtype]._Impl](
-                    rebind[Self._Legacy](self._impl).wrap_host_memory(
-                        host_ptr, size
-                    )
-                )
-            )
+        return DeviceBuffer[dtype](
+            _impl=self._impl.wrap_host_memory(host_ptr, size)
         )
 
     # ===-------------------------------------------------------------------===#
@@ -1170,11 +1077,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                dst_ptr, src_ptr, size
-            )
+            self._impl.enqueue_copy(dst_ptr, src_ptr, size)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(dst_ptr, src_ptr, size)
+            self._impl.enqueue_copy(dst_ptr, src_ptr, size)
 
     def enqueue_copy[
         dtype: DType
@@ -1198,13 +1103,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._Legacy](dst_buf._impl), src_ptr
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._HAL](dst_buf._impl), src_ptr
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
 
     def enqueue_copy[
         dtype: DType
@@ -1226,13 +1127,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._Legacy](dst_buf._impl), src_ptr
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._HAL](dst_buf._impl), src_ptr
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
 
     def enqueue_copy[
         dtype: DType
@@ -1255,13 +1152,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                dst_ptr, rebind[DeviceBuffer[dtype]._Legacy](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                dst_ptr, rebind[DeviceBuffer[dtype]._HAL](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1282,15 +1175,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             device.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._Legacy](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._Legacy](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._HAL](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._HAL](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1308,15 +1195,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._Legacy](dst_buf._impl),
-                rebind[HostBuffer[dtype]._Legacy](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._HAL](dst_buf._impl),
-                rebind[HostBuffer[dtype]._HAL](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1334,15 +1215,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._Legacy](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._Legacy](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._HAL](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._HAL](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1360,15 +1235,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._Legacy](dst_buf._impl),
-                rebind[HostBuffer[dtype]._Legacy](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._HAL](dst_buf._impl),
-                rebind[HostBuffer[dtype]._HAL](src_buf._impl),
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1390,13 +1259,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                dst_ptr, rebind[HostBuffer[dtype]._Legacy](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                dst_ptr, rebind[HostBuffer[dtype]._HAL](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1418,13 +1283,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._Legacy](dst_buf._impl), src
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[DeviceBuffer[dtype]._HAL](dst_buf._impl), src
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src)
 
     def enqueue_copy[
         dtype: DType
@@ -1444,13 +1305,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._Legacy](dst_buf._impl), src
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                rebind[HostBuffer[dtype]._HAL](dst_buf._impl), src
-            )
+            self._impl.enqueue_copy(dst_buf._impl, src)
 
     def enqueue_copy[
         dtype: DType
@@ -1472,13 +1329,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                dst, rebind[DeviceBuffer[dtype]._Legacy](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                dst, rebind[DeviceBuffer[dtype]._HAL](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst, src_buf._impl)
 
     def enqueue_copy[
         dtype: DType
@@ -1498,13 +1351,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy(
-                dst, rebind[HostBuffer[dtype]._Legacy](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst, src_buf._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy(
-                dst, rebind[HostBuffer[dtype]._HAL](src_buf._impl)
-            )
+            self._impl.enqueue_copy(dst, src_buf._impl)
 
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
@@ -1522,14 +1371,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_no_cross_stream_sync(
-                rebind[DeviceBuffer[dtype]._Legacy](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._Legacy](src_buf._impl),
+            self._impl.enqueue_copy_no_cross_stream_sync(
+                dst_buf._impl, src_buf._impl
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_no_cross_stream_sync(
-                rebind[DeviceBuffer[dtype]._HAL](dst_buf._impl),
-                rebind[DeviceBuffer[dtype]._HAL](src_buf._impl),
+            self._impl.enqueue_copy_no_cross_stream_sync(
+                dst_buf._impl, src_buf._impl
             )
 
     def enqueue_memset[
@@ -1549,13 +1396,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_memset(
-                rebind[DeviceBuffer[dtype]._Legacy](dst._impl), val
-            )
+            self._impl.enqueue_memset(dst._impl, val)
         else:
-            rebind[Self._HAL](self._impl).enqueue_memset(
-                rebind[DeviceBuffer[dtype]._HAL](dst._impl), val
-            )
+            self._impl.enqueue_memset(dst._impl, val)
 
     def enqueue_memset[
         dtype: DType
@@ -1574,13 +1417,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_memset(
-                rebind[HostBuffer[dtype]._Legacy](dst._impl), val
-            )
+            self._impl.enqueue_memset(dst._impl, val)
         else:
-            rebind[Self._HAL](self._impl).enqueue_memset(
-                rebind[HostBuffer[dtype]._HAL](dst._impl), val
-            )
+            self._impl.enqueue_memset(dst._impl, val)
 
     def enqueue_cpu_range[
         FuncType: def(Int) -> None,
@@ -1598,9 +1437,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_cpu_range(func, count)
+            self._impl.enqueue_cpu_range(func, count)
         else:
-            rebind[Self._HAL](self._impl).enqueue_cpu_range(func, count)
+            self._impl.enqueue_cpu_range(func, count)
 
     def enqueue_cpu_function[
         FuncType: def() -> None,
@@ -1620,7 +1459,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "enqueue_cpu_function is only available on the legacy DeviceContext"
-        rebind[Self._Legacy](self._impl).enqueue_cpu_function(func)
+        self._impl.enqueue_cpu_function(func)
 
     # ===-------------------------------------------------------------------===#
     # Compiling and launching functions
@@ -1678,8 +1517,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation fails.
         """
         comptime if use_legacy_backend():
-            result = type_of(result)._wrap_legacy(
-                rebind[Self._Legacy](self._impl).compile_function[
+            result = type_of(result)(
+                _impl=self._impl.compile_function[
                     func,
                     compile_options=compile_options,
                     link_options=link_options,
@@ -1690,8 +1529,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ](func_attribute=func_attribute)
             )
         else:
-            result = type_of(result)._wrap_hal(
-                rebind[Self._HAL](self._impl).compile_function[
+            result = type_of(result)(
+                _impl=self._impl.compile_function[
                     func,
                     compile_options=compile_options,
                     link_options=link_options,
@@ -1723,7 +1562,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "closure kernels are only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl).compile_function[ClosureType]()
+        return self._impl.compile_function[ClosureType]()
 
     def enqueue_function[
         ClosureType: RegisterPassable & def() -> None,
@@ -1754,7 +1593,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "closure kernels are only available on the legacy DeviceContext"
-        rebind[Self._Legacy](self._impl).enqueue_function[ClosureType](
+        self._impl.enqueue_function[ClosureType](
             f,
             closure,
             grid_dim=grid_dim,
@@ -1795,18 +1634,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the load fails.
         """
         comptime if use_legacy_backend():
-            result = type_of(result)._wrap_legacy(
-                rebind_var[type_of(result)._Legacy](
-                    rebind[Self._Legacy](self._impl).load_function[func](
-                        function_name=function_name^,
-                        asm=asm^,
-                        func_attribute=func_attribute,
-                    )
+            result = type_of(result)(
+                _impl=self._impl.load_function[func](
+                    function_name=function_name^,
+                    asm=asm^,
+                    func_attribute=func_attribute,
                 )
             )
         else:
-            result = type_of(result)._wrap_hal(
-                rebind[Self._HAL](self._impl).load_function[func](
+            result = type_of(result)(
+                _impl=self._impl.load_function[func](
                     function_name=function_name^, asm=asm^
                 )
             )
@@ -1845,8 +1682,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_function(
-                rebind[type_of(f)._Legacy](f._impl),
+            self._impl.enqueue_function(
+                f._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1857,8 +1694,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function(
-                rebind[type_of(f)._HAL](f._impl),
+            self._impl.enqueue_function(
+                f._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1903,7 +1740,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 f.unwrap_legacy(),
                 *args,
                 grid_dim=grid_dim,
@@ -1915,7 +1752,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 f.unwrap_hal(),
                 *args,
                 grid_dim=grid_dim,
@@ -1989,7 +1826,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # win over the base one that raises for targets that launch through
             # their own overloads.
             comptime if HostArgs.length == 0:
-                rebind[Self._Legacy](self._impl).enqueue_function[
+                self._impl.enqueue_function[
                     func,
                     link_options=link_options,
                     dump_asm=dump_asm,
@@ -2008,7 +1845,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     location=location,
                 )
             else:
-                rebind[Self._Legacy](self._impl).enqueue_function[
+                self._impl.enqueue_function[
                     func,
                     link_options=link_options,
                     dump_asm=dump_asm,
@@ -2028,7 +1865,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     location=location,
                 )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function[
+            self._impl.enqueue_function[
                 func,
                 link_options=link_options,
                 dump_asm=dump_asm,
@@ -2096,7 +1933,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_function[
+            self._impl.enqueue_function[
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
                 _dump_sass=_dump_sass,
@@ -2119,7 +1956,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 "the HAL backend launches only copyable, register-passable"
                 " closures"
             )
-            rebind[Self._HAL](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 rebind[
                     downcast[FuncType, ImplicitlyCopyable & RegisterPassable]
                 ](func),
@@ -2181,7 +2018,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the compilation or the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_function[
+            self._impl.enqueue_function[
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
                 _dump_sass=_dump_sass,
@@ -2198,7 +2035,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 func,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2250,14 +2087,14 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 "the legacy DeviceContext launches only grid and block"
                 " configurations"
             )
-            rebind[Self._Legacy](self._impl).enqueue_function[func](
+            self._impl.enqueue_function[func](
                 config,
                 *encoded_args,
                 host_args=host_args,
                 location=location,
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function[func](
+            self._impl.enqueue_function[func](
                 config,
                 *encoded_args,
                 host_args=host_args,
@@ -2289,19 +2126,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
 
             def run_legacy(inner: Self._Legacy) raises {imm}:
-                func(Self(_impl=rebind_var[Self._Impl](inner.copy())))
+                func(Self(_impl=inner.copy()))
 
-            return rebind[Self._Legacy](self._impl).execution_time(
-                run_legacy, num_iters
-            )
+            return self._impl.execution_time(run_legacy, num_iters)
         else:
 
             def run_hal(inner: Self._HAL) raises {imm}:
-                func(Self(_impl=rebind_var[Self._Impl](inner.copy())))
+                func(Self(_impl=inner.copy()))
 
-            return rebind[Self._HAL](self._impl).execution_time(
-                run_hal, num_iters
-            )
+            return self._impl.execution_time(run_hal, num_iters)
 
     def execution_time[
         FuncType: def() raises -> None,
@@ -2324,11 +2157,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the timing fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).execution_time(
-                func, num_iters
-            )
+            return self._impl.execution_time(func, num_iters)
         else:
-            return rebind[Self._HAL](self._impl).execution_time(func, num_iters)
+            return self._impl.execution_time(func, num_iters)
 
     def execution_time_iter[
         FuncType: def(Self, Int) raises -> None,
@@ -2352,19 +2183,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
 
             def run_legacy(inner: Self._Legacy, i: Int) raises {imm}:
-                func(Self(_impl=rebind_var[Self._Impl](inner.copy())), i)
+                func(Self(_impl=inner.copy()), i)
 
-            return rebind[Self._Legacy](self._impl).execution_time_iter(
-                run_legacy, num_iters
-            )
+            return self._impl.execution_time_iter(run_legacy, num_iters)
         else:
 
             def run_hal(inner: Self._HAL, i: Int) raises {imm}:
-                func(Self(_impl=rebind_var[Self._Impl](inner.copy())), i)
+                func(Self(_impl=inner.copy()), i)
 
-            return rebind[Self._HAL](self._impl).execution_time_iter(
-                run_hal, num_iters
-            )
+            return self._impl.execution_time_iter(run_hal, num_iters)
 
     # ===-------------------------------------------------------------------===#
     # Peer access and waits
@@ -2397,13 +2224,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If enabling peer access fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enable_peer_access(
-                rebind[Self._Legacy](peer._impl)
-            )
+            self._impl.enable_peer_access(peer._impl)
         else:
-            rebind[Self._HAL](self._impl).enable_peer_access(
-                rebind[Self._HAL](peer._impl)
-            )
+            self._impl.enable_peer_access(peer._impl)
 
     @staticmethod
     def enable_all_peer_access() raises:
@@ -2442,9 +2265,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).supports_multicast()
+            return self._impl.supports_multicast()
         else:
-            return rebind[Self._HAL](self._impl).supports_multicast()
+            return self._impl.supports_multicast()
 
     def enqueue_wait_for(self, other: DeviceContext) raises:
         """Enqueues a wait for all work currently pending on `other`.
@@ -2456,13 +2279,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_wait_for(
-                rebind[Self._Legacy](other._impl)
-            )
+            self._impl.enqueue_wait_for(other._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_wait_for(
-                rebind[Self._HAL](other._impl)
-            )
+            self._impl.enqueue_wait_for(other._impl)
 
 
 struct _DeviceContextScope[target: CompilationTarget]:
@@ -2481,15 +2300,9 @@ struct _DeviceContextScope[target: CompilationTarget]:
             ctx: The device context whose driver context to make current.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl)
-                )
-            )
+            self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(rebind[DeviceContext[Self.target]._HAL](ctx._impl))
-            )
+            self._impl = Self._HAL(ctx._impl)
 
     def __enter__(mut self) raises -> DeviceContext[Self.target]:
         """Makes the driver context current.
@@ -2501,12 +2314,10 @@ struct _DeviceContextScope[target: CompilationTarget]:
             If the driver context cannot be made current.
         """
         comptime if use_legacy_backend():
-            return rebind_var[DeviceContext[Self.target]](
-                rebind[Self._Legacy](self._impl).__enter__()
-            )
+            return DeviceContext[Self.target](_impl=self._impl.__enter__())
         else:
             return rebind_var[DeviceContext[Self.target]](
-                rebind[Self._HAL](self._impl).__enter__()
+                self._impl.__enter__()
             )
 
     def __exit__(mut self) raises:
@@ -2516,6 +2327,6 @@ struct _DeviceContextScope[target: CompilationTarget]:
             If the previous driver context cannot be restored.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).__exit__()
+            self._impl.__exit__()
         else:
-            rebind[Self._HAL](self._impl).__exit__()
+            self._impl.__exit__()

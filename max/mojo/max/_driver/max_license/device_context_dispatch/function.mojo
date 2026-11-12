@@ -137,19 +137,15 @@ struct DeviceFunction[
             If the compilation fails.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl),
-                    func_attribute=func_attribute,
-                    name=name,
-                )
+            self._impl = Self._Legacy(
+                ctx._impl,
+                func_attribute=func_attribute,
+                name=name,
             )
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(
-                    rebind[DeviceContext[Self.target]._HAL](ctx._impl),
-                    func_attribute=func_attribute,
-                )
+            self._impl = Self._HAL(
+                ctx._impl,
+                func_attribute=func_attribute,
             )
 
     def __init__(out self, *, var _impl: Self._Impl):
@@ -159,36 +155,6 @@ struct DeviceFunction[
             _impl: The backend function to take ownership of.
         """
         self._impl = _impl^
-
-    @doc_hidden
-    @staticmethod
-    def _wrap_legacy(var impl: Self._Legacy) -> Self:
-        """Builds a wrapper around a legacy backend function.
-
-        Args:
-            impl: The backend function to take ownership of.
-
-        Returns:
-            The wrapper around `impl`.
-        """
-        var typed = rebind_var[Self._Impl](impl^)
-        var wrapper = Self(_impl=typed^)
-        return wrapper^
-
-    @doc_hidden
-    @staticmethod
-    def _wrap_hal(var impl: Self._HAL) -> Self:
-        """Builds a wrapper around a HAL backend function.
-
-        Args:
-            impl: The backend function to take ownership of.
-
-        Returns:
-            The wrapper around `impl`.
-        """
-        var typed = rebind_var[Self._Impl](impl^)
-        var wrapper = Self(_impl=typed^)
-        return wrapper^
 
     @doc_hidden
     def _call_with_pack_checked[
@@ -227,7 +193,7 @@ struct DeviceFunction[
             If the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl)._call_with_pack_checked(
+            self._impl._call_with_pack_checked(
                 ctx._legacy_enqueuer(),
                 *args,
                 host_args=host_args,
@@ -240,7 +206,7 @@ struct DeviceFunction[
                 location=location,
             )
         else:
-            rebind[Self._HAL](self._impl)._call_with_pack_checked(
+            self._impl._call_with_pack_checked(
                 ctx._hal_enqueuer(),
                 *args,
                 host_args=host_args,
@@ -268,7 +234,7 @@ struct DeviceFunction[
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL function.
@@ -281,7 +247,7 @@ struct DeviceFunction[
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -304,7 +270,7 @@ struct DeviceFunction[
         comptime assert (
             use_legacy_backend()
         ), "get_attribute is only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl).get_attribute(attr)
+        return self._impl.get_attribute(attr)
 
     def occupancy_max_active_blocks_per_multiprocessor(
         self, block_size: Int, dynamic_shared_mem_size: Int
@@ -322,15 +288,11 @@ struct DeviceFunction[
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](
-                self._impl
-            ).occupancy_max_active_blocks_per_multiprocessor(
+            return self._impl.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, dynamic_shared_mem_size
             )
         else:
-            return rebind[Self._HAL](
-                self._impl
-            ).occupancy_max_active_blocks_per_multiprocessor(
+            return self._impl.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, dynamic_shared_mem_size
             )
 
@@ -375,21 +337,17 @@ struct DeviceExternalFunction[
             If the load fails.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl),
-                    function_name=function_name^,
-                    asm=asm^,
-                    func_attribute=func_attribute,
-                )
+            self._impl = Self._Legacy(
+                ctx._impl,
+                function_name=function_name^,
+                asm=asm^,
+                func_attribute=func_attribute,
             )
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(
-                    rebind[DeviceContext[Self.target]._HAL](ctx._impl),
-                    function_name^,
-                    asm,
-                )
+            self._impl = Self._HAL(
+                ctx._impl,
+                function_name^,
+                asm,
             )
 
     @doc_hidden
@@ -428,36 +386,6 @@ struct DeviceExternalFunction[
         """
         self._impl = _impl^
 
-    @doc_hidden
-    @staticmethod
-    def _wrap_legacy(var impl: Self._Legacy) -> Self:
-        """Builds a wrapper around a legacy backend function.
-
-        Args:
-            impl: The backend function to take ownership of.
-
-        Returns:
-            The wrapper around `impl`.
-        """
-        var typed = rebind_var[Self._Impl](impl^)
-        var wrapper = Self(_impl=typed^)
-        return wrapper^
-
-    @doc_hidden
-    @staticmethod
-    def _wrap_hal(var impl: Self._HAL) -> Self:
-        """Builds a wrapper around a HAL backend function.
-
-        Args:
-            impl: The backend function to take ownership of.
-
-        Returns:
-            The wrapper around `impl`.
-        """
-        var typed = rebind_var[Self._Impl](impl^)
-        var wrapper = Self(_impl=typed^)
-        return wrapper^
-
     # ===-------------------------------------------------------------------===#
     # Escape hatches
     # ===-------------------------------------------------------------------===#
@@ -473,7 +401,7 @@ struct DeviceExternalFunction[
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind_var[Self._Legacy](self._impl^)
+        return self._impl^
 
     def unwrap_hal(deinit self) -> Self._HAL:
         """Returns the underlying HAL function.
@@ -486,7 +414,7 @@ struct DeviceExternalFunction[
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind_var[Self._HAL](self._impl^)
+        return self._impl^
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -509,4 +437,4 @@ struct DeviceExternalFunction[
         comptime assert (
             use_legacy_backend()
         ), "get_attribute is only available on the legacy DeviceContext"
-        return rebind[Self._Legacy](self._impl).get_attribute(attr)
+        return self._impl.get_attribute(attr)

@@ -94,22 +94,14 @@ struct DeviceBuffer[dtype: DType](
         owned buffer allocation using the stream in the device context.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[default_accelerator()]._Legacy](
-                        ctx._impl
-                    ),
-                    size=size,
-                )
+            self._impl = Self._Legacy(
+                ctx._impl,
+                size=size,
             )
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(
-                    rebind[DeviceContext[default_accelerator()]._HAL](
-                        ctx._impl
-                    ),
-                    size=size,
-                )
+            self._impl = Self._HAL(
+                ctx._impl,
+                size=size,
             )
 
     @doc_hidden
@@ -131,26 +123,18 @@ struct DeviceBuffer[dtype: DType](
             owning: Whether releasing this buffer should free the pointer.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[default_accelerator()]._Legacy](
-                        ctx._impl
-                    ),
-                    rebind[Self._DevicePtr](ptr),
-                    size,
-                    owning=owning,
-                )
+            self._impl = Self._Legacy(
+                ctx._impl,
+                rebind[Self._DevicePtr](ptr),
+                size,
+                owning=owning,
             )
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(
-                    rebind[DeviceContext[default_accelerator()]._HAL](
-                        ctx._impl
-                    ),
-                    ptr,
-                    size,
-                    owning=owning,
-                )
+            self._impl = Self._HAL(
+                ctx._impl,
+                ptr,
+                size,
+                owning=owning,
             )
 
     def __init__(out self, *, var _impl: Self._Impl):
@@ -169,25 +153,9 @@ struct DeviceBuffer[dtype: DType](
     @doc_hidden
     def empty(context: DeviceContext) -> Self:
         comptime if use_legacy_backend():
-            return Self(
-                _impl=rebind_var[Self._Impl](
-                    Self._Legacy.empty(
-                        rebind[DeviceContext[default_accelerator()]._Legacy](
-                            context._impl
-                        )
-                    )
-                )
-            )
+            return Self(_impl=Self._Legacy.empty(context._impl))
         else:
-            return Self(
-                _impl=rebind_var[Self._Impl](
-                    Self._HAL.empty(
-                        rebind[DeviceContext[default_accelerator()]._HAL](
-                            context._impl
-                        )
-                    )
-                )
-            )
+            return Self(_impl=Self._HAL.empty(context._impl))
 
     # ===-------------------------------------------------------------------===#
     # Trait: DevicePassable
@@ -201,9 +169,9 @@ struct DeviceBuffer[dtype: DType](
     ):
         """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl)._to_device_type(encoder, target)
+            self._impl._to_device_type(encoder, target)
         else:
-            rebind[Self._HAL](self._impl)._to_device_type(encoder, target)
+            self._impl._to_device_type(encoder, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -230,7 +198,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL buffer.
@@ -243,7 +211,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -259,9 +227,9 @@ struct DeviceBuffer[dtype: DType](
             The number of elements in the buffer.
         """
         comptime if use_legacy_backend():
-            return len(rebind[Self._Legacy](self._impl))
+            return len(self._impl)
         else:
-            return len(rebind[Self._HAL](self._impl))
+            return len(self._impl)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -292,19 +260,11 @@ struct DeviceBuffer[dtype: DType](
         """
         comptime if use_legacy_backend():
             return DeviceBuffer[view_type](
-                _impl=rebind_var[DeviceBuffer[view_type]._Impl](
-                    rebind[Self._Legacy](self._impl).create_sub_buffer[
-                        view_type
-                    ](offset, size)
-                )
+                _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
         else:
             return DeviceBuffer[view_type](
-                _impl=rebind_var[DeviceBuffer[view_type]._Impl](
-                    rebind[Self._HAL](self._impl).create_sub_buffer[view_type](
-                        offset, size
-                    )
-                )
+                _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
 
     def unsafe_ptr[
@@ -324,15 +284,13 @@ struct DeviceBuffer[dtype: DType](
         """
         comptime if use_legacy_backend():
             return rebind[Pointer[Scalar[Self.dtype], origin]](
-                rebind[Self._Legacy](self._impl).unsafe_ptr()
+                self._impl.unsafe_ptr()
             )
         else:
             # The HAL reports an untracked origin; rebuild it against the
             # caller's borrow so the result behaves like the legacy pointer.
             return Pointer[Scalar[Self.dtype], origin](
-                unsafe_from_address=Int(
-                    rebind[Self._HAL](self._impl).unsafe_ptr()
-                )
+                unsafe_from_address=Int(self._impl.unsafe_ptr())
             )
 
     def unsafe_host_ptr[
@@ -356,7 +314,7 @@ struct DeviceBuffer[dtype: DType](
             use_legacy_backend()
         ), "unsafe_host_ptr is only available on the legacy DeviceContext"
         return rebind[Pointer[Scalar[Self.dtype], origin]](
-            rebind[Self._Legacy](self._impl).unsafe_host_ptr()
+            self._impl.unsafe_host_ptr()
         )
 
     def context(self) raises -> DeviceContext[]:
@@ -369,13 +327,9 @@ struct DeviceBuffer[dtype: DType](
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind_var[DeviceContext[]](
-                rebind[Self._Legacy](self._impl).context()
-            )
+            return DeviceContext[](_impl=self._impl.context())
         else:
-            return rebind_var[DeviceContext[]](
-                rebind[Self._HAL](self._impl).context()
-            )
+            return DeviceContext[](_impl=self._impl.context())
 
     @inline(.always)
     def take_ptr(var self) -> Self._DevicePtr:
@@ -389,9 +343,9 @@ struct DeviceBuffer[dtype: DType](
             The raw device pointer that was owned by this buffer.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).take_ptr()
+            return self._impl.take_ptr()
         else:
-            return rebind[Self._HAL](self._impl).take_ptr()
+            return self._impl.take_ptr()
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to another device buffer.
@@ -403,15 +357,11 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_to(
-                rebind[Self._Legacy](dst._impl)
-            )
+            self._impl.enqueue_copy_to(dst._impl)
         else:
             # The HAL host buffer copies through spans; it has no direct
             # host-to-host overload.
-            rebind[Self._HAL](self._impl).enqueue_copy_to(
-                rebind[Self._HAL](dst._impl)
-            )
+            self._impl.enqueue_copy_to(dst._impl)
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy to host memory.
@@ -423,13 +373,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_to(
-                rebind[HostBuffer[Self.dtype]._Legacy](dst._impl)
-            )
+            self._impl.enqueue_copy_to(dst._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_to(
-                rebind[HostBuffer[Self.dtype]._HAL](dst._impl)
-            )
+            self._impl.enqueue_copy_to(dst._impl)
 
     def enqueue_copy_to(
         self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
@@ -454,15 +400,11 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_from(
-                rebind[Self._Legacy](src._impl)
-            )
+            self._impl.enqueue_copy_from(src._impl)
         else:
             # The HAL host buffer copies through spans; it has no direct
             # host-to-host overload.
-            rebind[Self._HAL](self._impl).enqueue_copy_from(
-                rebind[Self._HAL](src._impl)
-            )
+            self._impl.enqueue_copy_from(src._impl)
 
     def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from host memory.
@@ -474,13 +416,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_from(
-                rebind[HostBuffer[Self.dtype]._Legacy](src._impl)
-            )
+            self._impl.enqueue_copy_from(src._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_from(
-                rebind[HostBuffer[Self.dtype]._HAL](src._impl)
-            )
+            self._impl.enqueue_copy_from(src._impl)
 
     def enqueue_copy_from(
         self, src_ptr: Pointer[mut=False, Scalar[Self.dtype], _]
@@ -494,9 +432,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_from(src_ptr)
+            self._impl.enqueue_copy_from(src_ptr)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_from(src_ptr)
+            self._impl.enqueue_copy_from(src_ptr)
 
     def enqueue_copy_from(
         self, src: Span[mut=False, Scalar[Self.dtype], _]
@@ -510,9 +448,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_from(src)
+            self._impl.enqueue_copy_from(src)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_from(src)
+            self._impl.enqueue_copy_from(src)
 
     def enqueue_copy_to(
         self, dst: Span[mut=True, Scalar[Self.dtype], _]
@@ -526,9 +464,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_copy_to(dst)
+            self._impl.enqueue_copy_to(dst)
         else:
-            rebind[Self._HAL](self._impl).enqueue_copy_to(dst)
+            self._impl.enqueue_copy_to(dst)
 
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
@@ -540,9 +478,9 @@ struct DeviceBuffer[dtype: DType](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_fill(val)
+            self._impl.enqueue_fill(val)
         else:
-            rebind[Self._HAL](self._impl).enqueue_fill(val)
+            self._impl.enqueue_fill(val)
 
     comptime _Handle = (
         _LegacyDeviceBufferPtr[
@@ -565,11 +503,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert (
             use_legacy_backend()
         ), "this constructor is only available on the legacy DeviceContext"
-        self._impl = rebind_var[Self._Impl](
-            Self._Legacy(
-                rebind[_LegacyDeviceBufferPtr[mut=True]](handle), device_ptr
-            )
-        )
+        self._impl = Self._Legacy(handle, device_ptr)
 
     def device_ptr(
         ref self,
@@ -584,11 +518,11 @@ struct DeviceBuffer[dtype: DType](
         """
         comptime if use_legacy_backend():
             return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
-                rebind[Self._Legacy](self._impl).device_ptr()
+                self._impl.device_ptr()
             )
         else:
             return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
-                rebind[Self._HAL](self._impl).device_ptr()
+                self._impl.device_ptr()
             )
 
     def take_handle(deinit self) -> Self._Handle:
@@ -601,13 +535,9 @@ struct DeviceBuffer[dtype: DType](
             The native handle of the buffer.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Handle](
-                rebind_var[Self._Legacy](self._impl^).take_handle()
-            )
+            return self._impl^.take_handle()
         else:
-            return rebind[Self._Handle](
-                rebind_var[Self._HAL](self._impl^).take_handle()
-            )
+            return self._impl^.take_handle()
 
     def _tensor_map_encode_tiled(
         self,
@@ -625,7 +555,7 @@ struct DeviceBuffer[dtype: DType](
     ) raises:
         """Encodes a tiled TMA descriptor for this buffer."""
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl)._tensor_map_encode_tiled(
+            self._impl._tensor_map_encode_tiled(
                 tensor_map,
                 data_type,
                 rank,
@@ -639,7 +569,7 @@ struct DeviceBuffer[dtype: DType](
                 oob_fill,
             )
         else:
-            rebind[Self._HAL](self._impl)._tensor_map_encode_tiled(
+            self._impl._tensor_map_encode_tiled(
                 tensor_map,
                 data_type,
                 rank,
@@ -672,7 +602,7 @@ struct DeviceBuffer[dtype: DType](
     ) raises:
         """Encodes an im2col TMA descriptor for this buffer."""
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl)._tensor_map_encode_im2col(
+            self._impl._tensor_map_encode_im2col(
                 tensor_map,
                 data_type,
                 rank,
@@ -689,7 +619,7 @@ struct DeviceBuffer[dtype: DType](
                 oob_fill,
             )
         else:
-            rebind[Self._HAL](self._impl)._tensor_map_encode_im2col(
+            self._impl._tensor_map_encode_im2col(
                 tensor_map,
                 data_type,
                 rank,
@@ -759,7 +689,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert (
             use_legacy_backend()
         ), "write_to is only available on the legacy DeviceContext"
-        rebind[Self._Legacy](self._impl).write_to(writer)
+        self._impl.write_to(writer)
 
 
 struct _HostMappedBuffer[dtype: DType]:

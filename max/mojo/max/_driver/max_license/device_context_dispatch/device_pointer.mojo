@@ -103,13 +103,9 @@ struct DevicePointer[
             If `buffer` is empty.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(Self._legacy_buffer(buffer))
-            )
+            self._impl = Self._Legacy(Self._legacy_buffer(buffer))
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(Self._hal_buffer(buffer))
-            )
+            self._impl = Self._HAL(Self._hal_buffer(buffer))
 
     def __init__(
         out self,
@@ -126,13 +122,9 @@ struct DevicePointer[
             If `buffer` is empty or `offset` is out of range.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(Self._legacy_buffer(buffer), offset)
-            )
+            self._impl = Self._Legacy(Self._legacy_buffer(buffer), offset)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(Self._hal_buffer(buffer), offset)
-            )
+            self._impl = Self._HAL(Self._hal_buffer(buffer), offset)
 
     @doc_hidden
     def __init__(out self, *, var _impl: Self._Impl):
@@ -183,17 +175,17 @@ struct DevicePointer[
             A raw pointer to the element.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).unsafe_ptr()
+            return self._impl.unsafe_ptr()
         else:
-            return rebind[Self._HAL](self._impl).unsafe_ptr()
+            return self._impl.unsafe_ptr()
 
     def _buffer_handle(
         ref self,
     ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl)._buffer_handle()
+            return self._impl._buffer_handle()
         else:
-            return rebind[Self._HAL](self._impl)._buffer_handle()
+            return self._impl._buffer_handle()
 
     # ===-------------------------------------------------------------------===#
     # Origin and mutability casts
@@ -270,15 +262,9 @@ struct DevicePointer[
             If the result is outside the buffer.
         """
         comptime if use_legacy_backend():
-            return Self(
-                _impl=rebind_var[Self._Impl](
-                    rebind[Self._Legacy](self._impl) + n
-                )
-            )
+            return Self(_impl=rebind[Self._Legacy](self._impl) + n)
         else:
-            return Self(
-                _impl=rebind_var[Self._Impl](rebind[Self._HAL](self._impl) + n)
-            )
+            return Self(_impl=rebind[Self._HAL](self._impl) + n)
 
     def __sub__(self, n: Int) raises -> Self:
         """Returns this pointer moved back by `n` elements.
@@ -293,15 +279,9 @@ struct DevicePointer[
             If the result is outside the buffer.
         """
         comptime if use_legacy_backend():
-            return Self(
-                _impl=rebind_var[Self._Impl](
-                    rebind[Self._Legacy](self._impl) - n
-                )
-            )
+            return Self(_impl=rebind[Self._Legacy](self._impl) - n)
         else:
-            return Self(
-                _impl=rebind_var[Self._Impl](rebind[Self._HAL](self._impl) - n)
-            )
+            return Self(_impl=rebind[Self._HAL](self._impl) - n)
 
     def __iadd__(mut self, n: Int) raises:
         """Advances this pointer by `n` elements.
@@ -313,13 +293,13 @@ struct DevicePointer[
             If the result is outside the buffer.
         """
         comptime if use_legacy_backend():
-            var impl = rebind[Self._Legacy](self._impl)
+            var impl = self._impl
             impl.__iadd__(n)
-            self._impl = rebind_var[Self._Impl](impl)
+            self._impl = impl
         else:
-            var impl = rebind[Self._HAL](self._impl)
+            var impl = self._impl
             impl.__iadd__(n)
-            self._impl = rebind_var[Self._Impl](impl)
+            self._impl = impl
 
     def __isub__(mut self, n: Int) raises:
         """Moves this pointer back by `n` elements.
@@ -331,13 +311,13 @@ struct DevicePointer[
             If the result is outside the buffer.
         """
         comptime if use_legacy_backend():
-            var impl = rebind[Self._Legacy](self._impl)
+            var impl = self._impl
             impl.__isub__(n)
-            self._impl = rebind_var[Self._Impl](impl)
+            self._impl = impl
         else:
-            var impl = rebind[Self._HAL](self._impl)
+            var impl = self._impl
             impl.__isub__(n)
-            self._impl = rebind_var[Self._Impl](impl)
+            self._impl = impl
 
     # ===-------------------------------------------------------------------===#
     # Comparison
@@ -354,12 +334,12 @@ struct DevicePointer[
             Whether the pointers are equal.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[Self._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs == rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[Self._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs == rhs
 
     @__unsafe_nested_origins_read_only
@@ -373,12 +353,12 @@ struct DevicePointer[
             Whether the pointers are equal.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[type_of(other)._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs == rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[type_of(other)._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs == rhs
 
     @__unsafe_nested_origins_read_only
@@ -419,12 +399,12 @@ struct DevicePointer[
             If the pointers are into different buffers.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[type_of(other)._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs < rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[type_of(other)._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs < rhs
 
     @__unsafe_nested_origins_read_only
@@ -441,12 +421,12 @@ struct DevicePointer[
             If the pointers are into different buffers.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[type_of(other)._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs <= rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[type_of(other)._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs <= rhs
 
     @__unsafe_nested_origins_read_only
@@ -463,12 +443,12 @@ struct DevicePointer[
             If the pointers are into different buffers.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[type_of(other)._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs > rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[type_of(other)._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs > rhs
 
     @__unsafe_nested_origins_read_only
@@ -485,12 +465,12 @@ struct DevicePointer[
             If the pointers are into different buffers.
         """
         comptime if use_legacy_backend():
-            var lhs = rebind[Self._Legacy](self._impl)
-            var rhs = rebind[type_of(other)._Legacy](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs >= rhs
         else:
-            var lhs = rebind[Self._HAL](self._impl)
-            var rhs = rebind[type_of(other)._HAL](other._impl)
+            var lhs = self._impl
+            var rhs = other._impl
             return lhs >= rhs
 
     # ===-------------------------------------------------------------------===#
@@ -504,9 +484,9 @@ struct DevicePointer[
             writer: The writer to write to.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).write_to(writer)
+            self._impl.write_to(writer)
         else:
-            rebind[Self._HAL](self._impl).write_to(writer)
+            self._impl.write_to(writer)
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

@@ -109,15 +109,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the stream cannot be created.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[Self.target]._Legacy](ctx._impl)
-                )
-            )
+            self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(rebind[DeviceContext[Self.target]._HAL](ctx._impl))
-            )
+            self._impl = Self._HAL(ctx._impl)
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend stream.
@@ -140,7 +134,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL stream.
@@ -151,7 +145,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     # ===-------------------------------------------------------------------===#
     # Function enqueuer
@@ -164,13 +158,13 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             use_legacy_backend()
         ), "this stream is not on the legacy backend"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def _hal_enqueuer(self) -> Self._HALEnqueuer:
         comptime assert (
             not use_legacy_backend()
         ), "this stream is not on the HAL backend"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -183,9 +177,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the synchronization fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).synchronize()
+            self._impl.synchronize()
         else:
-            rebind[Self._HAL](self._impl).synchronize()
+            self._impl.synchronize()
 
     def enqueue_wait_for(self, event: DeviceEvent) raises:
         """Enqueues a wait for `event` on this stream.
@@ -197,13 +191,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_wait_for(
-                rebind[DeviceEvent._Legacy](event._impl)
-            )
+            self._impl.enqueue_wait_for(event._impl)
         else:
-            rebind[Self._HAL](self._impl).enqueue_wait_for(
-                rebind[DeviceEvent._HAL](event._impl)
-            )
+            self._impl.enqueue_wait_for(event._impl)
 
     def record_event(self, event: DeviceEvent) raises:
         """Records `event` on this stream.
@@ -215,13 +205,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).record_event(
-                rebind[DeviceEvent._Legacy](event._impl)
-            )
+            self._impl.record_event(event._impl)
         else:
-            rebind[Self._HAL](self._impl).record_event(
-                rebind[DeviceEvent._HAL](event._impl)
-            )
+            self._impl.record_event(event._impl)
 
     def enqueue_host_func(
         self,
@@ -238,9 +224,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_host_func(func, user_data)
+            self._impl.enqueue_host_func(func, user_data)
         else:
-            rebind[Self._HAL](self._impl).enqueue_host_func(func, user_data)
+            self._impl.enqueue_host_func(func, user_data)
 
     def wait_for_flag(self, flag: CompletionFlag, value: UInt64) raises:
         """Blocks until `flag` reaches `value` on the device.
@@ -253,13 +239,9 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the operation fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).wait_for_flag(
-                rebind[CompletionFlag._Legacy](flag._impl), value
-            )
+            self._impl.wait_for_flag(flag._impl, value)
         else:
-            rebind[Self._HAL](self._impl).wait_for_flag(
-                rebind[CompletionFlag._HAL](flag._impl), value
-            )
+            self._impl.wait_for_flag(flag._impl, value)
 
     @deprecated("Use `wait_for_flag` instead.")
     def wait_for_host_value(self, flag: CompletionFlag, value: UInt64) raises:
@@ -306,7 +288,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the launch fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 f.unwrap_legacy(),
                 *args,
                 grid_dim=grid_dim,
@@ -317,7 +299,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 constant_memory=constant_memory^,
             )
         else:
-            rebind[Self._HAL](self._impl).enqueue_function(
+            self._impl.enqueue_function(
                 f.unwrap_hal(),
                 *args,
                 grid_dim=grid_dim,
@@ -352,19 +334,9 @@ struct DeviceEvent(ImplicitlyCopyable):
             If the event cannot be created.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(
-                    rebind[DeviceContext[default_accelerator()]._Legacy](
-                        ctx._impl
-                    )
-                )
-            )
+            self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(
-                    rebind[DeviceContext[default_accelerator()]._HAL](ctx._impl)
-                )
-            )
+            self._impl = Self._HAL(ctx._impl)
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend event.
@@ -383,7 +355,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL event.
@@ -394,7 +366,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     def synchronize(self) raises:
         """Blocks until this event's work has completed.
@@ -403,9 +375,9 @@ struct DeviceEvent(ImplicitlyCopyable):
             If the synchronization fails.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).synchronize()
+            self._impl.synchronize()
         else:
-            rebind[Self._HAL](self._impl).synchronize()
+            self._impl.synchronize()
 
 
 struct CompletionFlag(ImplicitlyCopyable):
@@ -437,11 +409,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         comptime assert (
             use_legacy_backend()
         ), "this constructor is only available on the legacy DeviceContext"
-        self._impl = rebind_var[Self._Impl](
-            Self._Legacy(
-                rebind[DeviceContext[default_accelerator()]._Legacy](ctx._impl)
-            )
-        )
+        self._impl = Self._Legacy(ctx._impl)
 
     def __init__(out self, *, handle: _LegacyCompletionFlagPtr[mut=True]):
         """Wraps a native completion flag handle.
@@ -452,7 +420,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         comptime assert (
             use_legacy_backend()
         ), "this constructor is only available on the legacy DeviceContext"
-        self._impl = rebind_var[Self._Impl](Self._Legacy(handle=handle))
+        self._impl = Self._Legacy(handle=handle)
 
     def __init__(out self, *, unsafe_from_address: Int):
         """Wraps the flag stored at a raw address.
@@ -461,13 +429,9 @@ struct CompletionFlag(ImplicitlyCopyable):
             unsafe_from_address: The address of the flag.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(unsafe_from_address=unsafe_from_address)
-            )
+            self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(unsafe_from_address=unsafe_from_address)
-            )
+            self._impl = Self._HAL(unsafe_from_address=unsafe_from_address)
 
     def unwrap_legacy(self) -> Self._Legacy:
         """Returns the underlying legacy flag.
@@ -478,7 +442,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL flag.
@@ -489,7 +453,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     def signal(self, value: UInt64):
         """Sets the flag to `value`.
@@ -498,9 +462,9 @@ struct CompletionFlag(ImplicitlyCopyable):
             value: The value to publish.
         """
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).signal(value)
+            self._impl.signal(value)
         else:
-            rebind[Self._HAL](self._impl).signal(value)
+            self._impl.signal(value)
 
     def load(self) -> UInt64:
         """Returns the flag's current value.
@@ -509,16 +473,16 @@ struct CompletionFlag(ImplicitlyCopyable):
             The flag's value.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).load()
+            return self._impl.load()
         else:
-            return rebind[Self._HAL](self._impl).load()
+            return self._impl.load()
 
     def reset(self):
         """Resets the flag to zero."""
         comptime if use_legacy_backend():
-            rebind[Self._Legacy](self._impl).reset()
+            self._impl.reset()
         else:
-            rebind[Self._HAL](self._impl).reset()
+            self._impl.reset()
 
 
 struct Device[target: CompilationTarget, origin: ImmOrigin]:
@@ -545,9 +509,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             _impl: The backend view to take ownership of.
         """
         comptime if use_legacy_backend():
-            self.id = rebind[Self._Legacy](_impl).id
+            self.id = _impl.id
         else:
-            self.id = rebind[Self._HAL](_impl).id
+            self.id = _impl.id
         self._impl = _impl
 
     def unwrap_legacy(self) -> Self._Legacy:
@@ -559,7 +523,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind[Self._Legacy](self._impl)
+        return self._impl
 
     def unwrap_hal(self) -> Self._HAL:
         """Returns the underlying HAL view.
@@ -570,7 +534,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind[Self._HAL](self._impl)
+        return self._impl
 
     def get_name(self) raises -> String:
         """Returns the device's name.
@@ -582,9 +546,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).get_name()
+            return self._impl.get_name()
         else:
-            return rebind[Self._HAL](self._impl).get_name()
+            return self._impl.get_name()
 
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the value of a device attribute.
@@ -599,9 +563,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).get_attribute(attr)
+            return self._impl.get_attribute(attr)
         else:
-            return rebind[Self._HAL](self._impl).get_attribute(attr)
+            return self._impl.get_attribute(attr)
 
     def multiprocessor_count(self) raises -> Int:
         """Returns the device's multiprocessor count.
@@ -613,9 +577,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).multiprocessor_count()
+            return self._impl.multiprocessor_count()
         else:
-            return rebind[Self._HAL](self._impl).multiprocessor_count()
+            return self._impl.multiprocessor_count()
 
     def max_threads_per_block(self) raises -> Int:
         """Returns the maximum number of threads in a block.
@@ -627,9 +591,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).max_threads_per_block()
+            return self._impl.max_threads_per_block()
         else:
-            return rebind[Self._HAL](self._impl).max_threads_per_block()
+            return self._impl.max_threads_per_block()
 
     def max_shared_memory_per_block(self) raises -> Int:
         """Returns the maximum shared memory per block.
@@ -641,11 +605,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](
-                self._impl
-            ).max_shared_memory_per_block()
+            return self._impl.max_shared_memory_per_block()
         else:
-            return rebind[Self._HAL](self._impl).max_shared_memory_per_block()
+            return self._impl.max_shared_memory_per_block()
 
     def max_grid_dim_x(self) raises -> Int:
         """Returns the maximum grid dimension along x.
@@ -657,9 +619,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).max_grid_dim_x()
+            return self._impl.max_grid_dim_x()
         else:
-            return rebind[Self._HAL](self._impl).max_grid_dim_x()
+            return self._impl.max_grid_dim_x()
 
     def max_grid_dim_y(self) raises -> Int:
         """Returns the maximum grid dimension along y.
@@ -671,9 +633,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).max_grid_dim_y()
+            return self._impl.max_grid_dim_y()
         else:
-            return rebind[Self._HAL](self._impl).max_grid_dim_y()
+            return self._impl.max_grid_dim_y()
 
     def max_grid_dim_z(self) raises -> Int:
         """Returns the maximum grid dimension along z.
@@ -685,9 +647,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).max_grid_dim_z()
+            return self._impl.max_grid_dim_z()
         else:
-            return rebind[Self._HAL](self._impl).max_grid_dim_z()
+            return self._impl.max_grid_dim_z()
 
     def max_grid_dim(self) raises -> Dim:
         """Returns the maximum grid dimensions.
@@ -699,9 +661,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).max_grid_dim()
+            return self._impl.max_grid_dim()
         else:
-            return rebind[Self._HAL](self._impl).max_grid_dim()
+            return self._impl.max_grid_dim()
 
     def is_host_unified(self) raises -> Bool:
         """Returns whether this device shares memory with the host.
@@ -713,9 +675,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).is_host_unified()
+            return self._impl.is_host_unified()
         else:
-            return rebind[Self._HAL](self._impl).is_host_unified()
+            return self._impl.is_host_unified()
 
     def get_arch(self) raises -> String:
         """Returns the device architecture name.
@@ -727,9 +689,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).get_arch()
+            return self._impl.get_arch()
         else:
-            return rebind[Self._HAL](self._impl).get_arch()
+            return self._impl.get_arch()
 
     def can_access_peer[
         peer_target: CompilationTarget, peer_origin: ImmOrigin, //
@@ -750,13 +712,9 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind[Self._Legacy](self._impl).can_access_peer(
-                rebind[LegacyDevice[peer_target, peer_origin]](peer._impl)
-            )
+            return self._impl.can_access_peer(peer._impl)
         else:
-            return rebind[Self._HAL](self._impl).can_access_peer(
-                rebind[HALDevice[peer_target, peer_origin]](peer._impl)
-            )
+            return self._impl.can_access_peer(peer._impl)
 
 
 struct DeviceContextArray[
@@ -942,15 +900,13 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         comptime if use_legacy_backend():
             var legacy = List[LegacyDeviceContext[]]()
             for ctx in contexts:
-                legacy.append(rebind[LegacyDeviceContext[]](ctx._impl))
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(legacy^, size=size)
-            )
+                legacy.append(ctx._impl)
+            self._impl = Self._Legacy(legacy^, size=size)
         else:
             var hal = List[HALDeviceContext[]]()
             for ctx in contexts:
-                hal.append(rebind[HALDeviceContext[]](ctx._impl))
-            self._impl = rebind_var[Self._Impl](Self._HAL(hal^, size=size))
+                hal.append(ctx._impl)
+            self._impl = Self._HAL(hal^, size=size)
 
     def unwrap_legacy(deinit self) -> Self._Legacy:
         """Returns the underlying legacy buffer.
@@ -961,7 +917,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return rebind_var[Self._Legacy](self._impl^)
+        return self._impl^
 
     def unwrap_hal(deinit self) -> Self._HAL:
         """Returns the underlying HAL buffer.
@@ -972,7 +928,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         comptime assert (
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
-        return rebind_var[Self._HAL](self._impl^)
+        return self._impl^
 
     def unicast_buffer_for(
         self, ctx: DeviceContext[]
@@ -990,19 +946,11 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         """
         comptime if use_legacy_backend():
             return DeviceBuffer[Self.dtype](
-                _impl=rebind_var[DeviceBuffer[Self.dtype]._Impl](
-                    rebind[Self._Legacy](self._impl).unicast_buffer_for(
-                        rebind[LegacyDeviceContext[]](ctx._impl)
-                    )
-                )
+                _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
         else:
             return DeviceBuffer[Self.dtype](
-                _impl=rebind_var[DeviceBuffer[Self.dtype]._Impl](
-                    rebind[Self._HAL](self._impl).unicast_buffer_for(
-                        rebind[HALDeviceContext[]](ctx._impl)
-                    )
-                )
+                _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
 
     def multicast_buffer_for(
@@ -1021,17 +969,9 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         """
         comptime if use_legacy_backend():
             return DeviceBuffer[Self.dtype](
-                _impl=rebind_var[DeviceBuffer[Self.dtype]._Impl](
-                    rebind[Self._Legacy](self._impl).multicast_buffer_for(
-                        rebind[LegacyDeviceContext[]](ctx._impl)
-                    )
-                )
+                _impl=self._impl.multicast_buffer_for(ctx._impl)
             )
         else:
             return DeviceBuffer[Self.dtype](
-                _impl=rebind_var[DeviceBuffer[Self.dtype]._Impl](
-                    rebind[Self._HAL](self._impl).multicast_buffer_for(
-                        rebind[HALDeviceContext[]](ctx._impl)
-                    )
-                )
+                _impl=self._impl.multicast_buffer_for(ctx._impl)
             )
