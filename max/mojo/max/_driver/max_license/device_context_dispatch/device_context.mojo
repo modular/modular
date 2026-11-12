@@ -39,9 +39,6 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
     _HALDeviceContextScope,
 )
-from max.gpu.host._driver_handles import (
-    _DeviceContextPtr as _HALDeviceContextPtr,
-)
 from max._plugin import MaxPluginForTarget
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
@@ -53,18 +50,10 @@ from max.gpu.host._legacy.device_context import (
     LegacyDeviceContext,
     _LegacyDeviceContextScope,
 )
-from max.gpu.host._driver_common import _DumpPath
-from max.gpu.host._driver_handles import (
-    _DeviceContextPtr as _LegacyDeviceContextPtr,
-)
+from max.gpu.host._driver_common import StreamPriorityRange, _DumpPath
+from max.gpu.host._driver_handles import _DeviceContextPtr
 from max.gpu.host._launch_args import DeviceFunctionWrapper
 from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
-from max.gpu.host._driver_common import (
-    StreamPriorityRange as _OverlayStreamPriorityRange,
-)
-from max.gpu.host._driver_handles import (
-    _DeviceContextPtr as _OverlayDeviceContextPtr,
-)
 from max.gpu.host.info import default_accelerator
 from max.gpu.host.launch_config import (
     ExecutionConfig,
@@ -416,20 +405,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         self._impl = _impl^
 
     @doc_hidden
-    def __init__(out self, ctx_ptr: _OverlayDeviceContextPtr[mut=True]):
+    def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Wraps the runtime's native context handle.
 
         Args:
             ctx_ptr: The native handle of the context.
         """
         comptime if use_legacy_backend():
-            self._impl = rebind_var[Self._Impl](
-                Self._Legacy(rebind[_LegacyDeviceContextPtr[mut=True]](ctx_ptr))
-            )
+            self._impl = rebind_var[Self._Impl](Self._Legacy(ctx_ptr))
         else:
-            self._impl = rebind_var[Self._Impl](
-                Self._HAL(rebind[_HALDeviceContextPtr[mut=True]](ctx_ptr))
-            )
+            self._impl = rebind_var[Self._Impl](Self._HAL(ctx_ptr))
 
     @doc_hidden
     def __init__(out self, handle: OpaquePointer[MutUntrackedOrigin]):
@@ -476,7 +461,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return rebind[Self._HAL](self._impl)
 
     @doc_hidden
-    def _handle_ptr(self) -> _OverlayDeviceContextPtr[mut=True]:
+    def _handle_ptr(self) -> _DeviceContextPtr[mut=True]:
         """Returns the backend's native context handle.
 
         For the AsyncRT calls that the shared kernel-load and capture helpers
@@ -486,13 +471,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The handle of the backend context this wrapper holds.
         """
         comptime if use_legacy_backend():
-            return rebind[_OverlayDeviceContextPtr[mut=True]](
-                rebind[Self._Legacy](self._impl)._handle
-            )
+            return rebind[Self._Legacy](self._impl)._handle
         else:
-            return rebind[_OverlayDeviceContextPtr[mut=True]](
-                rebind[Self._HAL](self._impl)._handle
-            )
+            return rebind[Self._HAL](self._impl)._handle
 
     # ===-------------------------------------------------------------------===#
     # Function enqueuer
@@ -920,7 +901,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         )
 
-    def stream_priority_range(self) raises -> _OverlayStreamPriorityRange:
+    def stream_priority_range(self) raises -> StreamPriorityRange:
         """Returns the range of stream priorities this device supports.
 
         Returns:
@@ -930,13 +911,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the query fails.
         """
         comptime if use_legacy_backend():
-            return rebind_var[_OverlayStreamPriorityRange](
-                rebind[Self._Legacy](self._impl).stream_priority_range()
-            )
+            return rebind[Self._Legacy](self._impl).stream_priority_range()
         else:
-            return rebind_var[_OverlayStreamPriorityRange](
-                rebind[Self._HAL](self._impl).stream_priority_range()
-            )
+            return rebind[Self._HAL](self._impl).stream_priority_range()
 
     def push_context(self) raises -> _DeviceContextScope[Self.target]:
         """Returns a context manager that makes this device's driver context
