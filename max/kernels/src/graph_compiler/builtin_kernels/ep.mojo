@@ -71,8 +71,8 @@ from shmem.ep_comm import (
     NVBlockScaledTokenFormat,
     ep_dispatch_recv_size,
     NullExpertLoad,
-    EP_P2P_SMALL_COMBINE_BYTES,
-    EP_P2P_SMALL_DISPATCH_BYTES,
+    ep_p2p_combine_header_bytes,
+    ep_p2p_dispatch_header_bytes,
     fused_silu_kernel,
     fused_silu_mx_kernel,
     fused_silu_mxfp6_kernel,
@@ -254,10 +254,12 @@ struct Struct_ep_init:
         comptime p2p_small = n_nodes == 1 and EPLocalSyncCounters[
             n_experts
         ].has_p2p_small_words(counters_0_size)
-        comptime dispatch_header = (
-            EP_P2P_SMALL_DISPATCH_BYTES if p2p_small else 0
-        )
-        comptime combine_header = EP_P2P_SMALL_COMBINE_BYTES if p2p_small else 0
+        comptime dispatch_header = ep_p2p_dispatch_header_bytes[
+            n_experts, n_gpus_per_node, max_token_per_rank, top_k
+        ]() if p2p_small else 0
+        comptime combine_header = ep_p2p_combine_header_bytes[
+            n_experts, n_gpus_per_node, max_token_per_rank, top_k
+        ]() if p2p_small else 0
 
         var atomic_counters_0_buf = atomic_counters_0.to_tile_tensor[
             .int32
@@ -330,7 +332,7 @@ struct Struct_ep_init:
                 n_experts
             ).take_ptr()
 
-        # The P2P small path's flags start at zero, an epoch it never uses.
+        # The P2P paths' flags start at zero, an epoch they never use.
         comptime if p2p_small:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer(

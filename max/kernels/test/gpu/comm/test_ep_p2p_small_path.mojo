@@ -11,28 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Checks the single-node P2P small EP path on 2, 4 or 8 AMD GPUs.
+"""Checks the single-node P2P EP paths on 2, 4 or 8 AMD GPUs.
 
 Runs the protocol dispatch and combine (`p2p_small_max_tokens=0`) and the
-small path on the same tokens, over a sequence of steps that reuses one set
-of buffers per path and crosses the small/protocol decision both ways
-(including a step where only some devices sit at the bound). The small
-path's epoch starts just short of its wrap, and every step first scribbles
-over the dispatch receive data, as an exchange sharing the buffers would.
-For each step it checks that:
+P2P paths on the same tokens, over a sequence of steps that reuses one set
+of buffers per path and crosses the small/prefill decision both ways
+(including a step where only some devices sit at the bound). Steps the small
+path declines take the prefill dispatch and the partial-row combine. The
+small path's epoch starts just short of its wrap, and every step first
+scribbles over the dispatch receive data, as an exchange sharing the buffers
+would. For each step it checks that:
 - the row offsets and expert ids match exactly;
 - every expert group holds the same rows (as a multiset of row bytes and
   scales);
 - each local expert's routed-token tally (EPLB expert load) matches;
 - with each row's expert output a function of its bytes and group, the two
-  combines agree, exactly on the steps the small path takes.
-With `-D P2P_SMALL_TIME=true` it then times dispatch + combine of both paths
-at decode sizes.
+  combines agree: exactly on small steps, within one BF16 rounding of each
+  partial row on the others.
+`-D max_tok=2048` adds an 8K-token step. With `-D P2P_SMALL_TIME=true` it
+then times dispatch + combine of both paths.
 """
 
 from std.memory.alloc import unsafe_alloc
 from std.random import randn, random_si64, seed
-from std.sys import get_defined_bool, size_of
+from std.sys import get_defined_bool, get_defined_int, size_of
 from std.time import perf_counter_ns
 
 from max.algorithm import sync_parallelize
@@ -43,12 +45,12 @@ from shmem.ep import ep_fused_combine_kernel_api, ep_fused_dispatch_kernel_api
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_P2P_EPOCH_MAX,
-    EP_P2P_SMALL_COMBINE_BYTES,
-    EP_P2P_SMALL_DISPATCH_BYTES,
     EP_P2P_SMALL_WORDS,
     EPLocalSyncCounters,
     ExpertLoadTally,
     ep_dispatch_recv_size,
+    ep_p2p_combine_header_bytes,
+    ep_p2p_dispatch_header_bytes,
 )
 from std.testing import assert_equal, assert_true
 
@@ -56,10 +58,30 @@ comptime HIDDEN = 4096
 comptime TOP_K = 8
 comptime MAX_WORLD = 8
 comptime N_LOCAL = 72
-comptime MAX_TOK = 64
+comptime MAX_TOK = get_defined_int["max_tok", 64]()
 comptime SMALL = 32
 comptime N_SCALES = HIDDEN // 128
 comptime MAX_RECV = MAX_WORLD * TOP_K * MAX_TOK + MAX_TOK + 4 * (N_LOCAL + 1)
+
+
+def _header[combine: Bool, world: Int]() -> Int:
+    comptime if combine:
+        return ep_p2p_combine_header_bytes[
+            N_LOCAL * world, world, MAX_TOK, TOP_K
+        ]()
+    return ep_p2p_dispatch_header_bytes[
+        N_LOCAL * world, world, MAX_TOK, TOP_K
+    ]()
+
+
+# Headers before the published receive buffers, as `ep.init` lays them out,
+# sized for any device count; a kernel reaches only the part it needs.
+comptime D_HDR = max(
+    max(_header[False, 2](), _header[False, 4]()), _header[False, 8]()
+)
+comptime C_HDR = max(
+    max(_header[True, 2](), _header[True, 4]()), _header[True, 8]()
+)
 comptime SRC_ROWS = N_LOCAL * MAX_WORLD * MAX_TOK
 
 
@@ -122,7 +144,7 @@ struct Rank:
             token_recv=True,
         )
         self.d_recv = ctx.enqueue_create_buffer[DType.uint8](
-            EP_P2P_SMALL_DISPATCH_BYTES + self.d_recv_data
+            D_HDR + self.d_recv_data
         )
         ctx.enqueue_memset(self.d_recv, UInt8(0))
         self.d_count = ctx.enqueue_create_buffer[DType.uint64](n_experts)
@@ -131,7 +153,7 @@ struct Rank:
             MAX_RECV * HIDDEN * 2
         )
         self.c_recv = ctx.enqueue_create_buffer[DType.uint8](
-            TOP_K * MAX_TOK * HIDDEN * 2 + EP_P2P_SMALL_COMBINE_BYTES
+            C_HDR + TOP_K * MAX_TOK * HIDDEN * 2
         )
         ctx.enqueue_memset(self.c_recv, UInt8(0))
         self.c_count = ctx.enqueue_create_buffer[DType.uint64](n_experts)
@@ -151,13 +173,13 @@ def ptr_table(
         if which == 0:
             p = Int(ranks[r].d_send.unsafe_ptr())
         elif which == 1:
-            p = Int(ranks[r].d_recv.unsafe_ptr()) + EP_P2P_SMALL_DISPATCH_BYTES
+            p = Int(ranks[r].d_recv.unsafe_ptr()) + D_HDR
         elif which == 2:
             p = Int(ranks[r].d_count.unsafe_ptr())
         elif which == 3:
             p = Int(ranks[r].c_send.unsafe_ptr())
         elif which == 4:
-            p = Int(ranks[r].c_recv.unsafe_ptr()) + EP_P2P_SMALL_COMBINE_BYTES
+            p = Int(ranks[r].c_recv.unsafe_ptr()) + C_HDR
         else:
             p = Int(ranks[r].c_count.unsafe_ptr())
         table[unsafe_offset=r] = UInt64(p)
@@ -318,9 +340,7 @@ def fill_expert_out(
 def scribble(ctx: DeviceContext, rank: Rank) raises:
     """Overwrites `rank`'s dispatch receive data past the small path's flags."""
     ctx.enqueue_memset(
-        rank.d_recv.create_sub_buffer[DType.uint8](
-            EP_P2P_SMALL_DISPATCH_BYTES, rank.d_recv_data
-        ),
+        rank.d_recv.create_sub_buffer[DType.uint8](D_HDR, rank.d_recv_data),
         UInt8(0xA5),
     )
 
@@ -523,6 +543,12 @@ def step[
         ctx.enqueue_copy(slow[r].expert_out, h_out_s)
         ctx.enqueue_copy(fast[r].expert_out, h_out_f)
         ctx.synchronize()
+        for p in [s_tok, f_tok]:
+            p.unsafe_free()
+        for p in [s_scl, f_scl]:
+            p.unsafe_free()
+        for p in [h_out_s, h_out_f]:
+            p.unsafe_free()
         print(t"  rank {r}: {n_rows} rows, {n_bad_total} differ")
         step_bad += n_bad_total
 
@@ -542,18 +568,26 @@ def step[
         ctxs[r].enqueue_copy(s_c, slow[r].combined)
         ctxs[r].enqueue_copy(f_c, fast[r].combined)
         ctxs[r].synchronize()
+        # Relative to the output scale: the partial-row combine rounds each
+        # device's partial to BF16, so near-cancelling sums differ by more
+        # than their own magnitude allows.
         var n_exact = 0
-        var max_err = Float32(0)
+        var max_abs = Float32(0)
+        var max_diff = Float32(0)
         for i in range(n * HIDDEN):
             var a = Float32(f_c[unsafe_offset=i])
             var b = Float32(s_c[unsafe_offset=i])
             if a == b:
                 n_exact += 1
-            max_err = max(max_err, abs(a - b) / (abs(b) + 1.0))
+            max_abs = max(max_abs, abs(b))
+            max_diff = max(max_diff, abs(a - b))
+        var max_err = max_diff / max(max_abs, Float32(1e-6))
         print(
             t"  rank {r}: combine {n_exact}/{n * HIDDEN} exact, max rel err"
             t" {max_err}"
         )
+        s_c.unsafe_free()
+        f_c.unsafe_free()
         # The small combine sums the same values in the same order.
         if max_err >= 0.02 or (all_small and n_exact != n * HIDDEN):
             print("  COMBINE MISMATCH")
@@ -659,7 +693,9 @@ def run[world: Int]() raises:
         return counts^
 
     # Decode-sized, then the bound from both sides (only some devices at it),
-    # a protocol step, a zero-token device, and back to small.
+    # protocol-dispatched steps (combined by the partial-row combine), a
+    # zero-token device, and back to small. A prefill-sized build adds
+    # Flash's 8K-token step.
     var plans: List[List[Int]] = [
         [12, 12, 12, 12],
         [2, 2, 1, 1],
@@ -671,6 +707,10 @@ def run[world: Int]() raises:
         [32, 32, 32, 32],
         [12, 12, 12, 12],
     ]
+    comptime if MAX_TOK >= 2028:
+        plans.append([2028, 2028, 2028, 2028])
+        plans.append([12, 12, 12, 12])
+        plans.append([MAX_TOK, MAX_TOK, MAX_TOK - 1, MAX_TOK - 1])
     # Start the small path's epoch just short of its wrap, so the steps
     # cross it.
     comptime n_experts = N_LOCAL * world
@@ -693,7 +733,10 @@ def run[world: Int]() raises:
 
     comptime if not get_defined_bool["P2P_SMALL_TIME", False]():
         return
-    for n in [2, 12, 24]:
+    var sizes: List[Int] = [2, 12, 24]
+    comptime if MAX_TOK >= 2028:
+        sizes = [2028, 512]
+    for n in sizes:
         time_path[0, world](ctxs, slow, st, n, 200)
         time_path[SMALL, world](ctxs, fast, ft, n, 200)
         time_path[0, world](ctxs, slow, st, n, 200)

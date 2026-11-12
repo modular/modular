@@ -621,6 +621,33 @@ def test_the_p2p_small_path_follows_the_virtual_target_not_the_host(
         set_virtual_device_count(0)
 
 
+def test_the_p2p_prefill_scratch_is_counted_in_the_estimate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GLM-5.3-Flash on 4 devices (288 experts, top-8, 2048 tokens a rank)
+    takes the prefill paths too, whose scratch sits in the receive-buffer
+    headers next to the small path's flags."""
+    monkeypatch.setattr(
+        ep_config_module, "is_virtual_device_mode", lambda: False
+    )
+    monkeypatch.setattr(ep_config_module, "accelerator_api", lambda: "hip")
+    config = dataclasses.replace(
+        _base_ep_config(),
+        hidden_size=4096,
+        n_experts=288,
+        max_tokens_per_rank=2048,
+        n_gpus_per_node=4,
+        fused_shared_expert=True,
+        tokens_split_evenly=True,
+    )
+    plain = dataclasses.replace(config, fused_shared_expert=False)
+    dispatch = 4096 + 2 * 8 * 2048 * 4 + 2 * 72 * 4
+    combine = 4096 + 4 * 2048 * 8 * (4 + 8) + 256 + 4 * 2048 * 4
+    assert config.estimate_memory_usage() - plain.estimate_memory_usage() == (
+        -(-dispatch // 256) * 256 + -(-combine // 256) * 256
+    )
+
+
 def test_fused_moe_is_requested_only_by_the_developer_switch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

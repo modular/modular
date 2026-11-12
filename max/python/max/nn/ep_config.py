@@ -483,8 +483,11 @@ def estimate_ep_memory_usage(
             + n_experts * max_tokens_per_rank * _EP_TOKEN_INDEX_BYTES
         )
         if p2p_small:
-            dispatch_recv_buf_size += _EP_P2P_SMALL_DISPATCH_BYTES
-            combine_recv_buf_size += _EP_P2P_SMALL_COMBINE_BYTES
+            dispatch_header, combine_header = _ep_p2p_header_bytes(
+                n_experts, n_gpus_per_node, max_tokens_per_rank, top_k
+            )
+            dispatch_recv_buf_size += dispatch_header
+            combine_recv_buf_size += combine_header
         combine_send_buf_size = 0
     else:
         dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
@@ -558,8 +561,51 @@ _EP_P2P_SMALL_DISPATCH_BYTES = 4096
 _EP_P2P_SMALL_COMBINE_BYTES = 4096
 """Mirrors ``EP_P2P_SMALL_COMBINE_BYTES`` in ``ep_comm.mojo``."""
 
+
 _EP_P2P_SMALL_HIDDEN_MULTIPLE = 64 * 16
 """Mirrors ``EP_P2P_SMALL_HIDDEN_MULTIPLE`` in ``ep_comm.mojo``."""
+
+
+def _ep_p2p_header_bytes(
+    n_experts: int, n_ranks: int, max_tokens_per_rank: int, top_k: int
+) -> tuple[int, int]:
+    """Returns the header bytes before the P2P receive buffers.
+
+    Mirrors ``ep_p2p_dispatch_header_bytes`` and
+    ``ep_p2p_combine_header_bytes`` in ``ep_comm.mojo``: the small path's
+    flags, and the prefill scratch when ``ep_p2p_prefill_on`` holds.
+    """
+    dispatch = _EP_P2P_SMALL_DISPATCH_BYTES
+    combine = _EP_P2P_SMALL_COMBINE_BYTES
+    prefill_on = (
+        top_k % 4 == 0
+        and top_k > n_ranks
+        and top_k & (top_k - 1) == 0
+        and n_experts // n_ranks + 1 < 128
+    )
+    if prefill_on:
+        n_local = n_experts // n_ranks
+        dispatch += (
+            ceildiv(
+                2 * _EP_MAX_GPUS_PER_NODE * max_tokens_per_rank * 4
+                + 2 * n_local * 4,
+                256,
+            )
+            * 256
+        )
+        per_src = max_tokens_per_rank * top_k
+        combine += (
+            ceildiv(
+                n_ranks * per_src * 4
+                + 256
+                + n_ranks * per_src * 8
+                + n_ranks * max_tokens_per_rank * 4,
+                256,
+            )
+            * 256
+        )
+    return dispatch, combine
+
 
 _EP_LOCAL_SYNC_RESERVED_WORDS = 262144
 """Int32 words (1 MiB) reserved for the fused MegaMoE counters at the end of
