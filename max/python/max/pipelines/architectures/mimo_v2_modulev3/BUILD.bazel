@@ -45,9 +45,6 @@ modular_py_library(
         # Config, quantization scheme and checkpoint naming are shared with
         # the graph-API architecture.
         "//max/python/max/pipelines/architectures/mimo_v2",
-        "//max/python/max/pipelines/architectures/gpt_oss",
-        # The DP-attention forward reuses the ModuleV3 batch-split helpers.
-        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
         # Its spec adapters run the DFlash drafter, which embeds and projects
         # through this target.
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",

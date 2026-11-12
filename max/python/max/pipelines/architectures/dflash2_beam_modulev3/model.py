@@ -35,12 +35,11 @@ from max.pipelines.lib.interfaces.arch_config import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.module_registration import device_mesh
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.speculative import DrafterExport, sampleable_vocab_size
 from max.tensor import default_device, default_dtype
 from transformers import AutoConfig
 from typing_extensions import Self
 
-from ..dflash_mimo_v2 import DrafterExport
-from ..dflash_mimo_v2.drafter import sampleable_vocab_size
 from .dflash2_beam import DFlash2Beam
 from .model_config import (
     DFlash2BeamConfig,

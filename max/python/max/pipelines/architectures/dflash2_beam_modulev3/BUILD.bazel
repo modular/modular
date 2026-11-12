@@ -14,12 +14,13 @@ modular_py_library(
         "//max/python/max/nn",
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
-        # The dflash_config parser and the export record are shared with the
-        # Qwen3.5 DFlash2 and MiMo-V2 DFlash drafters.
+        # The dflash_config parser is shared with the Qwen3.5 DFlash2 and
+        # MiMo-V2 DFlash drafters; the export record lives in the shared
+        # speculative library.
         "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
-        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
     ],
 )

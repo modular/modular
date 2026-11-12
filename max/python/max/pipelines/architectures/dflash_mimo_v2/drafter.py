@@ -41,7 +41,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.speculative import DrafterExport, sampleable_vocab_size
 from max.pipelines.speculative._dflash import parse_dflash_draft_hf_config
 from transformers import AutoConfig
 from typing_extensions import Self
@@ -104,15 +104,6 @@ def repo_file(repo: HuggingFaceRepo, name: str) -> Path:
     )
 
 
-def sampleable_vocab_size(pipeline_config: PipelineConfig) -> int:
-    """Returns the tokenizer's size; ``lm_head`` rows past it are padding."""
-    return len(
-        PIPELINE_REGISTRY.get_active_tokenizer(
-            pipeline_config.model.huggingface_model_repo
-        )
-    )
-
-
 def read_dflash_config(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Reads a drafter's ``config.json``, raw, as the drafter module parses it."""
     return json.loads(Path(path).read_text())
@@ -160,23 +151,6 @@ def drafter_config(
         kv_params=kv_params,
         max_seq_len=max_seq_len + 2 * int(dflash_config["block_size"]),
     )
-
-
-@dataclass(frozen=True)
-class DrafterExport:
-    """What an export built into the graph from the drafter.
-
-    An exporter records it in the graph's sidecar, with the hashes of the
-    files in ``directory`` for the serving engine to check at load time.
-    """
-
-    directory: Path
-    """The drafter directory whose files the graph was built from."""
-    target_layer_ids: list[int]
-    num_speculative_tokens: int
-    """The verify width of the speculative graph."""
-    spec_block_size: int
-    """The drafter's block width."""
 
 
 def drafter_export(

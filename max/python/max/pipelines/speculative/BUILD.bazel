@@ -5,6 +5,13 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "speculative",
     srcs = glob(["**/*.py"]),
+    # lib imports the speculative package, so it cannot be a dep here without
+    # a cycle; drafter_export.py imports it under TYPE_CHECKING and locally.
+    ignore_unresolved_imports = [
+        # The checker records symbol-level paths, not module roots.
+        "max.pipelines.lib.PipelineConfig",
+        "max.pipelines.lib.registry.PIPELINE_REGISTRY",
+    ],
     test_docstring_examples = True,
     deps = [
         "//max/python/max:tensor",

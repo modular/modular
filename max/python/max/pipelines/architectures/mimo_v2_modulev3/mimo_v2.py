@@ -43,9 +43,7 @@ from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
-from ..deepseekV3_modulev3.deepseekV3 import (
-    split_replicated_batch,
-)
+from .batch_split import split_replicated_batch
 from .layers.attention import MiMoV2Attention
 from .layers.moe import (
     MiMoV2ExpertParallelMoE,

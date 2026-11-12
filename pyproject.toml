@@ -191,6 +191,13 @@ ignore_missing_imports = true
 module = "max._validation_hooks"
 disable_error_code = ["import-not-found"]
 
+# The speculative package cannot depend on `max.pipelines.lib` (lib imports
+# speculative), so drafter_export's TYPE_CHECKING and function-local lib
+# imports have no stubs to follow.
+[[tool.mypy.overrides]]
+module = "max.pipelines.speculative.drafter_export"
+disable_error_code = ["import-not-found"]
+
 # Private MiniMax-M3 graph hooks diverge from the shared load_model template
 # signatures; suppress only the files that inherit those hooks.
 [[tool.mypy.overrides]]

@@ -55,7 +55,6 @@ from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2,
     DFlashMiMoV2DraftConfig,
-    DrafterExport,
 )
 from max.pipelines.architectures.dflash_mimo_v2.weight_adapters import (
     MASK_EMBEDDING,
@@ -73,7 +72,7 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 from max.pipelines.lib.pipeline_variants.structured_output_overlap import (
     StructuredOutputOverlapState,
 )
-from max.pipelines.speculative import SpeculativeConfig
+from max.pipelines.speculative import DrafterExport, SpeculativeConfig
 from max.pipelines.speculative.block_driver import BlockDriver
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.weights._fp8 import e4m3fn_lut
