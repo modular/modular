@@ -1,5 +1,5 @@
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
-load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "mojo_shared_library", "pkg_files")
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "mojo_shared_library", "pkg_files", "tsan_variant")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
 load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "td_library")
 
@@ -693,6 +693,25 @@ modular_shared_library(
     # Also in `deps`, so a target that depends on `Driver/Runtime.static` links
     # the driver statically when it doesn't list this library in dynamic_deps.
     deps = [":Driver/DeviceContextAPI"] + _DRIVER_RUNTIME_LIBS,
+)
+
+# Driver/Runtime built with ThreadSanitizer, which `mojo build --sanitize
+# thread` links instead. The parallel loop behind `parallelize` runs in this
+# library, and TSan sees its synchronization only when the code is
+# instrumented.
+tsan_variant(
+    name = "Driver/RuntimeTSan",
+    testonly = True,
+    src = ":Driver/Runtime",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+tsan_variant(
+    name = "Driver/RuntimeTSan.stripped",
+    src = ":Driver/Runtime.stripped",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 modular_shared_library(

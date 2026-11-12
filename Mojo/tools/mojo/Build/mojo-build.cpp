@@ -449,10 +449,45 @@ static int linkOutput(LinkProduct product, const State &state,
   if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
     return state.reportError("unable to locate Mojo CompilerRT library");
 
+  // With TSan, link the TSan builds of the runtime globals library,
+  // CompilerRT and libMDriver. The default runtime globals library uses
+  // tcmalloc, which aborts at load time under TSan. The default CompilerRT and
+  // libMDriver have no TSan instrumentation, so TSan misses their
+  // synchronization and reports false races. Each TSan build keeps the SONAME
+  // of its default build. The executable loads it first, so every library
+  // that needs that SONAME gets the TSan build.
+  SmallVector<StringRef> tsanRuntimeArgs;
+  SmallVector<std::string> tsanRuntimeDirs;
+  if (options.sanitizers.has(Sanitizers::kThread) &&
+      llvm::Triple(options.targetTriple).isOSLinux()) {
+    StringRef runtimeGlobalsPath = config.getRuntimeGlobalsTSanPath();
+    StringRef driverPath = config.getMDriverTSanPath();
+    compilerRTPath = config.getCompilerRTTSanPath();
+    for (StringRef path : {runtimeGlobalsPath, driverPath, compilerRTPath}) {
+      if (!std::filesystem::exists(path.str(), ec) || ec)
+        return state.reportError(
+            "unable to locate the ThreadSanitizer runtime library " + path);
+      std::string dir =
+          std::filesystem::absolute(path.str(), ec).parent_path().string();
+      if (!llvm::is_contained(tsanRuntimeDirs, dir))
+        tsanRuntimeDirs.push_back(std::move(dir));
+    }
+    for (const std::string &dir : tsanRuntimeDirs)
+      tsanRuntimeArgs.append({"-Xlinker", "-rpath", "-Xlinker", dir});
+    // `--no-as-needed` keeps the dependencies even though the executable
+    // itself calls nothing in these libraries.
+    tsanRuntimeArgs.append({"-Wl,--push-state,--no-as-needed",
+                            runtimeGlobalsPath, driverPath, "-Wl,--pop-state"});
+  }
+
   // Invoke the linker command.
   SmallVector<StringRef> linkerArgs = [&] {
-    if (product == LinkProduct::kExecutable)
-      return SmallVector<StringRef>{*linker, archivePath, compilerRTPath};
+    if (product == LinkProduct::kExecutable) {
+      SmallVector<StringRef> linkerInvocation{*linker, archivePath};
+      linkerInvocation.append(tsanRuntimeArgs);
+      linkerInvocation.push_back(compilerRTPath);
+      return linkerInvocation;
+    }
 
     // Here, we use `--whole-archive` to force every symbol from the `.a` static
     // archive to be included in the resulting library.  In the generated Python
@@ -470,6 +505,7 @@ static int linkOutput(LinkProduct product, const State &state,
     linkerInvocation.push_back("-Wl,--no-whole-archive");
 #endif
 
+    linkerInvocation.append(tsanRuntimeArgs);
     linkerInvocation.push_back(compilerRTPath);
     linkerInvocation.push_back("-o");
     linkerInvocation.push_back(outputName);

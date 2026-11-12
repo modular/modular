@@ -23,16 +23,20 @@
 
 # ERROR: error: invalid sanitizer 'unknown', expected one of: `address` or `thread`
 
-# Check that we have the expected sanitizer symbols in our built executables.
+# Check that we have the expected sanitizer symbols in our built executables,
+# and that the executables reach `main`.
 
 # RUN: %mojo-build %s --sanitize=address -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s --check-prefix=ASAN
+# RUN: %t | FileCheck %s --check-prefix=OUTPUT
 
 # RUN: %mojo-build %s --sanitize thread -o %t
 # RUN: llvm-objdump %t -t | FileCheck %s --check-prefix=TSAN
+# RUN: %t | FileCheck %s --check-prefix=OUTPUT
 
 # ASAN: __asan_init
 # TSAN: __tsan_init
+# OUTPUT: sanitizer
 
 
 def main():

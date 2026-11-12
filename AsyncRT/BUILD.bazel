@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
+load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library", "tsan_variant")
 
 # gazelle:default_visibility //AsyncRT:consumers
 # gazelle:default_features layering_check,parse_headers
@@ -136,7 +136,19 @@ modular_shared_library(
         "//Support:ExternalProfilerAnnotationHostGlue",
         "//Support:ProfilerHostGlue",
     ],
+    # Under TSan the system allocator replaces tcmalloc, whose load-time arena
+    # mmap lands in TSan shadow memory (MOCO-5030). The library then installs
+    # under lib/tsan/ with the same SONAME, so `mojo build --sanitize thread`
+    # swaps it in through an rpath.
+    local_defines = select({
+        "//:tsan_linux": ["ASYNCRT_TSAN_SYSTEM_MALLOC=1"],
+        "//conditions:default": ["ASYNCRT_TSAN_SYSTEM_MALLOC=0"],
+    }),
     output_name = "AsyncRTRuntimeGlobals",
+    shared_lib_name = select({
+        "//:tsan_linux": "tsan/libAsyncRTRuntimeGlobals.so",
+        "//conditions:default": "libAsyncRTRuntimeGlobals.so",
+    }),
     visibility = [
         ":consumers",
         "//mach/crates/max-sys-internal:__pkg__",
@@ -180,10 +192,31 @@ modular_shared_library(
         "//Support:Threading",
         "//Support:TimeProfiler",
         "//Support:TypeID",
-        "//bazel/internal:tcmalloc_numa_aware",
-        "//bazel/internal:tcmalloc_want_numa_aware",
         "@llvm-project//llvm:Support",
-    ],
+    ] + select({
+        "//:tsan_linux": [],
+        "//conditions:default": [
+            "//bazel/internal:tcmalloc_numa_aware",
+            "//bazel/internal:tcmalloc_want_numa_aware",
+        ],
+    }),
+)
+
+# The TSan build of RuntimeGlobals, for `mojo build --sanitize thread` (see
+# the selects in RuntimeGlobals above).
+tsan_variant(
+    name = "RuntimeGlobalsTSan",
+    testonly = True,
+    src = ":RuntimeGlobals",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+tsan_variant(
+    name = "RuntimeGlobalsTSan.stripped",
+    src = ":RuntimeGlobals.stripped",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 modular_cc_library(

@@ -11,9 +11,13 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+// The TSan build uses the system allocator; see RuntimeGlobalsTSan in
+// AsyncRT/BUILD.bazel.
 // NOTE: We use the legacy tcmalloc on macOS only because the modern tcmalloc
 // doesn't support it
-#if defined(__APPLE__)
+#if ASYNCRT_TSAN_SYSTEM_MALLOC
+#include "Support/AlignedAlloc.h"
+#elif defined(__APPLE__)
 #include <gperftools/tcmalloc.h>
 #else
 #pragma GCC diagnostic push
@@ -49,7 +53,9 @@ M::AsyncRT::Globals::getCPUDeviceTableSingleton(
 
 MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment,
                                                  size_t size) {
-#if defined(__APPLE__)
+#if ASYNCRT_TSAN_SYSTEM_MALLOC
+  return M::alignedAlloc(alignment, size);
+#elif defined(__APPLE__)
   return ::tc_memalign(alignment, size);
 #else
   return TCMallocInternalMemalign(alignment, size);
@@ -57,7 +63,9 @@ MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment,
 }
 MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment, size_t size,
                                                  size_t numaPartition) {
-#if defined(__APPLE__)
+#if ASYNCRT_TSAN_SYSTEM_MALLOC
+  return M::alignedAlloc(alignment, size);
+#elif defined(__APPLE__)
   // gperftools has no NUMA partition support; fall back to unpartitioned alloc.
   return ::tc_memalign(alignment, size);
 #else
@@ -65,7 +73,9 @@ MODULAR_CXX_EXPORT void *TCMallocGlobals::tc_new(size_t alignment, size_t size,
 #endif
 }
 MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
-#if defined(__APPLE__)
+#if ASYNCRT_TSAN_SYSTEM_MALLOC
+  return M::alignedFree(ptr);
+#elif defined(__APPLE__)
   return ::tc_free(ptr);
 #else
   return TCMallocInternalFree(ptr);

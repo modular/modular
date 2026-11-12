@@ -1,6 +1,7 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
+load("//bazel/internal:cc_transition.bzl", _tsan_variant = "tsan_variant")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:dialect_checksum.bzl", _dialect_checksum = "dialect_checksum")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:kgen.bzl", _kgen_kernel = "kgen_kernel")  # buildifier: disable=bzl-visibility
@@ -56,6 +57,7 @@ pkg_files = _pkg_files
 py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
+tsan_variant = _tsan_variant
 
 def modular_py_test(tags = [], **kwargs):
     if "external-exclusive" in tags:

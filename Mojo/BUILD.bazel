@@ -1,5 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("//bazel:api.bzl", "copy_files", "dialect_checksum", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files")
+load("//bazel:api.bzl", "copy_files", "dialect_checksum", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files", "tsan_variant")
 load(
     "//bazel:config.bzl",
     "ALLOW_UNUSED_TAG",
@@ -1072,6 +1072,25 @@ modular_shared_library(
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
     ],
+)
+
+# CompilerRT built with ThreadSanitizer, which `mojo build --sanitize thread`
+# links instead (MOCO-5030): TSan cannot see the synchronization in the AsyncRT
+# work queue unless that code is instrumented, and reports false races across
+# `parallelize`.
+tsan_variant(
+    name = "CompilerRTTSan",
+    testonly = True,
+    src = ":CompilerRT",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+tsan_variant(
+    name = "CompilerRTTSan.stripped",
+    src = ":CompilerRT.stripped",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 modular_cc_library(
