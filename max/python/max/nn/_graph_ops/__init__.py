@@ -12137,6 +12137,91 @@ def rms_norm_quantize_dynamic_scaled_float8(
     return result[0].tensor, result[1].tensor
 
 
+def quantize_dynamic_scaled_float8_grouped_mx(
+    input: TensorValue,
+    group_starts: TensorValue,
+    scale_offsets: TensorValue,
+    num_scale_rows: DimLike,
+    amax_floor: float = 0.0,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes group-sorted rows to fp8 with the grouped GEMM's MX scales.
+
+    The codes and scales are :func:`quantize_dynamic_scaled_float8`'s with
+    ``group_size_or_per_token=128`` and ``float8_e8m0fnu`` scales, bit for
+    bit. Each scale is repeated over its four 32-element MX groups and stored
+    at the scale row :func:`grouped_matmul_block_scaled` reads for its
+    activation row, given the same ``group_starts`` (its
+    ``expert_start_indices``) and ``scale_offsets`` (its ``a_scale_offsets``).
+    The rest of each group's last 128-row tile is zeroed and tiles no group
+    reaches are left unwritten; the GEMM multiplies neither into a stored
+    row. Rows past the last group get codes only.
+
+    Args:
+        input: ``[rows, K]`` activations, rows sorted by group; ``K`` must be
+            static and a multiple of 128.
+        group_starts: ``[groups + 1]`` uint32 exclusive prefix sum of the
+            group sizes.
+        scale_offsets: ``[groups]`` uint32 per-group scale tile offsets.
+        num_scale_rows: Scale rows to allocate, at least every group's
+            128-row-aligned extent.
+        amax_floor: Lower bound on a group's max-abs, as in
+            :func:`quantize_dynamic_scaled_float8`.
+
+    Returns:
+        The ``[rows, K]`` ``float8_e4m3fn`` codes and the
+        ``[ceildiv(num_scale_rows, 128), K / 128, 32, 4, 4]``
+        ``float8_e8m0fnu`` scales.
+    """
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            "input.shape[1] must be a statically known dimension. Input shape"
+            f" received: {input.shape}"
+        )
+    k = int(input.shape[1])
+    if k % 128:
+        raise ValueError(f"K={k} is not a multiple of 128")
+    _check_rank(1, group_starts=group_starts, scale_offsets=scale_offsets)
+    _check_dtype(
+        DType.uint32, group_starts=group_starts, scale_offsets=scale_offsets
+    )
+    if not math.isfinite(amax_floor) or amax_floor < 0.0:
+        raise ValueError(
+            f"amax_floor must be finite and non-negative, got {amax_floor}"
+        )
+
+    parameters: dict[str, bool | int | float | str | DType] = {}
+    if amax_floor > 0.0:
+        parameters["amax_floor"] = amax_floor
+
+    result = ops.custom(
+        "quantization.quantize_dynamic_scaled_float8.grouped_mx",
+        device=input.device,
+        values=[input, group_starts, scale_offsets],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[input.shape[0], k],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[
+                    ceildiv(Dim(num_scale_rows), Dim(128)),
+                    k // 128,
+                    32,
+                    4,
+                    4,
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return result[0].tensor, result[1].tensor
+
+
 def dynamic_scaled_matmul(
     a: TensorValue,
     b: TensorValue,

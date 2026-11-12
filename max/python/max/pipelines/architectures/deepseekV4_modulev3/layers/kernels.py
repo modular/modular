@@ -45,6 +45,7 @@ __all__ = [
     "latent_sparse_attention_ragged",
     "moe_create_indices_with_slots",
     "moe_router_group_limited",
+    "quantize_dynamic_scaled_float8_grouped_mx",
     "replicated_rule",
     "rope_ragged",
     "top_k_per_row",
@@ -116,6 +117,10 @@ compress_windows_ragged = F.functional(
 top_k_per_row = F.functional(kernels.top_k_per_row, rule=replicated_rule(2))
 moe_create_indices_with_slots = F.functional(
     kernels.moe_create_indices_with_slots, rule=replicated_rule(9)
+)
+# Inside the routed body, on each device's own slots.
+quantize_dynamic_scaled_float8_grouped_mx = F.functional(
+    kernels.quantize_dynamic_scaled_float8_grouped_mx, rule=replicated_rule(2)
 )
 # Every device routes the same replicated scores to the same experts.
 moe_router_group_limited = F.functional(

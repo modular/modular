@@ -37,7 +37,7 @@ from max.nn import Module
 from max.nn._graph_ops import _is_apple_gpu
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.quant_config import QuantConfig, ceildiv
+from max.nn.quant_config import ceildiv
 from max.tensor import Tensor
 from max.tensor.sharding import (
     AxisAssignment,
@@ -51,8 +51,12 @@ from max.tensor.sharding import (
 from max.tensor.sharding.action import PerShard
 
 from ..model_config import DeepseekV4Config
-from .kernels import moe_create_indices_with_slots, moe_router_group_limited
-from .quantization import LINEAR_QUANT_BLOCK, linear_for
+from .kernels import (
+    moe_create_indices_with_slots,
+    moe_router_group_limited,
+    quantize_dynamic_scaled_float8_grouped_mx,
+)
+from .quantization import linear_for
 
 __all__ = [
     "DeepseekV4Gate",
@@ -204,28 +208,16 @@ def _interleaved_scales(weight_scale: Tensor) -> Tensor:
 
 
 def _quantize_rows_for_w4a8(
-    x: Tensor, quant_config: QuantConfig, scale_slot: Tensor
+    x: Tensor, a_offsets: Tensor, scale_offsets: Tensor, scale_rows: DimLike
 ) -> tuple[Tensor, Tensor]:
-    """``act_quant(x, 128, "ue8m0")``, each scale repeated 4x for K/32."""
-    width = int(x.shape[1])
-    quantized, scales = quant_ops.quantize_dynamic_scaled_float8(
-        x.cast(DType.bfloat16),
-        quant_config.input_scale,
-        quant_config.weight_scale,
-        group_size_or_per_token=LINEAR_QUANT_BLOCK,
-        out_type=DType.float8_e4m3fn,
-        scales_type=DType.float8_e8m0fnu,
-    )
-    groups = width // LINEAR_QUANT_BLOCK
-    repeat = LINEAR_QUANT_BLOCK // FP4_WEIGHT_BLOCK
-    per_row = scales[:, 0 : x.shape[0]].transpose(0, 1)
-    per_row = F.gather(per_row, scale_slot, axis=0)
-    rows = scale_slot.shape[0]
-    per_row = F.broadcast_to(
-        per_row.unsqueeze(-1), [rows, groups, repeat]
-    ).reshape([rows, groups * repeat])
-    return quantized, quant_ops.block_scales_interleave(
-        per_row, FP4_WEIGHT_BLOCK
+    """``act_quant(x, 128, "ue8m0")``, stored in the GEMM's scale tiles.
+
+    Each scale is repeated 4x for K/32 and written at the scale-tile row the
+    grouped GEMM reads for its slot (``a_offsets`` / ``scale_offsets`` as the
+    GEMM gets them).
+    """
+    return quantize_dynamic_scaled_float8_grouped_mx(
+        x.cast(DType.bfloat16), a_offsets, scale_offsets, scale_rows
     )
 
 
@@ -254,7 +246,6 @@ class _RoutedSpec:
     hidden: int
     inter: int
     swiglu_limit: float
-    quant_config: QuantConfig
 
 
 def _grouped(
@@ -263,12 +254,13 @@ def _grouped(
     weight_scale: Tensor,
     a_offsets: Tensor,
     scale_offsets: Tensor,
-    scale_slot: Tensor,
+    scale_rows: DimLike,
     expert_ids: Tensor,
-    quant_config: QuantConfig,
 ) -> Tensor:
     n_experts = int(weight.shape[0])
-    quantized, a_scales = _quantize_rows_for_w4a8(x, quant_config, scale_slot)
+    quantized, a_scales = _quantize_rows_for_w4a8(
+        x, a_offsets, scale_offsets, scale_rows
+    )
     ones_f32 = F.constant(
         np.ones(n_experts, np.float32), DType.float32, device=x.device
     )
@@ -328,7 +320,7 @@ def _routed_body(
         scale_offsets,
         slot_token,
         slot_weight,
-        scale_slot,
+        _scale_slot,
     ) = moe_create_indices_with_slots(
         router_idx,
         weights.reshape([slots]).cast(DType.float32),
@@ -350,9 +342,8 @@ def _routed_body(
             scale,
             a_offsets,
             scale_offsets,
-            scale_slot,
+            padded,
             expert_ids,
-            spec.quant_config,
         )
 
     x_sorted = F.gather(x, slot_token, axis=0)
@@ -416,7 +407,6 @@ class DeepseekV4RoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
             hidden=config.hidden_size,
             inter=config.moe_intermediate_size,
             swiglu_limit=config.swiglu_limit,
-            quant_config=config.quant_config,
         )
         self.gate_up_proj = _PackedExpertWeight(
             self.n_experts, 2 * self.spec.inter, self.spec.hidden

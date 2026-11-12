@@ -49,6 +49,7 @@ from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
+    quantize_dynamic_scaled_fp8_grouped_mx,
     quantize_tensor_dynamic_scaled_fp8,
 )
 from linalg.block_scaled_quantization import (
@@ -2561,6 +2562,71 @@ struct QuantizeTensorDynamicScaledFloat8:
             scale_ub,
             ctx,
             num_rows=Int(input.shape()[0].value()),
+        )
+
+
+@extensibility.register(
+    "quantization.quantize_dynamic_scaled_float8.grouped_mx"
+)
+struct QuantizeDynamicScaledFloat8GroupedMx:
+    """Registers the `quantization.quantize_dynamic_scaled_float8.grouped_mx` graph op.
+
+    1x128 e8m0 fp8 quantization of group-sorted rows that writes the scales
+    straight into the grouped block-scaled GEMM's 5D MX scale tiles.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        amax_floor: Float32 = 0,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        group_starts: Some[Input & Tensor],
+        scale_offsets: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(group_starts), TileTensorable)
+        comptime assert conforms_to(type_of(scale_offsets), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(group_starts).rank == 1
+        comptime assert type_of(scale_offsets).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
+            )
+
+        quantize_dynamic_scaled_fp8_grouped_mx[
+            num_cols=type_of(input)._shape_types[1].static_value,
+        ](
+            input_fn,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            group_starts.to_tile_tensor[.uint32]().as_imm(),
+            scale_offsets.to_tile_tensor[.uint32]().as_imm(),
+            ctx,
+            num_rows=Int(input.shape()[0].value()),
+            amax_floor=amax_floor,
         )
 
 

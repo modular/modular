@@ -14,7 +14,7 @@
 """Provides FP8 quantization kernels supporting static, dynamic, and blockwise scaling."""
 
 from std.collections.string.string_span import get_static_string
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
@@ -62,6 +62,13 @@ from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
 from .utils import (
     ElementwiseEpilogueFn,
     no_epilogue_fn,
+)
+from .fp4_utils import (
+    MXFP8_SF_DTYPE,
+    MXFP8_SF_VECTOR_SIZE,
+    SF_ATOM_K,
+    SF_ATOM_M,
+    SF_MN_GROUP_SIZE,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
@@ -834,6 +841,321 @@ struct _QuantizeFp8Kernel[
                             input_vec, scale_factor_recip
                         ),
                     )
+
+
+########################################################
+# dynamic scaled fp8 quantization into grouped MX scale tiles
+########################################################
+
+# One 1x128 power-of-two scale repeated over its four 32-element MX groups is
+# exactly one SF-atom column: 4 contiguous bytes of the 5D TCGEN layout.
+comptime _GROUPED_MX_GROUP_SIZE = SF_ATOM_K * MXFP8_SF_VECTOR_SIZE
+
+
+def quantize_dynamic_scaled_fp8_grouped_mx[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType,
+    InputFnType: _row_col_input_fn_trait[in_dtype],
+    //,
+    num_cols: Int,
+    pdl_level: PDLLevel = PDLLevel.ON,
+](
+    input_fn: InputFnType,
+    scaled_output: TileTensor[mut=True, out_dtype, ...],
+    scales_mx: TileTensor[mut=True, scales_dtype, address_space=.GENERIC, ...],
+    group_starts: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    scale_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+    num_rows: Int,
+    amax_floor: Float32 = 0.0,
+) raises:
+    """1x128 e8m0 dynamic fp8 quantization of group-sorted rows, with the
+    scales written straight into the 5D MX scale tiles of a grouped
+    block-scaled GEMM.
+
+    The codes and scales are those of `quantize_dynamic_scaled_fp8` with
+    `group_size_or_per_token=128` and `float8_e8m0fnu` scales, bit for bit.
+    Each 128-element scale is stored over its four 32-element MX groups, at
+    the scale row the grouped GEMM reads for that activation row: row `m` of
+    group `g` (`group_starts[g] <= m < group_starts[g + 1]`) lands in tile
+    `(m - start) // 128 + start // 128 + scale_offsets[g]`, row
+    `(m - start) % 128`. The rest of each group's last tile is zeroed; tiles
+    no group reaches are not written. Rows at or past `group_starts[-1]`
+    (rows no GEMM group covers) get codes only.
+
+    Parameters:
+        out_dtype: Code dtype; must be `float8_e4m3fn`.
+        in_dtype: Input dtype (inferred).
+        scales_dtype: Scale dtype; must be `float8_e8m0fnu`.
+        InputFnType: Input lambda type (inferred).
+        num_cols: K, a multiple of 128.
+        pdl_level: Programmatic dependent launch level.
+
+    Args:
+        input_fn: Loads `width` input elements at `(row, col)`.
+        scaled_output: `[num_rows, K]` fp8 codes.
+        scales_mx: `[scale_rows / 128, K / 128, 32, 4, 4]` e8m0 MX scale tiles.
+        group_starts: `[groups + 1]` exclusive prefix sum of the group sizes.
+        scale_offsets: `[groups]` per-group scale tile offsets, as passed to
+            the grouped GEMM.
+        ctx: Device context used to enqueue the kernel.
+        num_rows: Number of activation rows.
+        amax_floor: Lower bound on a group's max-abs, as in
+            `quantize_dynamic_scaled_fp8`.
+    """
+    comptime assert out_dtype == .float8_e4m3fn, "codes must be float8_e4m3fn"
+    comptime assert (
+        scales_dtype == MXFP8_SF_DTYPE
+    ), "MX scale tiles need float8_e8m0fnu scales"
+    comptime assert (
+        num_cols % _GROUPED_MX_GROUP_SIZE == 0
+    ), "K must be a multiple of 128"
+    comptime assert scaled_output.rank == 2, "expected rank-2 output"
+    comptime assert scales_mx.rank == 5, "expected rank-5 MX scales"
+
+    # Eight lanes per group, 16 elements a lane. The group max is exact
+    # under any reduction order, so this matches
+    # `quantize_dynamic_scaled_fp8`'s packed-warp launch bit for bit.
+    comptime group_size = _GROUPED_MX_GROUP_SIZE
+    comptime simd_width = 16
+    comptime num_threads = WARP_SIZE
+
+    # TODO: MOCO-4295
+    @inline(.always)
+    def wrap[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var input_fn} -> SIMD[in_dtype, width]:
+        return input_fn.__call__[width=width, alignment=alignment](row, col)
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "quantize_dynamic_scaled_fp8_grouped_mx",
+        task_id=Int(ctx.device().id),
+    ):
+        if num_rows == 0:
+            return
+
+        # A warp quantizes four groups a pass. Decode rows spread one pass
+        # a warp over the grid; prefill rows take a whole row a warp, so the
+        # launch is not hundreds of thousands of one-warp blocks.
+        comptime per_pass = num_threads * simd_width // group_size
+        var passes = ceildiv(num_cols // group_size, per_pass)
+        var passes_per_warp = 1 if num_rows <= 64 else passes
+        var kernel = _QuantizeFp8GroupedMxKernel[
+            num_threads=num_threads,
+            group_size=group_size,
+            simd_width=simd_width,
+        ](
+            wrap,
+            scaled_output.address_space_cast[.GENERIC](),
+            scales_mx,
+            group_starts,
+            scale_offsets,
+            Int(scale_offsets.dim[0]()),
+            num_cols // group_size,
+            amax_floor,
+            passes_per_warp,
+        )
+
+        ctx.enqueue_function(
+            kernel,
+            grid_dim=(num_rows, ceildiv(passes, passes_per_warp), 1),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+
+
+@fieldwise_init
+struct _QuantizeFp8GroupedMxKernel[
+    out_type: DType,
+    output_layout: TensorLayout,
+    output_origin: MutOrigin,
+    output_engine: TensorEngine,
+    output_idx_type: DType,
+    scales_type: DType,
+    scales_layout: TensorLayout,
+    scales_origin: MutOrigin,
+    scales_engine: TensorEngine,
+    scales_idx_type: DType,
+    starts_layout: TensorLayout,
+    starts_origin: ImmOrigin,
+    starts_engine: TensorEngine,
+    starts_idx_type: DType,
+    offsets_layout: TensorLayout,
+    offsets_origin: ImmOrigin,
+    offsets_engine: TensorEngine,
+    offsets_idx_type: DType,
+    //,
+    in_type: DType,
+    InputFnType: _row_col_input_fn_trait[in_type],
+    num_threads: Int,
+    group_size: Int,
+    simd_width: Int,
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    var input_fn: Self.InputFnType
+    var output: TileTensor[
+        mut=True,
+        Self.out_type,
+        Self.output_layout,
+        Self.output_origin,
+        Engine=Self.output_engine,
+        linear_idx_type=Self.output_idx_type,
+    ]
+    var scales_mx: TileTensor[
+        mut=True,
+        Self.scales_type,
+        Self.scales_layout,
+        Self.scales_origin,
+        Engine=Self.scales_engine,
+        linear_idx_type=Self.scales_idx_type,
+    ]
+    var group_starts: TileTensor[
+        mut=False,
+        DType.uint32,
+        Self.starts_layout,
+        Self.starts_origin,
+        Engine=Self.starts_engine,
+        linear_idx_type=Self.starts_idx_type,
+    ]
+    var scale_offsets: TileTensor[
+        mut=False,
+        DType.uint32,
+        Self.offsets_layout,
+        Self.offsets_origin,
+        Engine=Self.offsets_engine,
+        linear_idx_type=Self.offsets_idx_type,
+    ]
+    var num_groups: Int
+    var sf_cols: Int
+    var amax_floor: Float32
+    var passes_per_warp: Int
+
+    @inline(.always)
+    def _sf_word(self, sf_row: Int, sf_col: Int) -> Int:
+        # Index, in 4-byte words, of SF-atom column `sf_col` of scale row
+        # `sf_row` in the layout `set_scale_factor` writes.
+        comptime atom_words = SF_ATOM_M[0] * SF_ATOM_M[1]
+        return (
+            (sf_row // SF_MN_GROUP_SIZE * self.sf_cols + sf_col) * atom_words
+            + (sf_row % SF_ATOM_M[0]) * SF_ATOM_M[1]
+            + (sf_row % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]
+        )
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        )
+    )
+    def __call__(self):
+        var passes_per_warp = self.passes_per_warp
+        var input_fn = self.input_fn
+        var output = TileTensor(self.output.ptr, self.output.layout)
+        var amax_floor = self.amax_floor
+        comptime fp8_max = Scalar[Self.out_type].MAX_FINITE
+        comptime accum_type = get_accum_type[Self.in_type]()
+        comptime assert accum_type == .float32, (
+            "float8_e8m0fnu quantization is only supported for float32 accum"
+            " type"
+        )
+        comptime lanes = Self.group_size // Self.simd_width
+        comptime per_pass = Self.num_threads // lanes
+        comptime assert lanes * per_pass == Self.num_threads
+
+        var lane = Int(thread_idx.x)
+        var row = Int(block_idx.x)
+        var seg = lane // lanes
+        var sub = lane - seg * lanes
+        var first = Int(block_idx.y) * passes_per_warp
+        var sf_row, pad_end = self._scale_row(row)
+        # Each scale fills one SF-atom column: 4 contiguous e8m0 bytes.
+        var words = self.scales_mx.ptr.unsafe_bitcast[UInt32]()
+
+        with PDL():
+            for p in range(first, first + passes_per_warp):
+                var group_idx = p * per_pass + seg
+                var live = group_idx < self.sf_cols
+                var idx = sub * Self.simd_width + group_idx * Self.group_size
+                # The scale and codes below must stay `_QuantizeFp8Kernel`'s
+                # e8m0 `_group_scale`, operation for operation.
+                var input_vec = SIMD[accum_type, Self.simd_width](0)
+                if live:
+                    input_vec = input_fn.__call__[
+                        width=Self.simd_width,
+                        alignment=Self.simd_width,
+                    ](row, idx).cast[accum_type]()
+                var thread_max = max(
+                    Scalar[accum_type](0), abs(input_vec).reduce_max()
+                )
+                var group_max = warp.lane_group_max[num_lanes=lanes](thread_max)
+
+                var scale_factor = max(
+                    max(group_max, amax_floor.cast[accum_type]())
+                    / fp8_max.cast[accum_type](),
+                    Scalar[accum_type](1e-10),
+                ).cast[MXFP8_SF_DTYPE]()
+                var scale_factor_recip = (
+                    0.0 if group_max
+                    == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+                )
+                if not live:
+                    continue
+                if sub == 0 and sf_row >= 0:
+                    var byte = bitcast[DType.uint8](scale_factor).cast[
+                        DType.uint32
+                    ]()
+                    words.unsafe_store(
+                        self._sf_word(sf_row, group_idx), byte * 0x01010101
+                    )
+                output.store(
+                    (row, idx),
+                    fp8_quantize[Self.out_type](input_vec, scale_factor_recip),
+                )
+
+            # The group's last row also clears the rest of its last tile;
+            # those rows are only ever multiplied into rows the GEMM does not
+            # store.
+            for p in range(first, first + passes_per_warp):
+                for sf_col in range(
+                    p * per_pass, min((p + 1) * per_pass, self.sf_cols)
+                ):
+                    for pad_row in range(
+                        sf_row + 1 + lane, pad_end, Self.num_threads
+                    ):
+                        words.unsafe_store(
+                            self._sf_word(pad_row, sf_col), UInt32(0)
+                        )
+
+    @inline(.always)
+    def _scale_row(self, row: Int) -> Tuple[Int, Int]:
+        """``(scale-tile row of activation row ``row``, end of the padding
+        it clears)``: ``(-1, 0)`` past the last group, and an empty padding
+        range unless ``row`` is its group's last."""
+        var n = self.num_groups
+        if row >= Int(self.group_starts[n]):
+            return (-1, 0)
+        # The group holding `row`: the last g with group_starts[g] <= row.
+        # An empty group shares its start with the next group and loses.
+        var lo = 0
+        var hi = n - 1
+        while lo < hi:
+            var mid = (lo + hi + 1) // 2
+            if Int(self.group_starts[mid]) <= row:
+                lo = mid
+            else:
+                hi = mid - 1
+        var start = Int(self.group_starts[lo])
+        var end = Int(self.group_starts[lo + 1])
+        var tile_base = (
+            start // SF_MN_GROUP_SIZE + Int(self.scale_offsets[lo])
+        ) * SF_MN_GROUP_SIZE
+        var sf_row = tile_base + (row - start)
+        if row != end - 1:
+            return (sf_row, 0)
+        return (sf_row, tile_base + align_up(end - start, SF_MN_GROUP_SIZE))
 
 
 @fieldwise_init
