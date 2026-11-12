@@ -850,6 +850,83 @@ def main() raises:
             )
 
             # -----------------------------------------------------------
+            # Group 4b: H=12 cells with a DMA producer warp on MI355 (32-row
+            # at S=2, 48-row at S=3/4 and the two-tile S=8). Forced split
+            # counts give partitions of 3, 4 and 5 key tiles, so the
+            # producer runs its two-tile loop with an odd and an even tail;
+            # ragged cache lengths leave each partition's last tile partial.
+            # -----------------------------------------------------------
+            print("--- Group 4b: H=12 producer-warp tile counts ---")
+
+            # np=4: 1500/2000/2500/3100 keys -> 3/4/5/7 tiles per partition.
+            run_fold_case[12](
+                "h12_s8_b4_ragged_np4_tiles3to7",
+                [1492, 1992, 2492, 3092],
+                [8, 8, 8, 8],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(4),
+            )
+            run_fold_case[12](
+                "h12_s4_b4_ragged_np4_tiles3to7",
+                [1496, 1996, 2496, 3096],
+                [4, 4, 4, 4],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(4),
+            )
+            run_fold_case[12](
+                "h12_s3_b4_ragged_np4_tiles3to7",
+                [1497, 1997, 2497, 3097],
+                [3, 3, 3, 3],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(4),
+            )
+            run_fold_case[12](
+                "h12_s2_b4_ragged_np4_tiles3to7",
+                [1498, 1998, 2498, 3098],
+                [2, 2, 2, 2],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(4),
+            )
+            # np=64 over long caches: 3/4/5/2 tiles per partition.
+            run_fold_case[12](
+                "h12_s8_b4_ragged_np64_long",
+                [24000, 28000, 39000, 12000],
+                [8, 8, 8, 8],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(64),
+            )
+            run_fold_case[12](
+                "h12_s2_b4_ragged_np64_long",
+                [24000, 28000, 39000, 12000],
+                [2, 2, 2, 2],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(64),
+            )
+            # np=1: one partition per request, hundreds of tiles.
+            run_fold_case[12](
+                "h12_s8_b4_ragged_np1_long",
+                [20000, 30001, 12345, 32760],
+                [8, 8, 8, 8],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(1),
+            )
+            run_fold_case[12](
+                "h12_s2_b4_ragged_np1_long",
+                [20000, 30001, 12345, 32760],
+                [2, 2, 2, 2],
+                CausalMask(),
+                ctx,
+                num_partitions=Optional(1),
+            )
+
+            # -----------------------------------------------------------
             # Group 5: edge data. Near-empty caches (num_keys == S and
             # S+1) exercise the shortest causal tails; large-magnitude
             # inputs drive the online-softmax max/rescale branches; a

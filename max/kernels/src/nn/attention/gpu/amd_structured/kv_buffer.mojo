@@ -356,6 +356,23 @@ struct KVBuffer[
         Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps == 0
         and not Self.kv_t.rows_indexed else 0
     )
+    # Issued depth-column-major (column group outer, key group inner) instead
+    # of key-major, so a consumer that waits on a prefix of the DMA has the
+    # shallow depth strips of the whole BN tile in LDS and can start QK on
+    # them while the rest of the tile is still in flight. Only the FP8
+    # 16x16x128 decode layout qualifies; every other config keeps the
+    # key-major order and full drains.
+    comptime dma_col_major = (
+        Self.transpose
+        and Self.full_kv
+        and Self.kv_t.dtype.is_float8()
+        and Self.mma_shape[0] == 16
+        and Self.BK == 2 * Self.bk_smem
+        and not Self.kv_t.rows_indexed
+        and not Self.kv_t.rows_predicated
+        and Self.vm_instrs_per_load > 0
+        and Self._total_tiles % (Self._num_warps * 2) == 0
+    )
 
     comptime _mma_total_rows = Self.num_mmas * Self.num_k_mmas2 * Self._reg_num_k_tiles
     comptime mma_layout = row_major[
@@ -641,7 +658,9 @@ struct KVBuffer[
                             zero_strip[strip]()
 
     @inline(.always)
-    def load_from_dram[buffer_idx: Int](mut self):
+    def load_from_dram[
+        buffer_idx: Int, desc_in_registers: Bool = False
+    ](mut self):
         comptime if Self.kv_t.rows_predicated:
             self._load_predicated_from_dram[buffer_idx]()
             return
@@ -671,7 +690,9 @@ struct KVBuffer[
                 ](warp_row, 0)
                 # Default `hoist_scalar_offset=False` keeps the legacy
                 # per-iter `Int(src_partitions.ptr) - dram_base` codegen.
-                loader.load(smem_warp, gmem_warp_tile)
+                loader.load[desc_in_registers=desc_in_registers](
+                    smem_warp, gmem_warp_tile
+                )
         elif (
             Self.smem_depth == 64
             and Self.BN <= Self.warp_tile_rows * 2
@@ -684,7 +705,9 @@ struct KVBuffer[
             var gmem_warp_tile = gmem_tile.tile[
                 Self.warp_tile_rows, Self.bk_smem
             ](warp_r, warp_c)
-            loader.load(smem_warp, gmem_warp_tile)
+            loader.load[desc_in_registers=desc_in_registers](
+                smem_warp, gmem_warp_tile
+            )
         else:
             comptime num_warps = Self.num_threads // WARP_SIZE
             comptime num_row_groups = Self.BN // Self.warp_tile_rows
@@ -716,13 +739,25 @@ struct KVBuffer[
                         var gmem_warp_tile = gmem_tile.tile[
                             Self.warp_tile_rows, Self.bk_smem
                         ](Int(warp_row), Int(warp_col))
-                        loader.load(smem_warp, gmem_warp_tile)
+                        loader.load[desc_in_registers=desc_in_registers](
+                            smem_warp, gmem_warp_tile
+                        )
             else:
                 comptime for t in range(tiles_per_warp):
                     comptime tile_idx = Int(t) * num_warps
                     var warp_tile = UInt32(tile_idx) + self.warp_id
-                    var warp_row, warp_col = divmod(
-                        warp_tile, UInt32(num_col_groups)
+                    var warp_major, warp_minor = divmod(
+                        warp_tile,
+                        UInt32(
+                            Self.BN
+                            // Self.warp_tile_rows if Self.dma_col_major else num_col_groups
+                        ),
+                    )
+                    var warp_row = (
+                        warp_minor if Self.dma_col_major else warp_major
+                    )
+                    var warp_col = (
+                        warp_major if Self.dma_col_major else warp_minor
                     )
                     var smem_warp = self.smem_block_tile[Self.warp_tile_rows](
                         Int(warp_row), _stage_block_base + Int(warp_col)
@@ -730,7 +765,9 @@ struct KVBuffer[
                     var gmem_warp_tile = gmem_tile.tile[
                         Self.warp_tile_rows, Self.bk_smem
                     ](Int(warp_row), Int(warp_col))
-                    loader.load(smem_warp, gmem_warp_tile)
+                    loader.load[desc_in_registers=desc_in_registers](
+                        smem_warp, gmem_warp_tile
+                    )
 
         # K-tail padding is handled register-side in `zero_partial_tile_pad`
         # (as the reference does — see that method for the rationale). The

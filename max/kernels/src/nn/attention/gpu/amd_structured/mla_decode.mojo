@@ -20,7 +20,8 @@ Key invariants (enforced via `mla_decode` callsite in `mla.mojo`):
   * `mla_kv_alias = True`: V reads from K's swizzled SMEM, so no V DMA.
   * `shared_kv = True` (required by `mla_kv_alias`): V SMEM is a bitcast
     view of K SMEM (see `attention.mojo` constructor).
-  * `BN = 128` ⇒ `double_buffer_k_only = False`: single-buffer K loop.
+  * `BN = 128` ⇒ `double_buffer_k_only = False`: single-buffer K loop,
+    except under `mla_dma_warp`, where K streams through two LDS stages.
   * `output_depth ≤ depth`: per-warp V buffer slices the V-nope portion
     out of K's full-depth SMEM.
 
@@ -32,16 +33,20 @@ Recipe (see `process_tile`):
 NOTE: `process_tile`, `prefetch_next`, the empty-partition handling,
 the softmax block, and the epilogue are largely line-for-line shared
 with `mha_decode.mojo`; the two files only diverge in the K==V
-aliasing path, the single-buffer-K loop, and the `bk_smem<BK` K SMEM
-split.  Bug fixes to the shared logic (softmax numerics, barrier
-placement, etc.) must be mirrored to both files until the kernels are
-re-converged behind a shared helper.
+aliasing path, the single-buffer-K loop, the `bk_smem<BK` K SMEM
+split, the counted K-DMA waits (`_split_k_dma`; `mha_decode.mojo`
+keeps full drains), and the FP8 fold's DMA producer warp
+(`mla_dma_warp`), which
+fills the next K stage while the compute warps run `process_tile` on
+the stage its `slot` argument names.  Bug fixes to the shared logic
+(softmax numerics, barrier placement, etc.) must be mirrored to both
+files until the kernels are re-converged behind a shared helper.
 """
 
 from std.sys import get_defined_bool
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
-from max.gpu import block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu import warp_id as get_warp_id
 from max.gpu.sync import s_waitcnt
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -57,6 +62,45 @@ from .kv_buffer import KVBuffer, _get_k_swizzle
 
 # Partition alignment for a predicated K operand: one indexed-load strip.
 comptime _PREDICATED_SPLIT_ALIGN = 16
+
+# Barriers the DMA producer warp meets per tile: K ready, P written, tile
+# done. Under `dma_warp`, `process_tile` must execute exactly this many, or
+# the producer and the compute warps fall out of step on a CTA barrier.
+comptime _DMA_WARP_BARRIERS_PER_TILE = 3
+
+
+@inline(.always)
+def _k_dma_group_wait[
+    tiles_per_warp: Int,
+    num_warps: Int,
+    key_groups: Int,
+    max_depth_group: Int,
+]() -> UInt32:
+    """Returns the VMEM ops still outstanding once every wave has issued its
+    DMA tiles for depth column groups `<= max_depth_group`.
+
+    The loader issues two `buffer_load_dwordx4` per (32 key, 64 depth) tile in
+    warp tile order, so a wave's first `2 * (t + 1)` ops cover its tiles
+    `0..t`. Every wave executes the same `s_waitcnt`, so the value is set by
+    the wave that needs the most of its prefix retired.
+
+    Parameters:
+        tiles_per_warp: DMA tiles each wave issues per KV tile.
+        num_warps: Waves issuing the DMA.
+        key_groups: Key groups per depth column group.
+        max_depth_group: The last depth column group that must have landed.
+
+    Returns:
+        The `vmcnt` value for the wait.
+    """
+    var outstanding = 2 * tiles_per_warp
+    for w in range(num_warps):
+        var issued = 0
+        for t in range(tiles_per_warp):
+            if (t * num_warps + w) // key_groups <= max_depth_group:
+                issued = 2 * (t + 1)
+        outstanding = min(outstanding, 2 * tiles_per_warp - issued)
+    return UInt32(outstanding)
 
 
 __extension Attention:
@@ -99,6 +143,8 @@ __extension Attention:
         comptime k_swizzle = _get_k_swizzle[Self.mma_shape[0], _bk_smem]()
 
         var warp_id = UInt32(get_warp_id[broadcast=True]())
+        # Warp index of the DMA producer, one past the compute warps.
+        comptime producer_warp_id = UInt32(Self.num_warps_m * Self.num_warps_n)
 
         # Split-K: compute this partition's key range. A predicated
         # (in-place sparse) K operand's partitions need only strip alignment,
@@ -125,6 +171,10 @@ __extension Attention:
                 min_or_neg_inf[Self.accum_type]()
             )
             _ = self.softmax.rowsum_tensor.fill(0)
+            comptime if Self.mla_dma_warp:
+                # The producer warp owns no stat rows.
+                if warp_id == producer_warp_id:
+                    return
             self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
             return
 
@@ -160,6 +210,39 @@ __extension Attention:
             end,
             warp_id,
         )
+
+        # Counted DMA waits: start QK on the shallow depth strips while the
+        # deeper ones are still landing (`KBufT.dma_col_major` issues them in
+        # that order). The three groups are K strips `[0, _strip_hi_0)`,
+        # `[_strip_hi_0, _strip_hi_1)` and `[_strip_hi_1, _num_k_strips)`, so
+        # each needs only the first `2 * hi - 1` 64-deep column groups of the
+        # tile. A mask with interior FULL_MASK tiles skips a tile without
+        # draining its DMA (it issues the next one instead), so it keeps the
+        # full-drain path.
+        comptime _num_k_strips = ceildiv(Self.depth, Self.BK)
+        comptime _depth_groups = _k_smem_depth // _bk_smem
+        comptime _strip_hi_0 = min(2, _num_k_strips)
+        comptime _strip_hi_1 = min(4, _num_k_strips)
+        comptime dma_warp = Self.mla_dma_warp
+        comptime _split_k_dma = (
+            KBufT.dma_col_major
+            and _num_k_strips > 2
+            and not Self.mask_t.check_mask_during_decoding
+            and not dma_warp
+        )
+        comptime _dma_key_groups = Self.BN // KBufT.warp_tile_rows
+        comptime _dma_wait_0 = _k_dma_group_wait[
+            KBufT._tiles_per_warp,
+            KBufT._num_warps,
+            _dma_key_groups,
+            min(2 * _strip_hi_0 - 1, _depth_groups - 1),
+        ]()
+        comptime _dma_wait_1 = _k_dma_group_wait[
+            KBufT._tiles_per_warp,
+            KBufT._num_warps,
+            _dma_key_groups,
+            min(2 * _strip_hi_1 - 1, _depth_groups - 1),
+        ]()
 
         # V is aliased onto K's SMEM (mla_kv_alias).  We need only the
         # per-warp V reader; no V DMA buffer.  MHA: output_depth == depth.
@@ -205,7 +288,8 @@ __extension Attention:
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
             cache_depth=Self.cache_depth,
-            smem_depth=smem_depth_per_warp,
+            # A V stage step must equal a K stage step when K is staged twice.
+            smem_depth=_k_smem_depth if dma_warp else smem_depth_per_warp,
             bk_smem=_bk_smem,
         ]
         var v_buffer = VBufT(
@@ -256,15 +340,18 @@ __extension Attention:
         ]
 
         @inline(.always)
-        def mma_qk() {imm}:
-            self.zero_p_buffer[0]()
+        def mma_qk[
+            lo: Int = 0, hi: Int = _num_k_strips, zero_p: Bool = True
+        ]() {imm}:
             # ceildiv (not floor): when depth % BK != 0 (Kimi MLA: 576 %
             # 128 == 64) we must still process the partial K-tile.  Q's
             # OOB lanes are zero'd in QRegisterBuffer (buffers.mojo) and
             # K's OOB cols come back as zero via buffer_load's
             # resource-bound clamp, so the partial tile MFMA is correct
             # without any explicit masking inside this loop.
-            comptime for i in range(ceildiv(Self.depth, Self.BK)):
+            comptime if zero_p:
+                self.zero_p_buffer[0]()
+            comptime for i in range(lo, hi):
                 comptime for k_mma in range(Self.num_k_mmas2):
                     QKMmaOp.mma[swap_a_b=Self.swap_a_b](
                         self.q_buffer.mma_tile[i, k_mma](),
@@ -306,15 +393,18 @@ __extension Attention:
             _ = k_buffer.load_from_dram[0]()
 
         @inline(.always)
-        def process_tile[has_next: Bool]() {mut self, imm}:
+        def process_tile[has_next: Bool](slot: Int) {mut self, imm}:
             """Process one KV tile.
 
-            K is already in LDS when called.  V is loaded from the same
-            SMEM (mla_kv_alias) mid-tile after K is consumed by QK.
+            K is already in LDS stage `slot` when called.  V is loaded from
+            the same SMEM (mla_kv_alias) mid-tile after K is consumed by QK.
             """
-            # Wait for K DMA.
-            s_waitcnt[vmcnt=0, lgkmcnt=0]()
-            barrier()
+            comptime if not _split_k_dma:
+                # Drain the tile's K DMA before the FULL_MASK check, so a
+                # skipped tile never leaves it in flight. DMA producer
+                # barrier 1 of `_DMA_WARP_BARRIERS_PER_TILE`.
+                s_waitcnt[vmcnt=0, lgkmcnt=0]()
+                barrier()
 
             # Skip fully-masked tiles (ChunkedCausalMask interior).
             comptime if has_interior_full_mask:
@@ -326,12 +416,38 @@ __extension Attention:
                         prefetch_next()
                     return
 
-            k_buffer.load_from_shared(0)
-            # Set the pad columns of the partial K-tile to zero. When
-            # depth % BK == 0, there is no pad.
-            k_buffer.zero_partial_tile_pad()
-            mma_qk()
-
+            comptime if _split_k_dma:
+                # Counted DMA waits, one per depth strip group: the strips
+                # already in LDS run their QK MMAs while the rest of the
+                # tile is still landing.
+                comptime for g in range(3):
+                    comptime lo = (
+                        0 if g
+                        == 0 else (_strip_hi_0 if g == 1 else _strip_hi_1)
+                    )
+                    comptime hi = (
+                        _strip_hi_0 if g
+                        == 0 else (_strip_hi_1 if g == 1 else _num_k_strips)
+                    )
+                    comptime wait = (
+                        _dma_wait_0 if g
+                        == 0 else (_dma_wait_1 if g == 1 else UInt32(0))
+                    )
+                    s_waitcnt[vmcnt=wait]()
+                    barrier()
+                    comptime for i in range(lo, hi):
+                        k_buffer.load_from_shared[i](0)
+                    # Register-side zero pad for the partial K-tile's OOB
+                    # tail (a no-op when depth % BK == 0).
+                    comptime if hi == _num_k_strips:
+                        k_buffer.zero_partial_tile_pad()
+                    mma_qk[lo, hi, zero_p=(g == 0)]()
+            else:
+                k_buffer.load_from_shared(slot)
+                # Set the pad columns of the partial K-tile to zero. When
+                # depth % BK == 0, there is no pad.
+                k_buffer.zero_partial_tile_pad()
+                mma_qk()
             # Online softmax on P (cross-warp reduction via SMEM).
             # Prescaled path is numerically safer (Qwen-class models need
             # it — `_fma` accumulates NaN after a few decode steps on real
@@ -347,13 +463,14 @@ __extension Attention:
             # Write P to shared memory so all warps can read it for PV.
             self.p_reg_buffer.copy_to_shared()
             s_waitcnt[lgkmcnt=0]()
+            # DMA producer barrier 2 of `_DMA_WARP_BARRIERS_PER_TILE`.
             barrier()
 
-            v_buffer.load_from_shared(0)
+            v_buffer.load_from_shared(slot)
 
             # Prefetch next tile after V→REG.  Barrier ensures all warps
             # finished V LDS reads before DMA.
-            comptime if has_next:
+            comptime if has_next and not dma_warp:
                 prefetch_next()
 
             self.online_softmax_update_output()
@@ -361,19 +478,71 @@ __extension Attention:
 
             # Iter-end drain + barrier.  The entry barrier at the next
             # iteration is not sufficient on its own: without this
-            # explicit full drain, mma_pv's pipelined P SMEM ds_reads (and
-            # prefetch_next's in-flight DMA) can overlap with iter N+1's
-            # copy_to_shared writes and K LDS reads.  Waitcnt-only and
+            # explicit drain, mma_pv's pipelined P SMEM ds_reads can overlap
+            # with iter N+1's copy_to_shared writes.  Waitcnt-only and
             # barrier-only are both empirically insufficient — both are
-            # required.
-            s_waitcnt[vmcnt=0, lgkmcnt=0]()
+            # required.  With the counted K DMA waits the vector counter is
+            # left alone here: iter N+1's first strip-group wait closes it.
+            comptime if _split_k_dma:
+                s_waitcnt[lgkmcnt=0]()
+            else:
+                s_waitcnt[vmcnt=0, lgkmcnt=0]()
+            # DMA producer barrier 3 of `_DMA_WARP_BARRIERS_PER_TILE`.
             barrier()
 
         var num_tiles = ceildiv(end - start, Self.BN)
 
-        # Prologue: load first tile's K (slot 0).  V is aliased onto K's
-        # SMEM and is consumed mid-tile after K's reads finish.
-        _ = k_buffer.load_from_dram[0]()
+        comptime if dma_warp:
+            if warp_id == producer_warp_id:
+                # Producer: tile t+1's DMA lands in the other stage while the
+                # compute warps run tile t. It meets their three barriers per
+                # tile: K ready, P written, tile done.
+                comptime DmaBufT = KVBuffer[
+                    kv_t=Self.k_t,
+                    mma_shape=Self.mma_shape,
+                    swizzle=k_swizzle,
+                    BN=Self.BN,
+                    WN=Self.BN,
+                    BK=Self.BK,
+                    num_threads=WARP_SIZE,
+                    depth=Self.depth,
+                    kv_num_heads=Self.num_heads // Self.group,
+                    transpose=True,
+                    smem_depth=_k_smem_depth,
+                    bk_smem=_bk_smem,
+                ]
+                var dma = DmaBufT(
+                    self.k,
+                    self.batch_idx,
+                    self.kv_head_idx(),
+                    DmaBufT.SmemParentType(
+                        self.k_smem_ptr.as_unsafe_any_origin(),
+                        DmaBufT._SmemParentLayout(),
+                    ),
+                    end,
+                    0,
+                )
+                dma.kv_cache_iter.tile_start_row = start
+
+                dma.load_from_dram[0, desc_in_registers=True]()
+                for t in range(0, num_tiles, 2):
+                    comptime for slot in range(2):
+                        if t + slot < num_tiles:
+                            s_waitcnt[vmcnt=0]()
+                            barrier()
+                            if t + slot + 1 < num_tiles:
+                                dma.load_from_dram[
+                                    1 - slot, desc_in_registers=True
+                                ]()
+                            comptime for _ in range(
+                                _DMA_WARP_BARRIERS_PER_TILE - 1
+                            ):
+                                barrier()
+                return
+        else:
+            # Prologue: load first tile's K (slot 0).  V is aliased onto K's
+            # SMEM and is consumed mid-tile after K's reads finish.
+            _ = k_buffer.load_from_dram[0]()
 
         # Capping the key bound at the row's valid length makes the tile
         # mask cover the padding; a partition wholly past it is empty,
@@ -401,13 +570,17 @@ __extension Attention:
             self.num_keys = valid_end
             num_tiles = ceildiv(valid_end - start, Self.BN)
 
-        # Single-buffer K: simple linear loop.  MLA never enables
-        # `double_buffer_k_only` because BN=128 > 64.
-        for _ in range(num_tiles - 1):
-            process_tile[True]()
+        comptime if dma_warp:
+            for t in range(num_tiles):
+                process_tile[False](t & 1)
+        else:
+            # Single-buffer K: simple linear loop.  MLA never enables
+            # `double_buffer_k_only` because BN=128 > 64.
+            for _ in range(num_tiles - 1):
+                process_tile[True](0)
 
-        if num_tiles > 0:
-            process_tile[False]()
+            if num_tiles > 0:
+                process_tile[False](0)
 
         self.out_reg_buffer.apply_softmax_denominator[
             p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2

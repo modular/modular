@@ -53,7 +53,7 @@ from .buffers import (
     PRegisterBuffer,
     QRegisterBuffer,
 )
-from .config import AMDStructuredConfig
+from .config import AMDStructuredConfig, mla_decode_dma_warp
 from .mask_op import MaskTileOp
 from .mma import TiledMmaOp
 from .utils import get_warp_coords
@@ -370,6 +370,22 @@ struct Attention[
     # For depth%BK==0, _bk_smem=BK → ceildiv(depth,BK) blocks = depth/BK,
     # so this reduces to BN × depth.
     comptime _k_smem_blocks = ceildiv(Self.depth, Self._bk_smem)
+    # MLA decode with a DMA producer warp: K (= V) streams through two stages.
+    comptime mla_dma_warp = (
+        Self.mla_kv_alias
+        and Self.token_gen
+        and mla_decode_dma_warp[
+            Self.q_type,
+            Self.k_t,
+            Self.mask_t,
+            Self.BM,
+            Self.BN,
+            Self.WM,
+            Self.WN,
+            Self.depth,
+            Self.q_seq_len,
+        ]()
+    )
     comptime _k_smem_size = Self.BN * (
         Self._k_smem_blocks
         * Self._bk_smem if Self.amd_structured_config.full_kv else Self.BK
@@ -377,6 +393,7 @@ struct Attention[
         2 if (
             Self.amd_structured_config.double_buffer
             or Self.amd_structured_config.double_buffer_k_only
+            or Self.mla_dma_warp
         ) else 1
     )
     # V SMEM must cover the wider of K depth and output depth: MLA prefill has

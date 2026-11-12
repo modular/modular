@@ -133,6 +133,7 @@ from nn.softmax import (
     _exp_concrete,
     _online_softmax_iter_for_mma_output,
 )
+from .amd_structured.config import mla_decode_dma_warp
 from .amd_structured.mla_decode import Attention
 from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
@@ -780,8 +781,14 @@ struct AMDMLA(MLAKernels):
                 num_heads <= 16 or depth % 128 == 0
             )
             comptime BK = 128 if amd_fp8_16x16x128 else (64 if amd_fp8 else 32)
-            # num warps in M and N, multiplied by warp size.
-            comptime num_threads = (BM // WM) * (BN // WN) * warp_size
+            # num warps in M and N (plus the fold's DMA producer warp),
+            # multiplied by warp size.
+            comptime dma_warp = mla_decode_dma_warp[
+                q.dtype, k_t, mask_t, BM, BN, WM, WN, depth, q_seq_len
+            ]()
+            comptime num_threads = (
+                (BM // WM) * (BN // WN) + Int(dma_warp)
+            ) * warp_size
 
             comptime accum_type = get_accum_type[q.dtype]()
             comptime num_pipeline_stages = 6
@@ -3111,6 +3118,10 @@ def mla_decoding_amd[
             num_keys,
             0,
         )
+        comptime AttentionT = type_of(attention)
+        comptime assert num_threads == (
+            AttentionT.num_threads + Int(AttentionT.mla_dma_warp) * WARP_SIZE
+        ), "num_threads must add one warp exactly when mla_dma_warp is set"
         attention.mla_decode(
             exp_sum_batch_ptr,
             qk_max_batch_ptr,

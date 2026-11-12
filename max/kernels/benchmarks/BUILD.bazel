@@ -1016,6 +1016,46 @@ _FA4_WS_DEPS = [
     ]
 ]
 
+# Kimi K3 MLA decode cells on MI355 (TP8, fp8 KV, bf16 out, depth 576): the
+# target verify (12 heads per rank) and the DSpark drafter (8 heads per rank).
+# Shapes past the head count (seq_len, num_keys, batch_size, np_list) stay
+# runtime args.
+[
+    mojo_test(
+        name = "gpu/nn/bench_mla.mojo.run_k3_" + cell + "_amd",
+        size = "enormous",
+        srcs = ["gpu/nn/bench_mla.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "qkv_type=DType.float8_e4m3fn",
+            "-D",
+            "num_heads=" + str(heads),
+            "-D",
+            "group=" + str(heads),
+        ],
+        enable_assertions = False,
+        exec_properties = {
+            "test.resources:gpu-memory": "64",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:amd_gpu"],
+        deps = [
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for cell, heads in [
+        ("target", 12),
+        ("drafter", 8),
+    ]
+]
+
 # MiniMax-M3 dense-attention decode cell on MI355: 64 q heads and 4 kv heads
 # over TP4 give num_heads=16 / group=16, depth 128, fp8_e4m3 KV, bf16 out.
 # `num_partitions` stays a runtime arg so one binary sweeps the split-K ladder.
