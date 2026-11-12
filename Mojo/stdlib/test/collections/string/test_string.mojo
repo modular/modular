@@ -733,24 +733,24 @@ def test_contains() raises:
 def test_find() raises:
     var str = "Hello world"
 
-    assert_equal(0, str.find(""))
-    assert_equal(0, str.find("Hello"))
-    assert_equal(2, str.find("llo"))
-    assert_equal(6, str.find("world"))
-    assert_equal(-1, str.find("universe"))
+    assert_equal(str.find(""), 0)
+    assert_equal(str.find("Hello"), 0)
+    assert_equal(str.find("llo"), 2)
+    assert_equal(str.find("world"), 6)
+    assert_false(str.find("universe"))
 
     # Test find() offset is absolute, not relative (issue mojo/#1355)
     var str2 = "...a"
-    assert_equal(3, str2.find("a", 0))
-    assert_equal(3, str2.find("a", 1))
-    assert_equal(3, str2.find("a", 2))
-    assert_equal(3, str2.find("a", 3))
+    assert_equal(str2.find("a", 0), 3)
+    assert_equal(str2.find("a", 1), 3)
+    assert_equal(str2.find("a", 2), 3)
+    assert_equal(str2.find("a", 3), 3)
 
     # Test find() support for negative start positions
-    assert_equal(4, str.find("o", -10))
-    assert_equal(7, str.find("o", -5))
+    assert_equal(str.find("o", -10), 4)
+    assert_equal(str.find("o", -5), 7)
 
-    assert_equal(-1, String("abc").find("abcd"))
+    assert_false(String("abc").find("abcd"))
 
 
 def test_replace() raises:
@@ -777,23 +777,23 @@ def test_rfind() raises:
     var s1 = "hello world"
     # Basic usage.
     assert_equal(s1.rfind("world"), 6)
-    assert_equal(s1.rfind("bye"), -1)
+    assert_false(s1.rfind("bye"))
 
     # Repeated substrings.
     assert_equal(String("ababab").rfind("ab"), 4)
 
     # Empty string and substring.
-    assert_equal(String().rfind("ab"), -1)
+    assert_false(String().rfind("ab"))
     assert_equal(String("foo").rfind(""), 3)
 
     # Test that rfind(start) returned pos is absolute, not relative to specified
     # start. Also tests positive and negative start offsets.
     assert_equal(s1.rfind("l", 5), 9)
     assert_equal(s1.rfind("l", -5), 9)
-    assert_equal(s1.rfind("w", -3), -1)
+    assert_false(s1.rfind("w", -3))
     assert_equal(s1.rfind("w", -5), 6)
 
-    assert_equal(-1, String("abc").rfind("abcd"))
+    assert_false(String("abc").rfind("abcd"))
 
     # Special characters.
     # TODO(#26444): Support unicode strings.

@@ -68,20 +68,26 @@ def _single_mfma_kernel[
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:
-    var start = asm.find(directive)
-    assert_true(start >= 0, "assembly is missing " + directive)
-    var line_end = asm.find("\n", start)
-    var line = asm[byte=start:line_end]
-    var colon = line.find(":")
-    return Int(line[byte = colon + 1 :].strip())
+    match asm.find(directive):
+        case .None:
+            raise Error("assembly is missing " + directive)
+        case .Some(start):
+            var line_end = asm.find("\n", start).or_else(asm.byte_length())
+            var line = asm[byte=start:line_end]
+            match line.find(":"):
+                case .None:
+                    raise Error("expected a value after " + directive)
+                case .Some(colon):
+                    return Int(line[byte = colon + 1 :].strip())
 
 
 def _register_span(operand: StringSpan) raises -> Int:
     """Returns how many registers a `v[lo:hi]` instruction operand covers."""
     var text = String(operand).strip()
-    var open_bracket = text.find("[")
-    var colon = text.find(":")
-    var close_bracket = text.find("]")
+    # A missing bracket or colon maps to 0, which fails the check below.
+    var open_bracket = text.find("[").or_else(0)
+    var colon = text.find(":").or_else(0)
+    var close_bracket = text.find("]").or_else(0)
     assert_true(
         open_bracket > 0 and colon > open_bracket and close_bracket > colon,
         "expected a v[lo:hi] register range, got " + text,

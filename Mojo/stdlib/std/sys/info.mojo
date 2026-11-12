@@ -1844,22 +1844,22 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
     var minor = 0
     var patch = 0
 
-    if "." in osver:
-        major = Int(osver[byte = : osver.find(".")])
+    if case .Some(dot) = osver.find("."):
+        major = Int(osver[byte=:dot])
         # TODO(MOCO-4373): split into two statements so the interior-origin
         # slice of `osver` is copied into a new String before `osver` is
         # reassigned; the single-statement form false-positives on
         # interior-origin invalidation.
-        var rest_major = String(osver[byte = osver.find(".") + 1 :])
+        var rest_major = String(osver[byte = dot + 1 :])
         osver = rest_major^
 
-    if "." in osver:
-        minor = Int(osver[byte = : osver.find(".")])
-        var rest_minor = String(osver[byte = osver.find(".") + 1 :])
+    if case .Some(dot) = osver.find("."):
+        minor = Int(osver[byte=:dot])
+        var rest_minor = String(osver[byte = dot + 1 :])
         osver = rest_minor^
 
-    if "." in osver:
-        patch = Int(osver[byte = : osver.find(".")])
+    if case .Some(dot) = osver.find("."):
+        patch = Int(osver[byte=:dot])
 
     return (major, minor, patch)
 

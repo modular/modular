@@ -413,29 +413,48 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         StringSpan(self).write_repr_to(writer)
 
-    def find(self, substr: StaticString, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+    def find(self, substr: StaticString, start: Int = 0) -> Optional[Int]:
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find. A negative value
+            counts back from the end of the string.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          An `Optional` holding the offset in bytes of `substr` relative to the
+          beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        print("hello world".find("o"))  # 4
+        print("hello world".find("o", start=5))  # 7
+        print("hello world".find("xyz"))  # None
+        ```
         """
         return StringSpan(self).find(substr, start=start)
 
-    def rfind(self, substr: StaticString, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+    def rfind(self, substr: StaticString, start: Int = 0) -> Optional[Int]:
+        """Finds the offset in bytes of the last occurrence of `substr`
+        starting at `start`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find. A negative value
+            counts back from the end of the string.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          An `Optional` holding the offset in bytes of `substr` relative to the
+          beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        print("hello world".rfind("o"))  # 7
+        print("hello world".rfind("xyz"))  # None
+        ```
         """
         return StringSpan(self).rfind(substr, start=start)
 

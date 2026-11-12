@@ -97,12 +97,14 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
         ".sgpr_spill_count",
         ".private_segment_fixed_size",
     ]:
-        var at = asm.find(directive + ":")
-        assert_true(
-            at >= 0, String(t"assembly metadata is missing {directive}")
-        )
+        var at: Int
+        if case .Some(found) = asm.find(directive + ":"):
+            at = found
+        else:
+            raise Error(t"assembly metadata is missing {directive}")
         var rest = asm[byte = at + directive.byte_length() + 1 :]
-        var value = Int(String(rest[byte = 0 : rest.find("\n")]).strip())
+        var line_end = rest.find("\n").or_else(rest.byte_length())
+        var value = Int(String(rest[byte=0:line_end]).strip())
         if directive == ".private_segment_fixed_size":
             private_bytes = value
         else:
@@ -134,7 +136,7 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
                 body = candidate
             start = -1
     assert_true(
-        body.byte_length() > 0 and body.find("scratch_") < 0,
+        body.byte_length() > 0 and "scratch_" not in body,
         String(t"{label}: no scratch-free kernel function in the dump"),
     )
 

@@ -61,12 +61,19 @@ def _verify_parameterized_on_cuda(asm: StringSpan) raises -> None:
     #     st.param.b64 	[func_retval0], 42;
     # PTX ISA 8.3+ spells the function-param state space explicitly, so newer
     # targets emit `st.param::func.b64` for the same store.
-    var instruction_start_loc = asm.find("st.param.b64")
-    if instruction_start_loc < 0:
-        instruction_start_loc = asm.find("st.param::func.b64")
-    assert_true(instruction_start_loc >= 0)  # Assert it's present
-    var instruction_end_loc = asm.find(";", instruction_start_loc)
-    assert_true(instruction_end_loc >= 0)
+    var store = asm.find("st.param.b64")
+    if not store:
+        store = asm.find("st.param::func.b64")
+    var instruction_start_loc: Int
+    if case .Some(found) = store:
+        instruction_start_loc = found
+    else:
+        raise Error("expected a `st.param` store in the assembly")
+    var instruction_end_loc: Int
+    if case .Some(found) = asm.find(";", instruction_start_loc):
+        instruction_end_loc = found
+    else:
+        raise Error("expected a `;` after the `st.param` store")
     var instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
     # Make sure 42 appears somewhere in the instruction
     assert_true("42" in instruction_str)

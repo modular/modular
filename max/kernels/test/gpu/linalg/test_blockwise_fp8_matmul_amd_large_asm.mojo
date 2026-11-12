@@ -42,16 +42,20 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd_large import (
 
 
 def directive(asm: String, name: String) -> Int:
-    var i = asm.find(name)
-    if i < 0:
-        return 0
-    var end = asm.find("\n", i)
-    var line = asm[byte=i:end]
-    var colon = line.find(":")
-    try:
-        return Int(line[byte = colon + 1 :].strip())
-    except:
-        return -1
+    match asm.find(name):
+        case .None:
+            return 0
+        case .Some(i):
+            var end = asm.find("\n", i).or_else(asm.byte_length())
+            var line = asm[byte=i:end]
+            match line.find(":"):
+                case .None:
+                    return -1
+                case .Some(colon):
+                    try:
+                        return Int(line[byte = colon + 1 :].strip())
+                    except:
+                        return -1
 
 
 def check[N: Int, K: Int]() raises -> Bool:

@@ -743,7 +743,7 @@ def report_distribution(
 def selected(kernels: String, name: String) -> Bool:
     """Exact comma-delimited token match, so "fused" never picks "fusedchain".
     """
-    return ("," + kernels + ",").find("," + name + ",") >= 0
+    return ("," + name + ",") in ("," + kernels + ",")
 
 
 def csv_path_for(

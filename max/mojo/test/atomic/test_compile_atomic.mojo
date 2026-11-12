@@ -25,14 +25,18 @@ comptime _MI300X_TARGET = get_gpu_target["mi300x"]()
 def _assert_ordered(text: String, first: String, second: String) raises:
     """Asserts that both substrings appear in `text` and that `first`
     occurs before `second`."""
-    var first_pos = text.find(first)
-    var second_pos = text.find(second)
-    assert_true(first_pos >= 0, String(t"expected to find {first}"))
-    assert_true(second_pos >= 0, String(t"expected to find {second}"))
-    assert_true(
-        first_pos < second_pos,
-        String(t"{first} must precede {second}"),
-    )
+    match text.find(first):
+        case .None:
+            raise Error(t"expected to find {first}")
+        case .Some(first_pos):
+            match text.find(second):
+                case .None:
+                    raise Error(t"expected to find {second}")
+                case .Some(second_pos):
+                    assert_true(
+                        first_pos < second_pos,
+                        String(t"{first} must precede {second}"),
+                    )
 
 
 def test_compile_store_nvptx_default_scope() raises:

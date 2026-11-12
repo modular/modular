@@ -46,7 +46,7 @@ from std.ffi import c_char, CStringSpan
 from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
-from std.bit.mask import is_negative, splat
+from std.bit.mask import splat
 from std.memory import unsafe_memcmp, pack_bits
 from std.utils._nicheable import _FieldNicheable
 from std.python import ConvertibleToPython, Python, PythonObject
@@ -959,7 +959,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
           True if the string contains the substring.
         """
-        return self.find(substr) != -1
+        return Bool(self.find(substr))
 
     @inline(.always)
     def __int__(self) raises -> Int:
@@ -1103,17 +1103,19 @@ struct StringSpan[origin: ImmOrigin](
         var current_pos = 0
 
         for _ in range(occurrences):
-            var idx = self.find(old, current_pos)
+            match self.find(old, current_pos):
+                case .Some(idx):
+                    # Copy preceding unchanged chars
+                    res += StringSpan(
+                        unsafe_from_utf8=self.as_bytes()[current_pos:idx]
+                    )
 
-            assert idx >= 0, "expected to find occurrence during find"
+                    # Insert a copy of the new replacement string
+                    res += new
 
-            # Copy preceding unchanged chars
-            res += StringSpan(unsafe_from_utf8=self.as_bytes()[current_pos:idx])
-
-            # Insert a copy of the new replacement string
-            res += new
-
-            current_pos = idx + old_len
+                    current_pos = idx + old_len
+                case .None:
+                    assert False, "expected to find occurrence during find"
 
         # Copy remaining chars
         if current_pos < self_len:
@@ -1840,23 +1842,36 @@ struct StringSpan[origin: ImmOrigin](
         """
         return _FormatUtils.format(self, *args)
 
-    def find(self, substr: StringSpan, start: Int = 0) -> Int:
+    def find(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
         """Finds the offset in bytes of the first occurrence of `substr`
-        starting at `start`. If not found, returns `-1`.
+        starting at `start`.
 
         Args:
             substr: The substring to find.
-            start: The offset in bytes from which to find.
+            start: The offset in bytes from which to find. A negative value
+                counts back from the end of the string.
 
         Returns:
-            The offset in bytes of `substr` relative to the beginning of the
-            string.
+            An `Optional` holding the offset in bytes of `substr` relative to
+            the beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var text = StringSpan("héllo, wörld")
+        print(text.find("l"))  # 3 (offsets are in bytes; "é" is 2 bytes)
+        print(text.find("l", start=4))  # 4
+        print(text.find("xyz"))  # None
+
+        if case .Some(index) = text.find(","):
+            print(text[byte=:index])  # héllo
+        ```
         """
         if not substr:
             return 0
 
         if self.byte_length() < substr.byte_length() + start:
-            return -1
+            return None
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
@@ -1874,25 +1889,38 @@ struct StringSpan[origin: ImmOrigin](
             case .Some(loc):
                 return Int(loc) - Int(self.unsafe_ptr())
             case .None:
-                return -1
+                return None
 
-    def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
-        """Finds the offset in bytes of the last occurrence of `substr` starting at
-        `start`. If not found, returns `-1`.
+    def rfind(self, substr: StringSpan, start: Int = 0) -> Optional[Int]:
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`.
 
         Args:
             substr: The substring to find.
-            start: The offset in bytes from which to find.
+            start: The offset in bytes from which to find. A negative value
+                counts back from the end of the string.
 
         Returns:
-            The offset in bytes of `substr` relative to the beginning of the
-            string.
+            An `Optional` holding the offset in bytes of `substr` relative to
+            the beginning of the string, or `None` if `substr` isn't found.
+
+        Examples:
+
+        ```mojo
+        var path = StringSpan("/home/user/notes.txt")
+        print(path.rfind("/"))  # 10
+        print(path.rfind("."))  # 16
+        print(path.rfind(":"))  # None
+
+        if case .Some(index) = path.rfind("/"):
+            print(path[byte=index + 1 :])  # notes.txt
+        ```
         """
         if not substr:
             return self.byte_length()
 
         if self.byte_length() < substr.byte_length() + start:
-            return -1
+            return None
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
@@ -1910,7 +1938,7 @@ struct StringSpan[origin: ImmOrigin](
             case .Some(loc):
                 return Int(loc) - Int(self.unsafe_ptr())
             case .None:
-                return -1
+                return None
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)
@@ -2239,12 +2267,8 @@ struct StringSpan[origin: ImmOrigin](
         var res = 0
         var offset = 0
 
-        while True:
-            var pos = self.find(substr, offset)
-            if pos == -1:
-                break
+        while case .Some(pos) = self.find(substr, offset):
             res += 1
-
             offset = pos + substr.byte_length()
 
         return res
@@ -2926,9 +2950,8 @@ def _split[
 
     while lhs <= str_byte_len:
         # FIXME(#3526): use str_span and sep_span
-        rhs = src_str.find(sep, lhs)
         # if not found go to the end
-        rhs += is_negative(rhs) & (str_byte_len + 1)
+        rhs = src_str.find(sep, lhs).or_else(str_byte_len)
 
         comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)

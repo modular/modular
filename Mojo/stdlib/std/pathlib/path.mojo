@@ -84,7 +84,7 @@ def _dir_of_current_file() raises -> Path:
 
 @inline(.never)
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
-    var i = String(file_name).rfind(DIR_SEPARATOR)
+    var i = String(file_name).rfind(DIR_SEPARATOR).or_else(0)
     return Path(file_name[byte=0:i])
 
 
@@ -505,12 +505,16 @@ struct Path(
         assert_true(p.suffix() == "") # No suffix
         ```
         """
-        # +2 to skip both `DIR_SEPARATOR` and the first ".".
-        # For example /a/.foo's suffix is "" but /a/b.foo's suffix is .foo.
-        var start = self.path.rfind(DIR_SEPARATOR) + 2
-        var i = self.path.rfind(".", start)
-        if 0 < i < (self.path.byte_length() - 1):
-            return String(self.path[byte=i:])
+        # Skip the first character of the file name, so a leading "." doesn't
+        # count. For example /a/.foo's suffix is "" but /a/b.foo's suffix is
+        # .foo.
+        var start = 1
+        if case .Some(last_sep) = self.path.rfind(DIR_SEPARATOR):
+            # +2 to skip both `DIR_SEPARATOR` and the first character.
+            start = last_sep + 2
+        if case .Some(i) = self.path.rfind(".", start):
+            if 0 < i < (self.path.byte_length() - 1):
+                return String(self.path[byte=i:])
 
         return ""
 
