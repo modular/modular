@@ -720,10 +720,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -731,6 +732,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
+        "//max/tests/integration/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),

@@ -1099,6 +1099,7 @@ modular_eager_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
     shard_count = 4,
     tags = ["gpu"],
     target_compatible_with = select({
@@ -1254,8 +1255,10 @@ modular_eager_py_test(
         "test.resources:gpu-2": "0.01",
         "test.resources:gpu-memory": "16",
     },
+    gpu_constraints = ["//:has_multi_gpu"],
+    precompile_device_count = 2,
+    precompile_mefs = True,
     tags = ["gpu"],
-    target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         ":tp_model_test_utils",
         requirement("numpy"),

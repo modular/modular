@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.nn.common_layers.moe import MoE
@@ -79,13 +80,18 @@ def test_moe_layer() -> None:
     gate = torch.zeros(_EXPERTS, _HIDDEN)
     gate[:, :_EXPERTS] = torch.eye(_EXPERTS)
 
-    with default_device(CPU()), default_dtype(DType.bfloat16):
-        layer = MoE(
-            hidden_dim=_HIDDEN,
-            num_experts=_EXPERTS,
-            num_experts_per_token=_TOP_K,
-            moe_dim=_MOE_DIM,
-        )
+    device = Accelerator()
+    # The parameters realize when the compiled model binds them, so the
+    # compile needs no device.
+    with F.lazy():
+        with default_device(CPU()), default_dtype(DType.bfloat16):
+            layer = MoE(
+                hidden_dim=_HIDDEN,
+                num_experts=_EXPERTS,
+                num_experts_per_token=_TOP_K,
+                moe_dim=_MOE_DIM,
+            )
+        layer.to(device)
     weights = {
         name: (torch.randn([int(d) for d in p.shape], generator=gen) * 0.05).to(
             torch.bfloat16
@@ -94,8 +100,7 @@ def test_moe_layer() -> None:
     }
     weights["gate.gate_score.weight"] = gate.to(torch.bfloat16)
 
-    device = Accelerator()
-    compiled = layer.to(device).compile(
+    compiled = layer.compile(
         TensorType(DType.bfloat16, ["tokens", _HIDDEN], device=device),
         weights=weights,
     )
