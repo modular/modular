@@ -519,11 +519,18 @@ def test_chat_session_driver_attaches_turn_images() -> None:
     assert isinstance(second_user_content[0], TextContentBlock)
 
 
-def test_prefix_turns_excluded_from_results() -> None:
-    """With prefix_turns=2, a 4-turn session should return only 2 results."""
+@pytest.mark.parametrize(
+    ("prefix_turns", "expected_outputs"),
+    [
+        pytest.param(2, 2, id="excluded_from_results"),
+        pytest.param(0, 4, id="zero_is_noop"),
+    ],
+)
+def test_prefix_turns_results(prefix_turns: int, expected_outputs: int) -> None:
+    """Prefix turns of a 4-turn session are left out of the results."""
 
     async def run_test() -> list[RequestFuncOutput]:
-        session = _make_4turn_session(prefix_turns=2)
+        session = _make_4turn_session(prefix_turns=prefix_turns)
         counter = RequestCounter(max_requests=100)
         driver = CapturingDriver()
         return await chat_session_driver(
@@ -537,7 +544,7 @@ def test_prefix_turns_excluded_from_results() -> None:
         )
 
     outputs = asyncio.run(run_test())
-    assert len(outputs) == 2
+    assert len(outputs) == expected_outputs
 
 
 def test_prefix_turns_dont_count_against_max_requests() -> None:
@@ -597,27 +604,6 @@ def test_prefix_turns_no_server_or_delays() -> None:
     assert len(sleep_calls) == 2
     assert 0.0 <= sleep_calls[0] <= 5.0
     assert sleep_calls[1] == pytest.approx(5.0)
-
-
-def test_prefix_turns_zero_is_noop() -> None:
-    """prefix_turns=0 should behave identically to the old code."""
-
-    async def run_test() -> list[RequestFuncOutput]:
-        session = _make_4turn_session(prefix_turns=0)
-        counter = RequestCounter(max_requests=100)
-        driver = CapturingDriver()
-        return await chat_session_driver(
-            model_id="test",
-            api_url="http://localhost:8000/v1/chat/completions",
-            request_driver=driver,
-            request_counter=counter,
-            chat_session=session,
-            max_chat_len=4096,
-            sampling=SamplingConfig(),
-        )
-
-    outputs = asyncio.run(run_test())
-    assert len(outputs) == 4
 
 
 def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:

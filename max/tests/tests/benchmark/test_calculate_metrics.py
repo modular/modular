@@ -1681,9 +1681,18 @@ def _turn(
 class TestPerTurnCacheRetention:
     """`_per_turn_cache_retentions` block-aligns vs the prior turn's context."""
 
-    def test_clean_hit_is_full_retention(self) -> None:
-        # prev context = 500 + 100 = 600. expected_cacheable =
-        # (600 // 128 - 1) * 128 = 3 * 128 = 384. cached(turn1) == 384 -> 1.0.
+    # prev context = 500 + 100 = 600. expected_cacheable =
+    # (600 // 128 - 1) * 128 = 3 * 128 = 384.
+    @pytest.mark.parametrize(
+        ("cached_tokens", "expected"),
+        [
+            pytest.param(384, 1.0, id="clean_hit_is_full_retention"),
+            pytest.param(192, 0.5, id="partial_drop"),
+        ],
+    )
+    def test_retention_against_prior_context(
+        self, cached_tokens: int, expected: float
+    ) -> None:
         turns = [
             _turn(
                 "s",
@@ -1697,30 +1706,12 @@ class TestPerTurnCacheRetention:
                 1,
                 prompt_tokens=600,
                 completion_tokens=100,
-                cached_tokens=384,
+                cached_tokens=cached_tokens,
             ),
         ]
-        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(1.0)]
-
-    def test_partial_drop(self) -> None:
-        # cached(turn1) == 192 of a 384 ceiling -> 0.5.
-        turns = [
-            _turn(
-                "s",
-                0,
-                prompt_tokens=500,
-                completion_tokens=100,
-                cached_tokens=0,
-            ),
-            _turn(
-                "s",
-                1,
-                prompt_tokens=600,
-                completion_tokens=100,
-                cached_tokens=192,
-            ),
+        assert _per_turn_cache_retentions(turns, 128) == [
+            pytest.approx(expected)
         ]
-        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(0.5)]
 
     def test_first_turn_excluded_and_sessions_isolated(self) -> None:
         # Two sessions, each 2 turns; only the second turn of each is checked,

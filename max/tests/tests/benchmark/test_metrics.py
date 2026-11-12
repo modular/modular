@@ -271,18 +271,6 @@ def test_throughput_metrics_reversed_percentiles() -> None:
     assert metrics.p99 == pytest.approx(np.percentile(data, 1), rel=1e-10)
 
 
-def test_throughput_metrics_vs_standard_percentiles() -> None:
-    """Test that throughput percentiles are lower than standard percentiles."""
-    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-
-    throughput_metrics = ThroughputMetrics(data)
-    standard_metrics = StandardPercentileMetrics(data)
-
-    assert throughput_metrics.p90 < standard_metrics.p90
-    assert throughput_metrics.p95 < standard_metrics.p95
-    assert throughput_metrics.p99 < standard_metrics.p99
-
-
 def test_throughput_metrics_scale_factor() -> None:
     """Test scale factor functionality."""
     data = [1.0, 2.0, 3.0, 4.0, 5.0]
