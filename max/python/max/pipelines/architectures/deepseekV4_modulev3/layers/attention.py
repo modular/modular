@@ -38,7 +38,14 @@ from .cache import KEY, DeepseekV4Cache, LayerIndex
 from .compressor import DeepseekV4Compressor
 from .csa import arange, compressed_stream, int32
 from .indexer import DeepseekV4Indexer
-from .kernels import latent_sparse_attention_ragged
+from .kernels import (
+    block_diagonal_block_scaled_matmul,
+    block_scales_interleave,
+    device_architectures,
+    latent_sparse_attention_ragged,
+    rope_quantize_dynamic_block_scaled,
+    wo_a_mxfp8_supported,
+)
 from .norm import DeepseekV4RMSNorm, weightless_rms_normalize
 from .quantization import (
     dequantize_fp8_blocks,
@@ -168,16 +175,32 @@ class DeepseekV4Attention(Module[..., Tensor]):
             axis=-1,
         )
 
-    def _output_projection(self, o: Tensor) -> Tensor:
-        """Projects ``[T, heads, head_dim]`` to ``[T, hidden_size]``.
+    def _output_projection(self, o: Tensor, freqs_cis: Tensor) -> Tensor:
+        """Projects the still-rotated ``[T, heads, head_dim]`` attention output.
 
-        The result is a partial sum when the heads are split. The group axis
+        The result is ``[T, hidden_size]``, a partial sum when the heads are
+        split. An fp8 ``wo_a`` on SM100 is one block-diagonal MXFP8 matmul fed
+        by a quantize that also undoes the RoPE tail, when every device's
+        groups fit it (:func:`wo_a_mxfp8_supported`). Otherwise the group axis
         is the only batch dim of a rank-3 ``[g, T, d] @ [g, d, r]``:
         broadcasting ``wo_a`` over tokens instead materializes a 24.75 GB
         constant per layer.
         """
-        t = o.shape[0]
         group_width = self.n_heads * self.head_dim // self.o_groups
+        scale = getattr(self.wo_a, "weight_scale", None)
+        if (
+            scale is not None
+            and o.dtype == DType.bfloat16
+            and wo_a_mxfp8_supported(
+                device_architectures(o.mesh.devices),
+                self.o_groups // o.mesh.num_devices,
+                self.o_lora_rank,
+                group_width,
+            )
+        ):
+            return self.wo_b(self._wo_a_mxfp8(o, freqs_cis, scale))
+        o = apply_rope_tail(o, freqs_cis, self.rope_head_dim, inverse=True)
+        t = o.shape[0]
         grouped = o.reshape([t, self.o_groups, group_width]).transpose(0, 1)
         weight = self.wo_a.weight
         scale = getattr(self.wo_a, "weight_scale", None)
@@ -189,6 +212,37 @@ class DeepseekV4Attention(Module[..., Tensor]):
             [t, self.o_groups * self.o_lora_rank]
         )
         return self.wo_b(flattened)
+
+    def _wo_a_mxfp8(
+        self, o: Tensor, freqs_cis: Tensor, scale: Tensor
+    ) -> Tensor:
+        """``wo_a`` of the still-rotated output as MXFP8, ``[T, g * r]``.
+
+        The checkpoint's 128 x 128 scales are ue8m0, so repeating each over
+        its 1 x 32 blocks re-encodes the same weight as MXFP8.
+        """
+        weight = self.wo_a.weight
+        rows, k = int(weight.shape[0]), int(weight.shape[1])
+        blocks = F.broadcast_to(
+            scale.reshape([rows // 128, 1, k // 128, 1]),
+            [rows // 128, 128, k // 128, 4],
+        )
+        weight_sf = block_scales_interleave(
+            blocks.reshape([rows, k // 32]).cast(DType.float8_e8m0fnu),
+            sf_vector_size=32,
+        )
+        x_q, x_sf = rope_quantize_dynamic_block_scaled(
+            o.reshape([o.shape[0], self.n_heads * self.head_dim]),
+            freqs_cis,
+            self.head_dim,
+            inverse=True,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+        )
+        return block_diagonal_block_scaled_matmul(
+            x_q, weight, x_sf, weight_sf, self.o_lora_rank
+        )
 
     def forward(
         self,
@@ -295,5 +349,4 @@ class DeepseekV4Attention(Module[..., Tensor]):
             split_k=_LATENT_ATTN_SPLIT_K,
             portable_p_bf16=_LATENT_ATTN_PORTABLE_P_BF16,
         )
-        o = apply_rope_tail(o, freqs_cis, rd, inverse=True)
-        return self._output_projection(o)
+        return self._output_projection(o, freqs_cis)

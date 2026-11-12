@@ -23,11 +23,13 @@ single-head latent cache.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from max import functional as F
 from max import tree
+from max.driver import Accelerator
+from max.graph import DeviceRef, TensorValue
 from max.nn import _graph_ops as kernels
 from max.tensor.sharding import (
     AxisAssignment,
@@ -40,15 +42,20 @@ from max.tensor.sharding import (
 )
 
 __all__ = [
+    "block_diagonal_block_scaled_matmul",
+    "block_scales_interleave",
     "compress_windows_ragged",
+    "device_architectures",
     "indexer_score_ragged",
     "latent_sparse_attention_ragged",
     "moe_create_indices_with_slots",
     "moe_router_group_limited",
     "quantize_dynamic_scaled_float8_grouped_mx",
     "replicated_rule",
+    "rope_quantize_dynamic_block_scaled",
     "rope_ragged",
     "top_k_per_row",
+    "wo_a_mxfp8_supported",
 ]
 
 R = Replicated()
@@ -126,3 +133,85 @@ quantize_dynamic_scaled_float8_grouped_mx = F.functional(
 moe_router_group_limited = F.functional(
     kernels.moe_router_group_limited, rule=replicated_rule(2)
 )
+
+
+# A weight's rows split across devices in whole 128-row scale tiles.
+block_scales_interleave = F.functional(
+    kernels.block_scales_interleave,
+    rule=_named_rule(
+        kernels.block_scales_interleave, {"scales": Sharded(0)}, (Sharded(0),)
+    ),
+)
+# Each device's whole heads quantize to its columns and their scale tiles.
+rope_quantize_dynamic_block_scaled = F.functional(
+    kernels.rope_quantize_dynamic_block_scaled,
+    rule=_named_rule(
+        kernels.rope_quantize_dynamic_block_scaled,
+        {"x": Sharded(1)},
+        (Sharded(1), Sharded(1)),
+    ),
+)
+
+
+def _block_diagonal_matmul(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    group_rows: int,
+) -> TensorValue:
+    """The block-diagonal matmul over a shard's groups of ``group_rows`` rows."""
+    return kernels.block_diagonal_block_scaled_matmul(
+        a, b, a_scales, b_scales, int(b.shape[0]) // group_rows
+    )
+
+
+# A device's columns of ``a`` are its groups: its rows of ``b`` and output
+# columns.
+block_diagonal_block_scaled_matmul = F.functional(
+    _block_diagonal_matmul,
+    rule=_named_rule(
+        _block_diagonal_matmul,
+        {
+            "a": Sharded(1),
+            "b": Sharded(0),
+            "a_scales": Sharded(1),
+            "b_scales": Sharded(0),
+        },
+        (Sharded(1),),
+    ),
+)
+
+
+def device_architectures(devices: Iterable[object]) -> list[str]:
+    """Each device's architecture name, ``""`` for one that is not a GPU."""
+    names = []
+    for device in devices:
+        if isinstance(device, DeviceRef):
+            device = device.to_device() if device.is_gpu() else None
+        names.append(
+            device.architecture_name if isinstance(device, Accelerator) else ""
+        )
+    return names
+
+
+def wo_a_mxfp8_supported(
+    architectures: Sequence[str],
+    groups: int,
+    o_lora_rank: int,
+    group_width: int,
+) -> bool:
+    """Whether ``wo_a`` runs as one block-diagonal MXFP8 matmul on every device.
+
+    The matmul is SM100-only and needs each of a device's ``groups`` blocks to
+    be whole 128 x 128 scale tiles. A device holding a single group is left
+    out: the matmul's fallback configs for a large token count are built only
+    for two groups or more.
+    """
+    return (
+        bool(architectures)
+        and all(name.startswith("sm_10") for name in architectures)
+        and groups >= 2
+        and o_lora_rank % 128 == 0
+        and group_width % 128 == 0
+    )
