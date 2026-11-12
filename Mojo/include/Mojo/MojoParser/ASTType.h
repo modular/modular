@@ -269,21 +269,6 @@ public:
   /// needed.  This does NOT strip off the RefType for a 'ref[]' result.
   ASTType getSignatureUserResultType() const;
 
-  /// If this type is parameterized, and if any of the parameters refer to a
-  /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-  /// will infer it.
-  ///
-  /// This makes parameter inference sensitive to what to propagate vs infer.
-  /// For example, if expectedType is known to be 'SIMD[uint8, 1]', then we can
-  /// infer which constructor to use when the input is an IntLiteral.
-  ///
-  /// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-  /// argument is an Int8, then we need the implicit conversion to infer the
-  /// base element.  Our solution to this is to rip and replace parameters that
-  /// contain unbound parameters, replacing them with UnboundAttr so inference
-  /// can find them.
-  ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
-
   /// If this type is has any index ref referencing to parameter defined in the
   /// current scope, extract those out and construct a new StructTypeGenerator
   /// independent from the current scope. E.g., it turns
@@ -301,10 +286,6 @@ public:
   /// the base element.  Our solution to this is to rip and replace parameters
   /// that contain unresolved the parameter, and construct an new partially
   /// bound struct type such that parameter inferences knows now to infer it.
-  ///
-  /// FIXME: this is a drop-in replacement for
-  /// `getWithUnknownParametersReplaced`, which will be deleted after fully
-  /// migrated.
   ASTType extractAndRelinkParamRef(SharedState &shared) const;
 
   /// Return true if this type contains any origins that are unmaterializable

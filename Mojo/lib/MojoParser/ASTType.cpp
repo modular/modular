@@ -1197,56 +1197,6 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   return RefType::get(mlirType, selfOrigin, /*addressSpace=*/0);
 }
 
-/// If this type is parameterized, and if any of the parameters refer to a
-/// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-/// will infer it.
-///
-/// This makes parameter inference sensitive to what to propagate vs infer. For
-/// example, if expectedType is known to be 'SIMD[uint8, 1]', then we can infer
-/// which constructor to use when the input is an IntLiteral.
-///
-/// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-/// argument is an Int8, then we need the implicit conversion to infer the
-/// base element.  Our solution to this is to rip and replace parameters that
-/// contain unbound parameters, replacing them with UnboundAttr so inference
-/// can find them.
-ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
-  // If this is a struct type, try unbinding just the parameters that have
-  // parameter references in it.
-  if (auto drt = sugarDynCast<StructType>(mlirType)) {
-    ParamIndexRefAttrFinder finder;
-
-    // Otherwise, check each bound parameter to see if it is unknown.  If so,
-    // replace it.
-    SmallVector<TypedAttr> newParams;
-    bool anyBound = false;
-    for (auto curValue : getParamBindings()) {
-      if (!finder.hasReferences(curValue)) {
-        // Keep this value if it has no references.
-        anyBound = true;
-      } else {
-        // Keep the argument type if it has no references.
-        Type paramType = curValue.getType();
-        if (finder.hasReferences(paramType))
-          paramType =
-              ASTType(UnboundAttr::get(TypeType::get(paramType.getContext())));
-        curValue = UnboundAttr::get(paramType);
-      }
-      newParams.push_back(curValue);
-    }
-
-    if (anyBound)
-      return cast<StructASTDecl>(getDecl(shared))
-          ->getOp()
-          .legacyBindReference(newParams);
-  }
-
-  // Otherwise return it with all parameters replaced.
-  if (Type nonParam = getWithoutParameters(shared))
-    return nonParam;
-  return *this;
-}
-
 namespace {
 /// Collects the indices of same-scope parameter references
 struct ParamIndexRefRelinker
