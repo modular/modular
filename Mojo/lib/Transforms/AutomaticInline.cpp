@@ -384,8 +384,9 @@ void CallGraph::completeFunctionProcessing(CallGraphNode *caller) {
   // If we updated the debug info in-place then performed a transformation, we
   // may have violated the debug info rules. Check with verifier. If deferred,
   // then no need to correct since a module wide sweep will occur later on to
-  // correct debug info.
-  if (!(updateAttrName.has_value() && *updateAttrName)) {
+  // correct debug info. A build without debug info has no scopes to repair and
+  // skips the walk.
+  if (updateAttrName.has_value() && !*updateAttrName) {
     mlir::MLIRContext *ctx = caller->func.getContext();
     bool failedVerify = false;
 
