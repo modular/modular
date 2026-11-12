@@ -360,7 +360,7 @@ class LineGenerator(Visitor[Line]):
             yield from self.line()
 
     def visit_comptime_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit `comptime if/for/match`, `comptime assert`, `comptime x = ...`."""
+        """Visit comptime compound statements and variable declarations."""
         yield from self.line()
 
         children = iter(node.children)
@@ -377,7 +377,11 @@ class LineGenerator(Visitor[Line]):
             # break that visit_match_stmt adds. Cases are indented under the
             # header, including input that was written flat.
             yield from self._visit_match_children(internal_stmt)
-        elif internal_stmt.type in (syms.if_stmt, syms.for_stmt):
+        elif internal_stmt.type in (
+            syms.if_stmt,
+            syms.for_stmt,
+            syms.guard_stmt,
+        ):
             # Visit child statement's children directly to avoid the
             # initial line break that visit_if_stmt/for_stmt add.
             for child in internal_stmt.children:
@@ -677,6 +681,9 @@ class LineGenerator(Visitor[Line]):
         )
         self.visit_while_stmt = partial(
             v, keywords={"while", "else"}, parens={"while"}
+        )
+        self.visit_guard_stmt = partial(
+            v, keywords={"__guard"}, parens={"__guard"}
         )
         self.visit_for_stmt = partial(
             v, keywords={"for", "else"}, parens={"for", "in"}

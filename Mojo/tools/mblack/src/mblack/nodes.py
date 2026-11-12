@@ -64,6 +64,7 @@ STATEMENT: Final = {
     syms.funcdef,
     syms.classdef,
     syms.match_stmt,
+    syms.guard_stmt,
     syms.case_block,
     syms.var_stmt,
     syms.comptime_stmt,

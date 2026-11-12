@@ -113,6 +113,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_with:
   case Token::kw_match:
   case Token::kw___match:
+  case Token::kw___guard:
   case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
@@ -296,8 +297,14 @@ struct StmtParser : public ParserBase {
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseIf(Location ifLoc, LexerCursor startCursor, size_t curIndent,
                       bool isComptime);
+  ParseResult parseGuardStmt(size_t curIndent, bool isComptime = false);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseMatchStmt(size_t curIndent, bool isComptime);
+
+  /// `comptime guard` parses its continuation into the successful branch. This
+  /// stack records guards opened by the current and nested suites so each suite
+  /// can terminate its own continuation when it reaches its closing dedent.
+  SmallVector<HLCF::ComptimeIfOp> openComptimeGuards;
 
   /// Emit a non-empty list of match case entries as one `hlcf.match`. Each
   /// entry's command list is tested in its own case region; the match else is
@@ -480,6 +487,16 @@ LogicalResult StmtParser::emitPatternBinding(IREmitter &emitter,
 /// statement ::=  stmt_list NEWLINE | compound_stmt
 /// stmt_list ::=  simple_stmt (";" simple_stmt)* [";"]
 ParseResult StmtParser::parseSuite(ssize_t curIndent) {
+  size_t openGuardDepth = openComptimeGuards.size();
+  auto closeComptimeGuards = llvm::scope_exit([&] {
+    while (openComptimeGuards.size() > openGuardDepth) {
+      HLCF::ComptimeIfOp guard = openComptimeGuards.pop_back_val();
+      if (!builder.getInsertionBlock()->mightHaveTerminator())
+        HLCF::ComptimeYieldOp::create(builder, guard.getLoc());
+      builder.setInsertionPointAfter(guard);
+    }
+  });
+
   // Ignore empty body at end of file: a `pass` is not required.
   if (getToken().is(Token::eof))
     return success();
@@ -914,6 +931,12 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (rejectInNonFunctionScope())
       return success();
     return parseMatchStmt(stmtIndent, /*isComptime=*/false);
+  case Token::kw___guard:
+    rejectDecorator();  // Decorators not allowed.
+    rejectSimpleStmt(); // Not a simple_stmt.
+    if (rejectInNonFunctionScope())
+      return success();
+    return parseGuardStmt(stmtIndent);
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
@@ -1129,6 +1152,11 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
     if (rejectInNonFunctionScope("match"))
       return success();
     return parseMatchStmt(curIndent, /*isComptime=*/true);
+  case Token::kw___guard:
+    rejectDecorator();
+    if (rejectInNonFunctionScope("guard"))
+      return success();
+    return parseGuardStmt(curIndent, /*isComptime=*/true);
   default:
     break;
   }
@@ -1670,6 +1698,253 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 //===----------------------------------------------------------------------===//
 // Compound statements.
 //===----------------------------------------------------------------------===//
+
+/// guard_stmt ::= "__guard" "case" pattern "=" assignment_expression
+///                  "else" ":" suite
+///
+/// Pattern declarations are emitted before the match so successful bindings
+/// remain visible in the continuation. The failure path ends in a fallthrough
+/// assertion because a guard's `else` suite must exit its enclosing scope.
+ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
+  SMLoc guardLoc = consumeToken(Token::kw___guard).getLoc();
+
+  ExprNode *patternExpr = nullptr;
+  ExprNode *subjectExpr = nullptr;
+  if (parseToken(Token::kw_case, "expected 'case' after '__guard'") ||
+      parseExpressionList(patternExpr, curIndent,
+                          /*terminators=*/{Token::equal}, Precedence::kAsPat) ||
+      parseToken(Token::equal, "expected '=' after guard pattern") ||
+      parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr) ||
+      parseToken(Token::kw_else, "expected 'else' after guard subject") ||
+      parseToken(Token::colon, "expected ':' after guard else"))
+    return failure();
+
+  LexerCursor elseCursor = getLexer().getCursor();
+  skipUntilIndentation(curIndent);
+  LexerCursor afterCursor = getLexer().getCursor();
+
+  if (isComptime) {
+    PValue subject = getParamEmitter(EC_MatchSubject)
+                         .emitExprPValue(subjectExpr, EC_MatchSubject);
+    if (!subject)
+      return success();
+
+    PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
+    const PatternPath *rootPath =
+        matchBuilder.getRootPath(subject.getRValueType());
+    SmallVector<const PatternCommand *, 8> commands;
+    if (failed(patternExpr->buildCheckList(matchBuilder, subject, rootPath,
+                                           commands)))
+      return failure();
+
+    Location guardLocation = translateLocation(guardLoc);
+    PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+                                   guardLocation,
+                                   DenseMap<const PatternPath *, CValue>()};
+    SmallVector<PatternBoundName, 4> bindings;
+    FailureOr<TypedAttr> condition =
+        emissionState.emitComptimeCondition(commands, bindings);
+    if (failed(condition))
+      return failure();
+
+    auto comptimeIfOp = HLCF::ComptimeIfOp::create(builder, guardLocation,
+                                                   TypeRange{}, *condition);
+    Block *thenBlock = builder.createBlock(&comptimeIfOp.getThenRegion());
+
+    Block *elseBlock = builder.createBlock(&comptimeIfOp.getElseRegion());
+    builder.setInsertionPointToStart(elseBlock);
+    elseCursor.restore(getLexer());
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+    if (!builder.getInsertionBlock()->mightHaveTerminator()) {
+      auto unreachable = HLCF::UnreachableOp::create(builder, guardLocation);
+      unreachable.setFallthroughErrorAttr(
+          builder.getStringAttr("guard 'else' block must not fall through"));
+    }
+
+    // Install the names before parsing the continuation into the then region.
+    // The else region always terminates, so elaboration only sees these
+    // bindings when the pattern matched.
+    IREmitter bindingEmitter = getParamEmitter(EC_MatchSubject);
+    for (const PatternBoundName &binding : bindings) {
+      PValue value = binding.value.getIfPValue();
+      if (!value) {
+        emitError(binding.expr ? binding.expr->getLoc() : guardLoc)
+            << "binding '" << binding.name
+            << "' in 'comptime guard' must be a compile-time value";
+        return failure();
+      }
+      DeclRefNode nameNode(binding.name);
+      if (failed(bindingEmitter.emitDestructuringPValue(value, &nameNode)))
+        return failure();
+    }
+
+    builder.setInsertionPointToStart(thenBlock);
+    openComptimeGuards.push_back(comptimeIfOp);
+    afterCursor.restore(getLexer());
+    return success();
+  }
+
+  CValue subject = getEmitter().emitExprCValue(subjectExpr, EC_MatchSubject);
+  if (!subject)
+    return success();
+  // Promote a DLValue and SRValue so matching against it will be simplified.
+  if (subject.getIfDLValue()) {
+    BValue subjectBValue =
+        getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subjectBValue)
+      return success();
+    subject = subjectBValue;
+  }
+  if (subject.getIfSRValue()) {
+    MRValue subjectMRValue =
+        getEmitter().emitMRValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subjectMRValue)
+      return success();
+    subject = subjectMRValue;
+  }
+
+  PatternMatchBuilder matchBuilder(*curDeclScope, EC_Type);
+  const PatternPath *rootPath =
+      matchBuilder.getRootPath(subject.getRValueType());
+  SmallVector<const PatternCommand *, 8> commands;
+  if (failed(patternExpr->buildCheckList(matchBuilder, subject, rootPath,
+                                         commands)))
+    return failure();
+
+  Location guardLocation = translateLocation(guardLoc);
+  PatternEmitState emissionState{*curDeclScope, subject, rootPath,
+                                 guardLocation,
+                                 DenseMap<const PatternPath *, CValue>()};
+  auto matchOp = HLCF::MatchOp::create(builder, guardLocation, TypeRange(),
+                                       /*caseRegionsCount=*/1);
+  Block &caseBlock = matchOp.getCaseRegions().front().emplaceBlock();
+  Block &elseBlock = matchOp.getElseRegion().emplaceBlock();
+
+  builder.setInsertionPointToStart(&caseBlock);
+  SmallVector<PatternBoundName> bindings;
+  if (failed(emissionState.emitCommands(builder, commands, bindings)))
+    return failure();
+
+  IREmitter caseEmitter = getEmitter();
+  SmallVector<CValue, 4> bindingValues;
+  if (failed(emissionState.getConsumedBindingValues(caseEmitter, bindings,
+                                                    bindingValues)))
+    return failure();
+  if (caseEmitter.builder)
+    builder = *caseEmitter.builder;
+
+  // Binding names are not known until pattern emission, but their declarations
+  // must dominate both the match and the continuation. This follows the shared
+  // declaration scheme used for or-pattern alternatives.
+  IREmitter declarationEmitter = getEmitter();
+  declarationEmitter.builder->setInsertionPoint(matchOp);
+  SmallVector<PatternBoundName, 4> declaredBindings;
+  for (const PatternBoundName &binding : bindings) {
+    ASTType declarationType = binding.value.getRValueType();
+    bool isRefOrBind = binding.bindingKind == PatternDeclKind::kRef ||
+                       binding.bindingKind == PatternDeclKind::kBind;
+    VarDeclKind declarationKind;
+    switch (binding.bindingKind) {
+    case PatternDeclKind::kRef:
+      declarationKind = VarDeclKind::Ref;
+      break;
+    case PatternDeclKind::kVar:
+      declarationKind = VarDeclKind::Var;
+      break;
+    case PatternDeclKind::kBind:
+      declarationKind = VarDeclKind::Bind;
+      break;
+    case PatternDeclKind::kNone:
+      llvm_unreachable("pattern binding must have a declaration kind");
+    }
+    if (isRefOrBind) {
+      if (binding.value.isMValue())
+        declarationType = binding.value.getMValueType();
+      else
+        declarationType =
+            RefType::getAnyOrigin(declarationType, /*isMut=*/true);
+    }
+
+    VarDeclOp declaration = declarationEmitter.emitVarDecl(
+        binding.name, declarationType, guardLocation, declarationKind);
+    if (!declaration)
+      return failure();
+    CValue slot = isRefOrBind ? CValue(RLValue(declaration))
+                              : CValue(MLValue(declaration));
+    declaredBindings.push_back({binding.name, slot, binding.bindingKind,
+                                binding.path, binding.expr, declaration});
+  }
+
+  builder.setInsertionPointToEnd(&caseBlock);
+  IREmitter bindingInitEmitter = getEmitter();
+  for (auto [bindingIndex, binding] : llvm::enumerate(bindings)) {
+    SMLoc bindingLoc = binding.expr ? binding.expr->getLoc() : guardLoc;
+    SyntheticNode bindingExpr(bindingLoc);
+    CValue bindingValue =
+        bindingValues.empty() ? binding.value : bindingValues[bindingIndex];
+    if (binding.bindingKind == PatternDeclKind::kVar &&
+        emissionState.rootSubject.getIfRValue() && binding.path &&
+        bindingValues.empty()) {
+      bindingValue = emissionState.getPathValue(
+          bindingInitEmitter, binding.path, binding.expr, /*consume=*/true);
+      if (!bindingValue)
+        return failure();
+    }
+    const PatternBoundName &declaredBinding = declaredBindings[bindingIndex];
+    LValue destination;
+    if (MLValue value = declaredBinding.value.getIfMLValue())
+      destination = LValue(value);
+    else
+      destination = LValue(declaredBinding.value.getIfRLValue());
+    ExprDest destinationExpr(destination, EC_VarInitMatchBinding);
+    if (bindingValue.isMValue() &&
+        sugarIsa<RefType>(declaredBinding.value.getRValueType())) {
+      Value reference = bindingInitEmitter.emitRebindOpIfNeeded(
+          bindingValue.getMValueReference(),
+          declaredBinding.value.getRValueType(), bindingLoc);
+      bindingValue = CValue::getMValueForRef(reference);
+    }
+    if (!bindingInitEmitter.emitCResult(bindingValue, &bindingExpr,
+                                        destinationExpr))
+      return failure();
+  }
+  if (bindingInitEmitter.builder)
+    builder = *bindingInitEmitter.builder;
+  builder.setInsertionPointToEnd(&caseBlock);
+  HLCF::MatchCompleteOp::create(builder, guardLocation);
+
+  builder.setInsertionPointToStart(&elseBlock);
+  elseCursor.restore(getLexer());
+  if (failed(parseLocalScopeSuite(curIndent)))
+    return failure();
+  if (!builder.getInsertionBlock()->mightHaveTerminator()) {
+    auto unreachable = HLCF::UnreachableOp::create(builder, guardLocation);
+    unreachable.setFallthroughErrorAttr(
+        builder.getStringAttr("guard 'else' block must not fall through"));
+  }
+
+  builder.setInsertionPointAfter(matchOp);
+  // Install the names only after parsing the failure suite. Guard bindings
+  // belong to the continuation and must not be visible from the `else` path.
+  for (const PatternBoundName &binding : declaredBindings) {
+    CValue resultBinding;
+    if (MLValue value = binding.value.getIfMLValue()) {
+      resultBinding = value;
+    } else {
+      Value reference = RefLoadOp::create(builder, guardLocation,
+                                          binding.value.getIfRLValue());
+      resultBinding = CValue::getMValueForRef(reference);
+    }
+    StringAttr name = StringAttr::get(builder.getContext(), binding.name);
+    SMLoc bindingLoc = binding.expr ? binding.expr->getLoc() : guardLoc;
+    ASTDecl &declaration = shared.getDeclResolver().addFullyResolvedDecl(
+        resultBinding, name, bindingLoc, curDeclScope);
+    shared.notifyListenerOnVariableDecl(declaration, bindingLoc);
+  }
+  afterCursor.restore(getLexer());
+  return success();
+}
 
 /// while_stmt ::=  "while" ("case" pattern "=" assignment_expression |
 ///                           assignment_expression) ":" suite

@@ -104,6 +104,7 @@ class _python_symbols(Symbols):
     generatortype: int
     global_stmt: int
     guard: int
+    guard_stmt: int
     if_stmt: int
     import_as_name: int
     import_as_names: int

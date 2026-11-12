@@ -583,6 +583,77 @@ while case [item, 0] = get_next():
     use(item)
 ```
 
+## `guard` for early-exit pattern matching
+
+Deeply nested `if case` statements obscure the normal path of a function. Mojo
+should support an early-exit pattern binding that keeps that path at the outer
+scope:
+
+```mojo
+guard case .Some(v1) = get_optional_value() else:
+    return
+
+comptime guard case .Some(v2) = get_optional_value() else:
+    return
+
+use(v1, v2)
+```
+
+The right-hand side is evaluated once. If the pattern matches, its bindings
+remain in scope after the statement. If it does not match, the `else` body must
+not fall through: it must exit the current scope with `return`, `raise`,
+`break`, `continue`, or another diverging operation.
+
+The `guard` keyword makes the control-flow intent explicit. It also follows
+Mojo's existing `if case` convention, which marks a conditional pattern match
+visibly rather than making it look like an assignment.
+
+### Alternative considered: name this `unless`
+
+A common suggestion may be to name this `unless` as is seen in other languages.
+However, this isn't a general purpose "inverted if" statement, this specifically
+requires that the body does not fall through. This is the root of the name
+`guard`: it guards the logic below it with the condition.
+
+### Alternative considered: `guard .Some(value) = ...` without `case`
+
+Like with `if` conditions, it isn't syntactically ambiguous to know if something
+is a failable assignment, and unlike `if` statements, this should not allow
+singleton binary conditions (we don't want a general purpose `unless`
+statement).
+
+The only reason to require `case` here is consistency with `if` and `match`
+statements, but that seems worth protecting and makes things more clear.
+
+### Alternative considered: `var ... else:`
+
+Mojo could instead follow Rust's `let ... else` model:
+
+```mojo
+var .Some(value) = get_optional_value() else:
+    return
+
+use(value)
+```
+
+This avoids a new keyword, but has several problems. First, it breaks with
+consistency across Python, where all statements (if, while, with, etc) start
+with a strong keyword.
+
+Second, we don't want to limit this to `var` bindings that copy out the pattern,
+we want to get the "default imm binding" rule that `match` and `if` provide.
+
+Third, `var` is a recursive pattern in Mojo rather than a declaration statement
+as `let` is in Rust. For example, `(var x, var y) = get_pair()` is already a
+valid assignment pattern. Limiting this syntax to statements that lexically
+begin with `var` would resolve the parsing ambiguity, but it still makes a
+refutable pattern look like an ordinary assignment. The `guard case` spelling
+keeps conditional patterns explicit.
+
+Finally, we worked hard to separate match from destructuring, since they are
+seemingly similar, but quite different operations in practice. This confuses the
+issue again.
+
 ### Alternative considered
 
 **`if pattern = expr` with no `case keyword**

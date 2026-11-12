@@ -137,14 +137,15 @@ alias_stmt_body: alias_target_list [metaparams] (
     (where_clause)* '=' (yield_expr|testlist_star_expr)
 )
 comptime_assert_stmt_body: 'assert' test [',' test]
-comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt | match_stmt)
+comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEWLINE | if_stmt | for_stmt | match_stmt | guard_stmt)
 
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | comptime_stmt
+compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | guard_stmt | comptime_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' if_condition ':' suite ('elif' if_condition ':' suite)* ['else' ':' suite]
 if_condition: namedexpr_test | "case" patterns '=' namedexpr_test
 while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
+guard_stmt: "__guard" "case" patterns '=' namedexpr_test 'else' ':' suite
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
