@@ -208,6 +208,16 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
             != 0
         )
 
+    def max_queues_per_context(self) raises HALError -> Optional[Int]:
+        """Returns the most queues one context on this device can hold at once,
+        or `None` when the plugin sets no limit."""
+        var limit = self._raw[].get_optional_device_property[
+            "max_queues_per_context", Int64
+        ](self._handle)
+        if not limit:
+            return None
+        return Int(limit.value())
+
     def name(self) raises HALError -> String:
         """Queries the device's human-readable name."""
         var buf = Array[Int8, _DEVICE_PROPERTY_MAX_LEN](fill=0)

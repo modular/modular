@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -243,6 +244,18 @@ struct DriverPluginDeviceTest : DriverPluginTest {
       session->devices = devices;
       session->hasDevices = true;
     }
+  }
+
+  // The plugin's `max_queues_per_context` property, or `INT64_MAX` when it
+  // sets no limit.
+  int64_t maxQueuesPerContext(M_driver_device_t device) {
+    int64_t maxQueues = 0;
+    M_driver_status_t queryStatus = device_property(
+        device, M_DRIVER_DEVICE_PROPERTY_MAX_QUEUES_PER_CONTEXT, &maxQueues);
+    if (queryStatus == M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME)
+      return std::numeric_limits<int64_t>::max();
+    EXPECT_SUCCESS(queryStatus);
+    return maxQueues;
   }
 
   std::vector<M_driver_device_t> devices;

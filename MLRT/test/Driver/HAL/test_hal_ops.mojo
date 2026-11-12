@@ -166,6 +166,10 @@ def main() raises:
     var ctx = device[].get_context()
 
     do_queue_stream_sync_test(ctx[])
-    do_event_ordering_test(ctx[])
+    var max_queues = device[].max_queues_per_context()
+    if max_queues and max_queues.value() < 2:
+        print("Skipping event ordering: the context holds one queue at a time")
+    else:
+        do_event_ordering_test(ctx[])
     do_copy_overflow_test(ctx[])
     print("All HAL ops tests OK")

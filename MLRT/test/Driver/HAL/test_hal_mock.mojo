@@ -124,6 +124,13 @@ def test_device_host_unified() raises:
     assert_false(device[].is_host_unified())
 
 
+def test_device_max_queues_per_context_unset() raises:
+    # The mock leaves the property out, so it sets no queue limit.
+    var driver = Driver.create(_get_plugin_spec())
+    var device = driver[].get_device_dynamic(Int64(0))
+    assert_false(Bool(device[].max_queues_per_context()))
+
+
 def test_invalid_device_id() raises:
     var driver = Driver.create(_get_plugin_spec())
     with assert_raises():
@@ -773,6 +780,7 @@ def main() raises:
 
     test_driver_create()
     test_device_host_unified()
+    test_device_max_queues_per_context_unset()
     test_invalid_device_id()
     test_context_create()
     test_invalid_device_error_message()

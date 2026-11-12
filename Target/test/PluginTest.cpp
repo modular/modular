@@ -402,7 +402,10 @@ TEST_F(DriverPluginContextTest, EventRecordWait) {
   for (unsigned int i = 0; i < numElems; i++)
     src[i] = i;
 
-  for (M_driver_context_t ctx : contexts) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    if (maxQueuesPerContext(devices[i]) < 2)
+      GTEST_SKIP() << "the context holds one queue at a time";
+    M_driver_context_t ctx = contexts[i];
     M_driver_queue_t queueA = nullptr;
     M_driver_queue_t queueB = nullptr;
     ASSERT_SUCCESS(queue_create(ctx, &queueA));
