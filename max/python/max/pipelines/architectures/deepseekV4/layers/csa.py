@@ -177,7 +177,7 @@ class CompressedStream:
 
 def compressed_stream(
     compressor: DeepseekV4Compressor,
-    x32: TensorValue,
+    x: TensorValue,
     rows: RaggedRows,
     windows: WindowRows,
     freqs_table: TensorValue,
@@ -190,7 +190,7 @@ def compressed_stream(
 
     Args:
         compressor: The stream's compressor (attention's or the indexer's).
-        x32: ``[T, hidden]`` float32 block input.
+        x: ``[T, hidden]`` block input in the activation dtype.
         rows: The batch's token bookkeeping.
         windows: The candidate windows for ``compressor.compress_ratio``.
         freqs_table: The layer's full rotary table.
@@ -205,7 +205,7 @@ def compressed_stream(
     assert windows.ratio == ratio
     assert layer.zone is not None
 
-    kv_proj, score_proj = compressor.projections(x32)
+    kv_proj, score_proj = compressor.projections(x)
     cap = ceildiv(max_seq_len, ratio)
     if state_leaf is None:
         # Every position is in the chunk. Rows past a request's end are

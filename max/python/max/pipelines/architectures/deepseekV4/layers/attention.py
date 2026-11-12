@@ -380,11 +380,11 @@ class DeepseekV4Attention(Module):
         index_score: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
-            x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
+            x2 = ops.reshape(x, [t, x.shape[2]])
             windows = rows.windows[ratio]
             stream = compressed_stream(
                 self.compressor,
-                x32,
+                x2,
                 rows,
                 windows,
                 freqs_table,
@@ -400,7 +400,7 @@ class DeepseekV4Attention(Module):
             if self.indexer is not None:
                 idx_stream = compressed_stream(
                     self.indexer.compressor,
-                    x32,
+                    x2,
                     rows,
                     windows,
                     freqs_table,
@@ -409,7 +409,6 @@ class DeepseekV4Attention(Module):
                     cache.idx_comp if cache is not None else None,
                     index,
                 )
-                x2 = ops.reshape(x, [t, x.shape[2]])
                 qr2 = ops.reshape(qr, [t, qr.shape[2]])
                 if cache is not None:
                     index_score = self.indexer.score_cached(

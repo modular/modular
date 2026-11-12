@@ -33,9 +33,11 @@ here the raw per-token projections live in a sliding-window cache leaf
 caller assembles from it, so prefill, chunked prefill and decode are one
 computation.
 
-Everything up to the norm runs in float32; the reference stores ``wkv`` and
-``wgate`` in bf16 but computes the pooling in fp32, and the ``ape`` and gate
-scores are fp32 parameters.
+Everything up to the norm runs in float32. The reference declares ``wkv``
+and ``wgate`` float32 and upcasts the checkpoint's bf16 values; here they keep
+the activation dtype and the GEMM accumulates and returns float32. The
+products of bf16 values are exact in float32, so only the accumulation order
+differs. The pooling, ``ape`` and the gate scores are float32.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn._graph_ops import compress_windows_ragged
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
+from max.nn.legacy.linear import Linear, linear
 from max.nn.legacy.norm.rms_norm import RMSNorm
 
 from ..model_config import DeepseekV4Config
@@ -97,22 +99,27 @@ class DeepseekV4Compressor(Module):
             device=device,
         )
         # ``wkv`` and ``wgate`` stacked by the adapter (``[wkv; wgate]`` along
-        # N): the graph compiler does not merge the two f32 GEMMs itself
+        # N): the graph compiler does not merge the two GEMMs itself
         # (GEX-1978), and each launches only a handful of CTAs.
         self.wkv_wgate = Linear(
-            config.hidden_size, 2 * self.proj_dim, DType.float32, device
+            config.hidden_size, 2 * self.proj_dim, config.dtype, device
         )
         self.norm = RMSNorm(head_dim, DType.float32, config.rms_norm_eps)
         self.activation_dtype = config.dtype
 
-    def projections(self, x32: TensorValue) -> tuple[TensorValue, TensorValue]:
+    def projections(self, x: TensorValue) -> tuple[TensorValue, TensorValue]:
         """Raw ``wkv`` / ``wgate`` projections, ``[b, s, proj_dim]`` float32.
 
         These are what the state leaf stores per token. ``ape`` is *not* added
         here: it depends on the token's slot within its window, which
         :meth:`__call__` knows and the store does not.
+
+        Args:
+            x: ``[..., hidden_size]`` in the activation dtype.
         """
-        out = self.wkv_wgate(x32)
+        out = linear(
+            x, self.wkv_wgate.weight.to(x.device), out_dtype=DType.float32
+        )
         width = int(out.shape[-1])
         return out[..., : self.proj_dim], out[..., self.proj_dim : width]
 

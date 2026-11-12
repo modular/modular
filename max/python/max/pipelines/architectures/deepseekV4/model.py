@@ -162,10 +162,10 @@ def set_checkpoint_dtypes(
         # is the reference's default dtype, bf16, which is also what the
         # checkpoint stores ``embed`` / ``ffn.gate`` /
         # ``indexer.weights_proj`` in and the reference declares them as;
-        # those follow ``config.dtype``, and so does ``head`` (bf16 GEMM, see
-        # ``head_logits``). The other weights the reference declares float32
-        # (norms, compressor ``wkv`` / ``wgate``) are declared so by the
-        # modules and upcast by the adapter.
+        # those follow ``config.dtype``, and so do ``head`` (bf16 GEMM, see
+        # ``head_logits``) and the compressor's ``wkv`` / ``wgate`` (bf16
+        # GEMM, float32 out). The norms, which the reference declares
+        # float32, are declared so by the modules and upcast by the adapter.
         quant_config = fp8_block_quant_config(
             getattr(huggingface_config, "quantization_config", None),
             config.num_hidden_layers,
