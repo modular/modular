@@ -157,8 +157,8 @@ mojo_test(
     ],
 )
 
-# Standalone multi-GPU test: the bundled allreduce kernel's `build_graph` entry
-# point over stable address slots. Needs the graph-compiler kernel package.
+# Standalone multi-GPU test: the bundled allreduce's recording path, the
+# allreduce over stable address slots recorded into a collective device graph.
 mojo_test(
     name = "test_bundled_allreduce_build_graph.mojo.test",
     size = "large",
@@ -173,7 +173,6 @@ mojo_test(
         "//:has_multi_gpu",
     ],
     deps = [
-        "//max:builtin_kernels",
         "//max:comm",
         "//max:extensibility",
         "//max:layout",

@@ -30,7 +30,9 @@ the wrong buffers or none at all.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -195,6 +197,73 @@ def test_collective_two_gpus(name: str, is_device_graph: bool) -> None:
     )
     inputs = _inputs(elements)
     _run(graph, DEVICES, signals, inputs, _expected(name, inputs))
+
+
+@pytest.mark.parametrize("name", ["allgather", "allreduce", "broadcast_from_0"])
+def test_rebuilt_rank_republishes_its_slot(name: str) -> None:
+    """Device 1 replays while device 0 re-records, reading device 0 through
+    its slot.
+
+    Device 0's peer comes from `fill_from_host_scalar`, whose host input keys
+    only device 0's graph, so a changed value re-records device 0 alone. The
+    new recording allocates a new output for the fill, publishes its address
+    into device 0's slot, and device 1's cached graph must read the new
+    address there. A bundled kernel whose `build_graph` read the slot at
+    record time instead would replay against device 0's first buffer and
+    return the old value on device 1. Collectives in which device 1 reads
+    nothing from device 0 are left out.
+    """
+    if accelerator_count() < len(DEVICES):
+        pytest.skip(f"Test requires {len(DEVICES)} GPUs")
+
+    signals = Signals(DEVICES)
+    peer_type = TensorType(DType.float32, [1, NUM_ELEMENTS], device=DEVICES[0])
+    with Graph(
+        f"{name}_rebuilt_rank",
+        input_types=[
+            TensorType(DType.float32, [1], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [1, NUM_ELEMENTS], device=DEVICES[1]),
+            *signals.input_types(),
+        ],
+        custom_extensions=[
+            Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
+        ],
+        is_device_graph=True,
+    ) as graph:
+        filled = ops.custom(
+            "fill_from_host_scalar",
+            device=DEVICES[0],
+            values=[graph.inputs[0].tensor],
+            out_types=[peer_type],
+        )[0].tensor
+        tensors = [filled, ops.relu(graph.inputs[1].tensor)]
+        signal_buffers = [graph.inputs[2 + i].buffer for i in range(2)]
+        graph.output(*COLLECTIVES[name](tensors, signal_buffers))
+
+    host = CPU()
+    session = InferenceSession(
+        devices=[host, *(Accelerator(i) for i in range(len(DEVICES)))]
+    )
+    compiled = session.load(graph)
+
+    x1 = _inputs()[1]
+    device_x1 = Buffer.from_numpy(x1).to(Accelerator(1))
+
+    # 3.0 records both devices, 9.0 re-records device 0 alone, and 3.0 again
+    # returns to device 0's first graph, which must publish its own buffer
+    # back into the slot.
+    for value in (3.0, 9.0, 3.0):
+        scalar = Buffer.from_numpy(np.array([value], dtype=np.float32))
+        outputs = compiled.execute(scalar, device_x1, *signals.buffers())
+        inputs = [np.full([1, NUM_ELEMENTS], value, dtype=np.float32), x1]
+        expected = _expected(name, inputs)
+        for i, (out, want) in enumerate(zip(outputs, expected, strict=True)):
+            assert isinstance(out, Buffer)
+            np.testing.assert_array_equal(
+                out.to(host).to_numpy(),
+                want,
+                err_msg=f"device {i} with {value}",
+            )
 
 
 @pytest.mark.parametrize("is_device_graph", [False, True], ids=["plain", "dg"])

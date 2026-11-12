@@ -14,6 +14,12 @@ modular_py_test(
         ["*.py"],
         exclude = ["test_execute_stress.py"],
     ),
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },

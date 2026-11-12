@@ -10,33 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""`mo.bundled.allreduce.sum`'s `build_graph` entry point recorded into a
-`DeviceGraph.create_collective` graph over `StableInputVariadicTensors`.
+"""The recording path of `mo.bundled.allreduce.sum` driven by hand into a
+`DeviceGraph.create_collective` graph over stable address slots.
 
 Each device's build closure publishes its own input into its stable address
-slot, packs every device's slot into a `StableVariadicTensors` (the aggregate
-the graph compiler hands the kernel), and records the kernel through its
-`build_graph` method. The graphs are replayed and verified, replayed again,
-and finally rank 0 is rebuilt against an alternate input so that the other
-ranks' cached graphs are shown to read rank 0's data through the slot rather
-than through an address baked in at record time.
+slot, projects every device's slot to a `StableAddrEngine` tile (as the
+kernel's `build_graph` projects its `Stable` inputs), and records the `comm`
+allreduce into the builder's recording context. The graphs are replayed and
+verified, replayed again, and finally rank 0 is rebuilt against an alternate
+input so that the other ranks' cached graphs are shown to read rank 0's data
+through the slot rather than through an address baked in at record time.
 """
 
 from std.sys import size_of
 
-from builtin_kernels.bundled import BundledAllReduceSum
 from comm import Signal
+from comm.allreduce import allreduce
 from comm.sync import enable_p2p, init_signal_buffer
-from extensibility import (
-    IOSpec,
-    ManagedTensorSlice,
-    OutputFusion,
-    StableVariadicTensors,
-    StaticTensorSpecList,
-    VariadicTensors,
-    get_row_major_tensor_spec_static,
+from extensibility.stable_addr_engine import (
+    StableTileTensor,
+    stable_tile_tensor,
 )
-from layout import coord_to_index_list
+from layout import TileTensor, row_major
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -44,35 +39,13 @@ from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
-    StableAddr,
 )
-from std.testing import assert_almost_equal, assert_equal, assert_true
-from std.utils import IndexList, StaticTuple
+from std.testing import assert_almost_equal, assert_true
 
 comptime dtype = DType.float32
 
-# Lengths are compile-time so the packs can carry fully static specs, as the
-# graph compiler's specs do.
 comptime test_lengths = (8 * 1024, 8 * 1024 + 7)
 comptime test_gpu_counts = (2, 4)
-
-
-@fieldwise_init
-struct _StoreOutFusion[fusion_dtype: DType](OutputFusion):
-    """Plain store functor for the kernel's fused output: the graph compiler
-    always binds one, so the test binds the identity store by hand."""
-
-    var dst: Pointer[Scalar[Self.fusion_dtype], MutUntrackedOrigin]
-
-    def store[
-        dtype: DType,
-        rank: Int,
-        simd_width: SIMDLength,
-        element_alignment: Int = 1,
-    ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
-        self.dst.unsafe_offset(idx[rank - 1]).unsafe_store[
-            alignment=element_alignment
-        ](rebind[SIMD[Self.fusion_dtype, simd_width]](val))
 
 
 def _source_of(
@@ -106,48 +79,9 @@ def _check_outputs[
                 raise e^
 
 
-def _check_pack_views[length: Int, ngpus: Int]() raises:
-    """`StableVariadicTensors` element views carry the pack's shape and size on
-    the host without touching the slots."""
-    comptime spec = get_row_major_tensor_spec_static[dtype, 1, length]()
-    comptime specs = StaticTensorSpecList[
-        ParameterList.of[spec.get_internals(), spec.get_internals()](),
-        ParameterList.of[
-            coord_to_index_list(spec.shape_tuple),
-            coord_to_index_list(spec.shape_tuple),
-        ](),
-        ParameterList.of[
-            coord_to_index_list(spec.strides_tuple),
-            coord_to_index_list(spec.strides_tuple),
-        ](),
-    ]()
-    comptime SlotPtr = Pointer[
-        Pointer[NoneType, MutUntrackedOrigin], ImmUntrackedOrigin
-    ]
-    var pack = StableVariadicTensors[io_spec=IOSpec.Input, static_specs=specs](
-        StaticTuple[StableAddr, 2](
-            StableAddr(SlotPtr.unsafe_dangling()),
-            StableAddr(SlotPtr.unsafe_dangling()),
-        ),
-        StaticTuple[IndexList[1], 2](
-            IndexList[1](length), IndexList[1](length)
-        ),
-    )
-    assert_equal(len(pack), 2)
-    assert_equal(pack[0].size(), length)
-    assert_equal(pack[1].shape()[0], length)
-
-
 def bundled_allreduce_build_graph_test[
-    ngpus: Int,
-    //,
-    length: Int,
-    in_specs: StaticTensorSpecList[dtype=dtype, rank=1, ...],
-    sig_specs: StaticTensorSpecList[dtype=DType.uint8, rank=1, ...],
-    signal_bytes: Int,
+    ngpus: Int, //, length: Int, signal_bytes: Int
 ](ctxs: Array[DeviceContext[], ngpus]) raises:
-    comptime in_spec = get_row_major_tensor_spec_static[dtype, 1, length]()
-
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var in_dev_alt = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -171,49 +105,33 @@ def bundled_allreduce_build_graph_test[
     # reads it by reference, so the flip below is visible to later rebuilds.
     var publish_alt = False
 
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
         _ = builder.place_stable(
             n,
             _source_of(in_dev_alt[n]) if publish_alt else _source_of(in_dev[n]),
         )
 
-        # Every peer, this device's included, is read through its slot: the
-        # pack the graph compiler would hand the kernel.
-        var addrs = StaticTuple[StableAddr, ngpus]()
+        # Every peer, this device's included, is read through its slot, as
+        # the kernel's `build_graph` reads its `Stable` inputs.
+        comptime InType = StableTileTensor[dtype, type_of(row_major(length))]
+        var in_tensors = Array[InType, ngpus](uninitialized=True)
         for j in range(ngpus):
-            addrs[j] = builder.get_stable(j)
-        var shapes = StaticTuple[IndexList[1], ngpus](IndexList[1](length))
-        var inputs = StableVariadicTensors[
-            io_spec=IOSpec.Input, static_specs=in_specs
-        ](addrs, shapes)
-
-        var sig_ptrs = StaticTuple[
-            Pointer[Scalar[DType.uint8], MutUntrackedOrigin], ngpus
-        ]()
-        for j in range(ngpus):
-            sig_ptrs[j] = (
-                signal_buffers[j]
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
+            in_tensors[j] = stable_tile_tensor[dtype](
+                builder.get_stable(j), row_major(length)
             )
-        var sig_shapes = StaticTuple[IndexList[1], ngpus](
-            IndexList[1](signal_bytes)
-        )
-        var signals = VariadicTensors[
-            io_spec=IOSpec.MutableInput, static_specs=sig_specs
-        ](sig_ptrs, sig_shapes)
 
-        var out_ptr = (
-            out_dev[n].unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-        )
-        var output = ManagedTensorSlice[
-            io_spec=IOSpec.Output, static_spec=in_spec
-        ](out_ptr, IndexList[1](length))._bind_to_fused_output(
-            _StoreOutFusion(out_ptr)
-        )
-
-        BundledAllReduceSum.build_graph[dtype, 1, "bundled_allreduce"](
-            output, inputs, signals, builder
+        allreduce[ngpus=ngpus](
+            in_tensors,
+            TileTensor(out_dev[n], row_major(length)),
+            rank_sigs,
+            builder.recording_context(),
+            my_rank=n,
         )
 
     def key_for[n: Int]() {imm} -> String:
@@ -280,47 +198,22 @@ def bundled_allreduce_build_graph_test[
     _ = in_dev^
     _ = in_dev_alt^
     _ = out_dev^
+    _ = rank_sigs^
     _ = signal_buffers^
     _ = publish_alt
     _ = stable_devices^
 
 
 def _run[ngpus: Int, length: Int](ctxs: Array[DeviceContext[], ngpus]) raises:
-    """Builds the static spec lists (one identical spec per peer, spelled the
-    way the graph compiler emits them) for the supported peer counts."""
-    comptime in_spec = get_row_major_tensor_spec_static[dtype, 1, length]()
     comptime signal_bytes = size_of[Signal]() + 2 * ngpus * size_of[
         dtype
     ]() * length
-    comptime sig_spec = get_row_major_tensor_spec_static[
-        DType.uint8, 1, signal_bytes
-    ]()
-    comptime in_shape = coord_to_index_list(in_spec.shape_tuple)
-    comptime in_strides = coord_to_index_list(in_spec.strides_tuple)
-    comptime sig_shape = coord_to_index_list(sig_spec.shape_tuple)
-    comptime sig_strides = coord_to_index_list(sig_spec.strides_tuple)
-
-    comptime in_specs = StaticTensorSpecList[
-        ParameterList.splat[ngpus, in_spec.get_internals()](),
-        ParameterList.splat[ngpus, in_shape](),
-        ParameterList.splat[ngpus, in_strides](),
-    ]()
-    comptime sig_specs = StaticTensorSpecList[
-        ParameterList.splat[ngpus, sig_spec.get_internals()](),
-        ParameterList.splat[ngpus, sig_shape](),
-        ParameterList.splat[ngpus, sig_strides](),
-    ]()
     bundled_allreduce_build_graph_test[
-        length=length,
-        in_specs=in_specs,
-        sig_specs=sig_specs,
-        signal_bytes=signal_bytes,
+        length=length, signal_bytes=signal_bytes
     ](ctxs)
 
 
 def main() raises:
-    _check_pack_views[8, 2]()
-
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
