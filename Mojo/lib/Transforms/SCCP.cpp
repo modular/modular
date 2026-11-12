@@ -451,12 +451,10 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
   // Otherwise, process subregions if any and mark all results as Unknown.
   if (node->getNumRegions() > 0) {
     for (Region &region : node->getRegions()) {
-      AnalysisStateType nestedState = state;
       bool hasEarlyExits = false;
-      if (failed(processRegion(region, nestedState, hasEarlyExits,
-                               shouldContinue, loopLevel)))
+      if (failed(processRegion(region, state, hasEarlyExits, shouldContinue,
+                               loopLevel)))
         return failure();
-      (void)mergeStates(state, nestedState);
     }
   }
 
