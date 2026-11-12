@@ -46,14 +46,22 @@ class Gemma4TransformerBlock(Module[..., Tensor]):
         hidden_size: int,
         rms_norm_eps: float,
         moe_block: Module[[Tensor], Tensor] | None = None,
+        post_feedforward_norm_eps: float | None = None,
     ) -> None:
         super().__init__()
+        # post_feedforward_norm_eps applies to the norm right after the
+        # dense MLP: post_feedforward_layernorm_1 when experts run beside it.
+        dense_norm_eps = (
+            rms_norm_eps
+            if post_feedforward_norm_eps is None
+            else post_feedforward_norm_eps
+        )
         self.self_attn = attention
         self.mlp = mlp
         self.moe_block = moe_block
         if moe_block is not None:
             self.post_feedforward_layernorm_1 = Gemma4RMSNorm(
-                hidden_size, eps=rms_norm_eps
+                hidden_size, eps=dense_norm_eps
             )
             self.post_feedforward_layernorm_2 = Gemma4RMSNorm(
                 hidden_size, eps=rms_norm_eps
@@ -66,7 +74,8 @@ class Gemma4TransformerBlock(Module[..., Tensor]):
             hidden_size, eps=rms_norm_eps
         )
         self.post_feedforward_layernorm = Gemma4RMSNorm(
-            hidden_size, eps=rms_norm_eps
+            hidden_size,
+            eps=rms_norm_eps if moe_block is not None else dense_norm_eps,
         )
         self.layer_scalar = Tensor.ones([1])
 

@@ -185,6 +185,12 @@ class Gemma4TextConfig(Gemma3Config):
     sliding_window_rope_theta: float = 10000.0
     """Rope theta used for the RoPE embeddings used in sliding window attention."""
 
+    ffn_fp16_loss_scale: float = 256.0
+    """Divisor the dense MLP applies to its up projection when activations are
+    float16, keeping the gated product and the down projection within float16
+    range. The post-feedforward norm cancels it. Use a power of two so the
+    division is exact; 1.0 disables it."""
+
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     """Which hidden states the text model returns alongside logits."""
 

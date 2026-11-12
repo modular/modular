@@ -91,6 +91,7 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_attention.py",
+        "test_ffn_loss_scale.py",
         "test_moe_forward.py",
         "test_pooling.py",
         "test_rms_norm.py",

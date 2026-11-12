@@ -160,6 +160,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
             # An NVFP4 MoE checkpoint quantizes only the experts; its dense
             # MLP stays BF16.
             mlp: Module[[Tensor], Tensor]
+            ffn_scale = 1.0
             if (
                 nvfp4_config is not None
                 and moe_block is None
@@ -178,10 +179,13 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                     quantized_mlp = tensor_parallel_mlp(quantized_mlp)
                 mlp = quantized_mlp
             else:
+                if self.dtype == DType.float16:
+                    ffn_scale = 1.0 / text_config.ffn_fp16_loss_scale
                 mlp = MLP(
                     hidden_dim=text_config.hidden_size,
                     feed_forward_length=text_config.intermediate_size,
                     activation_function=text_config.hidden_activation,
+                    up_scale=ffn_scale,
                 )
 
             layers.append(
@@ -207,6 +211,11 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
                     hidden_size=text_config.hidden_size,
                     rms_norm_eps=text_config.rms_norm_eps,
                     moe_block=moe_block,
+                    # rms_norm(c * y, c**2 * eps) == rms_norm(y, eps), so
+                    # the post-FFN norm cancels the scale exactly.
+                    post_feedforward_norm_eps=(
+                        text_config.rms_norm_eps * ffn_scale**2
+                    ),
                 )
             )
         self.layers = ModuleList(layers)
