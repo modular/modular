@@ -1104,6 +1104,10 @@ single_version_override(
         "//bazel/public-patches:tcmalloc-local-dynamic.patch",
         "//bazel/public-patches:tcmalloc-numa.patch",
         "//bazel/public-patches:tcmalloc-glibc-rseq.patch",
+        # Turn allocation sampling off by default: recording a sampled
+        # allocation walks frame pointers, which Mojo code does not keep.
+        # https://github.com/modular/modular/issues/7526
+        "//bazel/public-patches:tcmalloc-disable-sampling.patch",
     ],
 )
 

@@ -1,0 +1,19 @@
+diff --git a/tcmalloc/parameters.cc b/tcmalloc/parameters.cc
+--- a/tcmalloc/parameters.cc
++++ b/tcmalloc/parameters.cc
+@@ -237,8 +237,13 @@
+ ABSL_CONST_INIT std::atomic<double>
+     Parameters::per_cpu_caches_dynamic_slab_shrink_threshold_(0.4);
+ 
+-ABSL_CONST_INIT std::atomic<int64_t> Parameters::profile_sampling_interval_(
+-    kDefaultProfileSamplingInterval);
++// Modular: sampling is off by default. A sampled allocation records its stack
++// with absl::GetStackTrace, which follows frame pointers, and Mojo code does
++// not keep them: the walk can read past the end of the stack and crash
++// (https://github.com/modular/modular/issues/7526). Nothing reads the heap
++// profiles that sampling feeds, and their stacks through Mojo frames would be
++// wrong anyway. MallocExtension::SetProfileSamplingInterval turns it back on.
++ABSL_CONST_INIT std::atomic<int64_t> Parameters::profile_sampling_interval_(0);
+ 
+ ABSL_CONST_INIT std::atomic<bool>
+     Parameters::use_userspace_collapse_heuristics_(false);

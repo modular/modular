@@ -1,5 +1,5 @@
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//bazel:api.bzl", "mojo_binary")
+load("//bazel:api.bzl", "modular_cc_test", "mojo_binary")
 
 # gazelle:default_visibility //visibility:private
 package(
@@ -30,4 +30,25 @@ sh_test(
     # allow; the script fails rather than skips without them.
     tags = ["skip-external-ci"],
     target_compatible_with = ["@platforms//os:linux"],
+)
+
+# An allocation must not crash when the frame pointer register holds the end of
+# the stack, as Mojo code may leave it. x86-64 only: the test sets %rbp.
+modular_cc_test(
+    name = "bogus_frame_pointer_test",
+    size = "small",
+    srcs = ["bogus_frame_pointer_test.cpp"],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Support:Globals.static",
+    ],
 )
