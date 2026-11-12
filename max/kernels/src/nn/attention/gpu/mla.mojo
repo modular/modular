@@ -84,7 +84,6 @@ from layout import (
     RowMajorLayout,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tile_io import (
@@ -123,7 +122,6 @@ from nn.attention.mha_utils import (
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -2367,11 +2365,11 @@ def flare_mla_decoding[
                 [
                     trace_arg(
                         "q",
-                        coord_to_index_list(q.layout.shape_coord()),
+                        q.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )
@@ -4105,19 +4103,19 @@ def flare_mla_prefill[
                 [
                     trace_arg(
                         "q",
-                        coord_to_index_list(q.layout.shape_coord()),
+                        q.layout.shape_coord(),
                     ),
                     trace_arg(
                         "k",
-                        coord_to_index_list(k.layout.shape_coord()),
+                        k.layout.shape_coord(),
                     ),
                     trace_arg(
                         "v",
-                        coord_to_index_list(v.layout.shape_coord()),
+                        v.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )
@@ -4230,19 +4228,19 @@ def flare_mla_prefill[
                 [
                     trace_arg(
                         "q",
-                        coord_to_index_list(q.layout.shape_coord()),
+                        q.layout.shape_coord(),
                     ),
                     trace_arg(
                         "k",
-                        coord_to_index_list(k.layout.shape_coord()),
+                        k.layout.shape_coord(),
                     ),
                     trace_arg(
                         "v",
-                        coord_to_index_list(v.layout.shape_coord()),
+                        v.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )
@@ -4345,19 +4343,19 @@ def flare_mla_prefill[
                 [
                     trace_arg(
                         "q",
-                        coord_to_index_list(q.layout.shape_coord()),
+                        q.layout.shape_coord(),
                     ),
                     trace_arg(
                         "k",
-                        coord_to_index_list(k.layout.shape_coord()),
+                        k.layout.shape_coord(),
                     ),
                     trace_arg(
                         "v",
-                        coord_to_index_list(v.layout.shape_coord()),
+                        v.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )
@@ -4450,23 +4448,23 @@ def flare_mla_prefill[
                 [
                     trace_arg(
                         "q_nope",
-                        coord_to_index_list(q_nope.layout.shape_coord()),
+                        q_nope.layout.shape_coord(),
                     ),
                     trace_arg(
                         "q_rope",
-                        coord_to_index_list(q_rope.layout.shape_coord()),
+                        q_rope.layout.shape_coord(),
                     ),
                     trace_arg(
                         "k",
-                        coord_to_index_list(k.layout.shape_coord()),
+                        k.layout.shape_coord(),
                     ),
                     trace_arg(
                         "v",
-                        coord_to_index_list(v.layout.shape_coord()),
+                        v.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )
@@ -4586,23 +4584,23 @@ def flare_mla_prefill[
                 [
                     trace_arg(
                         "q_nope",
-                        coord_to_index_list(q_nope.layout.shape_coord()),
+                        q_nope.layout.shape_coord(),
                     ),
                     trace_arg(
                         "q_rope",
-                        coord_to_index_list(q_rope.layout.shape_coord()),
+                        q_rope.layout.shape_coord(),
                     ),
                     trace_arg(
                         "k",
-                        coord_to_index_list(k.layout.shape_coord()),
+                        k.layout.shape_coord(),
                     ),
                     trace_arg(
                         "v",
-                        coord_to_index_list(v.layout.shape_coord()),
+                        v.layout.shape_coord(),
                     ),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )

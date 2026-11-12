@@ -62,7 +62,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
 )
 
 comptime _DRAFT_CLUSTER_MAX = 4
@@ -379,10 +378,10 @@ def dspark_draft_sample_gpu[
         Error: If the shapes disagree or a row does not fit the staging
             budget even at the widest cluster.
     """
-    var shape = coord_to_index_list(logits.layout.shape_coord())
-    var bias_shape = coord_to_index_list(bias.layout.shape_coord())
-    var rows = shape[0]
-    var d = shape[1]
+    var shape = logits.layout.shape_coord()
+    var bias_shape = bias.layout.shape_coord()
+    var rows = Int(shape[0])
+    var d = Int(shape[1])
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -399,9 +398,9 @@ def dspark_draft_sample_gpu[
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
     ):
-        if bias_shape[0] != rows or bias_shape[1] != d:
+        if Int(bias_shape[0]) != rows or Int(bias_shape[1]) != d:
             raise Error("dspark_draft_sample: bias must be [rows, vocab]")
-        if Int(coord_to_index_list(dist.layout.shape_coord())[0]) != rows:
+        if Int(dist.layout.shape_coord()[0]) != rows:
             raise Error("dspark_draft_sample: dist must be [rows, vocab]")
         if d % _DRAFT_VEC != 0:
             raise Error(

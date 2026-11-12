@@ -25,7 +25,6 @@ from layout import (
     RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
 )
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 

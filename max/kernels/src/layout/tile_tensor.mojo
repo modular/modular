@@ -61,7 +61,6 @@ from layout.coord import (
     CoordLike,
     _IntToComptimeInt,
     coord,
-    coord_to_index_list,
     _CoordToDynamic,
     _Multiply,
     _Divide,

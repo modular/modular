@@ -272,20 +272,18 @@ def _batched_matmul_cpu_impl[
     var mat_rows = c_shape[rank - 2]
     var mat_cols = c_shape[rank - 1]
 
-    var a_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_tile.layout.shape_coord())
-    )
-    var b_shape_idx = rebind[IndexList[rank]](
-        coord_to_index_list(b_tile.layout.shape_coord())
-    )
+    var a_shape = a_tile.layout.shape_coord()
+    var b_shape = b_tile.layout.shape_coord()
 
     var c = c_tile.reshape(row_major(collapsed_batches, mat_rows, mat_cols))
     var a = a_tile.reshape(
-        row_major(collapsed_batches, a_shape[rank - 2], a_shape[rank - 1])
+        row_major(
+            collapsed_batches, Int(a_shape[rank - 2]), Int(a_shape[rank - 1])
+        )
     )
     var b = b_tile.reshape(
         row_major(
-            collapsed_batches, b_shape_idx[rank - 2], b_shape_idx[rank - 1]
+            collapsed_batches, Int(b_shape[rank - 2]), Int(b_shape[rank - 1])
         )
     )
     var batch_size: Int = Int(c.dim[0]())
@@ -1139,12 +1137,11 @@ def _batched_matmul_gpu_impl[
                         width=simd_width,
                         alignment=alignment * size_of[c_type](),
                     ](idx)
-                    var collapsed = coord_to_index_list(idx)
                     var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                        Int(collapsed[0]), c_shape
+                        Int(idx[0]), c_shape
                     )
-                    nd_coords[rank - 1] = collapsed[2]
-                    nd_coords[rank - 2] = collapsed[1]
+                    nd_coords[rank - 1] = Int(idx[2])
+                    nd_coords[rank - 2] = Int(idx[1])
                     epilogue_fn[c_type, simd_width, alignment=alignment](
                         Coord(nd_coords), c_val
                     )
@@ -1164,12 +1161,11 @@ def _batched_matmul_gpu_impl[
                     var c_val = c_tensor_reshaped.load[
                         width=simd_width, alignment=byte_alignment
                     ](idx)
-                    var collapsed = coord_to_index_list(idx)
                     var nd_coords = _get_start_indices_of_nth_subvolume[2](
-                        Int(collapsed[0]), c_shape
+                        Int(idx[0]), c_shape
                     )
-                    nd_coords[rank - 1] = collapsed[2]
-                    nd_coords[rank - 2] = collapsed[1]
+                    nd_coords[rank - 1] = Int(idx[2])
+                    nd_coords[rank - 2] = Int(idx[1])
                     c_tensor_reshaped.store[
                         width=simd_width, alignment=byte_alignment
                     ](
@@ -1530,16 +1526,9 @@ def _batched_matmul[
 
     comptime rank = c_buf.rank
 
-    # Build shape IndexLists from TileTensor for tracing.
-    var a_shape = rebind[IndexList[rank]](
-        coord_to_index_list(a_buf.layout.shape_coord())
-    )
-    var b_shape = rebind[IndexList[rank]](
-        coord_to_index_list(b_buf.layout.shape_coord())
-    )
-    var c_shape = rebind[IndexList[rank]](
-        coord_to_index_list(c_buf.layout.shape_coord())
-    )
+    var a_shape = a_buf.layout.shape_coord()
+    var b_shape = b_buf.layout.shape_coord()
+    var c_shape = c_buf.layout.shape_coord()
 
     @inline(.always)
     def description_fn() {var a_shape, var b_shape, var c_shape, imm} -> String:

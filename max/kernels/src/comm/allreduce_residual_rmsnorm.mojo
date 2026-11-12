@@ -96,7 +96,6 @@ from layout import (
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
@@ -1251,8 +1250,7 @@ def _launch_split_allreduce_rmsnorm[
     ](coords: Coord, val: SIMD[_dtype, length=_width]) {
         var residual_2d, var residual_output_2d
     } -> None:
-        var il = coord_to_index_list(coords)
-        var rc = Coord(il[0], il[1])
+        var rc = Coord(Int(coords[0]), Int(coords[1]))
         var res = residual_2d.load[width=_width, alignment=alignment](rc)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.

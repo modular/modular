@@ -49,7 +49,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.layout import Layout
@@ -687,9 +686,9 @@ def topk_topp_masked_probs_cluster[
     """
     comptime assert logits.rank == 2, "logits rank must be 2"
 
-    var shape = coord_to_index_list(logits.layout.shape_coord())
-    var batch_size = shape[0]
-    var d = shape[1]
+    var shape = logits.layout.shape_coord()
+    var batch_size = Int(shape[0])
+    var d = Int(shape[1])
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -706,8 +705,8 @@ def topk_topp_masked_probs_cluster[
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
     ):
-        var probs_shape = coord_to_index_list(probs.layout.shape_coord())
-        if probs_shape[0] != batch_size or probs_shape[1] != d:
+        var probs_shape = probs.layout.shape_coord()
+        if Int(probs_shape[0]) != batch_size or Int(probs_shape[1]) != d:
             raise Error("probs shape must match the logits shape")
 
         # Speculative decoding runs this with zero rows on every step that has
@@ -1566,9 +1565,9 @@ def topk_topp_sampling_from_prob_cluster[
     comptime assert probs.rank == 2, "probs rank must be 2"
     comptime assert output.rank == 1, "output rank must be 1"
 
-    var shape = coord_to_index_list(probs.layout.shape_coord())
-    var batch_size = shape[0]
-    var d = shape[1]
+    var shape = probs.layout.shape_coord()
+    var batch_size = Int(shape[0])
+    var d = Int(shape[1])
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -1586,8 +1585,8 @@ def topk_topp_sampling_from_prob_cluster[
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.device().id),
     ):
-        var out_shape = coord_to_index_list(output.layout.shape_coord())
-        if out_shape[0] != batch_size:
+        var out_shape = output.layout.shape_coord()
+        if Int(out_shape[0]) != batch_size:
             raise Error("output batch size must match probs batch size")
 
         # Use up to 8 elements per vector to minimize the number of chunks
@@ -1633,10 +1632,11 @@ def topk_topp_sampling_from_prob_cluster[
         comptime if emit_dist:
             match out_dist:
                 case .Some(dist):
-                    var dist_shape = coord_to_index_list(
-                        dist.layout.shape_coord()
-                    )
-                    if dist_shape[0] != batch_size or dist_shape[1] != d:
+                    var dist_shape = dist.layout.shape_coord()
+                    if (
+                        Int(dist_shape[0]) != batch_size
+                        or Int(dist_shape[1]) != d
+                    ):
                         raise Error("out_dist shape must match probs shape")
                     dist_ptr = dist.ptr
                 case .None:

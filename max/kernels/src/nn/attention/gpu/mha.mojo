@@ -72,7 +72,6 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
-    coord_to_index_list,
 )
 from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
 from layout.tile_io import (
@@ -236,7 +235,7 @@ def flash_attention[
                     trace_arg("v", v.layout.shape_coord()),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )

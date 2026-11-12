@@ -38,7 +38,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tensor_core import get_mma_shape

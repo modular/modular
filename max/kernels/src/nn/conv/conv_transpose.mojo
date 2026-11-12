@@ -52,7 +52,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
     row_major,
 )
 from layout.coord import DynamicCoord

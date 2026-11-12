@@ -45,7 +45,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
     stack_allocation,
 )

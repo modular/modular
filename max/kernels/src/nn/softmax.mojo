@@ -1076,17 +1076,16 @@ def softmax_inline[
         axis: The axis along which to compute the softmax.
         context: Optional device context for GPU execution.
     """
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
 
     def trace_information() {imm} -> String:
-        return trace_arg("input", shape_il, dtype)
+        return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
     ):
         # Exit early if the tensors are empty.
-        if shape_il.flattened_length() == 0:
+        if Int(shape.product()) == 0:
             return
         comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)

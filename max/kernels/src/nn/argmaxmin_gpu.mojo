@@ -30,7 +30,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
@@ -491,11 +490,11 @@ def argmax_with_bias_gpu[
     comptime assert bias.rank == 2, "bias must be rank 2"
     comptime assert output.rank == 1, "output must be rank 1"
 
-    var shape = coord_to_index_list(logits.layout.shape_coord())
-    var bias_shape = coord_to_index_list(bias.layout.shape_coord())
-    var num_rows = shape[0]
-    var positions = shape[1]
-    var num_elements = shape[2]
+    var shape = logits.layout.shape_coord()
+    var bias_shape = bias.layout.shape_coord()
+    var num_rows = Int(shape[0])
+    var positions = Int(shape[1])
+    var num_elements = Int(shape[2])
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -521,9 +520,9 @@ def argmax_with_bias_gpu[
                 positions,
                 ")",
             )
-        if bias_shape[0] != num_rows or bias_shape[1] != num_elements:
+        if Int(bias_shape[0]) != num_rows or Int(bias_shape[1]) != num_elements:
             raise Error("argmax_with_bias_gpu: bias must be [rows, n]")
-        if Int(coord_to_index_list(output.layout.shape_coord())[0]) != num_rows:
+        if Int(output.layout.shape_coord()[0]) != num_rows:
             raise Error("argmax_with_bias_gpu: output must be [rows]")
         if num_rows == 0 or num_elements == 0:
             return

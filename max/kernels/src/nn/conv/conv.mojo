@@ -3563,15 +3563,9 @@ def conv_nhwc_direct[
     def description_fn() {imm} -> String:
         return ";".join(
             [
-                trace_arg(
-                    "input", coord_to_index_list(input.layout.shape_coord())
-                ),
-                trace_arg(
-                    "filter", coord_to_index_list(filter.layout.shape_coord())
-                ),
-                trace_arg(
-                    "output", coord_to_index_list(output.layout.shape_coord())
-                ),
+                trace_arg("input", input.layout.shape_coord()),
+                trace_arg("filter", filter.layout.shape_coord()),
+                trace_arg("output", output.layout.shape_coord()),
                 String(t"group={num_groups}"),
                 "stride=" + "x".join([stride]),
                 "padding_h=" + "x".join([pad_h]),
@@ -5643,25 +5637,25 @@ def conv_gpu[
 
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
-            var _in_s = coord_to_index_list(input.layout.shape_coord())
+            var _in_s = input.layout.shape_coord()
             var input_rm = input.reshape(
                 row_major(
                     (
-                        _in_s[0],
-                        _in_s[1],
-                        _in_s[2],
-                        _in_s[3],
+                        Int(_in_s[0]),
+                        Int(_in_s[1]),
+                        Int(_in_s[2]),
+                        Int(_in_s[3]),
                     )
                 )
             )
-            var _filt_s = coord_to_index_list(filter.layout.shape_coord())
+            var _filt_s = filter.layout.shape_coord()
             var filter_rm = filter.reshape(
                 row_major(
                     (
-                        _filt_s[0],
-                        _filt_s[1],
-                        _filt_s[2],
-                        _filt_s[3],
+                        Int(_filt_s[0]),
+                        Int(_filt_s[1]),
+                        Int(_filt_s[2]),
+                        Int(_filt_s[3]),
                     )
                 )
             )
@@ -5705,14 +5699,14 @@ def conv_gpu[
                 _ = output_tmp_data^
 
             else:
-                var _out_s = coord_to_index_list(output.layout.shape_coord())
+                var _out_s = output.layout.shape_coord()
                 var output_rm = output.reshape(
                     row_major(
                         (
-                            _out_s[0],
-                            _out_s[1],
-                            _out_s[2],
-                            _out_s[3],
+                            Int(_out_s[0]),
+                            Int(_out_s[1]),
+                            Int(_out_s[2]),
+                            Int(_out_s[3]),
                         )
                     )
                 )

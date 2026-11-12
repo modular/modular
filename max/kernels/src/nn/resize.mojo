@@ -593,11 +593,7 @@ def resize_linear[
     """
     _check_resize_shapes(input, output)
 
-    if rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    ) == rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape_coord())
-    ):
+    if input.layout.shape_coord() == output.layout.shape_coord():
         return unsafe_memcpy(
             dest=output.ptr, src=input.ptr, count=input.num_elements()
         )
@@ -821,42 +817,39 @@ def resize_cubic[
         out_dtype == .uint8 and in_dtype == .uint8
     ), "output must be float32, or uint8 for a uint8 input"
 
-    var in_shape = rebind[IndexList[4]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-    var out_shape = rebind[IndexList[4]](
-        coord_to_index_list(output.layout.shape_coord())
-    )
+    var in_shape = input.layout.shape_coord()
+    var out_shape = output.layout.shape_coord()
     debug_assert(
-        in_shape[0] == out_shape[0] and in_shape[3] == out_shape[3],
+        Int(in_shape[0]) == Int(out_shape[0])
+        and Int(in_shape[3]) == Int(out_shape[3]),
         "outer and inner sizes must match",
     )
     if input.num_elements() == 0 or output.num_elements() == 0:
         return
-    var outer = in_shape[0]
-    var inner = in_shape[3]
+    var outer = Int(in_shape[0])
+    var inner = Int(in_shape[3])
     var src = input.reshape(
-        row_major((outer, in_shape[1], in_shape[2] * inner))
+        row_major((outer, Int(in_shape[1]), Int(in_shape[2]) * inner))
     )
     var dst = output.reshape(
-        row_major((outer, out_shape[1], out_shape[2] * inner))
+        row_major((outer, Int(out_shape[1]), Int(out_shape[2]) * inner))
     )
     comptime if out_dtype == .uint8:
         _resize_2d_fixed_point(
             src.bitcast[.uint8](),
             dst.bitcast[.uint8](),
-            in_shape[2],
-            out_shape[2],
+            Int(in_shape[2]),
+            Int(out_shape[2]),
             inner,
         )
     else:
         _resize_2d_fused(
-            _AxisTaps(in_shape[2], out_shape[2]),
-            _AxisTaps(in_shape[1], out_shape[1]),
+            _AxisTaps(Int(in_shape[2]), Int(out_shape[2])),
+            _AxisTaps(Int(in_shape[1]), Int(out_shape[1])),
             src,
             dst.bitcast[.float32](),
-            in_shape[2],
-            out_shape[2],
+            Int(in_shape[2]),
+            Int(out_shape[2]),
             inner,
         )
 

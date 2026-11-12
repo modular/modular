@@ -223,15 +223,15 @@ def _cumsum_shape[axis: Int](input: ImmTileTensor[...]) -> Tuple[Int, Int, Int]:
     `[num_rows, axis_len, stride]`.
     """
     comptime axis_pos = axis if axis >= 0 else axis + input.rank
-    var shape = coord_to_index_list(input.layout.shape_coord())
+    var shape = input.layout.shape_coord()
     var num_rows = 1
     var stride = 1
     comptime for i in range(input.rank):
         comptime if i < axis_pos:
-            num_rows *= shape[i]
+            num_rows *= Int(shape[i])
         elif i > axis_pos:
-            stride *= shape[i]
-    return (num_rows, shape[axis_pos], stride)
+            stride *= Int(shape[i])
+    return (num_rows, Int(shape[axis_pos]), stride)
 
 
 @inline(.always)

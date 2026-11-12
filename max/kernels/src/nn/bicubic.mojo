@@ -31,7 +31,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
 )
 from std.itertools import product
 from std.utils.coord import dyn_coord
@@ -134,14 +133,14 @@ def cpu_bicubic_kernel(
     comptime assert output_host.flat_rank >= 4
 
     # get dimensions
-    var input_shape = coord_to_index_list(input_host.layout.shape_coord())
-    var output_shape = coord_to_index_list(output_host.layout.shape_coord())
-    var batch_size = input_shape[0]
-    var channels = input_shape[1]
-    var in_height = input_shape[2]
-    var in_width = input_shape[3]
-    var out_height = output_shape[2]
-    var out_width = output_shape[3]
+    var input_shape = input_host.layout.shape_coord()
+    var output_shape = output_host.layout.shape_coord()
+    var batch_size = Int(input_shape[0])
+    var channels = Int(input_shape[1])
+    var in_height = Int(input_shape[2])
+    var in_width = Int(input_shape[3])
+    var out_height = Int(output_shape[2])
+    var out_width = Int(output_shape[3])
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -238,12 +237,12 @@ def gpu_bicubic_kernel[
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var input_shape = coord_to_index_list(input.layout.shape_coord())
-    var output_shape = coord_to_index_list(output.layout.shape_coord())
-    var in_height = input_shape[2]
-    var in_width = input_shape[3]
-    var out_height = output_shape[2]
-    var out_width = output_shape[3]
+    var input_shape = input.layout.shape_coord()
+    var output_shape = output.layout.shape_coord()
+    var in_height = Int(input_shape[2])
+    var in_width = Int(input_shape[3])
+    var out_height = Int(output_shape[2])
+    var out_width = Int(output_shape[3])
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -322,10 +321,10 @@ def resize_bicubic[
     ), "bicubic resize only supports rank 4 tensors"
 
     comptime if ctx.target.is_gpu():
-        var input_shape = coord_to_index_list(input.layout.shape_coord())
-        var N = input_shape[0]
-        var C = input_shape[1]
-        var output_shape = coord_to_index_list(output.layout.shape_coord())
+        var input_shape = input.layout.shape_coord()
+        var N = Int(input_shape[0])
+        var C = Int(input_shape[1])
+        var output_shape = output.layout.shape_coord()
 
         # Use a fixed block size to avoid exceeding CUDA thread limits. Pixels
         # are spread over the third grid dimension so that a few images still
@@ -336,7 +335,12 @@ def resize_bicubic[
         var pixel_blocks = clamp(
             ceildiv(blocks_to_fill_gpu, N * C),
             1,
-            min(ceildiv(output_shape[2] * output_shape[3], block_size), 65535),
+            min(
+                ceildiv(
+                    Int(output_shape[2]) * Int(output_shape[3]), block_size
+                ),
+                65535,
+            ),
         )
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,

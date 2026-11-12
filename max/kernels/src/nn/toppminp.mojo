@@ -21,7 +21,6 @@ from std.random import random_float64
 from layout import (
     Coord,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from nn.softmax import softmax_inline
@@ -144,9 +143,9 @@ def _topp_minp_sampling[
         out_token_ids.flat_rank == 2
     ), "Only rank 2 tensors are supported"
     comptime assert p_thresholds.flat_rank == 1
-    var input_shape = coord_to_index_list(input_logits.layout.shape_coord())
-    var batch_size = input_shape[0]
-    var vocab_size = input_shape[1]
+    var input_shape = input_logits.layout.shape_coord()
+    var batch_size = Int(input_shape[0])
+    var vocab_size = Int(input_shape[1])
 
     var sorted_probs_alloc = alloc(
         AllocLayout[Scalar[dtype]](length=batch_size * vocab_size)

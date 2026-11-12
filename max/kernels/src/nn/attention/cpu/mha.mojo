@@ -40,7 +40,7 @@ from layout import (
     coord,
     row_major,
 )
-from layout.coord import DynamicCoord, coord_to_index_list
+from layout.coord import DynamicCoord
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
@@ -1365,7 +1365,7 @@ def flash_attention_split_kv[
                     trace_arg("v_cache", v_cache_shape),
                     trace_arg(
                         "output",
-                        coord_to_index_list(output.layout.shape_coord()),
+                        output.layout.shape_coord(),
                     ),
                 ]
             )

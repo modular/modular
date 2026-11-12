@@ -256,12 +256,12 @@ def _tile_gpu[
 
     # All extents are read on the host and captured by value: the source
     # coordinate of each output element wraps per axis by the input extent.
-    var input_dims = coord_to_index_list(input.layout.shape_coord())
-    var output_dims = coord_to_index_list(output.layout.shape_coord())
+    var input_dims = input.layout.shape_coord()
+    var output_dims = output.layout.shape_coord()
     comptime rank = input.rank
     var in_dims_t = StaticTuple[Int64, rank](fill=0)
     comptime for axis in range(rank):
-        in_dims_t[axis] = Int64(input_dims[axis])
+        in_dims_t[axis] = Int64(Int(input_dims[axis]))
 
     var in_inner = Int(input_dims[rank - 1])
     var out_inner = Int(output_dims[rank - 1])
