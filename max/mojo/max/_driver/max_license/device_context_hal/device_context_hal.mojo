@@ -248,58 +248,85 @@ def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
     return d == a
 
 
-def _load_driver[api: StaticString]() -> Optional[ArcPointer[Driver]]:
-    """Loads the first plugin in `MODULAR_DRIVER_PLUGINS` that satisfies `api`.
+def _plugin_spec_entry(api: String) raises -> String:
+    """Returns the first `MODULAR_DRIVER_PLUGINS` entry that satisfies `api`.
 
-    The one-time initializer for `_GPU_DRIVER` and `_CPU_DRIVER`. It backs a
-    `_Global` initializer, so it must not raise: a missing or unloadable plugin
-    is reported as an empty `Optional`.
+    Args:
+        api: The requested device API, such as "cpu", "gpu" or "cuda".
 
-    Parameters:
-        api: `"gpu"` for the accelerator plugin, `"cpu"` for the CPU plugin.
+    Returns:
+        The matching `name@/path/to/plugin.so` entry.
+
+    Raises:
+        If `MODULAR_DRIVER_PLUGINS` is not set or no entry satisfies `api`.
     """
     var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
     if not plugin_spec:
-        return None
-    try:
-        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
-        for entry in plugin_spec.split(";"):
-            var name = String(entry.split("@")[0])
-            if _driver_satisfies_api(name, api):
-                return Optional(Driver.create(String(entry)))
-        return None
-    except:
-        return None
+        raise Error("MODULAR_DRIVER_PLUGINS not set")
+    # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
+    for entry in plugin_spec.split(";"):
+        var name = String(entry.split("@")[0])
+        if _driver_satisfies_api(name, api):
+            return String(entry)
+    raise Error(
+        String(t"Requested API {api} not provided by MODULAR_DRIVER_PLUGINS")
+    )
 
 
-comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_driver["gpu"]]
+def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
+    """Loads the accelerator plugin named by `MODULAR_DRIVER_PLUGINS`.
 
-# CPU kernels create a CPU context per call (`sync_parallelize` does when it is
-# given none), so loading the plugin per context would put a `dlopen` and a
-# symbol lookup per entry point on every CPU kernel launch.
-comptime _CPU_DRIVER = _Global["MODULAR_HAL_CPU_DRIVER", _load_driver["cpu"]]
-
-
-def _load_cpu_device() -> (
-    Optional[ArcPointer[_HALDevice[get_device_spec[0]()]]]
-):
-    """Opens device 0 of the CPU plugin; the initializer for `_CPU_DEVICE`.
-
-    It backs a `_Global` initializer, so it must not raise: a missing plugin or
-    device is reported as an empty `Optional`.
+    Used as the one-time initializer for `_GPU_DRIVER`; see that global. It
+    backs a `_Global` initializer, so it must not raise: a missing or
+    unloadable plugin is reported as an empty `Optional`.
     """
     try:
-        var maybe_driver = _CPU_DRIVER.get_or_create_ptr()
-        if case .Some(driver) = maybe_driver[]:
-            return Optional(driver[].get_device[0]())
-        return None
+        return Optional(Driver.create(_plugin_spec_entry("gpu")))
     except:
         return None
 
 
-# Opening a device also resolves its extension symbols, so a CPU context per
-# kernel call would repeat those lookups too.
-comptime _CPU_DEVICE = _Global["MODULAR_HAL_CPU_DEVICE", _load_cpu_device]
+comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
+
+
+@fieldwise_init
+struct _CPUPlugin(Copyable, Movable):
+    """The CPU plugin's driver and its device 0."""
+
+    var driver: ArcPointer[Driver]
+    var device: ArcPointer[_HALDevice[get_device_spec[0]()]]
+
+
+def _open_cpu_plugin() raises -> _CPUPlugin:
+    """Loads the CPU plugin named by `MODULAR_DRIVER_PLUGINS` and opens device 0.
+
+    Returns:
+        The loaded driver and device.
+
+    Raises:
+        If the plugin is not named, does not load, or has no device 0.
+    """
+    var driver = Driver.create(_plugin_spec_entry("cpu"))
+    var device = driver[].get_device[0]()
+    return _CPUPlugin(driver=driver^, device=device^)
+
+
+def _load_cpu_plugin() -> Optional[_CPUPlugin]:
+    """Opens the CPU plugin; the one-time initializer for `_CPU_PLUGIN`.
+
+    It backs a `_Global` initializer, so it must not raise: a missing or
+    unloadable plugin is reported as an empty `Optional`.
+    """
+    try:
+        return Optional(_open_cpu_plugin())
+    except:
+        return None
+
+
+# CPU kernels create a CPU context per call (`sync_parallelize` does when it is
+# given none). Loading the plugin per context would put a `dlopen`, and a
+# symbol lookup per entry point and extension, on every CPU kernel launch.
+comptime _CPU_PLUGIN = _Global["MODULAR_HAL_CPU_PLUGIN", _load_cpu_plugin]
 
 
 def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
@@ -653,54 +680,26 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             )
 
-        var plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
-        if not plugin_spec:
-            raise Error("MODULAR_DRIVER_PLUGINS not set")
-
-        # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so"); load the
-        # first whose name satisfies the requested api (its concrete vendor
-        # name, "cpu", or the generic accelerator alias "gpu").
-        var chosen = String("")
-        for entry in plugin_spec.split(";"):
-            var name = String(entry.split("@")[0])
-            if _driver_satisfies_api(name, api):
-                chosen = String(entry)
-                break
-        if not chosen:
-            raise Error(
-                String(
-                    t"Requested API {api} not provided by"
-                    t" MODULAR_DRIVER_PLUGINS"
-                )
-            )
-
         self._handle = None
-        if not _driver_satisfies_api(String(chosen.split("@")[0]), "gpu"):
-            var maybe_cpu_driver = _CPU_DRIVER.get_or_create_ptr()
-            if case .Some(driver) = maybe_cpu_driver[]:
-                self._driver = driver
+        # `_api_matches_target` above pairs a CPU target with the "cpu" api, so
+        # the branch is known at compile time. Choosing it here keeps the
+        # accelerator path out of CPU-only code. The CPU branch also skips
+        # parsing `MODULAR_DRIVER_PLUGINS`, which the cached load already did.
+        comptime if Self.target.is_cpu():
+            # `_open_cpu_plugin` only loads a plugin that satisfies "cpu", so
+            # the driver needs no api check here.
+            var maybe_plugin = _CPU_PLUGIN.get_or_create_ptr()
+            if case .Some(plugin) = maybe_plugin[]:
+                self._driver = plugin.driver
+                self._device = plugin.device
             else:
-                # `_Global` init drops the load error; reload to raise it.
-                _ = Driver.create(chosen)
-                raise Error(String(t"failed to load CPU plugin '{chosen}'"))
-
-            # Validate that the loaded plugin satisfies the requested api (its
-            # concrete vendor name, or the generic accelerator alias "gpu").
-            var driver_name = self._driver[].name()
-            if not _driver_satisfies_api(String(driver_name), api):
-                raise Error(
-                    String(
-                        t"Requested API {api} not supported by driver"
-                        t" {driver_name}"
-                    )
-                )
-            var maybe_cpu_device = _CPU_DEVICE.get_or_create_ptr()
-            if case .Some(device) = maybe_cpu_device[]:
-                self._device = device
-            else:
-                # `_Global` init drops the open error; reopen to raise it.
-                self._device = self._driver[].get_device[0]()
+                # The cached load drops its error; load again to raise it.
+                _ = _open_cpu_plugin()
+                raise Error("failed to load the CPU plugin")
         else:
+            # Load the first plugin whose name satisfies the requested api: its
+            # concrete vendor name, or the generic accelerator alias "gpu".
+            var chosen = _plugin_spec_entry(api)
             # Shared so peer calls get both contexts from one driver.
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
             if case .Some(driver) = maybe_driver[]:

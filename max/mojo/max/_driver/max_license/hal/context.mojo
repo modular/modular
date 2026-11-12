@@ -164,8 +164,10 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         )
         self._raw = device._raw
         self._self_ref = WeakPointer[Self]()
-        self._function_cache = {}
-        self._function_alias = {}
+        # `{}` would use the dict-literal constructor, which brings in the
+        # insert and resize code for every module that makes a context.
+        self._function_cache = Dict[String, _CachedFunction]()
+        self._function_alias = Dict[_FunctionAlias, FunctionHandle]()
         self._function_cache_lock = alloc(Layout[Int64](length=1)).unsafe_leak()
         self._function_cache_lock[] = 0
 
