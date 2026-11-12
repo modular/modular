@@ -38,11 +38,6 @@ from collections.abc import Coroutine, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
-# TODO(MXF-897): Remove once device discovery stops depending on import
-# order. A plugin-backed accelerator only registers if max.engine loads
-# before max._mlir_context; this package is usually the first max module a
-# tensor program imports, so it loads max.engine first.
-from max import engine as _engine
 from max._mlir_context import MLIRThreadPoolExecutor
 from max.driver import Device
 from max.dtype import DType

@@ -300,7 +300,7 @@ modular_cc_binary(
     srcs = ["test/LegacyStubPlugin.cpp"],
     linkshared = True,
     linkstatic = False,
-    visibility = ["//visibility:private"],
+    visibility = ["//max/internal/driver/test:__pkg__"],
     deps = ["//SDK:HAL"],
 )
 
