@@ -51,6 +51,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_error_messages.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
+    "test_invalidated_capture_eager.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_matmul_swiglu_fusion_gpu.py",
@@ -811,6 +812,31 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/_graph_ops",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# Its own process: a failed capture must leave the stream usable for eager
+# execution, and a stream left capturing breaks every later test in the process.
+modular_py_test(
+    name = "test_invalidated_capture_eager",
+    srcs = [
+        "conftest.py",
+        "test_invalidated_capture_eager.py",
+    ],
+    # TODO(GEX-4551): NVIDIA only until HIP can end an invalidated capture; then
+    # this test is also the AMD pass criterion (it fails on MI355 today).
+    gpu_constraints = ["//:nvidia_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("hypothesis"),
         requirement("numpy"),
     ],

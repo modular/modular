@@ -1158,6 +1158,8 @@ modular_cc_test(
         "GraphCaptureTest.cpp",
         "ScopedEnvVar.h",
     ],
+    # The MultiGpu* cases run in GraphCaptureMultiGPUTest.
+    args = ["--gtest_filter=-GraphCaptureTest.MultiGpu*"],
     data = GRAPH_CAPTURE_HSACO_DATA,
     exec_properties = {
         # Measured peak GPU memory: ~628 MB, set to 2x for safety margin.
@@ -1167,6 +1169,31 @@ modular_cc_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": ["//:has_gpu"],
     }),
+    tags = ["gpu"],
+    deps = [
+        ":DeviceGraphTestUtils",
+        ":TestUtils",
+        "//AsyncRT:Runtime",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+        "@bazel_tools//tools/cpp/runfiles",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "GraphCaptureMultiGPUTest",
+    size = "medium",
+    srcs = [
+        "GraphCaptureTest.cpp",
+        "ScopedEnvVar.h",
+    ],
+    args = ["--gtest_filter=GraphCaptureTest.MultiGpu*"],
+    data = GRAPH_CAPTURE_HSACO_DATA,
+    exec_properties = {
+        "test.resources:gpu-memory": "1.3",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = ["gpu"],
     deps = [
         ":DeviceGraphTestUtils",

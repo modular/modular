@@ -1522,11 +1522,20 @@ ErrorOr<DeviceGraphRef> CUDADeviceStream::endCapture() {
   CUstreamCaptureStatus status = getCaptureStatus();
   if (status == CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_NONE)
     RETURN_ERROR("stream is not capturing");
-  if (status == CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_INVALIDATED)
-    RETURN_ERROR("stream capture was invalidated");
 
   CUDADevice &cudaDevice = CUDADevice::cast(this->device());
   CUDA_WITH_DEV_ERR(cudaDevice);
+
+  if (status == CUstreamCaptureStatus::CU_STREAM_CAPTURE_STATUS_INVALIDATED) {
+    // End the capture anyway: until cuStreamEndCapture runs, the stream and
+    // every stream joined to its capture reject all eager work. Best effort,
+    // like ~CUDADeviceGraphBuilder: the call reports the invalidation again.
+    CUgraph orphan = nullptr;
+    cudaDevice.cudaDriver().cuStreamEndCapture(stream_, &orphan);
+    if (orphan)
+      cudaDevice.cudaDriver().cuGraphDestroy(orphan);
+    RETURN_ERROR("stream capture was invalidated");
+  }
 
   CUgraph graph = nullptr;
   CUDA_CHECK_ERR(cudaDevice.cudaDriver().cuStreamEndCapture(stream_, &graph));

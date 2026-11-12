@@ -921,7 +921,8 @@ public:
   virtual ErrorOrSuccess beginCapture() const;
 
   /// End capture and return the captured graph.
-  /// Returns error if not capturing or capture was invalidated.
+  /// Returns error if not capturing or capture was invalidated. On CUDA, an
+  /// invalidated capture is still ended, so the stream accepts work again.
   virtual ErrorOr<DeviceGraphRef> endCapture();
 
   /// Begin recording a device launch trace. Default is a no-op.
