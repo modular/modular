@@ -157,20 +157,19 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
     // Import mojo stdlib packages and compiler directives.
     for (auto [package, as] : MOGG::kPackagesToImport) {
       if (as.empty())
-        state.builder.import(package);
+        state.file->import(package);
       else
-        state.builder.importAs(package, as);
+        state.file->importAs(package, as);
     }
     if (moduleOp
             ->walk([](MOGG::GraphBlobOp) { return WalkResult::interrupt(); })
             .wasInterrupted())
-      state.builder.importAs(MOGG::kGraphBlobModule,
-                             MOGG::kGraphBlobModuleAlias);
+      state.file->importAs(MOGG::kGraphBlobModule, MOGG::kGraphBlobModuleAlias);
 
     // Import mojo packages for the custom kernel libraries.
     for (const auto &kernelLibraryPath : kernelLibraryPaths) {
       auto moduleName = std::filesystem::path(kernelLibraryPath).stem();
-      state.builder.import(moduleName.string());
+      state.file->import(moduleName.string());
     }
 
     // Library imports bind only the top-level package, so under
@@ -184,10 +183,10 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
       if (structName.empty())
         continue;
       if (importedKernelModules.insert(moduleName).second)
-        state.builder.import(moduleName.str());
+        state.file->import(moduleName.str());
     }
 
-    state.builder.newline();
+    state.file->newline();
 
     for (auto &&kernelStub : llvm::make_early_inc_range(
              moduleOp.getBodyRegion().getOps<MOGG::FuncOp>())) {
@@ -200,7 +199,7 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
     // Append any deferred struct definitions (fusion structs emitted by
     // BindLambdaOp). Mojo processes all module-scope declarations before
     // compiling function bodies, so ordering doesn't matter.
-    auto mojoText = state.builder.str() + state.structDefsBuilder.str();
+    auto mojoText = state.file.str();
 
     // Compute a base file name for the dump from the names of non-subgraph
     // ModelOps (user-visible model names) joined by "+", or "graph" when there

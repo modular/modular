@@ -18,7 +18,7 @@
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MOGGDialect/MOGGEnums.h"
 #include "GraphCompiler/MOGGDialect/MOGGTypes.h"
-#include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
+#include "GraphCompiler/MOGGDialect/Support/MojoFile.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
 
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -26,6 +26,7 @@
 #include "Support/AssertStream.h"
 
 #include "llvm/ADT/ScopedHashTable.h"
+#include "llvm/ADT/StringSet.h"
 
 namespace M::MOGG {
 // Forward-declared to break MOGGOps.h -> EmitsMojoInterface.h ->
@@ -58,31 +59,27 @@ struct EmitMojoState {
         enableOpTraceComments(enableOpTraceComments),
         enableDebugDumpFusedTensorSpecs(enableDebugDumpFusedTensorSpecs) {}
 
-  MojoBuilder builder;
-  /// Module-scope struct definitions (fusion structs), which are discovered
-  /// mid-function (e.g. from BindLambdaOp). Appended after the main output;
-  /// Mojo allows file-scope declarations in any order.
-  MojoBuilder structDefsBuilder;
+  /// The Mojo source file being emitted: the function bodies in order, then
+  /// the module-scope declarations they need. Emitters write through
+  /// `file.output()`, which is the declarations section while a declaration
+  /// is being emitted.
+  MojoFile file;
 
-  /// One-per-module guard for `_MoggTensorIO` + `_MoggTensorArg` and its
-  /// `_MoggDenseTensorArg` / `_MoggStableTensorArg` engine-binding aliases,
-  /// which `TraitCreateOp::emitMojo` emits on first use (no library type yet).
-  bool emittedTensorArgDefs = false;
-  /// One-per-module guard for `_MoggShapeTensorArg`, which backs every
-  /// shape-function trait tensor argument. Shape functions run on the host,
-  /// so it needs none of `_MoggTensorArg`'s device-passable machinery.
-  bool emittedShapeTensorArgDefs = false;
-  /// One-per-module guard for `_MoggTensorBufferCapture` (region→stub
-  /// boundary).
-  bool emittedTensorBufferCaptureDefs = false;
-  /// One-per-module guard for `kInputLoadFusionDefs`, emitted by
-  /// `emitInputLoadFusionFunctor`.
-  bool emittedInputLoadFusionArgDefs = false;
-  /// One-per-module guard for `kOutputStoreFusionDefs`.
-  bool emittedOutputStoreFusionArgDefs = false;
-  /// One-per-module guard for `kTransformFusionDefs`, emitted by
-  /// `emitTransformFusionFunctor`.
-  bool emittedTransformFusionArgDefs = false;
+  /// Emits `definition` into the declarations section unless this file already
+  /// has it. `definition` is the text of the declaration itself, which is what
+  /// identifies it: there is no separate id to keep in sync.
+  void declare(llvm::StringRef definition) {
+    // Inside a declaration, this text would be written at the declaration's
+    // indentation and then never at file scope, since the set below records it
+    // as written first.
+    ASSERT_STREAM(!file.inDeclarations(),
+                  << "a declaration cannot be written from inside another; "
+                     "leave the declaration scope first");
+    if (!emittedDeclarations.insert(definition).second)
+      return; // already in this file.
+    file.declarations().verbatim(MojoValue(definition));
+  }
+
   /// The `mogg.routine.async` return values, set by ops feeding
   /// `mogg.output` (e.g. AsyncReadyOp or AsyncPack*).
   SmallVector<MojoValue> mojoReturnValues;
@@ -188,10 +185,10 @@ struct EmitMojoState {
   /// If true, generate compute lambdas when possible.
   bool enableComputeLambdas;
 
-  /// Emit `kOutputStoreFusionDefs` into `structDefsBuilder` once per module.
-  void emitOutputStoreFusionDefsOnce();
-
 private:
+  /// The declarations already written into `file`.
+  llvm::StringSet<> emittedDeclarations;
+
   llvm::ScopedHashTable<Value, MojoValue> mlirValueToMojoValue;
   // Holds the bindings made outside any `ValueScope`.
   llvm::ScopedHashTableScope<Value, MojoValue> outermostValueScope{
@@ -245,7 +242,7 @@ public:
 
   void genAllKeepAliveStatements() {
     for (const MojoValue &val : keepAliveValues)
-      builder.keepAlive(val);
+      file->keepAlive(val);
     keepAliveValues.clear();
   }
 

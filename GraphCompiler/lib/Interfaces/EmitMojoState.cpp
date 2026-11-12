@@ -34,13 +34,6 @@ using namespace M;
 
 namespace M::MOGG {
 
-void EmitMojoState::emitOutputStoreFusionDefsOnce() {
-  if (emittedOutputStoreFusionArgDefs)
-    return;
-  structDefsBuilder.verbatim(MojoValue(kOutputStoreFusionDefs.str()));
-  emittedOutputStoreFusionArgDefs = true;
-}
-
 #define EMITS_MOJO_EXTERNALLY(OpTy)                                            \
   LogicalResult emitMojo(OpTy op, EmitMojoState &state);
 #define EMIT_MOJO_EXTERNALLY(OpTy)                                             \
@@ -90,7 +83,7 @@ EMITS_MOJO_EXTERNALLY(KGEN::ParamConstantOp);
 LogicalResult EmitMojoState::lowerOpToMojo(Operation *op) {
   if (auto emitMojoInterface = dyn_cast<MOGG::EmitsMojoInterface>(op)) {
     if (enableOpTraceComments)
-      builder.comment(llvm::formatv("Emitting Mojo for: {0}", op->getName()));
+      file->comment(llvm::formatv("Emitting Mojo for: {0}", op->getName()));
 
     if (emitMojoInterface.emitMojo(*this).failed()) {
       return emitMojoInterface->emitError()
@@ -200,14 +193,13 @@ void EmitMojoState::addDebugPrintTensorSpecs(const MojoValue &tensorValue,
 
   // We check if all indices are 0 to only print once.
   ManagedTensorSliceRef mts(tensorValue);
-  builder.if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
-    builder.call(
-        kFnPrint, {},
-        {MojoValue(isInput ? kParameterInput : kParameterOutput).quote(),
-         MojoValue("#" + std::to_string(operandIndex) + ":").quote(),
-         MojoValue("shape =").quote(), mts.staticShapeTuple(),
-         MojoValue("strides =").quote(), mts.staticStridesTuple(),
-         MojoValue("alignment =").quote(), mts.alignment()});
+  file->if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
+    file->call(kFnPrint, {},
+               {MojoValue(isInput ? kParameterInput : kParameterOutput).quote(),
+                MojoValue("#" + std::to_string(operandIndex) + ":").quote(),
+                MojoValue("shape =").quote(), mts.staticShapeTuple(),
+                MojoValue("strides =").quote(), mts.staticStridesTuple(),
+                MojoValue("alignment =").quote(), mts.alignment()});
   });
 }
 
@@ -219,15 +211,15 @@ void EmitMojoState::addDebugPrintLambdaParam(MOGG::BindLambdaKind lambdaKind,
     return;
 
   // We check if all indices are 0 to only print once.
-  builder.if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
-    builder.call(kFnPrint, {},
-                 {
-                     MojoValue(stringifyBindLambdaKind(lambdaKind)).quote(),
-                     MojoValue("width =").quote(),
-                     widthParam,
-                     MojoValue("alignment =").quote(),
-                     alignmentParam,
-                 });
+  file->if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
+    file->call(kFnPrint, {},
+               {
+                   MojoValue(stringifyBindLambdaKind(lambdaKind)).quote(),
+                   MojoValue("width =").quote(),
+                   widthParam,
+                   MojoValue("alignment =").quote(),
+                   alignmentParam,
+               });
   });
 }
 

@@ -82,11 +82,11 @@ static MOGG::MojoValue inlineArray(MOGG::EmitMojoState &state,
   auto mojoType = MOGG::MojoValue(std::move(type));
 
   if (isComptime)
-    return state.builder.comptime(state.builder.listLiteral(mojoValues),
-                                  /*type=*/&mojoType);
+    return state.file->comptime(state.file->listLiteral(mojoValues),
+                                /*type=*/&mojoType);
 
-  auto var = state.builder.varDecl(mojoType);
-  state.builder.assign(var, state.builder.listLiteral(mojoValues));
+  auto var = state.file->varDecl(mojoType);
+  state.file->assign(var, state.file->listLiteral(mojoValues));
   return var;
 }
 
@@ -207,8 +207,7 @@ LogicalResult BufferAllocOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue byteSizeVar = state.getMojoValueFor(getRuntimeSize());
   MojoValue deviceCtxVar = state.getMojoValueFor(getDeviceContext());
 
-  MojoValue result =
-      state.builder.var(function({}, {byteSizeVar, deviceCtxVar}));
+  MojoValue result = state.file->var(function({}, {byteSizeVar, deviceCtxVar}));
   state.setMojoValueFor(getResult(), result);
 
   return success();
@@ -255,8 +254,8 @@ LogicalResult BufferHostToDeviceOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue otherDeviceParam =
       MojoValue(getOtherDevice() ? getOtherDevice().getLabel() : "gpu").quote();
 
-  state.builder.call(function, {hostDeviceParam, otherDeviceParam},
-                     state.getMojoValuesFor(getOperands().drop_front()));
+  state.file->call(function, {hostDeviceParam, otherDeviceParam},
+                   state.getMojoValuesFor(getOperands().drop_front()));
 
   return success();
 }
@@ -297,8 +296,8 @@ LogicalResult BufferMemsetOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue elemSizeVal = MojoValue(getElemSize());
   MojoValue deviceCtxVal = state.getMojoValueFor(getDeviceContext());
 
-  state.builder.call(function, {deviceParam},
-                     {bufferVal, valueBitsVal, elemSizeVal, deviceCtxVal});
+  state.file->call(function, {deviceParam},
+                   {bufferVal, valueBitsVal, elemSizeVal, deviceCtxVal});
 
   return success();
 }
@@ -336,8 +335,8 @@ LogicalResult BufferDeviceToHostOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue hostDeviceParam =
       MojoValue(getHostDevice() ? getHostDevice().getLabel() : "cpu").quote();
 
-  state.builder.call(function, {otherDeviceParam, hostDeviceParam},
-                     state.getMojoValuesFor(getOperands().drop_front()));
+  state.file->call(function, {otherDeviceParam, hostDeviceParam},
+                   state.getMojoValuesFor(getOperands().drop_front()));
 
   return success();
 }
@@ -375,8 +374,8 @@ LogicalResult BufferDeviceToDeviceOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue srcDeviceParam = MojoValue(getSrcDevice().getLabel()).quote();
   MojoValue destDeviceParam = MojoValue(getDstDevice().getLabel()).quote();
 
-  state.builder.call(function, {srcDeviceParam, destDeviceParam},
-                     state.getMojoValuesFor(getOperands().drop_front()));
+  state.file->call(function, {srcDeviceParam, destDeviceParam},
+                   state.getMojoValuesFor(getOperands().drop_front()));
 
   return success();
 }
@@ -447,7 +446,7 @@ LogicalResult BufferConcatOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue inputBuffers =
       inlineArray<MojoValue>(state, inputValues, /*isComptime=*/false,
                              /*elementType=*/kStructOwnedByteBuffer);
-  state.builder.call(function, bDevice.quote(), {output, inputBuffers, ctx});
+  state.file->call(function, bDevice.quote(), {output, inputBuffers, ctx});
 
   return success();
 }
@@ -464,7 +463,7 @@ LogicalResult BufferSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue function(primitiveMojoName(primDecl));
 
   MojoValue res =
-      state.builder.var(function({}, state.getMojoValuesFor(getOperands())));
+      state.file->var(function({}, state.getMojoValuesFor(getOperands())));
   state.setMojoValueFor(getOutBuffer(), res);
 
   return success();
@@ -555,13 +554,13 @@ LogicalResult BufferBulkSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue deviceCtxVar = state.getMojoValueFor(getDeviceContext());
 
   // Returns Array[MutByteBuffer, N].
-  MojoValue result = state.builder.var(
+  MojoValue result = state.file->var(
       function({}, {baseArg, offsetsArray, sizesArray, deviceCtxVar}));
 
   // Bind each slice to a named var: consumers may transfer it with `^`, which
   // needs an origin a subscript expression lacks.
   for (auto &&[i, outBuf] : llvm::enumerate(getOutBuffers()))
-    state.setMojoValueFor(outBuf, state.builder.var(result[i]));
+    state.setMojoValueFor(outBuf, state.file->var(result[i]));
 
   return success();
 }
@@ -579,7 +578,7 @@ LogicalResult BufferToIndexOp::emitMojo(MOGG::EmitMojoState &state) {
 
   MojoValue bufferVar = state.getMojoValueFor(getInBuffer());
 
-  MojoValue result = state.builder.var(function({}, {bufferVar}));
+  MojoValue result = state.file->var(function({}, {bufferVar}));
 
   state.setMojoValueFor(getOut(), result);
 
@@ -598,7 +597,7 @@ LogicalResult BufferToBoolOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue deviceParam = MojoValue(bufferType.getDevice().getLabel()).quote();
 
   state.setMojoValueFor(
-      getResult(), state.builder.var(function(
+      getResult(), state.file->var(function(
                        {deviceParam}, {state.getMojoValueFor(getBuffer())})));
   return success();
 }
@@ -626,7 +625,7 @@ LogicalResult BufferSetWithIndexOp::emitMojo(MOGG::EmitMojoState &state) {
   args.emplace_back(state.getMojoValueFor(getBuffer()));
   args.append(state.getMojoValuesFor(getValues()));
 
-  state.builder.call(function, {deviceParam}, args);
+  state.file->call(function, {deviceParam}, args);
 
   return success();
 }
@@ -672,7 +671,7 @@ LogicalResult BufferPlanOp::emitMojo(MOGG::EmitMojoState &state) {
   // var <name>: Array[Int, N] = [v0, v1, ...]
   MojoValue runtimeSizesArray;
   {
-    MojoValue name = state.builder.newVar("var");
+    MojoValue name = state.file->newVar("var");
     std::string str;
     llvm::raw_string_ostream stream(str);
     stream << "var " << name << ": " << kStructArray << "[Int, "
@@ -680,13 +679,13 @@ LogicalResult BufferPlanOp::emitMojo(MOGG::EmitMojoState &state) {
     llvm::interleaveComma(runtimeSizeArgs, stream,
                           [&](const MojoValue &v) { stream << v; });
     stream << "]";
-    state.builder.verbatim(MojoValue(str));
+    state.file->verbatim(MojoValue(str));
     runtimeSizesArray = name;
   }
 
   // [alignments, canShare, staticSizes](runtimeSizes) -> (highWatermark,
   // offsets: StaticTuple)
-  MojoValue result = state.builder.var(function(
+  MojoValue result = state.file->var(function(
       {alignmentsParam, canShareParam, staticSizesParam}, {runtimeSizesArray}));
 
   state.setMojoValueFor(getHighWatermark(), result[0]);
@@ -902,15 +901,14 @@ LogicalResult DebugTensorPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue tensorSpecAsyncVar = state.getMojoValueFor(getSpec());
   MOGG::MojoValue bufferVar = state.getMojoValueFor(getBuffer());
   MOGG::MojoValue labelLiteral = MOGG::MojoValue(getLabel()).quote();
-  MOGG::MojoValue labelString = state.builder.var(
-      MOGG::MojoValue(MOGG::kStructString)({}, {labelLiteral}));
+  MOGG::MojoValue labelString =
+      state.file->var(MOGG::MojoValue(MOGG::kStructString)({}, {labelLiteral}));
   MOGG::MojoStringRef label(labelString);
   MOGG::MojoValue labelPtrVar = label.unsafePtr();
   MOGG::MojoValue labelSizeVar = label.byteLength();
 
-  state.builder.call(
-      function, {specRankParam, dtypeParam},
-      {bufferVar, tensorSpecAsyncVar, labelPtrVar, labelSizeVar});
+  state.file->call(function, {specRankParam, dtypeParam},
+                   {bufferVar, tensorSpecAsyncVar, labelPtrVar, labelSizeVar});
 
   return success();
 }
@@ -927,8 +925,8 @@ LogicalResult SyncOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MojoValue function(primitiveMojoName(primDecl));
 
-  state.builder.call(function, {},
-                     state.getMojoValuesFor(getOperands().drop_front()));
+  state.file->call(function, {},
+                   state.getMojoValuesFor(getOperands().drop_front()));
 
   return success();
 }
@@ -946,8 +944,8 @@ LogicalResult DeviceWaitOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue function(primitiveMojoName(primDecl));
 
   // Everything but the in-chain.
-  state.builder.call(function, {},
-                     state.getMojoValuesFor(getOperands().drop_front()));
+  state.file->call(function, {},
+                   state.getMojoValuesFor(getOperands().drop_front()));
 
   return success();
 }

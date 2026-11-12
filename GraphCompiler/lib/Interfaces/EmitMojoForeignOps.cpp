@@ -41,7 +41,7 @@ namespace M::MOGG {
 LogicalResult emitMojo(mlir::index::AddOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] + operands[1]));
+                        state.file->var(operands[0] + operands[1]));
   return success();
 }
 
@@ -88,7 +88,7 @@ LogicalResult emitMojo(mlir::index::CmpOp op, EmitMojoState &state) {
     replacementValue = operands[0].lt(operands[1]);
     break;
   }
-  state.setMojoValueFor(op.getResult(), state.builder.var(replacementValue));
+  state.setMojoValueFor(op.getResult(), state.file->var(replacementValue));
 
   return success();
 }
@@ -106,65 +106,65 @@ LogicalResult emitMojo(mlir::index::BoolConstantOp op, EmitMojoState &state) {
 LogicalResult emitMojo(mlir::index::DivSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0].idiv(operands[1])));
+                        state.file->var(operands[0].idiv(operands[1])));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::DivUOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0].idiv(operands[1])));
+                        state.file->var(operands[0].idiv(operands[1])));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::CeilDivSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0].sdiv(operands[1])));
+                        state.file->var(operands[0].sdiv(operands[1])));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::CeilDivUOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0].sdiv(operands[1])));
+                        state.file->var(operands[0].sdiv(operands[1])));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::MinSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue minFunc = "min";
-  state.setMojoValueFor(op.getResult(), state.builder.var(minFunc(
-                                            {}, {operands[0], operands[1]})));
+  state.setMojoValueFor(
+      op.getResult(), state.file->var(minFunc({}, {operands[0], operands[1]})));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::MaxSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue maxFunc = kFnMax;
-  state.setMojoValueFor(op.getResult(), state.builder.var(maxFunc(
-                                            {}, {operands[0], operands[1]})));
+  state.setMojoValueFor(
+      op.getResult(), state.file->var(maxFunc({}, {operands[0], operands[1]})));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::MulOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] * operands[1]));
+                        state.file->var(operands[0] * operands[1]));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::RemSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] % operands[1]));
+                        state.file->var(operands[0] % operands[1]));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::RemUOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] % operands[1]));
+                        state.file->var(operands[0] % operands[1]));
   return success();
 }
 
@@ -176,21 +176,21 @@ LogicalResult emitMojo(KGEN::POP::AndOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_and(operands[1])));
+      state.file->var(operands[0].bitwise_logical_and(operands[1])));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::AddOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] + operands[1]));
+                        state.file->var(operands[0] + operands[1]));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::MulOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] * operands[1]));
+                        state.file->var(operands[0] * operands[1]));
   return success();
 }
 
@@ -198,10 +198,10 @@ LogicalResult emitMojo(KGEN::POP::DivOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   if (op.getType().isFloat()) {
     state.setMojoValueFor(op.getResult(),
-                          state.builder.var(operands[0].div(operands[1])));
+                          state.file->var(operands[0].div(operands[1])));
   } else {
     state.setMojoValueFor(op.getResult(),
-                          state.builder.var(operands[0].idiv(operands[1])));
+                          state.file->var(operands[0].idiv(operands[1])));
   }
   return success();
 }
@@ -239,7 +239,7 @@ LogicalResult emitMojo(KGEN::POP::CmpOp op, EmitMojoState &state) {
     replacementValue = operands[0].lt(operands[1]);
     break;
   }
-  state.setMojoValueFor(op.getResult(), state.builder.var(replacementValue));
+  state.setMojoValueFor(op.getResult(), state.file->var(replacementValue));
 
   return success();
 }
@@ -247,7 +247,7 @@ LogicalResult emitMojo(KGEN::POP::CmpOp op, EmitMojoState &state) {
 LogicalResult emitMojo(KGEN::POP::RemOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] % operands[1]));
+                        state.file->var(operands[0] % operands[1]));
   return success();
 }
 
@@ -257,37 +257,37 @@ LogicalResult emitMojo(KGEN::POP::SelectOp op, EmitMojoState &state) {
   // sym_name on PrimitiveDeclOp is the fully-qualified Mojo source name.
   MojoValue selectFunc(primDecl.getSymNameAttr().strref());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(selectFunc({}, operands)));
+                        state.file->var(selectFunc({}, operands)));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::ShlOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] << operands[1]));
+                        state.file->var(operands[0] << operands[1]));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::ShrOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(operands[0] >> operands[1]));
+                        state.file->var(operands[0] >> operands[1]));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::MinOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue minFunc = "min";
-  state.setMojoValueFor(op.getResult(), state.builder.var(minFunc(
-                                            {}, {operands[0], operands[1]})));
+  state.setMojoValueFor(
+      op.getResult(), state.file->var(minFunc({}, {operands[0], operands[1]})));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::MaxOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue maxFunc = kFnMax;
-  state.setMojoValueFor(op.getResult(), state.builder.var(maxFunc(
-                                            {}, {operands[0], operands[1]})));
+  state.setMojoValueFor(
+      op.getResult(), state.file->var(maxFunc({}, {operands[0], operands[1]})));
   return success();
 }
 
@@ -295,7 +295,7 @@ LogicalResult emitMojo(KGEN::POP::OrOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_or(operands[1])));
+      state.file->var(operands[0].bitwise_logical_or(operands[1])));
   return success();
 }
 
@@ -303,7 +303,7 @@ LogicalResult emitMojo(KGEN::POP::XOrOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_xor(operands[1])));
+      state.file->var(operands[0].bitwise_logical_xor(operands[1])));
   return success();
 }
 
@@ -311,7 +311,7 @@ LogicalResult emitMojo(KGEN::POP::SIMDAndOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_and(operands[1])));
+      state.file->var(operands[0].bitwise_logical_and(operands[1])));
   return success();
 }
 
@@ -321,7 +321,7 @@ LogicalResult emitMojo(KGEN::POP::SIMDSelectOp op, EmitMojoState &state) {
   // sym_name on PrimitiveDeclOp is the fully-qualified Mojo source name.
   MojoValue selectFunc(primDecl.getSymNameAttr().strref());
   state.setMojoValueFor(op.getResult(),
-                        state.builder.var(selectFunc({}, operands)));
+                        state.file->var(selectFunc({}, operands)));
   return success();
 }
 
@@ -329,7 +329,7 @@ LogicalResult emitMojo(KGEN::POP::SIMDOrOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_or(operands[1])));
+      state.file->var(operands[0].bitwise_logical_or(operands[1])));
   return success();
 }
 
@@ -337,7 +337,7 @@ LogicalResult emitMojo(KGEN::POP::SIMDXOrOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   state.setMojoValueFor(
       op.getResult(),
-      state.builder.var(operands[0].bitwise_logical_xor(operands[1])));
+      state.file->var(operands[0].bitwise_logical_xor(operands[1])));
   return success();
 }
 

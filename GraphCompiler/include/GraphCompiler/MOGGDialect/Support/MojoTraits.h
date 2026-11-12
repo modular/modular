@@ -26,7 +26,7 @@ namespace M::MOGG {
 
 // Buffer identity (pointer + layout) at the region->stub boundary. The stub
 // body builds the dense/fused wrappers from it and the contract metadata.
-static constexpr llvm::StringLiteral kTensorBufferCaptureDefs = R"mojo(
+static constexpr llvm::StringLiteral kTensorBufferCaptureDefinitions = R"mojo(
 from layout import TensorLayout
 
 
@@ -65,10 +65,11 @@ struct _MoggTensorBufferCapture[
 // functor captures bare `Pointer`s, which translate to device addresses; a
 // `TileTensor` field would be bit-copied, so the tile is rebuilt in `__call__`.
 //
-// NOTE: this and `kOutputStoreFusionDefs` / `kTransformFusionDefs` are
-// near-identical. If a fourth fused form appears, generate them from a
-// builder instead of adding another verbatim block.
-static constexpr llvm::StringLiteral kInputLoadFusionDefs = R"mojo(
+// NOTE: this and `kOutputStoreFusionDefinitions` /
+// `kTransformFusionDefinitions` are near-identical. If a fourth fused form
+// appears, generate them from a builder instead of adding another verbatim
+// block.
+static constexpr llvm::StringLiteral kInputLoadFusionDefinitions = R"mojo(
 from layout import Coord, TensorLayout, TileTensor
 from extensibility import Fused, Input, LoadAccess, Loadable, Tensor, UnsafeFusedView
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -189,14 +190,15 @@ struct _MoggInputLoadFusionTensor[
 )mojo";
 
 // The fused output-store argument (`Output & Fused & StoreAccess`), the
-// epilogue counterpart of `kInputLoadFusionDefs`. `OutputStoreFusion.__call__`
-// runs the fused consumer epilogue and writes. `Storable` is gated by
+// epilogue counterpart of `kInputLoadFusionDefinitions`.
+// `OutputStoreFusion.__call__` runs the fused consumer epilogue and writes.
+// `Storable` is gated by
 // `_access_enabled` as for fused load. The same wrapper fills a
 // `_LegacyComputeOutput` slot whose epilogue can't be a compute lambda (a cast,
 // reshape, or multi-store epilogue); `_compute_output_slot` adds that
 // conformance there and only there, so a plain fused store never claims to be
 // a compute-output slot.
-static constexpr llvm::StringLiteral kOutputStoreFusionDefs = R"mojo(
+static constexpr llvm::StringLiteral kOutputStoreFusionDefinitions = R"mojo(
 from layout import Coord, TensorLayout, TileTensor
 from extensibility import Fused, Output, StoreAccess, Storable, Tensor, UnsafeFusedView, _LegacyComputeOutput
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -329,7 +331,7 @@ struct _MoggOutputStoreFusionTensor[
 // by `_access_enabled`; the device kernel refines via `downcast[...,
 // _LegacyComputable & TileTensorable]`. The buffer is a bare `Pointer` so it
 // translates to a device address.
-static constexpr llvm::StringLiteral kTransformFusionDefs = R"mojo(
+static constexpr llvm::StringLiteral kTransformFusionDefinitions = R"mojo(
 from layout import Coord, TensorLayout, TileTensor
 from extensibility import Fused, Output, TileTensorable, UnsafeFusedView, _LegacyComputable, _LegacyComputeOutput
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -492,14 +494,14 @@ struct _MoggTransformFusionTensor[
 )mojo";
 
 // Inline Mojo definitions for the trait tensor-argument struct, emitted once
-// per module (guarded by `EmitMojoState::emittedTensorArgDefs`). One struct
+// per module (via `EmitMojoState::declare`). One struct
 // serves every execute lane. `_Engine` names how the storage is referenced: a
 // raw pointer under `DefaultEngine`, a stable address slot under
 // `StableAddrEngine`. `_is_device_passable` selects whether it crosses to the
 // device (as the projected `TileTensor`, itself `DevicePassable`). The
 // `_MoggDenseTensorArg` and `_MoggStableTensorArg`
 // aliases bind the engine, so a stub names the lane rather than the engine.
-static constexpr llvm::StringLiteral kTensorArgDefs = R"mojo(
+static constexpr llvm::StringLiteral kTensorArgumentDefinitions = R"mojo(
 from layout import Coord, DefaultEngine, TensorEngine, TensorLayout, TileTensor
 from extensibility import (
     Input,
@@ -670,7 +672,7 @@ comptime _MoggStableTensorArg = _MoggTensorArg[
 // The host-only `_MoggShapeTensorArg`, which backs every shape-function
 // trait tensor argument (see `kShapeTensorArgStructName` in
 // MOGGOpsEmitters.cpp).
-static constexpr llvm::StringLiteral kShapeTensorArgDefs = R"mojo(
+static constexpr llvm::StringLiteral kShapeTensorArgumentDefinitions = R"mojo(
 from layout import Coord, CurrentTensorEngine, TensorLayout, TileTensor
 from extensibility import Tensor, TileTensorable
 

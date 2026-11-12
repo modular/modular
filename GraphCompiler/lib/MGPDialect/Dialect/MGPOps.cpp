@@ -269,7 +269,7 @@ LogicalResult ResourceConstantOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue function(primitiveMojoName(primDecl));
   auto &[ptr, bytecount] =
       state.mojoConstantResources[getResourceSlot().getZExtValue()];
-  MOGG::MojoValue result = state.builder.var(function({}, {ptr, bytecount}));
+  MOGG::MojoValue result = state.file->var(function({}, {ptr, bytecount}));
   state.setMojoValueFor(getOutBuffer(), result);
 
   return success();
@@ -321,7 +321,7 @@ LogicalResult BufferConstantOp::emitMojo(MOGG::EmitMojoState &state) {
   uint64_t resourceIndex = std::distance(constantResources.begin(), it);
   auto &[ptr, bytecount] = state.mojoConstantResources[resourceIndex];
 
-  MOGG::MojoValue result = state.builder.var(function({}, {ptr, bytecount}));
+  MOGG::MojoValue result = state.file->var(function({}, {ptr, bytecount}));
   state.setMojoValueFor(getOutBuffer(), result);
 
   return success();
@@ -355,7 +355,7 @@ LogicalResult TensorSpecCreateOp::emitMojo(MOGG::EmitMojoState &state) {
 
   SmallVector<MojoValue> operands = state.getMojoValuesFor(getOperands());
   operands.insert(operands.begin(), rawDimsArg);
-  MojoValue result = state.builder.var(function({rawDimsRankParam}, operands));
+  MojoValue result = state.file->var(function({rawDimsRankParam}, operands));
   state.setMojoValueFor(getResult(), result);
 
   return success();
@@ -469,7 +469,7 @@ LogicalResult TensorSpecGetDimOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue rankParam = getSpec().getType().getRank();
   MOGG::MojoValue specVar = state.getMojoValueFor(getSpec());
 
-  state.setMojoValueFor(getResult(), state.builder.var(getDimFunc(
+  state.setMojoValueFor(getResult(), state.file->var(getDimFunc(
                                          {rankParam, axisParam}, {specVar})));
 
   return success();
@@ -509,7 +509,7 @@ LogicalResult BufferGetCachedOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue mgpBufferGetCacheFunc(primitiveMojoName(primDecl));
-  auto res = state.builder.var(
+  auto res = state.file->var(
       mgpBufferGetCacheFunc({}, {state.getMojoValueFor(getTheContext()),
                                  state.getMojoValueFor(getBBufferSlot())}));
   // The primitive returns a single storage-carrying `OwnedByteBuffer`.
@@ -540,9 +540,9 @@ LogicalResult IntCacheOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue function(primitiveMojoName(primDecl));
   MOGG::MojoValue bIntSlotParam = MOGG::MojoValue(getBIntSlot());
-  state.builder.call(function, {bIntSlotParam},
-                     {state.getMojoValueFor(getTheContext()),
-                      state.getMojoValueFor(getValue())});
+  state.file->call(function, {bIntSlotParam},
+                   {state.getMojoValueFor(getTheContext()),
+                    state.getMojoValueFor(getValue())});
   return success();
 }
 
@@ -554,8 +554,8 @@ LogicalResult IntGetCachedOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
   MOGG::MojoValue function(primitiveMojoName(primDecl));
   auto res =
-      state.builder.var(function({}, {state.getMojoValueFor(getTheContext()),
-                                      state.getMojoValueFor(getBIntSlot())}));
+      state.file->var(function({}, {state.getMojoValueFor(getTheContext()),
+                                    state.getMojoValueFor(getBIntSlot())}));
   state.setMojoValueFor(getResult(), res);
   return success();
 }
@@ -572,13 +572,13 @@ LogicalResult AssertOp::emitMojo(MOGG::EmitMojoState &state) {
 
   MOGG::MojoValue conditionVar = state.getMojoValueFor(getCond());
   MOGG::MojoValue messageLiteral = MOGG::MojoValue(getMessage()).quote();
-  MOGG::MojoValue messageString = state.builder.var(
+  MOGG::MojoValue messageString = state.file->var(
       MOGG::MojoValue(MOGG::kStructString)({}, {messageLiteral}));
   MOGG::MojoStringRef message(messageString);
   MOGG::MojoValue messagePtr = message.unsafePtr();
   MOGG::MojoValue messageSize = message.byteLength();
 
-  state.builder.call(function, {}, {conditionVar, messagePtr, messageSize});
+  state.file->call(function, {}, {conditionVar, messagePtr, messageSize});
 
   return success();
 }
@@ -619,7 +619,7 @@ LogicalResult TensorExtractBufferOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue function(primitiveMojoName(primDecl));
 
   MojoValue res =
-      state.builder.var(function({}, state.getMojoValueFor(getTensor())));
+      state.file->var(function({}, state.getMojoValueFor(getTensor())));
   state.setMojoValueFor(getOutBuffer(), res);
 
   return success();
@@ -677,7 +677,7 @@ LogicalResult TensorExtractTensorSpecOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue tensorDtypeParam =
       state.mlirDTypeToMojoType(tensorSpec.getOptDType().value());
 
-  MojoValue result = state.builder.var(
+  MojoValue result = state.file->var(
       function({tensorRankParam, bufferRankParam, tensorDtypeParam},
                state.getMojoValueFor(getTensor())));
   state.setMojoValueFor(getResult(), result);
@@ -769,7 +769,7 @@ LogicalResult TensorCreateOp::emitMojo(MOGG::EmitMojoState &state) {
                          .equal(MojoValue(MOGG::kStructDeviceGraphInputKind)
                                     .get(MOGG::kInputKindHost)));
 
-  MojoValue result = state.builder.var(
+  MojoValue result = state.file->var(
       function(params, state.getMojoValuesFor(getOperands().drop_front())));
   state.setMojoValueFor(getOutTensor(), result);
 
@@ -799,7 +799,7 @@ LogicalResult TensorSliceOp::emitMojo(MOGG::EmitMojoState &state) {
       state.mlirDTypeToMojoType(tensorSpec.getOptDType().value());
 
   // input, outputSpec, and start are all runtime operands.
-  MojoValue result = state.builder.var(
+  MojoValue result = state.file->var(
       function({rankParam, dtypeParam}, state.getMojoValuesFor(getOperands())));
   state.setMojoValueFor(getOutput(), result);
 
@@ -919,7 +919,7 @@ LogicalResult DebugPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue labelParam = MOGG::MojoValue(getLabel()).quote();
   MOGG::MojoValue ctxVar = state.getMojoValueFor(getTheContext());
 
-  state.builder.call(function, {debugStringParam, labelParam}, ctxVar);
+  state.file->call(function, {debugStringParam, labelParam}, ctxVar);
 
   return success();
 }
@@ -936,7 +936,7 @@ LogicalResult DebugPrintIntOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue ctxVar = state.getMojoValueFor(getTheContext());
   MOGG::MojoValue valueVar = state.getMojoValueFor(getValue());
 
-  state.builder.call(function, {labelParam}, {ctxVar, valueVar});
+  state.file->call(function, {labelParam}, {ctxVar, valueVar});
 
   return success();
 }

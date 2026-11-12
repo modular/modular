@@ -53,7 +53,7 @@ LogicalResult DeviceGraphCacheOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
 
   MojoValue theContext = state.getMojoValueFor(getTheContext());
-  MojoValue cache = state.builder.var(MojoValue(kStructPointer)(
+  MojoValue cache = state.file->var(MojoValue(kStructPointer)(
       /*parameters=*/{},
       /*operands=*/{
           MojoValue(kParameterTo)
@@ -75,8 +75,8 @@ LogicalResult DeviceGraphYieldOp::emitMojo(MOGG::EmitMojoState &state) {
     MojoValue outVal = state.getMojoValueFor(output);
     MojoValue asyncValue =
         outVal.get(kFnAsyncPack)(/*parameters=*/{}, /*operands=*/{});
-    state.builder.call(builder.addOutput(),
-                       /*parameters=*/{}, /*operands=*/{asyncValue});
+    state.file->call(builder.addOutput(),
+                     /*parameters=*/{}, /*operands=*/{asyncValue});
   }
   return success();
 }
@@ -93,7 +93,7 @@ LogicalResult DeviceGraphAllocOp::emitMojo(MOGG::EmitMojoState &state) {
 
   DeviceRefAttr hostDevice = M::getHostDevice(getContext());
   MojoValue isHostParam(getOutBuffer().getType().getDevice() == hostDevice);
-  MojoValue result = state.builder.var(function(
+  MojoValue result = state.file->var(function(
       /*parameters=*/{isHostParam},
       /*operands=*/{state.getMojoValueFor(getRuntimeSize()),
                     state.getMojoValueFor(getGraphBuilder())}));
@@ -111,7 +111,7 @@ LogicalResult
 DeviceGraphRecordingContextOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
-  MojoValue result = state.builder.var(builder.recordingContext());
+  MojoValue result = state.file->var(builder.recordingContext());
   state.setMojoValueFor(getContext(), result);
   return success();
 }
@@ -124,7 +124,7 @@ DeviceGraphRecordingContextOp::emitMojo(MOGG::EmitMojoState &state) {
 LogicalResult DeviceGraphDeviceContextOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
-  MojoValue result = state.builder.var(builder.context());
+  MojoValue result = state.file->var(builder.context());
   state.setMojoValueFor(getDeviceContext(), result);
   return success();
 }
@@ -169,9 +169,9 @@ LogicalResult DeviceGraphDependenciesOp::emitMojo(MOGG::EmitMojoState &state) {
     MojoValue optionalType = MojoValue(
         kStructOptional)[EmitMojoState::mlirTypeToMojoType(result.getType())];
     MojoValue outVar =
-        state.builder.var(optionalType(/*parameters=*/{},
-                                       /*operands=*/{MojoValue(kComptimeNone)}),
-                          /*cache=*/false);
+        state.file->var(optionalType(/*parameters=*/{},
+                                     /*operands=*/{MojoValue(kComptimeNone)}),
+                        /*cache=*/false);
     surfaced.emplace_back(result, yielded, outVar);
   }
 
@@ -186,7 +186,7 @@ LogicalResult DeviceGraphDependenciesOp::emitMojo(MOGG::EmitMojoState &state) {
       surfaced.empty() ? llvm::StringRef("imm") : llvm::StringRef("mut");
 
   bool errOccurred = false;
-  MojoValue workClosure = state.builder.lambda(
+  MojoValue workClosure = state.file->lambda(
       "work", /*parameters=*/{}, /*arguments=*/{builderParam},
       /*returnType=*/std::nullopt,
       // Never inline: single-use per-kernel bodies otherwise merge into the
@@ -201,22 +201,22 @@ LogicalResult DeviceGraphDependenciesOp::emitMojo(MOGG::EmitMojoState &state) {
             return;
           }
         for (const SurfacedResult &s : surfaced)
-          state.builder.assign(s.outVar,
-                               state.getMojoValueFor(s.yielded).transfer());
+          state.file->assign(s.outVar,
+                             state.getMojoValueFor(s.yielded).transfer());
       });
   if (errOccurred)
     return failure();
 
   SmallVector<MojoValue> depValues = state.getMojoValuesFor(getDependencies());
-  MojoValue dependenciesList = state.builder.listLiteral(depValues);
+  MojoValue dependenciesList = state.file->listLiteral(depValues);
 
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
   MojoValue node =
-      state.builder.var(builder.region(workClosure, dependenciesList));
+      state.file->var(builder.region(workClosure, dependenciesList));
   state.setMojoValueFor(getNode(), node);
 
   for (const SurfacedResult &s : surfaced)
-    state.setMojoValueFor(s.result, state.builder.var(s.outVar.get("take")(
+    state.setMojoValueFor(s.result, state.file->var(s.outVar.get("take")(
                                         /*parameters=*/{}, /*operands=*/{})));
 
   return success();
@@ -232,7 +232,7 @@ LogicalResult DeviceGraphStableGetOp::emitMojo(MOGG::EmitMojoState &state) {
 
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
   state.setMojoValueFor(
-      getResult(), state.builder.var(builder.getStable(MojoValue(getIndex()))));
+      getResult(), state.file->var(builder.getStable(MojoValue(getIndex()))));
   return success();
 }
 
@@ -245,14 +245,14 @@ LogicalResult DeviceGraphStablePlaceOp::emitMojo(MOGG::EmitMojoState &state) {
   auto extractDecl =
       state.registry.lookupPrimitive(TensorExtractBufferOp::getOperationName());
   MojoValue extractBuffer(extractDecl.getSymNameAttr().strref());
-  MojoValue buffer = state.builder.var(extractBuffer(
+  MojoValue buffer = state.file->var(extractBuffer(
       /*parameters=*/{}, {state.getMojoValueFor(getTensor())}));
   MojoValue dataPtr =
       OpaquePointerRef(ManagedTensorSliceRef(buffer).unsafePtr())
           .bitcast(MojoValue(kComptimeDTypeNoneType))();
 
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
-  state.setMojoValueFor(getPlacedAddr(), state.builder.var(builder.placeStable(
+  state.setMojoValueFor(getPlacedAddr(), state.file->var(builder.placeStable(
                                              MojoValue(getIndex()), dataPtr)));
   return success();
 }
@@ -286,9 +286,9 @@ LogicalResult DeviceGraphStableTensorOp::emitMojo(MOGG::EmitMojoState &state) {
         MojoValue(kParameterKind)
             .equal(MojoValue(kStructDeviceGraphInputKind).get(kInputKindHost)));
 
-  state.setMojoValueFor(getResult(),
-                        state.builder.var(function(
-                            params, state.getMojoValuesFor(getOperands()))));
+  state.setMojoValueFor(
+      getResult(),
+      state.file->var(function(params, state.getMojoValuesFor(getOperands()))));
   return success();
 }
 
@@ -309,7 +309,7 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
   llvm::SmallBitVector shapeOnlyInputs = op.shapeOnlyInputs();
 
   bool errOccurred = false;
-  MojoValue buildFor = state.builder.lambda(
+  MojoValue buildFor = state.file->lambda(
       "collective_build_for", /*parameters=*/{nParam},
       /*arguments=*/{builderParam},
       /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kNever,
@@ -349,11 +349,10 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
               if (shapeOnlyInputs.test(inputOffset + i)) {
                 MojoValue kind = MojoValue(kStructDeviceGraphInputKind)
                                      .get(kInputKindShapeOnly);
-                input = state.builder.var(input.get(kFnWithKind)(
+                input = state.file->var(input.get(kFnWithKind)(
                     /*parameters=*/{kind}, /*operands=*/{}));
               }
-              MojoValue stable =
-                  state.builder.var(builderValue.addInput(input));
+              MojoValue stable = state.file->var(builderValue.addInput(input));
               state.setMojoValueFor(arg, stable);
             }
 
@@ -365,8 +364,8 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
           };
 
           if (idx == 0)
-            branch = &state.builder.if_(n.eq(MojoValue(idx)), regionBody,
-                                        /*comptime=*/true);
+            branch = &state.file->if_(n.eq(MojoValue(idx)), regionBody,
+                                      /*comptime=*/true);
           else
             branch = &branch->elif_(n.eq(MojoValue(idx)), regionBody);
 
@@ -374,7 +373,7 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
         }
 
         branch->else_([&] {
-          state.builder.raise(
+          state.file->raise(
               "Error(\"unexpected device index in collective device graph "
               "build\")");
         });
@@ -394,7 +393,7 @@ emitCollectiveKeyForClosure(MOGG::EmitMojoState &state,
 
   NamedMojoDef nParam("n", MojoValue("Int"));
 
-  return state.builder.lambda(
+  return state.file->lambda(
       "collective_key_for", /*parameters=*/{nParam},
       /*arguments=*/{},
       /*returnType=*/MojoValue(kStructString),
@@ -417,15 +416,15 @@ emitCollectiveKeyForClosure(MOGG::EmitMojoState &state,
               if (isDeviceGraphInput(input))
                 keyInputs.push_back(state.getMojoValueFor(input));
 
-            MojoValue key = state.builder.var(
+            MojoValue key = state.file->var(
                 MojoValue(kStructDeviceGraphCache)
                     .get("make_key")(/*parameters=*/{}, keyInputs));
-            state.builder.returnsValue(key.transfer());
+            state.file->returnsValue(key.transfer());
           };
 
           if (idx == 0)
-            branch = &state.builder.if_(n.eq(MojoValue(idx)), keyRegionBody,
-                                        /*comptime=*/true);
+            branch = &state.file->if_(n.eq(MojoValue(idx)), keyRegionBody,
+                                      /*comptime=*/true);
           else
             branch = &branch->elif_(n.eq(MojoValue(idx)), keyRegionBody);
 
@@ -433,7 +432,7 @@ emitCollectiveKeyForClosure(MOGG::EmitMojoState &state,
         }
 
         branch->else_([&] {
-          state.builder.raise(
+          state.file->raise(
               "Error(\"unexpected device index in collective device graph "
               "key\")");
         });
@@ -469,10 +468,10 @@ DeviceGraphCollectiveCreateOp::emitMojo(MOGG::EmitMojoState &state) {
     SmallVector<MojoValue> deviceContextValues;
     for (const MojoValue &ctx : state.getMojoValuesFor(getDeviceContexts()))
       deviceContextValues.push_back(
-          state.builder.var(ctx.get(kFnAssertDefaultTarget)({}, {})));
-    MojoValue contextsArray = state.builder.varDecl(contextsArrayType);
-    state.builder.assign(contextsArray,
-                         state.builder.listLiteral(deviceContextValues));
+          state.file->var(ctx.get(kFnAssertDefaultTarget)({}, {})));
+    MojoValue contextsArray = state.file->varDecl(contextsArrayType);
+    state.file->assign(contextsArray,
+                       state.file->listLiteral(deviceContextValues));
 
     SmallVector<MojoValue> collectiveArgs = {
         contextsArray, *buildFor, keyFor,
@@ -497,11 +496,11 @@ DeviceGraphCollectiveCreateOp::emitMojo(MOGG::EmitMojoState &state) {
             MojoValue(static_cast<uint64_t>(it - contexts.begin())));
       }
       collectiveArgs.push_back(DeviceGraphRef::stableDevicesArg(
-          state.builder.listLiteral(stableDevices)));
+          state.file->listLiteral(stableDevices)));
     }
 
     graphsArray =
-        state.builder.var(DeviceGraphRef::createCollective(collectiveArgs));
+        state.file->var(DeviceGraphRef::createCollective(collectiveArgs));
   } else {
     if (StableAddressArrayAttr stableTypes = getStableTypesAttr();
         stableTypes && !stableTypes.getValue().empty())
@@ -514,28 +513,28 @@ DeviceGraphCollectiveCreateOp::emitMojo(MOGG::EmitMojoState &state) {
         "builder", MojoValue(kStructDeviceGraphBuilder));
     builderParam.argConvention = "mut";
 
-    graphsArray = state.builder.varDecl(MojoValue(graphsArrayType));
+    graphsArray = state.file->varDecl(MojoValue(graphsArrayType));
     for (auto [idx, ctx] : llvm::enumerate(getDeviceContexts())) {
-      MojoValue buildDevice = state.builder.lambda(
+      MojoValue buildDevice = state.file->lambda(
           "collective_build_device", /*parameters=*/{},
           /*arguments=*/{builderParam},
           /*returnType=*/std::nullopt, MojoBuilder::LambdaInline::kNever,
           /*isAsync=*/false, /*raises=*/true,
           /*captureConvention=*/"var", [&](const FunctionBody &bd) {
-            state.builder.call(*buildFor, /*parameters=*/{MojoValue(idx)},
-                               /*operands=*/{bd.arguments.front()});
+            state.file->call(*buildFor, /*parameters=*/{MojoValue(idx)},
+                             /*operands=*/{bd.arguments.front()});
           });
 
-      MojoValue graph = state.builder.var(
+      MojoValue graph = state.file->var(
           DeviceGraphRef::create({state.getMojoValueFor(ctx), buildDevice}));
-      state.builder.assign(graphsArray[MojoValue(idx)], graph);
+      state.file->assign(graphsArray[MojoValue(idx)], graph);
     }
   }
 
   // Named per-device variables keep an origin so consumers can transfer them
   // with `^`.
   for (unsigned i = 0; i < numGraphs; ++i) {
-    MojoValue graphVar = state.builder.var(graphsArray[MojoValue(i)]);
+    MojoValue graphVar = state.file->var(graphsArray[MojoValue(i)]);
     state.setMojoValueFor(getOutGraphs()[i], graphVar);
   }
 
