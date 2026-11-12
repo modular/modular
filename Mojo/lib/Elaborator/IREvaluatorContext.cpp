@@ -151,25 +151,26 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetLinkageNameAttr(
 
 FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
     GetSourceNameAttr getSourceNameAttr) {
-  /// Returns the symbol of the function `attr` references.
-  auto getFuncSymbolRef = [](TypedAttr attr) -> SymbolRefAttr {
-    if (auto symbol = FuncSymbolGenerator::dynCast(attr))
-      return symbol.getSymbol();
-    if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
-      return literal.getBody().getTargetLiteral().getSymbol();
-    if (auto literal = dyn_cast<FuncLiteralType>(attr.getType()))
-      return literal.getTargetLiteral().getSymbol();
-    return {};
-  };
+  FuncSymbolGenerator symbol =
+      extractFuncSymbolGenerator(getSourceNameAttr.getFunc());
+  GeneratorOp func = symbol ? getGenerator(symbol.getSymbol()) : GeneratorOp();
 
-  SymbolRefAttr symbol = getFuncSymbolRef(getSourceNameAttr.getFunc());
-  if (!symbol) {
-    emitError({*errorLoc, "'get_source_name' function argument does not "
-                          "name a function generator"});
-    return failure();
+  // A function passed as a value of a variadic function type arrives as a
+  // transparent thunk. Name the function it wraps, as `get_linkage_name` does.
+  std::optional<ErrorTreeOr<FuncSymbolGenerator>> thunkCallee;
+  if (func)
+    thunkCallee = resolveTransparentThunkCallee(func, symbol, *errorLoc);
+  if (thunkCallee) {
+    if (thunkCallee->isError()) {
+      emitError(thunkCallee->takeError());
+      return failure();
+    }
+    symbol = thunkCallee->takeValue();
+    if (!symbol)
+      return TypedAttr(); // Not ready yet — signal retry.
+    func = getGenerator(symbol.getSymbol());
   }
 
-  auto func = getGenerator(symbol);
   if (!func) {
     emitError({*errorLoc, "'get_source_name' function argument does not "
                           "name a function generator"});
@@ -178,7 +179,8 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
 
   std::optional<StringRef> sourceName = func.getSourceName();
   if (!sourceName) {
-    emitError({*errorLoc, "function '" + symbol.getLeafReference().getValue() +
+    emitError({*errorLoc, "function '" +
+                              symbol.getSymbol().getLeafReference().getValue() +
                               "' has no source name"});
     return failure();
   }

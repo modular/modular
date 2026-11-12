@@ -102,6 +102,23 @@ def test_get_function_name_export() raises:
     assert_equal(name, "export_func")
 
 
+def two_args(a: Int, b: Float32):
+    pass
+
+
+def _variadic_function_name[
+    ret_type: AnyType,
+    arg_types: TypeList[Trait=AnyType, ...],
+    //,
+    func: def(*args: *arg_types) thin -> ret_type,
+]() -> StaticString:
+    return get_function_name[func]()
+
+
+def test_get_function_name_through_variadic_function_type() raises:
+    assert_equal(_variadic_function_name[two_args](), "two_args")
+
+
 struct WhatsMyName:
     pass
 
