@@ -368,8 +368,10 @@ void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
                               const MoggPipelineOptions &opts) {
   pm.addPass(MOGG::createLegalizeRowwiseKernels());
   pm.addPass(MOGG::createConformCallOperands());
-  if (opts.enableGraphBlobs)
+  if (opts.enableGraphBlobs) {
     pm.addPass(MOGG::createFormGraphBlobs());
+    pm.addNestedPass<GraphOp>(MOGG::createReuseGraphBlobBuffers());
+  }
   pm.addPass(MOGG::createOutlineRoutines());
   pm.addPass(MOGG::createWrapFuncsWithTrace());
 
