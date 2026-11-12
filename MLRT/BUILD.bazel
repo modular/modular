@@ -494,12 +494,16 @@ modular_cc_library(
 )
 
 # Pinned host staging region shared by MAX's tiered KV connectors (through the
-# Python `_ChunkedStagingRegion`) and Mach's host tier (through its C shim).
+# Python `_ChunkedStagingRegion`), Mach's host tier (through its C shim) and
+# the driver C API (`M_DriverHostRegionCreate`).
 modular_cc_library(
     name = "Driver/ChunkedStagingRegion",
     srcs = ["lib/Driver/DeviceContext/ChunkedStagingRegion.cpp"],
     hdrs = ["include/MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"],
     includes = ["include"],
+    # libmax (through the C API) and the Python extension each link a copy.
+    # The region holds no global state, so the copies cannot disagree.
+    tags = ["LINKABLE_MORE_THAN_ONCE"],
     visibility = ["//MLRT:consumers"],
     deps = [
         ":Driver/DeviceContextAPI",
@@ -1218,6 +1222,7 @@ modular_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":Driver/ArchitectureVersion",
+        ":Driver/ChunkedStagingRegion",
         ":Driver/DeviceContextAPI",
         "//Support:Base",
         "//Support:SymbolExport",

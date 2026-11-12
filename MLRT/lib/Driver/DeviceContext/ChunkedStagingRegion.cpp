@@ -19,11 +19,14 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 #include "Support/Log.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -31,6 +34,7 @@
 #include <sstream>
 #include <string>
 #include <sys/mman.h>
+#include <thread>
 #if defined(__linux__)
 #include <cerrno>
 #include <fstream>
@@ -286,6 +290,112 @@ std::string verifyDriverOwned(void *, Device::API) { return {}; }
 
 #endif // !MODULAR_HAL_DEVICE_CONTEXT
 
+using WrapFn = llvm::function_ref<void(unsigned)>;
+
+void touchAndWrapOnWorkers(M::AsyncRT::CPUDevice &cpu, unsigned numChunks,
+                           unsigned threads, size_t page,
+                           const std::vector<Slice> &slices, WrapFn wrapChunk) {
+  using AsyncChain = M::AsyncRT::AsyncValueRef<M::AsyncRT::Chain>;
+
+  std::vector<AsyncChain> touchDone;
+  std::vector<AsyncChain> wrapDone;
+  touchDone.reserve(numChunks);
+  wrapDone.reserve(numChunks);
+  for (unsigned i = 0; i < numChunks; ++i) {
+    touchDone.push_back(AsyncChain::allocate(cpu));
+    wrapDone.push_back(AsyncChain::allocate(cpu));
+  }
+
+  constexpr int kWrapWorker = 0;
+  const size_t numWorkers = cpu.getWorkQueue()->getParallelismLevel();
+  // Extra touch lanes only contend on memory bandwidth, so leave kWrapWorker.
+  const size_t touchLanes =
+      numWorkers > 1 ? std::min<size_t>(std::max(1u, threads), numWorkers - 1)
+                     : 0;
+
+  auto enqueueWrap = [&](unsigned i) {
+    M::AsyncRT::addTask(
+        cpu,
+        [&, i]() {
+          wrapChunk(i);
+          wrapDone[i].copy().emplace();
+        },
+        kWrapWorker);
+  };
+
+  // Gating on the previous wrap keeps wrapping serial while touch runs free.
+  touchDone[0].andThenSync([&]() { enqueueWrap(0); });
+  for (unsigned i = 1; i < numChunks; ++i) {
+    M::AsyncRT::andThenSync(
+        std::make_tuple(touchDone[i].copy(), wrapDone[i - 1].copy()),
+        [&, i](AsyncChain, AsyncChain) { enqueueWrap(i); });
+  }
+
+  M::AsyncRT::parallelForEachNChainWithTaskIds(
+      cpu, static_cast<size_t>(numChunks),
+      [touchLanes](size_t i) -> int {
+        if (touchLanes == 0)
+          return kDefaultTaskId;
+        return static_cast<int>(1 + (i % touchLanes));
+      },
+      [&](size_t i) {
+        touchSlice(slices[i].first, slices[i].second, page);
+        touchDone[i].copy().emplace();
+      });
+
+  M::AsyncRT::await(wrapDone[numChunks - 1]);
+}
+
+// The same pipeline as `touchAndWrapOnWorkers`: touch threads claim chunks in
+// order, and the calling thread wraps each one serially once it is touched.
+void touchAndWrapOnOwnThreads(unsigned numChunks, unsigned threads, size_t page,
+                              const std::vector<Slice> &slices,
+                              WrapFn wrapChunk,
+                              const std::atomic<bool> &anyFailed) {
+  std::mutex mutex;
+  std::condition_variable touchedCv;
+  std::vector<bool> touched(numChunks, false);
+  std::atomic<unsigned> next{0};
+
+  auto touchLoop = [&]() {
+    for (unsigned i = next.fetch_add(1, std::memory_order_relaxed);
+         i < numChunks; i = next.fetch_add(1, std::memory_order_relaxed)) {
+      // A failed wrap ends the region, so the remaining pages need no touch.
+      if (!anyFailed.load(std::memory_order_relaxed))
+        touchSlice(slices[i].first, slices[i].second, page);
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        touched[i] = true;
+      }
+      touchedCv.notify_all();
+    }
+  };
+
+  // The build disables exceptions, so a failed thread start aborts. The cap
+  // keeps a C API caller's touch_threads from reaching the thread limit.
+  // TODO(pprovins): query RLIMIT_NPROC or start threads with pthread_create and
+  // fall back to fewer lanes if a container's limit sits below this.
+  constexpr unsigned kMaxTouchThreads = 64;
+  const unsigned lanes =
+      std::min({std::max(1u, threads), numChunks, kMaxTouchThreads});
+  std::vector<std::thread> workers;
+  workers.reserve(lanes);
+  for (unsigned lane = 0; lane < lanes; ++lane)
+    workers.emplace_back(touchLoop);
+
+  for (unsigned i = 0; i < numChunks; ++i) {
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      touchedCv.wait(lock, [&] { return touched[i]; });
+    }
+    if (!anyFailed.load(std::memory_order_relaxed))
+      wrapChunk(i);
+  }
+
+  for (std::thread &worker : workers)
+    worker.join();
+}
+
 } // namespace
 
 namespace {
@@ -307,13 +417,25 @@ std::unique_ptr<ChunkedStagingRegion> ChunkedStagingRegion::create(
     bool mlockPages, ChunkedStagingRegionError &error) {
   std::unique_ptr<ChunkedStagingRegion> region(
       new ChunkedStagingRegion(ctx, byteSize, rowBytes));
-  if (!region->init(cpu, byteSize, rowBytes, threads, chunkBytes, driverAlloc,
+  if (!region->init(&cpu, byteSize, rowBytes, threads, chunkBytes, driverAlloc,
                     mlockPages, error))
     return nullptr;
   return region;
 }
 
-bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice &cpu, size_t byteSize,
+std::unique_ptr<ChunkedStagingRegion> ChunkedStagingRegion::create(
+    const DeviceContextRef &ctx, size_t byteSize, size_t rowBytes,
+    unsigned threads, size_t chunkBytes, bool driverAlloc, bool mlockPages,
+    ChunkedStagingRegionError &error) {
+  std::unique_ptr<ChunkedStagingRegion> region(
+      new ChunkedStagingRegion(ctx, byteSize, rowBytes));
+  if (!region->init(/*cpu=*/nullptr, byteSize, rowBytes, threads, chunkBytes,
+                    driverAlloc, mlockPages, error))
+    return nullptr;
+  return region;
+}
+
+bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice *cpu, size_t byteSize,
                                 size_t rowBytes, unsigned threads,
                                 size_t chunkBytes, bool driverAlloc,
                                 bool mlockPages,
@@ -351,7 +473,6 @@ bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice &cpu, size_t byteSize,
 #endif
 
   const DeviceContextRef &dctx = ctx_;
-  M::AsyncRT::CPUDevice *cpuDeviceRef = &cpu;
 
   size_t page = static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
   // A boundary inside a row breaks transfers; a boundary mid-page makes two
@@ -359,8 +480,16 @@ bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice &cpu, size_t byteSize,
   size_t alignment = std::lcm(page, rowBytes);
   chunkBytes_ =
       std::max<size_t>(alignment, (chunkBytes / alignment) * alignment);
-  unsigned numChunks =
-      static_cast<unsigned>((byteSize + chunkBytes_ - 1) / chunkBytes_);
+  // Not `(byteSize + chunkBytes_ - 1) / chunkBytes_`: that wraps to 0 for a
+  // chunk_bytes near UINT64_MAX.
+  const size_t chunkCount =
+      byteSize / chunkBytes_ + (byteSize % chunkBytes_ != 0 ? 1 : 0);
+  if (chunkCount > std::numeric_limits<unsigned>::max())
+    return fail(error, /*invalidArgument=*/true,
+                "ChunkedStagingRegion: chunk_bytes " +
+                    std::to_string(chunkBytes_) + " is too small for " +
+                    std::to_string(byteSize) + " bytes");
+  const unsigned numChunks = static_cast<unsigned>(chunkCount);
 
   if (driverAlloc) {
 #if MODULAR_HAL_DEVICE_CONTEXT
@@ -468,17 +597,6 @@ bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice &cpu, size_t byteSize,
     slices[i] = {base_ + off, std::min(chunkBytes_, byteSize - off)};
   }
 
-  using AsyncChain = M::AsyncRT::AsyncValueRef<M::AsyncRT::Chain>;
-
-  std::vector<AsyncChain> touchDone;
-  std::vector<AsyncChain> wrapDone;
-  touchDone.reserve(numChunks);
-  wrapDone.reserve(numChunks);
-  for (unsigned i = 0; i < numChunks; ++i) {
-    touchDone.push_back(AsyncChain::allocate(*cpuDeviceRef));
-    wrapDone.push_back(AsyncChain::allocate(*cpuDeviceRef));
-  }
-
   std::vector<M::Driver::DeviceBufferRef> wraps(numChunks);
   std::atomic<bool> anyFailed{false};
   std::string firstErrMsg;
@@ -499,47 +617,11 @@ bool ChunkedStagingRegion::init(M::AsyncRT::CPUDevice &cpu, size_t byteSize,
     wraps[i] = wrapOr.takeValue();
   };
 
-  constexpr int kWrapWorker = 0;
-  const size_t numWorkers = cpuDeviceRef->getWorkQueue()->getParallelismLevel();
-  // Extra touch lanes only contend on memory bandwidth, so leave kWrapWorker.
-  const size_t touchLanes =
-      numWorkers > 1 ? std::min<size_t>(std::max(1u, threads), numWorkers - 1)
-                     : 0;
-
-  auto enqueueWrap = [&](unsigned i) {
-    M::AsyncRT::addTask(
-        *cpuDeviceRef,
-        [&, i]() {
-          wrapChunk(i);
-          wrapDone[i].copy().emplace();
-        },
-        kWrapWorker);
-  };
-
-  {
-
-    // Gating on the previous wrap keeps wrapping serial while touch runs free.
-    touchDone[0].andThenSync([&]() { enqueueWrap(0); });
-    for (unsigned i = 1; i < numChunks; ++i) {
-      M::AsyncRT::andThenSync(
-          std::make_tuple(touchDone[i].copy(), wrapDone[i - 1].copy()),
-          [&, i](AsyncChain, AsyncChain) { enqueueWrap(i); });
-    }
-
-    M::AsyncRT::parallelForEachNChainWithTaskIds(
-        *cpuDeviceRef, static_cast<size_t>(numChunks),
-        [touchLanes](size_t i) -> int {
-          if (touchLanes == 0)
-            return kDefaultTaskId;
-          return static_cast<int>(1 + (i % touchLanes));
-        },
-        [&](size_t i) {
-          touchSlice(slices[i].first, slices[i].second, page);
-          touchDone[i].copy().emplace();
-        });
-
-    M::AsyncRT::await(wrapDone[numChunks - 1]);
-  }
+  if (cpu == nullptr)
+    touchAndWrapOnOwnThreads(numChunks, threads, page, slices, wrapChunk,
+                             anyFailed);
+  else
+    touchAndWrapOnWorkers(*cpu, numChunks, threads, page, slices, wrapChunk);
 
   if (anyFailed.load(std::memory_order_acquire)) {
     {

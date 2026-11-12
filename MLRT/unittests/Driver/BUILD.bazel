@@ -1428,6 +1428,32 @@ modular_cc_test(
     ],
 )
 
+# The chunked pinned host regions of the driver C API. Separate from CAPITest
+# because driver-allocated chunks on HIP need HSA_USERPTR_FOR_PAGED_MEM=0 at
+# process start, which changes every other pinned allocation HIP serves.
+modular_cc_test(
+    name = "CAPIHostRegionTest",
+    size = "small",
+    srcs = [
+        "CAPIHostRegionTest.cpp",
+        "CAPITestHelpers.h",
+    ],
+    data = _CAPI_TEST_PLUGINS,
+    env = _CAPI_TEST_PLUGIN_ENV | select({
+        "//:amd_gpu": {"HSA_USERPTR_FOR_PAGED_MEM": "0"},
+        "//conditions:default": {},
+    }),
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
 # A virtual device configured for the real accelerator's target must report
 # that accelerator's identity. Runs on the NVIDIA and AMD GPU lanes in the
 # default config; under --config=hal-device-context, run it through
@@ -1538,6 +1564,7 @@ test_suite(
     tags = ["manual"],
     tests = [
         ":CAPIConcurrencyTest",
+        ":CAPIHostRegionTest",
         ":CAPIPeerTest",
         ":CAPITest",
         ":VirtualDeviceParityTest",

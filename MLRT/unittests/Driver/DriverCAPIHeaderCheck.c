@@ -186,6 +186,20 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*mapping_byte_size)(const M_DriverMapping *, uint64_t *) =
       M_DriverMappingByteSize;
 
+  // Host staging regions.
+  M_DriverStatus (*host_region_create)(
+      const M_DriverDevice *, uint64_t, uint64_t, uint64_t, bool, bool,
+      uint32_t, M_DriverHostRegion **) = M_DriverHostRegionCreate;
+  M_DriverStatus (*host_region_destroy)(M_DriverHostRegion *) =
+      M_DriverHostRegionDestroy;
+  M_DriverStatus (*host_region_chunk_count)(
+      const M_DriverHostRegion *, uint64_t *) = M_DriverHostRegionChunkCount;
+  M_DriverStatus (*host_region_chunk_address)(const M_DriverHostRegion *,
+                                              uint64_t, void **) =
+      M_DriverHostRegionChunkAddress;
+  M_DriverStatus (*host_region_chunk_bytes)(
+      const M_DriverHostRegion *, uint64_t *) = M_DriverHostRegionChunkBytes;
+
   // Copies.
   M_DriverStatus (*copy_host_to_device)(const M_DriverStream *, void *,
                                         const void *, uint64_t) =
@@ -246,7 +260,10 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          buffer_is_host != NULL && memory_register != NULL &&
          mapping_destroy != NULL && mapping_destroy_sync != NULL &&
          mapping_pointer != NULL && mapping_byte_size != NULL &&
-         copy_host_to_device != NULL && copy_device_to_host != NULL &&
-         copy_batch != NULL && copy_device_to_device != NULL &&
-         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL;
+         host_region_create != NULL && host_region_destroy != NULL &&
+         host_region_chunk_count != NULL && host_region_chunk_address != NULL &&
+         host_region_chunk_bytes != NULL && copy_host_to_device != NULL &&
+         copy_device_to_host != NULL && copy_batch != NULL &&
+         copy_device_to_device != NULL && copy_peer_to_peer != NULL &&
+         copy_peer_to_peer_unordered != NULL;
 }

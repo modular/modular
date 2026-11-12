@@ -88,7 +88,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 5
+#define M_DRIVER_CAPI_VERSION_MINOR 6
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -158,6 +158,7 @@ typedef struct M_DriverStream M_DriverStream;
 typedef struct M_DriverEvent M_DriverEvent;
 typedef struct M_DriverBuffer M_DriverBuffer;
 typedef struct M_DriverMapping M_DriverMapping;
+typedef struct M_DriverHostRegion M_DriverHostRegion;
 typedef struct M_DriverCompletionFlag M_DriverCompletionFlag;
 
 //===----------------------------------------------------------------------===//
@@ -928,6 +929,82 @@ M_DriverMappingPointer(const M_DriverMapping *mapping, void **out);
 /// Writes the size in bytes of a registered range to `*out`.
 M_DRIVER_API M_DriverStatus
 M_DriverMappingByteSize(const M_DriverMapping *mapping, uint64_t *out);
+
+/// A pinned host staging region the driver allocates and owns, laid out in
+/// chunks: large enough for hundreds of GiB, which one registration cannot
+/// pin quickly or at all past 1 TiB. Create with `M_DriverHostRegionCreate`;
+/// destroy with `M_DriverHostRegionDestroy`.
+///
+/// Each chunk's host address is also its address in copies, as for a
+/// registered range. No chunk boundary falls inside a row, and a copy must not
+/// cross a chunk boundary, because the chunks are separate registrations (or,
+/// with `driver_alloc`, separate allocations that need not be contiguous).
+/// Callers address the region chunk by chunk, through
+/// `M_DriverHostRegionChunkAddress`.
+///
+/// The region registers on a context this interface owns, so it neither
+/// reports nor clears an error MAX left pending on the device.
+
+/// Allocates `byte_size` bytes of pinned host memory for `device` in chunks
+/// of whole rows, and writes the region to `*out`. Blocks until every chunk is
+/// pinned.
+///
+/// `byte_size` is a non-zero multiple of `row_bytes`. `chunk_bytes` is the
+/// requested chunk size, 0 for the default of 512 MiB; it is rounded to whole
+/// rows and pages, and `M_DriverHostRegionChunkBytes` reports the result.
+///
+/// With `driver_alloc` false, the region is one anonymous mapping, faulted in
+/// by `touch_threads` threads (0 for the default of 16) that this call starts
+/// and joins while the calling thread registers each chunk with the device.
+/// `mlock_pages` also locks the mapping, keeping it off the kernel's reclaim
+/// lists; that needs `RLIMIT_MEMLOCK` or `CAP_IPC_LOCK` to cover `byte_size`.
+///
+/// With `driver_alloc` true, each chunk is its own pinned allocation from the
+/// GPU driver, whose pages memory compaction cannot migrate. `mlock_pages`
+/// does not apply and is `M_DRIVER_INVALID_ARGUMENT`, and `touch_threads` is
+/// ignored. On HIP the first chunk is checked to be driver-owned memory, which
+/// needs `HSA_USERPTR_FOR_PAGED_MEM=0` in the environment before the process
+/// starts; without it, creation fails rather than return movable memory.
+///
+/// A null device or out-pointer, the CPU device, or a size that breaks the
+/// rules above is `M_DRIVER_INVALID_ARGUMENT`. A HAL device context build
+/// cannot allocate driver chunks or register host memory, so a request that
+/// passes validation is `M_DRIVER_NOT_SUPPORTED` there. Any other failure
+/// (the mapping, the lock, an allocation or a registration) is
+/// `M_DRIVER_OUT_OF_MEMORY`, with the cause in the message, and leaves nothing
+/// allocated.
+M_DRIVER_API M_DriverStatus M_DriverHostRegionCreate(
+    const M_DriverDevice *device, uint64_t byte_size, uint64_t row_bytes,
+    uint64_t chunk_bytes, bool driver_alloc, bool mlock_pages,
+    uint32_t touch_threads, M_DriverHostRegion **out);
+
+/// Releases the region: unregisters every chunk and unmaps the memory, or
+/// frees every driver-allocated chunk, and returns once that is done.
+///
+/// Nothing orders the release behind the streams that copied through the
+/// region, so the caller synchronizes every one of them first, including
+/// MAX's own work on the device (`M_DriverDeviceSynchronize`) when it copied
+/// there. A failure to unregister or free a chunk is logged rather than
+/// returned, and the handle is released either way. A null handle is
+/// `M_DRIVER_INVALID_ARGUMENT`.
+M_DRIVER_API M_DriverStatus
+M_DriverHostRegionDestroy(M_DriverHostRegion *region);
+
+/// Writes the number of chunks to `*out`.
+M_DRIVER_API M_DriverStatus
+M_DriverHostRegionChunkCount(const M_DriverHostRegion *region, uint64_t *out);
+
+/// Writes the address of chunk `index` to `*out`, valid until the region is
+/// destroyed. Chunk `i` holds bytes [`i` * chunk bytes, (`i` + 1) * chunk
+/// bytes) of the region. An `index` at or past the chunk count is
+/// `M_DRIVER_INVALID_ARGUMENT`.
+M_DRIVER_API M_DriverStatus M_DriverHostRegionChunkAddress(
+    const M_DriverHostRegion *region, uint64_t index, void **out);
+
+/// Writes the size in bytes of every chunk but the last, which may be shorter,
+/// to `*out`.
+M_DRIVER_API M_DriverStatus
+M_DriverHostRegionChunkBytes(const M_DriverHostRegion *region, uint64_t *out);
 
 /// Enqueues a host-to-device copy of `byte_size` bytes from `src_host` to
 /// `dst_device`, on `stream`, and returns without waiting for it.

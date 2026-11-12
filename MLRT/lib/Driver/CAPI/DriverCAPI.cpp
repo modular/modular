@@ -28,16 +28,19 @@
 #include "MLRT/Driver/CAPI/DriverCAPI.h"
 
 #include "MLRT/Driver/CAPI/ArchitectureVersion.h"
+#include "MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
 
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -196,6 +199,11 @@ struct Service {
 struct M_DriverMapping {
   M::Driver::DeviceBufferRef buffer;
   Service *service;
+};
+
+struct M_DriverHostRegion {
+  std::unique_ptr<M::Driver::ChunkedStagingRegion> region;
+  std::vector<uintptr_t> chunks;
 };
 
 namespace {
@@ -1294,6 +1302,89 @@ M_DriverStatus M_DriverMappingByteSize(const M_DriverMapping *mapping,
   if (mapping == nullptr || out == nullptr || !mapping->buffer.getPointer())
     return fail(M_DRIVER_INVALID_ARGUMENT, "mapping or out is null");
   *out = static_cast<uint64_t>(mapping->buffer->byteSize());
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionCreate(const M_DriverDevice *device,
+                                        uint64_t byte_size, uint64_t row_bytes,
+                                        uint64_t chunk_bytes, bool driver_alloc,
+                                        bool mlock_pages,
+                                        uint32_t touch_threads,
+                                        M_DriverHostRegion **out) {
+  if (device == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out is null");
+  *out = nullptr;
+  if (contextOf(*device).device().api() == Device::cpuAPI)
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverHostRegionCreate: the CPU device has no pinned host "
+                "memory; pass an accelerator");
+#if MODULAR_HAL_DEVICE_CONTEXT
+  if (driver_alloc)
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverHostRegionCreate: driver_alloc is not available under "
+                "the HAL device context");
+#endif
+  // A context of the region's own, rather than the shared service context:
+  // creation can run for minutes, and the region's drains must neither wait
+  // on nor clear anything MAX or another registration left there.
+  ErrorOr<DeviceContextRef> ctx = contextOf(*device).device().createContext();
+  if (ctx.isError())
+    return fail(ctx, "M_DriverHostRegionCreate");
+  M::Driver::ChunkedStagingRegionError error;
+  std::unique_ptr<M::Driver::ChunkedStagingRegion> region =
+      M::Driver::ChunkedStagingRegion::create(
+          *ctx, byte_size, row_bytes,
+          touch_threads == 0 ? M::Driver::kDefaultTouchThreads : touch_threads,
+          chunk_bytes == 0 ? M::Driver::kDefaultChunkBytes : chunk_bytes,
+          driver_alloc, mlock_pages, error);
+  if (!region) {
+    M_DriverStatus status = error.invalidArgument ? M_DRIVER_INVALID_ARGUMENT
+                                                  : M_DRIVER_OUT_OF_MEMORY;
+#if MODULAR_HAL_DEVICE_CONTEXT
+    // The HAL context cannot wrap host memory, so every registered chunk
+    // fails and the cause is the build, not memory pressure.
+    if (!error.invalidArgument)
+      status = M_DRIVER_NOT_SUPPORTED;
+#endif
+    return fail(status, "M_DriverHostRegionCreate failed: " + error.message);
+  }
+  std::vector<uintptr_t> chunks = region->chunkAddresses();
+  *out = new M_DriverHostRegion{std::move(region), std::move(chunks)};
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionDestroy(M_DriverHostRegion *region) {
+  if (region == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region is null");
+  delete region;
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkCount(const M_DriverHostRegion *region,
+                                            uint64_t *out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  *out = static_cast<uint64_t>(region->chunks.size());
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkAddress(const M_DriverHostRegion *region,
+                                              uint64_t index, void **out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  if (index >= region->chunks.size())
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "index is out of range: expected index < " +
+                    std::to_string(region->chunks.size()));
+  *out = reinterpret_cast<void *>(region->chunks[index]);
+  return succeed();
+}
+
+M_DriverStatus M_DriverHostRegionChunkBytes(const M_DriverHostRegion *region,
+                                            uint64_t *out) {
+  if (region == nullptr || out == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "region or out is null");
+  *out = static_cast<uint64_t>(region->region->chunkBytes());
   return succeed();
 }
 
