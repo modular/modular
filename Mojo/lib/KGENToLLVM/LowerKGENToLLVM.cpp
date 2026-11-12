@@ -706,11 +706,17 @@ static bool isCABICallee(const SymbolTable &symtab, FlatSymbolRefAttr sym) {
   return false;
 }
 
+/// The C ABI result form of each converted abi("C") definition, for
+/// ConvertKGENReturn.
+using CABIDefinitionMap = llvm::DenseMap<Operation *, CABIDefinition>;
+
 class ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
 public:
   ConvertKGENFunc(mlir::LLVMTypeConverter &tc, SymbolTable &symtab,
-                  const AttributeIdentifiers &ids)
-      : ConvertSymbolOpToLLVM(tc, symtab), ids(ids) {}
+                  const AttributeIdentifiers &ids,
+                  CABIDefinitionMap &cabiDefinitions)
+      : ConvertSymbolOpToLLVM(tc, symtab), ids(ids),
+        cabiDefinitions(cabiDefinitions) {}
 
   LogicalResult matchAndRewrite(FuncOp func, FuncOpAdaptor adaptor,
                                 DirectRewriter &b) const override {
@@ -760,7 +766,8 @@ public:
 
     // Mark abi("C") functions so ConvertKGENCall can identify them via
     // symbol lookup regardless of conversion order.
-    if (func.getFuncTypeGenerator().getBody().getFnEffects().isCABI()) {
+    bool isCABI = func.getFuncTypeGenerator().getBody().getFnEffects().isCABI();
+    if (isCABI) {
       funcOp->setAttr(kCABIFuncAttr,
                       b.getDenseBoolArrayAttr(llvm::map_to_vector(
                           func.getFunctionType().getResults(), [](Type type) {
@@ -778,6 +785,18 @@ public:
     // Drop empty struct arguments.
     dropEmptyStructArguments(funcOp, b);
 
+    // Give an abi("C") function its C ABI signature. ConvertKGENReturn
+    // applies the result coercion when it converts the returns.
+    if (isCABI) {
+      std::unique_ptr<CABIInfo> abiInfo =
+          createCABIInfo(target.getTriple(), getContext(), *getTypeConverter());
+      bool isResultSigned =
+          func.getFunctionType().getNumResults() == 1 &&
+          isSignedIntegerScalar(func.getFunctionType().getResults().front());
+      cabiDefinitions[funcOp] =
+          rewriteCABIFunctionEntry(funcOp, *abiInfo, isResultSigned);
+    }
+
     // Remove the function.
     symtab.remove(func);
     Block::iterator insertPt(func->getNextNode());
@@ -789,6 +808,7 @@ public:
 
 private:
   const AttributeIdentifiers &ids;
+  CABIDefinitionMap &cabiDefinitions;
 };
 
 //===----------------------------------------------------------------------===//
@@ -967,16 +987,26 @@ struct ConvertKGENCallIndirect
 
 /// Convert `hlcf.return` to `llvm.return`, packing the results if necessary.
 struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<HLCF::ReturnOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+  ConvertKGENReturn(mlir::LLVMTypeConverter &tc,
+                    const CABIDefinitionMap &cabiDefinitions)
+      : ConvertPOPToLLVMPattern(tc), cabiDefinitions(cabiDefinitions) {}
 
   LogicalResult matchAndRewrite(HLCF::ReturnOp op,
                                 HLCF::ReturnOpAdaptor adaptor,
                                 DirectRewriter &rewriter) const override {
+    auto cabiDefinition =
+        cabiDefinitions.find(op->getParentOfType<LLVM::LLVMFuncOp>());
+    auto replaceWithReturn = [&](ValueRange results) {
+      auto ret =
+          rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(), results);
+      if (cabiDefinition != cabiDefinitions.end())
+        rewriteCABIReturn(ret, cabiDefinition->second);
+    };
     auto operands = adaptor.getOperands();
 
     // If the results don't need to be packed, create the LLVM return.
     if (op->getNumOperands() <= 1) {
-      rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, TypeRange(), operands);
+      replaceWithReturn(operands);
       return success();
     }
 
@@ -991,9 +1021,12 @@ struct ConvertKGENReturn : public ConvertPOPToLLVMPattern<HLCF::ReturnOp> {
     }
 
     // Create the LLVM return.
-    rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, result);
+    replaceWithReturn(result);
     return success();
   }
+
+private:
+  const CABIDefinitionMap &cabiDefinitions;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1276,12 +1309,10 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
-                                       mlir::RewritePatternSet &patterns,
-                                       SymbolTable &symtab,
-                                       InterpreterMemoryConverter &imc,
-                                       bool &passFailed,
-                                       const AttributeIdentifiers &ids) {
+static void populateKGENToLLVMPatterns(
+    mlir::LLVMTypeConverter &typeConverter, mlir::RewritePatternSet &patterns,
+    SymbolTable &symtab, InterpreterMemoryConverter &imc, bool &passFailed,
+    const AttributeIdentifiers &ids, CABIDefinitionMap &cabiDefinitions) {
   patterns.insert<
       // clang-format off
       ConvertKGENCallIndirect,
@@ -1291,12 +1322,12 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,
       ConvertKGENStructReplace,
-      ConvertKGENReturn,
       ConvertKGENUnreachable
       // clang-format on
       >(typeConverter);
   patterns.insert<ConvertKGENCall>(typeConverter, symtab);
-  patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids);
+  patterns.insert<ConvertKGENFunc>(typeConverter, symtab, ids, cabiDefinitions);
+  patterns.insert<ConvertKGENReturn>(typeConverter, cabiDefinitions);
   patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
       typeConverter, imc, passFailed);
 }
@@ -1378,8 +1409,9 @@ void LowerKGENToLLVMPass::runOnOperation() {
   SymbolTable &symtab = symtabAnalysis.getTopLevelSymbolTable();
   InterpreterMemoryConverter imc(symtab, typeConverter);
   bool passFailed = false;
+  CABIDefinitionMap cabiDefinitions;
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc, passFailed,
-                             ids);
+                             ids, cabiDefinitions);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
@@ -1412,25 +1444,6 @@ void LowerKGENToLLVMPass::runOnOperation() {
     const TargetLowering *lowering = *loweringOr;
     for (auto funcOp : theModule.getOps<LLVM::LLVMFuncOp>())
       lowering->finalizeConvertedFunction(funcOp);
-  }
-
-  // Apply C ABI to abi("C") function definitions. This rewrites the function
-  // entry (C ABI args → Mojo types) and exits (Mojo return → C ABI), making
-  // the function directly callable from C. Call sites were already patched
-  // during conversion by ConvertKGENCall.
-  {
-    auto abiHandler =
-        createCABIInfo(typeConverter.getTarget().getTriple(), &getContext(),
-                       static_cast<const LLVMDataLayout &>(typeConverter));
-    for (auto func : theModule.getOps<LLVM::LLVMFuncOp>()) {
-      auto resultSigns = func->getAttrOfType<DenseBoolArrayAttr>(kCABIFuncAttr);
-      if (!resultSigns)
-        continue;
-      // Several results are packed into a struct, which is never extended.
-      bool isResultSigned =
-          resultSigns.size() == 1 && resultSigns.asArrayRef().front();
-      processCABIFunctionDefinition(func, *abiHandler, isResultSigned);
-    }
   }
 
   // Convert the debug info within the IR.

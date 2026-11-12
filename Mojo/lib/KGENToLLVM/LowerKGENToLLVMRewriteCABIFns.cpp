@@ -96,39 +96,16 @@ reconstructCABIArguments(LLVMFunctionType newFnTy, Block *entry,
   return reconstructed;
 }
 
-/// Rewrite every ReturnOp in `func` to store its value through `retAlloca`
-/// and reload as `coercedType`, performing a bitcast-via-memory.
-static void rewriteReturnsToCoercedType(LLVMFuncOp func, Value retAlloca,
-                                        Type coercedType) {
-  func.walk([&](ReturnOp ret) {
-    if (ret.getOperands().empty())
-      return;
-    ImplicitLocOpBuilder rb(ret.getLoc(), ret);
-    StoreOp::create(rb, ret.getArg(), retAlloca);
-    ret->setOperands(ValueRange({LoadOp::create(rb, coercedType, retAlloca)}));
-  });
-}
-
-/// Apply C ABI return coercion to `func`: rewrite all ReturnOps and, for the
-/// sret case, insert the hidden result-pointer as block arg 0. Returns the
-/// new LLVM return type that replaces the original.
-static Type applyCABIReturnCoercion(LLVMFuncOp func, Block *entry,
-                                    const M::KGEN::CoercionInfo &retInfo,
-                                    Type origRetType, ImplicitLocOpBuilder &b,
-                                    LLVMPointerType ptrType, MLIRContext *ctx,
-                                    Location loc,
-                                    const M::KGEN::LLVMDataLayout &dl) {
-  if (retInfo.useSRet) {
-    // sret: the caller passes a hidden result pointer in arg 0 (x8 on ARM64).
-    // Store the return value through it and return void instead.
-    Value sretArg = entry->insertArgument(0u, ptrType, loc);
-    func.walk([&](ReturnOp ret) {
-      ImplicitLocOpBuilder rb(ret.getLoc(), ret);
-      StoreOp::create(rb, ret.getArg(), sretArg);
-      ret->setOperands(ValueRange());
-    });
-    return LLVMVoidType::get(ctx);
-  }
+/// Make the C ABI result slot of a definition: for sret, the hidden result
+/// pointer as block arg 0 (x8 on ARM64); otherwise, memory at the top of the
+/// entry block through which the result is coerced.
+static M::KGEN::CABIDefinition
+createCABIResultSlot(Block *entry, const M::KGEN::CoercionInfo &retInfo,
+                     Type origRetType, ImplicitLocOpBuilder &b,
+                     LLVMPointerType ptrType, MLIRContext *ctx, Location loc,
+                     const M::KGEN::LLVMDataLayout &dl) {
+  if (retInfo.useSRet)
+    return {retInfo, entry->insertArgument(0u, ptrType, loc), Type()};
 
   // Single- or two-register: bitcast the original return value via memory.
   Type coercedType =
@@ -139,16 +116,29 @@ static Type applyCABIReturnCoercion(LLVMFuncOp func, Block *entry,
   assert(coercedType);
   b.setInsertionPointToStart(entry);
   Value retAlloca = createEntryAlloca(b, ptrType, origRetType, coercedType, dl);
-  rewriteReturnsToCoercedType(func, retAlloca, coercedType);
-  return coercedType;
+  return {retInfo, retAlloca, coercedType};
 }
 
 } // namespace
 
 namespace M::KGEN {
 
-void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
-                                   bool isResultSigned) {
+void rewriteCABIReturn(ReturnOp ret, const CABIDefinition &def) {
+  if (!def.retSlot || ret.getOperands().empty())
+    return;
+  ImplicitLocOpBuilder rb(ret.getLoc(), ret);
+  StoreOp::create(rb, ret.getArg(), def.retSlot);
+  // sret: store the result through the hidden pointer and return void.
+  if (def.ret.useSRet) {
+    ret->setOperands(ValueRange());
+    return;
+  }
+  ret->setOperands(
+      ValueRange({LoadOp::create(rb, def.coercedRetType, def.retSlot)}));
+}
+
+CABIDefinition rewriteCABIFunctionEntry(LLVMFuncOp func, CABIInfo &abiInfo,
+                                        bool isResultSigned) {
   Location loc = func.getLoc();
   MLIRContext *ctx = func.getContext();
   SmallVector<Type> origArgTypes = llvm::to_vector(func.getArgumentTypes());
@@ -178,13 +168,14 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
       argInfos, [](const CoercionInfo &ci) { return !ci.isIdentity(); });
   if (!anyArgCoercion && retInfo.isIdentity()) {
     applyCABIAttrs();
-    return;
+    return {retInfo, Value(), Type()};
   }
 
   auto ptrType = LLVMPointerType::get(ctx);
   LLVMFunctionType newFnTy = sigClass.getFunctionType(
       ctx, origArgTypes, origRetType, func.getFunctionType().isVarArg());
 
+  CABIDefinition def{retInfo, Value(), Type()};
   if (!func.isExternal()) {
     Block *entry = &func.getBody().front();
     ImplicitLocOpBuilder b(loc, entry, entry->begin());
@@ -200,13 +191,14 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
     entry->eraseArguments(0, origArgTypes.size());
 
     if (!retInfo.isIdentity()) {
-      applyCABIReturnCoercion(func, entry, retInfo, origRetType, b, ptrType,
-                              ctx, loc, dl);
+      def = createCABIResultSlot(entry, retInfo, origRetType, b, ptrType, ctx,
+                                 loc, dl);
     }
   }
 
   func.setType(newFnTy);
   applyCABIAttrs();
+  return def;
 }
 
 } // namespace M::KGEN
