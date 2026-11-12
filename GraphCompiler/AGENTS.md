@@ -7,6 +7,8 @@ principles, 24 quality attributes, 8 constraints, and 8 ADRs. This file is the
 short version: the rules that change what you write. Read the spec section
 named beside a rule before you argue with it.
 
+Invoke the `graph-execution-engineer` skill before you edit anything here.
+
 Cited symbols move. Find them by name, not by the line number in the spec's
 permalinks, which are pinned to revision `ceaf9aea9ed8`.
 
