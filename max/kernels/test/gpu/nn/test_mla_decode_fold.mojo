@@ -30,7 +30,9 @@ query rows: uniform and mixed-width ragged batches (a short sequence's pad
 rows must clamp on both the Q read and the output store), pad rows at
 S=6/S=7 (M=72/84 live rows in the 96-slot two-tile launch), split-K with
 empty partitions, NaN-poisoned output buffers, and signed / large-magnitude
-inputs that drive the online-softmax rescale branches.
+inputs that drive the online-softmax rescale branches. The H=8 control also
+runs at batch 4 with 32k caches, where the heuristic's wave target, not the
+page cap, sets the split-K count.
 """
 
 from std.math import align_up, ceildiv
@@ -847,6 +849,58 @@ def main() raises:
                 [8],
                 CausalMask(),
                 ctx,
+            )
+
+            # The two cases above run at batch 1, where the split-K count is
+            # page-capped (4096 keys = 16 split pages), so a change to the
+            # partition heuristic is invisible to them. The DSpark drafter runs
+            # this H=8 fold at batch 4 with S=7/8, where the one-wave target
+            # binds instead (np = 64 at 32768 keys, 128 split pages).
+            run_fold_case[8](
+                "h8_s7_b4_causal_nk32768",
+                [32768, 32768, 32768, 32768],
+                [7, 7, 7, 7],
+                CausalMask(),
+                ctx,
+            )
+            run_fold_case[8](
+                "h8_s8_b4_causal_nk32768",
+                [32768, 32768, 32768, 32768],
+                [8, 8, 8, 8],
+                CausalMask(),
+                ctx,
+            )
+            # Ragged cache lengths at batch 4: the heuristic sees only the
+            # longest cache, while each request scans its own `num_keys`, so
+            # partitions are unevenly filled. Lengths are not multiples of the
+            # 128-row key tile, so per-partition key ranges land off-tile.
+            run_fold_case[8](
+                "h8_s7_b4_ragged_cache_causal_nk32768",
+                [32768, 20000, 30001, 12345],
+                [7, 7, 7, 7],
+                CausalMask(),
+                ctx,
+            )
+            # At 32k random keys every output element sits far below the
+            # tolerance, so the cases above cannot see a reduce that drops or
+            # misweights a partition. With the causal tail boosted, the last
+            # partition carries the softmax mass and such an error moves the
+            # output by O(1).
+            run_fold_case[8](
+                "h8_s7_b4_causal_nk32768_tailboost",
+                [32768, 32768, 32768, 32768],
+                [7, 7, 7, 7],
+                CausalMask(),
+                ctx,
+                k_tail_boost=8.0,
+            )
+            run_fold_case[8](
+                "h8_s7_b4_ragged_cache_causal_nk32768_tailboost",
+                [32768, 20000, 30001, 12345],
+                [7, 7, 7, 7],
+                CausalMask(),
+                ctx,
+                k_tail_boost=8.0,
             )
 
             # -----------------------------------------------------------

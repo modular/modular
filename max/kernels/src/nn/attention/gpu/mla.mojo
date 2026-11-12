@@ -875,6 +875,7 @@ struct AMDMLA(MLAKernels):
                     ctx,
                     is_mla=True,
                     num_m_tiles=(num_blocks_y if q_seq_len > 1 else 1),
+                    q_seq_len=q_seq_len,
                 )
 
             # Token fold (S>1): split-K is re-keyed by query row, so the

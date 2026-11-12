@@ -18,11 +18,13 @@ answer, so choosing a worse one costs wall time and nothing else. No GPU
 test can see that, which leaves the policy free to drift silently.
 
 The S>1 fold's two-tile split doubles the CTAs each (batch, partition)
-spans, and the measured optimum is one wave of that true CTA count. These
-pins hold the rule at the measured shapes, the b3 bucket boundary between
-the b2/b4 neighbors, and — just as load-bearing — the byte-identity of
-every single-tile caller (S=1, the S<=5 single-tile fold, all MHA), whose
-partition counts must not move when the fold rule does.
+spans, and the measured optimum is one wave of that true CTA count. The
+single-tile fold at 8 heads or fewer (the DSpark drafter) measures the same
+reduce-bound optimum, so it takes the same one-wave target. These pins hold
+both rules at the measured shapes, the b3 bucket boundary between the
+b2/b4 neighbors, and — just as load-bearing — the byte-identity of every
+caller they must not touch (S=1 at any head count, the S<=5 single-tile
+fold, all MHA), whose partition counts must not move when a fold rule does.
 """
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
@@ -140,12 +142,68 @@ def test_multi_tile_fold_targets_one_wave() raises:
         )
 
 
+def test_single_tile_fold_at_low_heads_targets_one_wave() raises:
+    """The H=8 S=7 drafter fold packs M=56 into one tile, so its CTAs are
+    batch-only and one wave of them fills the device. Measured on MI355X
+    (drafter, S=7, b4, fp8 KV, nk 87040, decode+reduce): np=64 (one wave)
+    84.1us, np=128 (two waves) 99.3us, np=32 (half a wave) 136.6us.
+    """
+    comptime heads = 8
+    comptime s = 7
+
+    # Context ladder at b4. 16k is page-capped to 64 by both arms (64 split
+    # pages), so the rule only moves the longer contexts.
+    for keys, want in [
+        (16384, 64),
+        (32768, 64),
+        (87040, 64),
+        (131072, 64),
+    ]:
+        _expect(
+            String(t"drafter np b4 {keys}"),
+            hip_mha_decoding_num_partitions(
+                4, keys, heads, SM_COUNT, is_mla=True, q_seq_len=s
+            ),
+            want,
+        )
+    # Batch ladder at 32k: one wave, rounded up to a power-of-two rung.
+    for b, want in [(1, 128), (2, 128), (3, 128), (4, 64), (8, 32)]:
+        _expect(
+            String(t"drafter np b{b} 32k"),
+            hip_mha_decoding_num_partitions(
+                b, 32768, heads, SM_COUNT, is_mla=True, q_seq_len=s
+            ),
+            want,
+        )
+    # M = H * S <= 16 runs the legacy BM=16 launch, latency-bound like
+    # H=16 S=1, and keeps two waves.
+    for h, sq in [(8, 2), (4, 4)]:
+        _expect(
+            String(t"M<=16 H={h} S={sq} np b4 32k"),
+            hip_mha_decoding_num_partitions(
+                4, 32768, h, SM_COUNT, is_mla=True, q_seq_len=sq
+            ),
+            128,
+        )
+    # The H=12 S=8 verify shape has two M tiles and keeps its own two-tile
+    # one-wave target (np=32) whether or not S is threaded through. S=1 at
+    # the drafter's heads is latency-bound per CTA and keeps two waves
+    # (pinned in the single-tile caller test below).
+    _expect(
+        "H=12 S=8 np b4 32k",
+        hip_mha_decoding_num_partitions(
+            4, 32768, 12, SM_COUNT, is_mla=True, num_m_tiles=2, q_seq_len=8
+        ),
+        32,
+    )
+
+
 def test_single_tile_callers_keep_their_partition_counts() raises:
-    """Every caller that does not span a two-tile fold must keep its exact
-    partition count: the fold rule is gated on num_m_tiles > 1 and the
-    default argument is 1, so existing call sites are unchanged. These are
-    regression pins at the pre-fold values, not restatements of the
-    formula.
+    """Every caller that spans no fold must keep its exact partition count:
+    the fold rules are gated on num_m_tiles > 1 and on q_seq_len > 1 at 8
+    heads or fewer, and both default arguments preserve today's value, so
+    existing call sites are unchanged. These are regression pins at the
+    pre-fold values, not restatements of the formula.
     """
     # S=1 and the S<=5 single-tile fold (H=12): the two-wave target,
     # page-capped at 128 by the 32k context.
@@ -160,10 +218,19 @@ def test_single_tile_callers_keep_their_partition_counts() raises:
         _expect(
             "single-tile fold np at batch=" + String(b) + " 32k",
             hip_mha_decoding_num_partitions(
-                b, 32768, 12, SM_COUNT, is_mla=True, num_m_tiles=1
+                b, 32768, 12, SM_COUNT, is_mla=True, num_m_tiles=1, q_seq_len=5
             ),
             128,
         )
+    # 9 heads is past the single-tile fold's head cap: an S=7 single tile
+    # keeps the two-wave target.
+    _expect(
+        "single-tile fold np H=9 S=7 b4 32k",
+        hip_mha_decoding_num_partitions(
+            4, 32768, 9, SM_COUNT, is_mla=True, num_m_tiles=1, q_seq_len=7
+        ),
+        128,
+    )
     _expect(
         "S=1 np b1 120k",
         hip_mha_decoding_num_partitions(1, 122880, 12, SM_COUNT, is_mla=True),
@@ -174,9 +241,10 @@ def test_single_tile_callers_keep_their_partition_counts() raises:
         hip_mha_decoding_num_partitions(4, 8192, 12, SM_COUNT, is_mla=True),
         32,
     )
-    # The H=8 drafter control: M=56 at S=7 stays single-tile.
+    # The H=8 drafter at S=1 (single tile, two waves): the fold rule is
+    # gated on q_seq_len > 1, and the default argument is 1.
     _expect(
-        "H=8 S=7 np b4 32k",
+        "H=8 S=1 np b4 32k",
         hip_mha_decoding_num_partitions(4, 32768, 8, SM_COUNT, is_mla=True),
         128,
     )
@@ -214,5 +282,6 @@ def test_single_tile_callers_keep_their_partition_counts() raises:
 def main() raises:
     test_fold_tile_count_matches_the_launch_ladder()
     test_multi_tile_fold_targets_one_wave()
+    test_single_tile_fold_at_low_heads_targets_one_wave()
     test_single_tile_callers_keep_their_partition_counts()
     print("AMD MLA decode partition policy pins OK")
