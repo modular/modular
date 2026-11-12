@@ -48,6 +48,9 @@ _SWEPT_SCALARS = (
     (1e-6, 0.0),
     (1e-5, 1.0),
     (1e-6, 1.0),
+    # Gemma 4's float16 post-FFN norm: 1e-6 over its FFN loss scale (256)
+    # squared.
+    (1e-6 / 256**2, 0.0),
 )
 
 
