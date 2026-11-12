@@ -35,7 +35,7 @@ repository:
 
   ```bash
   ./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
-    --model Qwen/Qwen3.5-0.8B --max-batch-size 1 --max-length 10000 \
+    --model Qwen/Qwen3.5-0.8B --max-batch-size 1 --max-length 8000 \
     --prompt "The sky is blue because"
   ```
 
