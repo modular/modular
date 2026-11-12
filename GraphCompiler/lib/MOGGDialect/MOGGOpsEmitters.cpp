@@ -975,7 +975,7 @@ static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
 }
 
 // Emits the launch of a declarative kernel. `execute_configuration` returns a
-// `GridBlockLaunchConfig`, which provides grid and block dims for the launch:
+// `GridBlockExecutionConfig`, which provides the launch's grid and block dims:
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand

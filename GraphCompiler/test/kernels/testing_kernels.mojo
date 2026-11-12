@@ -20,13 +20,17 @@ from std.sys import align_of
 from std.sys.info import simd_width_of
 from max.algorithm.functional import elementwise
 import extensibility
-from extensibility import GridBlockLaunchConfig
 from layout import TensorLayout
 from layout import TileTensor, CoordLike, Coord, DefaultEngine, row_major
 from layout.coord import DynamicCoord
 from layout.layout import Layout
 from algorithm.reduce_op import ReduceOp
-from max.gpu.host import DeviceContext, DeviceContextArray, Dim
+from max.gpu.host import (
+    DeviceContext,
+    DeviceContextArray,
+    Dim,
+    GridBlockExecutionConfig,
+)
 from max.gpu.host import DeviceGraphBuilder
 from extensibility import (
     InputTensor,
@@ -3740,7 +3744,7 @@ struct MapLowerNoContext:
 
 # Return value for a kernel's `execute_configuration`.
 @fieldwise_init
-struct DeclarativeLaunchConfig(Copyable, GridBlockLaunchConfig):
+struct DeclarativeLaunchConfig(Copyable, GridBlockExecutionConfig):
     var grid_dim: Dim
     var block_dim: Dim
 

@@ -24,7 +24,7 @@ from algorithm.cpu.rowwise import CPU_WIDE_ACCUMULATOR_FACTOR
 from algorithm.rowwise import Row, launch, pick_simd_width
 from algorithm.rowwise_types import ContextParams, RowBody
 
-from extensibility import GridBlockLaunchConfig, StaticTensorSpec
+from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
@@ -37,6 +37,7 @@ from extensibility import (
 from std.collections import Array
 from max.gpu import block_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
+from max.gpu.host import GridBlockExecutionConfig
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
@@ -1533,7 +1534,9 @@ def mogg_launch_declarative[
     //,
     func: def(*args: *declared_arg_types) thin -> None,
     *Ts: DevicePassable,
-](ctx: DeviceContext, config: Some[GridBlockLaunchConfig], *args: *Ts) raises:
+](
+    ctx: DeviceContext, config: Some[GridBlockExecutionConfig], *args: *Ts
+) raises:
     """Compiles a declarative kernel's device function and launches it with
     the grid and block dims of `config`.
 
