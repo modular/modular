@@ -1769,8 +1769,6 @@ modular_shared_library(
     dynamic_deps = [
         ":MojoLLDB",
         "@llvm-project//llvm:LLVM",
-        "//AsyncRT:RuntimeGlobals",
-        "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],
     deps = [

@@ -607,10 +607,8 @@ modular_cc_test(
         "ScopedEnvVar.h",
     ],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         ":TestUtils",
@@ -630,14 +628,10 @@ modular_cc_test(
     # the legacy backend ignores the variable.
     data = ["//Target:CPUPlugin.so"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
-        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
-        "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     env = {
         "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so)",
@@ -692,10 +686,8 @@ modular_cc_test(
     size = "small",
     srcs = ["HALVirtualDeviceTest.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
     # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
@@ -721,10 +713,8 @@ modular_cc_test(
     size = "small",
     srcs = ["ArchitectureVersionTest.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
@@ -743,10 +733,8 @@ modular_cc_test(
     size = "small",
     srcs = ["CAPIVirtualDeviceTest.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
@@ -892,14 +880,10 @@ modular_cc_test(
     size = "small",
     srcs = ["TraceMetadataTest.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
-        "//MLRT:Driver/Compilation",
         "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
-        "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     local_defines = ["MODULAR_TESTING"],
     deps = [

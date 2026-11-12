@@ -256,10 +256,7 @@ modular_cc_test(
 modular_cc_test(
     name = "ContextTest",
     srcs = ["ContextTest.cpp"],
-    dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
-        "//Support:Globals",
-    ],
+    dynamic_deps = ["//Support:Globals"],
     deps = [
         "//Support:Context",
         "//Support:Globals.static",
@@ -339,10 +336,7 @@ modular_cc_test(
 modular_cc_test(
     name = "ProfilingTest",
     srcs = ["TimeProfilerTest.cpp"],
-    dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
-        "//Support:Globals",
-    ],
+    dynamic_deps = ["//Support:Globals"],
     deps = [
         "//Support:Globals.static",
         "//Support:TimeProfiler",

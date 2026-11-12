@@ -13,7 +13,6 @@ modular_nanobind_extension(
     testonly = True,
     srcs = ["test_bindings.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",
     ],

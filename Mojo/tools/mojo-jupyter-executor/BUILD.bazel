@@ -15,7 +15,6 @@ modular_cc_binary(
         "//Mojo:MojoJupyter",
         "//Mojo:MojoLLDB",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
