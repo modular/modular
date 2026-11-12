@@ -454,6 +454,11 @@ This version is still a work in progress.
 
 ## Fixed
 
+- `std.ffi.c_pid_t` is now `c_int` instead of `Int`, matching the 32-bit C
+  `pid_t` on Linux and macOS. As an `Int`, a `-1` returned by a function such
+  as `waitpid()` read back as a large positive number, so checks for `-1` or a
+  negative result never fired.
+
 - On Apple GPUs, building a `SIMD` from device-buffer elements in a kernel, as
   in `SIMD[DType.float32, 2](src[i], src[i])`, no longer reads zeros.
 

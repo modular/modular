@@ -129,7 +129,7 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
-comptime c_pid_t = Int
+comptime c_pid_t = c_int
 """C `pid_t` type."""
 
 comptime _null[
