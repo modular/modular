@@ -355,40 +355,36 @@ FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
   if (!func)
     return TypedAttr();
 
-  // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = ParameterExprArrayAttr::get(
       op.getContext(), op.getOperands().drop_front());
-  TypedAttr &cached =
-      elaborator->lookupCachedInterpretation(func, operandsAttr);
-  if (cached) {
-    elaborator->recordInterpreterCall(*errorLoc, func,
-                                      /*cpuNanos=*/std::nullopt);
-    return cached;
-  }
+  ErrorTreeOr<TypedAttr> result = elaborator->interpretWithCache(
+      *errorLoc, func, operandsAttr,
+      [this, func, withResultSlot](
+          ParameterExprArrayAttr &operands) -> ErrorTreeOr<TypedAttr> {
+        ErrorTreeOr<Attribute> operandsOr =
+            elaborator->concretizeSymbolsWithin(operands, parent, *errorLoc);
+        if (operandsOr.isError())
+          return operandsOr.takeError();
+        operands = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
+        if (!operands)
+          return TypedAttr();
 
-  // Concretize symbols within the operands before invoking the function.
-  ErrorTreeOr<Attribute> operandsOr =
-      elaborator->concretizeSymbolsWithin(operandsAttr, parent, *errorLoc);
-  if (operandsOr.isError()) {
-    emitError(operandsOr.takeError());
+        // Interpretation errors are emitted here and returned as null so the
+        // caller defers, as the uncached path did.
+        ErrorTreeOr<TypedAttr> interpreted =
+            withResultSlot ? evaluateFunctionWithResultSlot(func, operands)
+                           : evaluateFunction(func, operands);
+        if (interpreted.isError()) {
+          emitError(interpreted.takeError());
+          return TypedAttr();
+        }
+        return interpreted;
+      });
+  if (result.isError()) {
+    emitError(result.takeError());
     return failure();
   }
-  operandsAttr = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
-  if (!operandsAttr)
-    return TypedAttr();
-
-  // Now invoke the interpreter.
-  ErrorTreeOr<TypedAttr> result =
-      withResultSlot ? evaluateFunctionWithResultSlot(func, operandsAttr)
-                     : evaluateFunction(func, operandsAttr);
-
-  // If we had a value, write it back.
-  if ((cached = result.tryGetValue())) {
-    return elaborator->writeGlobalCachedInterpretation(func, operandsAttr,
-                                                       cached);
-  }
-  emitError(result.takeError());
-  return TypedAttr();
+  return result.takeValue();
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateStringAddress(ParamOperatorAttr op) {

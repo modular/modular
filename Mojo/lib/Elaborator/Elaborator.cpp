@@ -862,34 +862,28 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getOperandsAttr());
 
-  // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
-  TypedAttr &cached = lookupCachedInterpretation(func, operandsAttr);
-  if (cached) {
-    recordInterpreterCall(op.getLoc(), func, /*cpuNanos=*/std::nullopt);
-  } else {
-    ErrorTreeOr<Attribute> operandsOr =
-        concretizeSymbolsWithin(operandsAttr, inode, op.getLoc());
-    if (operandsOr.isError()) {
-      inode->setToError(operandsOr.takeError());
-      return failure();
-    }
-    operandsAttr = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
-    if (!operandsAttr)
-      return ElaborationState::skipNode();
-
-    inode->getEvaluator().setErrorLoc(op.getLoc());
-    ErrorTreeOr<TypedAttr> result =
-        inode->getEvaluator().evaluateFunction(func, operandsAttr);
-    if (result.isError()) {
-      inode->setToError(result.takeError());
-      return failure();
-    }
-    // Get the value from the global cache and use it below. This way, all
-    // call sites to this function use exactly the same value.
-    cached =
-        writeGlobalCachedInterpretation(func, operandsAttr, result.takeValue());
+  ErrorTreeOr<TypedAttr> result = interpretWithCache(
+      op.getLoc(), func, operandsAttr,
+      [this, inode, &op,
+       func](ParameterExprArrayAttr &operands) -> ErrorTreeOr<TypedAttr> {
+        ErrorTreeOr<Attribute> operandsOr =
+            concretizeSymbolsWithin(operands, inode, op.getLoc());
+        if (operandsOr.isError())
+          return operandsOr.takeError();
+        operands = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
+        if (!operands)
+          return TypedAttr();
+        inode->getEvaluator().setErrorLoc(op.getLoc());
+        return inode->getEvaluator().evaluateFunction(func, operands);
+      });
+  if (result.isError()) {
+    inode->setToError(result.takeError());
+    return failure();
   }
+  TypedAttr cached = result.takeValue();
+  if (!cached)
+    return ElaborationState::skipNode();
 
   // Bind the result and erase the operation.
   inode->getEvaluator().setDeclBinding(op.getParamDecl(), cached);
@@ -1309,27 +1303,40 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
       hasNextInput =
           StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
 
-    ErrorTreeOr<TypedAttr> hasNextResult =
-        parent->getEvaluator().evaluateFunction(*hasNextFunc, hasNextInput);
+    // Iterator states recur across instantiations of the enclosing generator.
+    auto hasNextKey =
+        ParameterExprArrayAttr::get(op.getContext(), {hasNextInput});
+    ErrorTreeOr<TypedAttr> hasNextResult = interpretWithCache(
+        op.getLoc(), *hasNextFunc, hasNextKey,
+        [parent, &hasNextFunc,
+         &hasNextInput](ParameterExprArrayAttr &) -> ErrorTreeOr<TypedAttr> {
+          return parent->getEvaluator().evaluateFunction(*hasNextFunc,
+                                                         hasNextInput);
+        });
     if (hasNextResult.isError()) {
       parent->setToError(hasNextResult.takeError());
       return failure();
     }
-    if (!cast<SIMDAttr>(*hasNextResult).getAsBool())
+    if (!cast<SIMDAttr>(hasNextResult.takeValue()).getAsBool())
       break;
 
     // Get the next iterator value.
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
     parent->getEvaluator().setErrorLoc(op.getLoc());
-    ErrorTreeOr<TypedAttr> result =
-        parent->getEvaluator().evaluateFunctionWithResultSlot(*getNextIterFunc,
-                                                              iterator);
-    if (result.isError()) {
-      parent->setToError(result.takeError());
+    auto nextKey = ParameterExprArrayAttr::get(op.getContext(), {iterator});
+    ErrorTreeOr<TypedAttr> nextResult = interpretWithCache(
+        op.getLoc(), *getNextIterFunc, nextKey,
+        [parent, &getNextIterFunc,
+         &iterator](ParameterExprArrayAttr &) -> ErrorTreeOr<TypedAttr> {
+          return parent->getEvaluator().evaluateFunctionWithResultSlot(
+              *getNextIterFunc, iterator);
+        });
+    if (nextResult.isError()) {
+      parent->setToError(nextResult.takeError());
       return failure();
     }
-    iterator = *result;
+    iterator = nextResult.takeValue();
     ++loopUnrollCount;
   }
 
