@@ -61,24 +61,24 @@ mo.graph @sum_rank3_last_axis() -> !mo.tensor<[2, 2, 1], f32> {
 }
 // CHECK{LITERAL}: 'sum_rank3_last_axis' returned tensor<2x2x1xf32> [6.000000e+00, 1.500000e+01, -6.000000e+00, -1.500000e+01]
 
-mo.graph @prod_rank3_first_axis<() -> D0, D1, D2>() -> !mo.tensor<[D0, D1, D2], f32> {
+mo.graph @prod_rank3_first_axis() -> !mo.tensor<[1, 2, 3], f32> {
   %input = mo.constant <#M.dense_array<1.0, 2.0, 3.0, 4.0, 5.0, 6.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0> : tensor<2x2x3xf32>> : !mo.tensor<[2, 2, 3], f32>
-  %res   = mo.reduce.mul<() -> D3, D4, D5>(%input) [axis = -3] : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[D3, D4, D5], f32>
-  mo.output<D3, D4, D5> %res : !mo.tensor<[D3, D4, D5], f32>
+  %res   = mo.reduce.mul(%input) : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[1, 2, 3], f32>
+  mo.output %res : !mo.tensor<[1, 2, 3], f32>
 }
 // CHECK{LITERAL}: 'prod_rank3_first_axis' returned tensor<1x2x3xf32> [-1.000000e+00, -4.000000e+00, -9.000000e+00, -1.600000e+01, -2.500000e+01, -3.600000e+01]
 
-mo.graph @prod_rank3_second_axis<() -> D0, D1, D2>() -> !mo.tensor<[D0, D1, D2], f32> {
+mo.graph @prod_rank3_second_axis() -> !mo.tensor<[2, 1, 3], f32> {
   %input = mo.constant <#M.dense_array<1.0, 2.0, 3.0, 4.0, 5.0, 6.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0> : tensor<2x2x3xf32>> : !mo.tensor<[2, 2, 3], f32>
-  %res   = mo.reduce.mul<() -> D3, D4, D5>(%input) [axis = -2] : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[D3, D4, D5], f32>
-  mo.output<D3, D4, D5> %res : !mo.tensor<[D3, D4, D5], f32>
+  %res   = mo.reduce.mul(%input) : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[2, 1, 3], f32>
+  mo.output %res : !mo.tensor<[2, 1, 3], f32>
 }
 // CHECK{LITERAL}: 'prod_rank3_second_axis' returned tensor<2x1x3xf32> [4.000000e+00, 1.000000e+01, 1.800000e+01, 4.000000e+00, 1.000000e+01, 1.800000e+01]
 
-mo.graph @prod_rank3_last_axis<() -> D0, D1, D2>() -> !mo.tensor<[D0, D1, D2], f32> {
+mo.graph @prod_rank3_last_axis() -> !mo.tensor<[2, 2, 1], f32> {
   %input = mo.constant <#M.dense_array<1.0, 2.0, 3.0, 4.0, 5.0, 6.0, -1.0, -2.0, -3.0, -4.0, -5.0, -6.0> : tensor<2x2x3xf32>> : !mo.tensor<[2, 2, 3], f32>
-  %res   = mo.reduce.mul<() -> D3, D4, D5>(%input) [axis = -1] : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[D3, D4, D5], f32>
-  mo.output<D3, D4, D5> %res : !mo.tensor<[D3, D4, D5], f32>
+  %res   = mo.reduce.mul(%input) : (!mo.tensor<[2, 2, 3], f32>) -> !mo.tensor<[2, 2, 1], f32>
+  mo.output %res : !mo.tensor<[2, 2, 1], f32>
 }
 // CHECK{LITERAL}: 'prod_rank3_last_axis' returned tensor<2x2x1xf32> [6.000000e+00, 1.200000e+02, -6.000000e+00, -1.200000e+02]
 

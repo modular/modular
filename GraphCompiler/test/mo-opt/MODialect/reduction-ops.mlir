@@ -25,15 +25,15 @@ mo.graph @mean_middle_axis(%input: !mo.tensor<[2, 3, 5], f32>) -> (!mo.tensor<[2
 
 // CHECK: mo.graph @reduce_mul(%[[INPUT:.*]]: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32> {
 mo.graph @reduce_mul(%input: !mo.tensor<[?, ?, 5], f32>) -> (!mo.tensor<[?, ?, 1], f32>) {
-  // CHECK-NEXT: mo.reduce.mul(%[[INPUT]]) [axis = 2] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
-  %output = mo.reduce.mul(%input) [axis = 2] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
+  // CHECK-NEXT: mo.reduce.mul(%[[INPUT]]) : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
+  %output = mo.reduce.mul(%input) : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
   mo.output %output : !mo.tensor<[?, ?, 1], f32>
 }
 
-// CHECK: mo.graph @reduce_mul_negative_index_canonicalization(%[[INPUT:.*]]: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32> {
-mo.graph @reduce_mul_negative_index_canonicalization(%input: !mo.tensor<[?, ?, 5], f32>) -> (!mo.tensor<[?, ?, 1], f32>) {
-  // CHECK-NEXT: mo.reduce.mul(%[[INPUT]]) [axis = 2] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
-  %output = mo.reduce.mul(%input) [axis = -1] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, 1], f32>
+// CHECK: mo.graph @reduce_mul_fold(%[[INPUT:.*]]: !mo.tensor<[?, ?, 1], f32>) -> !mo.tensor<[?, ?, 1], f32> {
+mo.graph @reduce_mul_fold(%input: !mo.tensor<[?, ?, 1], f32>) -> (!mo.tensor<[?, ?, 1], f32>) {
+  // CHECK: mo.output %[[INPUT:.*]] : !mo.tensor<[?, ?, 1], f32>
+  %output = mo.reduce.mul(%input) : (!mo.tensor<[?, ?, 1], f32>) -> !mo.tensor<[?, ?, 1], f32>
   mo.output %output : !mo.tensor<[?, ?, 1], f32>
 }
 

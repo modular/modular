@@ -329,10 +329,6 @@ static std::optional<int64_t> normalizedReductionAxis(TensorValue input,
   return axis;
 }
 
-std::optional<int64_t> ReduceMulOp::getReductionAxis() {
-  return normalizedReductionAxis(getInput(), getAxisAttr().getInt());
-}
-
 std::optional<int64_t> ArgMaxOp::getReductionAxis() {
   return normalizedReductionAxis(getInput(), getAxisAttr().getInt());
 }
@@ -877,7 +873,7 @@ void Composite::DistributedAllReduceRMSNormOp::getEffects(
 bool DebugTensorPrintOp::isDataTypeAgnostic() { return false; }
 
 //===----------------------------------------------------------------------===//
-// ReduceAddOp, ReduceMinOp, ReduceMaxOp
+// ReduceAddOp, ReduceMinOp, ReduceMaxOp, ReduceMulOp
 
 static std::optional<int64_t> implicitReductionAxis(TensorValue input,
                                                     TensorValue result) {
@@ -896,5 +892,9 @@ std::optional<int64_t> ReduceMinOp::getReductionAxis() {
 }
 
 std::optional<int64_t> ReduceMaxOp::getReductionAxis() {
+  return implicitReductionAxis(getInput(), getResult());
+}
+
+std::optional<int64_t> ReduceMulOp::getReductionAxis() {
   return implicitReductionAxis(getInput(), getResult());
 }

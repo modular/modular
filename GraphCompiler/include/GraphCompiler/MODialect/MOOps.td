@@ -2110,19 +2110,19 @@ class MO_ImplicitAxisReductionOp<string name, list<Trait> traits = []> :
   }];
 }
 
-def MO_ReduceMulOp : MO_MonotypeReductionOp<"reduce.mul", [
+def MO_ReduceMulOp : MO_ImplicitAxisReductionOp<"reduce.mul", [
   DeclareOpInterfaceMethods<MO_Staticization>,
 ]> {
   let summary = "Product reduction operation";
   let description = [{
-    Reduces `input` across `axis` (numpy semantics) to its product,
-    keeping that axis as size 1.
+    Reduces `input` to its product along the one dimension that is a static
+    1 in the result.
 
     Example:
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %res = mo.reduce.mul(%arg) [axis = 1] : (
+      %res = mo.reduce.mul(%arg) : (
         !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 1], f32>
     ```
   }];

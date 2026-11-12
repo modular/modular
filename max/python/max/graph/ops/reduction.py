@@ -289,7 +289,12 @@ def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
     return _reduce(mo.ReduceMulOp, x, axis=axis)
 
 
-_IMPLICIT_AXIS_REDUCTIONS = (mo.ReduceAddOp, mo.ReduceMinOp, mo.ReduceMaxOp)
+_IMPLICIT_AXIS_REDUCTIONS = (
+    mo.ReduceAddOp,
+    mo.ReduceMinOp,
+    mo.ReduceMaxOp,
+    mo.ReduceMulOp,
+)
 
 
 def _reduce(

@@ -8,7 +8,7 @@
 // CHECK-DAG: reduction mo.reduce.add: width = W, outputs = [acc]
 // CHECK-DAG: reduction mo.reduce.max: width = W, outputs = [acc]
 // CHECK-DAG: reduction mo.reduce.min: width = W, outputs = [acc]
-// CHECK-DAG: reduction reduction.mul.tmp: width = W, outputs = [acc]
+// CHECK-DAG: reduction mo.reduce.mul: width = W, outputs = [acc]
 // CHECK-DAG: reduction reduction.min_and_max.tmp: width = W, outputs = [min_acc, max_acc]
 // CHECK-DAG: reduction reduction.arg_max.tmp: width = W, outputs = [acc_values, acc_indices]
 // CHECK-DAG: reduction reduction.arg_min.tmp: width = W, outputs = [acc_values, acc_indices]

@@ -18,7 +18,7 @@ package it scans for registrations.
 
 Each is registered under its MO op's name. Those whose MO op still has a
 hand-written kernel carry a temporary `.tmp` suffix (e.g.
-`reduction.mul.tmp`), dropped when the reduction moves to the graph
+`reduction.arg_max.tmp`), dropped when the reduction moves to the graph
 compiler.
 """
 
@@ -816,7 +816,7 @@ struct ReduceMin[
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("reduction.mul.tmp")
+@extensibility.register("mo.reduce.mul")
 struct ReduceProduct[
     dtype: DType,
     W: Int = simd_width_of[dtype](),

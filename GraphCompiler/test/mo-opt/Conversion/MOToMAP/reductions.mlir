@@ -41,6 +41,17 @@ mo.graph @minMiddleAxis(%x: !mo.tensor<[2, 16, 4], f16>) -> !mo.tensor<[2, 1, 4]
   mo.output %r : !mo.tensor<[2, 1, 4], f16>
 }
 
+// A product on an outer axis, in bf16: the fold and the store keep bf16.
+// CHECK-LABEL: mo.graph @productOuterAxis
+// CHECK:       map.iter.rowwise<[16, 4], axis = 0>
+// CHECK:       outputs (%[[OUT5:.*]]: !mo.tensor<[1, 4], bf16>)
+// CHECK:       %[[ACC5:.*]] = map.iter.reduce @builtin_kernels.monoids.ReduceProduct index ({{.*}}: !map.index<2>) -> bf16 {
+// CHECK:       map.store %[[OUT5]][{{.*}}] = %[[ACC5]] : !mo.tensor<[1, 4], bf16>
+mo.graph @productOuterAxis(%x: !mo.tensor<[16, 4], bf16>) -> !mo.tensor<[1, 4], bf16> {
+  %r = mo.reduce.mul(%x) : (!mo.tensor<[16, 4], bf16>) -> !mo.tensor<[1, 4], bf16>
+  mo.output %r : !mo.tensor<[1, 4], bf16>
+}
+
 // A monoid with several output fields has one result per field, each stored
 // at the row index. ArgMax's index output is int64.
 // CHECK-LABEL: mo.graph @argMax

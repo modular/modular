@@ -82,12 +82,12 @@ mo.graph @materialize_mean_axis_0_si32_e2e<D4>(%arg0: !mo.tensor<[D4, 2], f32>) 
 // CHECK-NEXT: }
 
 mo.graph @materialize_prod_axis_1_si64_e2e<D4>(%arg0: !mo.tensor<[D4, 2], f32>) -> !mo.tensor<[D4, 1], f32> {
-    %1 = mo.reduce.mul(%arg0) [axis = 1] : (!mo.tensor<[D4, 2], f32>) -> !mo.tensor<[D4, 1], f32>
+    %1 = mo.reduce.mul(%arg0) : (!mo.tensor<[D4, 2], f32>) -> !mo.tensor<[D4, 1], f32>
     mo.output %1 : !mo.tensor<[D4, 1], f32>
 }
 // CHECK-LABEL: mo.graph
 // CHECK-SAME: @materialize_prod_axis_1_si64_e2e<[[D4:.*]]>([[VARG0:%.*]]: !mo.tensor<[[[D4]], 2], f32>) -> !mo.tensor<[[[D4]], 1], f32> {
-// CHECK-NEXT:   [[V1:%.*]] = mo.reduce.mul([[VARG0]]) [axis = 1] : (!mo.tensor<[[[D4]], 2], f32>) -> !mo.tensor<[[[D4]], 1], f32>
+// CHECK-NEXT:   [[V1:%.*]] = mo.reduce.mul([[VARG0]]) : (!mo.tensor<[[[D4]], 2], f32>) -> !mo.tensor<[[[D4]], 1], f32>
 // CHECK-NEXT:   mo.output [[V1]] : !mo.tensor<[[[D4]], 1], f32>
 // CHECK-NEXT: }
 
@@ -541,12 +541,12 @@ mo.graph @tile(%arg0: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[20, 60], f32> {
 // CHECK-NEXT: }
 
 mo.graph @partially_parameterized_signature<in, D6, D7>(%arg0: !mo.tensor<[in, D6, D7], f32>) -> !mo.tensor<[in, 1, D7], f32> {
-    %1 = mo.reduce.mul(%arg0) [axis = 1] : (!mo.tensor<[in, D6, D7], f32>) -> !mo.tensor<[in, 1, D7], f32>
+    %1 = mo.reduce.mul(%arg0) : (!mo.tensor<[in, D6, D7], f32>) -> !mo.tensor<[in, 1, D7], f32>
     mo.output %1 : !mo.tensor<[in, 1, D7], f32>
 }
 // CHECK-LABEL: mo.graph
 // CHECK-SAME: @partially_parameterized_signature<in, [[D6:.*]], [[D7:.*]]>([[VARG0:%.*]]: !mo.tensor<[in, [[D6]], [[D7]]], f32>) -> !mo.tensor<[in, 1, [[D7]]], f32> {
-// CHECK-NEXT:   [[V1:%.*]] = mo.reduce.mul([[VARG0]]) [axis = 1] : (!mo.tensor<[in, [[D6]], [[D7]]], f32>) -> !mo.tensor<[in, 1, [[D7]]], f32>
+// CHECK-NEXT:   [[V1:%.*]] = mo.reduce.mul([[VARG0]]) : (!mo.tensor<[in, [[D6]], [[D7]]], f32>) -> !mo.tensor<[in, 1, [[D7]]], f32>
 // CHECK-NEXT:   mo.output [[V1]] : !mo.tensor<[in, 1, [[D7]]], f32>
 // CHECK-NEXT: }
 

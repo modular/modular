@@ -27,7 +27,6 @@ from .rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_min_and_max,
-    reduce_product,
 )
 
 from max.gpu.host import DeviceContext
@@ -562,89 +561,6 @@ struct ApplyQKRMSNorm:
             Int(k_tile.dim[1]()),
             ctx,
         )
-
-
-@extensibility.register("mo.reduce.mul")
-struct ReduceMul:
-    """Registers the `mo.reduce.mul` graph op with the graph compiler."""
-
-    @staticmethod
-    def execute[
-        axis: Int,
-        _trace_name: StaticString,
-    ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
-        ctx: DeviceContext,
-    ) raises:
-        """Executes the `mo.reduce.mul` graph op.
-
-        Parameters:
-            axis: Dimension along which to reduce.
-            _trace_name: Name used for tracing and debugging.
-
-        Args:
-            output: Output tensor receiving the result.
-            input: Input tensor to reduce.
-            ctx: Device context used to enqueue the kernel.
-
-        Raises:
-            Error: If the operation parameters are invalid.
-        """
-        comptime dtype = type_of(input).dtype
-        comptime assert type_of(output).dtype == dtype
-        comptime assert type_of(input).rank == type_of(output).rank
-
-        # Project the host proxy to its access-enabled view so the closures can
-        # load/store on the GPU lane `reduce_product` dispatches to internally.
-        comptime assert conforms_to(type_of(input), UnsafeFusedView)
-        var in_view = unsafe_fused_view(input)
-        comptime assert conforms_to(type_of(in_view), Loadable)
-        comptime assert conforms_to(type_of(output), UnsafeFusedView)
-        var out_view = unsafe_fused_view(output)
-        comptime assert conforms_to(type_of(out_view), Storable)
-
-        @inline(.always)
-        def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
-            return rebind[SIMD[dtype, width]](
-                in_view.load[width=width, element_alignment=alignment](coords)
-            )
-
-        @inline(.always)
-        def output_fn[
-            width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
-            out_view.store[width=width](
-                coords,
-                rebind[SIMD[type_of(out_view).dtype, width]](val),
-            )
-
-        reduce_product[
-            dtype,
-            reduce_dim=axis,
-            name=_trace_name,
-        ](input_fn, output_fn, input.shape().flatten(), ctx)
-
-
-@extensibility.register_shape_function("mo.reduce.mul")
-def reduce_mul_shape[
-    axis: Int,
-](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
-    """Computes the output shape for the `mo.reduce.mul` graph op.
-
-    Parameters:
-        axis: Dimension along which to multiply the elements of `input`.
-
-    Args:
-        input: Input tensor reduced along `axis` by multiplication.
-
-    Returns:
-        The output shape after reducing `input` along `axis`
-        by multiplication.
-    """
-    return reduce_shape(input, axis)
 
 
 @extensibility.register("mo.reduce.layer_norm")

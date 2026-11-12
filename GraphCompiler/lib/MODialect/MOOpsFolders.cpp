@@ -57,7 +57,7 @@ using namespace MO;
 using namespace M;
 using namespace MO;
 //===----------------------------------------------------------------------===//
-// ReduceAddOp, ReduceMinOp, ReduceMaxOp
+// ReduceAddOp, ReduceMinOp, ReduceMaxOp, ReduceMulOp
 
 // A reduction that changes no dimension returns its input.
 static OpFoldResult foldImplicitAxisReduction(TensorValue input,
@@ -76,5 +76,9 @@ OpFoldResult ReduceMinOp::fold(FoldAdaptor) {
 }
 
 OpFoldResult ReduceMaxOp::fold(FoldAdaptor) {
+  return foldImplicitAxisReduction(getInput(), getResult());
+}
+
+OpFoldResult ReduceMulOp::fold(FoldAdaptor) {
   return foldImplicitAxisReduction(getInput(), getResult());
 }

@@ -92,7 +92,6 @@ HAS_FALLBACK(MO::PadRepeatOp)
 HAS_FALLBACK(MO::RandomNormalOp)
 HAS_FALLBACK(MO::RandomUniformOp)
 HAS_FALLBACK(MO::RangeOp)
-HAS_FALLBACK(MO::ReduceMulOp)
 HAS_FALLBACK(MO::ReshapeOp)
 HAS_FALLBACK(MO::RoiAlignOp)
 HAS_FALLBACK(MO::ResizeBicubicOp)
@@ -190,7 +189,6 @@ struct AddFallbackShapeFunctions
       CALL_FALLBACK(MO::RandomNormalOp)
       CALL_FALLBACK(MO::RandomUniformOp)
       CALL_FALLBACK(MO::RangeOp)
-      CALL_FALLBACK(MO::ReduceMulOp)
       CALL_FALLBACK(MO::ReshapeOp)
       CALL_FALLBACK(MO::RoiAlignOp)
       CALL_FALLBACK(MO::ResizeBicubicOp)
@@ -708,7 +706,6 @@ ErrorOrSuccess Fallback<MO::RangeOp>::build(GraphOp &graph, OpBuilder &builder,
 
 BUILD_REDUCTION_OP(MO::ArgMaxOp)
 BUILD_REDUCTION_OP(MO::ArgMinOp)
-BUILD_REDUCTION_OP(MO::ReduceMulOp)
 
 #undef BUILD_REDUCTION_OP
 

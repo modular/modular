@@ -118,7 +118,7 @@ mo.graph @reduce_sinking_success_mul_on_new_bcasted_dim<A, B, P1, P2, P3>(
   %arg0: !mo.tensor<[A, B], f32>
 ) -> (!mo.tensor<[1, P2, P3, A, B], f32>) {
   %broadcasted_arg0 = mo.static.broadcast_to(%arg0) : !mo.tensor<[A, B], f32> -> !mo.tensor<[P1, P2, P3, A, B], f32>
-  %reduce_axis1 = mo.reduce.mul(%broadcasted_arg0) [axis = 0] : (!mo.tensor<[P1, P2, P3, A, B], f32>) -> !mo.tensor<[1, P2, P3, A, B], f32>
+  %reduce_axis1 = mo.reduce.mul(%broadcasted_arg0) : (!mo.tensor<[P1, P2, P3, A, B], f32>) -> !mo.tensor<[1, P2, P3, A, B], f32>
   mo.output %reduce_axis1 : !mo.tensor<[1, P2, P3, A, B], f32>
 }
 // CHECK-LABEL: mo.graph
@@ -175,7 +175,7 @@ mo.graph @reduce_sinking_success_reduce_mul<A, B, P1>(
   %arg0: !mo.tensor<[A, B], f32>
 ) -> !mo.tensor<[P1, A, 1], f32> {
   %broadcasted_arg0 = mo.static.broadcast_to(%arg0) : !mo.tensor<[A, B], f32> -> !mo.tensor<[P1, A, B], f32>
-  %reduce_axis1 = mo.reduce.mul(%broadcasted_arg0) [axis = 2] : (!mo.tensor<[P1, A, B], f32>) -> !mo.tensor<[P1, A, 1], f32>
+  %reduce_axis1 = mo.reduce.mul(%broadcasted_arg0) : (!mo.tensor<[P1, A, B], f32>) -> !mo.tensor<[P1, A, 1], f32>
   mo.output %reduce_axis1: !mo.tensor<[P1, A, 1], f32>
 }
 // CHECK-LABEL: mo.graph

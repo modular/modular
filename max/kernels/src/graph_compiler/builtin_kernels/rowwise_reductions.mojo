@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Row-based row-wise reductions (free-form body layer).
 
-Pure-reduction entry points (`reduce_product` / `reduce_argmax` /
-`reduce_argmin` / `reduce_min_and_max`) built on the `algorithm.rowwise`
-scaffolder and the `builtin_kernels.monoids` monoid library. Each authors one free-form body — a
+Pure-reduction entry points (`reduce_argmax` / `reduce_argmin` /
+`reduce_min_and_max`) built on the `algorithm.rowwise` scaffolder and the
+`builtin_kernels.monoids` monoid library. Each authors one free-form body — a
 single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 """
 
@@ -26,7 +26,6 @@ from .monoids import (
     ArgMax,
     ArgMin,
     MinMax,
-    ReduceProduct,
 )
 
 
@@ -58,89 +57,6 @@ def _in_range_indices[
     return indices.eq(SIMD[.int64, width](Int64.MAX)).select(
         SIMD[.int64, width](0), indices
     )
-
-
-def reduce_product[
-    dtype: DType,
-    InputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
-    OutputFn: ImplicitlyCopyable
-    & RegisterPassable
-    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
-    /,
-    *,
-    reduce_dim: Int,
-    name: StaticString = "reduce_product",
-](
-    input_fn: InputFn,
-    output_fn: OutputFn,
-    input_shape: Coord,
-    context: DeviceContext.Optional = DeviceContext.NoneValue,
-) raises:
-    comptime simd_width = rowwise.pick_simd_width[
-        ReduceProduct[dtype, 1], context.T.target, 64, dtype
-    ]()
-    comptime assert (
-        0 <= reduce_dim < input_shape.rank
-    ), "reduce_dim must index input_shape"
-    comptime assert input_shape.is_flat, "input_shape must be flat"
-    comptime op_name = name if name != "" else "reduce_product"
-    var axis_size = Int(input_shape[reduce_dim])
-
-    @inline(.always)
-    def body[
-        params: rowwise.ContextParams
-    ](row_coords: Coord, mut ctx: rowwise.Context[params]) {
-        var axis_size, var input_fn, var output_fn
-    }:
-        comptime rank = row_coords.rank
-
-        # Load: fuses the caller's input closure into the row's primary load.
-        @inline(.always)
-        def load[
-            width: Int, alignment: Int
-        ](idx: DynamicCoord[DType.int, rank]) {var input_fn} -> SIMD[
-            dtype, width
-        ]:
-            return input_fn[width, alignment](idx)
-
-        # Prepare Row: build the row view over the axis size (always
-        # dynamic here — these entry points take no static_cols param).
-        var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, keep_tile=False
-        ](row_coords, Int(axis_size), ctx, load)
-
-        # Reduce: product via the ReduceProduct monoid.
-        @inline(.always)
-        def val[
-            width: Int
-        ](
-            tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, rank]
-        ) {} -> SIMD[dtype, width]:
-            return tile
-
-        var acc = row.reduce[ReduceProduct[dtype, params.simd_width]](
-            val, load
-        ).acc
-
-        # Emit: per-row output — the reduced scalar.
-        @inline(.always)
-        def write(oc: DynamicCoord[DType.int, rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width](
-                oc,
-                acc.slice[params.emit_tile_width](),
-            )
-
-        # `acc`/`output_fn` ride `write`'s capture list into `emit`.
-        row.emit(write)
-
-    rowwise.launch[
-        axis=reduce_dim,
-        simd_width=simd_width,
-        num_phases=1,
-        name=op_name,
-    ](body, input_shape, context)
 
 
 # ===----------------------------------------------------------------------=== #

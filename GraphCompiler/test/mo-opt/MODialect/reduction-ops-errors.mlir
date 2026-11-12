@@ -10,10 +10,10 @@ mo.graph @input_res_rank_mismatch(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.ten
 
 // -----
 
-mo.graph @axis_too_big(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], f32> {
-  // expected-error @below {{'mo.reduce.mul' op axis must be between [-3, 2] found 3}}
-  %output = mo.reduce.mul(%input) [axis = 3] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], f32>
-  mo.output %output : !mo.tensor<[?, ?, ?], f32>
+mo.graph @axis_too_big(%input: !mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], si64> {
+  // expected-error @below {{'mo.reduce.arg_min' op axis must be between [-3, 2] found 3}}
+  %output = mo.reduce.arg_min(%input) [axis = 3] : (!mo.tensor<[?, ?, 5], f32>) -> !mo.tensor<[?, ?, ?], si64>
+  mo.output %output : !mo.tensor<[?, ?, ?], si64>
 }
 
 // -----

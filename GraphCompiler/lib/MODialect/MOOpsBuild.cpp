@@ -422,15 +422,6 @@ void BatchMatmulOp::build(OpBuilder &odsBuilder, OperationState &odsState,
   }
 }
 
-//===----------------------------------------------------------------------===//
-// ReduceMulOp
-//===----------------------------------------------------------------------===//
-
-void ReduceMulOp::build(OpBuilder &odsBuilder, OperationState &odsState,
-                        TensorValue input, int64_t axis, TensorType outputTy) {
-  buildReductionOp<ReduceMulOp>(odsBuilder, odsState, input, axis, outputTy);
-}
-
 void ShapeOfOp::build(OpBuilder &odsBuilder, OperationState &odsState,
                       TensorValue input, int64_t width) {
   ASSERT_STREAM(llvm::is_contained({32, 64}, width),
@@ -470,7 +461,7 @@ M::MO::deriveLaunchDevicesFromBundle(BundleType bundle) {
 }
 
 //===----------------------------------------------------------------------===//
-// ReduceAddOp, ReduceMinOp, ReduceMaxOp
+// ReduceAddOp, ReduceMinOp, ReduceMaxOp, ReduceMulOp
 
 static void buildImplicitAxisReduction(OpBuilder &builder,
                                        OperationState &state, TensorValue input,
@@ -492,6 +483,11 @@ void ReduceMinOp::build(OpBuilder &builder, OperationState &state,
 }
 
 void ReduceMaxOp::build(OpBuilder &builder, OperationState &state,
+                        TensorValue input, int64_t axis) {
+  buildImplicitAxisReduction(builder, state, input, axis);
+}
+
+void ReduceMulOp::build(OpBuilder &builder, OperationState &state,
                         TensorValue input, int64_t axis) {
   buildImplicitAxisReduction(builder, state, input, axis);
 }

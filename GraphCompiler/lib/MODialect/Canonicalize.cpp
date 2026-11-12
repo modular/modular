@@ -1254,14 +1254,6 @@ OpFoldResult RangeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// ReduceMulOp
-//===----------------------------------------------------------------------===//
-LogicalResult ReduceMulOp::canonicalize(ReduceMulOp op,
-                                        PatternRewriter &rewriter) {
-  return canonicalizeStaticNegativeIndicesInPlace(op, 1, rewriter);
-}
-
-//===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//
 LogicalResult RebindOp::canonicalize(RebindOp op,
