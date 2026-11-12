@@ -14,3 +14,4 @@
 
 from .listener import TCPListener
 from .socket import TCPSocket
+from .stream import TCPStream
