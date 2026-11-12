@@ -18,6 +18,7 @@
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MOGGDialect/MOGGEnums.h"
 #include "GraphCompiler/MOGGDialect/MOGGTypes.h"
+#include "GraphCompiler/MOGGDialect/Support/EmitMojoRegion.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoFile.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
 
@@ -27,6 +28,11 @@
 
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TypeName.h"
+
+#include <memory>
+#include <utility>
 
 namespace M::MOGG {
 // Forward-declared to break MOGGOps.h -> EmitsMojoInterface.h ->
@@ -36,7 +42,7 @@ struct KernelDeclFunctionAdaptor;
 struct KernelDeclAdaptor;
 class PrimitiveDeclOp;
 class ShapeFunctionDeclOp;
-struct GraphBlobEmission;
+class GraphBlobRegion;
 
 /// A fused load/store receiver's `ManagedTensorSlice` decomposed into a bare
 /// pointer, runtime shape/strides, and comptime `StaticTensorSpec`, all
@@ -88,11 +94,6 @@ struct EmitMojoState {
 
   MojoRegistry &registry;
 
-  /// The `mogg.graph_blob` being emitted, if any. Its
-  /// `mogg.call.execute_device`s emit only their host part and leave the
-  /// launch to the blob.
-  GraphBlobEmission *graphBlob = nullptr;
-
   /// Values kept alive with `_ = someVar` at function end, where the Mojo
   /// compiler misjudges lifetimes (mostly lambdas, until the new closures).
   SmallVector<MojoValue> keepAliveValues;
@@ -107,67 +108,35 @@ struct EmitMojoState {
   };
   llvm::DenseMap<Value, TaskHandleInfo> taskHandleInfos;
 
-  /// The width and alignment of the elementwise lambda being emitted, which
-  /// `TensorLoadOp`, `TensorStoreOp`, `CallElementwiseOp` and
-  /// `ConstantScalarOp` read. Only an elementwise lambda has them; a lambda
-  /// that declares no width pushes the value it computes instead.
-  ElementwiseLambdaParameters elementwiseLambdaParameters;
+  /// Pushes a region built from `args` for the ops lowered while the scope
+  /// lives, and pops it when the scope ends.
+  template <typename Region, typename... Args>
+  [[nodiscard]] EmitMojoRegionScope enterRegion(Args &&...args) {
+    // The size before this region, so the scope can check on exit that nothing
+    // pushed after it is still alive.
+    size_t regionCount = regions.size();
+    regions.push_back(std::make_unique<Region>(std::forward<Args>(args)...));
+    return EmitMojoRegionScope(regions, regionCount);
+  }
 
-  /// Restores `elementwiseLambdaParameters` on scope exit.
-  class ElementwiseLambdaParametersGuard {
-  public:
-    ElementwiseLambdaParametersGuard(EmitMojoState &state,
-                                     ElementwiseLambdaParameters parameters)
-        : state(state),
-          savedParameters(std::move(state.elementwiseLambdaParameters)) {
-      state.elementwiseLambdaParameters = std::move(parameters);
-    }
-    ElementwiseLambdaParametersGuard(const ElementwiseLambdaParametersGuard &) =
-        delete;
-    ElementwiseLambdaParametersGuard &
-    operator=(const ElementwiseLambdaParametersGuard &) = delete;
-    ~ElementwiseLambdaParametersGuard() {
-      state.elementwiseLambdaParameters = std::move(savedParameters);
-    }
+  /// The innermost region of this type; asserts if none was pushed.
+  template <typename Region>
+  Region &currentRegion() {
+    if (Region *region = findRegion<Region>())
+      return *region;
+    ASSERT_STREAM(false, << "no " << llvm::getTypeName<Region>()
+                         << " in scope");
+    llvm_unreachable("no region of this type in scope");
+  }
 
-  private:
-    EmitMojoState &state;
-    ElementwiseLambdaParameters savedParameters;
-  };
-
-  /// What the ops of a `mogg.call.rowwise` body print against: names in the
-  /// Row API body the kernel prints, and its element types.
-  struct RowwiseBodyInfo {
-    Block *body = nullptr;
-    MojoValue params;
-    MojoValue rank;
-    MojoValue rowCoord;
-    MojoValue axisSize;
-    MojoValue dtype;
-    MojoValue accum;
-    /// Set by the body's `mogg.rowwise.tile`, which prints them.
-    MojoValue load;
-    MojoValue row;
-    /// The tile the phase printing now reads.
-    MojoValue tile;
-  };
-  RowwiseBodyInfo *rowwiseBody = nullptr;
-
-  /// Sets `rowwiseBody` while it lives.
-  class RowwiseBodyGuard {
-  public:
-    RowwiseBodyGuard(EmitMojoState &state, RowwiseBodyInfo &info)
-        : state(state), saved(state.rowwiseBody) {
-      state.rowwiseBody = &info;
-    }
-    RowwiseBodyGuard(const RowwiseBodyGuard &) = delete;
-    RowwiseBodyGuard &operator=(const RowwiseBodyGuard &) = delete;
-    ~RowwiseBodyGuard() { state.rowwiseBody = saved; }
-
-  private:
-    EmitMojoState &state;
-    RowwiseBodyInfo *saved;
-  };
+  /// The innermost region of this type, if one was pushed.
+  template <typename Region>
+  Region *findRegion() {
+    for (auto frame = regions.rbegin(); frame != regions.rend(); ++frame)
+      if ((*frame)->kind() == Region::kKind)
+        return static_cast<Region *>(frame->get());
+    return nullptr;
+  }
 
   /// Drops the bindings made while it lives, and restores the outer ones they
   /// shadowed. A value lowered inside a Mojo lambda is local to it (a constant
@@ -188,6 +157,9 @@ struct EmitMojoState {
 private:
   /// The declarations already written into `file`.
   llvm::StringSet<> emittedDeclarations;
+
+  /// The regions of the constructs currently being emitted, innermost last.
+  EmitMojoRegionStack regions;
 
   llvm::ScopedHashTable<Value, MojoValue> mlirValueToMojoValue;
   // Holds the bindings made outside any `ValueScope`.
