@@ -243,6 +243,8 @@ private:
       return;
     }
 
+    preserveArgsBindingDims(graphOp, boundaryValues, preservedArgs);
+
     auto newCallsites = hoistConstantOperations(
         graphOp, callsites, preservedArgs, effectiveInvariantArgMask,
         constantOps, boundaryValues, sortedConstantOps);
@@ -388,6 +390,41 @@ private:
           return true;
         });
       }
+    }
+  }
+
+  /// Collects the parameters an argument type binds. `GraphOp::verify` rejects
+  /// parameter expressions in argument types, so every reference binds one.
+  static void collectArgParams(Type type, DenseSet<StringAttr> &names) {
+    type.walk([&](KGEN::ParamDeclRefAttr ref) { names.insert(ref.getName()); });
+  }
+
+  /// A subgraph binds its parameters from its argument types only. Keep an
+  /// invariant argument that is the only remaining binding of a parameter, even
+  /// when nothing uses its value, so the parameter stays bound.
+  void preserveArgsBindingDims(GraphOp graphOp,
+                               const SetVector<Value> &boundaryValues,
+                               llvm::BitVector &preservedArgs) {
+    Block *body = graphOp.getBodyBlock();
+    DenseSet<StringAttr> bound;
+    for (unsigned i : preservedArgs.set_bits())
+      collectArgParams(body->getArgument(i).getType(), bound);
+    for (Value boundaryVal : boundaryValues)
+      collectArgParams(boundaryVal.getType(), bound);
+
+    for (BlockArgument arg : body->getArguments()) {
+      if (preservedArgs[arg.getArgNumber()])
+        continue;
+      DenseSet<StringAttr> declared;
+      collectArgParams(arg.getType(), declared);
+      if (llvm::all_of(declared,
+                       [&](StringAttr name) { return bound.contains(name); }))
+        continue;
+      LLVM_DEBUG(llvm::dbgs() << "Arg " << arg.getArgNumber()
+                              << " is the only binding of a parameter, "
+                                 "keeping it\n");
+      preservedArgs.set(arg.getArgNumber());
+      bound.insert(declared.begin(), declared.end());
     }
   }
 
