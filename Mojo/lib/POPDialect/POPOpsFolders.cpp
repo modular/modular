@@ -2302,7 +2302,8 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
 OpFoldResult PointerToIndexOp::fold(FoldAdaptor adaptor) {
   // Check for a pointer input. The result must be a scalar index.
   if (auto ptr = dyn_cast_if_present<PointerAttr>(adaptor.getValue()))
-    return Builder(getContext()).getIndexAttr(ptr.getAddr());
+    return SIMDAttr::get(uint64_t(ptr.getAddr()),
+                         cast<SIMDType>(getResult().getType()));
   return {};
 }
 
@@ -2324,7 +2325,9 @@ ErrorTreeOrSuccess
 PointerToIndexOp::parametric_interpret(ArrayRef<Attribute> operands,
                                        ParametricInterpreterState &state) {
   if (auto ptr = dyn_cast_if_present<PointerAttr>(operands.front())) {
-    return state.mapResults(Builder(getContext()).getIndexAttr(ptr.getAddr()));
+    return state.mapResults(SIMDAttr::get(
+        uint64_t(ptr.getAddr()),
+        cast<SIMDType>(state.getReboundType(getResult().getType()))));
   }
 
   return ErrorTree(getLoc(), "input pointer is not an index");

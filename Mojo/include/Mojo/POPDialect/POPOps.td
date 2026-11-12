@@ -1938,13 +1938,13 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure,
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>> to index
-    %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>> to index
+    %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins PointerType:$value);
-  let results = (outs Index:$result);
+  let results = (outs IndexScalar:$result);
   let assemblyFormat = "$value attr-dict `:` type($value)";
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;

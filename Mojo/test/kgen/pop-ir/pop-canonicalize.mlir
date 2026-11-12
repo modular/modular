@@ -1671,20 +1671,20 @@ kgen.func @array_replace_with_const(%idx0: index, %idx1: index) -> !pop.array<3,
 }
 
 // CHECK-LABEL: @pointer_to_index
-kgen.func @pointer_to_index() -> index {
+kgen.func @pointer_to_index() -> !kgen.scalar<index> {
   // CHECK-DAG: <1>
   %0 = kgen.param.constant: pointer<i8> = <#interp.pointer<1>>
   %1 = pop.pointer_to_index %0 : !kgen.pointer<i8>
-  hlcf.return %1 : index
+  hlcf.return %1 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func @bitcast_ptr_to_index
-kgen.func @bitcast_ptr_to_index(%arg0: !kgen.pointer<none>) -> index {
+kgen.func @bitcast_ptr_to_index(%arg0: !kgen.pointer<none>) -> !kgen.scalar<index> {
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<none> to !kgen.pointer<index>
   // CHECK-NEXT: %0 = pop.pointer_to_index %arg0
   %1 = pop.pointer_to_index %0 : !kgen.pointer<index>
   // CHECK-NEXT: return %0
-  hlcf.return %1 : index
+  hlcf.return %1 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @cast_to_builtin

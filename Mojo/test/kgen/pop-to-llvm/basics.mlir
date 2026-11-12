@@ -681,12 +681,12 @@ kgen.func @cmp_simd(%lhs: !kgen.simd<4, f32>, %rhs: !kgen.simd<4, f32>) -> !kgen
 
 // CHECK-LABEL: @pointer_to_index
 kgen.func @pointer_to_index(%a: !kgen.pointer<scalar<f32>>, %b: !kgen.pointer<simd<4, si32>>)
-    -> (index, index) {
+    -> (!kgen.scalar<index>, !kgen.scalar<index>) {
   // CHECK: llvm.ptrtoint
   %0 = pop.pointer_to_index %a : !kgen.pointer<scalar<f32>>
   // CHECK: llvm.ptrtoint
   %1 = pop.pointer_to_index %b : !kgen.pointer<simd<4, si32>>
-  hlcf.return %0, %1 : index, index
+  hlcf.return %0, %1 : !kgen.scalar<index>, !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @lower_raise_cast
