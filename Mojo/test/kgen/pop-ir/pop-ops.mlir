@@ -852,8 +852,8 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
 
   // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x array<4, T>
   %5 = pop.stack_allocation 1 x !pop.array<4, T>
-  // CHECK: %[[IDX:.*]] = index.constant
-  %6 = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %6 = kgen.param.constant: scalar<index> = <2>
   // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
   %7 = pop.array.gep %5[%6] : <array<4, T>>
 

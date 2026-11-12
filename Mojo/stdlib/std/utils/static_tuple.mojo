@@ -246,7 +246,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._mlir_value)._get_kgen_pointer(),
-            idx.__mlir_index__(),
+            idx._mlir_value,
         )
         return Pointer[origin=origin_of(self)](_mlir_value=ptr)[]
 

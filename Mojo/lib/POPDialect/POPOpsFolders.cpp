@@ -935,7 +935,10 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
       // exception is if it changes it to zero, which is acceptable now, because
       // !pop.array is always within address space 0.
       if (op.getType() == PointerType::get(arrTy.getElementType())) {
-        auto zero = ParamConstantOp::create(b, op.getLoc(), b.getIndexAttr(0));
+        auto zero = ParamConstantOp::create(
+            b, op.getLoc(),
+            SIMDAttr::get(uint64_t(0),
+                          SIMDType::getScalarIndexType(b.getContext())));
         b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getInput(), zero);
         return success();
       }
@@ -1625,12 +1628,11 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
   // TODO: could generalize (offset (array.gep a, i), j) -> (array.gep a, i + j)
   // but we don't have a way to add two index values here.
   if (auto gep = op.getPtr().getDefiningOp<ArrayGEPOp>()) {
-    if (!mlir::matchPattern(gep.getIndex(), mlir::m_Zero()))
+    if (matchConstantIndex(gep.getIndex()) != 0)
       return b.notifyMatchFailure(op, "not a constant offset");
 
-    Value index = CastToBuiltinOp::create(b, op.getLoc(), b.getIndexType(),
-                                          op.getIndex());
-    b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(), index);
+    b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(),
+                                     op.getIndex());
     return success();
   }
 
@@ -2226,7 +2228,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
-  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  std::optional<int64_t> index = getConstantIndex(operands[1]);
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
@@ -2236,7 +2238,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
-  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
+  int64_t addr = ptr.getAddr() + *index * *stride;
   return state.mapResults(
       PointerAttr::get(addr, PointerType::get(elementType)));
 }
@@ -2249,7 +2251,7 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
-  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  std::optional<int64_t> index = getConstantIndex(operands[1]);
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
@@ -2260,7 +2262,7 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
-  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
+  int64_t addr = ptr.getAddr() + *index * *stride;
   return state.mapResults(
       PointerAttr::get(addr, PointerType::get(elementType)));
 }
@@ -2285,8 +2287,10 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
   // is undefined behaviour for that to be anything but `0` so we can replace it
   // with the constant `0`. This frees the use to be DCE'd and unblocks other
   // optimizations.
-  auto zero =
-      ParamConstantOp::create(rewriter, op.getLoc(), rewriter.getIndexAttr(0));
+  auto zero = ParamConstantOp::create(
+      rewriter, op.getLoc(),
+      SIMDAttr::get(uint64_t(0),
+                    SIMDType::getScalarIndexType(rewriter.getContext())));
   rewriter.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getArray(),
                                           zero);
   return success();

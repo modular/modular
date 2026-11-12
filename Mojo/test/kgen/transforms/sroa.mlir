@@ -44,8 +44,8 @@ kgen.func @simple_struct(%arg1: !kgen.struct<(index, index)>) -> !kgen.scalar<in
 // CHECK-LABEL: @simple_array
 // MEM2REG-LABEL: @simple_array
 kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !kgen.scalar<index> {
-   %0 = kgen.param.constant = <0>
-   %1 = kgen.param.constant = <1>
+   %0 = kgen.param.constant: scalar<index> = <0>
+   %1 = kgen.param.constant: scalar<index> = <1>
 
   // CHECK: %[[MEM1:.*]] = pop.stack_allocation 1 x index
   // CHECK-NEXT: %[[MEM2:.*]] = pop.stack_allocation 1 x index
@@ -213,8 +213,8 @@ kgen.func @n_stack_store(%val1: index, %output : !kgen.pointer<index>) {
 // CHECK: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 // MEM2REG: (%[[ARG0:.*]]: !pop.array<3, index>, %[[OUT_PTR:.*]]: !kgen.pointer<index>)
 kgen.func @n_stack_arrays(%val: !pop.array<3, index>, %output : !kgen.pointer<index>) {
-  %0 = kgen.param.constant = <0>
-  %1 = kgen.param.constant = <1>
+  %0 = kgen.param.constant: scalar<index> = <0>
+  %1 = kgen.param.constant: scalar<index> = <1>
   %offidx1 = kgen.param.constant: scalar<index> = <1>
 
   // CHECK: pop.stack_allocation 1 x index
@@ -306,10 +306,10 @@ kgen.func @store_arg(
 
 // CHECK-LABEL: kgen.func @negArrayGep
 kgen.func @negArrayGep() {
-  // CHECK: kgen.param.constant = <-1>
+  // CHECK: kgen.param.constant: scalar<index> = <-1>
   // CHECK-NEXT: pop.stack_allocation 1 x array<2, index>
   // CHECK-NEXT: pop.array.gep
-  %0 = kgen.param.constant = <-1>
+  %0 = kgen.param.constant: scalar<index> = <-1>
   %array = pop.stack_allocation 1 x !pop.array<2, index>
   %gep = pop.array.gep %array[%0] : <array<2, index>>
   hlcf.return
@@ -328,10 +328,10 @@ kgen.func @negOffsetGep() {
 
 // CHECK-LABEL: kgen.func @oobArrayGep
 kgen.func @oobArrayGep() {
-  // CHECK: kgen.param.constant = <2>
+  // CHECK: kgen.param.constant: scalar<index> = <2>
   // CHECK-NEXT: pop.stack_allocation 1 x array<2, index>
   // CHECK-NEXT: pop.array.gep
-  %0 = kgen.param.constant = <2>
+  %0 = kgen.param.constant: scalar<index> = <2>
   %array = pop.stack_allocation 1 x !pop.array<2, index>
   %gep = pop.array.gep %array[%0] : <array<2, index>>
   hlcf.return
@@ -352,16 +352,17 @@ kgen.func @oobOffsetGep() {
 // MEM2REG-LABEL: kgen.func @load_of_array
 kgen.func @load_of_array(%arg0: !pop.array<4, index>) -> !pop.array<4, index> {
   %array = kgen.param.constant: array<4, index> = <[0, 0, 0, 0]>
-  %0 = kgen.param.constant = <3>
-  %1 = kgen.param.constant = <2>
+  %0 = kgen.param.constant: scalar<index> = <3>
+  %1 = kgen.param.constant: scalar<index> = <2>
   %2 = kgen.param.constant = <1>
-  %3 = kgen.param.constant = <0>
+  %3 = kgen.param.constant: scalar<index> = <0>
   %4 = pop.stack_allocation 1 x !pop.array<4, index>
   pop.store %array, %4 : !kgen.pointer<array<4, index>>
   %5 = pop.array.get %arg0[0] : !pop.array<4, index>
   %6 = pop.array.gep %4[%3] : <array<4, index>>
   pop.store %5, %6 : !kgen.pointer<index>
-  %7 = pop.array.gep %4[%2] : <array<4, index>>
+  %gepidx1 = kgen.param.constant: scalar<index> = <1>
+  %7 = pop.array.gep %4[%gepidx1] : <array<4, index>>
   pop.store %2, %7 : !kgen.pointer<index>
   %8 = pop.array.get %arg0[2] : !pop.array<4, index>
   %9 = pop.array.gep %4[%1] : <array<4, index>>
@@ -399,7 +400,7 @@ kgen.func @offset_of_offset() -> !kgen.pointer<index> {
 
 // CHECK-LABEL: @large_array
 kgen.func @large_array(%arg1: !pop.array<512, index>) -> index {
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
   %array = pop.stack_allocation 1 x !pop.array<512, index>
   // Larger arrays should not be touched.
   // CHECK: pop.stack_allocation 1 x array<512, index>
@@ -480,7 +481,7 @@ kgen.generator @unresolved_index_struct_gep<I: index>(%arg0: !kgen.struct<(index
 
 // CHECK-LABEL: @array_offset
 kgen.func @array_offset(%arg1: !pop.array<4, index>, %arg2: !kgen.scalar<index>) -> index {
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
   %array = pop.stack_allocation 1 x array<4, index>
   // Offset from an element should not be touched.
   // CHECK: pop.stack_allocation 1 x array<4, index>
@@ -528,7 +529,7 @@ kgen.func @bitcast_wrapper_roundtrip(%arg0: !kgen.pointer<none>) -> !kgen.pointe
   // CHECK: hlcf.return %[[L]]
 
   // MEM2REG: hlcf.return %[[PTR]]
-  %index0 = kgen.param.constant = <0>
+  %index0 = kgen.param.constant: scalar<index> = <0>
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(array<1, pointer<none>>)>>
   %2 = kgen.struct.gep %1[0] : <struct<(array<1, pointer<none>>)>>
@@ -623,7 +624,7 @@ kgen.func @bitcast_roundtrip_array_only(%arg0: !kgen.pointer<none>) -> !kgen.poi
   // CHECK: hlcf.return %[[L]]
 
   // MEM2REG: hlcf.return %[[PTR]]
-  %index0 = kgen.param.constant = <0>
+  %index0 = kgen.param.constant: scalar<index> = <0>
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<array<1, pointer<none>>>
   %2 = pop.array.gep %1[%index0] : <array<1, pointer<none>>>
@@ -637,7 +638,7 @@ kgen.func @bitcast_roundtrip_array_only(%arg0: !kgen.pointer<none>) -> !kgen.poi
 // CHECK-LABEL: @bitcast_roundtrip_nonzero_index
 kgen.func @bitcast_roundtrip_nonzero_index(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
   // CHECK: pop.pointer.bitcast
-  %index1 = kgen.param.constant = <1>
+  %index1 = kgen.param.constant: scalar<index> = <1>
   %0 = pop.stack_allocation 1 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<array<2, pointer<none>>>
   %2 = pop.array.gep %1[%index1] : <array<2, pointer<none>>>
@@ -654,7 +655,7 @@ kgen.func @bitcast_roundtrip_nonzero_index(%arg0: !kgen.pointer<none>) -> !kgen.
 kgen.func @zero_element_stack_bitcast(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
   // CHECK: pop.stack_allocation 0 x pointer<none>
   // CHECK: pop.pointer.bitcast
-  %index0 = kgen.param.constant = <0>
+  %index0 = kgen.param.constant: scalar<index> = <0>
   %0 = pop.stack_allocation 0 x pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<pointer<none>> to !kgen.pointer<struct<(array<1, pointer<none>>)>>
   %2 = kgen.struct.gep %1[0] : <struct<(array<1, pointer<none>>)>>

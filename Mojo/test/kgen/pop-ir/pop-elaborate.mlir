@@ -65,7 +65,8 @@ kgen.generator @array_gep_load<I>(%arg0: !pop.array<3, i24>) -> i24 {
   %0 = kgen.param.constant = <I>
   %1 = pop.stack_allocation 1 x !pop.array<3, i24>
   pop.store %arg0, %1 : !kgen.pointer<array<3, i24>>
-  %2 = pop.array.gep %1[%0] : <array<3, i24>>
+  %gepidx1 = pop.cast_from_builtin %0 : index to !kgen.scalar<index>
+  %2 = pop.array.gep %1[%gepidx1] : <array<3, i24>>
   %3 = pop.load %2 : !kgen.pointer<i24>
   hlcf.return %3 : i24
 }

@@ -182,7 +182,7 @@ kgen.func @sroa_array_load_debug_var(%arg0: !pop.array<2, index>) {
 
 // CHECK-LABEL: @sroa_array_di_and_use
 kgen.func @sroa_array_di_and_use(%arg0: !pop.array<2, index>) -> index {
-  %c1 = kgen.param.constant = <1>
+  %c1 = kgen.param.constant: scalar<index> = <1>
   // CHECK-COUNT-2: pop.stack_allocation 1 x index
   // CHECK-NOT: pop.stack_allocation 1 x !pop.array
   %0 = pop.stack_allocation 1 x !pop.array<2, index> loc(#loc)
@@ -211,7 +211,7 @@ kgen.func @sroa_array_di_and_use(%arg0: !pop.array<2, index>) -> index {
 
 // CHECK-LABEL: @sroa_array_element_debug_var
 kgen.func @sroa_array_element_debug_var(%arg0: index) -> index {
-  %c1 = kgen.param.constant = <1>
+  %c1 = kgen.param.constant: scalar<index> = <1>
   // CHECK-COUNT-2: pop.stack_allocation 1 x index
   // CHECK-NOT: pop.stack_allocation 1 x !pop.array
   %0 = pop.stack_allocation 1 x !pop.array<2, index> loc(#loc)

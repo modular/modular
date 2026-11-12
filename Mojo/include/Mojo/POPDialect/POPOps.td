@@ -1474,12 +1474,12 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 
     ```mlir
     %arr = pop.stack_allocation 1 : !pop.array<4, i32>
-    %two = index.constant 2
+    %two = kgen.param.constant: scalar<index> = <2>
     %v2 = pop.array.gep %arr[%two] : <array<4, i32>>
     ```
   }];
 
-  let arguments = (ins PointerOf<POP_ArrayType>:$array, Index:$index);
+  let arguments = (ins PointerOf<POP_ArrayType>:$array, IndexScalar:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array)";
   let hasCanonicalizeMethod = 1;

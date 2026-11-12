@@ -405,14 +405,12 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
 
       // We only support array GEPs of constant array indexing.
       if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
-        APInt index;
-        if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
-            index.isNegative())
+        std::optional<int64_t> index = matchConstantIndex(gep.getIndex());
+        if (!index || *index < 0)
           return false;
 
         // Oddly this comes up. Guard against out of range accesses.
-        if (static_cast<int64_t>(index.getLimitedValue()) >=
-            *containerTy.getResolvedSize())
+        if (*index >= *containerTy.getResolvedSize())
           return false;
 
         // Make sure all the users of the GEP look safe to promote.  We cannot
@@ -453,9 +451,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   void replaceUserImpl(Operation *user,
                        SmallVectorImpl<Operation *> &toDelete) {
     if (auto gep = dyn_cast<ArrayGEPOp>(user)) {
-      APInt index;
-      matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index));
-      gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+      std::optional<int64_t> index = matchConstantIndex(gep.getIndex());
+      gep.replaceAllUsesWith(newAllocas[*index]);
     } else if (auto load = dyn_cast<POP::LoadOp>(user)) {
       // Store each load in its index in the array, using the fact that C++ will
       // make value null by default.
@@ -490,16 +487,15 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
           get->dropAllReferences();
           toDelete.push_back(get);
         } else if (auto gep = dyn_cast<POP::ArrayGEPOp>(loadUser)) {
-          APInt index;
-          if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&index)) ||
-              index.isNegative())
+          std::optional<int64_t> index = matchConstantIndex(gep.getIndex());
+          if (!index || *index < 0)
             continue;
 
           // Oddly this comes up. Guard against out of range accesses.
-          if (index.getSExtValue() >= sizeOfArray)
+          if (*index >= sizeOfArray)
             continue;
 
-          gep.replaceAllUsesWith(newAllocas[index.getLimitedValue()]);
+          gep.replaceAllUsesWith(newAllocas[*index]);
           gep->dropAllReferences();
           toDelete.push_back(gep);
         }
@@ -568,9 +564,8 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
         if (!idx || idx.getInt() != 0 || !isRoundTripAlias(gep.getResult()))
           return false;
       } else if (auto gep = dyn_cast<POP::ArrayGEPOp>(user)) {
-        APInt idx;
-        if (!matchPattern(gep.getIndex(), mlir::m_ConstantInt(&idx)) ||
-            !idx.isZero() || !isRoundTripAlias(gep.getResult()))
+        if (matchConstantIndex(gep.getIndex()) != 0 ||
+            !isRoundTripAlias(gep.getResult()))
           return false;
       } else {
         return false;

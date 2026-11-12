@@ -93,12 +93,12 @@ kgen.func @projection_access(%arg0: !kgen.pointer<index> mut) {
   %8 = pop.load %7 : !kgen.pointer<index>
   pop.store %8, %7 : !kgen.pointer<index>
 
-  %idx1 = index.constant 1
-  %9 = pop.array.gep %2[%idx1] : <array<2, index>>
+  %gepidx1 = kgen.param.constant: scalar<index> = <1>
+  %9 = pop.array.gep %2[%gepidx1] : <array<2, index>>
   %10 = pop.load %9 : !kgen.pointer<index>
   pop.store %10, %9 : !kgen.pointer<index>
 
-  %offidx1 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
   %11 = pop.offset %arg0[%offidx1] : !kgen.pointer<index>
   %12 = pop.load %11 : !kgen.pointer<index>
   pop.store %12, %11 : !kgen.pointer<index>

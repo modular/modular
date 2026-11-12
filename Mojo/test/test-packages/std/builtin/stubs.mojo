@@ -1294,7 +1294,7 @@ struct VariadicList[
         var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             __mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
-                Int(0).__mlir_index__(),
+                Int(0)._mlir_value,
             )
         ).unsafe_bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?

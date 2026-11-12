@@ -1165,7 +1165,7 @@ struct VariadicList[
         var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
-                Int(0).__mlir_index__(),
+                Int(0)._mlir_value,
             )
         ).unsafe_bitcast[Self._EltPointerType]()
         self._value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size))

@@ -48,14 +48,14 @@ kgen.func @bitcast_muli_use_offset() -> (!kgen.scalar<si64>, !kgen.pointer<scala
 // `pop.array.gep`.
 // CHECK-LABEL: kgen.func @bitcast_muli_use_offset
 // CHECK: %[[OUT:.*]] = kgen.param.constant: scalar<si64> = <4>
-// CHECK: %[[IDX:.*]] = kgen.param.constant = <1>
+// CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <1>
 // CHECK: %[[GLOBAL:.*]] = pop.global_constant: array<3, scalar<si64>> = <[2, 3, 4]>
 // CHECK: %[[GEP:.*]] = pop.array.gep %[[GLOBAL]][%[[IDX]]]
 // CHECK: hlcf.return %[[OUT]], %[[GEP]]
 
 
 kgen.func @array_gep() -> !kgen.scalar<si64> {
-  %two = kgen.param.constant = <2>
+  %two = kgen.param.constant: scalar<index> = <2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, -4]>
   %1 = pop.array.gep %0[%two] : <array<3, scalar<si64>>>
   %2 = pop.load %1 align<1> : !kgen.pointer<scalar<si64>>
@@ -68,7 +68,7 @@ kgen.func @array_gep() -> !kgen.scalar<si64> {
 
 
 kgen.func @array_neg_index() -> !kgen.scalar<si64> {
-  %two = kgen.param.constant = <-2>
+  %two = kgen.param.constant: scalar<index> = <-2>
   %0 = pop.global_constant: array<3, scalar<si64>> = <[2, 3, -4]>
   %1 = pop.array.gep %0[%two] : <array<3, scalar<si64>>>
   %2 = pop.load %1 align<1> : !kgen.pointer<scalar<si64>>
