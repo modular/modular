@@ -88,5 +88,15 @@
     "source": "/api/mojo/max/gpu/host/device_context/DeviceContextBase/?",
     "dest": "/api/mojo/max/gpu/host/device_context/DeviceContext/",
     "status": 302
+  },
+  {
+    "source": "/layout/layouts/?",
+    "dest": "/tile-tensor/layouts/",
+    "status": 302
+  },
+  {
+    "source": "/layout/tensors/?",
+    "dest": "/tile-tensor/tensors/",
+    "status": 302
   }
 ]

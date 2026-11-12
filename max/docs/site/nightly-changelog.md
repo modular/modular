@@ -370,14 +370,14 @@ This version is still a work in progress.
   `ThreadScope` now lives in `layout.tile_io`.
 
 - The legacy `Layout` and `IntTuple` types have been removed from the `layout`
-  package, along with the `layout.layout` and `layout.int_tuple` modules, the
-  `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and the legacy
-  `tile_layout_k_major()`, `tile_layout_mn_major()` and
-  `tile_sf_layout_k_major()` constructors. Use the typed layouts in
-  `layout.tile_layout` (`Layout`, also exported as `MixedLayout`) for layout
-  values, `Coord` for shapes, strides and indices, and the `*_typed` tile
-  layout constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()`
-  and `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
+  package, along with the original `layout.layout` and `layout.int_tuple`
+  modules, the `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and
+  the legacy `tile_layout_k_major()`, `tile_layout_mn_major()` and
+  `tile_sf_layout_k_major()` constructors. Use the typed layouts in the new
+  `layout.layout` (`Layout`, also exported as `MixedLayout`) for layout values,
+  `Coord` for shapes, strides and indices, and the `*_typed` tile layout
+  constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()` and
+  `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
   accepts a typed layout directly.
 
 - `TileTensor.tile()` on a nested layout now indexes each mode first leaf

@@ -238,8 +238,6 @@ phases, the algorithm produces incorrect results. For a deeper understanding of
 the tiling strategy, see
 [this section of our blog post on optimizing matrix multiplication on NVIDIA's Blackwell](https://www.modular.com/blog/matrix-multiplication-on-nvidias-blackwell-part-2-using-hardware-features-to-optimize-matmul#shared-memory).
 
-{/* @sync: ../../../../../max/examples/gpu-block-and-warp/tiled_matmul.mojo */}
-
 ```mojo title="tiled_matmul.mojo"
 from std.math import ceildiv
 from std.sys import exit, has_accelerator
