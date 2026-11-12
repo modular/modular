@@ -534,3 +534,13 @@ def main() raises:
         test[.bfloat16, transpose_b=True, N=Int(128), K=Int(512)](
             ctx, 5, 128, 512
         )
+        # GLM-5.3-Flash's KDA low-rank (N 128) and TP4 per-rank beta (N 16)
+        # projections at speculative-verify M: every row, ragged M included.
+        for m in [2, 3, 4, 7, 8, 16, 17, 20, 24, 25, 28, 33, 40, 61, 64]:
+            test[.bfloat16, transpose_b=True, N=Int(128), K=Int(4096)](
+                ctx, m, 128, 4096
+            )
+        for m in [2, 3, 4, 5, 16, 33, 64]:
+            test[.bfloat16, transpose_b=True, N=Int(16), K=Int(4096)](
+                ctx, m, 16, 4096
+            )

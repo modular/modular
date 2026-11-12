@@ -3569,5 +3569,65 @@ def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
             tile_k=128,
             swapAB=False,
         ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [13]
+        TuningConfigSmallMNGemms(
+            M=2,
+            M_end=17,
+            N=128,
+            K=4096,
+            tile_m=2,
+            tile_n=4,
+            num_threads=512,
+            kernel_kind=GEMVAlgorithm.GemvSplitK,
+            unroll_factor=2,
+            tile_k=128,
+            swapAB=False,
+        ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [14]
+        TuningConfigSmallMNGemms(
+            M=17,
+            M_end=25,
+            N=128,
+            K=4096,
+            tile_m=4,
+            tile_n=1,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GemvSplitK,
+            unroll_factor=2,
+            tile_k=128,
+            swapAB=False,
+        ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [15]
+        TuningConfigSmallMNGemms(
+            M=25,
+            M_end=65,
+            N=128,
+            K=4096,
+            tile_m=16,
+            tile_n=8,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GemmMmaCpasync,
+            unroll_factor=1,
+            tile_k=256,
+            swapAB=True,
+        ),
+        # Automatically generated from [tuning_table_sm100_small_mn_bf16.yaml]
+        # index: [16]
+        TuningConfigSmallMNGemms(
+            M=2,
+            M_end=65,
+            N=16,
+            K=4096,
+            tile_m=1,
+            tile_n=2,
+            num_threads=512,
+            kernel_kind=GEMVAlgorithm.GemvSplitK,
+            unroll_factor=1,
+            tile_k=128,
+            swapAB=False,
+        ),
         # ----------------END-TUNING-LIST-SM100-SMALL-MN-BF16----------------
     ]
