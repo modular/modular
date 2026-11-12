@@ -997,8 +997,8 @@ struct BlackwellBlockScaledMatmulKernel[
         var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
         var tmem_addr: UInt32 = 0
 
-        comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
-            warp_role, Self.max_profiled_tiles_per_SM
+        comptime MatmulProfilerType = MatmulProfileWarp[
+            _, Self.max_profiled_tiles_per_SM
         ]
 
         # ===== TMA LOAD WARP =====

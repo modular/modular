@@ -107,6 +107,4 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
 comptime eval[T: AnyType, //, val: T] = val
 """Helper alias to force evaluation of expressions at compile time."""
 
-comptime SMemPtr[type: AnyType] = MutPointer[
-    type, MutUntrackedOrigin, address_space=.SHARED
-]
+comptime SMemPtr = MutPointer[_, MutUntrackedOrigin, address_space=.SHARED]

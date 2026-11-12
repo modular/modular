@@ -116,14 +116,14 @@ comptime ACCUM_LAYOUT = Layout(
 """The whole TMEM allocation as a lane-by-column grid."""
 # 32-bit indices: TMEM addresses are 32-bit, so the layout math that
 # produces view offsets should not widen them.
-comptime AccumTile[accum_type: DType] = TileTensor[
-    accum_type,
+comptime AccumTile = TileTensor[
+    _,
     type_of(ACCUM_LAYOUT),
     MutAnyOrigin,
     Engine=TMemEngine,
     linear_idx_type=DType.uint32,
 ]
-comptime AccumStorage[accum_type: DType] = TMemStorage[accum_type, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[_, MutAnyOrigin]
 comptime FRAGMENT_LANES = 16
 """Lanes of the block a `tmem_16x256b` view covers."""
 

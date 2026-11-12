@@ -1146,7 +1146,7 @@ struct HasIntParam[p: Int](Movable where False):
   def __init__(out self): # expected-note {{function declared here}}
      pass
 
-comptime HasIntParamAlias[p: Int] = HasIntParam[p]
+comptime HasIntParamAlias = HasIntParam[_]
 
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
 

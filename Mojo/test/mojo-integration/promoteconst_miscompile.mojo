@@ -23,7 +23,7 @@
 
 from std.testing import assert_true
 
-comptime _SimdVec[W: Int] = SIMD[.uint8, W]
+comptime _SimdVec = SIMD[.uint8, _]
 
 
 struct Matcher[pattern: String](Copyable, Movable):

@@ -1305,8 +1305,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     var num_iters: UInt32 = ceildiv(mnk[2], UInt32(BK))
 
-    comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
-        warp_role, max_profiled_tiles_per_SM
+    comptime MatmulProfilerType = MatmulProfileWarp[
+        _, max_profiled_tiles_per_SM
     ]
 
     comptime if CLUSTER_SIZE > 1:

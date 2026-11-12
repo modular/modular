@@ -112,8 +112,8 @@ from max.gpu.sync import (
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import mul_ftz, sub_ftz
 
-comptime SPtr[T: AnyType] = Pointer[
-    T, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+comptime SPtr = Pointer[
+    _, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 
 comptime L = 256

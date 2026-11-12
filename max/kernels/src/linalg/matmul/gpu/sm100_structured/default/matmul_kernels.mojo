@@ -2033,8 +2033,8 @@ struct BlackwellMatmulSM100Kernel[
         comptime if Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
-            warp_role, Self.max_profiled_tiles_per_SM
+        comptime MatmulProfilerType = MatmulProfileWarp[
+            _, Self.max_profiled_tiles_per_SM
         ]
 
         if WarpRole.is_main_load():
@@ -2626,8 +2626,8 @@ struct BlackwellMatmulSM100Kernel[
             cta_group=Self.cta_group,
         ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
-        comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
-            warp_role, Self.max_profiled_tiles_per_SM
+        comptime MatmulProfilerType = MatmulProfileWarp[
+            _, Self.max_profiled_tiles_per_SM
         ]
 
         if WarpRole.is_main_load():

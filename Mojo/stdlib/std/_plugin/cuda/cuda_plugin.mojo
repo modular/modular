@@ -141,7 +141,7 @@ struct CUDAPlugin(StdPlugin):
     """`PluginHooks` implementation for NVIDIA CUDA backends."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
-    comptime HookFor[target: CompilationTarget] = CUDAPluginHooks[target]
+    comptime HookFor = CUDAPluginHooks[_]
 
 
 struct CUDAPluginHooks[target: CompilationTarget](PluginHooks):

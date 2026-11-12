@@ -148,10 +148,10 @@ struct OwnedTensor[
         self._storage = {}
         self.layout = layout
 
-    comptime _View[origin: Origin] = TileTensor[
+    comptime _View = TileTensor[
         Self.dtype,
         Self.LayoutType,
-        origin,
+        _,
         address_space=Self.address_space,
         Engine=Self.Engine.ViewEngine,
     ]

@@ -318,8 +318,8 @@ struct TileTensorIter[
             )
         return result
 
-    comptime BitcastType[target_dtype: DType] = TileTensorIter[
-        target_dtype,
+    comptime BitcastType = TileTensorIter[
+        _,
         Self.LayoutType,
         Self.origin,
         address_space=Self.address_space,
@@ -353,9 +353,9 @@ struct TileTensorIter[
             num_valid_rows=self.num_valid_rows,
         )
 
-    comptime ReshapeType[NewLayout: TensorLayout] = TileTensorIter[
+    comptime ReshapeType = TileTensorIter[
         Self.dtype,
-        NewLayout,
+        _,
         Self.origin,
         address_space=Self.address_space,
         circular=Self.circular,

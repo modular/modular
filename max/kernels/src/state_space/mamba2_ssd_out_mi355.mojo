@@ -85,15 +85,15 @@ comptime Frag = SIMD[DType.bfloat16, 8]
 comptime Acc = SIMD[DType.float32, 4]
 comptime F4 = SIMD[DType.float32, 4]
 
-comptime LPtr[T: AnyType] = Pointer[
-    T, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+comptime LPtr = Pointer[
+    _, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 comptime Lds = LPtr[UInt8]
-comptime GPtr[T: AnyType] = Pointer[
-    T, ImmUntrackedOrigin, address_space=AddressSpace.GLOBAL
+comptime GPtr = Pointer[
+    _, ImmUntrackedOrigin, address_space=AddressSpace.GLOBAL
 ]
-comptime GMutPtr[T: AnyType] = Pointer[
-    T, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
+comptime GMutPtr = Pointer[
+    _, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
 ]
 comptime LdsAtomic = Atomic[UInt32, scope="workgroup"]
 

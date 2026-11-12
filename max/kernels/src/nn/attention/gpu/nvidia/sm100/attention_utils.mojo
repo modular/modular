@@ -99,9 +99,7 @@ comptime LocalTensor[
     Engine=Engine,
     address_space=.LOCAL,
 ]
-comptime SharedMemPointer[type: AnyType] = Pointer[
-    type, MutAnyOrigin, address_space=.SHARED
-]
+comptime SharedMemPointer = Pointer[_, MutAnyOrigin, address_space=.SHARED]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
 
 

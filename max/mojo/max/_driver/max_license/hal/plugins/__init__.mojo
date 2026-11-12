@@ -185,9 +185,7 @@ struct M_driver_memory_view(Copyable, Movable):
     var size: UInt64
 
 
-comptime MemoryViewHandle[origin: ImmOrigin] = ImmPointer[
-    M_driver_memory_view, origin
-]
+comptime MemoryViewHandle = ImmPointer[M_driver_memory_view, _]
 
 # ===-----------------------------------------------------------------------===#
 # C API function pointer types

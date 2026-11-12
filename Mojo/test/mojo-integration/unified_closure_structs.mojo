@@ -150,7 +150,7 @@ comptime _chained_fn_trait0[
     FOO: DType, cw: Int
 ] = ImplicitlyCopyable & Deinitable & (def() -> SIMD[FOO, cw])
 
-comptime _chained_fn_trait1[BAR: DType] = _chained_fn_trait0[BAR, 4]
+comptime _chained_fn_trait1 = _chained_fn_trait0[_, 4]
 
 
 @fieldwise_init

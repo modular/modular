@@ -532,7 +532,7 @@ struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks[target]
+    comptime HookFor = DefaultMaxPluginHooks[_]
 
 
 struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):

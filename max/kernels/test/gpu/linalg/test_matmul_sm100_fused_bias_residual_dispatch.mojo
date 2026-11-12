@@ -63,8 +63,8 @@ from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
 )
 from linalg.matmul.vendor.matmul import matmul as matmul_vendor
 
-comptime EpilogueTile[c_type: DType] = TileTensor[
-    c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin
+comptime EpilogueTile = TileTensor[
+    _, RowMajorLayout[Int64, Int64], ImmutAnyOrigin
 ]
 
 

@@ -163,12 +163,7 @@ kernel asserts stride-for-stride.
 stride ``((gran, num_chunks*CM*gran), (1, CM*gran))``.
 """
 
-comptime _tile_layout_k_major_pagedense[
-    dtype: DType,
-    mn_dim: Int,
-    k_dim: Int,
-    swizzle_mode: TensorMapSwizzle,
-] = _tile_layout_k_major[dtype, mn_dim, k_dim, swizzle_mode, True]
+comptime _tile_layout_k_major_pagedense = _tile_layout_k_major[_, _, _, _, True]
 """Page-dense k-major SMEM layout: **chunk-inner (row-major atoms)**.
 
 Each `_CM_NUM_ROWS`-row swizzle atom is a dense, contiguous 1 KB SMEM block

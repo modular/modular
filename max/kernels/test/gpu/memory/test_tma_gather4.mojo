@@ -203,12 +203,10 @@ def _typed_row_major[
     return ConcLayout(shape_c, stride_c)
 
 
-comptime _PagedCollection[
-    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
-] = PagedKVCacheCollection[
-    dtype,
-    kv_params,
-    page_size,
+comptime _PagedCollection = PagedKVCacheCollection[
+    _,
+    _,
+    _,
     MutAnyOrigin,
     ImmutAnyOrigin,
     ImmutAnyOrigin,
@@ -271,10 +269,8 @@ def _paged_collection[
     )
 
 
-comptime _ContinuousCollection[
-    dtype: DType, kv_params: KVCacheStaticParams
-] = ContinuousBatchingKVCacheCollection[
-    dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+comptime _ContinuousCollection = ContinuousBatchingKVCacheCollection[
+    _, _, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
 ]
 
 

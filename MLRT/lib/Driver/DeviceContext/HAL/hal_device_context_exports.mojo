@@ -84,7 +84,7 @@ comptime _CompletionFlagBoxPtr = Pointer[
 comptime _RawMemoryPtr = Pointer[Byte, MutUntrackedOrigin]
 
 # An out-parameter slot the export writes for the C++ caller.
-comptime _OutPtr[T: AnyType] = Pointer[mut=True, T, MutUntrackedOrigin]
+comptime _OutPtr = Pointer[mut=True, _, MutUntrackedOrigin]
 
 
 def _err_cstr(msg: String) -> _CString[]:

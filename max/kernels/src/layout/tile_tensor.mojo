@@ -853,21 +853,21 @@ struct TileTensor[
         C: The coordinate element types to check against.
     """
 
-    comptime static_shape[i: Int] = Self.LayoutType.static_shape[i]
+    comptime static_shape = Self.LayoutType.static_shape[_]
     """Get the compile-time shape value for dimension i, or -1 if dynamic.
 
     Parameters:
         i: The dimension index.
     """
 
-    comptime is_static_shape[i: Int] = Self.LayoutType.is_static_shape[i]
+    comptime is_static_shape = Self.LayoutType.is_static_shape[_]
     """Whether the shape of dimension i is known at compile time.
 
     Parameters:
         i: The dimension index.
     """
 
-    comptime static_stride[i: Int] = Self.LayoutType.static_stride[i]
+    comptime static_stride = Self.LayoutType.static_stride[_]
     """Get the compile-time stride value for dimension i, or -1 if dynamic.
 
     Parameters:
@@ -940,10 +940,10 @@ struct TileTensor[
     produce GENERIC address space tensors.
     """
 
-    comptime DeviceGenericType[origin: Origin] = TileTensor[
+    comptime DeviceGenericType = TileTensor[
         Self.dtype,
         Self.LayoutType,
-        origin,
+        _,
         Engine=DevicePointerEngine[element_width=1],
         address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
@@ -4207,21 +4207,21 @@ struct NullableTileTensor[
         C: The coordinate element types to check against.
     """
 
-    comptime static_shape[i: Int] = Self.LayoutType.static_shape[i]
+    comptime static_shape = Self.LayoutType.static_shape[_]
     """Get the compile-time shape value for dimension i, or -1 if dynamic.
 
     Parameters:
         i: The dimension index.
     """
 
-    comptime is_static_shape[i: Int] = Self.LayoutType.is_static_shape[i]
+    comptime is_static_shape = Self.LayoutType.is_static_shape[_]
     """Whether the shape of dimension i is known at compile time.
 
     Parameters:
         i: The dimension index.
     """
 
-    comptime static_stride[i: Int] = Self.LayoutType.static_stride[i]
+    comptime static_stride = Self.LayoutType.static_stride[_]
     """Get the compile-time stride value for dimension i, or -1 if dynamic.
 
     Parameters:

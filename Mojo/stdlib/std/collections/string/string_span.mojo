@@ -62,7 +62,7 @@ Use `StringSpan` instead.
 
 
 @deprecated(use=StringSpan)
-comptime ImmStringSpan[origin: ImmOrigin] = StringSpan[origin]
+comptime ImmStringSpan = StringSpan[_]
 """Deprecated: An immutable `StringSpan`.
 
 `StringSpan` is always immutable. Use `StringSpan` instead.

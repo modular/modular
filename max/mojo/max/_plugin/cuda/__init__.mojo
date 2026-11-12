@@ -83,7 +83,7 @@ struct CudaMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for CUDA targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
-    comptime HookFor[target: CompilationTarget] = CudaMaxPluginHooks[target]
+    comptime HookFor = CudaMaxPluginHooks[_]
 
 
 struct CudaMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):

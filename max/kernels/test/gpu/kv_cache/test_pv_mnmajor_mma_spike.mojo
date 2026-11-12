@@ -152,12 +152,7 @@ kernel asserts stride-for-stride.
 ``((1, CM*row_len), (row_len, CM*mn))``; see `_tile_layout_mn_major_native`.
 """
 
-comptime _tile_layout_mn_major_native[
-    dtype: DType,
-    mn_dim: Int,
-    k_dim: Int,
-    swizzle_mode: TensorMapSwizzle,
-] = _tile_layout_mn_major[dtype, mn_dim, k_dim, swizzle_mode, True]
+comptime _tile_layout_mn_major_native = _tile_layout_mn_major[_, _, _, _, True]
 """The native (pre-`#73811`) mn-major SMEM layout, recovered verbatim from
 `fe239ba77a3:max/kernels/src/layout/tensor_core_async.mojo`.
 

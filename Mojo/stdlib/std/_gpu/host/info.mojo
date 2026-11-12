@@ -142,8 +142,8 @@ struct TargetAccelerator[
     # conflicts are (e.g. GTX1060 and GTX1060Ti could arguably both match
     # "sm_61", but only is declared with as matching that `--target-accelerator`
     # value).
-    comptime _with_cli_values[values: List[String]] = TargetAccelerator[
-        Self.gpu_info_, Self.target_, values
+    comptime _with_cli_values = TargetAccelerator[
+        Self.gpu_info_, Self.target_, _
     ]
 
     def __init__(out self):

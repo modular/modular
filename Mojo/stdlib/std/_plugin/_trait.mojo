@@ -480,7 +480,7 @@ struct DefaultPlugin(StdPlugin):
     """
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultPluginHooks[target]
+    comptime HookFor = DefaultPluginHooks[_]
 
 
 struct DefaultPluginHooks[target: CompilationTarget](PluginHooks):

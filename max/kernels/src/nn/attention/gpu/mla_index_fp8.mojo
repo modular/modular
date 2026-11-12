@@ -1538,10 +1538,10 @@ comptime _MXFP4_INDEX_KV_PARAMS = KVCacheStaticParams(
     num_heads=1, head_size=MXFP4_INDEX_VALUE_BYTES, is_mla=True
 )
 
-comptime MXFP4IndexKCache[page_size: Int] = PagedKVCache[
+comptime MXFP4IndexKCache = PagedKVCache[
     DType.uint8,
     _MXFP4_INDEX_KV_PARAMS,
-    page_size,
+    _,
     MutUntrackedOrigin,
     DefaultEngine[element_width=1],
     ImmutAnyOrigin,

@@ -186,7 +186,7 @@ struct MetalPlugin(StdPlugin):
     """`PluginHooks` implementation for Apple Metal backends."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["metal"]()
-    comptime HookFor[target: CompilationTarget] = MetalPluginHooks[target]
+    comptime HookFor = MetalPluginHooks[_]
 
 
 struct MetalPluginHooks[target: CompilationTarget](PluginHooks):

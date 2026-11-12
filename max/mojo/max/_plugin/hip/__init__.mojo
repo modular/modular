@@ -59,7 +59,7 @@ struct HipMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for HIP targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["hip"]()
-    comptime HookFor[target: CompilationTarget] = HipMaxPluginHooks[target]
+    comptime HookFor = HipMaxPluginHooks[_]
 
 
 struct HipMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):

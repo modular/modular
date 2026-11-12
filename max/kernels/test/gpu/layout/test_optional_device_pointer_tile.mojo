@@ -40,10 +40,10 @@ from std.testing import assert_equal
 
 comptime _N = 8
 
-comptime _Tile[LayoutType: TensorLayout, origin: MutOrigin] = TileTensor[
+comptime _Tile = TileTensor[
     .float32,
-    LayoutType,
-    origin,
+    _,
+    _,
     Engine=DevicePointerEngine[element_width=1],
 ]
 

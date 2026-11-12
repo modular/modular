@@ -44,10 +44,10 @@ comptime NUM_LAYERS = 2
 comptime kv_params = KVCacheStaticParams(
     num_heads=1, head_size=HEAD_DIM, is_mla=True
 )
-comptime Collection[dtype: DType, page_size: Int] = PagedKVCacheCollection[
-    dtype,
+comptime Collection = PagedKVCacheCollection[
+    _,
     kv_params,
-    page_size,
+    _,
     MutAnyOrigin,
     ImmutAnyOrigin,
     ImmutAnyOrigin,

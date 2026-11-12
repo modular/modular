@@ -129,9 +129,7 @@ comptime internal_k_major[
 )
 
 # Convenience aliases for common swizzle sizes
-comptime internal_k_major_128B[
-    dtype: DType, BM: Int, BK: Int
-] = internal_k_major[dtype, BM, BK, 128]
+comptime internal_k_major_128B = internal_k_major[_, _, _, 128]
 
 # Internal row-major layout (no swizzle) - just delegates to row_major
 comptime internal_k_major_none[
