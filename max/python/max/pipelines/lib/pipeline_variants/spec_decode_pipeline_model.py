@@ -1952,18 +1952,7 @@ def build_spec_graph(
         input_spec=nn_model.input_spec,
         input_types=call.input_types,
         export_contract=call.export_contract,
-        # Penalties, a later stage's boundary and the replay graph's own
-        # inputs have no names, so a graph that takes any stays unnamed.
-        input_tree=(
-            None
-            if call.penalties or call.boundary_count or call.replay_count
-            else nn_model.input_tree(
-                call.kv_params,
-                trailing=spec_adapters.trailing_input_tree(
-                    call.target_arch, call.method, call.target_config
-                ),
-            )
-        ),
+        input_tree=call.input_tree,
     )
 
 
@@ -1989,6 +1978,34 @@ class _DriverCall:
     replay_count: int = 0
     """How many of the trailing inputs are the replay graph's own, which come
     after everything else."""
+
+    @cached_property
+    def input_tree(self) -> DecoderGraphInputs | None:
+        """The graph's inputs named by group.
+
+        Its leaves are :attr:`input_types`. It is ``None`` for a signature
+        with inputs no group names: penalties, a later stage's boundary and
+        the replay graph's own inputs among them.
+        """
+        if self.penalties or self.boundary_count or self.replay_count:
+            return None
+        return self.driver.input_tree(
+            self.kv_params,
+            trailing=spec_adapters.trailing_input_tree(
+                self.target_arch, self.method, self.target_config
+            ),
+        )
+
+    @property
+    def arguments(self) -> tuple[Any, ...]:
+        """What the fused module's ``forward`` takes.
+
+        That is the named inputs as one argument, so an export records their
+        names, or else each input.
+        """
+        if self.input_tree is None:
+            return tuple(self.input_types)
+        return (self.input_tree,)
 
     def __call__(
         self,
@@ -2498,12 +2515,14 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         call = module.driver_call()
         # Weights that weight entries name come from the checkpoints uncast.
         compiled = module.compile(
-            *call.input_types,
+            *call.arguments,
             weights=_cast_to_parameter_dtypes(module, modules.weights),
             name=_graph_name(self.pairing, call.method),
             signal_buffer_index=call.driver.input_spec.signal_buffer_index,
             signals_group=tp_signals,
         )
+        if call.input_tree is not None:
+            self._batching.bind_input_tree(call.input_tree)
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
         self.export_contract = call.export_contract
@@ -2569,12 +2588,14 @@ def _target_slot(target: Any, slot: str) -> tuple[str, Any] | None:
     return found[0] if len(found) == 1 else None
 
 
-class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):
+class _SpecDecodeModule(ModuleV3[..., Mapping[str, Any]]):
     """The target, the draft and the driver, as the one module that compiles.
 
     Its weights are ``target.*`` and ``draft.*``. It takes the inputs its
-    driver declares; the traced graph appends the signal buffers of its
-    mesh, which the realization context holds.
+    driver declares, as :attr:`_DriverCall.arguments` passes them; the
+    traced graph appends the signal buffers of its mesh, which the
+    realization context holds. It returns the driver's outputs in one
+    ``spec`` group, as the graph API's fused graph does.
     """
 
     def __init__(
@@ -2597,10 +2618,10 @@ class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):
         """
         return self._driver_call(target=self.target, draft=self.draft)
 
-    def forward(self, *inputs: Tensor) -> tuple[Tensor, ...]:
+    def forward(self, *inputs: tree.Tree[Tensor]) -> Mapping[str, Any]:
         call = self.driver_call()
         graph_inputs = call.driver.decode_inputs(
-            as_graph_values(list(inputs)), call.kv_params
+            as_graph_values(tree.leaves(inputs, leaf=Tensor)), call.kv_params
         )
         signals = getattr(
             current_realization_context(None), "signal_buffers", None
@@ -2608,7 +2629,7 @@ class _SpecDecodeModule(ModuleV3[..., tuple[Tensor, ...]]):
         outputs = call(
             graph_inputs, signal_buffers=list(signals) if signals else None
         )
-        result: tuple[Tensor, ...] = as_tensors(tuple(outputs))
+        result: Mapping[str, Any] = as_tensors(spec_decode_outputs(outputs))
         return result
 
 

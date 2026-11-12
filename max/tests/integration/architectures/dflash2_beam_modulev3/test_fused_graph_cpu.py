@@ -16,7 +16,8 @@ The pairing resolves through the registry, and the fused module stages on a
 1-device CPU mesh with a tiny target and drafter: the Tensor boundary, the
 adapters, the verify with its taps, the drafter and its selector, without
 compiling. What is pinned is what Mach binds: the graph's name, its inputs
-and the drafter's weight names, and the kernels the trace runs.
+and outputs as an exported artifact names them, the drafter's weight names,
+and the kernels the trace runs.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from beam_dflash2_fixtures import (
     graph_name,
 )
 from max import functional as F
+from max._artifact.value_types import treedef_to_json
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -91,7 +93,7 @@ def staged() -> tuple[StagedGraph[Any, Any], str, set[str]]:
     with default_dtype(DType.bfloat16), default_device(CPU()):
         with F.lazy():
             graph, _ = module.stage(
-                *module.driver_call().input_types,
+                *module.driver_call().arguments,
                 weights=weights,
                 name=graph_name(),
                 allow_subgraphs=True,
@@ -116,6 +118,35 @@ def test_the_inputs_are_the_block_adapters(
     assert not any(
         getattr(value.type, "dtype", None) == DType.bool for value in inputs
     )
+
+
+def test_the_graph_names_its_inputs_and_outputs(
+    staged: tuple[StagedGraph[Any, Any], str, set[str]],
+) -> None:
+    """An exported artifact's serving engine binds the graph by name: its
+    inputs as one decoder group and its outputs as one spec group."""
+    graph, _, _ = staged
+    # As the artifact's JSON records them.
+    in_tree = json.loads(json.dumps(treedef_to_json(graph.in_tree)))
+    out_tree = json.loads(json.dumps(treedef_to_json(graph.out_tree)))
+    args, kwargs = in_tree["children"]
+    (inputs,) = args["children"]
+    assert inputs["type"] == "decoder_inputs"
+    assert {"tokens", "signals", "kv", "spec"} <= set(inputs["keys"])
+    assert kwargs == {"kind": "dict", "keys": [], "children": []}
+    leaf = {"kind": "leaf"}
+    assert out_tree == {
+        "kind": "ordered_dict",
+        "keys": ["spec"],
+        "children": [
+            {
+                "kind": "node",
+                "type": "spec_decode_outputs",
+                "keys": ["num_accepted", "next_tokens", "next_draft_tokens"],
+                "children": [leaf, leaf, leaf],
+            }
+        ],
+    }
 
 
 def test_the_drafter_binds_its_checkpoint_names(

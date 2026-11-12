@@ -72,6 +72,7 @@ modular_py_test(
     deps = [
         ":beam_dflash2_fixtures",
         "//max/python/max:tensor",
+        "//max/python/max/_artifact",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
