@@ -787,6 +787,7 @@ mojo.gpu_toolchains(
     gpu_mapping = {
         " A10G": "a10",
         "A100-": "a100",
+        "Tesla T4": "t4",
         " H100": "h100",
         " H200": "h200",
         " L4": "l4",
@@ -837,6 +838,7 @@ mojo.gpu_toolchains(
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
+        "t4": "nvidia:sm_75",
         "gfx90a": "amdgpu:gfx90a",
         "mi300a": "amdgpu:gfx942",
         "mi300x": "amdgpu:gfx942",
