@@ -59,6 +59,39 @@ from typing_extensions import Self, override
 
 from .layers.rotary_embedding import ProportionalScalingParams
 
+MAX_IMAGES_PER_REQUEST = "max_images_per_request"
+"""The one ``--vision-config-overrides`` key Gemma 4 reads."""
+
+
+def max_images_per_request(pipeline_config: PipelineConfig) -> int | None:
+    """Returns the per-request image cap, ``None`` for no cap.
+
+    Set with ``--vision-config-overrides '{"max_images_per_request": N}'``,
+    as vLLM's ``--limit-mm-per-prompt``. ``0`` serves text only: the vision
+    tower is not built, and the router rejects any request with an image or
+    a video, since both go through that tower.
+
+    Raises:
+        ValueError: On any other override key, or a cap that is not a
+            non-negative integer.
+    """
+    overrides = dict(pipeline_config.model.vision_config_overrides)
+    unknown = sorted(overrides.keys() - {MAX_IMAGES_PER_REQUEST})
+    if unknown:
+        raise ValueError(
+            f"Gemma 4 vision_config_overrides accepts only "
+            f"{MAX_IMAGES_PER_REQUEST!r}, got {unknown}"
+        )
+    cap = overrides.get(MAX_IMAGES_PER_REQUEST)
+    if cap is not None and (
+        isinstance(cap, bool) or not isinstance(cap, int) or cap < 0
+    ):
+        raise ValueError(
+            f"{MAX_IMAGES_PER_REQUEST} must be a non-negative integer, "
+            f"got {cap!r}"
+        )
+    return cap
+
 
 def _resolve_num_global_kv_heads(text_config: PretrainedConfig) -> int:
     """Returns the number of KV heads used by full-attention layers.
@@ -746,6 +779,8 @@ class Gemma4ForConditionalGenerationConfig(
             vision_config = None
         elif staged:
             # A pipeline stage serves text only.
+            vision_config = None
+        elif max_images_per_request(pipeline_config) == 0:
             vision_config = None
         else:
             vision_config = Gemma4VisionConfig.initialize_from_config(

@@ -1359,3 +1359,36 @@ async def test_image_bytes_are_hashed_once_per_request(
     # One digest, reused for both the preprocess cache and the context.
     assert spy.call_count == 1
     assert context.images[0].image_hash == hash_image(image_bytes, 280)
+
+
+def test_an_image_cap_of_zero_rejects_images_and_videos(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """The router reads both caps off the tokenizer."""
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    assert tokenizer.max_images_per_request is None
+    assert tokenizer.max_videos_per_request is None
+
+    mock_pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 0
+    }
+    tokenizer = Gemma4Tokenizer("test-model", mock_pipeline_config)
+    assert tokenizer.max_images_per_request == 0
+    assert tokenizer.max_videos_per_request == 0
+
+
+def test_text_only_requires_the_vision_cache_off(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+    mock_pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 0
+    }
+    mock_pipeline_config.runtime.vision_cache_utilization = 0.05
+
+    with pytest.raises(ValueError, match="--vision-cache-utilization 0"):
+        Gemma4Tokenizer("test-model", mock_pipeline_config)
