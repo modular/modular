@@ -26,6 +26,7 @@
 #include "Support/PlatformUtils.h"
 #include "Support/SymbolExport.h"
 
+#include <optional>
 #include <string>
 
 #if MODULAR_MACOS
@@ -35,6 +36,12 @@ class Device;
 #endif
 
 namespace M::Driver {
+
+/// The `vendor:arch` of device 0 of the first accelerator plugin in
+/// `MODULAR_DRIVER_PLUGINS` that implements the HAL C ABI, or "" when that
+/// plugin has no device. `std::nullopt` when the variable names no such
+/// plugin, so the caller falls back to the vendor libraries.
+std::optional<std::string> getHALPluginAcceleratorArch();
 
 /// For example `sm_80`, or `sm_90a` from sm_90 on.
 MODULAR_CXX_EXPORT std::string cudaCCToSM(int major, int minor);

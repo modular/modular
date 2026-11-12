@@ -21,9 +21,9 @@
 
 static_assert(
     !MODULAR_HAL_DEVICE_CONTEXT,
-    "the legacy DeviceContext statics must compile against the legacy "
-    "declarations: -UMODULAR_HAL_DEVICE_CONTEXT in this target's copts must "
-    "override Driver/DeviceContextHeaders' define");
+    "libMDriverCompilation must compile the same in every configuration: "
+    "nothing Driver/AcceleratorArch depends on may carry "
+    "Driver/DeviceContextAPI's define");
 
 #include "AcceleratorArch.h"
 #include "AsyncRT/Runtime/Globals/VirtualDeviceGlobals.h"
@@ -37,6 +37,7 @@ static_assert(
 #include "llvm/ADT/Twine.h"
 
 #include <mutex>
+#include <optional>
 #include <string>
 
 namespace M::Driver {
@@ -166,6 +167,12 @@ MODULAR_CXX_EXPORT const std::string &Device::getAcceleratorArchOrEmpty() {
               virtualTargetArch)
           .str();
     }
+
+    // A HAL process names its accelerator plugin, and its runtime answers from
+    // that plugin, so the compiler asks the same one. The vendor libraries
+    // below might find a different accelerator.
+    if (std::optional<std::string> pluginArch = getHALPluginAcceleratorArch())
+      return *pluginArch;
 
     // Otherwise, detect from physical hardware
     std::string vendor("nvidia");

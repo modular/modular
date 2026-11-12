@@ -528,18 +528,14 @@ _DEVICE_CONTEXT_HDRS = [
 # The DeviceContext headers without //AsyncRT:Runtime, which CompilerRT owns
 # and Driver/Compilation must not link. A separate target so that
 # //Target:DriverPlugin has no cycle with Driver/DeviceContextImplCpp.
+#
+# Always the legacy declarations: the compiler family reaches the headers only
+# through this target, so it compiles the same in every configuration and
+# shares its build cache with the default one (DRIV-729). It uses only statics,
+# whose symbols both declarations share.
 modular_cc_library(
     name = "Driver/DeviceContextHeaders",
     hdrs = _DEVICE_CONTEXT_HDRS,
-    # Switches DeviceContext.h to the HAL shim declarations. Propagated from the
-    # target that provides the header rather than a global `--copt`, which would
-    # rekey every C++ action including LLVM onto a separate build cache
-    # (DRIV-340). Targets that must keep the legacy declarations undefine it in
-    # their own `copts`.
-    defines = select({
-        "//:hal_device_context_enabled": ["MODULAR_HAL_DEVICE_CONTEXT=1"],
-        "//conditions:default": [],
-    }),
     includes = ["include"],
     visibility = [
         "//MLRT:__subpackages__",
@@ -562,6 +558,15 @@ modular_cc_library(
 modular_cc_library(
     name = "Driver/DeviceContextAPI",
     hdrs = _DEVICE_CONTEXT_HDRS,
+    # Switches DeviceContext.h to the HAL shim declarations. Propagated from the
+    # target that provides the header rather than a global `--copt`, which would
+    # rekey every C++ action including LLVM onto a separate build cache
+    # (DRIV-340). Targets that must keep the legacy declarations undefine it in
+    # their own `copts`.
+    defines = select({
+        "//:hal_device_context_enabled": ["MODULAR_HAL_DEVICE_CONTEXT=1"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         ":Driver/DeviceContextHeaders",
@@ -608,31 +613,6 @@ modular_cc_library(
     alwayslink = True,
 )
 
-# Minimal, plugin-direct provider of `M::Driver::Device::getAcceleratorArchOrEmpty`
-# for the Mojo/KGEN compiler family, so those binaries can detect the target
-# accelerator arch WITHOUT linking the DeviceContext runtime. dlopens the driver
-# plugin and queries device 0 over the `M_driver_*` C ABI directly. Only built
-# under --config=hal-device-context, where Driver/Compilation carries it in place
-# of Driver/AcceleratorArch.
-modular_cc_library(
-    name = "Driver/CompilerDeviceArch",
-    srcs = ["lib/Driver/DeviceContext/CompilerDeviceArch.cpp"],
-    target_compatible_with = select({
-        "//:hal_device_context_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    visibility = [
-        "//Kernels/tools/max_license/gpu-query:__pkg__",
-        "//MLRT/unittests/Driver:__pkg__",
-    ],
-    deps = [
-        ":Driver/DeviceContextHeaders",
-        "//SDK:HAL",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
 # The DeviceContext runtime shared library. Toolchain-side consumers
 # (//Mojo:CompilerRT, the mojo toolchain implicit deps) drop this target under
 # --config=hal-device-context: the HAL arm reaches @mojo//:std, which would
@@ -659,12 +639,10 @@ modular_cc_library(
 )
 
 _DRIVER_COMPILATION_LIBS = [
+    ":Driver/AcceleratorArch",
     ":Driver/CompilationDeviceImpl",
     "//Target:DriverPlugin",
-] + select({
-    "//:hal_device_context_enabled": [":Driver/CompilerDeviceArch"],
-    "//conditions:default": [":Driver/AcceleratorArch"],
-})
+]
 
 # The part of the driver that the compiler needs: kernel compilation, plugin
 # loading and arch detection. The compiler links it without Driver/Runtime or
@@ -1093,10 +1071,10 @@ modular_cc_library(
     ],
 )
 
-# The legacy driver code that needs no device: arch detection with the vendor
-# libraries it loads, and DeviceContext's configuration and error formatter.
-# Driver/Compilation links it so the compiler can detect its target without the
-# device-context runtime.
+# The driver code that needs no device: arch detection, through the HAL plugins
+# that MODULAR_DRIVER_PLUGINS names or the vendor libraries, and the legacy
+# DeviceContext's configuration and error formatter. Driver/Compilation links it
+# so the compiler can detect its target without the device-context runtime.
 modular_cc_library(
     name = "Driver/AcceleratorArch",
     srcs = [
@@ -1111,7 +1089,6 @@ modular_cc_library(
         "lib/Driver/DeviceContext/HIP/HIPDriver.inc",
         "lib/Driver/DeviceContext/Metal/MetalDriver.h",
     ],
-    copts = ["-UMODULAR_HAL_DEVICE_CONTEXT"],
     # Repeats the frameworks of @metal-cpp, which has no library, so
     # cc_shared_library drops its linkopts. CoreGraphics lets
     # MTLCreateSystemDefaultDevice find a device in a command-line process.
@@ -1130,6 +1107,7 @@ modular_cc_library(
         ":Driver/CompilationDeviceImpl",
         ":Driver/DeviceContextHeaders",
         "//AsyncRT:RuntimeGlobals.static",
+        "//SDK:HAL",
         "//Support:Base",
         "//Support:Configuration",
         "//Support:DLFcn",
