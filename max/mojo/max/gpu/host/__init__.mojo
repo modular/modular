@@ -41,16 +41,8 @@ from max._driver.max_license.device_context_dispatch.host_types import (
     DeviceMulticastBuffer,
     DeviceStream,
 )
-from ._overlay import (
+from max._driver.max_license.device_context_dispatch.backend_names import (
     DefaultDeviceTypeEncoder,
-    DeviceTypeEncoder,
-    DeviceGraph,
-    DeviceGraphBuilder,
-    DeviceGraphCache,
-    DeviceGraphInput,
-    DeviceGraphInputKind,
-    DeviceGraphNode,
-    StableAddr,
     CUDA_get_current_context,
 )
 from max.gpu.host._driver_handles import (
@@ -59,11 +51,7 @@ from max.gpu.host._driver_handles import (
     _DeviceContextPtr,
     _DeviceFunctionPtr,
 )
-from max.gpu.host._driver_common import (
-    _DumpPath,
-    _check_dim_in_range,
-    _checked,
-)
+from max.gpu.host._driver_common import _checked
 from max.gpu.host._vendor_handles import (
     CUcontext,
     CUmodule,
@@ -72,6 +60,11 @@ from max.gpu.host._vendor_handles import (
     hipDevice_t,
     hipStream_t,
 )
+from max.gpu.host._driver_common import (
+    _DumpPath,
+    _check_dim_in_range,
+)
+from std.builtin.device_passable import DeviceTypeEncoder
 from ._legacy.dim import Dim
 from .launch_config import (
     BlockExecutionConfig,
@@ -87,6 +80,15 @@ from ._legacy.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,
+)
+from ._overlay import DeviceGraphInput
+from max._driver.max_license.device_context_dispatch.graph_names import (
+    DeviceGraph,
+    DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInputKind,
+    DeviceGraphNode,
+    StableAddr,
 )
 from max._driver.max_license.device_context_dispatch.vendor import (
     CUDA,

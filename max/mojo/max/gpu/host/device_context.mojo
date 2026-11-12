@@ -43,7 +43,7 @@ from max._driver.max_license.device_context_dispatch.host_types import (
     DeviceMulticastBuffer,
     DeviceStream,
 )
-from ._overlay import (
+from max._driver.max_license.device_context_dispatch.backend_names import (
     DefaultDeviceTypeEncoder,
 )
 from max.gpu.host._driver_common import StreamPriorityRange
