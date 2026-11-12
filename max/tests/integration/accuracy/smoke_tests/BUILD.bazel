@@ -26,8 +26,9 @@ modular_py_library(
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        requirement("requests"),
         requirement("lm-eval"),
+        requirement("pillow"),
+        requirement("requests"),
     ],
 )
 
