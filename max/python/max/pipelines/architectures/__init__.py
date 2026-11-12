@@ -137,6 +137,11 @@ def register_all_models() -> None:
             "dflash_kimi_k25_draft_arch",
         ),
         _LazyArch(
+            "DFlashLagunaForCausalLM",
+            ".dflash_laguna_modulev3",
+            "dflash_laguna_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DFlashMiMoV2DraftModel",
             ".dflash_mimo_v2",
             "dflash_mimo_v2_draft_arch",

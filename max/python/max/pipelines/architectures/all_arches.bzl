@@ -21,6 +21,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/dflash2_beam_modulev3",
     "//max/python/max/pipelines/architectures/dflash2_qwen3_5",
     "//max/python/max/pipelines/architectures/dflash_kimi_k25",
+    "//max/python/max/pipelines/architectures/dflash_laguna_modulev3",
     "//max/python/max/pipelines/architectures/dflash_llama3",
     "//max/python/max/pipelines/architectures/dflash_mimo_v2",
     "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
