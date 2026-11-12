@@ -256,3 +256,41 @@ mgp.model @compiled_region_uncacheable_result devices [#M.device_ref<"cpu", 0>] 
   } inOutSignature = <"ii"> {device = #M.device_ref<"cpu", 0>}
   mef.output %ch, %tensor : !mef.chain, !mgp.tensor<2x2xf32>
 }
+
+// -----
+
+// An op that reads an allocation a later 'execute' op writes through a view
+// stays in 'execute': each step must see the previous step's write.
+
+// CHECK-LABEL: mgp.model @keep_read_of_view_written_later
+// CHECK:     } execute (
+// CHECK:       mogg.routine.async (%{{.*}}, %{{.*}}, %{{.*}})
+// CHECK:       } inOutSignature = <"iio">
+// CHECK:       mogg.routine.async
+// CHECK:       } inOutSignature = <"iio">
+
+mgp.model @keep_read_of_view_written_later devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+  %ch0 = grt.chain.create ()
+  %ctx = mgp.context.create 2
+  %ch2 = mgp.runtime.create %ch0, %ctx[1]
+  mef.output %ch2, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
+} execute (%ch0: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %flag: !mgp.tensor<1xui8>) -> (!mef.chain, !mgp.tensor<2x2xf32>) {
+  %flag_buf = mgp.tensor.extract.buffer %flag : <1xui8>
+  %size = index.constant 32
+  %half = index.constant 16
+  %zero = index.constant 0
+  %shared = mgp.buffer.alloc %ch0, %size, %cpu, align 16 : !mgp.buffer, !mgp.device_context<<"cpu", 0>>
+  %out = mgp.buffer.alloc %ch0, %half, %cpu, align 16 : !mgp.buffer, !mgp.device_context<<"cpu", 0>>
+  %ch1 = mogg.routine.async (%ch0, %shared, %out) : (%c: !mef.chain, %a: !mgp.buffer, %o: !mgp.buffer) -> (!mef.chain) {
+    %ready = mogg.async.ready
+    mogg.output %ready : !mef.chain
+  } inOutSignature = <"iio"> {device = #M.device_ref<"cpu", 0>}
+  %view = mgp.buffer.slice %shared, %zero, %half, %cpu : !mgp.buffer, !mgp.device_context<<"cpu", 0>>
+  %ch3 = mogg.routine.async (%ch1, %flag_buf, %view) : (%c: !mef.chain, %a: !mgp.buffer, %o: !mgp.buffer) -> (!mef.chain) {
+    %ready = mogg.async.ready
+    mogg.output %ready : !mef.chain
+  } inOutSignature = <"iio"> {device = #M.device_ref<"cpu", 0>}
+  %spec = mgp.tensor_spec.create : !mgp.tensor_spec<2x2xf32>
+  %t = mgp.tensor.create %ch3, %out, %spec : !mgp.tensor<2x2xf32>
+  mef.output %ch3, %t : !mef.chain, !mgp.tensor<2x2xf32>
+}

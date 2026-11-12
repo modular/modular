@@ -108,6 +108,23 @@ MOGraphLoweringState::getShape(Location loc, Value loweredTensor,
                                                           loweredTensor);
 }
 
+Value MOGraphLoweringState::joinControlFlowChains(Location loc) {
+  if (execute.controlFlowChains.empty())
+    return execute.currentChain;
+  SmallVector<Value> chains;
+  // The root chain is ready before any other, so it adds no ordering.
+  if (execute.currentChain != execute.rootChain)
+    chains.push_back(execute.currentChain);
+  llvm::append_range(chains, execute.controlFlowChains);
+  execute.controlFlowChains.clear();
+  Value joined = chains.size() == 1
+                     ? chains.front()
+                     : GRT::ChainCreateOp::create(execute.builder, loc, chains)
+                           .getResult();
+  setCurrentExecuteChain(joined);
+  return joined;
+}
+
 MGP::TensorSpecGetDimOp MOGraphLoweringState::getDim(Location loc,
                                                      Value loweredTensor,
                                                      uint64_t axis,

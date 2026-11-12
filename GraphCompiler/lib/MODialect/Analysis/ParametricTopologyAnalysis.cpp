@@ -64,8 +64,14 @@ ParametricTopologyAnalysis::ParametricTopologyAnalysis(mlir::Operation *root) {
               nextUseDefGraph.decls.find(reference.getName());
           if (whereItIsDeclaredIt == nextUseDefGraph.decls.end())
             continue;
-          auto whereItIsDeclared = whereItIsDeclaredIt->second;
-          applyDependencyToParentOps(whereItIsDeclared.declOp, op, true);
+          // `decls` also holds default-constructed entries, with a null
+          // declOp, for parameters used here but declared above `root`:
+          // ParameterUseDefGraphNode::end() inserts them through
+          // `g->decls[param]`. Such a parameter has no provider here.
+          Operation *declOp = whereItIsDeclaredIt->second.declOp;
+          if (!declOp)
+            continue;
+          applyDependencyToParentOps(declOp, op, true);
         }
       }
 

@@ -151,6 +151,12 @@ public:
     /// Sequences side-effecting operations such as printing.
     TypedValue<MEF::ChainType> currentChain;
 
+    /// Out-chains of control flow ops not yet folded into currentChain. An op
+    /// after control flow waits on one only if it reads a result of the
+    /// control flow op, through the result's guard, or is itself ordered
+    /// against control flow: control flow, a call, or a block terminator.
+    SmallVector<Value> controlFlowChains;
+
     /// Passed in as the second argument.
     TypedValue<MGP::ContextType> mgpContext;
 
@@ -295,6 +301,16 @@ public:
   void setCurrentExecuteChain(Value chain) {
     execute.currentChain = cast<TypedValue<MEF::ChainType>>(chain);
   }
+
+  /// Records a control flow op's out-chain without ordering later ops after
+  /// it; see ExecuteState::controlFlowChains.
+  void addControlFlowChain(Value chain) {
+    execute.controlFlowChains.push_back(chain);
+  }
+
+  /// Folds the recorded control flow out-chains into the current chain, for
+  /// an op ordered against control flow, and returns the new current chain.
+  Value joinControlFlowChains(Location loc);
 
   /// The runtime value a mo.graph SSA value (often a `mo.tensor`) lowers to.
   Value lookupExecuteLoweredValue(Value key) {

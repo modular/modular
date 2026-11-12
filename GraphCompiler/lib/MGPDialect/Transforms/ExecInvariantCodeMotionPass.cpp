@@ -21,6 +21,7 @@
 #include "GraphCompiler/MGPDialect/Transforms/IndexSet.h"
 #include "GraphCompiler/MGPDialect/Transforms/Utils.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
+#include "MLRT/GraphRT/GRTDialect/GRTMayAliasInterface.h"
 #include "MLRT/GraphRT/GRTDialect/GRTOps.h"
 #include "MLRT/GraphRT/MEFDialect/MEFOps.h"
 #include "Support/AssertStream.h"
@@ -514,8 +515,29 @@ private:
       operationIndex->addToSet(unliftableOps, op);
     }
     // Only suppress upstream ops whose results this unliftable op *mutates*.
+    // A result that may alias an operand (a view, per GRTMayAliasInterface)
+    // passes a mutation through to that operand.
+    SmallVector<bool> resultMutated(op->getNumResults(), false);
+    auto mayAlias = dyn_cast<GRT::GRTMayAliasInterface>(op);
+    if (mayAlias && anyUsesMutatedByUnliftable) {
+      for (OpResult result : op->getResults()) {
+        Analysis::Set resultSet = domainMap.bottom;
+        for (OpOperand &use : result.getUses())
+          domainMap.leastUpperBound(resultSet,
+                                    analysis.getEntriesAndId(domainMap, &use));
+        resultMutated[result.getResultNumber()] = resultSet.test(0);
+      }
+    }
+    auto isMutatedThroughAlias = [&](OpOperand &opOperand) {
+      return mayAlias &&
+             llvm::any_of(llvm::seq(op->getNumResults()), [&](size_t r) {
+               return resultMutated[r] &&
+                      mayAlias.mayAlias(opOperand.getOperandNumber(), r);
+             });
+    };
     for (OpOperand &opOperand : op->getOpOperands()) {
-      if (isUnliftable && isMutated(opOperand))
+      if (isUnliftable &&
+          (isMutated(opOperand) || isMutatedThroughAlias(opOperand)))
         analysis.setTrue(domainMap, &opOperand);
       else
         analysis.setDefault(domainMap, &opOperand);
