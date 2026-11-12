@@ -482,3 +482,10 @@ This version is still a work in progress.
 - Building a `SIMD` value from a list literal with the wrong number of elements
   is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
   and kept only the first element.
+
+- Printing a `Float32` or `Float64` now produces the shortest decimal that
+  rounds back to the same value, with ties rounded to even. Previously about
+  one `Float32` in 200 printed a decimal that parsed back to a neighboring
+  value (for example, `33560532.0` printed as `33560530.0`), and values
+  exactly halfway between two shortest decimals, such as `3.37890625`, rounded
+  up instead of to even.

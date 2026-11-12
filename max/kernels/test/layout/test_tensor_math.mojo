@@ -153,7 +153,7 @@ def test_exp():
     # CHECK: 1.0 2.7182817 7.389056 20.085537
     # CHECK: 54.59815 148.41316 403.42877 1096.6332
     # CHECK: 2980.958 8103.0835 22026.465 59874.14
-    # CHECK: 162754.78 442413.37 1202604.2 3269017.2
+    # CHECK: 162754.78 442413.38 1202604.2 3269017.2
     var result = stack_allocation[tensor_4x4.dtype](tensor_4x4.layout)
     tensor_exp(result, tensor_4x4)
     print_matrix(result)

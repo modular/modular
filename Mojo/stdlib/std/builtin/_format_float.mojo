@@ -75,6 +75,11 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
     comptime cache_bits = 64 if Self.CarrierDType == .uint32 else 128
     comptime min_k = -31 if Self.CarrierDType == .uint32 else -292
     comptime max_k = 46 if Self.CarrierDType == .uint32 else 326
+    # The only binary exponent at which the shorter-interval round-up can tie;
+    # dragonbox's lower and upper tie thresholds coincide for both formats.
+    comptime shorter_interval_tie_exp = (
+        -35 if Self.CarrierDType == .uint32 else -77
+    )
     comptime divide_magic_number: Array[UInt32, 2] = [6554, 656]
     comptime n_max = (
         (
@@ -374,8 +379,13 @@ def _to_decimal[
                 FP[dtype].cache_bits,
             ](cache_index, beta)
 
-            # When tie occurs
-            if sig < xi:
+            # On a tie, round to the even significand.
+            if (
+                sig % 2 != 0
+                and binary_exp == FP[dtype].shorter_interval_tie_exp
+            ):
+                sig -= 1
+            elif sig < xi:
                 sig += 1
 
             # No trailing zeroes, so set exp and return
@@ -389,6 +399,10 @@ def _to_decimal[
     else:
         # For subnormal numbers
         binary_exp = FP[dtype].min_normal_exp - FP[dtype].sig_bits
+
+    # Round-to-nearest-even: the rounding interval includes its endpoints only
+    # when the significand is even.
+    var include_endpoints = (two_fc & 2) == 0
 
     ##########################################
     # Step 1: Schubfach multiplier calculation
@@ -415,14 +429,18 @@ def _to_decimal[
     )
 
     if r < deltai:
-        exp = minus_k + FP[dtype].kappa + 1
-        return _remove_trailing_zeros(sig, exp)
-    # compare fractional parts if r == deltai
-    if r == deltai:
-        var x_result = _compute_mul_parity(
-            (two_fc - 1).cast[.uint64](), cache_index, beta
-        )
-        if x_result.parity | x_result.is_integer:
+        # An odd significand excludes the right endpoint; if that endpoint is
+        # the candidate, fall back to the smaller divisor.
+        if r == 0 and z_result.is_integer and not include_endpoints:
+            sig -= 1
+            r = Scalar[CarrierDType](FP[dtype].big_divisor)
+        else:
+            exp = minus_k + FP[dtype].kappa + 1
+            return _remove_trailing_zeros(sig, exp)
+    elif r == deltai:
+        # Compare fractional parts; the left endpoint counts only if included.
+        var x_result = _compute_mul_parity(two_fc - 1, cache_index, beta)
+        if x_result.parity or (x_result.is_integer and include_endpoints):
             exp = minus_k + FP[dtype].kappa + 1
             return _remove_trailing_zeros(sig, exp)
     #######################################################
@@ -454,10 +472,12 @@ def _to_decimal[
         # Since there are only 2 possibilities, we only need to care about the
         # parity. Also, zi and r should have the same parity since the divisor
         # is an even number.
-        var y_result = _compute_mul_parity(
-            two_fc.cast[.uint64](), cache_index, beta
-        )
+        var y_result = _compute_mul_parity(two_fc, cache_index, beta)
         if y_result.parity != approx_y_parity:
+            sig -= 1
+        elif y_result.is_integer and sig % 2 != 0:
+            # y is an integer, so the value sits halfway between two
+            # candidates: round to the even one.
             sig -= 1
 
     # No trailing zeroes on this branch, so set exp as the final step
@@ -646,7 +666,7 @@ def _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
 def _compute_mul_parity[
     CarrierDType: DType
 ](two_f: Scalar[CarrierDType], cache_index: Int, beta: Int) -> _MulParity:
-    if CarrierDType == .uint64:
+    comptime if CarrierDType == .uint64:
         assert 1 <= beta < 64, "beta must be between 1 and 64"
         var r = _umul192_lower128(
             two_f.cast[.uint64](),
@@ -724,7 +744,7 @@ def _umul96_upper64[
 def _compute_mul[
     CarrierDType: DType
 ](u: Scalar[CarrierDType], cache_index: Int) -> _MulResult[CarrierDType]:
-    if CarrierDType == .uint64:
+    comptime if CarrierDType == .uint64:
         var r = _umul192_upper128(u, global_constant[cache_f64]()[cache_index])
         var r_high = _uint128_high(r)
         var r_low = _uint128_low(r)
@@ -740,7 +760,7 @@ def _compute_mul[
 def _compute_delta[
     CarrierDType: DType, total_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
-    if CarrierDType == .uint64:
+    comptime if CarrierDType == .uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         return (_uint128_high(cache) >> UInt64(total_bits - 1 - beta)).cast[
             CarrierDType
@@ -797,7 +817,7 @@ def _count_factors[
 def _compute_round_up_for_shorter_interval_case[
     CarrierDType: DType, total_bits: Int, sig_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
-    if CarrierDType == .uint64:
+    comptime if CarrierDType == .uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         return (
