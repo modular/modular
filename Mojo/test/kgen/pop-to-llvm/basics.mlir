@@ -358,13 +358,16 @@ kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: !kgen.scalar<index>) -> !k
 
 // CHECK-LABEL: @memcpy_scalar
 kgen.func @memcpy_scalar(%p: !kgen.pointer<scalar<f32>>, %q: !kgen.pointer<scalar<f32>>) {
-  // CHECK: [[LEN4:%.*]] = kgen.param.constant = <4>
-  // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN4]]
-  // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]]) <{isVolatile = false}>
-  %len = kgen.param.constant: index = <4>
-  pop.memcpy %p, %q, %len : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>>
-  // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]]) <{isVolatile = true}>
-  pop.memcpy volatile<1> %p, %q, %len : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>>
+  // CHECK: %[[LEN4:.*]] = kgen.param.constant: scalar<index> = <4>
+  // CHECK: %[[LEN:.*]] = builtin.unrealized_conversion_cast %[[LEN4]] : !kgen.scalar<index> to i64
+  // CHECK: "llvm.intr.memcpy"(%1, %0, %[[LEN]]) <{isVolatile = false}>
+  %memcpylen1 = kgen.param.constant: scalar<index> = <4>
+  pop.memcpy %p, %q, %memcpylen1 : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>>
+  // CHECK: %[[LEN2:.*]] = kgen.param.constant: scalar<index> = <4>
+  // CHECK: %[[LENB:.*]] = builtin.unrealized_conversion_cast %[[LEN2]] : !kgen.scalar<index> to i64
+  // CHECK: "llvm.intr.memcpy"(%1, %0, %[[LENB]]) <{isVolatile = true}>
+  %memcpylen2 = kgen.param.constant: scalar<index> = <4>
+  pop.memcpy volatile<1> %p, %q, %memcpylen2 : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>>
   hlcf.return
 }
 
@@ -374,7 +377,8 @@ kgen.func @memcpy_struct(%p: !kgen.pointer<!kgen.struct<(f32, f32, i8)>>, %q: !k
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN12]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
   %len = kgen.param.constant: index = <get_sizeof(struct<(f32, f32, i8)>, #target)>
-  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(f32, f32, i8)>> -> !kgen.pointer<!kgen.struct<(f32, f32, i8)>>
+  %memcpylen3 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy %p, %q, %memcpylen3 : !kgen.pointer<!kgen.struct<(f32, f32, i8)>> -> !kgen.pointer<!kgen.struct<(f32, f32, i8)>>
   hlcf.return
 }
 
@@ -384,7 +388,8 @@ kgen.func @memcpy_addrspace(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.poi
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN4]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]]) <{isVolatile = false}> : (!llvm.ptr<3>, !llvm.ptr, i64)
   %len = kgen.param.constant: index = <get_sizeof(scalar<f32>, #target)>
-  pop.memcpy volatile<0> %dst, %src, %len : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>, 3>
+  %memcpylen4 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy volatile<0> %dst, %src, %memcpylen4 : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>, 3>
   hlcf.return
 }
 
@@ -1010,7 +1015,8 @@ kgen.func @memcpy_struct_32(%p: !kgen.pointer<!kgen.struct<(index, index)>>, %q:
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN8]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
   %len = kgen.param.constant: index = <get_sizeof(struct<(index, index)>, #target)>
-  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
+  %memcpylen5 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy %p, %q, %memcpylen5 : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
   hlcf.return
 }
 
@@ -1028,7 +1034,8 @@ kgen.func @memcpy_struct_64(%p: !kgen.pointer<!kgen.struct<(index, index)>>, %q:
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN16]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
   %len = kgen.param.constant: index = <get_sizeof(struct<(index, index)>, #target)>
-  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
+  %memcpylen6 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy %p, %q, %memcpylen6 : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
   hlcf.return
 }
 

@@ -275,11 +275,11 @@ lit.fn @does_memcpy<l: !lit.origin<true>, l2: !lit.origin<true>>
   // This rebind should be removed entirely by lower types.
   %rb = kgen.rebind %0 : !lit.ref<si32, mut l->x> to !lit.ref<si32, mut l2>
 
-  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(si32, current_target())>
+  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant: scalar<index> = <from_builtin(get_sizeof(si32, current_target()))>
   // CHECK-NEXT: pop.memcpy %0, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32>
   lit.memcpy %1, %rb : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l2>
 
-  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(si32, current_target())>
+  // CHECK-NEXT: [[LEN:%.*]] = kgen.param.constant: scalar<index> = <from_builtin(get_sizeof(si32, current_target()))>
   // CHECK-NEXT: pop.memcpy %2, %1, [[LEN]] : !kgen.pointer<si32> -> !kgen.pointer<si32, 3>
   lit.memcpy %1, %2 : !lit.ref<si32, mut l->x> -> !lit.ref<si32, mut l->x, 3>
 

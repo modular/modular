@@ -1142,7 +1142,7 @@ def POP_MemcpyOp : POPOp<"memcpy", [
 
   let arguments = (ins Arg<PointerType, "", [MemWrite]>:$dst,
                        Arg<PointerType, "", [MemRead]>:$src,
-                       Index:$len,
+                       IndexScalar:$len,
                        AttrOfType<I1>:$isVolatile);
   let assemblyFormat = [{
     custom<I1Flag>($isVolatile, "\"volatile\"")

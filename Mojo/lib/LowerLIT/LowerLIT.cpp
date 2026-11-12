@@ -2165,9 +2165,10 @@ static Value lowerOp(MemcpyOp op, MemcpyOpAdaptor adaptor, LITTypeLowerer &b) {
   auto elementTypeAttr =
       TypeParamAttr::get(cast<PointerType>(dst.getType()).getElementType(),
                          TypeType::get(dst.getContext()));
-  Value sizeOfElt = ParamConstantOp::create(
-      b, op.getLoc(),
-      ParamOperatorAttr::get(POC::GetSizeOf, {elementTypeAttr, target}));
+  Value sizeOfElt =
+      ParamConstantOp::create(b, op.getLoc(),
+                              CastFromBuiltinAttr::get(ParamOperatorAttr::get(
+                                  POC::GetSizeOf, {elementTypeAttr, target})));
   // Note - swap the source and destination operands around.
   b.replaceOpWithNewOp<POP::MemcpyOp>(op, dst, adaptor.getSrc(), sizeOfElt);
   return {};

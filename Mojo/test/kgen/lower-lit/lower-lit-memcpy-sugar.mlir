@@ -16,7 +16,7 @@ lit.struct.decl @Wrapper<T: type> {
 // CHECK-LABEL: kgen.generator @memcpy_canonically_equal
 lit.fn @memcpy_canonically_equal<l: !lit.origin<true>, l2: !lit.origin<true>>
     (%src: !lit.ref<!Sugared, mut l>, %dst: !lit.ref<!Canonical, mut l2>) {
-  // CHECK: [[LEN:%.*]] = kgen.param.constant = <get_sizeof(
+  // CHECK: [[LEN:%.*]] = kgen.param.constant: scalar<index> = <from_builtin(get_sizeof(
   // CHECK-NEXT: pop.memcpy %arg1, %arg0, [[LEN]]
   lit.memcpy %src, %dst : !lit.ref<!Sugared, mut l> -> !lit.ref<!Canonical, mut l2>
   hlcf.return

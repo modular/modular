@@ -46,7 +46,8 @@ kgen.func @memcpy(%p: !kgen.pointer<scalar<f32>>, %q: !kgen.pointer<scalar<f32>,
   // CHECK-NEXT: [[IDX:%.*]] = builtin.unrealized_conversion_cast [[IDX4]] : index to i64
   // CHECK-NEXT: "llvm.intr.memcpy"([[DST]], [[SRC]], [[IDX]])
   %len = kgen.param.constant: index = <get_sizeof(scalar<f32>, #target)>
-  pop.memcpy %p, %q, %len : !kgen.pointer<scalar<f32>, 1> -> !kgen.pointer<scalar<f32>>
+  %memcpylen1 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy %p, %q, %memcpylen1 : !kgen.pointer<scalar<f32>, 1> -> !kgen.pointer<scalar<f32>>
   hlcf.return
 }
 

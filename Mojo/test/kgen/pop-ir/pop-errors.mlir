@@ -339,9 +339,9 @@ kgen.func @invalid_simd_reduce_and(%arg0: i32) {
 // -----
 
 kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.pointer<scalar<i32>>) {
-  %0 = kgen.param.constant: index = <4>
+  %memcpylen1 = kgen.param.constant: scalar<index> = <4>
   // expected-error @below {{'pop.memcpy' op source and destination must have same element type, got '!kgen.scalar<i32>' and '!kgen.scalar<f32>'}}
-  pop.memcpy %dst, %src, %0 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
+  pop.memcpy %dst, %src, %memcpylen1 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
   hlcf.return
 }
 

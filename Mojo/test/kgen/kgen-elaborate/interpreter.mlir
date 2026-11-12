@@ -925,10 +925,9 @@ kgen.generator @callIt()->!kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
 // COM: invalidate the blob reference held across the write (MOCO-4493).
 
 kgen.generator @global_const_with_string() -> index {
-  %idx1 = index.constant 1
   %0 = pop.global_constant: struct<(string)> = <{"a string nobody mapped yet"}>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(string)>> to !kgen.pointer<index>
-  %offidx6 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %offidx6 = kgen.param.constant: scalar<index> = <1>
   %2 = pop.offset %1[%offidx6] : !kgen.pointer<index>
   %3 = pop.load %2 : !kgen.pointer<index>
   hlcf.return %3 : index
@@ -970,7 +969,8 @@ kgen.generator @memcpy_1(%arg0: index) -> index {
   pop.store %idx3, %p4 : !kgen.pointer<index>
 
   %len = kgen.param.constant: index = <get_sizeof(struct<(index, index, index, index)>, current_target())>
-  pop.memcpy %q, %p, %len: !kgen.pointer<index> -> !kgen.pointer<index>
+  %memcpylen1 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
+  pop.memcpy %q, %p, %memcpylen1 : !kgen.pointer<index> -> !kgen.pointer<index>
 
   %offidx10 = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
   %ptr = pop.offset %q[%offidx10] : !kgen.pointer<index>
