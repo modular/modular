@@ -2619,8 +2619,6 @@ static MojoValue instantiateTileFusionStruct(EmitMojoState &state,
 /// `_FusedOutputTileTensor`) onto a slice over `$outputPtr`. A pass-through
 /// body binds the "no fusion" sentinel, so the kernel stores by itself.
 LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
-  // Shared with the SIMD store fusions.
-  state.emitOutputStoreFusionDefsOnce();
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
   if (dtypeOr.isError())
     return emitOpError("failed to convert epilogue element type to Mojo");
