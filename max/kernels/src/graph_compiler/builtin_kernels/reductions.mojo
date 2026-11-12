@@ -722,7 +722,7 @@ struct LayerNorm:
         # gamma / beta are passed as tile tensors (the Row body loads them
         # via a strided load); gamma's producer fusion, if any, is not used.
         # Pass the static row width when known so the Row register-caches the
-        # input strip (`_fuse`), avoiding a second global read of the input in
+        # input strip (`keep_tile`), avoiding a second global read of the input in
         # the map phase; a dynamic width falls back to streaming inside the
         # kernel.
         comptime ln_cols = type_of(input)._shape_types[rank - 1].static_value

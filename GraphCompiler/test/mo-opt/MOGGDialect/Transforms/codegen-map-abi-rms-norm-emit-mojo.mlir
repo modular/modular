@@ -5,7 +5,7 @@
 // bf16 row, a sum of squares in f32, the inverse rms once per row, and a map
 // phase that scales by gamma and casts back, with the same launch parameters.
 // CHECK-LABEL: def __static_broadcast_to_cast_add_{{[0-9a-f]+}}(
-// CHECK:       var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.bfloat16, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[4096], row_ctx, [[LOAD:load_+[0-9]+]])
+// CHECK:       var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.bfloat16, 1, {{.*}}, keep_tile = True](row_coords, layout.Idx[4096], row_ctx, [[LOAD:load_+[0-9]+]])
 // CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.bfloat16, w], {{.*}}) {var} -> SIMD[DType.float32, w]:
 // CHECK-NEXT:    var [[A:.*]] = builtin_kernels.elementwise.Cast.elementwise[out_dtype = DType.float32](tile)

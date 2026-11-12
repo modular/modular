@@ -16,7 +16,7 @@
 // CHECK-NEXT:    def [[LOAD:load_+[0-9]+]][width : Int, alignment : Int](idx: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var} -> SIMD[DType.float32, width]:
 // CHECK-NEXT:      var [[X:.*]] = managed_tensor_slice.simd_load_from_tensor_pointer[static_spec = [[SPEC_X]], simd_width = width, element_alignment = alignment]({{.*}}idx{{.*}})
 // CHECK-NEXT:      return [[X]]
-// CHECK:         var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, [[RANK]], is_cached = False](row_coords, layout.Idx[128], row_ctx, [[LOAD]])
+// CHECK:         var [[ROW:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, [[RANK]], keep_tile = False](row_coords, layout.Idx[128], row_ctx, [[LOAD]])
 // CHECK-NEXT:    @inline(.always)
 // CHECK-NEXT:    def [[ADD:contribute_+[0-9]+]][w : Int](tile: SIMD[DType.float32, w], idx: std.utils.coord.DynamicCoord[DType.int, [[RANK]]]) {var} -> SIMD[DType.float32, w]:
 // CHECK-NEXT:      return tile

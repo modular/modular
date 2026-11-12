@@ -896,16 +896,16 @@ void IterReduceOp::getAsmResultNames(
 }
 
 //===----------------------------------------------------------------------===//
-// map.iter.cache
+// map.iter.tile
 //===----------------------------------------------------------------------===//
 
-ParseResult IterCacheOp::parse(OpAsmParser &parser, OperationState &state) {
+ParseResult IterTileOp::parse(OpAsmParser &parser, OperationState &state) {
   SmallVector<OpAsmParser::Argument> indexArgInfo;
   if (parser.parseKeyword("index") || parseBlockArgList(parser, indexArgInfo))
     return mlir::failure();
   if (indexArgInfo.size() != 1)
     return parser.emitError(parser.getCurrentLocation(),
-                            "'map.iter.cache' expects exactly one index "
+                            "'map.iter.tile' expects exactly one index "
                             "argument");
   if (parser.parseArrowTypeList(state.types) ||
       parser.parseRegion(*state.addRegion(), indexArgInfo))
@@ -913,7 +913,7 @@ ParseResult IterCacheOp::parse(OpAsmParser &parser, OperationState &state) {
   return parser.parseOptionalAttrDict(state.attributes);
 }
 
-void IterCacheOp::print(OpAsmPrinter &p) {
+void IterTileOp::print(OpAsmPrinter &p) {
   p << " index ";
   printBlockArgList(p, getBody().front().getArguments());
   p.printArrowTypeList(getOperation()->getResultTypes());

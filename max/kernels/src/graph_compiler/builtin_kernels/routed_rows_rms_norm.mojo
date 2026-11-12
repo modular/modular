@@ -150,7 +150,7 @@ struct RoutedRowsRMSNorm:
                 )
 
             var row = rowwise.Row[
-                params, accum, dtype, 1, row_rank, is_cached=True
+                params, accum, dtype, 1, row_rank, keep_tile=True
             ](row_coords, ComptimeInt[cols](), ctx_p, load)
 
             @inline(.always)

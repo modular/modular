@@ -974,7 +974,7 @@ void RowwiseReduceOp::getAsmBlockArgumentNames(Region &region,
   nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);
 }
 
-ParseResult RowwiseCacheOp::parse(OpAsmParser &parser, OperationState &result) {
+ParseResult RowwiseTileOp::parse(OpAsmParser &parser, OperationState &result) {
   SmallVector<OpAsmParser::Argument> entryArgs;
   if (parseLeadingArgs(parser, entryArgs) ||
       parser.parseArrowTypeList(result.types) ||
@@ -983,7 +983,7 @@ ParseResult RowwiseCacheOp::parse(OpAsmParser &parser, OperationState &result) {
   return parser.parseOptionalAttrDict(result.attributes);
 }
 
-void RowwiseCacheOp::print(OpAsmPrinter &p) {
+void RowwiseTileOp::print(OpAsmPrinter &p) {
   p << " ";
   printLeadingArgs(p, getBody().front().getArguments());
   p.printArrowTypeList(getOperation()->getResultTypes());
@@ -992,8 +992,8 @@ void RowwiseCacheOp::print(OpAsmPrinter &p) {
   p.printOptionalAttrDict((*this)->getAttrs());
 }
 
-void RowwiseCacheOp::getAsmBlockArgumentNames(Region &region,
-                                              OpAsmSetValueNameFn setNameFn) {
+void RowwiseTileOp::getAsmBlockArgumentNames(Region &region,
+                                             OpAsmSetValueNameFn setNameFn) {
   if (region.empty())
     return;
   nameLeadingArgs(region.front().getArguments(), {"i"}, setNameFn);

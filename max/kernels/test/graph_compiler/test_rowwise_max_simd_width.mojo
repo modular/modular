@@ -74,7 +74,7 @@ def widest_load[
             return SIMD[DType.float32, width](1)
 
         var row = rowwise.Row[
-            params, DType.float32, DType.float32, 1, rank, is_cached=False
+            params, DType.float32, DType.float32, 1, rank, keep_tile=False
         ](row_coords, cols, ctx, load)
 
         @inline(.always)

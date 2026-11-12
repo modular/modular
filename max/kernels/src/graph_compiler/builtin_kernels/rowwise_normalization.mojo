@@ -132,7 +132,7 @@ def rms_norm_residual_add[
             ](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         @inline(.always)
@@ -302,7 +302,7 @@ def rms_norm_rope[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, input_dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, input_dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # Reduce: sum of squares -> inv_rms.
@@ -503,7 +503,7 @@ def layer_norm[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # Reduce: mean and variance in one Welford pass.
@@ -661,7 +661,7 @@ def layer_norm_rope_ragged[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, input_dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, input_dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         @inline(.always)
@@ -877,7 +877,7 @@ def row_mean_of_squares[
         # Prepare Row: this is a true reduction (no fuse-eligible cache), so
         # the axis size is always the dynamic form.
         var row = rowwise.Row[
-            params, accum, in_dtype, reduce_dim, row_rank, is_cached=False
+            params, accum, in_dtype, reduce_dim, row_rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx_p, load)
 
         # Reduce: sum of squares -> mean of squares.
@@ -1078,7 +1078,7 @@ def rms_norm_fused_residual_add[
             return input_0_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # gamma inner (lane) stride: 1 when the reduced axis is inner
@@ -1302,7 +1302,7 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, in_dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, in_dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # gamma indexed by the reduced axis: inner stride 1 when that axis is
@@ -1590,7 +1590,7 @@ def layer_norm_quantize_dynamic_scaled_fp8[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # The row is staged in shared memory as the reduce walks it, so the
@@ -1927,7 +1927,7 @@ def rms_norm_quantize_dynamic_scaled_fp8_dual[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+            params, accum, dtype, reduce_dim, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         # The row is staged in shared memory as the reduce walks it (see the

@@ -72,7 +72,7 @@ def softmax[
             return input_fn[width, alignment](idx)
 
         var row = rowwise.Row[
-            params, accum, dtype, 1, row_rank, is_cached=True
+            params, accum, dtype, 1, row_rank, keep_tile=True
         ](row_coords, axis_size, ctx_p, load)
 
         @inline(.always)

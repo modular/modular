@@ -116,9 +116,9 @@ bool GraphBlobOp::isThrows() { return true; }
 
 bool CallRowwiseOp::isThrows() { return true; }
 
-RowwiseCacheOp CallRowwiseOp::getCache() {
-  auto loads = getBody().front().getOps<RowwiseCacheOp>();
-  return loads.empty() ? RowwiseCacheOp() : *loads.begin();
+RowwiseTileOp CallRowwiseOp::getTile() {
+  auto loads = getBody().front().getOps<RowwiseTileOp>();
+  return loads.empty() ? RowwiseTileOp() : *loads.begin();
 }
 
 bool CallForeachTileOp::isThrows() { return true; }

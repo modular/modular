@@ -333,7 +333,7 @@ LogicalResult RowwiseReduceOp::verify() {
   return success();
 }
 
-LogicalResult RowwiseCacheOp::verify() {
+LogicalResult RowwiseTileOp::verify() {
   Block &body = getBody().front();
   if (body.getNumArguments() != 1)
     return emitOpError("body takes exactly one argument, the index");

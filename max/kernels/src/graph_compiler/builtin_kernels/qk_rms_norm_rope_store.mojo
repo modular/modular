@@ -364,7 +364,7 @@ def _rowwise_prologue[
             )
 
         var row = rowwise.Row[
-            params, accum, dtype, 2, row_rank, is_cached=True
+            params, accum, dtype, 2, row_rank, keep_tile=True
         ](row_coords, ComptimeInt[head_dim](), ctx_p, load)
 
         @inline(.always)

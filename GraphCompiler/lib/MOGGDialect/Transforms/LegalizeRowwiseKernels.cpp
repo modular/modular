@@ -15,12 +15,12 @@
 // step is its own pass so it can be tested alone;
 // `mogg-legalize-rowwise-kernels` runs them in order:
 //
-// 1. `mogg-rowwise-create-cache`: a body without a cache (one that skipped
-//    `map-rcse`) caches the input its first fold reads:
+// 1. `mogg-rowwise-create-tile`: a body without a tile (one that skipped
+//    `map-rcse`) gets one that loads the input its first fold reads:
 //
-//      reduce (%i) {                  %c = cache (%k) { yield %x[%k] }
+//      reduce (%i) {                  %t = tile (%k) { yield %x[%k] }
 //        %v = load %x[%i]       =>    reduce (%i) {
-//        ...                            %v = cache.load
+//        ...                            %v = tile.load
 //                                       ...
 //
 // 2. `mogg-rowwise-bind-monoids`: each fold names its monoid's fields and
@@ -68,7 +68,7 @@ using namespace mlir;
 namespace M::MOGG {
 
 #define GEN_PASS_DEF_LEGALIZEROWWISEKERNELS
-#define GEN_PASS_DEF_ROWWISECREATECACHE
+#define GEN_PASS_DEF_ROWWISECREATETILE
 #define GEN_PASS_DEF_ROWWISEBINDMONOIDS
 #define GEN_PASS_DEF_ROWWISEGROUPROWSTORES
 #define GEN_PASS_DEF_ROWWISESETLAUNCHPARAMS
@@ -105,10 +105,10 @@ SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
   return loads;
 }
 
-// Without a `mogg.rowwise.cache` from MAP, the row caches the input its first
-// fold reads at the element index, and each phase's load of it there becomes
-// `mogg.rowwise.cache.load`.
-LogicalResult createPlainCache(CallRowwiseOp op) {
+// Without a `mogg.rowwise.tile` from MAP, the row's tile loads the input its
+// first fold reads at the element index, and each phase's load of it there
+// becomes `mogg.rowwise.tile.load`.
+LogicalResult createPlainTile(CallRowwiseOp op) {
   if (folds(op).empty())
     return op.emitOpError("has no fold");
   RowwiseReduceOp first = *folds(op).begin();
@@ -127,8 +127,8 @@ LogicalResult createPlainCache(CallRowwiseOp op) {
   Value tensor = firstLoad.getTensor();
   auto type = cast<SimdType>(firstLoad.getType());
   OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
-  auto cache = RowwiseCacheOp::create(builder, op.getLoc(), type);
-  Block *block = builder.createBlock(&cache.getBody());
+  auto tile = RowwiseTileOp::create(builder, op.getLoc(), type);
+  Block *block = builder.createBlock(&tile.getBody());
   BlockArgument index =
       block->addArgument(first.getIndexArg().getType(), op.getLoc());
   YieldOp::create(
@@ -140,22 +140,22 @@ LogicalResult createPlainCache(CallRowwiseOp op) {
     for (TensorLoadOp load : elementLoads(phase, tensor)) {
       OpBuilder phaseBuilder(load);
       load.replaceAllUsesWith(
-          RowwiseCacheLoadOp::create(phaseBuilder, load.getLoc(), type)
+          RowwiseTileLoadOp::create(phaseBuilder, load.getLoc(), type)
               .getResult());
       load.erase();
     }
   return success();
 }
 
-LogicalResult createCache(CallRowwiseOp op) {
-  if (!op.getCache() && failed(createPlainCache(op)))
+LogicalResult createTile(CallRowwiseOp op) {
+  if (!op.getTile() && failed(createPlainTile(op)))
     return failure();
   unsigned readers = llvm::count_if(phases(op), [](RowwisePhaseOpInterface p) {
     return p->getRegion(0)
-        .walk([](RowwiseCacheLoadOp) { return WalkResult::interrupt(); })
+        .walk([](RowwiseTileLoadOp) { return WalkResult::interrupt(); })
         .wasInterrupted();
   });
-  op.setIsCached(readers > 1);
+  op.setKeepTile(readers > 1);
   return success();
 }
 
@@ -295,14 +295,14 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
     if (stateBits(fold) > stateBits(widest))
       widest = fold;
 
-  // Per-element work only: the cache and the folds. Row-level ops run
+  // Per-element work only: the tile and the folds. Row-level ops run
   // once per row.
   unsigned elementCost = 0;
   auto addCost = [&](Region &region) {
     region.walk([&](CallElementwiseOp call) { elementCost += cost(call); });
   };
-  if (RowwiseCacheOp cache = op.getCache())
-    addCost(cache.getBody());
+  if (RowwiseTileOp tile = op.getTile())
+    addCost(tile.getBody());
   for (RowwiseReduceOp fold : rowFolds)
     addCost(fold.getBody());
 
@@ -324,9 +324,9 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
   op.setNumPhases(writesEveryElement ? rowFolds.size() + 1 : 1);
   op.setDtypeSize(0);
   if (writesEveryElement && oneFieldFolds) {
-    ASSERT_STREAM(op.getCache(), << "the cache is created first");
+    ASSERT_STREAM(op.getTile(), << "the tile is created first");
     op.setDtypeSize(
-        (op.getCache().getType().getElementType().getIntOrFloatBitWidth() + 7) /
+        (op.getTile().getType().getElementType().getIntOrFloatBitWidth() + 7) /
         8);
   }
   op.setComputationallyExpensive(writesEveryElement ||
@@ -352,10 +352,10 @@ LogicalResult forEachRowwise(ModuleOp module,
   return success(ok);
 }
 
-struct RowwiseCreateCachePass
-    : public impl::RowwiseCreateCacheBase<RowwiseCreateCachePass> {
+struct RowwiseCreateTilePass
+    : public impl::RowwiseCreateTileBase<RowwiseCreateTilePass> {
   void runOnOperation() override {
-    if (failed(forEachRowwise(getOperation(), createCache)))
+    if (failed(forEachRowwise(getOperation(), createTile)))
       signalPassFailure();
   }
 };
@@ -395,7 +395,7 @@ struct LegalizeRowwiseKernelsPass
 
   void runOnOperation() override {
     OpPassManager pm(ModuleOp::getOperationName());
-    pm.addPass(createRowwiseCreateCache());
+    pm.addPass(createRowwiseCreateTile());
     pm.addPass(createRowwiseBindMonoids());
     pm.addPass(createRowwiseGroupRowStores());
     pm.addPass(createRowwiseSetLaunchParams(

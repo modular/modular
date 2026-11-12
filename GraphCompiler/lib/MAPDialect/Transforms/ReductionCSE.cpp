@@ -13,19 +13,19 @@
 //
 // Common subexpression elimination across the phases of a rowwise kernel. A
 // value every phase computes from the reduced input is computed once per
-// element in a `map.iter.cache`, which the Row caches, and each phase reads it
+// element in a `map.iter.tile`, the tile the Row loads, and each phase reads it
 // back instead of computing it again:
 //
-//   map.iter.reduce index (%i) {          %c = map.iter.cache index (%k) {
+//   map.iter.reduce index (%i) {          %c = map.iter.tile index (%k) {
 //     %v = mul(%x[%i], %s[%i])              %v = mul(%x[%k], %s[%k])
 //     ...                           =>      map.yield %v
 //   }                                     }
 //   map.iter.map index (%j) {             map.iter.reduce index (%i) {
-//     %v = mul(%x[%j], %s[%j])              %v = map.iter.cache.load %c[%i]
+//     %v = mul(%x[%j], %s[%j])              %v = map.iter.tile.load %c[%i]
 //     ...                                   ...
 //   }                                     }
 //                                         map.iter.map index (%j) {
-//                                           %v = map.iter.cache.load %c[%j]
+//                                           %v = map.iter.tile.load %c[%j]
 //                                           ...
 //
 //===----------------------------------------------------------------------===//
@@ -122,7 +122,7 @@ bool isElementLoad(Operation *op, Value tensor, Value index) {
   return load && load.getTensor() == tensor && load.getIndex() == index;
 }
 
-// Whether `phase`, once it reads `copies` from the cache, no longer loads
+// Whether `phase`, once it reads `copies` from the tile, no longer loads
 // `tensor` at its index.
 bool readsOnlyThrough(RowwisePhaseOpInterface phase, Value tensor,
                       ArrayRef<Value> copies) {
@@ -145,23 +145,23 @@ bool readsOnlyThrough(RowwisePhaseOpInterface phase, Value tensor,
   return true;
 }
 
-struct CachedValue {
+struct TileValue {
   // An element expression of the first fold.
   Value value;
   // Its copies in every phase, `value` included.
   SmallVector<Value> copies;
 };
 
-// The value the row caches. Of the first fold's element expressions over
+// The row's tile. Of the first fold's element expressions over
 // `tensor` that every phase computes wherever it reads `tensor`, take the one
-// with the narrowest type, then the most ops: a wider one would grow the
-// cached row, a smaller one would recompute work in every phase. The load
-// itself always qualifies.
-std::optional<CachedValue>
-chooseCachedValue(ArrayRef<RowwisePhaseOpInterface> phases, Value tensor) {
+// with the narrowest type, then the most ops: a wider one would widen the
+// tile, a smaller one would recompute work in every phase. The load itself
+// always qualifies.
+std::optional<TileValue> chooseTile(ArrayRef<RowwisePhaseOpInterface> phases,
+                                    Value tensor) {
   RowwisePhaseOpInterface first = phases.front();
   ElementExprs exprs;
-  std::optional<CachedValue> best;
+  std::optional<TileValue> best;
   unsigned bestBits = 0, bestSize = 0;
   for (Operation &op : first->getRegion(0).front().without_terminator()) {
     for (Value value : op.getResults()) {
@@ -173,7 +173,7 @@ chooseCachedValue(ArrayRef<RowwisePhaseOpInterface> phases, Value tensor) {
             return isElementLoad(o, tensor, first.getIndexArg());
           }))
         continue;
-      CachedValue candidate{value, {}};
+      TileValue candidate{value, {}};
       bool everywhere = llvm::all_of(phases, [&](RowwisePhaseOpInterface p) {
         size_t begin = candidate.copies.size();
         p->walk([&](Operation *o) {
@@ -198,23 +198,23 @@ chooseCachedValue(ArrayRef<RowwisePhaseOpInterface> phases, Value tensor) {
   return best;
 }
 
-// Computes `cached`'s value in a `map.iter.cache` at the start of `row`, and
+// Computes `tile.value` in a `map.iter.tile` at the start of `row`, and
 // makes each copy read it.
-void createCache(RowwiseOpInterface row, RowwisePhaseOpInterface first,
-                 const CachedValue &cached) {
+void createTile(RowwiseOpInterface row, RowwisePhaseOpInterface first,
+                const TileValue &tile) {
   Location loc = row->getLoc();
-  Type type = cached.value.getType();
+  Type type = tile.value.getType();
   OpBuilder builder = OpBuilder::atBlockBegin(&row->getRegion(0).front());
-  auto cache = IterCacheOp::create(builder, loc, type);
-  Block *block = builder.createBlock(&cache.getBody(), {},
+  auto tileOp = IterTileOp::create(builder, loc, type);
+  Block *block = builder.createBlock(&tileOp.getBody(), {},
                                      {first.getIndexArg().getType()}, {loc});
   IRMapping mapping;
   mapping.map(first.getIndexArg(), block->getArgument(0));
-  SmallVector<Operation *> ops = exprOps(cached.value, first).takeVector();
+  SmallVector<Operation *> ops = exprOps(tile.value, first).takeVector();
   llvm::sort(ops,
              [](Operation *a, Operation *b) { return a->isBeforeInBlock(b); });
   for (Operation *op : ops) {
-    // A constant the phase reads from the row comes after the cache.
+    // A constant the phase reads from the row comes after the tile.
     for (Value operand : op->getOperands())
       if (auto constant = operand.getDefiningOp<ConstantScalarOp>();
           constant && !mapping.contains(operand) &&
@@ -222,14 +222,14 @@ void createCache(RowwiseOpInterface row, RowwisePhaseOpInterface first,
         builder.clone(*constant, mapping);
     builder.clone(*op, mapping);
   }
-  YieldOp::create(builder, loc, mapping.lookup(cached.value));
+  YieldOp::create(builder, loc, mapping.lookup(tile.value));
 
-  for (Value copy : cached.copies) {
+  for (Value copy : tile.copies) {
     Operation *def = copy.getDefiningOp();
     builder.setInsertionPoint(def);
     copy.replaceAllUsesWith(
-        IterCacheLoadOp::create(
-            builder, copy.getLoc(), type, cache.getResult(),
+        IterTileLoadOp::create(
+            builder, copy.getLoc(), type, tileOp.getResult(),
             def->getParentOfType<RowwisePhaseOpInterface>().getIndexArg())
             .getResult());
   }
@@ -242,9 +242,9 @@ void eraseDeadOps(RowwisePhaseOpInterface phase) {
       op.erase();
 }
 
-void cacheRow(RowwiseOpInterface row) {
+void createRowTile(RowwiseOpInterface row) {
   Block &body = row->getRegion(0).front();
-  if (!body.getOps<IterCacheOp>().empty())
+  if (!body.getOps<IterTileOp>().empty())
     return;
   auto phases = llvm::to_vector(body.getOps<RowwisePhaseOpInterface>());
   if (phases.empty() || !isa<IterReduceOp>(phases.front()))
@@ -262,9 +262,9 @@ void cacheRow(RowwiseOpInterface row) {
   if (!tensor)
     return;
 
-  std::optional<CachedValue> cached = chooseCachedValue(phases, tensor);
-  ASSERT_STREAM(cached, << "the load of the reduced input always qualifies");
-  createCache(row, first, *cached);
+  std::optional<TileValue> tile = chooseTile(phases, tensor);
+  ASSERT_STREAM(tile, << "the load of the reduced input always qualifies");
+  createTile(row, first, *tile);
   for (RowwisePhaseOpInterface phase : phases)
     eraseDeadOps(phase);
 }
@@ -273,7 +273,7 @@ struct ReductionCSEPass : public impl::ReductionCSEBase<ReductionCSEPass> {
   using Base::Base;
 
   void runOnOperation() override {
-    getOperation().walk([](RowwiseOpInterface row) { cacheRow(row); });
+    getOperation().walk([](RowwiseOpInterface row) { createRowTile(row); });
   }
 };
 

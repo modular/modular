@@ -108,7 +108,7 @@ def reduce_product[
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: product via the ReduceProduct monoid.
@@ -200,7 +200,7 @@ def reduce_argmin[
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmin via the ArgMin monoid (lower index wins ties).
@@ -285,7 +285,7 @@ def reduce_argmax[
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmax via the ArgMax monoid (lower index wins ties).
@@ -382,7 +382,7 @@ def reduce_min_and_max[
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
-            params, dtype, dtype, reduce_dim, rank, is_cached=False
+            params, dtype, dtype, reduce_dim, rank, keep_tile=False
         ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min and max in one pass via the MinMax monoid.

@@ -412,7 +412,7 @@ IterReduceOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return mlir::success();
 }
 
-LogicalResult IterCacheOp::verify() {
+LogicalResult IterTileOp::verify() {
   Block &body = getBody().front();
   if (body.getNumArguments() != 1 ||
       !llvm::isa<MAP::IndexType>(body.getArgument(0).getType()))
@@ -433,12 +433,12 @@ LogicalResult IterCacheOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// map.iter.cache.load
+// map.iter.tile.load
 //===----------------------------------------------------------------------===//
 
-LogicalResult IterCacheLoadOp::verify() {
-  if (!getCache().getDefiningOp<IterCacheOp>())
-    return emitOpError() << "reads a value that isn't a map.iter.cache";
+LogicalResult IterTileLoadOp::verify() {
+  if (!getTile().getDefiningOp<IterTileOp>())
+    return emitOpError() << "reads a value that isn't a map.iter.tile";
   if (getIndex() != cast<RowwisePhaseOpInterface>(getOperation()->getParentOp())
                         .getIndexArg())
     return emitOpError() << "must read at its phase's index";

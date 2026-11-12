@@ -152,8 +152,8 @@ def _probe_layer_norm[
         # byte-identical results.
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
         # Static cols (`ComptimeInt`) matches the graph op's static-shape
-        # branch, which is what models hit: it enables the Row register
-        # cache (`is_cached` fuse path).
+        # branch, which is what models hit: it lets the Row keep its tile
+        # in registers (`keep_tile`).
         layer_norm[dtype, 2](
             input_fn,
             output_fn,

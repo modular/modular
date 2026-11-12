@@ -779,12 +779,13 @@ def launch[
 #    per-row shmem strip so any column is readable via `load` from a *different*
 #    participant — cross-participant reuse (e.g. rope's rotate-half partner).
 #
-# Off a cache-eligible tier (`fuse=False`: CPU, dynamic/odd cols, oversized
-# rows) both backings are empty and every access falls back to `recompute`
-# (re-run `compute` on a freshly loaded input tile) — always correct, no traffic
-# saved. `compute` may side-effect (e.g. emit a secondary output); on the
-# fallback path it can run more than once per element, so its stores must be
-# idempotent (the fused body re-emits the same residual value each time).
+# When the tile isn't kept in registers (`in_registers=False`: CPU,
+# dynamic/odd cols, oversized rows) both backings are empty and every access
+# falls back to `recompute` (re-run `compute` on a freshly loaded input
+# tile) — always correct, no traffic saved. `compute` may side-effect (e.g.
+# emit a secondary output); on the fallback path it can run more than once
+# per element, so its stores must be idempotent (the fused body re-emits the
+# same residual value each time).
 # ===-----------------------------------------------------------------------===#
 
 
@@ -805,7 +806,7 @@ struct RowCache[
     NCH: Int,
     W: Int,
     cols: Int,
-    fuse: Bool,
+    in_registers: Bool,
     shared: Bool,
 ](ImplicitlyCopyable, Movable):
     """A row value cached once by `Row.cache` and read
@@ -831,17 +832,18 @@ struct RowCache[
         NCH: Per-participant chunk count (mirrors `Row._NCH`).
         W: SIMD width (mirrors `Row._W`).
         cols: Reduced-axis length (mirrors `Row._cols`).
-        fuse: Whether the owning view is on a cache-eligible tier.
+        in_registers: Whether the owning view keeps its tile in registers
+            (`Row._tile_in_registers`).
         shared: Whether the row is also published to shared memory.
     """
 
     var _owned: Array[SIMD[Self.T, Self.W], Self.NCH]
-    """This participant's cached tiles (valid when `fuse`)."""
+    """This participant's cached tiles (valid when `in_registers`)."""
 
     var _shmem_addr: Int
     """Base address of the per-row shmem strip that `cache` wrote
-    (valid when `fuse and shared`); `load` rebuilds a SHARED pointer from
-    it. Carrying the address in the handle guarantees `load` reads the
+    (valid when `in_registers and shared`); `load` rebuilds a SHARED pointer
+    from it. Carrying the address in the handle guarantees `load` reads the
     exact buffer `cache` allocated."""
 
     var row_coord: DynamicCoord[DType.int, Self.rank]
@@ -972,7 +974,7 @@ struct RowCache[
         Returns:
             The cached value at `coord`.
         """
-        comptime if Self.fuse and Self.shared:
+        comptime if Self.in_registers and Self.shared:
             comptime al = align_of[SIMD[Self.T, Self.W]]()
             var warp_off = (
                 Int(warp_id()) * Self.cols
@@ -996,8 +998,8 @@ struct RowCache[
 # (per-element output: normalizing reductions) or `row.emit` (one value per
 # row: true reductions).
 #
-# The scaffolder owns the per-row register cache. On a cache-eligible tier
-# (`is_cached`, GPU block tier, inner axis, statically-known SIMD-aligned
+# The scaffolder can keep the row's tile in registers. On an eligible tier
+# (`keep_tile`, GPU block tier, inner axis, statically-known SIMD-aligned
 # cols) it stages the row's input strip once into registers and replays
 # it across every phase + the elementwise terminal — so an N-phase reduction
 # loads each element once, not N+1 times. Otherwise it streams (re-loads):
@@ -1019,7 +1021,7 @@ struct Row[
     axis: Int,
     rank: Int,
     AxisSize: CoordLike,
-    is_cached: Bool,
+    keep_tile: Bool,
 ](Copyable, Movable):
     """The body's handle to one logical row. See the module-level note.
 
@@ -1042,15 +1044,17 @@ struct Row[
         axis: Reduced axis (statically known).
         rank: Tensor rank.
         AxisSize: The reduced-axis length's `CoordLike` type —
-            `ComptimeInt[N]` when known at comptime (enables the
-            register-resident `_fuse` path) or a dynamic `Scalar` type
-            otherwise. One type carries both the comptime-known-ness
+            `ComptimeInt[N]` when known at comptime (enables keeping
+            the tile in registers) or a dynamic `Scalar` type otherwise.
+            One type carries both the comptime-known-ness
             and (via `.value()`) the runtime length, so the caller
             supplies a single `AxisSize`-typed value instead of a
             separate comptime "is it static" signal.
-        is_cached: Whether this view may cache the row — true for
-            normalizing multi-phase bodies; false for single-pass true
-            reductions where caching buys nothing.
+        keep_tile: Whether this view may keep the row's tiles in
+            registers between phases instead of loading them again — true
+            for normalizing multi-phase bodies; false for single-pass true
+            reductions where keeping them buys nothing. `cache` keeps its
+            values in registers only when the tile is kept.
     """
 
     comptime _W = Self.params.simd_width
@@ -1072,18 +1076,18 @@ struct Row[
     # count regardless of width (`_PSTRIDE` scales with `_W` too), so this
     # budget caps register pressure the same way whether the tier vectorized
     # or not.
-    comptime _FUSE_BYTE_BUDGET = 256
-    comptime _fuse = (
-        Self.is_cached
+    comptime _TILE_BYTE_BUDGET = 256
+    comptime _tile_in_registers = (
+        Self.keep_tile
         and not is_cpu[Self.params.target]()
         and Self.params._tier != ReduceTier.Splitk
         and Self.axis == Self.rank - 1
         and Self._cols > 0
         and Self._cols % Self._W == 0
         and Self._chunks * size_of[SIMD[Self.dtype, Self._W]]()
-        <= Self._FUSE_BYTE_BUDGET
+        <= Self._TILE_BYTE_BUDGET
     )
-    comptime _NCH = Self._chunks if Self._fuse else 1
+    comptime _NCH = Self._chunks if Self._tile_in_registers else 1
     # Warps per block (warp tier packs this many rows per block). Shmem
     # staging (`cache[shared=True]`) allocates one row strip per warp
     # on the warp tier, one per block otherwise.
@@ -1119,7 +1123,7 @@ struct Row[
         input_fn: InputFn,
     ):
         """Builds the view, staging the row strip into registers
-        on cache-eligible tiers.
+        when it keeps the tile there.
 
         Parameters:
             InputFn: The value-closure type of `input_fn`.
@@ -1131,8 +1135,8 @@ struct Row[
                 dynamic `Scalar`).
             ctx: The dispatch bundle.
             input_fn: Loads a tile of the primary input at a coord. Used
-                only here (fuse-path staging); not retained as a field —
-                later non-fuse-path methods take it again as an argument.
+                only here (register-path staging); not retained as a field —
+                later streaming-path methods take it again as an argument.
         """
         self.row_coord = dynamic_row_coord[Self.rank](row_coords)
         self.axis_size = axis_size
@@ -1142,7 +1146,7 @@ struct Row[
         )
         self._reduce_index = 0
 
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = self.row_coord
             comptime al = ctx.element_alignment[Self.dtype, Self._W]()
@@ -1203,7 +1207,7 @@ struct Row[
         `contribute` is a value closure (its copy-captured state rides the
         value); the tier loop's `reduce_tile` captures it directly.
         `input_fn` (the primary-input loader) is likewise a fresh value
-        argument, used only on the non-fuse (streaming) path — see the
+        argument, used only on the streaming path — see the
         module note above `Row` on why it isn't a stored field.
 
         Parameters:
@@ -1216,7 +1220,7 @@ struct Row[
             contribute: Per-element math; maps the loaded primary tile +
                 its coord to the accumulator-dtype contribution.
             input_fn: Loads a tile of the primary input at a coord
-                (non-fuse path only).
+                (streaming path only).
 
         Returns:
             The joined `M`, broadcast to every participant.
@@ -1279,7 +1283,7 @@ struct Row[
 
         var state = M()
 
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = self.row_coord
 
@@ -1349,11 +1353,11 @@ struct Row[
     ](mut self, g: G, input_fn: InputFn):
         """Per-element terminal (normalizing reductions): runs `g(tile,
         idx)` over the row; `g` computes and stores each output element.
-        Reuses the register cache when present.
+        Reuses the tile kept in registers when present.
 
         `g` is a value closure (its copy-captured state rides the value);
         the tier loop's `emit_tile` captures it directly. `input_fn` is
-        likewise a fresh value argument (non-fuse path only) — see the
+        likewise a fresh value argument (streaming path only) — see the
         module note above `Row`.
 
         Parameters:
@@ -1364,7 +1368,7 @@ struct Row[
             g: Per-element write; closes over the joined results and side
                 inputs, and stores via the body's output closure.
             input_fn: Loads a tile of the primary input at a coord
-                (non-fuse path only).
+                (streaming path only).
         """
         comptime if Self.params._num_phases > 1:
             debug_assert(
@@ -1405,7 +1409,7 @@ struct Row[
                     )
             return
 
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = self.row_coord
 
@@ -1548,7 +1552,7 @@ struct Row[
         Self._NCH,
         Self._W,
         Self._cols,
-        Self._fuse,
+        Self._tile_in_registers,
         shared,
     ]:
         """Caches a per-row value the later phases reuse: runs
@@ -1557,10 +1561,10 @@ struct Row[
         `shared=True`, `load` at any column) read it back instead of
         recomputing.
 
-        On a cache-eligible tier this writes each participant's tiles into
-        registers (and, when `shared`, publishes the row to a shmem strip
-        with one row-local sync); otherwise the returned handle recomputes
-        on access (always correct) — the caller re-supplies `input_fn` /
+        When the tile is kept in registers this writes each participant's
+        tiles into registers (and, when `shared`, publishes the row to a
+        shmem strip with one row-local sync); otherwise the returned handle
+        recomputes on access (always correct) — the caller re-supplies `input_fn` /
         `compute` to the cached `reduce` / `elementwise` overloads on that
         path, since `RowCache` doesn't carry them as fields (see its
         module note).
@@ -1591,11 +1595,11 @@ struct Row[
             Self._NCH,
             Self._W,
             Self._cols,
-            Self._fuse,
+            Self._tile_in_registers,
             shared,
         ](self.row_coord)
 
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = self.row_coord
 
@@ -1681,7 +1685,7 @@ struct Row[
             Self._NCH,
             Self._W,
             Self._cols,
-            Self._fuse,
+            Self._tile_in_registers,
             shared,
         ],
         contribute: Contribute,
@@ -1703,7 +1707,7 @@ struct Row[
         value); the tier loop's `reduce_tile` captures it directly.
         `input_fn` / `compute` (the same producer passed to the `cache`
         call that built `over`) are likewise fresh value arguments, used
-        only on the non-fuse (recompute) path — `RowCache` doesn't carry
+        only on the recompute path — `RowCache` doesn't carry
         them as fields (see its module note). `axis_size` / `ctx` are read
         from `self` rather than threaded as separate arguments — the
         owning view already holds both.
@@ -1720,8 +1724,8 @@ struct Row[
             over: The cached row to reduce.
             contribute: Per-element math over the staged tile, as a value.
             input_fn: Loads a tile of the primary input at a coord
-                (non-fuse path only).
-            compute: The producer that built `over` (non-fuse path only).
+                (streaming path only).
+            compute: The producer that built `over` (streaming path only).
 
         Returns:
             The joined `M`, broadcast to every participant.
@@ -1731,7 +1735,7 @@ struct Row[
         ), "cached reduce isn't phase-aware; pass dtype_size=0 to launch"
         var state = M()
 
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = over.row_coord
 
@@ -1822,7 +1826,7 @@ struct Row[
             Self._NCH,
             Self._W,
             Self._cols,
-            Self._fuse,
+            Self._tile_in_registers,
             shared,
         ],
         g: G,
@@ -1845,7 +1849,7 @@ struct Row[
         the tier loop's `emit_tile` captures it directly. `input_fn` /
         `compute` (the same producer passed to the `cache` call that
         built `over`) are likewise fresh value arguments, used only on
-        the non-fuse (recompute) path — `RowCache` doesn't carry them as
+        the recompute path — `RowCache` doesn't carry them as
         fields (see its module note). `axis_size` / `ctx` are read from
         `self` rather than threaded as separate arguments — the owning
         view already holds both.
@@ -1868,13 +1872,13 @@ struct Row[
             over: The cached row to walk.
             g: Per-element write over the staged tile, as a value.
             input_fn: Loads a tile of the primary input at a coord
-                (non-fuse path only).
-            compute: The producer that built `over` (non-fuse path only).
+                (streaming path only).
+            compute: The producer that built `over` (streaming path only).
         """
         comptime assert (
             Self.params._num_phases <= 1
         ), "cached elementwise isn't phase-aware; pass dtype_size=0 to launch"
-        comptime if Self._fuse:
+        comptime if Self._tile_in_registers:
             var participant = Self._participant()
             var base = over.row_coord
 

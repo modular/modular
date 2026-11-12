@@ -88,7 +88,7 @@ def _check(rows: Int, cols: Int) raises:
                 return x.load[width=width](idx)
 
             var row = rowwise.Row[
-                params, dtype, dtype, 1, rank, is_cached=False
+                params, dtype, dtype, 1, rank, keep_tile=False
             ](row_coords, cols, ctx_p, load)
 
             @inline(.always)

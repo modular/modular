@@ -11,12 +11,12 @@
 mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 mogg.kernel.decl @builtin_kernels.elementwise.Mul registration = "mo.mul" elementwise = <<!lit.generator<<"dtype": !DType, "width": !SIMDLength>("lhs": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>, "rhs": !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>) -> !lit.struct<#SIMD <:!DType *(0,0), :!SIMDLength *(0,1)>>>>, [#kgen<param.decl dtype : !DType>, #kgen<param.decl width : !SIMDLength>], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}, {dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}], [{dtype = #kgen.param.decl.ref<"dtype"> : !DType, size = #kgen.param.decl.ref<"width"> : !SIMDLength}]> struct_params = [] is_user_defined = false
 
-// A phase that computes x * y twice reads the cache twice.
+// A phase that computes x * y twice reads the tile twice.
 // CHECK-LABEL: mo.graph @twoCopies
-// CHECK:         %[[P:.*]] = map.iter.cache
+// CHECK:         %[[P:.*]] = map.iter.tile
 // CHECK:         map.iter.map index (%[[J:.*]]: !map.index<2>) {
-// CHECK-NEXT:      %[[A:.*]] = map.iter.cache.load %[[P]][%[[J]]]
-// CHECK-NEXT:      %[[B:.*]] = map.iter.cache.load %[[P]][%[[J]]]
+// CHECK-NEXT:      %[[A:.*]] = map.iter.tile.load %[[P]][%[[J]]]
+// CHECK-NEXT:      %[[B:.*]] = map.iter.tile.load %[[P]][%[[J]]]
 // CHECK-NEXT:      %[[R:.*]] = map.call.elementwise @builtin_kernels.elementwise.Mul(%[[J]], %[[A]], %[[B]])
 // CHECK-NEXT:      map.store %{{.*}}[%[[J]]] = %[[R]]
 mo.graph @twoCopies(%x: !mo.tensor<[8, 128], f32>, %y: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
@@ -44,22 +44,22 @@ mo.graph @twoCopies(%x: !mo.tensor<[8, 128], f32>, %y: !mo.tensor<[8, 128], f32>
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
 
-// Two folds and a map phase all compute x * y: each reads the cache.
+// Two folds and a map phase all compute x * y: each reads the tile.
 // CHECK-LABEL: mo.graph @twoFoldsAndMap
-// CHECK:         %[[P:.*]] = map.iter.cache index (%[[K:.*]]: !map.index<2>) -> f32 {
+// CHECK:         %[[P:.*]] = map.iter.tile index (%[[K:.*]]: !map.index<2>) -> f32 {
 // CHECK-NEXT:      %[[X:.*]] = map.load %{{.*}}[%[[K]]]
 // CHECK-NEXT:      %[[Y:.*]] = map.load %{{.*}}[%[[K]]]
 // CHECK-NEXT:      %[[Q:.*]] = map.call.elementwise @builtin_kernels.elementwise.Mul(%[[K]], %[[X]], %[[Y]])
 // CHECK-NEXT:      map.yield %[[Q]] : f32
 // CHECK-NEXT:    }
 // CHECK-NEXT:    map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%[[I1:.*]]: !map.index<2>)
-// CHECK-NEXT:      %[[V1:.*]] = map.iter.cache.load %[[P]][%[[I1]]]
+// CHECK-NEXT:      %[[V1:.*]] = map.iter.tile.load %[[P]][%[[I1]]]
 // CHECK-NEXT:      map.yield %[[V1]]
 // CHECK:         map.iter.reduce @builtin_kernels.monoids.ReduceSum index (%[[I2:.*]]: !map.index<2>)
-// CHECK-NEXT:      %[[V2:.*]] = map.iter.cache.load %[[P]][%[[I2]]]
+// CHECK-NEXT:      %[[V2:.*]] = map.iter.tile.load %[[P]][%[[I2]]]
 // CHECK-NEXT:      map.call.elementwise @builtin_kernels.elementwise.Mul(%[[I2]], %[[V2]],
 // CHECK:         map.iter.map index (%[[J:.*]]: !map.index<2>) {
-// CHECK-NEXT:      %[[W:.*]] = map.iter.cache.load %[[P]][%[[J]]]
+// CHECK-NEXT:      %[[W:.*]] = map.iter.tile.load %[[P]][%[[J]]]
 // CHECK-NEXT:      map.call.elementwise @builtin_kernels.elementwise.Mul(%[[J]], %[[W]],
 // CHECK-NOT:     map.load %{{.*}}[%[[J]]]
 mo.graph @twoFoldsAndMap(%x: !mo.tensor<[8, 128], f32>, %y: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {

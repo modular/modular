@@ -384,7 +384,7 @@ mo.graph @bodyPerElementOutsideMap(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<
 
 // -----
 
-mo.graph @cacheNotFirst(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+mo.graph @tileNotFirst(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
       inputs  (%x: !mo.tensor<[8, 128], f32>)
       outputs (%out: !mo.tensor<[8, 128], f32>)
@@ -394,7 +394,7 @@ mo.graph @cacheNotFirst(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f
       map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
     }
     // expected-error @below{{must come first in the row, after constants only}}
-    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
       %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
       map.yield %xv : f32
     }
@@ -404,13 +404,13 @@ mo.graph @cacheNotFirst(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f
 
 // -----
 
-mo.graph @cacheYieldType(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], f32> {
+mo.graph @tileYieldType(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
       inputs  (%x: !mo.tensor<[8, 128], bf16>)
       outputs (%out: !mo.tensor<[8, 128], f32>)
       row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
     // expected-error @below{{body must yield one value of the result type}}
-    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
       %xv = map.load %x[%k] : !mo.tensor<[8, 128], bf16>
       map.yield %xv : bf16
     }
@@ -420,15 +420,15 @@ mo.graph @cacheYieldType(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128],
 
 // -----
 
-mo.graph @cacheLoadOfNonCache(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+mo.graph @tileLoadOfNonTile(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
       inputs  (%x: !mo.tensor<[8, 128], f32>)
       outputs (%out: !mo.tensor<[8, 128], f32>)
       row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
     map.iter.map index (%i: !map.index<2>) {
       %xv = map.load %x[%i] : !mo.tensor<[8, 128], f32>
-      // expected-error @below{{reads a value that isn't a map.iter.cache}}
-      %v = map.iter.cache.load %xv[%i] : !map.index<2>, f32
+      // expected-error @below{{reads a value that isn't a map.iter.tile}}
+      %v = map.iter.tile.load %xv[%i] : !map.index<2>, f32
       map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
     }
   }
@@ -437,13 +437,13 @@ mo.graph @cacheLoadOfNonCache(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1
 
 // -----
 
-mo.graph @cacheStores(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+mo.graph @tileStores(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
       inputs  (%x: !mo.tensor<[8, 128], f32>)
       outputs (%out: !mo.tensor<[8, 128], f32>)
       row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
     // expected-error @below{{must not store; it only reads the row}}
-    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
       %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
       map.store %out[%k] = %xv : !mo.tensor<[8, 128], f32>
       map.yield %xv : f32
@@ -454,18 +454,18 @@ mo.graph @cacheStores(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32
 
 // -----
 
-mo.graph @cacheLoadAtRow(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+mo.graph @tileLoadAtRow(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
   %r = map.iter.rowwise<[8, 128], axis = 1>
       inputs  (%x: !mo.tensor<[8, 128], f32>)
       outputs (%out: !mo.tensor<[8, 128], f32>)
       row     (%row: !map.index<2>) -> !mo.tensor<[8, 128], f32> {
-    %p = map.iter.cache index (%k: !map.index<2>) -> f32 {
+    %p = map.iter.tile index (%k: !map.index<2>) -> f32 {
       %xv = map.load %x[%k] : !mo.tensor<[8, 128], f32>
       map.yield %xv : f32
     }
     map.iter.map index (%i: !map.index<2>) {
       // expected-error @below{{must read at its phase's index}}
-      %v = map.iter.cache.load %p[%row] : !map.index<2>, f32
+      %v = map.iter.tile.load %p[%row] : !map.index<2>, f32
       map.store %out[%i] = %v : !mo.tensor<[8, 128], f32>
     }
   }

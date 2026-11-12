@@ -2533,11 +2533,11 @@ def _rowwise_splat_lane[
     axis: Int,
     rank: Int,
     AxisSize: CoordLike,
-    is_cached: Bool,
+    keep_tile: Bool,
     value_dtype: DType,
     //,
 ](
-    row: Row[params, accum, dtype, axis, rank, AxisSize, is_cached],
+    row: Row[params, accum, dtype, axis, rank, AxisSize, keep_tile],
     value: SIMD[value_dtype, params.emit_tile_width],
 ) -> SIMD[value_dtype, params.simd_width]:
     """Spreads a per-row value over the width of the row's folds.
@@ -2549,7 +2549,7 @@ def _rowwise_splat_lane[
         axis: The reduced axis.
         rank: The rank of the iteration domain.
         AxisSize: The reduced-axis length's type.
-        is_cached: Whether the row is cached.
+        keep_tile: Whether the Row keeps its tile in registers between phases.
         value_dtype: The value's element type.
 
     Args:

@@ -10,7 +10,7 @@
 // and loads gamma at the context's element alignment, like the hand-written
 // kernel.
 // CHECK-LABEL: def __iter_opaque(
-// CHECK:       var [[ROW4:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[128], row_ctx, [[LOAD4:load_+[0-9]+]])
+// CHECK:       var [[ROW4:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, keep_tile = True](row_coords, layout.Idx[128], row_ctx, [[LOAD4:load_+[0-9]+]])
 // CHECK:       var [[ACC4:.*]] = [[ROW4]].reduce[builtin_kernels.monoids.ReduceSum[dtype = DType.float32, W = params.simd_width]]
 // CHECK-NEXT:  var [[MS:.*]] = builtin_kernels.elementwise.Div.elementwise[dtype = DType.float32]([[ACC4]].acc, SIMD[DType.float32, params.simd_width](128.0))
 // CHECK-NEXT:  var [[V:.*]] = builtin_kernels.elementwise.Add.elementwise[dtype = DType.float32]([[MS]], SIMD[DType.float32, params.simd_width](9.99999997E-7))
@@ -54,10 +54,10 @@ mo.graph @rmsNorm(%x: !mo.tensor<[8, 128], f32>, %g: !mo.tensor<[128], f32>) -> 
   mo.output %r : !mo.tensor<[8, 128], f32>
 }
 
-// A map phase over a dynamic axis: the row is cached, the row-level rsqrt runs
+// A map phase over a dynamic axis: the Row keeps the tile, the row-level rsqrt runs
 // once per row, and the phase reads it as `.slice[w]()`.
 // CHECK-LABEL: def __iter_opaque_0(
-// CHECK:       var [[ROW3:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, Int({{.*}}[1].value()), row_ctx, [[LOAD3:load_+[0-9]+]])
+// CHECK:       var [[ROW3:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, keep_tile = True](row_coords, Int({{.*}}[1].value()), row_ctx, [[LOAD3:load_+[0-9]+]])
 // CHECK:       var [[ACC3:.*]] = [[ROW3]].reduce[
 // CHECK-NEXT:  var [[INV:.*]] = builtin_kernels.elementwise.Rsqrt.elementwise[{{.*}}]([[ACC3]].acc)
 // CHECK-NEXT:  @inline(.always)
@@ -121,7 +121,7 @@ mo.graph @scaleByRow(%x: !mo.tensor<[8, 128], f32>, %s: !mo.tensor<[8, 1], f32>)
 // A softmax written as MAP IR: the second fold and the map phase read the
 // first fold's result as `.slice[w]()`, one phase per fold plus the map phase.
 // CHECK-LABEL: def __iter_opaque_2(
-// CHECK:       var [[ROW6:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, is_cached = True](row_coords, layout.Idx[128], row_ctx, [[LOAD6:load_+[0-9]+]])
+// CHECK:       var [[ROW6:.*]] = algorithm.rowwise.Row[params, DType.float32, DType.float32, 1, {{.*}}, keep_tile = True](row_coords, layout.Idx[128], row_ctx, [[LOAD6:load_+[0-9]+]])
 // CHECK:       var [[MAX6:.*]] = [[ROW6]].reduce[builtin_kernels.monoids.ReduceMax[dtype = DType.float32, W = params.simd_width]]
 // CHECK-NEXT:  @inline(.always)
 // CHECK-NEXT:  def {{contribute_+[0-9]+}}[w : Int](tile: SIMD[DType.float32, w], {{.*}}) {var} -> SIMD[DType.float32, w]:

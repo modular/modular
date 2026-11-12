@@ -1760,16 +1760,17 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
     tensor, then the row index, which has the `$axis` coordinate pinned to
     0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
-    `mogg-legalize-rowwise-kernels` gives the body a `mogg.rowwise.cache`,
+    `mogg-legalize-rowwise-kernels` gives the body a `mogg.rowwise.tile`,
     the value every phase reads of the row, and sets the rest, which the Row
     API needs:
 
     - `$accum`: the type the folds' contributions are computed in.
-    - `$is_cached`: whether more than one phase reads the row.
+    - `$keep_tile`: whether more than one phase reads the tile, so the Row
+      may keep it instead of loading it again.
     - `$cols`: the static size of `$axis`.
     - `$num_phases`: 1 when the body writes one value per row, else one per
       fold plus one for the map phases, which write every element.
-    - `$dtype_size`: the cached value's byte size when the body writes every
+    - `$dtype_size`: the tile's byte size when the body writes every
       element and every fold keeps one field, which lets the Row API split
       a long row; else 0.
     - `$computationally_expensive`: whether the body writes every element,
@@ -1805,7 +1806,7 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
     Optional<MOGG_Shape>:$dynamic_max_simd_width,
     StrAttr:$device,
     OptionalAttr<TypeAttr>:$accum,
-    UnitAttr:$is_cached,
+    UnitAttr:$keep_tile,
     OptionalAttr<I64Attr>:$cols,
     OptionalAttr<I64Attr>:$num_phases,
     OptionalAttr<I64Attr>:$dtype_size,
@@ -1818,24 +1819,24 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
-    /// The body's `mogg.rowwise.cache`, once legalized.
-    RowwiseCacheOp getCache();
+    /// The body's `mogg.rowwise.tile`, once legalized.
+    RowwiseTileOp getTile();
   }];
 }
 
-def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
+def MOGG_RowwiseTileOp : MOGG_Op<"rowwise.tile", [
   HasParent<"MOGG::CallRowwiseOp">,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
   SingleBlock,
 ]> {
-  let summary = "Compute once the value every phase of the row reads.";
+  let summary = "The row's tile: the value every phase of the row reads.";
   let description = [{
     Computes, at the element index in its argument, the value each phase
-    reads with `mogg.rowwise.cache.load`: a load of an input, or a fused
+    reads with `mogg.rowwise.tile.load`: a load of an input, or a fused
     computation on it, such as a producer of the reduction's input. It
-    prints as the Row's `load` closure, so the row computes it once per
-    element and caches it when more than one phase reads it.
+    prints as the Row's `load` closure, and the Row keeps the tile when more
+    than one phase reads it (`keep_tile`).
   }];
   let results = (outs MOGG_Simd:$result);
   let regions = (region SizedRegion<1>:$body);
@@ -1843,16 +1844,15 @@ def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
   let hasVerifier = 1;
 }
 
-def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
+def MOGG_RowwiseTileLoadOp : MOGG_Op<"rowwise.tile.load", [
   ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
 ]> {
-  let summary = "Read the row's cache at the current element.";
+  let summary = "Read the row's tile at the current element.";
   let description = [{
-    Reads the value the kernel's `mogg.rowwise.cache` computes, at the
-    phase's own index. The Row computes it once per element, caches it, and
-    hands each phase the tile.
+    Reads the value the kernel's `mogg.rowwise.tile` computes, at the
+    phase's own index: the tile the Row hands each phase.
   }];
   let results = (outs MOGG_Simd:$result);
   let assemblyFormat = "attr-dict `:` qualified(type($result))";

@@ -188,8 +188,8 @@ def ReductionCSE : Pass<"map-rcse", "MO::GraphOp"> {
     of each `map.iter.rowwise`: of the values every phase computes from the
     input the first fold reduces, wherever it reads that input, it takes
     the narrowest, then the largest, and computes it once per element in a
-    `map.iter.cache`, which the Row caches. Each phase's copy becomes a
-    `map.iter.cache.load`.
+    `map.iter.tile`, the tile the Row loads. Each phase's copy becomes a
+    `map.iter.tile.load`.
   }];
 
   let dependentDialects = [

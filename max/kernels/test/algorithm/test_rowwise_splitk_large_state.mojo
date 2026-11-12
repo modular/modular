@@ -84,7 +84,7 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
             var i = Int(idx[0]) * cols + Int(idx[1])
             return x_ptr.unsafe_offset(i).unsafe_load[width=width]()
 
-        var row = rowwise.Row[params, dtype, dtype, 1, rank, is_cached=False](
+        var row = rowwise.Row[params, dtype, dtype, 1, rank, keep_tile=False](
             row_coords, cols, ctx, load
         )
 

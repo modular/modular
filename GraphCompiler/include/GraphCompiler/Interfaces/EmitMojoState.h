@@ -145,10 +145,10 @@ struct EmitMojoState {
     MojoValue axisSize;
     MojoValue dtype;
     MojoValue accum;
-    /// Set by the body's `mogg.rowwise.cache`, which prints them.
+    /// Set by the body's `mogg.rowwise.tile`, which prints them.
     MojoValue load;
     MojoValue row;
-    /// The cached tile the phase printing now reads.
+    /// The tile the phase printing now reads.
     MojoValue tile;
   };
   RowwiseBodyInfo *rowwiseBody = nullptr;

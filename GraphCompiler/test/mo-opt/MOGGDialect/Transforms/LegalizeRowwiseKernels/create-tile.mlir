@@ -1,9 +1,9 @@
-// RUN: mo-opt %s --mogg-rowwise-create-cache | FileCheck %s
+// RUN: mo-opt %s --mogg-rowwise-create-tile | FileCheck %s
 
-// Without a `mogg.rowwise.cache` from MAP, the row caches the capture the first
-// fold loads at its own index, and every phase's load of it there becomes
-// `mogg.rowwise.cache.load`; other loads stay. `is_cached` says whether more
-// than one phase reads the cache.
+// Without a `mogg.rowwise.tile` from MAP, the row's tile loads the capture the
+// first fold loads at its own index, and every phase's load of it there becomes
+// `mogg.rowwise.tile.load`; other loads stay. `keep_tile` says whether more
+// than one phase reads the tile.
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>
 !SIMDLength = !lit.struct<@std::@builtin::@simd_length::@SIMDLength>
@@ -17,12 +17,12 @@ mogg.kernel.decl @builtin_kernels.elementwise.Div registration = "mo.div" elemen
 
 // CHECK-LABEL: func.func @twoInputs
 // CHECK:       mogg.call.rowwise {{.*}} capturing {%[[X:cap[0-9]+]] = %arg{{[0-9]+}} : !mogg.tensor, %[[Y:cap[0-9]+]] = %arg{{[0-9]+}} : !mogg.tensor, {{.*}}} device = "cpu" {
-// CHECK-NEXT:    mogg.rowwise.cache (%[[K:[[:alnum:]_]+]] : !map.index<2>) -> !mogg.simd<f32> {
+// CHECK-NEXT:    mogg.rowwise.tile (%[[K:[[:alnum:]_]+]] : !map.index<2>) -> !mogg.simd<f32> {
 // CHECK-NEXT:      %[[XK:.*]] = mogg.tensor.load %[[X]][%[[K]]]
 // CHECK-NEXT:      mogg.yield %[[XK]] : !mogg.simd<f32>
 // CHECK-NEXT:    }
 // CHECK-NEXT:    mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%[[I:[[:alnum:]_]+]] : !map.index<2>) -> !mogg.simd<f32> {
-// CHECK-NEXT:      %[[XV:.*]] = mogg.rowwise.cache.load : !mogg.simd<f32>
+// CHECK-NEXT:      %[[XV:.*]] = mogg.rowwise.tile.load : !mogg.simd<f32>
 // CHECK-NEXT:      %[[YV:.*]] = mogg.tensor.load %[[Y]][%[[I]]]
 // CHECK-NEXT:      builtin.unrealized_conversion_cast %[[XV]], %[[YV]]
 // CHECK:         mogg.tensor.load %[[X]][%row]
@@ -44,7 +44,7 @@ func.func @twoInputs(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor,
 // The first load picks the input, whatever the capture order.
 // CHECK-LABEL: func.func @firstLoad
 // CHECK:       mogg.call.rowwise {{.*}} capturing {%{{.*}}, %[[Y:cap[0-9]+]] = %arg{{[0-9]+}} : !mogg.tensor, {{.*}}} device = "cpu" {
-// CHECK-NEXT:    mogg.rowwise.cache
+// CHECK-NEXT:    mogg.rowwise.tile
 // CHECK-NEXT:      mogg.tensor.load %[[Y]]
 func.func @firstLoad(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %y: !mogg.tensor, %out: !mogg.tensor) {
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
@@ -61,11 +61,11 @@ func.func @firstLoad(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor,
 
 // Every fold's element loads of the input are replaced.
 // CHECK-LABEL: func.func @twoFolds
-// CHECK:       attributes {is_cached}
+// CHECK:       attributes {keep_tile}
 // CHECK:       mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum
-// CHECK-NEXT:    mogg.rowwise.cache.load : !mogg.simd<f32>
+// CHECK-NEXT:    mogg.rowwise.tile.load : !mogg.simd<f32>
 // CHECK:       mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum
-// CHECK-NEXT:    mogg.rowwise.cache.load : !mogg.simd<f32>
+// CHECK-NEXT:    mogg.rowwise.tile.load : !mogg.simd<f32>
 func.func @twoFolds(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
     %a = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
@@ -84,13 +84,13 @@ func.func @twoFolds(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, 
   return
 }
 
-// A map phase reads the input too, so the row is cached.
+// A map phase reads the input too, so the Row keeps the tile.
 // CHECK-LABEL: func.func @mapPhase
-// CHECK:       attributes {is_cached}
+// CHECK:       attributes {keep_tile}
 // CHECK:       mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum
-// CHECK-NEXT:    mogg.rowwise.cache.load : !mogg.simd<f32>
+// CHECK-NEXT:    mogg.rowwise.tile.load : !mogg.simd<f32>
 // CHECK:       mogg.rowwise.map (%[[J:[[:alnum:]_]+]] : !map.index<2>) {
-// CHECK-NEXT:    %[[XV:.*]] = mogg.rowwise.cache.load : !mogg.simd<f32>
+// CHECK-NEXT:    %[[XV:.*]] = mogg.rowwise.tile.load : !mogg.simd<f32>
 // CHECK-NEXT:    %[[Y:.*]] = builtin.unrealized_conversion_cast %[[XV]], %{{.*}}
 // CHECK-NEXT:    mogg.tensor.store %{{.*}}[%[[J]]] = %[[Y]]
 func.func @mapPhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
@@ -108,28 +108,28 @@ func.func @mapPhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, 
   return
 }
 
-// A cache from MAP stays; the phases that read it set `is_cached`.
-// CHECK-LABEL: func.func @cacheFromMap
-// CHECK:       attributes {is_cached}
-// CHECK-NEXT:    mogg.rowwise.cache
+// A tile from MAP stays; the phases that read it set `keep_tile`.
+// CHECK-LABEL: func.func @tileFromMap
+// CHECK:       attributes {keep_tile}
+// CHECK-NEXT:    mogg.rowwise.tile
 // CHECK-NEXT:      mogg.tensor.load
 // CHECK-NEXT:      mogg.tensor.load
 // CHECK-NEXT:      mogg.call.elementwise @builtin_kernels.elementwise.Div
-// CHECK-NOT:     mogg.rowwise.cache (
-func.func @cacheFromMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %y: !mogg.tensor, %out: !mogg.tensor) {
+// CHECK-NOT:     mogg.rowwise.tile (
+func.func @tileFromMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %y: !mogg.tensor, %out: !mogg.tensor) {
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
-    %p = mogg.rowwise.cache (%k : !map.index<2>) -> !mogg.simd<f32> {
+    %p = mogg.rowwise.tile (%k : !map.index<2>) -> !mogg.simd<f32> {
       %xv = mogg.tensor.load %cx[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       %yv = mogg.tensor.load %cy[%k] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       %q = mogg.call.elementwise @builtin_kernels.elementwise.Div(%xv, %yv) moOpName = "mo.div" : !mogg.simd<f32>, !mogg.simd<f32> -> !mogg.simd<f32>
       mogg.yield %q : !mogg.simd<f32>
     }
     %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
-      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
       mogg.yield %v : !mogg.simd<f32>
     }
     mogg.rowwise.map (%j : !map.index<2>) {
-      %v = mogg.rowwise.cache.load : !mogg.simd<f32>
+      %v = mogg.rowwise.tile.load : !mogg.simd<f32>
       %r = builtin.unrealized_conversion_cast %v, %acc : !mogg.simd<f32>, !mogg.simd<f32> to !mogg.simd<f32>
       mogg.tensor.store %co[%j] = %r : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
     }

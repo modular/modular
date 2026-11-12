@@ -1144,7 +1144,7 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),
       capturing, dynamicMaxSimdWidth,
       state.builder.getStringAttr(state.device.getLabel()),
-      /*accum=*/nullptr, /*is_cached=*/nullptr, /*cols=*/nullptr,
+      /*accum=*/nullptr, /*keep_tile=*/nullptr, /*cols=*/nullptr,
       /*num_phases=*/nullptr,
       /*dtype_size=*/nullptr, /*computationally_expensive=*/nullptr,
       /*simd_monoid=*/nullptr, maxSimdWidth);
@@ -1192,16 +1192,16 @@ LogicalResult IterReduceOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
-// map.iter.cache -> mogg.rowwise.cache.
-LogicalResult IterCacheOp::lowerToMOGG(MAPToMOGGState &state) {
+// map.iter.tile -> mogg.rowwise.tile.
+LogicalResult IterTileOp::lowerToMOGG(MAPToMOGGState &state) {
   Location loc = getLoc();
-  auto cache = MOGG::RowwiseCacheOp::create(state.builder, loc,
-                                            MOGG::SimdType::get(getType()));
-  Block *cacheBlock = state.builder.createBlock(&cache.getBody());
+  auto tile = MOGG::RowwiseTileOp::create(state.builder, loc,
+                                          MOGG::SimdType::get(getType()));
+  Block *tileBlock = state.builder.createBlock(&tile.getBody());
   state.mapping.map(getIndexArg(),
-                    cacheBlock->addArgument(getIndexArg().getType(), loc));
+                    tileBlock->addArgument(getIndexArg().getType(), loc));
 
-  state.builder.setInsertionPointToStart(cacheBlock);
+  state.builder.setInsertionPointToStart(tileBlock);
   Block &body = getBody().front();
   for (Operation &op : body.without_terminator())
     if (failed(state.lowerOp(&op)))
@@ -1210,15 +1210,15 @@ LogicalResult IterCacheOp::lowerToMOGG(MAPToMOGGState &state) {
   MOGG::YieldOp::create(state.builder, yield.getLoc(),
                         state.mapping.lookup(yield.getOperand(0)));
 
-  state.builder.setInsertionPointAfter(cache);
-  state.mapping.map(getResult(), cache.getResult());
+  state.builder.setInsertionPointAfter(tile);
+  state.mapping.map(getResult(), tile.getResult());
   return success();
 }
 
-// map.iter.cache.load -> mogg.rowwise.cache.load.
-LogicalResult IterCacheLoadOp::lowerToMOGG(MAPToMOGGState &state) {
+// map.iter.tile.load -> mogg.rowwise.tile.load.
+LogicalResult IterTileLoadOp::lowerToMOGG(MAPToMOGGState &state) {
   state.mapping.map(getResult(),
-                    MOGG::RowwiseCacheLoadOp::create(
+                    MOGG::RowwiseTileLoadOp::create(
                         state.builder, getLoc(), MOGG::SimdType::get(getType()))
                         .getResult());
   return success();
