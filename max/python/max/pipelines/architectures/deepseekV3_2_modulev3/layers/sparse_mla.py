@@ -49,15 +49,24 @@ from max.nn.kernels import (
     mla_decode_graph,
     mla_decode_graph_cp,
     mla_prefill_decode_graph,
+    store_mla_latent_ragged,
 )
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, NamedMapping, Sharded
+from max.tensor.sharding import DeviceMapping, NamedMapping, Sharded, Unknown
 
 from ...deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from .indexer import Indexer
+from .prefill_context_parallel import (
+    PrefillContextParallel,
+    PrefillContextParallelStep,
+)
 
 logger = logging.getLogger("max.pipelines")
+
+# The latent RMSNorm epsilon, shared by the attention op and the standalone
+# latent store so both write the same cache rows.
+_LATENT_NORM_EPS = 1e-6
 
 
 # Head counts that route prefill through the combined prefill/decode op
@@ -413,7 +422,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         freqs_cis: Tensor,
         kv_norm_gamma: Tensor,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        epsilon: float = 1e-6,
+        epsilon: float = _LATENT_NORM_EPS,
         *,
         sparse_indices: Tensor | None = None,
         sparse_indices_stride: int | None = None,
@@ -621,16 +630,137 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         layer_idx: Tensor,
         input_row_offsets: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        prev_topk_indices: Tensor | None = None,
+        prev_topk_indices: Selection | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
         selection_lag: int = 0,
-    ) -> tuple[Tensor, Tensor]:
+        pcp: PrefillContextParallelStep | None = None,
+    ) -> tuple[Tensor, Selection]:
         """Returns the attention output and the top-k selection it used.
 
         ``selection_lag`` is the number of positions between the token a
         reused selection was computed for and this call's token.
+
+        With ``pcp`` (a predicated step, :meth:`PrefillContextParallelStep.
+        predicated`) the layer runs both prefill context parallelism
+        (:meth:`_attend_pcp`) and the DCP path (:meth:`_attend`), each on
+        its share of the rows (see :meth:`_predicated`), and returns the
+        selection split into its DCP and PCP rows' halves.
         """
+        args: tuple[Any, ...] = (
+            x,
+            kv_collection,
+            indexer_kv_collection,
+            freqs_cis,
+            layer_idx,
+            input_row_offsets,
+            mla_prefill_metadata,
+            prev_topk_indices,
+            reuse_prev_topk,
+            indexer_layer_idx,
+            selection_lag,
+        )
+        if pcp is None:
+            if isinstance(prev_topk_indices, tuple):
+                raise ValueError(
+                    "a split selection comes only from a predicated layer"
+                )
+            attn_out, topk_indices = self._attend(*args)
+            return self.o_proj(attn_out), topk_indices
+        if pcp.cut is None:
+            raise ValueError(
+                "prefill context parallelism runs predicated: build the step"
+                " with PrefillContextParallelStep.predicated"
+            )
+        if selection_lag != 0:
+            raise ValueError(
+                "prefill context parallelism takes no lagged selection"
+            )
+        return self._predicated(args, pcp)
+
+    def _predicated(
+        self, args: tuple[Any, ...], step: PrefillContextParallelStep
+    ) -> tuple[Tensor, Selection]:
+        """Runs both PCP and DCP attention, each on its share of the rows.
+
+        A PCP step gives every row to :meth:`_attend_pcp` and none to
+        :meth:`_attend`; any other step the reverse. Every op returns before
+        launching on zero rows, so the empty path does no GPU work. Both
+        paths still take the whole batch's row offsets and caches, so each
+        of their ops must size its launch from its row tensor, not from the
+        offsets' last entry.
+        """
+        x, prev = args[0], args[7]
+        width = sparse_selection_width(self.kv_params, self.index_topk)
+        x_pcp, x_dcp = step.rows_split(x)
+        prev_pcp = prev_dcp = None
+        pcp = step.plan(args[5], x_pcp, args[1], args[2])
+        own = None
+        if isinstance(prev, tuple):
+            # The last predicated layer's halves: its DCP rows, and each
+            # rank's own PCP rows, which this rank's path reads as they are.
+            prev_dcp, own = prev
+        elif prev is not None:
+            prev_pcp, prev_dcp = step.rows_split(prev)
+            own = pcp.own_rows(_columns(prev_pcp, width))
+        attn_pcp, topk_pcp = self._attend_pcp(
+            x_pcp,
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[6],
+            own,
+            args[8],
+            args[9],
+            pcp=pcp,
+        )
+        # Each rank's own rows and the selection's columns only: the next
+        # layer's PCP path reads no others, so padding them to the step's
+        # rows or a count column would copy them for nothing.
+        topk_pcp = _columns(topk_pcp, width)
+        # Each device's rows are its own, as the DCP path's selection is.
+        topk_pcp = topk_pcp.rebind_mapping(
+            DeviceMapping(topk_pcp.mesh, (Unknown(),) * topk_pcp.mesh.ndim)
+        )
+        attn_dcp, topk_dcp = self._attend(
+            x_dcp,
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            args[6],
+            prev_dcp,
+            args[8],
+            args[9],
+            args[10],
+        )
+        topk_pcp, topk_dcp = (
+            t if t.dtype == DType.int32 else F.cast(t, DType.int32)
+            for t in (topk_pcp, topk_dcp)
+        )
+        attn = step.rows_join(attn_pcp, attn_dcp, x)
+        # The selection stays split: the next layer reads each half on its
+        # own path, so joining it would only copy the DCP rows every step.
+        return self.o_proj(attn), (topk_dcp, topk_pcp)
+
+    def _attend(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        freqs_cis: Tensor,
+        layer_idx: Tensor,
+        input_row_offsets: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None,
+        prev_topk_indices: Tensor | None,
+        reuse_prev_topk: bool,
+        indexer_layer_idx: Tensor | None,
+        selection_lag: int,
+    ) -> tuple[Tensor, Tensor]:
+        """The attention before ``o_proj``, and its selection."""
         if selection_lag != 0 and not reuse_prev_topk:
             raise ValueError(
                 f"selection_lag={selection_lag} describes a reused selection,"
@@ -702,7 +832,202 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
             selection_lag=selection_lag,
         )
 
-        return self.o_proj(attn_out), topk_indices
+        return attn_out, topk_indices
+
+    def _attend_pcp(
+        self,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        freqs_cis: Tensor,
+        layer_idx: Tensor,
+        input_row_offsets: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None,
+        prev_topk_indices: Tensor | None,
+        reuse_prev_topk: bool,
+        indexer_layer_idx: Tensor | None,
+        *,
+        pcp: PrefillContextParallel,
+    ) -> tuple[Tensor, Tensor]:
+        """Attends a prefill step split over each DCP group's ranks.
+
+        Each rank projects its run of the batch's rows (``pcp.local_rows``),
+        the group all-gathers the chunk's raw latent rows, every rank stores
+        the positions it owns into its DCP cache and every position into the
+        whole-context scratch, and the non-DCP sparse prefill op attends the
+        rank's queries over the scratch with all of the group's heads. One
+        all-to-all leaves every rank its tensor-parallel heads of every row,
+        as the DCP merge does, for the head-sharded ``o_proj``. See
+        :mod:`.prefill_context_parallel`.
+        """
+        if self.quantized or not self.dcp_q_replicate:
+            raise NotImplementedError(
+                "prefill context parallelism needs BF16 MLA weights and a "
+                "replicated decode context parallel query"
+            )
+        q_lora_rank = self.q_lora_rank
+        assert q_lora_rank is not None
+        x_local = pcp.local_rows(x)
+        qkv = quant_ops.matmul(x_local, self.wqkv)
+        q_a_out, kv = qkv.split([q_lora_rank, self.cache_head_dim], axis=1)
+        q_a_normed = self.q_a_layernorm(q_a_out)
+        # ``q_b`` holds the rank's group's heads, replicated within the group
+        # on the DCP view; each rank projects its own rows.
+        assert isinstance(self.q_b_proj, Tensor)
+        q_b = to_dcp_mesh(self.q_b_proj, x_local.mesh)
+        # Per device: the matmul rule cannot place rows sharded along DCP.
+        xq = F.call_on_mesh(
+            lambda a, w: a @ w.T, x_local.mesh, out_specs=q_a_normed.mapping
+        )(q_a_normed, q_b)
+        n_heads = dcp_group_heads(xq.mesh, self.n_heads, self.dcp_size)
+        if not _sparse_prefill_head_count_supported(
+            n_heads, self.kv_params.dtype
+        ):
+            raise NotImplementedError(
+                f"prefill context parallelism attends a DCP group's {n_heads} "
+                "heads with the sparse prefill kernel, which takes "
+                f"{_SPARSE_PREFILL_SUPPORTED_HEADS + _SPARSE_PREFILL_TP_SHARDED_HEADS}"
+            )
+        xq = xq.reshape((xq.shape[0], n_heads, self.qk_head_dim))
+        freqs_cis = F.cast(freqs_cis, xq.dtype)
+
+        # The whole chunk's raw latent rows, normed, roped and stored: by
+        # ownership into the DCP cache, whole into the scratch.
+        kv_all = pcp.gather_rows(kv, x)
+        store_mla_latent_ragged(
+            kv_all,
+            pcp.batch_row_offsets,
+            freqs_cis,
+            self.kv_a_proj_layernorm,
+            self.kv_params,
+            kv_collection,
+            layer_idx,
+            _LATENT_NORM_EPS,
+            dcp_size=self.dcp_size,
+            dcp_interleave=self.dcp_interleave,
+            dcp_rank=dcp_ranks(x.mesh, self.dcp_size),
+        )
+        scratch_slot = F.constant(0, DType.uint32, device=CPU())
+        store_mla_latent_ragged(
+            kv_all,
+            pcp.batch_row_offsets,
+            freqs_cis,
+            self.kv_a_proj_layernorm,
+            self.kv_params,
+            pcp.mla_scratch,
+            scratch_slot,
+            _LATENT_NORM_EPS,
+        )
+        full_layer = self.indexer is not None and not reuse_prev_topk
+        indexer_slot = (
+            layer_idx if indexer_layer_idx is None else indexer_layer_idx
+        )
+        pcp.fill_prefix(
+            [(kv_collection, pcp.mla_scratch, layer_idx)]
+            + (
+                [(indexer_kv_collection, pcp.indexer_scratch, indexer_slot)]
+                if full_layer
+                else []
+            )
+        )
+        if full_layer:
+            assert self.indexer is not None
+            topk_indices = self.indexer.forward_pcp(
+                x_local,
+                q_a_normed,
+                freqs_cis,
+                indexer_kv_collection,
+                indexer_slot,
+                pcp,
+                x,
+            )
+        else:
+            if prev_topk_indices is None:
+                raise ValueError(
+                    "Shared (skip_topk) sparse attention layers require top-k "
+                    "indices from a previous full indexer layer."
+                )
+            topk_indices = prev_topk_indices
+
+        scratch = pcp.mla_view
+        # The plain sparse op reads its group's heads' weights whole: on the
+        # DCP view they are the group's shard of each.
+        w_uk, _ = self.w_uk
+        w_uv, _ = self.w_uv
+        w_uk = to_dcp_mesh(w_uk, xq.mesh)
+        # The sparse prefill reads only ``w_uk`` and ``w_uv``; the op still
+        # types the dense prefill's ``[H * Dn, R]`` ``w_k``. A view of
+        # ``w_uk`` fills it without a second resident copy of the heads.
+        w_k = w_uk.reshape((-1, self.kv_lora_rank))
+        if pcp.zero_prefill_offsets is not None:
+            # The plan's, built once: the sparse op never reads them.
+            buffer_row_offsets = cache_offsets = pcp.zero_prefill_offsets
+        else:
+            metadata = self.create_mla_prefill_metadata(
+                pcp.row_offsets, scratch
+            )
+            buffer_row_offsets = metadata.buffer_row_offsets
+            cache_offsets = metadata.cache_offsets
+        assert scratch.attention_dispatch_metadata is not None
+        assert scratch.mla_num_partitions is not None
+        out = mla_prefill_decode_graph(
+            q=xq,
+            kv=kv,
+            input_row_offsets=pcp.row_offsets,
+            freqs_cis=freqs_cis,
+            kv_norm_gamma=self.kv_a_proj_layernorm,
+            buffer_row_offsets=buffer_row_offsets,
+            cache_offsets=cache_offsets,
+            # Unused by the sparse op; a host zero avoids a device read.
+            buffer_length=F.constant([0], DType.int32, device=CPU()),
+            w_k=w_k,
+            w_uk=w_uk,
+            w_uv=to_dcp_mesh(w_uv, xq.mesh),
+            kv_params=self.kv_params,
+            kv_collection=scratch,
+            layer_idx=scratch_slot,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+            epsilon=_LATENT_NORM_EPS,
+            v_head_dim=self.v_head_dim,
+            scalar_args=scratch.attention_dispatch_metadata,
+            num_partitions_scalar=scratch.mla_num_partitions,
+            sparse_indices=topk_indices,
+            sparse_indices_stride=sparse_selection_width(
+                self.kv_params, self.index_topk
+            ),
+            physical_indices=True,
+            sparse_attn_sink_inert=True,
+        )
+        del input_row_offsets, mla_prefill_metadata
+        merged = pcp.to_head_sharded(out, x)
+        attn_out = merged.reshape(
+            (merged.shape[0], merged.shape[1] * self.v_head_dim)
+        )
+        return attn_out, topk_indices
+
+
+Selection = Tensor | tuple[Tensor, Tensor]
+"""A layer's top-k selection: one tensor, or under predicated prefill
+context parallelism its DCP rows and each rank's own PCP rows, which the
+next layer reads without a join."""
+
+
+def _columns(t: Tensor, n: int) -> Tensor:
+    """Each device's ``t`` cut or ``-1``-padded to its first ``n`` columns."""
+
+    def cut(v: Tensor) -> Tensor:
+        have = int(v.shape[1])
+        if have == n:
+            return v
+        if have > n:
+            return v[:, :n]
+        fill = F.full(
+            [v.shape[0], n - have], -1, dtype=v.dtype, device=v.device
+        )
+        return F.concat([v, fill], axis=1)
+
+    return F.call_on_mesh(cut, t.mesh, out_specs=t.mapping)(t)
 
 
 def tensor_parallel_sparse_latent_attention_with_rope(

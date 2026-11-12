@@ -53,6 +53,7 @@ from nn.kv_cache import (
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
+    _scaled_cache_fp8_tail_size,
     paged_cache_rows,
 )
 from nn.kv_cache_ragged import (
@@ -8165,7 +8166,10 @@ struct Struct_mla_store_ragged_paged:
 
     @inline(.always)
     @staticmethod
-    def execute[](
+    def execute[
+        dcp_size: Int = 1,
+        dcp_interleave: Int = 1,
+    ](
         kv: Some[Input & Fused & LoadAccess],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
@@ -8178,6 +8182,7 @@ struct Struct_mla_store_ragged_paged:
         max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         epsilon: Float32,
+        dcp_rank: Int32,
         context: DeviceContext,
     ) raises:
         """Stores raw MLA latent rows into the paged cache, normed and roped.
@@ -8208,6 +8213,9 @@ struct Struct_mla_store_ragged_paged:
             max_cache_length: The batch's max cache length, `[1]`.
             layer_idx: Layer of the cache to write.
             epsilon: RMSNorm epsilon.
+            dcp_rank: This rank's index in the context-parallel group, a host
+                scalar. Outside a group (`dcp_size == 1`) it is 0 and the
+                layout never reads it.
             context: Device context for GPU execution.
         """
         comptime assert (
@@ -8255,6 +8263,12 @@ struct Struct_mla_store_ragged_paged:
             max_cache_length.to_tile_tensor[.uint32](),
         )
 
+        comptime if dcp_size > 1:
+            if dcp_rank < 0 or Int(dcp_rank) >= dcp_size:
+                raise Error(
+                    t"dcp_rank {dcp_rank} is outside a group of {dcp_size}"
+                )
+
         var num_rows = Int(kv.shape()[0].value())
         comptime assert conforms_to(type_of(kv), UnsafeFusedView)
         var kv_view = unsafe_fused_view(kv)
@@ -8274,7 +8288,9 @@ struct Struct_mla_store_ragged_paged:
             "attention.mla.store.ragged.paged",
             task_id=get_safe_task_id(context),
         ):
-            mla_store_ragged_paged(
+            mla_store_ragged_paged[
+                dcp_size=dcp_size, dcp_interleave=dcp_interleave
+            ](
                 num_rows,
                 input_row_offsets.to_tile_tensor[.uint32](),
                 freqs_cis.to_tile_tensor(),
@@ -8284,6 +8300,167 @@ struct Struct_mla_store_ragged_paged:
                 epsilon,
                 kv_input_fn,
                 context,
+                Int(dcp_rank),
+            )
+
+
+@extensibility.register("attention.mla.store.ragged.paged.nvfp4")
+struct Struct_mla_store_ragged_paged_nvfp4:
+    """Registers the `attention.mla.store.ragged.paged.nvfp4` graph op with the
+    graph compiler.
+
+    The scaled counterpart of `attention.mla.store.ragged.paged`. A packed
+    NVFP4 latent carries a scale pool beside its values, and the unscaled
+    registration has no operands to take one, so the two are separate
+    registrations rather than one with optional inputs. The cache operands
+    arrive in the order `flatten_without_attention_dispatch_metadata` emits
+    for quantized cache params.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        scale_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        dcp_size: Int = 1,
+        dcp_interleave: Int = 1,
+    ](
+        kv: Some[Input & Fused & LoadAccess],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        epsilon: Float32,
+        dcp_rank: Int32,
+        context: DeviceContext,
+    ) raises:
+        """Stores raw MLA latent rows into a packed NVFP4 paged cache.
+
+        Behaves as `attention.mla.store.ragged.paged`, writing each row of
+        `kv` normed, roped and quantized at its absolute position
+        `cache_length + token_idx`, but against a cache whose rows are packed
+        e2m1 bytes with a per-group scale. The row's trailing rope dims stay
+        unscaled FP8, so a row's logical width is twice its scaled prefix
+        plus that tail.
+
+        Args:
+            kv: Raw (un-normalized) latent rows, `[total_seq_len,
+                kv_lora_rank + qk_rope_head_dim]`, bfloat16.
+            input_row_offsets: Row offsets per request, `[batch + 1]`.
+            freqs_cis: Interleaved RoPE table, `[max_position,
+                qk_rope_head_dim]`; row `cache_length + token_idx` ropes a row.
+            kv_norm_gamma: RMSNorm gamma, `[kv_lora_rank]`.
+            kv_blocks: The paged cache's packed blocks, `[pages, 1, layers,
+                page_size, 1, packed_row_bytes]`.
+            page_stride: Page-to-page distance in elements; -1 when packed.
+            cache_lengths: Cached tokens per request, `[batch]`.
+            kv_lookup_table: Page lookup table, `[batch, pages_per_seq]`.
+            max_prompt_length: The batch's max prompt length, `[1]`.
+            max_cache_length: The batch's max cache length, `[1]`.
+            kv_scales: The scale pool, `kv_blocks`'s shape with its last
+                dimension the scales per row.
+            scales_page_stride: Page-to-page distance of `kv_scales`, which
+                pads independently of the values.
+            scales_lookup_table: Page lookup table of the scales.
+            layer_idx: Layer of the cache to write.
+            epsilon: RMSNorm epsilon.
+            dcp_rank: This rank's index in the context-parallel group, a host
+                scalar. Outside a group (`dcp_size == 1`) it is 0 and the
+                layout never reads it.
+            context: Device context for GPU execution.
+        """
+        comptime assert (
+            context.target.is_gpu()
+        ), "attention.mla.store.ragged.paged.nvfp4 is only supported on GPU"
+        comptime assert (
+            cache_dtype == DType.uint8 and scale_dtype == DType.float8_e4m3fn
+        ), "the nvfp4 store takes uint8 values with e4m3 scales"
+        comptime assert type_of(kv).rank == 2
+        comptime assert type_of(kv).dtype == DType.bfloat16
+
+        comptime cache_row_bytes = kv_blocks.static_spec.shape_tuple[5]
+        comptime scales_per_row = kv_scales.static_spec.shape_tuple[5]
+        comptime kv_norm_dim = kv_norm_gamma.static_spec.shape_tuple[0]
+        comptime fp8_tail = _scaled_cache_fp8_tail_size[
+            cache_dtype, scale_dtype
+        ](Int(cache_row_bytes), Int(scales_per_row))
+        # Two e2m1 values share a byte over the scaled prefix; the rope dims
+        # past the last scale are already one FP8 byte each.
+        comptime logical_head_size = (
+            2 * (Int(cache_row_bytes) - fp8_tail) + fp8_tail
+        )
+        comptime assert (
+            fp8_tail > 0
+        ), "the store op needs a rope slice: a row with FP8 tail bytes"
+        comptime assert (
+            type_of(kv)._shape_types[1].static_value == logical_head_size
+        ), "kv's width must equal the cache row's logical head size"
+        comptime assert logical_head_size > Int(
+            kv_norm_dim
+        ), "the cache row's logical width must exceed kv_norm_dim"
+
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
+        )
+
+        comptime if dcp_size > 1:
+            if dcp_rank < 0 or Int(dcp_rank) >= dcp_size:
+                raise Error(
+                    t"dcp_rank {dcp_rank} is outside a group of {dcp_size}"
+                )
+
+        var num_rows = Int(kv.shape()[0].value())
+        comptime assert conforms_to(type_of(kv), UnsafeFusedView)
+        var kv_view = unsafe_fused_view(kv)
+        comptime assert conforms_to(type_of(kv_view), Loadable)
+
+        @inline(.always)
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+            return rebind[SIMD[.bfloat16, width]](
+                kv_view.load[width=width, element_alignment=width](
+                    Coord(coords)
+                )
+            )
+
+        with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+            "attention.mla.store.ragged.paged.nvfp4",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_store_ragged_paged[
+                dcp_size=dcp_size, dcp_interleave=dcp_interleave
+            ](
+                num_rows,
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
+                kv_norm_gamma.to_tile_tensor(),
+                kv_collection,
+                layer_idx,
+                epsilon,
+                kv_input_fn,
+                context,
+                Int(dcp_rank),
             )
 
 

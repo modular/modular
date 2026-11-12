@@ -27,6 +27,7 @@ from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import DP, TP
+from max.nn.common_layers.multi_latent_attention import MLAPrefillMetadata
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
@@ -55,8 +56,16 @@ from ..deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
     split_replicated_batch,
 )
+from .layers.prefill_context_parallel import (
+    PrefillContextParallelStep,
+    prefill_predicate,
+)
 from .layers.rms_norm import MultiplyBeforeCastRMSNorm
-from .layers.transformer_block import DeepseekV3_2TransformerBlock
+from .layers.sparse_mla import Selection
+from .layers.transformer_block import (
+    BlockOutput,
+    DeepseekV3_2TransformerBlock,
+)
 from .model_config import DeepseekV3_2Config, indexer_cache_layer_map
 
 
@@ -318,12 +327,86 @@ class DeepseekV3_2TextModel(
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        layer_args = (
+            kv_collection,
+            indexer_kv_collection,
+            input_row_offsets,
+            freqs_cis,
+            mla_prefill_metadata,
+            comm_buffers,
+        )
+        pcp: PrefillContextParallelStep | None = None
+        if self.config.prefill_context_parallel:
+            # Prefill context parallelism is a per-step choice: a prefill
+            # splits its rows over each DCP group, while decode and verify
+            # steps keep DCP. The step's rows are predicated: each layer's
+            # attention runs PCP on a PCP step's rows and DCP on any other's.
+            assert self.mesh is not None
+            first_attn = self.layers[0].self_attn
+            active = prefill_predicate(
+                tokens, input_row_offsets, batch_context_length
+            )
+            # One plan for every layer, built on every step: a step that
+            # does not run PCP sizes it to one page and one row.
+            pcp = PrefillContextParallelStep(
+                dcp=first_attn.dcp_size,
+                interleave=first_attn.dcp_interleave,
+                page_size=self.config.mla_kv_params.page_size,
+                namespace="pcp",
+                active=active,
+                batch_context_length=batch_context_length,
+            ).predicated(h)
+            # Predicated: both paths run every step, each on its rows.
+            pcp = pcp.with_plan(
+                input_row_offsets,
+                pcp.rows_split(h)[0],
+                kv_collection,
+                indexer_kv_collection,
+            )
+        h = self._run_layers(h, *layer_args, pcp=pcp)
+
+        self._check_output_modes()
+        outputs: list[Tensor] = []
+        if self.emit_last_token_logits:
+            last_token_h = gather_last_tokens(h, input_row_offsets)
+            # Replicas of one device gather their rows before the vocabulary
+            # projection; replicas of several gather their logits after it
+            # (see :func:`project_to_logits`).
+            if self.config.data_parallel_degree > 1 and (
+                self.mesh is None or replica_size(self.mesh) == 1
+            ):
+                last_token_h = F.allgather(last_token_h, mesh_axis=DP)
+            outputs.append(self._project(last_token_h))
+        if self.return_logits is ReturnLogits.VARIABLE:
+            outputs.extend(
+                self._variable_logits(h, input_row_offsets, return_n_logits)
+            )
+        if self.return_hidden_states is ReturnHiddenStates.ALL_NORMALIZED:
+            outputs.append(self.norm(h))
+        return tuple(outputs)
+
+    def _run_layers(
+        self,
+        h: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        input_row_offsets: Tensor,
+        freqs_cis: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None,
+        comm_buffers: EPCommBuffers | None,
+        pcp: PrefillContextParallelStep | None = None,
+    ) -> Tensor:
+        """Runs the decoder blocks over ``h``.
+
+        With ``pcp`` every block's attention chooses prefill context
+        parallelism per step.
+        """
         # MoE blocks share a subgraph, as in V3. ``full`` and ``shared``
         # layers differ structurally (shared layers carry no indexer weights),
         # so they get one group each: a shared subgraph name is what makes two
         # call sites reuse a body, and the cache key does not otherwise see
         # the difference.
-        topk_indices: Tensor | None = None
+        topk_indices: Selection | None = None
         indexer_slots = indexer_cache_layer_map(
             self.config.indexer_types, len(self.layers)
         )
@@ -338,7 +421,7 @@ class DeepseekV3_2TextModel(
             indexer_slot_tensor = F.constant(
                 indexer_slots[idx], DType.uint32, device=CPU()
             )
-            call: Callable[..., tuple[Tensor, ...]] = layer
+            call: Callable[..., BlockOutput] = layer
             group = "shared" if layer.self_attn.skip_topk else "full"
             if isinstance(layer.mlp, QuantizedMoE):
                 call = as_subgraph(layer, name=f"moe_block_{group}")
@@ -374,28 +457,10 @@ class DeepseekV3_2TextModel(
                 indexer_slot_tensor,
                 norm_x=norm_h,
                 next_input_gamma=next_input_gamma,
+                pcp=pcp,
             )
             norm_h = rest[0] if rest else None
-
-        self._check_output_modes()
-        outputs: list[Tensor] = []
-        if self.emit_last_token_logits:
-            last_token_h = gather_last_tokens(h, input_row_offsets)
-            # Replicas of one device gather their rows before the vocabulary
-            # projection; replicas of several gather their logits after it
-            # (see :func:`project_to_logits`).
-            if self.config.data_parallel_degree > 1 and (
-                self.mesh is None or replica_size(self.mesh) == 1
-            ):
-                last_token_h = F.allgather(last_token_h, mesh_axis=DP)
-            outputs.append(self._project(last_token_h))
-        if self.return_logits is ReturnLogits.VARIABLE:
-            outputs.extend(
-                self._variable_logits(h, input_row_offsets, return_n_logits)
-            )
-        if self.return_hidden_states is ReturnHiddenStates.ALL_NORMALIZED:
-            outputs.append(self.norm(h))
-        return tuple(outputs)
+        return h
 
     def module_outputs(self, outputs: tuple[Tensor, ...]) -> ModuleV3Outputs:
         """Names the outputs of :meth:`forward` for the pipeline model."""

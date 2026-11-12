@@ -6,6 +6,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -113,6 +114,22 @@ modular_py_test(
     ],
 )
 
+# Each test realizes one eager graph of collectives on a CPU mesh. The
+# interpreter serves its ops from the build-warmed eager cache: compiling each
+# op and dtype on first use, about 10 s apiece, put the file past its timeout.
+modular_eager_py_test(
+    name = "test_prefill_context_parallel",
+    size = "large",
+    srcs = ["test_prefill_context_parallel.py"],
+    cpu_only = True,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "test_chat_template",
     srcs = ["test_chat_template.py"],
@@ -158,6 +175,7 @@ modular_py_test(
             "test_format_spec.py",
             "test_modulev3_nvfp4_kv.py",
             "test_mtp_draft.py",
+            "test_prefill_context_parallel.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
         ],

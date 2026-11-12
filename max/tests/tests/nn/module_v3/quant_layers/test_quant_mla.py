@@ -45,10 +45,17 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     NVFP4Tensor,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3.model_config import (
     mla_kv_cache_quant_config,
+)
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.prefill_context_parallel import (
+    PrefillContextParallelStep,
 )
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
@@ -1100,3 +1107,128 @@ def test_sparse_mla_nvfp4_forward_reads_the_nvfp4_op(
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert ".nvfp4" in ir
+
+
+# --------------------------------------------------------------------------- #
+# Prefill context parallelism
+# --------------------------------------------------------------------------- #
+
+_PCP_PACK = "kv_cache.pcp_pack_rows.paged"
+_PCP_UNPACK = "kv_cache.pcp_unpack_rows.paged"
+_LATENT_STORE = "attention.mla.store.ragged.paged"
+
+
+@pytest.mark.parametrize("latent_dtype", [DType.float8_e4m3fn, DType.uint8])
+def test_sparse_mla_prefill_context_parallel_traces_on_dcp(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    sm100_arch: None,
+    latent_dtype: DType,
+) -> None:
+    """TP4 x DCP4 with a replicated query: one predicated step.
+
+    Traced, not compiled; the plan is built once, above the layer. The PCP
+    path's ranks attend their runs of the step's PCP rows with all 16 heads
+    and leave with their 4 TP heads of every row for ``o_proj``. The chunk's
+    latent is stored by ownership into the DCP cache and whole into the
+    scratch on each rank, and the prefix is packed and unpacked once per
+    cache: the latent and the indexer keys. The DCP path runs beside it on
+    the step's other rows, with no ``ops.cond`` between them.
+    """
+    n = 4
+    devices = tuple(mock_accelerator(i) for i in range(n))
+    mesh = DeviceMesh(devices, (n,), (TP,))
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    kv_params = _make_sparse_kv_params(devices, latent_dtype)
+    indexer_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.from_device(d) for d in devices],
+        num_q_heads=_SPARSE_N_HEADS,
+        page_size=_PAGE_SIZE,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=128
+        ),
+    )
+    row_offsets = (0, 5, 9, 11)
+
+    def trace(pcp_on: bool) -> tuple[Tensor, str]:
+        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+            layer = tensor_parallel_sparse_latent_attention_with_rope(
+                _make_sparse_layer(
+                    devices,
+                    None,
+                    graph_mode="auto",
+                    kv_params=kv_params,
+                    indexer_quant_config=fp8_quant_config,
+                    dcp_size=n,
+                ),
+                n,
+            )
+            x = Tensor.zeros([row_offsets[-1], _HIDDEN_SIZE], device=replicated)
+            offsets = F.constant(
+                np.array(row_offsets, dtype=np.uint32), device=replicated
+            )
+            kv = _build_kv_collection(layer.kv_params, 3, 4, mesh)
+            indexer = _build_kv_collection(indexer_params, 3, 4, mesh)
+            step = PrefillContextParallelStep(
+                dcp=n,
+                interleave=1,
+                page_size=_PAGE_SIZE,
+                namespace="pcp",
+                active=F.constant(True, DType.bool, device=CPU()),
+                batch_context_length=F.constant(
+                    np.array([1024], np.int32), device=CPU()
+                ),
+            )
+            if pcp_on:
+                step = step.predicated(x)
+                step = step.with_plan(
+                    offsets, step.rows_split(x)[0], kv, indexer
+                )
+            out, _ = layer(
+                x,
+                kv,
+                indexer,
+                Tensor.zeros([4096, _QK_ROPE_HEAD_DIM], device=replicated),
+                F.constant(0, DType.uint32, device=CPU()),
+                offsets,
+                pcp=step if pcp_on else None,
+            )
+            return out, str(Graph.current._mlir_op)
+
+    out, ir = trace(True)
+    assert [list(s.shape) for s in out.local_shards] == [
+        [row_offsets[-1], _HIDDEN_SIZE]
+    ] * n
+    assert "mo.if" not in ir
+    # The PCP path stores by ownership and into the scratch, on each rank,
+    # beside the DCP path's own store.
+    _, dcp_ir = trace(False)
+    assert ir.count(_LATENT_STORE) >= dcp_ir.count(_LATENT_STORE) + 2 * n
+    assert ir.count(_PCP_PACK) == 2 * n
+    assert ir.count(_PCP_UNPACK) == 2 * n
+
+    # A decode or verify step's capture records both paths and the plan,
+    # so the predicated graph may add no host copy to the DCP-only one. (On
+    # these mock devices the PCP path's collectives lower to device-to-device
+    # transfers, which a capture records like any kernel.)
+    assert _host_transfers(ir) == _host_transfers(dcp_ir), (
+        "the predicated graph copies to or from the host:\n"
+        + "\n".join(_host_transfer_lines(ir))
+    )
+
+
+def _host_transfer_lines(ir: str) -> list[str]:
+    """The ``mo.transfer`` ops in printed IR that copy to or from the host."""
+    return [
+        line.strip()
+        for line in ir.splitlines()
+        if '"mo.transfer"' in line and "cpu" in line
+    ]
+
+
+def _host_transfers(ir: str) -> int:
+    """How many host copies printed IR holds."""
+    return len(_host_transfer_lines(ir))

@@ -19,6 +19,10 @@ one non-CP run of the same inputs: every token's row (and, for NVFP4, its
 scales) on its owner at the owner's local slot, and the poison everywhere
 else. The roped query uses the global position, so it must match the non-CP
 query bit for bit on every rank.
+
+The store-only form, `mla_store_ragged_paged`, which prefill context
+parallelism runs over a whole gathered chunk, must leave each rank the same
+image.
 """
 
 from std.collections import Set
@@ -31,7 +35,10 @@ from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, RowMajorLayout, TileTensor, row_major
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
-from nn.attention.gpu.mla_graph import mla_fused_rope_rmsnorm_quantization
+from nn.attention.gpu.mla_graph import (
+    mla_fused_rope_rmsnorm_quantization,
+    mla_store_ragged_paged,
+)
 from std.testing import assert_equal
 from std.utils import IndexList
 
@@ -312,6 +319,103 @@ def launch[
     ctx.synchronize()
 
 
+def launch_store[
+    cache_dtype: DType, nvfp4: Bool, dcp_size: Int, dcp_interleave: Int
+](
+    ctx: DeviceContext,
+    batch: Batch,
+    inputs: Inputs,
+    mut values: DeviceBuffer[cache_dtype],
+    mut scales: DeviceBuffer[NVFP4_SF_DTYPE],
+    dcp_rank: Int,
+) raises:
+    """Runs the store-only op for one rank into one latent cache."""
+    var total = batch.total_length()
+    var bsz = batch.batch_size()
+    var row_offsets_tt = TileTensor[mut=False](
+        inputs.row_offsets, row_major(bsz + 1)
+    )
+    var freqs_tt = TileTensor[mut=False](
+        inputs.freqs, row_major[max_seq_len, rope_dim]()
+    )
+    var gamma_tt = TileTensor[mut=False](inputs.gamma, row_major[kv_norm_dim]())
+    var kv_tt = TileTensor[mut=False](
+        inputs.kv, row_major((total, Idx[head_size]))
+    )
+    var cache_lengths_tt = TileTensor[mut=False](
+        inputs.cache_lengths, row_major(bsz)
+    )
+    var lut_tt = TileTensor[mut=False](
+        inputs.lut, row_major((bsz, batch.lut_cols))
+    )
+
+    @inline(.always)
+    def kv_input_fn[
+        width: Int
+    ](coords: IndexList[2]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
+        return kv_tt.load[width=width]((coords[0], coords[1]))
+
+    comptime if nvfp4:
+        var coll = PagedKVCacheCollection[
+            cache_dtype,
+            KVCacheStaticParams(
+                num_heads=1,
+                head_size=packed_size,
+                is_mla=True,
+                fp8_tail_size=rope_dim,
+            ),
+            page_size,
+            scale_dtype_=NVFP4_SF_DTYPE,
+            quantization_granularity_=NVFP4_SF_VECTOR_SIZE // 2,
+        ](
+            blocks_tt(values, batch.num_blocks, packed_size),
+            cache_lengths_tt,
+            lut_tt,
+            UInt32(batch.max_prompt()),
+            UInt32(batch.max_cache()),
+            scales=blocks_tt(scales, batch.num_blocks, sf_cols),
+            scales_lookup_table=lut_tt,
+        )
+        mla_store_ragged_paged[dcp_size, dcp_interleave](
+            total,
+            row_offsets_tt,
+            freqs_tt,
+            gamma_tt,
+            coll,
+            UInt32(layer_idx),
+            epsilon,
+            kv_input_fn,
+            ctx,
+            dcp_rank,
+        )
+    else:
+        var coll = PagedKVCacheCollection[
+            cache_dtype,
+            KVCacheStaticParams(num_heads=1, head_size=head_size, is_mla=True),
+            page_size,
+            scales_origin=MutUntrackedOrigin,
+        ](
+            blocks_tt(values, batch.num_blocks, head_size),
+            cache_lengths_tt,
+            lut_tt,
+            UInt32(batch.max_prompt()),
+            UInt32(batch.max_cache()),
+        )
+        mla_store_ragged_paged[dcp_size, dcp_interleave](
+            total,
+            row_offsets_tt,
+            freqs_tt,
+            gamma_tt,
+            coll,
+            UInt32(layer_idx),
+            epsilon,
+            kv_input_fn,
+            ctx,
+            dcp_rank,
+        )
+    ctx.synchronize()
+
+
 def poisoned[dt: DType](ctx: DeviceContext, n: Int) raises -> DeviceBuffer[dt]:
     var host = ctx.enqueue_create_host_buffer[dt](n)
     ctx.synchronize()
@@ -426,6 +530,34 @@ def run_case[
             0,
             msg="roped query, rank " + String(rank),
         )
+
+        # The store-only op leaves the same image.
+        var stored = poisoned[cache_dtype](ctx, values_n)
+        var stored_scales = poisoned[NVFP4_SF_DTYPE](ctx, scales_n)
+        launch_store[cache_dtype, nvfp4, dcp_size, dcp_interleave](
+            ctx, batch, inputs, stored, stored_scales, rank
+        )
+        assert_equal(
+            count_mismatches(
+                to_bytes(ctx, stored, values_n),
+                expected_rank_image[dcp_size, dcp_interleave](
+                    batch, ref_value_bytes, row_bytes, rank
+                ),
+            ),
+            0,
+            msg="store-only latent bytes, rank " + String(rank),
+        )
+        comptime if nvfp4:
+            assert_equal(
+                count_mismatches(
+                    to_bytes(ctx, stored_scales, scales_n),
+                    expected_rank_image[dcp_size, dcp_interleave](
+                        batch, ref_scale_bytes, sf_row_bytes, rank
+                    ),
+                ),
+                0,
+                msg="store-only scale bytes, rank " + String(rank),
+            )
 
 
 def run_cache[

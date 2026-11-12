@@ -1656,6 +1656,8 @@ def mla_store_ragged_paged[
     & RegisterPassable
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
+    dcp_size: Int = 1,
+    dcp_interleave: Int = 1,
 ](
     num_tokens: Int,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
@@ -1666,6 +1668,7 @@ def mla_store_ragged_paged[
     epsilon: Float32,
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
+    dcp_rank: Int = 0,
 ) raises:
     """Stores raw MLA latent rows into the paged cache, normed and roped.
 
@@ -1684,6 +1687,10 @@ def mla_store_ragged_paged[
         collection_t: Type of the KV cache collection (inferred).
         KVInputFnType: Type of the closure that loads the KV latent values
             (inferred).
+        dcp_size: Ranks of the context-parallel group that shares each
+            request's KV positions; 1 stores every row.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn (see `ContextParallelLayout`).
 
     Args:
         num_tokens: Total rows to store; the caller's row count.
@@ -1701,6 +1708,8 @@ def mla_store_ragged_paged[
             + rope_dim. It runs on the device, so it must copy what it
             captures.
         ctx: Device context for kernel execution.
+        dcp_rank: This rank's index in the context-parallel group. Outside a
+            group (`dcp_size == 1`) the layout never reads it.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -1731,7 +1740,9 @@ def mla_store_ragged_paged[
         q_rope_buf, row_major(num_tokens, Idx[1], Idx[rope_dim])
     )
 
-    mla_fused_rope_rmsnorm_quantization[store_only=True](
+    mla_fused_rope_rmsnorm_quantization[
+        store_only=True, dcp_size=dcp_size, dcp_interleave=dcp_interleave
+    ](
         q_rope,
         q_rope.as_unsafe_any_origin(),  # hack aliasing.
         input_row_offsets,
@@ -1742,6 +1753,7 @@ def mla_store_ragged_paged[
         epsilon,
         kv_input_fn,
         ctx,
+        dcp_rank,
     )
 
 

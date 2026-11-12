@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
     KVCacheParamInterface,
@@ -191,6 +192,20 @@ def resolve_dcp_q_replicate(value: bool | None) -> bool:
     return True if value is None else value
 
 
+def resolve_prefill_context_parallel(value: bool | None) -> bool:
+    """Returns whether prefill steps run prefill context parallelism.
+
+    ``None`` (no ``--prefill-context-parallel`` /
+    ``--no-prefill-context-parallel``) means off: PCP is opt-in. On a
+    prefill step too short to split, the predicated graph still pays PCP's
+    per-layer host work, so a DCP export only runs it when asked. An explicit
+    True passes through for the config to refuse where PCP cannot run (no
+    DCP, a gathered query, an interleave above 1, FP8 MLA weights or more
+    than one data-parallel replica).
+    """
+    return bool(value)
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     """Configuration for DeepseekV3.2 models (ModuleV3)."""
@@ -250,6 +265,19 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     :func:`resolve_dcp_q_replicate`).
     """
 
+    prefill_context_parallel: bool = False
+    """Whether prefill steps split their rows over each DCP group's ranks.
+
+    Each rank projects its run of the step's rows, the group all-gathers the
+    latent and indexer keys so every rank stores the positions it owns, and
+    each rank attends its own queries over a whole-context scratch copy of
+    the request's context with the non-DCP sparse prefill op; one
+    all-to-all returns every rank its heads of every row. Decode and verify
+    steps stay on DCP. Needs ``decode_context_parallel_degree > 1`` and
+    ``dcp_q_replicate``. See
+    :mod:`.layers.prefill_context_parallel`.
+    """
+
     def __post_init__(self) -> None:
         super().__post_init__()
         dcp = self.decode_context_parallel_degree
@@ -257,7 +285,44 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             raise ValueError(
                 f"decode_context_parallel_degree must be positive (got {dcp})."
             )
+        if self.prefill_context_parallel and dcp == 1:
+            raise ValueError(
+                "prefill_context_parallel splits prefill over decode context "
+                "parallel groups, so it needs decode_context_parallel_degree "
+                "> 1."
+            )
+        if self.prefill_context_parallel and not self.dcp_q_replicate:
+            raise ValueError(
+                "prefill_context_parallel needs a replicated decode context "
+                "parallel query (dcp_q_replicate): each rank projects all of "
+                "its group's heads for its own rows."
+            )
+        quant_config = self.quant_config
+        if (
+            self.prefill_context_parallel
+            and is_fp8_block_quantized(quant_config)
+            and quant_config is not None
+            and quant_config.attn_quantized_layers
+        ):
+            raise ValueError(
+                "prefill_context_parallel attends with BF16 MLA weights, and "
+                "this checkpoint's MLA is FP8 block-quantized; export without "
+                "--prefill-context-parallel."
+            )
+        if self.prefill_context_parallel and self.data_parallel_degree > 1:
+            raise ValueError(
+                "prefill_context_parallel splits one replica's rows, so it "
+                "needs data_parallel_degree 1 (got "
+                f"{self.data_parallel_degree}); export without "
+                "--prefill-context-parallel."
+            )
         interleave = self.decode_context_parallel_interleave
+        if self.prefill_context_parallel and interleave != 1:
+            raise ValueError(
+                "prefill_context_parallel requires "
+                "decode_context_parallel_interleave 1 for now (got "
+                f"{interleave}); export without --prefill-context-parallel."
+            )
         if interleave < 1:
             raise ValueError(
                 "decode_context_parallel_interleave must be positive (got "
@@ -578,6 +643,9 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
             ),
             dcp_q_replicate=resolve_dcp_q_replicate(
                 model_config.dcp_q_replicate
+            ),
+            prefill_context_parallel=resolve_prefill_context_parallel(
+                model_config.prefill_context_parallel
             ),
             # DeepseekV3.2 specific fields
             index_head_dim=config.index_head_dim,

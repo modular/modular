@@ -48,11 +48,17 @@ from .moe import (
     DeepseekV3_2TensorParallelMoE,
 )
 from .moe_gate import DeepseekV3_2TopKRouter
+from .prefill_context_parallel import PrefillContextParallelStep
 from .rms_norm import MultiplyBeforeCastRMSNorm
 from .sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
+    Selection,
     tensor_parallel_sparse_latent_attention_with_rope,
 )
+
+BlockOutput = tuple[Tensor, Selection] | tuple[Tensor, Selection, Tensor]
+"""A block's output, its top-k selection, and with ``next_input_gamma`` the
+next block's input norm."""
 
 
 def _get_mlp(
@@ -140,7 +146,7 @@ def _get_mlp(
     return mlp
 
 
-class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
+class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
     """Sparse MLA, MoE/MLP, and RMSNorm for DeepSeek V3.2.
 
     Differs from the V3 block in that attention is sparse: a lightning indexer
@@ -263,14 +269,18 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         comm_buffers: EPCommBuffers | None = None,
-        prev_topk_indices: Tensor | None = None,
+        prev_topk_indices: Selection | None = None,
         reuse_prev_topk: bool = False,
         indexer_layer_idx: Tensor | None = None,
         norm_x: Tensor | None = None,
         next_input_gamma: Tensor | None = None,
         selection_lag: int = 0,
-    ) -> tuple[Tensor, ...]:
+        pcp: PrefillContextParallelStep | None = None,
+    ) -> BlockOutput:
         """Returns the block output and its top-k selection.
+
+        With ``pcp`` the attention runs prefill context parallelism; the
+        rest of the block is unchanged.
 
         With ``next_input_gamma`` (only when :attr:`carry_next_input_norm`),
         also returns the next block's input norm of the output, fused into
@@ -292,6 +302,7 @@ class DeepseekV3_2TransformerBlock(Module[..., tuple[Tensor, ...]]):
             reuse_prev_topk,
             indexer_layer_idx,
             selection_lag,
+            pcp=pcp,
         )
 
         if self.fuse_post_attention_norm:

@@ -7543,6 +7543,10 @@ def store_mla_latent_ragged(
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     epsilon: float,
+    *,
+    dcp_size: int = 1,
+    dcp_interleave: int = 1,
+    dcp_rank: TensorValue | int = 0,
 ) -> None:
     """Stores raw MLA latent rows into the paged cache, normed and roped.
 
@@ -7566,6 +7570,13 @@ def store_mla_latent_ragged(
         kv_collection: Paged KV cache values.
         layer_idx: Layer index (uint32).
         epsilon: RMSNorm epsilon.
+        dcp_size: Ranks of the context-parallel group sharing each request's
+            KV positions. At 1 every row is stored, which is the default and
+            today's behavior.
+        dcp_interleave: Consecutive positions a rank owns before the next
+            rank's turn.
+        dcp_rank: This device's rank in the group, a Python int or an int32
+            host scalar.
     """
     if kv.rank != 2:
         raise ValueError(f"expected kv of rank 2 but got {kv.rank}")
@@ -7604,27 +7615,186 @@ def store_mla_latent_ragged(
             f" size {kv_params.head_dim}"
         )
 
-    if kv_collection.kv_scales is not None:
-        raise ValueError(
-            "store_mla_latent_ragged writes an unscaled latent; a scaled KV"
-            " cache is not supported."
-        )
-
     assert kv_params.page_size is not None
-    _reject_nvfp4_mla_kv_cache(kv_params, "attention.mla.store.ragged.paged")
 
+    # A packed NVFP4 latent needs its scale pool alongside the values, which
+    # the unscaled registration has no operands for, so it has its own.
+    if kv_params.is_nvfp4_kv_cache:
+        if kv_collection.kv_scales is None:
+            raise ValueError(
+                "an NVFP4 KV cache must carry its scales, but kv_scales is"
+                " None."
+            )
+        op_name = "attention.mla.store.ragged.paged.nvfp4"
+    else:
+        if kv_collection.kv_scales is not None:
+            raise ValueError(
+                "store_mla_latent_ragged writes an unscaled latent; a scaled"
+                " KV cache other than NVFP4 is not supported."
+            )
+        op_name = "attention.mla.store.ragged.paged"
+
+    values: MutableSequence[Value[Any]] = [
+        kv,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    parameters: dict[str, Any] = {}
+    _decode_context_parallel_operands(
+        op_name,
+        parameters,
+        values,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
+    )
     ops.inplace_custom(
-        "attention.mla.store.ragged.paged",
+        op_name,
         device=kv.device,
-        values=[
-            kv,
-            input_row_offsets,
-            freqs_cis,
-            kv_norm_gamma,
-            *kv_collection.flatten_without_attention_dispatch_metadata(),
-            layer_idx,
-            ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=values,
+        parameters=parameters,
+    )
+
+
+@_rejects_split_head_dims
+def kv_cache_row_bytes(kv_collection: PagedCacheValues) -> int:
+    """Returns the bytes one cache row and its scales take, one head a row.
+
+    That is the row width :func:`kv_cache_pack_owned_rows` packs and
+    :func:`kv_cache_unpack_prefix_rows` unpacks.
+    """
+    blocks = kv_collection.kv_blocks
+    value = int(blocks.shape[-1]) * int(blocks.shape[-2])
+    row = value * blocks.dtype.size_in_bytes
+    scales = kv_collection.kv_scales
+    if scales is not None:
+        row += int(scales.shape[-1]) * scales.dtype.size_in_bytes
+    return row
+
+
+@_rejects_split_head_dims
+def _pcp_row_op(
+    name: str, kv_collection: PagedCacheValues
+) -> tuple[str, list[Value[Any]]]:
+    """Returns a packing op's name and its cache operands."""
+    if kv_collection.kv_scales is not None:
+        name += ".scaled"
+    return name, list(
+        kv_collection.flatten_without_attention_dispatch_metadata()
+    )
+
+
+@_rejects_split_head_dims
+def kv_cache_pack_owned_rows(
+    output: BufferValue,
+    row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    *,
+    col_offset: int,
+    dcp_size: int,
+    dcp_interleave: int,
+    dcp_rank: TensorValue | int,
+) -> None:
+    """Packs the cache rows a context-parallel rank owns into ``output``.
+
+    Under prefill context parallelism every rank of a group needs every
+    cached position of the batch's requests, which the group's caches split
+    by ownership. Each rank packs its own: request ``b`` takes rows
+    ``[row_offsets[b], row_offsets[b + 1])`` of ``output``, at least
+    ``ceil(cache_length / (dcp_size * dcp_interleave)) * dcp_interleave``,
+    and row ``row_offsets[b] + j`` holds its local slot ``j`` as raw bytes:
+    the value row, then its scales if the cache has them, starting at byte
+    ``col_offset``. All-gather the rows over the group, rank-major, and
+    unpack them with :func:`kv_cache_unpack_prefix_rows`.
+
+    Args:
+        output: ``[N, width]`` uint8 rows, written in place.
+        row_offsets: ``[B + 1]`` uint32 row offsets of each request.
+        kv_collection: This rank's context-parallel cache, with global
+            cache lengths.
+        layer_idx: The layer to read, a uint32 host scalar.
+        col_offset: First byte column, a multiple of 4.
+        dcp_size: Ranks in the group.
+        dcp_interleave: Consecutive positions a rank owns in turn.
+        dcp_rank: This rank, a Python int or an int32 host scalar.
+    """
+    if col_offset % 4:
+        raise ValueError(f"col_offset {col_offset} is not a multiple of 4")
+    op_name, cache_values = _pcp_row_op(
+        "kv_cache.pcp_pack_rows.paged", kv_collection
+    )
+    values: MutableSequence[Value[Any]] = [
+        output,
+        row_offsets,
+        *cache_values,
+        layer_idx,
+    ]
+    parameters: dict[str, Any] = {"col_offset": col_offset}
+    _decode_context_parallel_operands(
+        op_name,
+        parameters,
+        values,
+        dcp_size=dcp_size,
+        dcp_interleave=dcp_interleave,
+        dcp_rank=dcp_rank,
+    )
+    parameters.setdefault("dcp_size", dcp_size)
+    parameters.setdefault("dcp_interleave", dcp_interleave)
+    ops.inplace_custom(
+        op_name,
+        device=row_offsets.device,
+        values=values,
+        parameters=parameters,
+    )
+
+
+@_rejects_split_head_dims
+def kv_cache_unpack_prefix_rows(
+    gathered: TensorValue,
+    row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    *,
+    col_offset: int,
+    dcp_size: int,
+    dcp_interleave: int,
+) -> None:
+    """Writes a group's gathered prefix rows into a whole-context cache.
+
+    ``gathered`` is the rank-major all-gather of every rank's
+    :func:`kv_cache_pack_owned_rows` output, ``[dcp_size * N, width]``. The
+    row of global position ``p`` of request ``b`` lands at position ``p`` of
+    ``kv_collection``, a cache outside any context-parallel group, for every
+    ``p`` below the request's cache length there.
+
+    Args:
+        gathered: ``[dcp_size * N, width]`` uint8 rows.
+        row_offsets: The ``[B + 1]`` row offsets the ranks packed with.
+        kv_collection: The whole-context cache, written in place.
+        layer_idx: The layer to write, a uint32 host scalar.
+        col_offset: First byte column, a multiple of 4.
+        dcp_size: Ranks in the group.
+        dcp_interleave: Consecutive positions a rank owns in turn.
+    """
+    if col_offset % 4:
+        raise ValueError(f"col_offset {col_offset} is not a multiple of 4")
+    op_name, cache_values = _pcp_row_op(
+        "kv_cache.pcp_unpack_rows.paged", kv_collection
+    )
+    ops.inplace_custom(
+        op_name,
+        device=row_offsets.device,
+        values=[gathered, row_offsets, *cache_values, layer_idx],
+        parameters={
+            "col_offset": col_offset,
+            "dcp_size": dcp_size,
+            "dcp_interleave": dcp_interleave,
+        },
     )
 
 

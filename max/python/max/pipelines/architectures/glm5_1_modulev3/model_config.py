@@ -43,6 +43,7 @@ from ..deepseekV3_2_modulev3.model_config import (
     check_replica_layout,
     resolve_dcp_q_replicate,
     resolve_indexer_types,
+    resolve_prefill_context_parallel,
 )
 from ..glm5_1.model_config import glm_rope_scaling, glm_unpadded_vocab_size
 
@@ -164,6 +165,9 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
             ),
             dcp_q_replicate=resolve_dcp_q_replicate(
                 model_config.dcp_q_replicate
+            ),
+            prefill_context_parallel=resolve_prefill_context_parallel(
+                model_config.prefill_context_parallel
             ),
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,

@@ -49,7 +49,11 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
     rms_norm_value_cache_ragged_paged,
 )
-from nn.kv_cache_gather import kv_cache_gather_rows_ragged
+from nn.kv_cache_gather import (
+    kv_cache_gather_rows_ragged,
+    kv_cache_pack_owned_rows,
+    kv_cache_unpack_prefix_rows,
+)
 from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
@@ -298,6 +302,220 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
             slots.to_tile_tensor[.int32](),
             row_offsets.to_tile_tensor[.uint32](),
             cache,
+            context,
+        )
+
+
+@extensibility.register("kv_cache.pcp_pack_rows.paged")
+struct Struct_kv_cache_pcp_pack_rows_paged:
+    """Registers the `kv_cache.pcp_pack_rows.paged` graph op.
+
+    Packs the cached rows one context-parallel rank owns, as raw bytes, into
+    a column window of `output`, for an all-gather over the group. See
+    `nn.kv_cache_gather.kv_cache_pack_owned_rows`. The `.scaled` variant
+    also packs each row's scales.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        //,
+        col_offset: Int,
+        dcp_size: Int,
+        dcp_interleave: Int,
+    ](
+        output: MutableInputTensor[dtype=.uint8, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        dcp_rank: Int32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        kv_cache_pack_owned_rows[
+            scale_row_elems=0,
+            col_offset=col_offset,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ](
+            output.to_tile_tensor[.uint8](),
+            row_offsets.to_tile_tensor[.uint32](),
+            collection.get_key_cache(Int(layer_idx)),
+            Int(dcp_rank),
+            context,
+        )
+
+
+@extensibility.register("kv_cache.pcp_pack_rows.paged.scaled")
+struct Struct_kv_cache_pcp_pack_rows_paged_scaled:
+    """Registers the `kv_cache.pcp_pack_rows.paged.scaled` graph op: the
+    `kv_cache.pcp_pack_rows.paged` op over a cache with a scale pool, whose
+    operands arrive in the order `flatten_without_attention_dispatch_metadata`
+    emits for quantized cache params."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        scale_dtype: DType,
+        //,
+        col_offset: Int,
+        dcp_size: Int,
+        dcp_interleave: Int,
+    ](
+        output: MutableInputTensor[dtype=.uint8, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        dcp_rank: Int32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
+        )
+        kv_cache_pack_owned_rows[
+            scale_row_elems=Int(kv_scales.static_spec.shape_tuple[5]),
+            col_offset=col_offset,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ](
+            output.to_tile_tensor[.uint8](),
+            row_offsets.to_tile_tensor[.uint32](),
+            collection.get_key_cache(Int(layer_idx)),
+            Int(dcp_rank),
+            context,
+        )
+
+
+@extensibility.register("kv_cache.pcp_unpack_rows.paged")
+struct Struct_kv_cache_pcp_unpack_rows_paged:
+    """Registers the `kv_cache.pcp_unpack_rows.paged` graph op.
+
+    Writes a context-parallel group's all-gathered packed prefix rows into a
+    cache outside any group, each at its global position. See
+    `nn.kv_cache_gather.kv_cache_unpack_prefix_rows`. The `.scaled` variant
+    also writes each row's scales.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        //,
+        col_offset: Int,
+        dcp_size: Int,
+        dcp_interleave: Int,
+    ](
+        gathered: InputTensor[dtype=.uint8, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        kv_cache_unpack_prefix_rows[
+            scale_row_elems=0,
+            col_offset=col_offset,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ](
+            gathered.to_tile_tensor[.uint8](),
+            row_offsets.to_tile_tensor[.uint32](),
+            collection.get_key_cache(Int(layer_idx)),
+            context,
+        )
+
+
+@extensibility.register("kv_cache.pcp_unpack_rows.paged.scaled")
+struct Struct_kv_cache_pcp_unpack_rows_paged_scaled:
+    """Registers the `kv_cache.pcp_unpack_rows.paged.scaled` graph op: the
+    `kv_cache.pcp_unpack_rows.paged` op over a cache with a scale pool."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        scale_dtype: DType,
+        //,
+        col_offset: Int,
+        dcp_size: Int,
+        dcp_interleave: Int,
+    ](
+        gathered: InputTensor[dtype=.uint8, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
+        )
+        kv_cache_unpack_prefix_rows[
+            scale_row_elems=Int(kv_scales.static_spec.shape_tuple[5]),
+            col_offset=col_offset,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
+        ](
+            gathered.to_tile_tensor[.uint8](),
+            row_offsets.to_tile_tensor[.uint32](),
+            collection.get_key_cache(Int(layer_idx)),
             context,
         )
 

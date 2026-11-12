@@ -787,6 +787,19 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether decode context parallel ranks replicate the query."""
 
+    prefill_context_parallel: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether prefill steps split "
+            "their query rows over each DCP group's ranks (prefill context "
+            "parallelism) instead of running DCP's per-rank attention over "
+            "every row. Needs a replicated query. None takes the default, "
+            "off: PCP is opt-in. Set only by the gen-mef export, like "
+            "decode_context_parallel_degree."
+        ),
+    )
+    """Whether prefill steps run prefill context parallelism over DCP."""
+
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )

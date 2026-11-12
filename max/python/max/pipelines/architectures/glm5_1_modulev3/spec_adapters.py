@@ -66,6 +66,11 @@ from max.tensor.sharding import (
 
 from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from ..deepseekV3_2_modulev3.deepseekV3_2 import project_to_logits
+from ..deepseekV3_2_modulev3.layers.prefill_context_parallel import (
+    PrefillContextParallelStep,
+    prefill_predicate,
+)
+from ..deepseekV3_2_modulev3.layers.sparse_mla import Selection
 from ..deepseekV3_2_modulev3.nextn import DeepseekV3_2NextN
 from ..deepseekV3_modulev3.deepseekV3 import gather_last_tokens
 from .glm5_1 import Glm5_1Decoder
@@ -281,7 +286,12 @@ class Glm5_1MTPProposer(TensorAdapter):
     ) -> Proposed[Tensor]:
         """Runs the draft over the prompt's target hidden states."""
         h, topk, offsets = self._decode(
-            batch, tokens, target_hidden, None, split_prefix="mtp_prefill"
+            batch,
+            tokens,
+            target_hidden,
+            None,
+            split_prefix="mtp_prefill",
+            prefill_context_parallel=True,
         )
         # Every row's hidden state and the logits of each request's last
         # ``return_n_logits`` rows, which the driver gathers at the accepted
@@ -294,10 +304,16 @@ class Glm5_1MTPProposer(TensorAdapter):
             self.mesh,
             data_parallel_degree=batch.data_parallel_degree,
         )
+        reuse: list[Tensor] = []
+        if self.reuse is not None:
+            # Only a draft without DCP reuses its selection, and only a
+            # predicated (PCP, so DCP) prefill splits it.
+            assert isinstance(topk, Tensor), type(topk)
+            reuse = list(topk.local_shards)
         return Proposed(
             logits=self._project(rows),
             hidden=list(h.local_shards),
-            reuse=list(topk.local_shards) if self.reuse is not None else [],
+            reuse=reuse,
         )
 
     def step(
@@ -359,13 +375,20 @@ class Glm5_1MTPProposer(TensorAdapter):
         reuse: list[Tensor] | None,
         selection_lag: int = 0,
         split_prefix: str = "mtp",
-    ) -> tuple[Tensor, Tensor, Tensor]:
+        prefill_context_parallel: bool = False,
+    ) -> tuple[Tensor, Selection, Tensor]:
         """Runs the draft layer, returning its output, top-k and offsets.
 
         ``split_prefix`` names this call's per-replica row dims. Every call
         that splits the batch needs its own: the target and the prefill split
         prompt tokens, each step one row per request, and dims that share a
         name share one runtime extent.
+
+        With ``prefill_context_parallel`` (the prefill call) a model built
+        for prefill context parallelism predicates the draft's rows per step
+        as the target does, and the selection comes back split into its DCP
+        and PCP rows' halves. No draft step reuses it: none does under
+        decode context parallelism.
         """
         rows = self._rows(batch)
         embedded = self.language_model.embed_tokens(
@@ -415,21 +438,53 @@ class Glm5_1MTPProposer(TensorAdapter):
                 batch.ep_inputs
             )
 
-        h, topk = self.draft(
-            embedded,
-            hidden,
+        def draft(
+            pcp: PrefillContextParallelStep | None = None,
+        ) -> tuple[Tensor, Selection]:
+            return self.draft(
+                embedded,
+                hidden,
+                kv_collection,
+                indexer_kv_collection,
+                offsets,
+                freqs_cis,
+                mla_prefill_metadata,
+                comm_buffers,
+                Tensor.from_shard_values(reuse, rows)
+                if reuse is not None
+                else None,
+                reuse is not None,
+                selection_lag=selection_lag,
+                pcp=pcp,
+            )
+
+        config = self.draft.config
+        if not (prefill_context_parallel and config.prefill_context_parallel):
+            h, topk = draft()
+            return h, topk, offsets
+
+        # The draft's prefill runs over the target's rows, so it makes the
+        # target's per-step choice (:func:`prefill_predicate`) and predicates
+        # its rows as the target does, with its own plan over its own caches:
+        # the NextN layer's attention runs both paths, each on its rows.
+        attention = self.draft.decoder_layer.self_attn
+        context_lengths = _context_lengths(batch)
+        active = prefill_predicate(embedded, offsets, context_lengths)
+        pcp = PrefillContextParallelStep(
+            dcp=attention.dcp_size,
+            interleave=attention.dcp_interleave,
+            page_size=config.mla_kv_params.page_size,
+            namespace="pcp_mtp",
+            active=active,
+            batch_context_length=context_lengths,
+        ).predicated(embedded)
+        pcp = pcp.with_plan(
+            offsets,
+            pcp.rows_split(embedded)[0],
             kv_collection,
             indexer_kv_collection,
-            offsets,
-            freqs_cis,
-            mla_prefill_metadata,
-            comm_buffers,
-            Tensor.from_shard_values(reuse, rows)
-            if reuse is not None
-            else None,
-            reuse is not None,
-            selection_lag=selection_lag,
         )
+        h, topk = draft(pcp)
         return h, topk, offsets
 
 

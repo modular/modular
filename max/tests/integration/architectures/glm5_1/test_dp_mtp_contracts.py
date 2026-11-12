@@ -434,3 +434,90 @@ def test_decode_splits_embeddings_and_preserves_local_carries(
             hidden,
             topk if reuse_selection else None,
         )
+
+
+def test_prefill_predicates_the_draft_rows_under_pcp() -> None:
+    """A PCP model's draft prefill predicates its rows as the target does.
+
+    The NextN layer gets a predicated step (its rows split, no per-layer
+    ``ops.cond``) whose one plan covers the step's PCP rows.
+    """
+    mesh = _mesh(1)
+    tokens = Tensor(list(range(4)), dtype=DType.int64)
+    hidden = [Tensor(np.zeros((4, 1), dtype=np.float32))]
+    attention = SimpleNamespace(
+        graph_mode="decode", dcp_size=2, dcp_interleave=1
+    )
+    planned: list[Tensor] = []
+    steps: list[object] = []
+
+    def with_plan(
+        step: spec_adapters.PrefillContextParallelStep,
+        offsets: Tensor,
+        rows: Tensor,
+        *caches: object,
+    ) -> spec_adapters.PrefillContextParallelStep:
+        planned.append(rows)
+        return step
+
+    def decode(
+        embedded: Tensor, carried: Tensor, *args: object, **kwargs: object
+    ) -> tuple[Tensor, Tensor]:
+        steps.append(kwargs["pcp"])
+        return carried, carried
+
+    config = _config(mesh)
+    config.prefill_context_parallel = True
+    proposer = object.__new__(spec_adapters.Glm5_1MTPProposer)
+    proposer.mesh = mesh
+    proposer.language_model = _text_model(mesh)
+    proposer.draft = object.__new__(DeepseekV3_2NextN)
+    proposer.draft.config = config
+    proposer.draft.ep_batch_manager = None
+    with (
+        patch.object(
+            proposer.language_model,
+            "embed_tokens",
+            side_effect=lambda t: t.cast(DType.float32).reshape((-1, 1)),
+            create=True,
+        ),
+        patch.object(
+            proposer.language_model,
+            "rope",
+            SimpleNamespace(freqs_cis=Tensor([[1.0]])),
+            create=True,
+        ),
+        patch.object(
+            proposer.draft,
+            "decoder_layer",
+            SimpleNamespace(self_attn=attention),
+            create=True,
+        ),
+        patch.object(proposer.draft, "forward", side_effect=decode),
+        patch.object(
+            DeepseekV3_2Config,
+            "mla_kv_params",
+            SimpleNamespace(page_size=128),
+        ),
+        patch.object(
+            spec_adapters.PrefillContextParallelStep,
+            "with_plan",
+            autospec=True,
+            side_effect=with_plan,
+        ),
+    ):
+        proposer._decode(
+            _batch(mesh, [2]),
+            tokens,
+            hidden,
+            None,
+            split_prefix="mtp_prefill",
+            prefill_context_parallel=True,
+        )
+    (step,) = steps
+    assert isinstance(step, spec_adapters.PrefillContextParallelStep)
+    assert step.cut is not None
+    assert step.namespace == "pcp_mtp"
+    # The plan covers the PCP rows: the step's trailing ``cut`` rows.
+    (rows,) = planned
+    assert str(rows.shape[0]) == "pcp_mtp_pcp_rows"

@@ -17,11 +17,17 @@ These have no sharding rule: on distributed inputs each runs once per
 device.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max import functional as F
 from max.nn._graph_ops import cp_merge_topk as _cp_merge_topk
 from max.nn._graph_ops import flare_mla_prefill_plan as _flare_mla_prefill_plan
+from max.nn._graph_ops import (
+    kv_cache_pack_owned_rows as _kv_cache_pack_owned_rows,
+)
+from max.nn._graph_ops import (
+    kv_cache_unpack_prefix_rows as _kv_cache_unpack_prefix_rows,
+)
 from max.nn._graph_ops import mla_decode_graph as _mla_decode_graph
 from max.nn._graph_ops import mla_decode_graph_cp as _mla_decode_graph_cp
 from max.nn._graph_ops import mla_fp8_index_top_k as _mla_fp8_index_top_k
@@ -48,6 +54,9 @@ from max.nn._graph_ops import (
 from max.nn.common_layers.mesh_axis import dcp_axis
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Unknown
+
+if TYPE_CHECKING:
+    from max.nn.common_layers.kv_cache import PagedCacheValues
 
 flare_mla_prefill_plan = F.functional(_flare_mla_prefill_plan)
 mla_prefill_graph = F.functional(_mla_prefill_graph)
@@ -86,11 +95,31 @@ def mla_decode_graph_cp(q: Tensor, **kwargs: Any) -> tuple[Tensor, Tensor]:
 
 
 store_mla_latent_ragged = F.functional(_store_mla_latent_ragged)
+kv_cache_pack_owned_rows = F.functional(_kv_cache_pack_owned_rows)
+kv_cache_unpack_prefix_rows = F.functional(_kv_cache_unpack_prefix_rows)
+
+
+def kv_cache_row_bytes(kv_collection: "PagedCacheValues") -> int:
+    """Returns the bytes one cache row and its scales take, one head a row.
+
+    That is the row width :func:`kv_cache_pack_owned_rows` packs and
+    :func:`kv_cache_unpack_prefix_rows` unpacks, the same on every device.
+    """
+    blocks = kv_collection.kv_blocks.local_shards[0]
+    row = int(blocks.shape[-1]) * int(blocks.shape[-2])
+    row *= blocks.dtype.size_in_bytes
+    if kv_collection.kv_scales is not None:
+        scales = kv_collection.kv_scales.local_shards[0]
+        row += int(scales.shape[-1]) * scales.dtype.size_in_bytes
+    return row
 
 
 __all__ = [
     "cp_merge_topk",
     "flare_mla_prefill_plan",
+    "kv_cache_pack_owned_rows",
+    "kv_cache_row_bytes",
+    "kv_cache_unpack_prefix_rows",
     "mla_decode_graph",
     "mla_decode_graph_cp",
     "mla_fp8_index_top_k",
