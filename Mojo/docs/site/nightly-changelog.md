@@ -10,6 +10,11 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added an experimental `__guard case` statement for early-exit pattern
+  matching. Its `else` body must not fall through, so bindings from a
+  successful pattern remain in scope on the normal path. This is analogous to
+  features in Rust and Swift, and also supports `comptime __guard`.
+
 - `with` statements now no longer copy when passed a reference to a context
   manager like in `with foo: pass`.
 
