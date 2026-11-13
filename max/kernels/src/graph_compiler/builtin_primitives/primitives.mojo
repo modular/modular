@@ -17,6 +17,7 @@ from std.math import gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 from std.sys.info import CompilationTarget
+from std.sys.intrinsics import unlikely
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
@@ -103,19 +104,6 @@ from .buffer_plan import BufferPlanState
 
 comptime MutByteBuffer = DynamicTensor[.int8, 1]
 comptime logger = Logger()
-
-# ===-----------------------------------------------------------------------===#
-# Helper Structures
-# ===-----------------------------------------------------------------------===#
-
-
-def pack_string_res(
-    str_ptr: Pointer[mut=False, Byte, _], str_len: Int
-) raises -> String:
-    var span = Span(unsafe_ptr=str_ptr, length=str_len)
-    # We can not free the resource ptr embedded in MEF, create a copy
-    return String(StringSpan(from_utf8=span))
-
 
 # ===-----------------------------------------------------------------------===#
 # Async Packing/Unpacking functions
@@ -1840,14 +1828,12 @@ def mgp_buffer_get_cached(
 
 @register_internal("mgp.assert")
 @inline(.never)
-def mgp_assert(
-    cond: Bool, msg_ptr: Pointer[mut=False, Byte, _], msg_len: Int
-) raises:
+def mgp_assert(cond: Bool, msg: String) raises:
     """
     Raises an error when the input condition is not true.
     """
-    if not cond:
-        raise Error(pack_string_res(msg_ptr, msg_len))
+    if unlikely(not cond):
+        raise Error(msg)
 
 
 def all_zeros(indices: IndexList) -> Bool:

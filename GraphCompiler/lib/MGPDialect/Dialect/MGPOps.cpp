@@ -572,13 +572,9 @@ LogicalResult AssertOp::emitMojo(MOGG::EmitMojoState &state) {
 
   MOGG::MojoValue conditionVar = state.getMojoValueFor(getCond());
   MOGG::MojoValue messageLiteral = MOGG::MojoValue(getMessage()).quote();
-  MOGG::MojoValue messageString =
-      state.file->var(MOGG::kStructString({messageLiteral}));
-  MOGG::MojoStringRef message(messageString);
-  MOGG::MojoValue messagePtr = message.unsafePtr();
-  MOGG::MojoValue messageSize = message.byteLength();
+  MOGG::MojoValue message = MOGG::kStructString({messageLiteral});
 
-  state.file->call(function, {}, {conditionVar, messagePtr, messageSize});
+  state.file->call(function, {}, {conditionVar, message});
 
   return success();
 }

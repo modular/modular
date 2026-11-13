@@ -1,5 +1,6 @@
 
 // RUN: mo-opt --mgp-lower-primitives %s | FileCheck %s
+// RUN: mo-opt %s --mogg-import-packages --mgp-lower-primitives --mogg-sequence-fusion --mogg-outline-async-routines --mogg-add-try-except-blocks --canonicalize --mogg-emit-mojo --mogg-dump-mojo 2>&1 | FileCheck %s --check-prefix=EMIT
 
 mgp.model @fold_true_assert devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
@@ -12,6 +13,10 @@ mgp.model @fold_true_assert devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.
   // CHECK: mogg.routine.async
   // CHECK:  mgp.assert %{{.*}}, "Tensor type mismatch for argument 0: Expected shape: [2,4]"
   // CHECK:  constantResources = ["Tensor type mismatch for argument 0: Expected shape: [2,4]"]
+  //
+  // The primitive takes a `String`, so the call builds it from the message
+  // attribute instead of passing MEF bytes and a length.
+  // EMIT: mgp_assert({{.*}}, String("Tensor type mismatch for argument 0: Expected shape: [2,4]"))
   %assert = mgp.assert %cond, "Tensor type mismatch for argument 0: Expected shape: [2,4]"
   %chain = grt.chain.create (%arg0, %assert)
   mef.output %chain : !mef.chain
