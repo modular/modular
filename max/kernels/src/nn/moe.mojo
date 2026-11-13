@@ -13,7 +13,7 @@
 """Implements Mixture-of-Experts (MoE) routing, token dispatch, and expert computation kernels."""
 
 from std.math import align_up, ceildiv, exp, log1p
-from std.math.uutils import umod
+from std.math.uutils import udivmod, umod
 from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
@@ -862,6 +862,232 @@ def moe_create_indices_with_slots[
         )
 
 
+# At decode `moe_finalize` is latency-bound, not bandwidth-bound: what a small
+# call costs is its gather's dependent round trips, not its bytes. The generic
+# body pays two of them per expert -- the `restore_order` row id, then that row
+# of `down` -- so a top-16 call serializes 16 of them. The gather kernel below
+# reads a token's whole top-k routing first and issues every row load before
+# the first accumulate, so no accumulate waits on a row it does not consume.
+#
+# A small call also has little work to spread across the CUs, so at few enough
+# chunks the launch takes `_FINALIZE_SMALL_BLOCK` threads instead of
+# `_FINALIZE_LARGE_BLOCK`, and below two workgroups per CU it halves the vector
+# too, which doubles the workgroup count. Past that a thread reads whole
+# 16-byte vectors of `down`, as the generic body does.
+comptime _FINALIZE_SMALL_BLOCK = 64
+comptime _FINALIZE_LARGE_BLOCK = 256
+comptime _FINALIZE_SMALL_WORK = 64 * 1024
+
+
+@inline(.always)
+def _moe_finalize_mut_ptr[
+    dtype: DType
+](t: TileTensor[dtype, ...],) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
+    """The mutable generic-address-space pointer behind a tile tensor.
+
+    The gather kernel takes dense row-major rows, so its launch rebuilds the
+    tensors as row-major ones over these pointers rather than carrying the
+    caller's layout and engine through the kernel's parameters.
+    """
+    comptime assert t.is_row_major, "moe.finalize tensors must be row-major"
+    return (
+        t.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
+    )
+
+
+@inline(.always)
+def _moe_finalize_imm_ptr[
+    dtype: DType
+](
+    t: TileTensor[mut=False, dtype, ...],
+) -> ImmPointer[
+    Scalar[dtype], ImmUntrackedOrigin
+]:
+    """The immutable generic-address-space pointer behind a tile tensor."""
+    comptime assert t.is_row_major, "moe.finalize tensors must be row-major"
+    return (
+        t.unsafe_ptr()
+        .unsafe_origin_cast[ImmUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
+)
+@__name(
+    t"moe_finalize_gather_{down_type}_{weight_type}_{out_type}_k{topk}_b{block_threads}"
+)
+def moe_finalize_gather_kernel[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    OutputLayoutType: TensorLayout,
+    DownLayoutType: TensorLayout,
+    RestoreOrderLayoutType: TensorLayout,
+    RouterWeightLayoutType: TensorLayout,
+    topk: Int,
+    vec: Int,
+    block_threads: Int,
+](
+    output: TileTensor[out_type, OutputLayoutType, MutUntrackedOrigin],
+    down: TileTensor[down_type, DownLayoutType, ImmUntrackedOrigin],
+    restore_order: TileTensor[
+        .uint32, RestoreOrderLayoutType, ImmUntrackedOrigin
+    ],
+    router_weight: TileTensor[
+        weight_type, RouterWeightLayoutType, ImmUntrackedOrigin
+    ],
+):
+    """Sums one token's top-k `down` rows per thread, top-k known at compile
+    time.
+
+    One thread owns `vec` consecutive columns of one token's row: it reads the
+    token's `topk` row ids and weights, issues all `topk` row loads, then
+    accumulates them in ascending k in fp32. The arithmetic is the per-term
+    `acc += f32(down) * f32(weight)` of the generic path, in the same order, so
+    a call is bit-identical to it.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        OutputLayoutType: Layout of `output` (row-major).
+        DownLayoutType: Layout of `down` (row-major).
+        RestoreOrderLayoutType: Layout of `restore_order`.
+        RouterWeightLayoutType: Layout of `router_weight`.
+        topk: `num_experts_per_token`, as a compile-time constant.
+        vec: Columns per thread; one vector load of `down` per row.
+        block_threads: Threads per workgroup, 64 or 256. It also bounds what the
+            register allocator keeps live, which is why the small-token launch
+            declares its own 64-thread group.
+
+    Args:
+        output: `[num_tokens, row_chunks * vec]`, one combined row per token.
+        down: `[num_tokens * topk, row_chunks * vec]`, expert-permuted rows.
+        restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
+        router_weight: `[num_tokens, topk]`, per-(token, expert) weight.
+    """
+    # The row width comes from the output view rather than a kernel argument:
+    # `Int` is not `DevicePassable`, so passing it would force an `Int32`
+    # narrowing at the launch and a widening back here.
+    var chunks = Int(output.dim(1)) // vec
+    var tid = block_idx.x * block_threads + thread_idx.x
+    if tid >= Int(output.dim(0)) * chunks:
+        return
+    var token, chunk = udivmod(tid, chunks)
+    var col = chunk * vec
+
+    var rows = Array[UInt32, topk](fill=UInt32(0))
+    var weights = Array[SIMD[.float32, 1], topk](fill=SIMD[.float32, 1](0))
+    var vals = Array[SIMD[down_type, vec], topk](fill=SIMD[down_type, vec](0))
+
+    with PDL():
+        # The token's routing, before anything that depends on it.
+        comptime for k in range(topk):
+            rows[k] = restore_order[token * topk + k]
+        comptime for k in range(topk):
+            weights[k] = router_weight.load[width=1]((token, k)).cast[
+                .float32
+            ]()
+        # Every row load issues here, ahead of the first accumulate.
+        comptime for k in range(topk):
+            vals[k] = down.load[width=vec]((Int(rows[k]), col))
+        var acc = SIMD[.float32, vec](0)
+        comptime for k in range(topk):
+            acc += vals[k].cast[.float32]() * weights[k]
+        output.store((token, col), acc.cast[out_type]())
+
+
+@inline(.always)
+def _moe_finalize_gather[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    topk: Int,
+    vec: Int,
+    small_block: Bool,
+](
+    output: TileTensor[mut=True, out_type, ...],
+    down: TileTensor[mut=False, down_type, ...],
+    restore_order: TileTensor[mut=False, .uint32, ...],
+    router_weight: TileTensor[mut=False, weight_type, ...],
+    row_chunks: Int,
+    context: DeviceContext,
+) raises:
+    """Launches `moe_finalize_gather_kernel` over the output's row chunks.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        topk: `num_experts_per_token`, as a compile-time constant.
+        vec: Columns per thread; one vector load of `down` per row.
+        small_block: Launch `_FINALIZE_SMALL_BLOCK` threads per workgroup
+            instead of `_FINALIZE_LARGE_BLOCK`.
+
+    Args:
+        output: `[num_tokens, row_chunks * vec]`, the combined rows.
+        down: `[num_tokens * topk, row_chunks * vec]`, the expert rows.
+        restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
+        router_weight: `[num_tokens, topk]`, the router weights.
+        row_chunks: Vector chunks in a row, `hidden // vec`.
+        context: The device context.
+    """
+    var num_tokens = Int(output.dim(0))
+    var hidden = Int(down.dim(1))
+    # `Idx[topk]` keeps the routing width out of the runtime layout, so the
+    # kernel's `router_weight` row stride stays a compile-time constant.
+    var output_rm = TileTensor(
+        ptr=_moe_finalize_mut_ptr(output),
+        layout=row_major(num_tokens, hidden),
+    )
+    var down_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(down),
+        layout=row_major(Int(down.dim(0)), hidden),
+    )
+    var restore_order_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(restore_order),
+        layout=row_major(Int(restore_order.dim(0))),
+    )
+    var router_weight_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(router_weight),
+        layout=row_major((num_tokens, Idx[topk])),
+    )
+
+    comptime block_threads = (
+        _FINALIZE_SMALL_BLOCK if small_block else _FINALIZE_LARGE_BLOCK
+    )
+    comptime kernel = moe_finalize_gather_kernel[
+        down_type,
+        weight_type,
+        out_type,
+        output_rm.LayoutType,
+        down_rm.LayoutType,
+        restore_order_rm.LayoutType,
+        router_weight_rm.LayoutType,
+        topk,
+        vec,
+        block_threads,
+    ]
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        "mo.moe.finalize.gather", task_id=Int(context.device().id)
+    ):
+        context.enqueue_function[kernel](
+            output_rm,
+            down_rm,
+            restore_order_rm,
+            router_weight_rm,
+            grid_dim=(ceildiv(num_tokens * row_chunks, block_threads),),
+            block_dim=(block_threads,),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
 def moe_finalize[
     down_type: DType,
     weight_type: DType,
@@ -919,9 +1145,101 @@ def moe_finalize[
     comptime simd_width = simd_width_of[down_type, target=context.target]()
     var shape = output.layout.shape_coord()
 
+    # The gather launch: row-major tensors, whole vectors per row, and a top-k
+    # it has an instantiation for. Everything else falls through to the generic
+    # elementwise body below, which is the only path for a layout whose density
+    # this cannot prove, and for every top-k without an instantiation.
+    var hidden = Int(down.dim(1))
+    comptime gathered = (
+        output.is_row_major
+        and down.is_row_major
+        and restore_order.is_row_major
+        and router_weight.is_row_major
+    )
+    # `is_row_major` compares static strides, so a layout with runtime shape and
+    # stride satisfies it vacuously. The gather reads rows as `row * hidden`,
+    # which is only the caller's addressing when the stride really is dense, so
+    # a runtime stride larger than the row width keeps the generic body.
+    var dense = (
+        Int(output.layout.stride[0]()) == Int(output.dim(1))
+        and Int(output.layout.stride[1]()) == 1
+        and Int(down.layout.stride[0]()) == hidden
+        and Int(down.layout.stride[1]()) == 1
+        and Int(restore_order.layout.stride[0]()) == 1
+        and Int(router_weight.layout.stride[0]()) == Int(router_weight.dim(1))
+        and Int(router_weight.layout.stride[1]()) == 1
+    )
+    comptime if gathered:
+        var num_tokens = Int(output.dim(0))
+        if dense and hidden % simd_width == 0 and num_tokens > 0:
+            comptime sm_count = context.default_device_info.sm_count
+            var row_chunks = hidden // simd_width
+            var small_block = num_tokens * row_chunks <= _FINALIZE_SMALL_WORK
+            # Fewer than two workgroups per CU leaves each CU one wave, with no
+            # second wave to hide a stall. Halving the vector doubles the
+            # workgroup count, which measured faster than whole vectors at these
+            # token counts.
+            comptime narrow = max(1, simd_width // 2)
+            var narrow_vec = (
+                small_block
+                and narrow < simd_width
+                and hidden % narrow == 0
+                and num_tokens * (hidden // narrow)
+                < 2 * _FINALIZE_SMALL_BLOCK * sm_count
+            )
+
+            @inline(.always)
+            def launch_topk[ntopk: Int]() raises {var}:
+                if narrow_vec:
+                    _moe_finalize_gather[ntopk, narrow, True](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        hidden // narrow,
+                        context,
+                    )
+                elif small_block:
+                    _moe_finalize_gather[ntopk, simd_width, True](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        row_chunks,
+                        context,
+                    )
+                else:
+                    _moe_finalize_gather[ntopk, simd_width, False](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        row_chunks,
+                        context,
+                    )
+
+            match num_experts_per_token:
+                case 16:
+                    launch_topk[16]()
+                    return
+                case 8:
+                    launch_topk[8]()
+                    return
+                case 6:
+                    launch_topk[6]()
+                    return
+                case 4:
+                    launch_topk[4]()
+                    return
+                case 2:
+                    launch_topk[2]()
+                    return
+                case _:
+                    pass
+
     # `down` rows are only vector-aligned when the row width is a multiple of
     # `simd_width`; every other shape runs scalar.
-    if Int(down.dim(1)) % simd_width == 0:
+    if hidden % simd_width == 0:
         elementwise[simd_width, _trace_description="moe.finalize"](
             finalize, shape, context
         )
