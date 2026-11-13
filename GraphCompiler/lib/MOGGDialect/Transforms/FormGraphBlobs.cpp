@@ -33,6 +33,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 
 using namespace mlir;
@@ -343,10 +344,9 @@ bool isReadOutside(RoutineOp member, SymbolTable &symbols,
   return false;
 }
 
-// The blob `formInBlock` keeps open, which it fuses when it closes.
+// A blob `formInBlock` keeps open, which it fuses when it closes.
 struct OpenBlob {
   SmallVector<RoutineOp> members;
-  DeviceRefAttr device;
   // The values inside the blob: its members' results and absorbed chain joins.
   llvm::DenseSet<Value> values;
   llvm::SetVector<Operation *> chainJoins;
@@ -354,7 +354,6 @@ struct OpenBlob {
   bool contains(Value value) const { return values.contains(value); }
 
   void add(RoutineOp member) {
-    device = MO::getDeviceOrDefaultAny(member);
     members.push_back(member);
     values.insert(member->result_begin(), member->result_end());
   }
@@ -374,43 +373,81 @@ struct OpenBlob {
   }
 };
 
-// Forms blobs in `block`, which is in dataflow order, keeping one blob open.
+// The blobs `formInBlock` keeps open, one per device.
+struct OpenBlobs {
+  llvm::MapVector<DeviceRefAttr, OpenBlob> byDevice;
+
+  OpenBlob &operator[](DeviceRefAttr device) { return byDevice[device]; }
+
+  bool contains(Value value) const {
+    return llvm::any_of(
+        llvm::make_second_range(byDevice),
+        [&](const OpenBlob &blob) { return blob.contains(value); });
+  }
+
+  // The open blobs that hold any of `values`.
+  SmallVector<OpenBlob *> holding(ValueRange values) {
+    SmallVector<OpenBlob *> blobs;
+    for (OpenBlob &blob : llvm::make_second_range(byDevice)) {
+      if (llvm::any_of(values,
+                       [&](Value value) { return blob.contains(value); }))
+        blobs.push_back(&blob);
+    }
+    return blobs;
+  }
+
+  void closeAll() {
+    for (OpenBlob &blob : llvm::make_second_range(byDevice))
+      blob.close();
+  }
+};
+
+// Forms blobs in `block`, which is in dataflow order, keeping one blob open per
+// device.
 //
-// Nothing outside the open blob reads its values: the blob ends at the first
+// Nothing outside an open blob reads its values: a blob ends at the first
 // member with a result that something outside it needs. That result is ready
 // as soon as the blob ends, rather than waiting for later members it doesn't
 // depend on, and no path can leave a blob and come back in, which would make
 // the fused routine wait on itself. The block's terminator, such as the graph's
 // output, doesn't count: it takes its operands only when the whole block ends.
 // Siblings still join one blob, whether or not they share an input.
+//
+// A multi-device graph interleaves its devices' routines, so a routine on
+// another device doesn't end a blob. The fused routine can still go where its
+// last member was, because whatever reads a blob from outside comes after its
+// last member: a reader that can't join the blob, such as a routine on another
+// device, ends the blob at the member it reads, and a routine on the same
+// device that didn't join came after the blob ended.
 void formInBlock(Block &block, SymbolTable &symbols,
                  const llvm::DenseSet<Value> &invariant) {
-  OpenBlob blob;
+  OpenBlobs blobs;
   for (Operation &op : llvm::make_early_inc_range(block)) {
     auto routine = dyn_cast<RoutineOp>(op);
     if (routine && canJoinBlob(routine, symbols, invariant)) {
-      if (!blob.members.empty() &&
-          MO::getDeviceOrDefaultAny(routine) != blob.device)
-        blob.close();
+      OpenBlob &blob = blobs[MO::getDeviceOrDefaultAny(routine)];
       blob.add(routine);
       if (isReadOutside(routine, symbols, invariant))
         blob.close();
       continue;
     }
-    // A join of the blob's chains orders a later member after earlier ones,
-    // which the blob's own order already does, so it stays inside the blob.
-    auto join = dyn_cast<MO::ChainCreateOp>(op);
-    if (join && llvm::any_of(join->getOperands(), [&](Value value) {
-          return blob.contains(value);
-        })) {
-      blob.absorb(join);
-      continue;
+    // A join of one blob's chains orders a later member after earlier ones,
+    // which the blob's own order already does, so it stays inside the blob. A
+    // join of several devices' blobs stays outside them all: `isReadOutside`
+    // kept those blobs open, so only the block's terminator reads the join,
+    // directly or through other joins.
+    if (auto join = dyn_cast<MO::ChainCreateOp>(op)) {
+      SmallVector<OpenBlob *> joined = blobs.holding(join->getOperands());
+      if (joined.size() == 1)
+        joined.front()->absorb(join);
+      if (!joined.empty())
+        continue;
     }
     // A blob forms within one block and never spans blocks, so control flow
-    // and `mo.parallel` keep working with blobs: the open blob ends here, and
+    // and `mo.parallel` keep working with blobs: the open blobs end here, and
     // each of their blocks forms its own.
     if (isa<RegionBranchOpInterface, MO::ParallelOp>(op)) {
-      blob.close();
+      blobs.closeAll();
       for (Region &region : op.getRegions()) {
         for (Block &nested : region) {
           if (sortTopologically(&nested))
@@ -421,12 +458,13 @@ void formInBlock(Block &block, SymbolTable &symbols,
     }
     // Holds by construction: `isReadOutside` ended the blob at any member with
     // a reader that can't join it, including one nested in a region.
-    assert((op.hasTrait<OpTrait::IsTerminator>() ||
-            llvm::none_of(readValues(op),
-                          [&](Value value) { return blob.contains(value); })) &&
-           "an op outside the open blob reads its values");
+    assert(
+        (op.hasTrait<OpTrait::IsTerminator>() ||
+         llvm::none_of(readValues(op),
+                       [&](Value value) { return blobs.contains(value); })) &&
+        "an op outside the open blobs reads their values");
   }
-  blob.close();
+  blobs.closeAll();
 }
 
 struct FormGraphBlobsPass

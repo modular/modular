@@ -198,6 +198,109 @@ mo.graph @two_devices(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
 
+// Each device keeps its own blob open, so two devices whose routines interleave
+// form one blob each.
+// CHECK-LABEL: mo.graph @interleaved_devices
+// CHECK:       %[[R0:.*]]:2 = mogg.routine
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK-COUNT-2:   mogg.call.execute_device
+// CHECK:       %[[R1:.*]]:2 = mogg.routine
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK-COUNT-2:   mogg.call.execute_device
+// CHECK-NOT:   mogg.routine
+// CHECK:       mo.output %[[R0]]#1, %[[R1]]#1
+mo.graph @interleaved_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %z = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%y) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %c, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// A kernel with `execute` that reads a member ends only the blob of that
+// member's device; the other device's blob stays open across it.
+// CHECK-LABEL: mo.graph @read_outside_one_device
+// CHECK:       %[[B:.*]] = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mogg.routine (%[[B]] : !mo.tensor<[2, 2], f32>)
+// CHECK:         mogg.call.opaque @{{.*}}MapLowerOnePlainOutput
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @read_outside_one_device(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %t = mo.custom [symbol = "map_lower_one_plain_output", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %z = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%y) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %t, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// A member that reads another device's member ends that device's blob at the
+// member it reads, so a later member on that device can't join it and move the
+// fused routine past its reader. Each blob goes where its last member was.
+// CHECK-LABEL: mo.graph @read_across_devices
+// CHECK:       %[[B:.*]] = mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+// CHECK:       mogg.routine (%{{.*}}, %[[B]] : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mogg.routine (%[[B]] : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @read_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %y = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %z = mo.custom [symbol = "map_lower_declarative_binary", device = #M.device_ref<"gpu", 1>](%y, %b) : (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%c) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %z, %d : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// A join of two devices' chains that only the graph's output reads stays
+// outside both blobs, and reads both blobs' chains.
+// CHECK-LABEL: mo.graph @join_across_devices
+// CHECK:       %[[CH:.*]] = mo.chain.create()
+// CHECK:       %[[JOIN:.*]] = mo.chain.create(%[[R0:[0-9]+]]#2, %[[R1:[0-9]+]]#2
+// CHECK:       %[[R0]]:3 = mogg.routine ({{.*}}) chain(%[[CH]])
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       %[[R1]]:3 = mogg.routine ({{.*}}) chain(%[[CH]])
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.output %[[R0]]#1, %[[R1]]#1, %[[JOIN]]
+mo.graph @join_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>, %cache0: !mo.buffer<[2, 2], f32>, %cache1: !mo.buffer<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain) {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache0, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %y, %cy1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 1>](%x, %cache1, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %join = mo.chain.create(%ch1, %cy1) : !mo.chain, !mo.chain
+  %c, %ch2 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache0, %ch1) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %z, %cy2 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 1>](%y, %cache1, %cy1) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  mo.output %c, %z, %join : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.chain
+}
+
+// A member that waits on a join with another device's chain ends that device's
+// blob at the member the chain comes from. Its own blob absorbs the join and
+// waits on that chain from outside.
+// CHECK-LABEL: mo.graph @join_waited_across_devices
+// CHECK:       %[[CH:.*]] = mo.chain.create()
+// CHECK:       %[[Y:.*]]:2 = mogg.routine ({{.*}}) chain(%[[CH]]) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+// CHECK:       %[[WAIT:.*]] = mo.chain.create(%[[CH]], %[[Y]]#1
+// CHECK-NEXT:  mogg.routine ({{.*}}) chain(%[[WAIT]])
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @join_waited_across_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>, %cache0: !mo.buffer<[2, 2], f32>, %cache1: !mo.buffer<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %ch0 = mo.chain.create()
+  %b, %ch1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%a, %cache0, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %y, %cy1 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 1>](%x, %cache1, %ch0) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %join = mo.chain.create(%ch1, %cy1) : !mo.chain, !mo.chain
+  %c, %ch2 = mo.custom [symbol = "map_lower_declarative_inplace", device = #M.device_ref<"gpu", 0>](%b, %cache0, %join) : (!mo.tensor<[2, 2], f32>, !mo.buffer<[2, 2], f32>, !mo.chain) -> (!mo.tensor<[2, 2], f32>, !mo.chain)
+  %z = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%y) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %c, %z : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
 // A member that reads both an earlier member's result and the blob's input
 // shares the fused routine's one input for it.
 // CHECK-LABEL: mo.graph @shared_input
@@ -259,6 +362,42 @@ mo.graph @control_flow(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>,
   %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%y) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   %e = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%d) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   mo.output %c, %r, %e : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
+}
+
+// Control flow ends every device's open blob, so two devices' members before a
+// `mo.if` and their independent members after it form four blobs, not two.
+// CHECK-LABEL: mo.graph @control_flow_two_devices
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.if
+// CHECK:       } else {
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 0>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mogg.routine (%{{.*}} : !mo.tensor<[2, 2], f32>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>)
+// CHECK:         attributes {device = #M.device_ref<"gpu", 1>
+// CHECK-NEXT:      mogg.graph_blob {
+// CHECK:       mo.output
+mo.graph @control_flow_two_devices(%a: !mo.tensor<[2, 2], f32>, %x: !mo.tensor<[2, 2], f32>, %y: !mo.tensor<[2, 2], f32>, %w: !mo.tensor<[2, 2], f32>, %cond: !mo.tensor<[], bool>) -> (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %p = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%x) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %q = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%p) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %r = mo.if(%cond : !mo.tensor<[], bool>) -> !mo.tensor<[2, 2], f32> {
+    %1 = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+    mo.yield %1 : !mo.tensor<[2, 2], f32>
+  } else {
+    mo.yield %a : !mo.tensor<[2, 2], f32>
+  }
+  %d = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%y) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %s = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%w) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %e = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%d) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %t = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 1>](%s) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %c, %q, %r, %e, %t : !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>
 }
 
 // A routine inside a branch that reads a member is outside the blob, like any
