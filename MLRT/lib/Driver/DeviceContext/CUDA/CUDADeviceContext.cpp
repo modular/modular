@@ -799,8 +799,17 @@ ErrorOrSuccess CUDADevice::vmmMapAndSetAccess(void *va, size_t byteSize,
   // multi-GPU (expert-parallel) kernels and collectives can read VMM-backed
   // buffers. VMM access does not inherit from cuCtxEnablePeerAccess.
   const std::vector<CUmemAccessDesc> &descs = vmmAccessDescs();
-  CUDA_CHECK_ERR(
-      driver_.cuMemSetAccess(ptr, byteSize, descs.data(), descs.size()));
+  CUDADriver::Result result =
+      driver_.cuMemSetAccess(ptr, byteSize, descs.data(), descs.size());
+  if (result != CUDADriver::SUCCESS) {
+    // A failed call leaves nothing mapped, so the caller can reuse the handle.
+    std::string rollback;
+    if (driver_.cuMemUnmap(ptr, byteSize) != CUDADriver::SUCCESS)
+      rollback = "cuMemUnmap after the refused access grant also failed, so "
+                 "the range is still mapped";
+    return formatCUDAError(__FILE__, __LINE__, __FUNCTION__, result,
+                           std::move(rollback));
+  }
   return success();
 }
 

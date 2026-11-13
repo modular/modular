@@ -665,7 +665,13 @@ ErrorOrSuccess HIPDevice::vmmMapAndSetAccess(void *va, size_t byteSize,
                  << " access descriptors. If this is hipErrorInvalidValue the "
                     "process has likely hit HIP's cap on total VMM-mapped "
                     "memory (GEX-4056); reduce memory_manager_size.\n";
-    return formatHipError(__FILE__, __LINE__, __FUNCTION__, result);
+    // A failed call leaves nothing mapped, so the caller can reuse the handle.
+    std::string rollback;
+    if (driver_.hipMemUnmap(va, byteSize) != HIPDriver::SUCCESS)
+      rollback = "hipMemUnmap after the refused access grant also failed, so "
+                 "the range is still mapped";
+    return formatHipError(__FILE__, __LINE__, __FUNCTION__, result,
+                          std::move(rollback));
   }
   return success();
 }
