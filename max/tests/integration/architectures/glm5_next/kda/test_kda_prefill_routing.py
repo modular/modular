@@ -285,12 +285,14 @@ def test_verify_keeps_drafts_on_the_ring(
 
     Only a draft-free prefill, which has nothing to roll back, takes
     ``kda_chunk``, behind the same conditional as the forward's, with the
-    forward's chunk launch on either vendor.
+    forward's chunk launch on either vendor. The ring asks for the K-group
+    kernel, which the op runs only on NVIDIA.
     """
     _patch_accelerator(monkeypatch, api, architecture)
     mlir = _core_mlir(verify=True)
     _assert_routed(mlir, "bf16", output_dtype, fallback="kda_verify_ring")
     assert ("use_computebound = true" in mlir) == computebound
+    assert "kgroup = true" in mlir
     assert "kda_decode" not in mlir
 
 

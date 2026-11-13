@@ -1167,6 +1167,7 @@ def kda_verify_ring(
     beta_mode: KdaBetaMode = "logits",
     state_layout: KdaStateLayout = "K_FIRST",
     chunk_long_rows: bool = False,
+    kgroup: bool = False,
 ) -> TensorValue:
     """Runs the KDA recurrence over a speculative verify window into a ring.
 
@@ -1213,6 +1214,10 @@ def kda_verify_ring(
         state_layout: Pool axis order; must match how the pool was allocated.
         chunk_long_rows: Whether a mixed verify's prompt rows run on the
             chunk pipeline, as above.
+        kgroup: Whether a verify at GLM-5.3-Flash's contract runs the
+            K-group kernel, which writes the same bits faster. The Mojo op
+            ``KdaVerifyRing`` (``Kernels/lib/graph_compiler/kda.mojo``)
+            states that contract; any other verify ignores this flag.
 
     Returns:
         ``[total_tokens, num_value_heads, value_head_dim]`` -- the op's
@@ -1278,6 +1283,7 @@ def kda_verify_ring(
             "beta_mode": beta_mode,
             "state_layout": state_layout,
             "chunk_long_rows": chunk_long_rows,
+            "kgroup": kgroup,
         },
     )
     return ops.squeeze(results[0].tensor, 0)

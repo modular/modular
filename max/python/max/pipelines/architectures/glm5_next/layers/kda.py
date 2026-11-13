@@ -347,6 +347,7 @@ def kda_core(
             gate_mode=gate_mode,
             beta_mode="logits",
             state_layout=STATE_LAYOUT,
+            kgroup=True,
         )
         return F.rebind(out, out_shape, "kda verify output rebind")
 
