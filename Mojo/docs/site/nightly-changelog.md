@@ -337,6 +337,16 @@ This version is still a work in progress.
       print("hello", file=f)
   ```
 
+- `SIMD.try_cast()` converts between integer types, raising
+  `TryCastSIMDError` if any element is out of range. `SIMD.cast()` wraps
+  instead, so `Int(-1).cast[.uint8]()` is 255.
+
+  ```mojo
+  var byte = Int(255).try_cast[.uint8]()  # 255
+  var checked = Int(-1).try_cast[.uint8]()  # raises TryCastSIMDError
+  var lanes = SIMD[.int32, 4](1, 2, 3, 300).try_cast[.uint8]()  # raises
+  ```
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

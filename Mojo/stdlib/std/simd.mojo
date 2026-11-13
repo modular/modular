@@ -486,6 +486,24 @@ struct FastMathFlag(
 
 
 # ===----------------------------------------------------------------------=== #
+# TryCastSIMDError
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct TryCastSIMDError(TrivialRegisterPassable, Writable):
+    """Signals that a value is out of range for a checked integer conversion."""
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a description of the error.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string("out of range integral type conversion attempted")
+
+
+# ===----------------------------------------------------------------------=== #
 # SIMD
 # ===----------------------------------------------------------------------=== #
 
@@ -2512,6 +2530,66 @@ struct SIMD[dtype: DType, length: SIMDLength](
             fastmathFlags=__mlir_attr.`#pop.fmf<fast>`,
         ](self._mlir_value)
         return SIMD(mlir_value=res)
+
+    # TODO: Raise `Never` when the conversion is lossless, as from `Int8` to
+    # `Int16`. A raises type that depends on the dtypes works at concrete call
+    # sites, but a generic caller then can't print the error or convert it to
+    # `Error`.
+    @inline(.always)
+    def try_cast[
+        target: DType, /
+    ](self) raises TryCastSIMDError -> SIMD[target, Self.length] where (
+        Self.dtype.is_integral() and target.is_integral()
+    ):
+        """Casts to the target dtype, raising if any element is out of range.
+
+        This is the checked counterpart of `cast()`. Where
+        `UInt8(200).cast[.int8]()` wraps to `-56`,
+        `UInt8(200).try_cast[.int8]()` raises.
+
+        Parameters:
+            target: The integral dtype to convert to.
+
+        Returns:
+            The cast SIMD value.
+
+        Raises:
+            TryCastSIMDError: If any element is outside the range of `target`.
+
+        Constraints:
+            The source and target dtypes must be integral.
+
+        Examples:
+
+        ```mojo
+        var count = Int64(300)
+        var low = count.try_cast[.uint16]()  # 300
+
+        try:
+            _ = SIMD[.int32, 4](1, 2, 3, 256).try_cast[.uint8]()
+        except e:
+            print(e)  # out of range integral type conversion attempted
+        ```
+        """
+        # TODO: Accept sub-byte dtypes once `cast` to them truncates. Until
+        # then the round trip can't detect an out-of-range value.
+        comptime sub_byte = (DType._uint1, DType._uint2, DType._uint4)
+        comptime assert (
+            Self.dtype not in sub_byte and target not in sub_byte
+        ), "`try_cast` doesn't support sub-byte dtypes"
+
+        var result = self.cast[target]()
+        var in_range = result.cast[Self.dtype]().eq(self)
+        # A signedness change can round-trip yet flip the sign, as in
+        # `Int8(-1)` -> `UInt16(65535)` -> `Int8(-1)`. Only the signed side
+        # can be negative, so it must not be.
+        comptime if Self.dtype.is_signed() and not target.is_signed():
+            in_range &= self.ge(0)
+        elif target.is_signed() and not Self.dtype.is_signed():
+            in_range &= result.ge(0)
+        if not in_range.reduce_and():
+            raise TryCastSIMDError()
+        return result
 
     @always_inline("builtin")
     def is_power_of_two(
