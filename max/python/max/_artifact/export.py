@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import huggingface_hub
-from max.driver import CPU
+from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
@@ -262,6 +262,21 @@ def model_artifact(
         sampling_defaults=sampling_defaults,
         overlap_helpers=overlap_helpers,
     )
+
+
+def ships_overlap_helpers(devices: Sequence[Device]) -> bool:
+    """Returns whether an export onto ``devices`` ships the overlap helpers.
+
+    Overlap scheduling runs only on accelerators, so a host-only artifact
+    could never load the helpers.
+
+    Args:
+        devices: The devices the exported pipeline runs on.
+
+    Returns:
+        ``True`` if any device is an accelerator.
+    """
+    return not all(device.is_host for device in devices)
 
 
 def pipeline_overlap_helpers(
@@ -755,7 +770,9 @@ def export_pipeline(
         else None
     )
     overlap_helpers = None
-    if pipeline_model is not None:
+    if pipeline_model is not None and ships_overlap_helpers(
+        pipeline_model.devices
+    ):
         started = time.monotonic()
         overlap_helpers = pipeline_overlap_helpers(
             pipeline_config, pipeline_model, model, kv_params

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import huggingface_hub
 import pytest
@@ -43,6 +44,7 @@ from max._artifact.export import (
     pipeline_kv_cache,
     pipeline_modules,
     pipeline_sampling_defaults,
+    ships_overlap_helpers,
     vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
@@ -66,7 +68,7 @@ from max._artifact.vision import (
     Span,
     VisionMetadata,
 )
-from max.driver import CPU, DeviceSpec
+from max.driver import CPU, Device, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
@@ -220,6 +222,14 @@ class _LoadsItsOwnGraphs(PipelineModelWithKVCache[Any, Any, Any]):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         raise NotImplementedError
+
+
+def test_only_an_accelerator_export_ships_the_overlap_helpers() -> None:
+    accelerator = Mock(spec=Device)
+    accelerator.is_host = False
+    assert not ships_overlap_helpers([CPU()])
+    assert ships_overlap_helpers([accelerator])
+    assert ships_overlap_helpers([CPU(), accelerator])
 
 
 def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
