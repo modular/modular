@@ -2929,7 +2929,7 @@ def _load_function(
             Int32,
             CStringSpan[ImmStaticOrigin],
             Int32,
-            CStringSpan[origin_of(owned_debug_name)],
+            type_of(owned_debug_name.as_c_string_span()),
         ](
             Pointer(to=result),
             ctx,
@@ -3863,11 +3863,11 @@ struct LegacyDeviceExternalFunction[
                 Pointer[_DeviceFunctionPtr[mut=True], origin_of(result)],
                 _DeviceContextPtr[mut=True],
                 CStringSpan[ImmStaticOrigin],
-                CStringSpan[origin_of(function_name)],
-                CStringSpan[origin_of(asm)],
+                type_of(function_name.as_c_string_span()),
+                type_of(asm.as_c_string_span()),
                 c_size_t,
                 Int32,
-                CStringSpan[origin_of(debug_level)],
+                type_of(debug_level.as_c_string_span()),
                 Int32,
             ](
                 Pointer(to=result),
@@ -4326,7 +4326,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
                 "AsyncRT_DeviceContext_create",
                 _CString[],
                 Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
-                CStringSpan[ImmOrigin(origin_of(api))],
+                type_of(api.as_c_string_span()),
                 Int32,
             ](
                 Pointer(to=result),

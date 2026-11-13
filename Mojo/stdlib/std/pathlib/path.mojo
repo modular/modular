@@ -597,7 +597,7 @@ struct Path(
 
     def parts(
         self,
-    ) -> List[StringSpan[origin_of(self.path)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[String._InteriorOrigin[origin_of(self.path)]]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:

@@ -321,7 +321,7 @@ def rocshmem_create_uniqueid(
     _get_rocshmem_function[
         "rocshmem_create_uniqueid",
         def(
-            CStringSpan[origin_of(server_ip)],
+            type_of(server_ip.as_c_string_span()),
             c_int,
             MutPointer[SHMEMUniqueID, origin_of(uid)],
         ) thin -> None,

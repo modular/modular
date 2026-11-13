@@ -222,6 +222,10 @@ struct String(
       string literal. String literals are compile-time values.
     """
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "bytes"
+    ]
+
     # Fields: String has two forms - the declared form here, and the "inline"
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
@@ -844,7 +848,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: Int
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -867,9 +871,7 @@ struct String(
     @inline(.always)
     def __getitem__[
         I: Indexer, //
-    ](self, *, byte: I) -> StringSpan[
-        origin_of(self)._get_owned_interior["bytes"]
-    ]:
+    ](self, *, byte: I) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -895,7 +897,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: IntLiteral
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -921,7 +923,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, byte: ContiguousSlice
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
@@ -946,7 +948,7 @@ struct String(
     def __getitem__[
         I: Indexer, //
     ](self, *, codepoint: I) -> StringSpan[
-        origin_of(self)._get_owned_interior["bytes"]
+        Self._InteriorOrigin[origin_of(self)]
     ]:
         """Gets the character at the specified position.
 
@@ -966,7 +968,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, codepoint: ContiguousSlice
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets a substring at the specified codepoint positions.
 
         Args:
@@ -982,7 +984,7 @@ struct String(
     @inline(.always)
     def __getitem__(
         self, *, grapheme: Some[Indexer]
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Gets the character at the specified position.
 
         Args:
@@ -1143,7 +1145,9 @@ struct String(
         """
         self._iadd(other.as_bytes())
 
-    def __iter__(self) -> GraphemeSliceIter[origin_of(self)]:
+    def __iter__(
+        self,
+    ) -> GraphemeSliceIter[Self._InteriorOrigin[origin_of(self)]]:
         """Iterate over the grapheme clusters in the string.
 
         A grapheme cluster is what a user would typically think of as a
@@ -1158,7 +1162,9 @@ struct String(
         """
         return self.graphemes()
 
-    def __reversed__(self) -> GraphemeSliceIter[origin_of(self), False]:
+    def __reversed__(
+        self,
+    ) -> GraphemeSliceIter[Self._InteriorOrigin[origin_of(self)], False]:
         """Iterate backwards over the grapheme clusters in the string.
 
         A grapheme cluster is what a user would typically think of as a
@@ -1274,7 +1280,7 @@ struct String(
         """
         return StringSpan(self).join(elems)
 
-    def bytes(self) -> BytesIter[origin_of(self)]:
+    def bytes(self) -> BytesIter[Self._InteriorOrigin[origin_of(self)]]:
         """Returns an iterator over the raw UTF-8 bytes of this string.
 
         Unlike `codepoints()` and `graphemes()`, this iterator operates at the
@@ -1313,9 +1319,11 @@ struct String(
         assert_equal(next(iter), Byte(0xA9))
         ```
         """
-        return StringSpan(self).bytes()
+        return self._interior_slice().bytes()
 
-    def codepoints(self) -> CodepointsIter[origin_of(self)]:
+    def codepoints(
+        self,
+    ) -> CodepointsIter[Self._InteriorOrigin[origin_of(self)]]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
         Returns:
@@ -1356,9 +1364,11 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return StringSpan(self).codepoints()
+        return self._interior_slice().codepoints()
 
-    def codepoint_slices(self) -> CodepointSliceIter[origin_of(self)]:
+    def codepoint_slices(
+        self,
+    ) -> CodepointSliceIter[Self._InteriorOrigin[origin_of(self)]]:
         """Returns an iterator over single-character slices of this string.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -1383,11 +1393,11 @@ struct String(
             _ = iter.__next__() # raises StopIteration
         ```
         """
-        return StringSpan(self).codepoint_slices()
+        return self._interior_slice().codepoint_slices()
 
     def codepoint_slices_reversed(
         self,
-    ) -> CodepointSliceIter[origin_of(self), False]:
+    ) -> CodepointSliceIter[Self._InteriorOrigin[origin_of(self)], False]:
         """Iterates backwards over the string, returning single-character slices.
 
         Each returned slice points to a single Unicode codepoint encoded in the
@@ -1397,9 +1407,11 @@ struct String(
         Returns:
             A reversed iterator of references to the string elements.
         """
-        return CodepointSliceIter[origin_of(self), forward=False](self)
+        return self._interior_slice().codepoint_slices_reversed()
 
-    def graphemes(self) -> GraphemeSliceIter[origin_of(self)]:
+    def graphemes(
+        self,
+    ) -> GraphemeSliceIter[Self._InteriorOrigin[origin_of(self)]]:
         """Return an iterator over the grapheme clusters in this string.
 
         A grapheme cluster is what a user would typically think of as a
@@ -1408,11 +1420,11 @@ struct String(
         Returns:
             An iterator yielding each grapheme cluster as a `StringSpan`.
         """
-        return StringSpan(self).graphemes()
+        return self._interior_slice().graphemes()
 
     def graphemes_reversed(
         self,
-    ) -> GraphemeSliceIter[origin_of(self), False]:
+    ) -> GraphemeSliceIter[Self._InteriorOrigin[origin_of(self)], False]:
         """Return an iterator over the grapheme clusters in this string,
         yielding them in reverse order.
 
@@ -1422,9 +1434,11 @@ struct String(
             A reverse iterator yielding each grapheme cluster as a
             `StringSpan`.
         """
-        return StringSpan(self).graphemes_reversed()
+        return self._interior_slice().graphemes_reversed()
 
-    def grapheme_indices(self) -> GraphemeIndicesIter[origin_of(self)]:
+    def grapheme_indices(
+        self,
+    ) -> GraphemeIndicesIter[Self._InteriorOrigin[origin_of(self)]]:
         """Return an iterator over grapheme clusters paired with their byte
         offsets.
 
@@ -1434,13 +1448,13 @@ struct String(
         Returns:
             An iterator yielding `(byte_offset, grapheme)` pairs.
         """
-        return StringSpan(self).grapheme_indices()
+        return self._interior_slice().grapheme_indices()
 
     def split_at_grapheme(
         self, n: Int
     ) -> Tuple[
-        StringSpan[ImmOrigin(origin_of(self))],
-        StringSpan[ImmOrigin(origin_of(self))],
+        StringSpan[ImmOrigin(Self._InteriorOrigin[origin_of(self)])],
+        StringSpan[ImmOrigin(Self._InteriorOrigin[origin_of(self)])],
     ]:
         """Split this string at the `n`-th grapheme-cluster boundary.
 
@@ -1452,7 +1466,7 @@ struct String(
             A tuple `(prefix, suffix)` of `StringSpan`s. The prefix covers
             grapheme clusters `[0, n)` and the suffix covers the rest.
         """
-        return StringSpan(self).split_at_grapheme(n)
+        return self._interior_slice().split_at_grapheme(n)
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
@@ -1508,7 +1522,7 @@ struct String(
     @inline(.always)
     def as_c_string_span(
         mut self,
-    ) -> CStringSpan[ImmOrigin(origin_of(self))]:
+    ) -> CStringSpan[ImmOrigin(Self._InteriorOrigin[origin_of(self)])]:
         """Return a `CStringSpan` to the underlying memory of the string.
 
         Returns:
@@ -1523,13 +1537,16 @@ struct String(
 
         # Safety: we ensure the string is null-terminated above.
         return CStringSpan(
-            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
+            unsafe_from_ptr=self.as_bytes()
+            .unsafe_ptr()
+            .unsafe_bitcast[c_char]()
+            .as_imm()
         )
 
     @__unsafe_nested_origins_read_only
     def as_bytes(
         ref self,
-    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> Span[Byte, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
@@ -1553,7 +1570,7 @@ struct String(
     @__unsafe_nested_origins_read_only
     def _interior_slice(
         ref self,
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         # Canonical interior-origin string-slice view of the whole string. All
         # view-returning accessors derive from this so element/substring views
         # are invalidated when the string is mutated.
@@ -1562,7 +1579,7 @@ struct String(
     @__unsafe_nested_origins_read_only
     def unsafe_as_bytes_mut(
         mut self,
-    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> Span[Byte, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
@@ -1741,7 +1758,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: StringSpan
-    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[Self._InteriorOrigin[origin_of(self)]]]:
         """Split the string by a separator.
 
         Args:
@@ -1768,7 +1785,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: StringSpan, maxsplit: Int
-    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[Self._InteriorOrigin[origin_of(self)]]]:
         """Split the string by a separator.
 
         Args:
@@ -1794,7 +1811,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: NoneType = None
-    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[Self._InteriorOrigin[origin_of(self)]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1823,7 +1840,7 @@ struct String(
     @inline(.always)
     def split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[Self._InteriorOrigin[origin_of(self)]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1843,7 +1860,7 @@ struct String(
 
     def splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSpan[origin_of(self)._get_owned_interior["bytes"]]]:
+    ) -> List[StringSpan[Self._InteriorOrigin[origin_of(self)]]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1872,7 +1889,7 @@ struct String(
 
     def strip(
         self, chars: StringSpan
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with leading and trailing characters
         removed.
 
@@ -1888,7 +1905,7 @@ struct String(
 
     def strip(
         self,
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1901,7 +1918,7 @@ struct String(
 
     def rstrip(
         self, chars: StringSpan
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with trailing characters removed.
 
         Args:
@@ -1915,7 +1932,7 @@ struct String(
 
     def rstrip(
         self,
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -1927,7 +1944,7 @@ struct String(
 
     def lstrip(
         self, chars: StringSpan
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with leading characters removed.
 
         Args:
@@ -1941,7 +1958,7 @@ struct String(
 
     def lstrip(
         self,
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -2022,7 +2039,7 @@ struct String(
 
     def removeprefix(
         self, prefix: StringSpan, /
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with the prefix removed if it was
         present.
 
@@ -2045,7 +2062,7 @@ struct String(
 
     def removesuffix(
         self, suffix: StringSpan, /
-    ) -> StringSpan[origin_of(self)._get_owned_interior["bytes"]]:
+    ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
         """Returns a view of the string with the suffix removed if it was
         present.
 

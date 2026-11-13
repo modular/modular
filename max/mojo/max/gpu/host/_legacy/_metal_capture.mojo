@@ -46,7 +46,7 @@ def _start_metal_trace_capture(ctx: DeviceContext, path: String) raises:
             "AsyncRT_DeviceContext_startMetalTraceCapture",
             _CString[],
             _DeviceContextPtr[mut=True],
-            CStringSpan[origin_of(path_copy)],
+            type_of(path_copy.as_c_string_span()),
         ](ctx._handle_ptr(), path_copy.as_c_string_span())
     )
 

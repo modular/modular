@@ -331,6 +331,11 @@ This version is still a work in progress.
   print(i)  # error: use of invalidated interior reference 'opt["value"]'
   ```
 
+- `String`'s iterators, `split_at_grapheme()`, and `as_c_string_span()` now
+  carry the string's interior origin, as `as_bytes()` and slicing already did.
+  Mutating or reassigning a string while an iterator from one of these is still
+  in use is now a compile-time error instead of a read of freed memory.
+
 - `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
   and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
   instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
