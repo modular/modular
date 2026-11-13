@@ -12,9 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 # The IR dump is produced only when the pass pipeline actually runs, and a
 # warm KGEN transform cache serves the result without running it, so give
-# the run an empty cache of its own.
+# the run an empty cache of its own. `raise-for-loops` runs on each function,
+# so its dumps come out in completion order while the checks below expect
+# source order: run the pipeline single-threaded.
 # RUN: rm -rf %t.cache && env MODULAR_CACHE_DIR=%t.cache kgen --emit=llvm %s \
-# RUN:   -mllvm --mlir-print-ir-after=raise-for-loops -o %t.ll 2>&1 | FileCheck %s
+# RUN:   -mllvm --mlir-print-ir-after=raise-for-loops \
+# RUN:   -mllvm --mlir-disable-threading -o %t.ll 2>&1 | FileCheck %s
 
 # Verify that mojo's `for i in range(...)` is raised from `hlcf.loop` to
 # `hlcf.for`. `range(end)` uses the `_ZeroStartingRange` iterator and
