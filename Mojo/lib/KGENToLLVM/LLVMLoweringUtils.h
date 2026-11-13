@@ -90,6 +90,11 @@ public:
   int64_t getTypeABIAlign(Type type) const {
     return getTypeABIAlignAndType(type).first;
   }
+  /// Get the byte offset of each field of the LLVM struct type, as
+  /// llvm::StructLayout::getElementOffset does: each field is at the next
+  /// offset aligned for it, after the alloc size of the field before.
+  SmallVector<int64_t>
+  getStructFieldOffsets(mlir::LLVM::LLVMStructType type) const;
 
   /// Get the target info.
   TargetInfoAttr getTarget() const { return target; }

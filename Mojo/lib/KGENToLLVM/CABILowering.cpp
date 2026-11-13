@@ -326,19 +326,12 @@ void CabiUtils::forEachMember(
   if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
     // The offsets below assume aligned fields. A packed struct would break
     // them; Mojo does not emit one.
-    // TODO(MOCO-3369): Use LLVMDataLayout::getStructFieldOffsets() once it
-    // exists.
     assert(!structType.isPacked() &&
            "packed structs are not supported; their fields may be unaligned");
-    int64_t fieldOffset = 0;
-    for (mlir::Type fieldType : structType.getBody()) {
-      // Lay out the fields as LLVMDataLayout::getTypeSizeInBits does for a
-      // struct: align each field, then add its alloc size.
-      fieldOffset =
-          llvm::alignTo(fieldOffset, dataLayout.getTypeABIAlign(fieldType));
+    for (auto [fieldType, fieldOffset] :
+         llvm::zip_equal(structType.getBody(),
+                         dataLayout.getStructFieldOffsets(structType)))
       forEachMember(fieldType, offset + fieldOffset, dataLayout, callback);
-      fieldOffset += dataLayout.getTypeAllocSize(fieldType);
-    }
     return;
   }
 

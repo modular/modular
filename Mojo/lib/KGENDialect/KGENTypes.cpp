@@ -1720,10 +1720,12 @@ std::optional<size_t> StructType::getNumElements() const {
   return resolved.getValues().size();
 }
 
-static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
-                                                        TargetInfoAttr target) {
-  int64_t size = 0;
-  int64_t strictest = 1;
+/// Lay out `types` in order, each at the next offset aligned for it. Append
+/// the offset of each type to `offsets`, and return the end of the last one.
+static std::optional<int64_t>
+layOutElements(ArrayRef<Type> types, TargetInfoAttr target,
+               SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
@@ -1731,22 +1733,10 @@ static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
         DataLayoutInterface::getTypeAllocSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
-    size = llvm::alignTo(size, *typeAlign) + *typeSize;
-    strictest = std::max(strictest, *typeAlign);
+    offsets.push_back(llvm::alignTo(end, *typeAlign));
+    end = offsets.back() + *typeSize;
   }
-  return llvm::alignTo(size, strictest);
-}
-
-std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
-  // A struct backed by a concrete ParamListAttr has a known size.
-  if (ParamListAttr attr = getVariadicIfResolved()) {
-    SmallVector<Type> types;
-    if (failed(resolveTypes(attr.getValues(), types)))
-      return {};
-    return getPackedElementsTypeSize(types, target);
-  }
-  // Parametric struct - size unknown until elaboration.
-  return {};
+  return end;
 }
 
 static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
@@ -1760,6 +1750,42 @@ static std::optional<int64_t> getMaxAlignmentAmongTypes(ArrayRef<Type> types,
     strictest = std::max(strictest, *typeAlign);
   }
   return strictest;
+}
+
+static std::optional<int64_t> getPackedElementsTypeSize(ArrayRef<Type> types,
+                                                        TargetInfoAttr target) {
+  SmallVector<int64_t> offsets;
+  std::optional<int64_t> end = layOutElements(types, target, offsets);
+  std::optional<int64_t> strictest = getMaxAlignmentAmongTypes(types, target);
+  if (!end || !strictest)
+    return {};
+  return llvm::alignTo(*end, *strictest);
+}
+
+std::optional<SmallVector<int64_t>>
+StructType::getElementOffsets(TargetInfoAttr target) const {
+  ParamListAttr attr = getVariadicIfResolved();
+  if (!attr)
+    return std::nullopt;
+  SmallVector<Type> types;
+  if (failed(resolveTypes(attr.getValues(), types)))
+    return std::nullopt;
+  SmallVector<int64_t> offsets;
+  if (!layOutElements(types, target, offsets))
+    return std::nullopt;
+  return offsets;
+}
+
+std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
+  // A struct backed by a concrete ParamListAttr has a known size.
+  if (ParamListAttr attr = getVariadicIfResolved()) {
+    SmallVector<Type> types;
+    if (failed(resolveTypes(attr.getValues(), types)))
+      return {};
+    return getPackedElementsTypeSize(types, target);
+  }
+  // Parametric struct - size unknown until elaboration.
+  return {};
 }
 
 std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {

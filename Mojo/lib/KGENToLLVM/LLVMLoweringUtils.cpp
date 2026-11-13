@@ -48,6 +48,20 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 // LLVMDataLayout
 //===----------------------------------------------------------------------===//
 
+/// Lay out the fields of `type` in order, each at the next offset aligned for
+/// it. Append the offset of each field to `offsets`, and return the end of the
+/// last one.
+static int64_t layOutFields(const LLVMDataLayout &dataLayout,
+                            LLVM::LLVMStructType type,
+                            SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
+  for (Type field : type.getBody()) {
+    offsets.push_back(llvm::alignTo(end, dataLayout.getTypeABIAlign(field)));
+    end = offsets.back() + dataLayout.getTypeAllocSize(field);
+  }
+  return end;
+}
+
 int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   if (type.isIntOrFloat())
     return type.getIntOrFloatBitWidth();
@@ -67,16 +81,21 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
            getTypeStoreSize(arrayType.getElementType()) * CHAR_BIT;
   }
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
-    int64_t size = 0;
+    SmallVector<int64_t> offsets;
+    int64_t size = layOutFields(*this, structType, offsets);
     int64_t strictest = 1;
-    for (Type type : structType.getBody()) {
-      int64_t eltABIAlign = getTypeABIAlign(type);
-      size = llvm::alignTo(size, eltABIAlign) + getTypeAllocSize(type);
-      strictest = std::max(strictest, eltABIAlign);
-    }
+    for (Type field : structType.getBody())
+      strictest = std::max(strictest, getTypeABIAlign(field));
     return llvm::alignTo(size, strictest) * CHAR_BIT;
   }
   llvm::report_fatal_error("unsupported LLVM dialect type");
+}
+
+SmallVector<int64_t>
+LLVMDataLayout::getStructFieldOffsets(LLVM::LLVMStructType type) const {
+  SmallVector<int64_t> offsets;
+  layOutFields(*this, type, offsets);
+  return offsets;
 }
 
 std::pair<int64_t, Type>
@@ -340,7 +359,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   addConversion([this](StructType structType) -> std::optional<Type> {
     std::optional<SmallVector<Type>> elementTypes =
         structType.getElementTypes();
-    if (!elementTypes)
+    std::optional<SmallVector<int64_t>> kgenOffsets =
+        structType.getElementOffsets(getTarget());
+    if (!elementTypes || !kgenOffsets)
       return {};
 
     SmallVector<Type> llvmTypes;
@@ -352,24 +373,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       if (!llvmType)
         return {};
 
-      // Get alignment and size from KGEN type (respects @align decorator).
-      std::optional<int64_t> kgenAlign =
-          DataLayoutInterface::getTypeABIAlign(getTarget(), kgenType);
+      // Get the size from KGEN type (respects @align decorator).
       std::optional<int64_t> kgenAllocSize =
           DataLayoutInterface::getTypeAllocSize(getTarget(), kgenType);
-      if (!kgenAlign || !kgenAllocSize)
+      if (!kgenAllocSize)
         return {};
 
-      // Get LLVM's natural alignment for this type.
-      // We always use LLVM's actual alignment to compare against KGEN's
-      // alignment, since LLVM doesn't know about KGEN's @align decorators
-      // or alignment inheritance from fields.
       int64_t llvmNaturalAlign = getTypeABIAlign(llvmType);
 
       // Compute where LLVM would naturally place this field and where KGEN
       // requires it.
       int64_t llvmOffset = llvm::alignTo(offset, llvmNaturalAlign);
-      int64_t kgenOffset = llvm::alignTo(offset, *kgenAlign);
+      int64_t kgenOffset = (*kgenOffsets)[logicalIdx];
 
       // Only add explicit padding if KGEN requires stricter alignment than
       // LLVM's natural alignment.

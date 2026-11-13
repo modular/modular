@@ -949,6 +949,12 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// Get the number of struct elements. Returns std::nullopt if parametric.
     std::optional<size_t> getNumElements() const;
 
+    /// Get the byte offset of each element on `target`. Each element is at
+    /// the next offset aligned for it. Returns std::nullopt if the struct is
+    /// parametric or an element has no known size or alignment.
+    std::optional<SmallVector<int64_t>>
+    getElementOffsets(TargetInfoAttr target) const;
+
     /// True iff this struct's layout is known to use the memory-only ABI
     /// (not register-passable). Reads `isMemoryOnly`: a concrete `BoolAttr`
     /// means the answer is final; an i1 constraint proposition (conditional
