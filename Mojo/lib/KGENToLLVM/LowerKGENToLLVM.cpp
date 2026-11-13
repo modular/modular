@@ -126,7 +126,7 @@ static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
 namespace {
 /// Cached attribute identifiers.
 struct AttributeIdentifiers {
-  StringAttr noalias, noundef, nonnull;
+  StringAttr noalias, noundef, nonnull, readonly;
 };
 } // namespace
 
@@ -537,9 +537,11 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     switch (conv) {
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
-      list.set(ids.noalias, b.getUnitAttr());
-      [[fallthrough]];
     case ArgConvention::ImmMem:
+      // Owned in-memory arguments are uniquely referenced, and the callee never
+      // writes through an immutable one.
+      list.set(conv == ArgConvention::ImmMem ? ids.readonly : ids.noalias,
+               b.getUnitAttr());
       if (needsByVal)
         addByValAttribute(list, type, func);
       list.set(ids.nonnull, b.getUnitAttr());
@@ -1358,6 +1360,7 @@ public:
     ids.noalias = id(LLVMDialect::getNoAliasAttrName());
     ids.noundef = id(LLVMDialect::getNoUndefAttrName());
     ids.nonnull = id(LLVMDialect::getNonNullAttrName());
+    ids.readonly = id(LLVMDialect::getReadonlyAttrName());
 
     return success();
   }
