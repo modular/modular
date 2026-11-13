@@ -429,6 +429,9 @@ def pipeline_engine_config(
             speculative_method=speculative.speculative_method,
             num_speculative_tokens=speculative.draft_width,
             draft_proposal=speculative.draft_proposal,
+            acceptance_mode=(
+                "greedy" if speculative.use_greedy_acceptance else "stochastic"
+            ),
             reasoning_parser=runtime.reasoning_parser,
             verify_takes_prefill_rows=facts.verify_takes_prefill_rows,
             verify_commits_long_rows=facts.verify_commits_long_rows,

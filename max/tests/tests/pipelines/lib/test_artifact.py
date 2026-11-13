@@ -584,6 +584,7 @@ ENGINE_CONFIG = EngineConfig(
         speculative_method="mtp",
         num_speculative_tokens=3,
         draft_proposal="argmax",
+        acceptance_mode="stochastic",
         reasoning_parser="gemma4",
         # Mixed values, so a swapped field cannot pass.
         verify_takes_prefill_rows=True,
@@ -614,6 +615,7 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "speculative_method": "mtp",
                 "num_speculative_tokens": 3,
                 "draft_proposal": "argmax",
+                "acceptance_mode": "stochastic",
                 "reasoning_parser": "gemma4",
                 "verify_takes_prefill_rows": True,
                 "verify_commits_long_rows": False,
@@ -650,6 +652,20 @@ def test_a_wrong_typed_verify_fact_is_rejected(tmp_path: Path) -> None:
         deserialize(dest)
 
 
+def test_engine_config_reads_an_artifact_exported_before_the_mode(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["speculative"]["acceptance_mode"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert isinstance(engine_config, EngineConfig)
+    speculative = engine_config.speculative
+    assert speculative is not None
+    assert speculative.acceptance_mode is None
+
+
 @pytest.mark.parametrize(
     "edit",
     [
@@ -657,6 +673,9 @@ def test_a_wrong_typed_verify_fact_is_rejected(tmp_path: Path) -> None:
         lambda section: section.pop("ep_size"),
         lambda section: section["sampling"].update(enable_penalties=1),
         lambda section: section["devices"].append({"type": "tpu", "id": 0}),
+        lambda section: section["speculative"].update(
+            acceptance_mode="sampled"
+        ),
     ],
 )
 def test_malformed_engine_config_rejected(

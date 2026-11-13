@@ -709,11 +709,14 @@ def test_engine_config_copies_the_planned_settings() -> None:
     )
 
 
-def test_engine_config_copies_the_speculative_settings() -> None:
+@pytest.mark.parametrize("greedy", [False, True])
+def test_engine_config_copies_the_speculative_settings(greedy: bool) -> None:
     config = _pipeline_config(
         sampling=SamplingConfig.model_construct(),
         speculative=SpeculativeConfig.model_construct(
-            speculative_method="mtp", num_speculative_tokens=3
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            use_greedy_acceptance=greedy,
         ),
         reasoning_parser="gemma4",
     )
@@ -722,6 +725,7 @@ def test_engine_config_copies_the_speculative_settings() -> None:
             speculative_method="mtp",
             num_speculative_tokens=3,
             draft_proposal="argmax",
+            acceptance_mode="greedy" if greedy else "stochastic",
             reasoning_parser="gemma4",
         )
     )

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal, TypeAlias
 
 from max.driver import DeviceSpec
 from typing_extensions import Self
@@ -32,6 +33,9 @@ from .value_types import (
     expect,
     unknown_fields,
 )
+
+AcceptanceMode: TypeAlias = Literal["greedy", "stochastic"]
+"""How a fused speculative graph accepts drafts."""
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,8 @@ class EngineSpeculativeConfig:
         num_speculative_tokens: The number of tokens drafted per step.
         draft_proposal: How the draft proposes tokens: ``argmax``, or
             ``sampled``, which adds the draft's probabilities to the graph.
+        acceptance_mode: How the graph accepts drafts, or ``None`` for an
+            artifact exported before MAX recorded it.
         reasoning_parser: The reasoning parser, if any. With one, a block
             draft's graph takes whether each request is still thinking.
         verify_takes_prefill_rows: Whether the verify commits a prefill row
@@ -74,6 +80,7 @@ class EngineSpeculativeConfig:
     speculative_method: str
     num_speculative_tokens: int
     draft_proposal: str
+    acceptance_mode: AcceptanceMode | None
     reasoning_parser: str | None
     verify_takes_prefill_rows: bool = False
     verify_commits_long_rows: bool = False
@@ -163,6 +170,7 @@ class EngineConfig:
                 "speculative_method": speculative.speculative_method,
                 "num_speculative_tokens": speculative.num_speculative_tokens,
                 "draft_proposal": speculative.draft_proposal,
+                "acceptance_mode": speculative.acceptance_mode,
                 "reasoning_parser": speculative.reasoning_parser,
                 "verify_takes_prefill_rows": (
                     speculative.verify_takes_prefill_rows
@@ -241,12 +249,25 @@ def _sampling(value: ArtifactType) -> EngineSamplingConfig:
     )
 
 
+def _acceptance_mode(value: ArtifactType) -> AcceptanceMode:
+    match expect(value, str):
+        case "greedy":
+            return "greedy"
+        case "stochastic":
+            return "stochastic"
+        case other:
+            raise ValueError(f"unknown acceptance mode {other!r}")
+
+
 def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
     obj = decode_object(value, EngineSpeculativeConfig)
     return EngineSpeculativeConfig(
         speculative_method=expect(obj["speculative_method"], str),
         num_speculative_tokens=expect(obj["num_speculative_tokens"], int),
         draft_proposal=expect(obj["draft_proposal"], str),
+        acceptance_mode=decode_optional(_acceptance_mode)(
+            obj.get("acceptance_mode")
+        ),
         reasoning_parser=decode_optional(_str)(obj["reasoning_parser"]),
         # An artifact written before these fields existed reads each as
         # false.
