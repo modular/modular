@@ -325,7 +325,7 @@ index 20ec8dc..289592f 100644
      deps = [
          ":Support",
          ":llvm_driver_tools_def_lib",
-@@ -4621,6 +4639,139 @@ cc_library(
+@@ -4621,6 +4639,138 @@ cc_library(
      ],
  )
  
@@ -382,7 +382,6 @@ index 20ec8dc..289592f 100644
 +        ":Coroutines",
 +        ":Coverage",
 +        ":DTLTO",
-+        ":DWARFCFIChecker",
 +        ":DWARFLinker",
 +        ":DWARFLinkerBase",
 +        ":DWARFLinkerParallel",
@@ -465,7 +464,7 @@ index 20ec8dc..289592f 100644
  cc_library(
      name = "pass_registry_def",
      copts = llvm_copts,
-@@ -5443,6 +5594,7 @@ cc_binary(
+@@ -5443,6 +5593,7 @@ cc_binary(
      name = "llc",
      srcs = ["tools/llc/llc.cpp"],
      copts = llvm_copts,
@@ -473,7 +472,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [
          ":Support",
-@@ -5566,6 +5718,7 @@ cc_binary(
+@@ -5566,6 +5717,7 @@ cc_binary(
          "tools/llvm-as/*.cpp",
      ]),
      copts = llvm_copts,
@@ -481,7 +480,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -5820,6 +5973,9 @@ cc_library(
+@@ -5820,6 +5972,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-debuginfod-find",
@@ -491,7 +490,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [":llvm-debuginfod-find-lib"],
  )
-@@ -5830,6 +5986,7 @@ cc_binary(
+@@ -5830,6 +5985,7 @@ cc_binary(
          "tools/llvm-dis/*.cpp",
      ]),
      copts = llvm_copts,
@@ -499,7 +498,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [
          ":Analysis",
-@@ -6546,6 +6703,9 @@ cc_library(
+@@ -6546,6 +6702,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-objdump",
@@ -509,7 +508,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [":llvm-objdump-lib"],
  )
-@@ -6959,6 +7119,9 @@ cc_library(
+@@ -6959,6 +7118,9 @@ cc_library(
  
  llvm_driver_cc_binary(
      name = "llvm-symbolizer",
@@ -519,7 +518,7 @@ index 20ec8dc..289592f 100644
      stamp = 0,
      deps = [":llvm-symbolizer-lib"],
  )
-@@ -7039,6 +7202,7 @@ cc_library(
+@@ -7039,6 +7201,7 @@ cc_library(
  
  cc_binary(
      name = "opt",

@@ -115,7 +115,6 @@ struct Replacer {
       }
       toDelete.push_back(user);
     } else if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user)) {
-      llvm::BitVector eraseIndices(user->getNumOperands());
       for (auto [idx, value] : llvm::enumerate(user->getOperands())) {
         if (value == alloc) {
           user->eraseOperand(idx);

@@ -74,7 +74,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
     // Traverse again to avoid touching dom info on region variant ops.
     for (Value operand : op.getOperands()) {
       if (Operation *parent = operand.getDefiningOp()) {
-        if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+        if (auto *op = llvm::dyn_cast_if_present<Operation *>(
+                leastDominatingOperand)) {
           if (domInfo.dominates(op, parent))
             leastDominatingOperand = parent;
         } else if (cast<Region *>(leastDominatingOperand)
@@ -83,7 +84,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
         }
       } else {
         Region *region = operand.getParentRegion();
-        if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+        if (auto *op = llvm::dyn_cast_if_present<Operation *>(
+                leastDominatingOperand)) {
           if (op->getParentRegion()->isProperAncestor(region))
             leastDominatingOperand = region;
         } else if (cast<Region *>(leastDominatingOperand)
@@ -95,7 +97,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
 
     // Hoist to the earliest legal point. If it's a region, most to the
     // beginning of the region. Otherwise, move to just after the operation.
-    if (auto *region = leastDominatingOperand.dyn_cast<Region *>())
+    if (auto *region =
+            llvm::dyn_cast_if_present<Region *>(leastDominatingOperand))
       op.moveBefore(&region->front(), region->front().begin());
     else
       op.moveAfter(cast<Operation *>(leastDominatingOperand));

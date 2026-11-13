@@ -2,9 +2,9 @@
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "fa8c67382e4fa68010fce98bbd267f91b397f80e"
+LLVM_COMMIT = "eaabd239f5d23639eaf4d1d3a49ae90261c53b00"
 
-LLVM_SHA = "b4ab9e2d62be5eb4c0d90bc0cf4bffce8819560f77a7fa480073bd40fbb0f4ad"
+LLVM_SHA = "a6b4730f6fae684a10f5437f20b81f14c2f2b5e40ada727478a186db4dc2eb59"
 # END_GENERATED
 
 PATCHES = [

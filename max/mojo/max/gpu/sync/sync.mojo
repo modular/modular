@@ -957,9 +957,12 @@ def mbarrier_arrive_expect_tx_shared[
     """
 
     comptime if is_nvidia_gpu():
-        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type=__mlir_type.i64](
-            to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
-        )
+        var ptr = to_llvm_shared_mem_ptr(addr)
+        var count = to_i32(tx_count)
+        _ = __mlir_op[
+            `nvvm.mbarrier.arrive.expect_tx %{ptr}, %{count} : %{type_of(ptr)}, %{type_of(count)} -> i64`,
+            _type=__mlir_type.i64,
+        ]
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),

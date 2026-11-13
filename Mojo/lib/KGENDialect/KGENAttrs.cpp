@@ -4095,7 +4095,7 @@ static Attribute simplifyApply(ArrayRef<TypedAttr> operands, Type &resultType) {
     if (failed((*op)->fold(attrs, results)))
       return {};
     assert(results.size() == 1 && "expected one operation result");
-    if (auto result = results.front().dyn_cast<Attribute>())
+    if (auto result = llvm::dyn_cast_if_present<Attribute>(results.front()))
       return cast<TypedAttr>(result);
     // If the fold hook returned an operation, just look up the corresponding
     // input.

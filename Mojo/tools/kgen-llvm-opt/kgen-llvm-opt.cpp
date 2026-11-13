@@ -399,7 +399,7 @@ int main(int argc, char **argv) {
 
   if (moduleTriple.getArch()) {
     const TargetOptions options =
-        codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
+        codegen::getTargetOptions(context.getLibraryOptions(), moduleTriple);
     cpuStr = codegen::getCPUStr();
     featuresStr = codegen::getFeaturesStr();
     Expected<std::unique_ptr<TargetMachine>> expectedTM =

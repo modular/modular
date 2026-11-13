@@ -267,7 +267,7 @@ buildFunctionSimplificationPipeline(PassBuilder passBuilder,
 static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
                              const CompilationOptions &options) {
   ModuleInlinerWrapperPass miwp(
-      getInlineParamsFromOptLevel(/*OptLevel=*/3),
+      getInlineParamsFromOptLevel(passBuilder.getContext(), /*OptLevel=*/3),
       /*PerformMandatoryInliningsFirst*/ true,
       InlineContext{ThinOrFullLTOPhase::None, InlinePass::CGSCCInliner},
       InliningAdvisorMode::Default,

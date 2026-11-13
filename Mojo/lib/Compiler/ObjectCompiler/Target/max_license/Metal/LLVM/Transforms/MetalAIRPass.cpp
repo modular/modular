@@ -230,6 +230,17 @@ static bool transformTargetTriple(Module &module,
   return false;
 }
 
+/// Rebuilds \p gep over \p ptr and \p indices with the same source element
+/// type. Unlike IRBuilder::CreateGEP, this neither folds nor canonicalizes to
+/// an i8 ptradd, so the i32 indices this pass produces for AIR survive.
+static GetElementPtrInst *rebuildGEP(IRBuilder<> &builder,
+                                     GetElementPtrInst *gep, Value *ptr,
+                                     ArrayRef<Value *> indices,
+                                     GEPNoWrapFlags flags) {
+  return builder.Insert(GetElementPtrInst::Create(gep->getSourceElementType(),
+                                                  ptr, indices, flags));
+}
+
 /// Helper function to construct a new type identical to \p type with pointers
 /// from `MetalAddressSpace::None` transformed to pointer from \p addressSpace
 static llvm::Type *createTypeWithAddressSpace(llvm::Type *type,
@@ -849,7 +860,6 @@ private:
   void propagateAddressSpace(Function &func) {
     DenseSet<llvm::Instruction *> toRemove;
     SmallVector<llvm::Instruction *, 8> worklist;
-    DenseSet<llvm::Instruction *> visited;
 
     ReversePostOrderTraversal<BasicBlock *> rpot(&func.getEntryBlock());
     for (llvm::BasicBlock *bb : rpot) {
@@ -888,14 +898,10 @@ private:
                     })
                 .Case<llvm::GetElementPtrInst>(
                     [&](llvm::GetElementPtrInst *gep) {
-                      llvm::GetElementPtrInst *newGEP =
-                          cast<llvm::GetElementPtrInst>(builder.CreateGEP(
-                              gep->getSourceElementType(),
-                              gep->getPointerOperand(),
-                              SmallVector<llvm::Value *>(gep->indices())));
-                      newGEP->setIsInBounds(gep->isInBounds());
-                      newGEP->setNoWrapFlags(gep->getNoWrapFlags());
-                      return newGEP;
+                      return rebuildGEP(
+                          builder, gep, gep->getPointerOperand(),
+                          SmallVector<llvm::Value *>(gep->indices()),
+                          gep->getNoWrapFlags());
                     })
                 .Case<llvm::BitCastInst>([&](llvm::BitCastInst *cast) {
                   llvm::Type *newTy =
@@ -2048,12 +2054,9 @@ private:
                       SmallVector<Value *, 4> indices;
                       for (Value *idx : gep->indices())
                         indices.push_back(getVal(idx));
-                      auto *newGEP = cast<GetElementPtrInst>(builder.CreateGEP(
-                          gep->getSourceElementType(),
-                          getVal(gep->getPointerOperand()), indices));
-                      newGEP->setIsInBounds(gep->isInBounds());
-                      newGEP->setNoWrapFlags(gep->getNoWrapFlags());
-                      return newGEP;
+                      return rebuildGEP(builder, gep,
+                                        getVal(gep->getPointerOperand()),
+                                        indices, gep->getNoWrapFlags());
                     })
                 .Case<BitCastInst>([&](BitCastInst *cast) -> Value * {
                   Value *src = getVal(cast->getOperand(0));
@@ -2700,10 +2703,10 @@ static bool convertI64OperationsToI32(Function &func) {
         }
 
         if (needsConversion) {
-          replacement = builder.CreateGEP(gep->getSourceElementType(),
-                                          gep->getPointerOperand(), newIndices);
-          if (gep->isInBounds())
-            cast<GetElementPtrInst>(replacement)->setIsInBounds(true);
+          replacement =
+              rebuildGEP(builder, gep, gep->getPointerOperand(), newIndices,
+                         gep->isInBounds() ? GEPNoWrapFlags::inBounds()
+                                           : GEPNoWrapFlags::none());
         }
       }
 
@@ -2817,7 +2820,7 @@ static void updateInstructionForAddressSpace(User *user, Value *oldPtr,
     // Create new gep with address space pointer - this will maintain the
     // address space
     Value *newGEP =
-        builder.CreateGEP(gep->getSourceElementType(), newPtr, indices);
+        rebuildGEP(builder, gep, newPtr, indices, GEPNoWrapFlags::none());
 
     // Now update all users of this gep to use the new address space version
     SmallVector<User *, 8> gepUsers(gep->users());
@@ -2915,8 +2918,8 @@ static bool eliminateAddrspaceCasts(Function &func) {
                 indices.push_back(idx);
 
               // Create new gep directly on the address space 1 pointer
-              Value *newGEP = builder.CreateGEP(gep->getSourceElementType(),
-                                                srcPtr, indices);
+              Value *newGEP = rebuildGEP(builder, gep, srcPtr, indices,
+                                         GEPNoWrapFlags::none());
 
               // Update all users of this gep
               SmallVector<User *, 8> gepUsers(gep->users());
