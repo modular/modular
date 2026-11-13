@@ -173,12 +173,12 @@ kgen.struct.generator @extension5<A: type> = struct_inst<"extension5"[A]<:type A
 // CHECK-LABEL: kgen.func @extension_datalayout
 kgen.generator @extension_datalayout() {
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(#extended5, #target5)>
+  kgen.param.constant: scalar<index> = <get_sizeof(#extended5, #target5)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_alignof(#extended5, #target5)>
+  kgen.param.constant: scalar<index> = <get_alignof(#extended5, #target5)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(#chained5, #target5)>
+  kgen.param.constant: scalar<index> = <get_sizeof(#chained5, #target5)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: index = <get_sizeof(#kgen.upcast<#viewed5> : !kgen.type, #target5)>
+  kgen.param.constant: scalar<index> = <get_sizeof(#kgen.upcast<#viewed5> : !kgen.type, #target5)>
   hlcf.return
 }

@@ -15,6 +15,7 @@
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
@@ -864,10 +865,13 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
           {idx, Value(LLVM::BitcastOp::create(b, ptrType, ptr))});
 
     } else {
+      auto indexTy = SIMDType::getScalarIndexType(b.getContext());
       popAlloc = POP::AlignedAllocOp::create(
           b, PointerType::get(b.getI8Type()),
-          mlir::index::ConstantOp::create(b, hdl.getAlign()),
-          mlir::index::ConstantOp::create(b, hdl.getSize()));
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getAlign()), indexTy)),
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getSize()), indexTy)));
 
       Value ptr = mlir::UnrealizedConversionCastOp::create(b, ptrType, popAlloc)
                       .getResult(0);

@@ -53,8 +53,8 @@ kgen.generator @call_it() {
 
 // expected-note @below {{failed to interpret function @heap_use_after_free}}
 kgen.generator @heap_use_after_free() -> i64 {
-  %idx32 = index.constant 32
-  %idx8 = index.constant 8
+  %idx32 = kgen.param.constant: scalar<index> = <32>
+  %idx8 = kgen.param.constant: scalar<index> = <8>
   %0 = pop.aligned_alloc %idx32, %idx8 : <i64>
   pop.aligned_free %0 : <i64>
   // CHECK-PARAM: failed to interpret operation pop.load{isInvariant: false, isNonTemporal: false, isVolatile: false, ordering: #pop.atomic_ordering<not_atomic>}(#interp.pointer

@@ -373,23 +373,21 @@ kgen.func @memcpy_scalar(%p: !kgen.pointer<scalar<f32>>, %q: !kgen.pointer<scala
 
 // CHECK-LABEL: @memcpy_struct
 kgen.func @memcpy_struct(%p: !kgen.pointer<!kgen.struct<(f32, f32, i8)>>, %q: !kgen.pointer<!kgen.struct<(f32, f32, i8)>>) {
-  // CHECK: [[LEN12:%.*]] = kgen.param.constant = <12>
+  // CHECK: [[LEN12:%.*]] = kgen.param.constant: scalar<index> = <12>
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN12]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
-  %len = kgen.param.constant: index = <get_sizeof(struct<(f32, f32, i8)>, #target)>
-  %memcpylen3 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
-  pop.memcpy %p, %q, %memcpylen3 : !kgen.pointer<!kgen.struct<(f32, f32, i8)>> -> !kgen.pointer<!kgen.struct<(f32, f32, i8)>>
+  %len = kgen.param.constant: scalar<index> = <get_sizeof(struct<(f32, f32, i8)>, #target)>
+  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(f32, f32, i8)>> -> !kgen.pointer<!kgen.struct<(f32, f32, i8)>>
   hlcf.return
 }
 
 // CHECK-LABEL: @memcpy_addrspace
 kgen.func @memcpy_addrspace(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.pointer<scalar<f32>>) {
-  // CHECK: [[LEN4:%.*]] = kgen.param.constant = <4>
+  // CHECK: [[LEN4:%.*]] = kgen.param.constant: scalar<index> = <4>
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN4]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]]) <{isVolatile = false}> : (!llvm.ptr<3>, !llvm.ptr, i64)
-  %len = kgen.param.constant: index = <get_sizeof(scalar<f32>, #target)>
-  %memcpylen4 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
-  pop.memcpy volatile<0> %dst, %src, %memcpylen4 : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>, 3>
+  %len = kgen.param.constant: scalar<index> = <get_sizeof(scalar<f32>, #target)>
+  pop.memcpy volatile<0> %dst, %src, %len : !kgen.pointer<scalar<f32>> -> !kgen.pointer<scalar<f32>, 3>
   hlcf.return
 }
 
@@ -1011,12 +1009,11 @@ module attributes {M.target_info = #M.target<triple = "", arch = "", features = 
 
 // CHECK-LABEL: @memcpy_struct_32
 kgen.func @memcpy_struct_32(%p: !kgen.pointer<!kgen.struct<(index, index)>>, %q: !kgen.pointer<!kgen.struct<(index, index)>>) {
-  // CHECK: [[LEN8:%.*]] = kgen.param.constant = <8>
+  // CHECK: [[LEN8:%.*]] = kgen.param.constant: scalar<index> = <8>
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN8]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
-  %len = kgen.param.constant: index = <get_sizeof(struct<(index, index)>, #target)>
-  %memcpylen5 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
-  pop.memcpy %p, %q, %memcpylen5 : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
+  %len = kgen.param.constant: scalar<index> = <get_sizeof(struct<(index, index)>, #target)>
+  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
   hlcf.return
 }
 
@@ -1030,12 +1027,11 @@ module attributes {M.target_info = #M.target<triple = "", arch = "", features = 
 
 // CHECK-LABEL: @memcpy_struct_64
 kgen.func @memcpy_struct_64(%p: !kgen.pointer<!kgen.struct<(index, index)>>, %q: !kgen.pointer<!kgen.struct<(index, index)>>) {
-  // CHECK: [[LEN16:%.*]] = kgen.param.constant = <16>
+  // CHECK: [[LEN16:%.*]] = kgen.param.constant: scalar<index> = <16>
   // CHECK: [[LEN:%.*]] = builtin.unrealized_conversion_cast [[LEN16]]
   // CHECK: "llvm.intr.memcpy"(%1, %0, [[LEN]])
-  %len = kgen.param.constant: index = <get_sizeof(struct<(index, index)>, #target)>
-  %memcpylen6 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
-  pop.memcpy %p, %q, %memcpylen6 : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
+  %len = kgen.param.constant: scalar<index> = <get_sizeof(struct<(index, index)>, #target)>
+  pop.memcpy %p, %q, %len : !kgen.pointer<!kgen.struct<(index, index)>> -> !kgen.pointer<!kgen.struct<(index, index)>>
   hlcf.return
 }
 

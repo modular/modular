@@ -1078,8 +1078,11 @@ Value LowerAsyncBuildContext::initializeContinuation(FuncOp rampFunction,
       DataLayoutInterface::getTypeStoreSize(targetInfoAttr, continuationType);
   std::optional<int64_t> align =
       DataLayoutInterface::getTypeABIAlign(targetInfoAttr, continuationType);
-  Value sizeOf = mlir::index::ConstantOp::create(builder, size.value());
-  Value alignOf = mlir::index::ConstantOp::create(builder, align.value());
+  auto indexTy = SIMDType::getScalarIndexType(builder.getContext());
+  Value sizeOf = ParamConstantOp::create(
+      builder, SIMDAttr::get(uint64_t(size.value()), indexTy));
+  Value alignOf = ParamConstantOp::create(
+      builder, SIMDAttr::get(uint64_t(align.value()), indexTy));
 
   Value continuation = AlignedAllocOp::create(
       builder, PointerType::get(continuationType), ValueRange{alignOf, sizeOf});

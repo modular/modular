@@ -1668,7 +1668,7 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc", [
     ```
   }];
 
-  let arguments = (ins Index:$align, Index:$size);
+  let arguments = (ins IndexScalar:$align, IndexScalar:$size);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$ptr);
 
   let assemblyFormat = "$align `,` $size attr-dict `:` type($ptr)";

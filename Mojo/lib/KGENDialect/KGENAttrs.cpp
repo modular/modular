@@ -2738,8 +2738,9 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!::isa<IndexType>(type))
-      return emitError() << stringifyEnum(opcode) << " should return index";
+    if (type != SIMDType::getScalarIndexType(type.getContext()))
+      return emitError() << stringifyEnum(opcode)
+                         << " should return !kgen.scalar<index>";
     break;
   case POC::Apply:
     if (failed(verifyApply(operands, type, emitError)))
@@ -4009,9 +4010,9 @@ static TypeParamAttr getLayoutTypeConstant(TypedAttr type) {
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
                                    Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
   auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
@@ -4024,16 +4025,16 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
 static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
                                     Type &resultType) {
-  Builder b(operands[0].getContext());
+  auto indexTy = SIMDType::getScalarIndexType(operands[0].getContext());
   if (!resultType)
-    resultType = b.getIndexType();
+    resultType = indexTy;
 
   auto typeCst = getLayoutTypeConstant(operands[0]);
   auto target = sugarDynCast<TargetParamAttr>(operands[1]);
@@ -4044,7 +4045,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
   if (!size)
     return {};
 
-  return b.getIndexAttr(*size);
+  return SIMDAttr::get(uint64_t(*size), indexTy);
 }
 
 // We want data_to_str to maintain a simple invariant without sugar getting in
@@ -4635,7 +4636,9 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
   Type resultType;
   if (opcode == POC::Cond)
     resultType = operandsIn[1].getType();
-  else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
+  else if (opcode == POC::GetSizeOf || opcode == POC::GetAlignOf)
+    resultType = SIMDType::getScalarIndexType(operandsIn.front().getContext());
+  else
     resultType = operandsIn.front().getType();
   // Raise error if operands do not have the same type for certain POCs.
   if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot, POC::DataToStr,

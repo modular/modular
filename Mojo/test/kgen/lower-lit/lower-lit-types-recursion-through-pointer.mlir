@@ -134,9 +134,9 @@ lit.struct.decl @Ptr<ty: type> register_passable {
 lit.struct.decl @Aligned register_passable {
   lit.struct.field a : !kgen.scalar<index>
 } <
-  minAlignment = #kgen.param.expr<get_alignof,
+  minAlignment = #kgen.cast_to_builtin<#kgen.param.expr<get_alignof,
     #kgen.type<!lit.struct<@Ptr<:type !kgen.scalar<index>>>> : !kgen.type,
-    #kgen.param.expr<current_target> : !kgen.target> : index
+    #kgen.param.expr<current_target> : !kgen.target> : !kgen.scalar<index>> : index
 >
 
 // CHECK-LABEL: kgen.struct.generator @User

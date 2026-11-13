@@ -93,8 +93,8 @@ kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
 }
 
 kgen.generator @return_heap(%arg0: i16, %arg1: i16) -> !kgen.struct<(pointer<i16>, pointer<i16>)> {
-  %idx4 = index.constant 4
-  %idx32 = index.constant 0x2000
+  %idx4 = kgen.param.constant: scalar<index> = <4>
+  %idx32 = kgen.param.constant: scalar<index> = <8192>
   %0 = pop.aligned_alloc %idx32, %idx4 : <i16>
   pop.store %arg0, %0 : !kgen.pointer<i16>
   %offidx2 = kgen.param.constant: scalar<index> = <1>
@@ -121,8 +121,8 @@ kgen.generator @modify_stack_mem(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<i16
 }
 
 kgen.generator @return_pointer_to_pointer(%arg0: !kgen.pointer<i16>) -> !kgen.pointer<pointer<i16>> {
-  %idx-1 = index.constant -1
-  %idx16 = index.constant 16
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
+  %idx16 = kgen.param.constant: scalar<index> = <16>
   %0 = pop.aligned_alloc %idx-1, %idx16 : <pointer<i16>>
   %offidx4 = kgen.param.constant: scalar<index> = <1>
   %1 = pop.offset %0[%offidx4] : !kgen.pointer<pointer<i16>>
@@ -145,8 +145,8 @@ kgen.generator @free_null(%arg0: !kgen.pointer<i16>) -> index {
 }
 
 kgen.generator @freed_memory() -> !kgen.pointer<i16> {
-  %idx-1 = index.constant -1
-  %idx4 = index.constant 4
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
+  %idx4 = kgen.param.constant: scalar<index> = <4>
   %0 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   %1 = pop.aligned_alloc %idx-1, %idx4 : <i16>
   pop.aligned_free %0 : <i16>

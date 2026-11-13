@@ -128,8 +128,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: llvm.func @alloc_free
   llvm.func @alloc_free() {
-    %size = index.constant 1
-    %align = index.constant 8
+    %size = kgen.param.constant: scalar<index> = <1>
+    %align = kgen.param.constant: scalar<index> = <8>
     // CHECK: [[RAW_PTR:%.*]] = llvm.call @KGEN_CompilerRT_AlignedAlloc
     // CHECK-NEXT: [[PTR:%.*]] = llvm.bitcast [[RAW_PTR]] : !llvm.ptr to !llvm.ptr
     %0 = pop.aligned_alloc %align, %size : <index>

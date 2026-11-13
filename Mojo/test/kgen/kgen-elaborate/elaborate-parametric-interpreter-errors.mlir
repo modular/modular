@@ -24,7 +24,7 @@ kgen.generator export @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 

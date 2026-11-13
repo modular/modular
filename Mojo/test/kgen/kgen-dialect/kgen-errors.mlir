@@ -87,7 +87,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_sizeof should return index}}
+// expected-error @below {{get_sizeof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_sizeof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
@@ -104,7 +104,7 @@ kgen.generator @dtype_params() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{get_alignof should return index}}
+// expected-error @below {{get_alignof should return !kgen.scalar<index>}}
 "someop"() {a = #kgen.param.expr<get_alignof, #kgen.type<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----

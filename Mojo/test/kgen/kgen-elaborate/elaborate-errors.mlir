@@ -27,7 +27,7 @@ kgen.generator @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 
@@ -460,8 +460,8 @@ kgen.generator @"clash::b"() {
 
 // expected-note @below {{failed to interpret function @negative_alloc_size}}
 kgen.generator @negative_alloc_size() -> !kgen.pointer<index> {
-  %idx8 = index.constant 8
-  %idx_neg = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx_neg = kgen.param.constant: scalar<index> = <-1>
   // expected-note @below {{failed to interpret operation pop.aligned_alloc}}
   // expected-note @below {{alloc has negative size}}
   %0 = pop.aligned_alloc %idx8, %idx_neg : <index>

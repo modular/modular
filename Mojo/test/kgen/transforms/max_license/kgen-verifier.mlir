@@ -10,7 +10,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     hlcf.return
   }
 
-  kgen.func @aligned_alloc(%arg0: index, %arg1: index) {
+  kgen.func @aligned_alloc(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) {
     // expected-error @below {{heap allocation is not supported on GPU}}
     %0 = pop.aligned_alloc %arg0, %arg1 : <index>
     hlcf.return

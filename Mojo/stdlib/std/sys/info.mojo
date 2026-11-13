@@ -1613,15 +1613,13 @@ def size_of[
         `> : !kgen.type`,
     ]
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_sizeof, #kgen.type<`,
-                mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_sizeof, #kgen.type<`,
+            mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 
@@ -1644,7 +1642,7 @@ def size_of[
             Scalar[dtype]._mlir_type,
             `> : !kgen.type,`,
             target._mlir_value,
-            `> : index`,
+            `> : !kgen.scalar<index>`,
         ]
     )
 
@@ -1670,15 +1668,13 @@ def align_of[
         `> : !kgen.type`,
     ]
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_alignof, #kgen.type<`,
-                +mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            +mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 
@@ -1696,15 +1692,13 @@ def align_of[
         The alignment of the dtype in bytes.
     """
     return Int(
-        SIMDLength(
-            mlir_value=__mlir_attr[
-                `#kgen.param.expr<get_alignof, #kgen.type<`,
-                Scalar[dtype]._mlir_type,
-                `> : !kgen.type,`,
-                target._mlir_value,
-                `> : index`,
-            ]
-        )
+        mlir_value=__mlir_attr[
+            `#kgen.param.expr<get_alignof, #kgen.type<`,
+            Scalar[dtype]._mlir_type,
+            `> : !kgen.type,`,
+            target._mlir_value,
+            `> : !kgen.scalar<index>`,
+        ]
     )
 
 

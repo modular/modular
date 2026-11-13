@@ -169,11 +169,11 @@ kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
 
 // CHECK-LABEL: kgen.func @call_throwing_coro
 kgen.func @call_throwing_coro() {
-  %size = index.constant 1
-  %align = index.constant 8
+  %size = kgen.param.constant: scalar<index> = <1>
+  %align = kgen.param.constant: scalar<index> = <8>
   // CHECK:      [[CONT:%.*]] = kgen.call @throwing_coroutine_ramp()
-  // CHECK-NEXT: [[ERR:%.*]] = pop.aligned_alloc %idx8, %idx1 : <index>
-  // CHECK-NEXT: [[RES:%.*]] = pop.aligned_alloc %idx8, %idx1 : <index>
+  // CHECK-NEXT: [[ERR:%.*]] = pop.aligned_alloc %{{.*}}, %{{.*}} : <index>
+  // CHECK-NEXT: [[RES:%.*]] = pop.aligned_alloc %{{.*}}, %{{.*}} : <index>
   // CHECK-NEXT: [[ERRORSLOT:%.*]] = kgen.struct.gep [[CONT]][[[#ERROR]]]
   // CHECK-NEXT: [[TYPED_ERRORSLOT:%.*]] = pop.pointer.bitcast [[ERRORSLOT]] : !kgen.pointer<pointer<none>> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.store [[ERR]], [[TYPED_ERRORSLOT]] : !kgen.pointer<pointer<index>>
@@ -971,7 +971,7 @@ kgen.func @multiple_results(%arg0: !co.routine) async -> (i32, i64) {
 }
 
 // CHECK-LABEL: kgen.func @no_results_ramp
-// CHECK: aligned_alloc %idx8, %idx48
+// CHECK: aligned_alloc %{{.*}}, %{{.*}}
 kgen.func @no_results() async {
   hlcf.return
 }
@@ -1144,9 +1144,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-SAME:  -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 
 // FRAME ALLOCATION: Frame space is the same as cold.
-// CHECK-NEXT:  %idx72 = index.constant 72
-// CHECK-NEXT:  %idx8 = index.constant 8
-// CHECK-NEXT:  [[CONT:%.*]] = pop.aligned_alloc %idx8, %idx72 : <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index, index)>>
+// CHECK-NEXT:  [[SIZE:%.*]] = kgen.param.constant: scalar<index> = <72>
+// CHECK-NEXT:  [[ALIGN:%.*]] = kgen.param.constant: scalar<index> = <8>
+// CHECK-NEXT:  [[CONT:%.*]] = pop.aligned_alloc [[ALIGN]], [[SIZE]] : <struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<(index)>, index, index)>>
 
 // STATE INIT
 // CHECK-NEXT:  [[V1:%.*]] = kgen.param.constant: i32 = <0>
@@ -1332,9 +1332,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-SAME: (%arg0: !kgen.generator<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 
 // Instantiate Continuation and initialize state to 1
-// CHECK-NEXT: %idx64 = index.constant 64
-// CHECK-NEXT: %idx8 = index.constant 8
-// CHECK-NEXT: [[CONT1:%.*]] = pop.aligned_alloc %idx8, %idx64
+// CHECK-NEXT: [[SIZE:%.*]] = kgen.param.constant: scalar<index> = <64>
+// CHECK-NEXT: [[ALIGN:%.*]] = kgen.param.constant: scalar<index> = <8>
+// CHECK-NEXT: [[CONT1:%.*]] = pop.aligned_alloc [[ALIGN]], [[SIZE]]
 // CHECK-NEXT: [[V1:%.*]] = kgen.param.constant: i32 = <0>
 // CHECK-NEXT: [[V2:%.*]] = kgen.struct.gep [[CONT1]][0]
 // CHECK-NEXT: pop.store [[V1]], [[V2]] : !kgen.pointer<i32>
@@ -1373,9 +1373,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: kgen.func @needsBoth_ramp(%arg0: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 // allocate continuation and set it to state 0
-// CHECK-NEXT:  %idx72 = index.constant 72
-// CHECK-NEXT:  %idx8 = index.constant 8
-// CHECK-NEXT:  [[CONT:%.*]] = pop.aligned_alloc %idx8, %idx72
+// CHECK-NEXT:  [[SIZE:%.*]] = kgen.param.constant: scalar<index> = <72>
+// CHECK-NEXT:  [[ALIGN:%.*]] = kgen.param.constant: scalar<index> = <8>
+// CHECK-NEXT:  [[CONT:%.*]] = pop.aligned_alloc [[ALIGN]], [[SIZE]]
 // CHECK-NEXT:  [[V1:%.*]] = kgen.param.constant: i32 = <0>
 // CHECK-NEXT:  [[V2:%.*]] = kgen.struct.gep [[CONT]][0]
 // CHECK-NEXT:  pop.store [[V1]], [[V2]] : !kgen.pointer<i32>
@@ -1458,8 +1458,8 @@ kgen.func @triggerCold(%arg0: index, %arg1: index) {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 // CHECK-LABEL: kgen.func @hot_stack_alloc_hot_ramp
 kgen.func @hot_stack_alloc(%arg1: index) async -> index {
- // CHECK-NEXT:   %idx64 = index.constant 64
- // CHECK-NEXT:   %idx8 = index.constant 8
+ // CHECK-NEXT:   [[SIZE:%.*]] = kgen.param.constant: scalar<index> = <64>
+ // CHECK-NEXT:   [[ALIGN:%.*]] = kgen.param.constant: scalar<index> = <8>
  // CHECK-NEXT:   [[CORO:%.*]] = pop.aligned_alloc
 
  // CHECK:        pop.pointer.bitcast [[CORO]]
@@ -1476,8 +1476,8 @@ kgen.func @hot_stack_alloc(%arg1: index) async -> index {
 
 // CHECK-LABEL: kgen.func @hot_stack_alloc_no_sus_hot_ramp
 kgen.func @hot_stack_alloc_no_sus(%arg1: index) async -> index {
- // CHECK-NEXT:   %idx64 = index.constant 64
- // CHECK-NEXT:   %idx8 = index.constant 8
+ // CHECK-NEXT:   [[SIZE:%.*]] = kgen.param.constant: scalar<index> = <64>
+ // CHECK-NEXT:   [[ALIGN:%.*]] = kgen.param.constant: scalar<index> = <8>
  // CHECK-NEXT:   [[CORO2:%.*]] = pop.aligned_alloc
 
  // CHECK:        pop.pointer.bitcast [[CORO2]]

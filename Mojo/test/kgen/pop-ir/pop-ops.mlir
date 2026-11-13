@@ -993,7 +993,7 @@ kgen.generator @dtype_utils<DT: dtype>(%arg0: !kgen.dtype) {
 
 
 // CHECK-LABEL: @aligned_alloc
-kgen.func @aligned_alloc(%arg0: index, %arg1: index) {
+kgen.func @aligned_alloc(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) {
   // CHECK-NEXT: %0 = pop.aligned_alloc %arg0, %arg1 : <index>
   %0 = pop.aligned_alloc %arg0, %arg1 : <index>
   // CHECK-NEXT: pop.aligned_free %0 : <index>

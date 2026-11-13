@@ -295,8 +295,8 @@ kgen.generator export @persistent_variadic() {
 // -----
 
 kgen.generator @size_zero_alloc() -> !kgen.pointer<index> {
-  %idx0 = index.constant 0
-  %idx1 = index.constant 1
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
   %0 = pop.aligned_alloc %idx1, %idx0 : <index>
   hlcf.return %0 : !kgen.pointer<index>
 }
@@ -320,8 +320,8 @@ kgen.generator export @malloc_nullptr() {
 
 kgen.generator @fill_ptr() -> !ptr_t {
   %idx1 = index.constant 1
-  %idx8 = index.constant 8
-  %idx32 = index.constant 32
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx32 = kgen.param.constant: scalar<index> = <32>
 
   // Allocate an array of 2 elements.
   %0 = pop.aligned_alloc %idx8, %idx32 : !ptr_t
@@ -333,7 +333,9 @@ kgen.generator @fill_ptr() -> !ptr_t {
   // Store a pointer to the second element.
   %offidx5 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
   %2 = pop.offset %0[%offidx5] : !ptr_t
-  %3 = pop.aligned_alloc %idx1, %idx1 : !kgen.pointer<none>
+  %allocalign1 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %allocsize2 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %3 = pop.aligned_alloc %allocalign1, %allocsize2 : !kgen.pointer<none>
   %4 = pop.pointer.bitcast %2 : !ptr_t to !kgen.pointer<pointer<none>>
   pop.store %3, %4 : !kgen.pointer<pointer<none>>
 
@@ -511,8 +513,8 @@ kgen.generator @testInternalization(%pointer: !kgen.pointer<index>) -> index {
 }
 
 kgen.generator @makePtrPtrConstant<ptr: !kgen.pointer<index>>() -> !kgen.pointer<pointer<index>> {
-  %idx8 = index.constant 8
-  %idx-1 = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
   %0 = pop.aligned_alloc %idx-1, %idx8 : <index>
   %pointer = kgen.param.constant: !kgen.pointer<index> = <ptr>
   %x = pop.load %pointer : !kgen.pointer<index>
@@ -534,8 +536,8 @@ kgen.generator export @constant() -> index {
 // COM: Ensure results of kgen.param.materialize are internalized.
 
 kgen.generator @makePtrPtrMaterialize() -> !kgen.pointer<pointer<index>> {
-  %idx8 = index.constant 8
-  %idx-1 = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
   %0 = pop.aligned_alloc %idx-1, %idx8 : <index>
   %pointer = kgen.param.materialize: !kgen.pointer<index> = <#mem>
   %x = pop.load %pointer : !kgen.pointer<index>
@@ -660,8 +662,8 @@ kgen.generator @call_it(%arg1: !kgen.pointer<<dtype>(index) -> index>) -> !kgen.
 
 kgen.generator @get_variant(%arg0: !kgen.pointer<!variant> byref_result) {
   // Create inner pointer to index.
-  %size = index.constant 8
-  %align = index.constant 8
+  %size = kgen.param.constant: scalar<index> = <8>
+  %align = kgen.param.constant: scalar<index> = <8>
   %mem = pop.aligned_alloc %align, %size : !kgen.pointer<index>
 
   // Fill inner pointer.
@@ -688,8 +690,8 @@ kgen.generator export @call_result_slot() {
 kgen.generator @writeIndexType(%arg0: index) -> !kgen.pointer<index> {
   %index1 = kgen.param.constant = <1>
   %2 = index.sub %arg0, %index1
-  %idx8 = index.constant 8
-  %idx-1 = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx-1 = kgen.param.constant: scalar<index> = <-1>
   %3 = pop.aligned_alloc %idx-1, %idx8 : <index>
   pop.store %2, %3 : !kgen.pointer<index>
   hlcf.return %3 : !kgen.pointer<index>
@@ -749,7 +751,7 @@ kgen.generator export @test_union() {
 // CHECK-LABEL @f
 kgen.generator @f(
     %arg0: index) -> !kgen.pointer<index> no_inline {
-  %idx8 = index.constant 8
+  %idx8 = kgen.param.constant: scalar<index> = <8>
   %0 = pop.aligned_alloc %idx8, %idx8 : !kgen.pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<index>
   pop.store %arg0, %1: !kgen.pointer<index>
@@ -759,7 +761,7 @@ kgen.generator @f(
 // CHECK-LABEL @g
 kgen.generator @g(
     %arg0: !kgen.pointer<index>) -> !kgen.pointer<!structTy> no_inline {
-  %idx8 = index.constant 8
+  %idx8 = kgen.param.constant: scalar<index> = <8>
   %0 = pop.aligned_alloc %idx8, %idx8 : !kgen.pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<!structTy>
   %2 = kgen.struct.gep %1[0] : <!structTy>
@@ -769,8 +771,8 @@ kgen.generator @g(
 
 // CHECK-LABEL @h
 kgen.generator @h(%arg0: !kgen.pointer<!structTy>,%arg1: !kgen.pointer<!structTy>) -> !kgen.pointer<!structTy2> no_inline {
-  %idx8 = index.constant 8
-  %idx16 = index.constant 16
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx16 = kgen.param.constant: scalar<index> = <16>
   %0 = pop.aligned_alloc %idx8, %idx16 : !kgen.pointer<none>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<!structTy2>
   %2 = kgen.struct.gep %1[0] : <!structTy2>
@@ -968,9 +970,8 @@ kgen.generator @memcpy_1(%arg0: index) -> index {
   %p4 = pop.offset %p2[%offidx9] : !kgen.pointer<index>
   pop.store %idx3, %p4 : !kgen.pointer<index>
 
-  %len = kgen.param.constant: index = <get_sizeof(struct<(index, index, index, index)>, current_target())>
-  %memcpylen1 = pop.cast_from_builtin %len : index to !kgen.scalar<index>
-  pop.memcpy %q, %p, %memcpylen1 : !kgen.pointer<index> -> !kgen.pointer<index>
+  %len = kgen.param.constant: scalar<index> = <get_sizeof(struct<(index, index, index, index)>, current_target())>
+  pop.memcpy %q, %p, %len : !kgen.pointer<index> -> !kgen.pointer<index>
 
   %offidx10 = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
   %ptr = pop.offset %q[%offidx10] : !kgen.pointer<index>

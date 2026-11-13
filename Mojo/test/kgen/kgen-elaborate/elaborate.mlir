@@ -1926,7 +1926,7 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
 // CHECK-MAIN: kgen.func @"get_array_type,T=index"
 // CHECK-MAIN-NEXT: kgen.param.constant: type = <array<[[SIZEOF:.+]], index>>
 kgen.generator @get_array_type<T: type>() -> !kgen.type {
-  %0 = kgen.param.constant: type = <array<get_sizeof(T, current_target()), index>>
+  %0 = kgen.param.constant: type = <array<to_builtin(:scalar<index> get_sizeof(T, current_target())), index>>
   hlcf.return %0 : !kgen.type
 }
 

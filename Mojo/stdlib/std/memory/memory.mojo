@@ -429,7 +429,7 @@ def _malloc[
         mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
         mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
-            alignment.__mlir_index__(), size.__mlir_index__()
+            alignment._mlir_value, size._mlir_value
         )
 
     # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
