@@ -32,10 +32,12 @@
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 
+#include <optional>
 #include <tuple>
 
 using namespace M;
@@ -59,6 +61,38 @@ bool resultsUnusedBefore(IterElementwiseOp a, IterElementwiseOp b) {
     Operation *inBlock = block->findAncestorOpInBlock(*user);
     return inBlock && inBlock->isBeforeInBlock(b);
   });
+}
+
+// `a`'s readers between `a` and `b` that can move past `b`, in block order,
+// or none when one of them can't: each has no region, no memory effect and no
+// parameter declaration, and nothing at or before `b` reads it. Such readers
+// are metadata, typically a `mo.rebind` of the result for the graph's output:
+//
+//   %x = add(%a, %b)                      // a
+//   %full = mo.rebind(%x)                 // moves past b
+//   %stops = mo.shape.to_tensor(...)
+//   %w = slice(%x, %starts, %stops, ...)  // b
+//   mo.output %full, %w
+std::optional<SmallVector<Operation *>>
+readersMovablePast(IterElementwiseOp a, IterElementwiseOp b) {
+  Block *block = b->getBlock();
+  SmallVector<Operation *> readers;
+  for (Operation *user : a->getUsers()) {
+    Operation *reader = block->findAncestorOpInBlock(*user);
+    if (!reader || !reader->isBeforeInBlock(b) ||
+        llvm::is_contained(readers, reader))
+      continue;
+    bool movable = reader->getNumRegions() == 0 && isMemoryEffectFree(reader);
+    if (!movable || llvm::any_of(reader->getUsers(), [&](Operation *later) {
+          Operation *inBlock = block->findAncestorOpInBlock(*later);
+          return inBlock && !b->isBeforeInBlock(inBlock);
+        }))
+      return std::nullopt;
+    readers.push_back(reader);
+  }
+  llvm::sort(readers,
+             [](Operation *x, Operation *y) { return x->isBeforeInBlock(y); });
+  return readers;
 }
 
 // Whether `op`'s body loads from its input `in`.
@@ -402,9 +436,11 @@ BlockArgument inputArgFor(IterElementwiseOp op, Value in) {
 // body then runs in a `map.index.slice.select` at `a`'s index, where the slice
 // selects the element, and stores at the slice's index.
 //
-// Returns the merged kernel, created where `b` was.
+// Returns the merged kernel, created where `b` was, or where `a` was with
+// `atA`.
 IterElementwiseOp fuse(IterElementwiseOp a, IterElementwiseOp b,
-                       Value forwarded = {}, SliceIndexOp slice = {}) {
+                       Value forwarded = {}, SliceIndexOp slice = {},
+                       bool atA = false) {
   assert((!slice || forwarded) && "a slice is how `b` reads `forwarded`");
   // Merged inputs: `a`'s, then the ones only `b` carries. A shared operand
   // keeps `a`'s slot, which is what collapses the duplicate load.
@@ -432,7 +468,7 @@ IterElementwiseOp fuse(IterElementwiseOp a, IterElementwiseOp b,
 
   MLIRContext *ctx = a.getContext();
   Location loc = mlir::FusedLoc::get(ctx, {a.getLoc(), b.getLoc()});
-  OpBuilder builder(b);
+  OpBuilder builder(atA ? a : b);
   // Deferred if either member is, as input fusion combines the launch policy.
   auto fused = IterElementwiseOp::create(
       builder, loc, resultTypes, a.getShapeAttr(), inputs,
@@ -542,7 +578,12 @@ bool readsOnlyThroughPrologue(IterOpaqueOp opaque, Value value) {
 // `dstKernel`'s result has one foreach consumer, `srcKernel`, and other
 // readers too, so input fusion leaves the pair alone. They merge into one
 // kernel that stores the result for the other readers and hands `srcKernel`
-// the value just computed instead of a reload.
+// the value just computed instead of a reload:
+//
+//   %x = add(%a, %b)                   %x, %y = one kernel: add, then relu
+//   %k = cumsum(%x)           ->       %k = cumsum(%x)
+//   %y = relu(%x)
+//   mo.output %k, %x, %y               mo.output %k, %x, %y
 bool fuseEscapingConsumer(IterElementwiseOp dstKernel) {
   if (dstKernel.getChain() || dstKernel.getHasReadEffect() ||
       dstKernel.getHasWriteEffect() || isRaisableViewChain(dstKernel))
@@ -643,15 +684,49 @@ bool fuseEscapingConsumer(IterElementwiseOp dstKernel) {
         store.getIndex() != dstBody.getArguments().back())
       continue;
 
-    // The merged kernel takes `srcKernel`'s place, as a sibling merge's does,
-    // so nothing in between may read `dstKernel`, and no other operand of
-    // `srcKernel` may depend on it.
-    if (!resultsUnusedBefore(dstKernel, srcKernel) ||
-        llvm::any_of(srcKernel->getOperands(), [&](Value other) {
+    // Where the merged kernel goes, with `dstKernel` = %x and `srcKernel` =
+    // %y, both returned:
+    //
+    //   nothing in between reads %x                  -> at %y
+    //   something does (an opaque kernel taking %x), and %y's other operands
+    //   are all defined before %x                    -> at %x
+    //     %x = add(%a, %b); %k = cumsum(%x); %y = relu(%x)
+    //   the readers in between are only metadata     -> they move past %y,
+    //                                                   then at %y
+    //     %x = add(%a, %b); %full = mo.rebind(%x); %y = slice(%x, .., %stops)
+    //   neither                                      -> no merge
+    //     %x = add(%a, %b); %k = cumsum(%x); %y = mul(%x, %k)
+    //
+    // At %y, as a sibling merge's, no other operand of %y may depend on %x.
+    bool atDst = false;
+    SmallVector<Operation *> readersToMove;
+    if (!resultsUnusedBefore(dstKernel, srcKernel)) {
+      atDst = llvm::all_of(srcKernel->getOperands(), [&](Value other) {
+        if (other == result)
+          return true;
+        Operation *def = other.getDefiningOp();
+        Operation *inBlock =
+            def ? dstKernel->getBlock()->findAncestorOpInBlock(*def) : nullptr;
+        return !inBlock || inBlock->isBeforeInBlock(dstKernel);
+      });
+      if (!atDst) {
+        std::optional<SmallVector<Operation *>> movable =
+            readersMovablePast(dstKernel, srcKernel);
+        if (!movable)
+          continue;
+        readersToMove = std::move(*movable);
+      }
+    }
+    if (!atDst && llvm::any_of(srcKernel->getOperands(), [&](Value other) {
           return other != result && dataflowGraphDependsOn(other, dstKernel);
         }))
       continue;
-    fuse(dstKernel, srcKernel, result, slice);
+    Operation *anchor = srcKernel;
+    for (Operation *reader : readersToMove) {
+      reader->moveAfter(anchor);
+      anchor = reader;
+    }
+    fuse(dstKernel, srcKernel, result, slice, atDst);
     return true;
   }
   return false;
