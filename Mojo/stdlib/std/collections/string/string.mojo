@@ -1968,6 +1968,7 @@ struct String(
         """
         return self._interior_slice().lstrip()
 
+    @stable(since="1.3")
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 

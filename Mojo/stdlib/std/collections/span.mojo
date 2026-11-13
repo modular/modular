@@ -587,6 +587,7 @@ struct Span[
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where (

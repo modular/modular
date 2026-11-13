@@ -569,6 +569,7 @@ struct Optional[T: AnyType](
             fields
         )
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):

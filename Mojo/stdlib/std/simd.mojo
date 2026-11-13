@@ -2311,6 +2311,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
+    @stable(since="1.3")
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 

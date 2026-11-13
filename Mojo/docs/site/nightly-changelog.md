@@ -155,6 +155,11 @@ This version is still a work in progress.
 
 - `List.insert`
 - `List.clear`
+- `Hashable`
+  - `Hashable.__hash__`
+- `Hasher`
+  - `Hasher.update`
+  - `Hasher.finish`
 - `Pointer.__init__(to=)`
 - `Pointer.__eq__`
 - `Pointer.__ne__`

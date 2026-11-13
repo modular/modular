@@ -604,6 +604,7 @@ struct List[T: AnyType, /](
             index += 1
         return True
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):

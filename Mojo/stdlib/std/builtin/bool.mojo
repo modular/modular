@@ -489,6 +489,7 @@ struct Bool(
         """
         return lhs ^ self
 
+    @stable(since="1.3")
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
