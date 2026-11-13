@@ -2725,6 +2725,12 @@ class MLAKVCacheParams(KVCacheParams):
     attention sink. Either one keeps the 128-head NVIDIA split off its relaxed
     page floor, so the dispatch key must know."""
 
+    sparse_row_invariant_verify: bool = False
+    """Whether the sparse decode is the row-invariant pin's own verify, whose
+    split count the dispatcher sizes from the shape instead of the live cache.
+    The key must take the same count as the launch, so only a model that pins
+    the split sets this."""
+
     sparse_physical_indices: bool = False
     """Whether sparse indices already name physical cache rows. NVFP4 always
     uses physical value and scale rows. Other caches default to logical
@@ -2818,6 +2824,7 @@ class MLAKVCacheParams(KVCacheParams):
             sparse_indices_stride=mla.sparse_indices_stride,
             sparse_kv_form=mla.resolved_sparse_kv_form,
             sparse_fixed_topk=mla.sparse_fixed_topk,
+            sparse_row_invariant_verify=mla.sparse_row_invariant_verify,
             sparse_physical_indices=mla.resolved_sparse_physical_indices,
             sparse_dispatch_head_dim=mla.resolved_sparse_dispatch_head_dim,
         )
@@ -2864,6 +2871,7 @@ class MLAKVCacheParams(KVCacheParams):
                 fixed_topk=self.sparse_fixed_topk,
                 physical_indices=self.resolved_sparse_physical_indices,
                 depth=self.resolved_sparse_dispatch_head_dim,
+                row_invariant_verify=self.sparse_row_invariant_verify,
             )
         )
         return MLAAttnKey(

@@ -1170,11 +1170,14 @@ class MAXModelConfig(MAXModelConfigBase):
             self._generation_config = self._make_generation_config()
 
     def _has_loadable_hf_config(self) -> bool:
-        """Whether the model repo exposes a loadable HuggingFace config.
+        """Whether the model repo exposes a config this process can load.
 
         Mirrors :func:`load_huggingface_config`'s lookup (``config.json``, then
         the diffusers ``scheduler_config.json`` fallback) so eager loading is
-        skipped -- not raised -- for config-less components.
+        skipped -- not raised -- for config-less components. That lookup also
+        derives a config from a checkpoint's ``params.json``, which this does
+        not wait on: a repo that ships only ``params.json`` is loaded by the
+        lazy getter, on first access, exactly as before.
         """
         repo = self.huggingface_model_repo
         prefix = f"{repo.subfolder}/" if repo.subfolder is not None else ""

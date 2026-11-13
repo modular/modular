@@ -823,6 +823,173 @@ def store_k_scale_cache_ragged(
 
 
 @_rejects_split_head_dims
+def indexer_k_quantize_store(
+    kv_collection: PagedCacheValues,
+    keys: TensorValue,
+    k_norm_weight: TensorValue,
+    k_norm_bias: TensorValue,
+    k_norm_epsilon: float,
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+    rope_dim: int = 0,
+    key_col_offset: int = 0,
+) -> None:
+    """Normalizes, rotates and FP8-quantizes index keys, then stores them.
+
+    One launch replaces, bit for bit, a biased LayerNorm (bias and epsilon as
+    given, ``keep_dtype=False``) over each 128-wide key,
+    :func:`rope_ragged`
+    over its leading ``rope_dim`` columns, :func:`quantize_dynamic_scaled_float8`
+    (one E8M0 scale per key), :func:`store_k_cache_ragged` of the FP8 keys and
+    :func:`store_k_scale_cache_ragged` of the scales as float32, bit for bit.
+
+    Args:
+        kv_collection: The indexer's FP8 key cache, with float32 scales.
+        keys: BF16 channels as the projection left them: ``[rows,
+            key_col_offset + 128]``, whose last 128 columns are the key, or
+            ``[rows, 128]`` when ``key_col_offset`` is 0.
+        k_norm_weight: ``[128]`` LayerNorm scale weight.
+        k_norm_bias: ``[128]`` LayerNorm bias weight.
+        k_norm_epsilon: The LayerNorm epsilon.
+        freqs_cis: The rotary table, ``[positions, rope_dim]``-wide at least.
+        input_row_offsets: ``[batch + 1]`` ragged row offsets.
+        start_pos: ``[batch]`` cached tokens per request, the rope start.
+        layer_idx: The layer's slot in the cache.
+        quantization_granularity: Channels per stored scale; the kernel stores
+            one E8M0 scale per key, so this must be 128.
+        rope_dim: Leading columns of the key the rope rotates; 0 rotates none.
+        key_col_offset: The column the key starts at: the width of the latent
+            columns the caller concatenated before it. The op reads the key
+            there rather than being handed a copy of it, and refuses a
+            projection whose width disagrees with the offset rather than
+            letting the offset stand for the width.
+    """
+    _check_rank(2, keys=keys)
+    _check_dtype(DType.bfloat16, keys=keys)
+    _check_rank(1, k_norm_weight=k_norm_weight, k_norm_bias=k_norm_bias)
+    if (
+        isinstance(keys.shape[1], StaticDim)
+        and int(keys.shape[1]) != key_col_offset + 128
+    ):
+        raise ValueError(
+            f"an index key is 128 channels at offset {key_col_offset}; got a"
+            f" {int(keys.shape[1])}-wide operand"
+        )
+    if (
+        kv_collection.kv_scales is None
+        or kv_collection.scales_page_stride is None
+        or kv_collection.scales_lookup_table is None
+    ):
+        raise ValueError("indexer_k_quantize_store needs a cache with scales")
+    ops.inplace_custom(
+        "indexer.k.quantize_store.fp8.paged.ragged",
+        device=keys.device,
+        values=[
+            keys,
+            kv_collection.kv_blocks,
+            kv_collection.page_stride,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_prompt_length,
+            kv_collection.max_cache_length,
+            kv_collection.kv_scales,
+            kv_collection.scales_page_stride,
+            kv_collection.scales_lookup_table,
+            layer_idx,
+            k_norm_weight,
+            k_norm_bias,
+            ops.constant(k_norm_epsilon, DType.float32, device=DeviceRef.CPU()),
+            freqs_cis,
+            start_pos,
+        ],
+        parameters={
+            "quantization_granularity": quantization_granularity,
+            "rope_dim": rope_dim,
+            "key_col_offset": key_col_offset,
+        },
+    )
+
+
+def indexer_q_ssmax_rope_quantize(
+    q: TensorValue,
+    positions: TensorValue,
+    ssmax_s: TensorValue,
+    ssmax_b: TensorValue,
+    freqs_cis: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    *,
+    rope_dim: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Applies SSMax and RoPE to an index query and FP8-quantizes it.
+
+    One launch computes what this chain does, bit for bit: ``q`` times the
+    SSMax factor ``s * log(positions + 1) + b`` rounded to BF16 at each step,
+    then
+    :func:`rope_ragged` over the leading ``rope_dim`` columns of each head
+    (interleaved), then :func:`quantize_dynamic_scaled_float8` of each
+    128-wide head with an E8M0 scale.
+
+    Args:
+        q: ``[rows, heads, 128]`` BF16 query projection.
+        positions: ``[rows]`` uint32 absolute positions, for SSMax.
+        ssmax_s: ``[heads]`` BF16 SSMax scale.
+        ssmax_b: ``[heads]`` BF16 SSMax bias.
+        freqs_cis: ``[positions, rope_dim]`` BF16 interleaved RoPE table.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged row offsets.
+        start_pos: ``[batch]`` uint32 RoPE start of each request.
+        rope_dim: Leading columns of each head to rotate; 0 for none.
+
+    Returns:
+        The ``[rows, heads, 128]`` FP8 query and its ``[rows, heads]`` E8M0
+        scales.
+    """
+    _check_rank(3, q=q)
+    _check_dtype(DType.bfloat16, q=q, ssmax_s=ssmax_s, ssmax_b=ssmax_b)
+    _check_dtype(
+        DType.uint32,
+        positions=positions,
+        input_row_offsets=input_row_offsets,
+        start_pos=start_pos,
+    )
+    if rope_dim:
+        _check_dtype(DType.bfloat16, freqs_cis=freqs_cis)
+        if int(freqs_cis.shape[1]) != rope_dim:
+            raise ValueError(
+                f"freqs_cis is {freqs_cis.shape[1]} wide; rope_dim={rope_dim}"
+            )
+    # As in `rope_ragged`: a cross-device table must be materialized on the
+    # kernel's device rather than fused in as a view.
+    if freqs_cis.device != q.device:
+        freqs_cis = freqs_cis.to(q.device)
+    result = ops.custom(
+        "indexer.q.ssmax_rope_quantize.fp8",
+        device=q.device,
+        values=[
+            q,
+            positions,
+            ssmax_s,
+            ssmax_b,
+            freqs_cis,
+            input_row_offsets,
+            start_pos,
+        ],
+        out_types=[
+            TensorType(DType.float8_e4m3fn, q.shape, device=q.device),
+            TensorType(
+                DType.float8_e8m0fnu, [q.shape[0], q.shape[1]], device=q.device
+            ),
+        ],
+        parameters={"rope_dim": rope_dim},
+    )
+    return result[0].tensor, result[1].tensor
+
+
+@_rejects_split_head_dims
 def _rope_split_store_ragged_unfused(
     kv_params: KVCacheParams,
     qkv: TensorValue,
@@ -3572,6 +3739,7 @@ def _mla_fp8_index_top_k(
     mla_collection: PagedCacheValues | None,
     *,
     write_logical: bool,
+    deterministic: bool,
 ) -> list[TensorValue]:
     _validate_mla_fp8_index_top_k(
         q,
@@ -3603,6 +3771,10 @@ def _mla_fp8_index_top_k(
         "quantization_granularity": quantization_granularity,
         "mask_str": mask_str,
     }
+    # Set only when asked for, so the graphs of the models that leave it off
+    # are unchanged.
+    if deterministic:
+        parameters["deterministic"] = True
     values: list[Value[Any]] = [
         q,
         q_s,
@@ -3664,6 +3836,8 @@ def mla_fp8_index_top_k(
     quantization_granularity: int,
     mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
     kpool: int = 1,
+    *,
+    deterministic: bool = False,
 ) -> TensorValue:
     """Computes top-k indices for MLA FP8 indexed attention scores.
 
@@ -3685,6 +3859,13 @@ def mla_fp8_index_top_k(
             ``k`` consecutive tokens, so ``top_k`` counts pools and the
             returned indices are pool ids that the caller expands back to
             token positions.
+        deterministic: Whether one input must always give the same keys in
+            the same output columns. By default the column order follows the
+            order the kernel's threads finish in, and so does which of
+            several keys tied at the threshold survives. That changes the
+            fp32 sum order of a consumer that reduces over the columns in
+            order, such as the sparse MLA ops, from launch to launch.
+            ``True`` makes both reproducible, at some cost on decode shapes.
 
     Returns:
         Output tensor of shape [total_seq_len, top_k] containing top-k key
@@ -3708,6 +3889,7 @@ def mla_fp8_index_top_k(
         kpool,
         mla_collection=None,
         write_logical=True,
+        deterministic=deterministic,
     )[0]
 
 
@@ -3722,6 +3904,8 @@ def mla_fp8_index_top_k_with_physical(
     top_k: int,
     quantization_granularity: int,
     mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+    *,
+    deterministic: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Computes :func:`mla_fp8_index_top_k` and the selections' MLA cache rows.
 
@@ -3741,6 +3925,7 @@ def mla_fp8_index_top_k_with_physical(
         top_k: Requested number of top indices per token, at most 2048.
         quantization_granularity: Quantization granularity for the K cache.
         mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+        deterministic: As for :func:`mla_fp8_index_top_k`.
 
     Returns:
         The logical indices, as :func:`mla_fp8_index_top_k` returns them, and
@@ -3766,6 +3951,7 @@ def mla_fp8_index_top_k_with_physical(
         kpool=1,
         mla_collection=mla_collection,
         write_logical=True,
+        deterministic=deterministic,
     )
     return logical, physical
 
@@ -3781,6 +3967,8 @@ def mla_fp8_index_top_k_physical(
     top_k: int,
     quantization_granularity: int,
     mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+    *,
+    deterministic: bool = False,
 ) -> TensorValue:
     """Computes only the physical rows of :func:`mla_fp8_index_top_k_with_physical`.
 
@@ -3797,6 +3985,7 @@ def mla_fp8_index_top_k_physical(
         top_k: Requested number of top indices per token, at most 2048.
         quantization_granularity: Quantization granularity for the K cache.
         mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+        deterministic: As for :func:`mla_fp8_index_top_k`.
 
     Returns:
         A ``[total_seq_len, top_k]`` tensor of the selected positions'
@@ -3821,6 +4010,7 @@ def mla_fp8_index_top_k_physical(
         kpool=1,
         mla_collection=mla_collection,
         write_logical=False,
+        deterministic=deterministic,
     )[1]
 
 
@@ -7291,6 +7481,7 @@ def mla_prefill_decode_graph(
     index_kpool_select_tail: bool = True,
     selection_lag: int = 0,
     sparse_attn_sink_inert: bool = False,
+    sparse_split_rows_per_request: int = 0,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -7348,9 +7539,19 @@ def mla_prefill_decode_graph(
             Only the decode branch reads it.
         sparse_attn_sink_inert: Marks the sparse attention sink as inert, which
             the AMD sparse arms require to accept one.
+        sparse_split_rows_per_request: Sizes every sparse decode launch's
+            split-K count for a verify of this many rows per request, so a
+            one-row decode step reduces each row in the verify's order and
+            matches its row bit for bit. Zero leaves the split to the
+            dispatcher. Only the sparse op with BF16 weights and an SM100 FP8
+            cache supports it.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
+
+    Raises:
+        ValueError: If ``sparse_split_rows_per_request`` is non-zero on a call
+            whose op cannot take it.
     """
     _validate_mla_prefill_decode_graph_inputs(
         q,
@@ -7436,6 +7637,13 @@ def mla_prefill_decode_graph(
         parameters["nvfp4_convert_max_rows"] = (
             nvfp4_mla_prefill_convert_max_rows()
         )
+    if sparse_split_rows_per_request:
+        if op_name != "attention.mla.graph.prefill.decode.paged.sparse":
+            raise ValueError(
+                "sparse_split_rows_per_request needs the sparse op with BF16"
+                f" weights and an FP8 cache; {op_name} cannot take it"
+            )
+        parameters["split_rows_per_request"] = sparse_split_rows_per_request
 
     # Capturable-graph scalar appended after the optional sparse tensors
     # (see MoGG op signature).
@@ -9153,9 +9361,63 @@ def moe_sink_gate_router(
     return (results[0].tensor, results[1].tensor, results[2].tensor)
 
 
+_PRECISE_FP32_MAX_N = 256
+"""The SM100 fp32 split-K GEMV's static-N cap.
+
+``has_precise_f32_gemv`` in the SM100 dispatch keeps an fp32 ``transpose_b``
+matmul on that GEMV only while the weight's leading dimension (the output
+width) is this narrow; a wider one favors the tensor-core tile GEMM at every
+row count, so a bounded precise route has no kernel to reach there.
+"""
+_PRECISE_FP32_MIN_K = 2048
+"""That GEMV's static-K floor: below it the many-CTA launch does not pay."""
+_PRECISE_FP32_K_ALIGN = 4
+"""Its K alignment: the fp32 SIMD width the split-K lanes are cut by."""
+
+MIXED_GEMV_EPILOGUE_MAX_M = 64
+"""The last row count `mo.mixed.gemv.epilogue` launches its fused GEMV at.
+
+It is the same 64 ``dispatch.mojo`` crosses an fp32 ``transpose_b`` matmul at:
+up to it the matmul runs the split-K GEMV the fused launch reproduces, above it
+the TF32 tile GEMM. A caller passes this to keep the op bit-identical to its
+chain at every row count; the op carries the same number as
+``_MIXED_GEMV_EPILOGUE_MAX_M`` in ``builtin_kernels/linalg.mojo``, which caps
+any wider window it is handed.
+"""
+
+_ROUTER_GATE_MIXED_GEMV_MAX_M = 128
+"""The row window `mo.router.gate.mixed.gemv` defaults to.
+
+A caller that wants the op's own window stages no parameter at all, so the
+graph keeps the IR it had before the window became a parameter; the number is
+here only so a caller's own window can be compared against it.
+"""
+
+
+def _keeps_precise_fp32(n: int, k: int) -> bool:
+    """Returns whether an fp32 ``transpose_b`` matmul of ``[n, k]`` is precise.
+
+    ``has_precise_f32_gemv`` in the SM100 dispatch keeps that matmul on its
+    IEEE-fp32 split-K GEMV only for a weight this narrow and a contraction
+    this deep; every other shape runs the TF32 tile GEMM at every row count,
+    so there is no fp32-precise kernel for a bounded precise route to reach.
+
+    Args:
+        n: The weight's leading dimension, which is the output width.
+        k: The length of the contraction.
+    """
+    return (
+        n <= _PRECISE_FP32_MAX_N
+        and k >= _PRECISE_FP32_MIN_K
+        and k % _PRECISE_FP32_K_ALIGN == 0
+    )
+
+
 def _router_gate_mixed_gemv(
     hidden_states: TensorValue,
     gate_weight: TensorValue,
+    max_m: int = _ROUTER_GATE_MIXED_GEMV_MAX_M,
+    precise_max_m: int = 0,
 ) -> TensorValue:
     """Computes mixed-input router logits from fixed gate weights.
 
@@ -9163,6 +9425,35 @@ def _router_gate_mixed_gemv(
     remain unchanged during execution. The kernel prefetches weights before
     waiting for dependent grids, so weights produced by preceding graph ops
     are unsupported. An already initialized graph input is allowed.
+
+    Args:
+        hidden_states: ``[rows, hidden]`` BF16 activation.
+        gate_weight: ``[experts, hidden]`` float32 gate weight, a graph constant.
+        max_m: The largest row count to launch the fused GEMV for; above it the
+            op takes the cast + fp32 matmul chain it replaces. The op's own
+            window bounds it per target, so the default leaves every target at
+            its tuned window and stages no ``max_m`` attribute at all, which
+            keeps a caller that does not narrow it on the IR it staged before
+            the window was a parameter. A caller only narrows it, to stop the
+            fused launch where its own chain stops being bit-identical to it:
+            the fused GEMV is IEEE fp32 at every row count, while an fp32
+            matmul of a static N at most 256 crosses to the TF32 tile GEMM
+            above 64 rows.
+        precise_max_m: The last row count whose above-window matmul stays IEEE
+            fp32. ``0``, the default, leaves that matmul the baseline's, free
+            to truncate its operands to TF32 on tensor cores; a positive value
+            keeps the whole route fp32-precise up to that row count and the
+            baseline's above it, so a row's logits no longer depend on how
+            many rows share the launch below the bound. The static shape the
+            fp32 split-K GEMV serves (``N`` at most 256, ``K`` at least 2048
+            and a multiple of the fp32 SIMD width) is checked here; the SM100
+            target it also needs is the op's own compile error, since only the
+            kernel knows which targets carry that GEMV. The bound is the op's
+            to apply: the row count is runtime-dynamic, so the graph cannot
+            pick a route by it.
+
+    Returns:
+        The ``[rows, experts]`` float32 logits.
     """
     _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
     _check_dtype(DType.bfloat16, hidden_states=hidden_states)
@@ -9187,11 +9478,96 @@ def _router_gate_mixed_gemv(
             "hidden_states K must match gate_weight K, got"
             f" {hidden_states.shape[1]} and {k_dim}"
         )
+    # Both parameters are the op's own defaults unless a caller asks for
+    # something else, so a graph that asks for neither stages exactly what it
+    # staged before either bound existed.
+    parameters: dict[str, int] = {}
+    if max_m != _ROUTER_GATE_MIXED_GEMV_MAX_M:
+        parameters["max_m"] = max_m
+    if precise_max_m > 0:
+        # That route needs the SM100 fp32 split-K GEMV, whose shape gate a
+        # mismatch would only fail deep inside the kernel compile.
+        if not _keeps_precise_fp32(n_dim.dim, k_dim.dim):
+            raise ValueError(
+                "precise_max_m requires an IEEE-fp32 split-K GEMV shape (N at"
+                f" most {_PRECISE_FP32_MAX_N}, K at least"
+                f" {_PRECISE_FP32_MIN_K} and a multiple of"
+                f" {_PRECISE_FP32_K_ALIGN}), got [{n_dim.dim}, {k_dim.dim}]"
+            )
+        parameters["precise_max_m"] = precise_max_m
 
     return ops.custom(
         "moe.router.gate.mixed.gemv",
         device=hidden_states.device,
         values=[hidden_states, gate_weight],
+        parameters=parameters,
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[hidden_states.shape[0], n_dim],
+                device=hidden_states.device,
+            )
+        ],
+    )[0].tensor
+
+
+def _mixed_gemv_epilogue(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    max_m: int = MIXED_GEMV_EPILOGUE_MAX_M,
+) -> TensorValue:
+    """Computes mixed-input ``hidden_states @ weight.T`` through its epilogue.
+
+    On SM100, ``weight`` must be initialized before graph execution and remain
+    unchanged during execution. The kernel prefetches weights before waiting
+    for dependent grids, so weights produced by preceding graph ops are
+    unsupported. An already initialized graph input is allowed.
+
+    Unlike :func:`_router_gate_mixed_gemv`, whose output is written plainly,
+    this op stores every output element through the epilogue the graph fused
+    onto it. That is what keeps elementwise work on the projection -- a scale
+    chain, which would otherwise be a launch of its own -- inside the one
+    launch the fused GEMV replaces two with.
+
+    Args:
+        hidden_states: ``[rows, hidden]`` BF16 activation.
+        weight: ``[n, hidden]`` float32 weight, a graph constant.
+        max_m: The largest row count to launch the fused GEMV for; above it the
+            op takes the cast + fp32 matmul chain it replaces, through the same
+            epilogue. Defaults to :data:`MIXED_GEMV_EPILOGUE_MAX_M`, the row
+            count at which an fp32 matmul of this shape crosses to the TF32
+            tile GEMM: a caller keeps the default to stay bit-identical to its
+            chain at every row count, and passes a smaller value only to pay
+            less for rows it wants on the chain.
+
+    Returns:
+        The ``[rows, n]`` float32 product.
+    """
+    _check_rank(2, hidden_states=hidden_states, weight=weight)
+    _check_dtype(DType.bfloat16, hidden_states=hidden_states)
+    _check_dtype(DType.float32, weight=weight)
+    _check_same_device(hidden_states=hidden_states, weight=weight)
+
+    n_dim = weight.shape[0]
+    k_dim = weight.shape[1]
+    # N/K are inferred from the static weight layout inside the op, so the
+    # shape must be known here (the op also asserts this at compile time).
+    if not isinstance(n_dim, StaticDim) or not isinstance(k_dim, StaticDim):
+        raise ValueError(
+            "_mixed_gemv_epilogue requires a static weight shape, got"
+            f" {weight.shape}"
+        )
+    if hidden_states.shape[1] != k_dim:
+        raise ValueError(
+            "hidden_states K must match weight K, got"
+            f" {hidden_states.shape[1]} and {k_dim}"
+        )
+
+    return ops.custom(
+        "mo.mixed.gemv.epilogue",
+        device=hidden_states.device,
+        values=[hidden_states, weight],
+        parameters={"max_m": max_m},
         out_types=[
             TensorType(
                 dtype=DType.float32,
@@ -12306,6 +12682,229 @@ def rms_norm_quantize_dynamic_scaled_float8(
     )
 
     return result[0].tensor, result[1].tensor
+
+
+def rms_norm_quantize_dynamic_scaled_float8_dual(
+    input: TensorValue,
+    gamma: TensorValue,
+    epsilon: float,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    *,
+    weight_offset: float = 0.0,
+    multiply_before_cast: bool = False,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.float32,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """RMS-normalizes ``input``, keeping the normalized row, and quantizes it.
+
+    Uses dynamic group (blockwise) scales, in a single kernel.
+
+    Equivalent to :func:`~max.graph.ops.rms_norm` followed by
+    :func:`quantize_dynamic_scaled_float8` with the same arguments, including
+    the ``[K // group_size, M_padded]`` scale layout, without a normalized
+    round trip through HBM -- and unlike
+    :func:`rms_norm_quantize_dynamic_scaled_float8` it also hands back the
+    normalized row, so a norm with a second reader keeps one launch. Its
+    statistics ride the ``rowwise`` reduction :func:`~max.graph.ops.rms_norm`
+    picks, so the three outputs are the unfused pair's bytes.
+
+    Args:
+        input: The ``[M, K]`` activation to normalize and quantize.
+        gamma: The ``[K]`` RMSNorm weight, in ``input``'s dtype.
+        epsilon: The RMSNorm epsilon.
+        input_scale_spec: Activation scale spec; supplies the group size when
+            ``group_size_or_per_token`` is -1.
+        weight_scale_spec: Weight scale spec of the consuming matmul.
+        weight_offset: Constant added to ``gamma`` (Gemma-style norms).
+        multiply_before_cast: RMSNorm gamma-multiply order; see
+            :func:`~max.graph.ops.rms_norm`.
+        scale_ub: Upper bound of the dynamic scale.
+        group_size_or_per_token: Columns per scale, or -1 to take the
+            activation block size from ``input_scale_spec``.
+        out_type: FP8 output dtype.
+        scales_type: Scale dtype. Defaults to float32, which the
+            blockwise-FP8 matmuls require.
+
+    Returns:
+        The normalized ``[M, K]`` row in ``input``'s dtype, the quantized
+        ``[M, K]`` tensor and its ``[K // group_size, M_padded]`` scales.
+
+    Raises:
+        ValueError: If the group size is not a proper divisor of the row width,
+            or ``gamma`` does not match it.
+    """
+    group_size, out_types = _dynamic_scaled_float8_quant_out_types(
+        input,
+        input_scale_spec,
+        weight_scale_spec,
+        group_size_or_per_token,
+        out_type,
+        scales_type,
+    )
+    num_cols = int(input.shape[1])
+    if not 0 < group_size < num_cols or num_cols % group_size != 0:
+        raise ValueError(
+            "rms_norm_quantize_dynamic_scaled_float8_dual needs a group size"
+            f" that is a proper divisor of the row width; got group_size="
+            f"{group_size} for {num_cols} columns"
+        )
+    if gamma.shape != input.shape[-1:] or gamma.dtype != input.dtype:
+        raise ValueError(
+            f"gamma must be [{num_cols}] in {input.dtype}; got {gamma.shape}"
+            f" {gamma.dtype}"
+        )
+
+    result = ops.custom(
+        "mo.rms_norm_quantize_dynamic_scaled_float8.dual",
+        device=input.device,
+        values=[
+            input,
+            gamma,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(input.dtype, input.shape, device=input.device),
+            *out_types,
+        ],
+        parameters={
+            "group_size_or_per_token": group_size,
+            "multiply_before_cast": multiply_before_cast,
+            "weight_offset": weight_offset,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor, result[2].tensor
+
+
+def layer_norm_quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    gamma: TensorValue,
+    beta: TensorValue,
+    epsilon: float,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    *,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.float32,
+) -> tuple[TensorValue, TensorValue]:
+    """Layer-normalizes ``input`` and quantizes the result to FP8.
+
+    Uses dynamic group (blockwise) scales, in a single kernel.
+
+    Equivalent to a biased
+    :func:`~max.graph.ops.layer_norm` over ``input`` with float32 statistics,
+    rounded back to ``input``'s dtype, followed by
+    :func:`quantize_dynamic_scaled_float8` with the same arguments -- including
+    the ``[K // group_size, M_padded]`` scale layout -- without materializing
+    the normalized activation.
+
+    Args:
+        input: The ``[M, K]`` activation to normalize and quantize.
+        gamma: The ``[K]`` LayerNorm scale weight, in float32.
+        beta: The ``[K]`` LayerNorm bias weight, in float32.
+        epsilon: The LayerNorm epsilon.
+        input_scale_spec: Activation scale spec; supplies the group size when
+            ``group_size_or_per_token`` is -1.
+        weight_scale_spec: Weight scale spec of the consuming matmul.
+        scale_ub: Upper bound of the dynamic scale.
+        group_size_or_per_token: Columns per scale, or -1 to take the
+            activation block size from ``input_scale_spec``.
+        out_type: FP8 output dtype.
+        scales_type: Scale dtype. Defaults to float32, which the
+            blockwise-FP8 matmuls require.
+
+    Returns:
+        The quantized ``[M, K]`` tensor and its ``[K // group_size, M_padded]``
+        scales.
+
+    Raises:
+        ValueError: If the group size is not a proper divisor of the row width,
+            or the weights are not float32 vectors over that width.
+    """
+    group_size, out_types = _dynamic_scaled_float8_quant_out_types(
+        input,
+        input_scale_spec,
+        weight_scale_spec,
+        group_size_or_per_token,
+        out_type,
+        scales_type,
+    )
+    num_cols = int(input.shape[1])
+    if not 0 < group_size < num_cols or num_cols % group_size != 0:
+        raise ValueError(
+            "layer_norm_quantize_dynamic_scaled_float8 needs a group size that"
+            f" is a proper divisor of the row width; got group_size="
+            f"{group_size} for {num_cols} columns (per-token scales fuse via"
+            " ops.layer_norm + quantize_dynamic_scaled_float8 instead)"
+        )
+    for name, weight in (("gamma", gamma), ("beta", beta)):
+        if weight.shape != input.shape[-1:]:
+            raise ValueError(f"{name} must be [{num_cols}]; got {weight.shape}")
+
+    result = ops.custom(
+        "mo.layer_norm_quantize_dynamic_scaled_float8",
+        device=input.device,
+        values=[
+            input,
+            gamma,
+            beta,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=out_types,
+        parameters={"group_size_or_per_token": group_size},
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def row_invariant_matmul(x: TensorValue, weight: TensorValue) -> TensorValue:
+    """Computes ``x @ weight.T`` the same way at every row count.
+
+    Matches ``x @ weight.T`` except that a one-row launch on SM100 runs the
+    kernel a multi-row launch runs instead of a GEMV, which reduces ``K`` in
+    another order. Each output row is then bit-identical whatever the number
+    of rows, which a decode step needs to match its multi-row speculative
+    verify.
+
+    Args:
+        x: The ``[rows, K]`` BF16 activations.
+        weight: The ``[N, K]`` BF16 weight.
+
+    Returns:
+        The ``[rows, N]`` BF16 product.
+
+    Raises:
+        ValueError: If an operand is not a rank-2 BF16 tensor, or the two
+            ``K`` differ.
+    """
+    for name, value in (("x", x), ("weight", weight)):
+        if value.dtype != DType.bfloat16 or value.rank != 2:
+            raise ValueError(
+                f"row_invariant_matmul takes rank-2 BF16 operands; {name} is"
+                f" {value.dtype} of rank {value.rank}"
+            )
+    if x.shape[1] != weight.shape[1]:
+        raise ValueError(
+            f"row_invariant_matmul: x has K={x.shape[1]}, weight has"
+            f" K={weight.shape[1]}"
+        )
+    return ops.custom(
+        "mo.matmul.row_invariant",
+        device=x.device,
+        values=[x, weight],
+        out_types=[
+            TensorType(
+                DType.bfloat16, [x.shape[0], weight.shape[0]], device=x.device
+            )
+        ],
+    )[0].tensor
 
 
 def quantize_dynamic_scaled_float8_grouped_mx(

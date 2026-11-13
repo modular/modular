@@ -77,6 +77,7 @@ from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
 )
+from max.pipelines.context.context_validators import validate_no_images
 from max.pipelines.modeling.types import InputModality, RequestID
 from max.pipelines.speculative import proposers, spec_adapters
 from max.pipelines.speculative._tensor_compat import (
@@ -162,6 +163,17 @@ __all__ = [
 ]
 
 logger = logging.getLogger("max.pipelines")
+
+_REFUSES_IMAGES_WITHOUT_VISION = frozenset(
+    {"MistralLarge4ForConditionalGeneration_ModuleV3"}
+)
+"""Targets whose text-only pairing refuses images at admission.
+
+A pairing of one of these keeps the target's vision tokenizer while its fused
+graph encodes no images, so tokenizing an image request would only fail later,
+at batch preparation, where it raises the worker. Every other target keeps the
+behaviour it ships, including the pairings that silently drop the image.
+"""
 
 
 class _UnifiedSpecDecodeModelMixin:
@@ -456,6 +468,21 @@ def spec_decode_architecture(
         context_type=base.context_type if vision else TextContext,
         input_modalities=(
             base.input_modalities if vision else {InputModality.TEXT}
+        ),
+        # A text-only pairing of an image-taking target keeps the vision
+        # tokenizer, so an image request would tokenize into a context the
+        # fused graph cannot encode, then reach batch preparation, where
+        # the refusal raises the worker instead of failing the one
+        # request. This validator refuses the images at admission, where
+        # the error fails that request alone. It is added only where the
+        # pairing is known to be safe to refuse: Mistral Large 4, whose
+        # text-only pairing ships that way. Qwen3.5 + MTP is the same shape
+        # and keeps its shipped behaviour, which drops the image at batch
+        # preparation instead (a known gap, not this pairing's to fix).
+        context_validators=(
+            [*base.context_validators, validate_no_images]
+            if not vision and base.name in _REFUSES_IMAGES_WITHOUT_VISION
+            else base.context_validators
         ),
         multi_gpu_supported=(
             base.multi_gpu_supported and draft.multi_gpu_supported
@@ -990,7 +1017,10 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         """Whether the target's batching prepares the batches' inputs."""
         spec = self.spec_config.input_spec
         assert spec is not None, "the graph has not been built"
-        return spec.distributed or self._prepares_batches
+        # An EP target at one attention replica takes the collective buffers
+        # its own batching allocates, so it needs that batching however few
+        # replicas it runs.
+        return spec.distributed or spec.ep_tail or self._prepares_batches
 
     @cached_property
     def _target_batching(self) -> Any:
@@ -1079,7 +1109,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             inputs = super().prepare_initial_token_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
-        elif self._prepares_batches and not config.input_spec.distributed:
+        elif (
+            self._prepares_batches or config.input_spec.ep_tail
+        ) and not config.input_spec.distributed:
             inputs = self._target_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
@@ -1130,12 +1162,41 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         target = self._target_batching.prepare_initial_token_inputs(
             replica_batches, kv_cache_inputs, return_n_logits
         )
+        # An EP target at one attention replica takes its collective buffers on
+        # this signature too; they are the same buffers the target's own
+        # batching prepared for the base graph. A batch that stages more or
+        # fewer of them than the graph declares shifts every later slot: the
+        # counters and pointer tables land on each other, and the sampling run
+        # after them reads collective state as its own scalars. The width is
+        # the one the graph recorded when it was declared -- the built module
+        # is not in hand here, and no adapter can be asked to count it again --
+        # so the failure names the batch.
+        ep_inputs: tuple[Buffer, ...] = ()
+        if spec.ep_tail:
+            _, prepared = spec_adapters.batch_distributed_buffers(
+                self._pairing.adapter_arch, target
+            )
+            ep_inputs = tuple(prepared)
+            if len(ep_inputs) != spec.ep_tail_arity:
+                raise ValueError(
+                    f"this batch staged {len(ep_inputs)} expert-parallel"
+                    f" buffers, but the fused graph declares"
+                    f" {spec.ep_tail_arity}: the target's batching did not bind"
+                    " its EP initializer"
+                )
+        # A ModuleV3 target's batching holds no signal buffers, which its
+        # module's trace appends itself; a target that declares none at all
+        # takes the pairing's.
+        signals = getattr(target, "signal_buffers", ()) or (
+            self.runtime.signal_buffers
+        )
         return _Inputs(
             tokens=target.tokens,
             input_row_offsets=target.input_row_offsets,
             return_n_logits=target.return_n_logits,
-            signal_buffers=list(self.runtime.signal_buffers),
+            signal_buffers=list(signals),
             kv_cache_inputs=target.kv_cache_inputs,
+            ep_inputs=ep_inputs,
             seed=self._next_seed(self.runtime.devices[0]),
             spec=spec,
             trailing=spec_adapters.batch_trailing_buffers(
@@ -2153,6 +2214,79 @@ def _proposer(
     )
 
 
+def _input_type_spec(
+    pipeline_config: PipelineConfig,
+    devices: Sequence[DeviceRef],
+    target_arch: str,
+    target: Any,
+    *,
+    distributed: bool,
+    include_signal_buffers: bool,
+    trace_owns_signal_buffers: bool,
+    signal_buffer_index: int | None,
+    thinking: bool,
+    vision: bool,
+    ep_tail_arity: int = 0,
+) -> SpecDecodeInputTypeSpec:
+    """Returns a fused graph's signature variation points.
+
+    Two of them are the target *adapter's* to declare rather than the
+    caller's: where its trace places the signal buffers, and whether it
+    declares the expert-parallel collectives on an undistributed signature
+    (an EP target at one attention replica). A spec built anywhere else has
+    to go through this, or it can silently disagree with the graph the driver
+    declares.
+
+    Args:
+        pipeline_config: The pipeline's config, for the data-parallel degree and
+            the vision cache's width.
+        devices: The graph's devices, in signature order.
+        target_arch: The target's adapter architecture name.
+        target: The built target module, which the adapter reads.
+        distributed: Whether the signature is a data-parallel one.
+        include_signal_buffers: Whether the graph takes the mesh's signals.
+        trace_owns_signal_buffers: Whether a ``Module.compile`` trace appends
+            them itself.
+        signal_buffer_index: Where that trace inserts them, if not last.
+        thinking: Whether the acceptance relaxes into a reasoning phase.
+        vision: Whether the graph takes the vision cache's inputs.
+        ep_tail_arity: How many inputs the target's collective tail declares,
+            which the caller counts off the module it built. Recorded only for
+            a tail that is actually declared.
+
+    Returns:
+        The spec the signature is declared from.
+    """
+    if distributed and signal_buffer_index is not None:
+        # An adapter names the slot in the undistributed signature; the
+        # distributed one declares the host offsets and the batch splits
+        # ahead of it.
+        signal_buffer_index += 2
+    # The target's own collective tail, for an expert-parallel target at one
+    # attention replica: it declares the buffers its forward reads without any
+    # of the data-parallel scaffolding.
+    ep_tail = not distributed and spec_adapters.ep_tail(target_arch, target)
+    return SpecDecodeInputTypeSpec(
+        devices=list(devices),
+        distributed=distributed,
+        data_parallel_degree=(
+            pipeline_config.model.data_parallel_degree if distributed else 1
+        ),
+        include_signal_buffers=include_signal_buffers,
+        trace_owns_signal_buffers=trace_owns_signal_buffers,
+        signal_buffer_index=signal_buffer_index,
+        include_in_thinking_phase=thinking,
+        enable_vision=vision,
+        vision_hidden_size=(
+            pipeline_config.model.huggingface_config.get_text_config().hidden_size
+            if vision
+            else None
+        ),
+        ep_tail=ep_tail,
+        ep_tail_arity=ep_tail_arity if ep_tail else 0,
+    )
+
+
 def _driver_call(
     pipeline_config: PipelineConfig,
     kv_params: MultiKVCacheParams,
@@ -2224,25 +2358,22 @@ def _driver_call(
         huggingface_config,
     )
     distributed = _takes_distributed_inputs(verify, proposer)
-    if distributed and signal_buffer_index is not None:
-        # An adapter names the slot in the undistributed signature; the
-        # distributed one declares the host offsets and the batch splits
-        # ahead of it.
-        signal_buffer_index += 2
-    input_spec = SpecDecodeInputTypeSpec(
-        devices=list(devices),
+    # The target's collectives, whose width the spec records: this is the one
+    # place the built module is in hand, and the signature's EP tail is
+    # exactly these inputs.
+    ep_input_types = spec_adapters.ep_input_types(target_arch, target)
+    input_spec = _input_type_spec(
+        pipeline_config,
+        devices,
+        target_arch,
+        target,
         distributed=distributed,
-        data_parallel_degree=(
-            pipeline_config.model.data_parallel_degree if distributed else 1
-        ),
         include_signal_buffers=include_signal_buffers,
         trace_owns_signal_buffers=trace_owns_signal_buffers,
         signal_buffer_index=signal_buffer_index,
-        include_in_thinking_phase=thinking,
-        enable_vision=vision,
-        vision_hidden_size=(
-            huggingface_config.get_text_config().hidden_size if vision else None
-        ),
+        thinking=thinking,
+        vision=vision,
+        ep_tail_arity=len(ep_input_types),
     )
     # Last of all, so an export without them keeps every slot above.
     penalties = (
@@ -2269,7 +2400,7 @@ def _driver_call(
         use_greedy_acceptance=speculative.use_greedy_acceptance,
         # Sizes the draft distributions under draft_proposal="sampled".
         vocab_size=huggingface_config.get_text_config().vocab_size,
-        ep_input_types=spec_adapters.ep_input_types(target_arch, target),
+        ep_input_types=ep_input_types,
         # A later pipeline stage's boundary comes after the whole signature
         # the model takes unstaged.
         trailing_input_types=[

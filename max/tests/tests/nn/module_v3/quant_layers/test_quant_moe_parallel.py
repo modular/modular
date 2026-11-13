@@ -16,11 +16,13 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max import functional as F
@@ -32,7 +34,9 @@ from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
+    QuantizedMoE,
     TensorParallelMoE,
+    _shared_expert_overlap,
 )
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
@@ -76,6 +80,18 @@ from max.tensor.sharding import (
     Sharded,
     ShardingError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_ambient_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The overlap knob comes from the test, never from the job's environment.
+
+    A CI job that exports ``MODULAR_OVERLAP_SHARED_EXPERT=0`` would otherwise
+    change which arm of the shared expert the staging helpers reach.
+    """
+    monkeypatch.delenv("MODULAR_OVERLAP_SHARED_EXPERT", raising=False)
+    monkeypatch.delenv("MODULAR_MEGA_MOE_TP", raising=False)
+
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -1346,3 +1362,165 @@ def test_expert_parallel_moe_rejects_mxfp8(
                 quant_config=mxfp8_quant_config,
                 ep_batch_manager=ep_batch_manager,
             )
+
+
+# --------------------------------------------------------------------------- #
+# The shared-expert helpers' home
+# --------------------------------------------------------------------------- #
+
+_SHARED_EXPERT_HELPERS = ("_shared_experts_inline", "_compute_shared_experts")
+
+
+@contextmanager
+def _helpers_on_the_expert_parallel_class() -> Iterator[None]:
+    """Puts the two shared-expert helpers back where they were defined.
+
+    They moved from ``ExpertParallelMoE`` up to ``QuantizedMoE`` so a
+    tensor-parallel layer could reach them. The functions are the same objects
+    either way; what this restores is the subclass's own definition, which is
+    the tree before the move.
+    """
+    helpers = {
+        name: QuantizedMoE.__dict__[name] for name in _SHARED_EXPERT_HELPERS
+    }
+    for name, helper in helpers.items():
+        setattr(ExpertParallelMoE, name, helper)
+        delattr(QuantizedMoE, name)
+    try:
+        yield
+    finally:
+        for name, helper in helpers.items():
+            delattr(ExpertParallelMoE, name)
+            setattr(QuantizedMoE, name, helper)
+
+
+_SEED = re.compile(r"#M\.dense_array<\d+> : tensor<ui64>")
+"""A random draw's seed, which one process hands out from a counter: two builds
+of the same layer in one process draw different ones, and they are not part of
+the graph the layer describes."""
+
+
+def _stage_expert_parallel_moe(mock_accelerator: MagicMock) -> str:
+    """Stages DeepSeek's expert-parallel MoE layer and returns its IR.
+
+    The layer is the one ``deepseekV3_modulev3``'s and
+    ``deepseekV3_2_modulev3``'s transformer blocks build for their
+    expert-parallel arm: the framework's own ``ExpertParallelMoE``, off its own
+    gate and shared expert, with no ML4-specific subclass in the way.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, num_devices), devices
+        )
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                has_shared_experts=True,
+                shared_experts_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            layer(x, comm_buffers)
+            return _SEED.sub(
+                "#M.dense_array<seed> : tensor<ui64>",
+                str(Graph.current._mlir_op),
+            )
+
+
+def test_another_models_expert_parallel_moe_is_unchanged(
+    mock_accelerator: MagicMock,
+) -> None:
+    """Moving the helpers up a class leaves every expert-parallel model alone.
+
+    Three architectures reach these helpers through ``ExpertParallelMoE.forward``
+    -- DeepSeek-V3, DeepSeek-V3.2 and GLM-5.Next -- so the move has to be a move
+    and nothing else. (MiMo-V2 is not one of them: its expert-parallel layer is
+    hand-rolled and never calls either helper.) The comparison arm defines the
+    helpers on the subclass again, which is where they were; what this shows is
+    that the attribute lookup resolves to the same function either way, so the
+    ops the layer runs, and their order, do not notice the move. The bodies
+    themselves are the branch's own objects on both sides, so a change inside one
+    cannot show up here; they were compared with ``892ce9e0e38`` when this
+    landed and differ only in a docstring.
+    """
+    graph = _stage_expert_parallel_moe(mock_accelerator)
+    assert '"mo.sequence"' in graph, (
+        "the layer stages no side-stream region, so it never reaches the"
+        " helpers this test is about"
+    )
+    with _helpers_on_the_expert_parallel_class():
+        before = _stage_expert_parallel_moe(mock_accelerator)
+    assert graph == before, "the move changed another model's MoE graph"
+
+
+def test_the_comparison_above_can_fail(mock_accelerator: MagicMock) -> None:
+    """Control: the knob really does move the shared expert.
+
+    ``MODULAR_OVERLAP_SHARED_EXPERT=0`` runs the shared expert inline instead of
+    in the region, so a comparison that could not see that difference could not
+    see anything. What it does not show is the move: both arms reach the branch's
+    own helper objects, so this proves the variable discriminates, not that the
+    relocation is transparent.
+    """
+    graph = _stage_expert_parallel_moe(mock_accelerator)
+    with patch.dict(os.environ, {"MODULAR_OVERLAP_SHARED_EXPERT": "0"}):
+        inline = _stage_expert_parallel_moe(mock_accelerator)
+    assert '"mo.sequence"' not in inline
+    assert graph != inline
+
+
+@pytest.mark.parametrize(
+    "raw, default, expected",
+    [
+        (None, True, True),
+        (None, False, False),
+        ("0", True, False),
+        ("0", False, False),
+        ("1", True, True),
+        ("1", False, True),
+    ],
+)
+def test_the_overlap_knob_parses_0_and_1_the_same_way(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str | None,
+    default: bool,
+    expected: bool,
+) -> None:
+    """Unset keeps the caller's default; ``0`` and ``1`` override it anywhere.
+
+    The variable has two rules in the tree today -- the legacy expert-parallel
+    forward keeps its own -- but every reader this branch touches goes through
+    this predicate, so there ``0`` and ``1`` mean the same thing whatever the
+    layer's default is, and its two defaults are the two layouts' shipped
+    schedules: on for the expert-parallel layers, off for Mistral Large 4's.
+    """
+    monkeypatch.delenv("MODULAR_OVERLAP_SHARED_EXPERT", raising=False)
+    if raw is not None:
+        monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", raw)
+    assert _shared_expert_overlap(default=default) is expected
+
+
+def test_the_overlap_knob_reads_every_other_value_as_on() -> None:
+    """A value that is not ``0`` means on, as it always has for every model.
+
+    The rule predates this predicate: the expert-parallel forward ran the
+    shared expert on a side stream unless the variable read exactly ``0``. So
+    ``true``, the empty string and a stray number keep meaning on, whatever
+    the layer's own default is, and Mistral Large 4 is the only layout whose
+    unset behaviour differs from the expert-parallel layers'.
+    """
+    for raw in ("true", "", "2", "yes"):
+        with patch.dict(os.environ, {"MODULAR_OVERLAP_SHARED_EXPERT": raw}):
+            assert _shared_expert_overlap(default=True)
+            assert _shared_expert_overlap(default=False)

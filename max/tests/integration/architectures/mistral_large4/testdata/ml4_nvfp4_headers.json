@@ -1,0 +1,2720 @@
+{
+"layers.0.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.0.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.0.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.0.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.0.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.0.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.0.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.0.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.0.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.0.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.0.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.0.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.0.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.0.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"layers.0.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"layers.0.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.0.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.0.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.0.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.0.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.0.feed_forward.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+24576,
+6144
+]
+},
+"layers.0.feed_forward.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+192,
+1,
+48,
+1
+]
+},
+"layers.0.feed_forward.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+24576
+]
+},
+"layers.0.feed_forward.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+192,
+1
+]
+},
+"layers.0.feed_forward.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+24576,
+6144
+]
+},
+"layers.0.feed_forward.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+192,
+1,
+48,
+1
+]
+},
+"layers.0.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.1.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.1.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.1.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.1.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.1.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.1.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.1.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.1.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.1.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.1.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.1.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.1.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.1.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.1.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"layers.1.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"layers.1.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.1.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.1.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.1.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.1.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.1.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.1.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.1.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.1.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.1.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.1.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.1.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.1.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.1.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.1.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.1.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.17.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.17.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.17.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.17.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"layers.17.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"layers.17.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.17.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.17.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.17.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.17.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.17.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.17.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.17.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.17.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.17.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.17.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.17.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.17.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.17.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.17.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.17.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.18.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.18.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.18.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.18.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"layers.18.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"layers.18.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.18.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.18.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.18.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.18.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.18.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.18.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.18.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.18.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.18.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.18.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.18.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.18.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.18.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.18.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.18.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.3.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.3.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.3.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.3.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.3.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.3.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.3.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.3.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.3.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.3.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.3.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.3.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.3.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.3.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+512,
+6144
+]
+},
+"layers.3.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+16384,
+512
+]
+},
+"layers.3.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.3.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.3.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.3.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.3.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.3.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.3.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.3.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.3.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.3.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.3.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.3.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.3.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.3.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.3.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.3.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.35.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.35.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.35.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.35.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.35.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.35.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.35.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.35.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.35.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.35.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.35.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"layers.35.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.35.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.35.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+512,
+6144
+]
+},
+"layers.35.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+16384,
+512
+]
+},
+"layers.35.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.35.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.35.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.35.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.35.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.35.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.35.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.35.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.35.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.35.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.35.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.35.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.35.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.35.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.35.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.35.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.39.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.39.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.39.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.39.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.39.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.39.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.39.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.39.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.39.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.39.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.39.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.39.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.39.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+16384,
+512
+]
+},
+"layers.39.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.39.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.39.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.39.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.39.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.39.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.39.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.39.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.39.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.39.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.39.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.39.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.39.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.39.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.39.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.39.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.71.attention.indexer.k_norm.bias": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.71.attention.indexer.k_norm.weight": {
+"dtype": "BF16",
+"shape": [
+128
+]
+},
+"layers.71.attention.indexer.q_input_norm.bias": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.71.attention.indexer.q_input_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.71.attention.indexer.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.71.attention.indexer.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"layers.71.attention.indexer.weights_proj.weight": {
+"dtype": "BF16",
+"shape": [
+32,
+6144
+]
+},
+"layers.71.attention.indexer.wk.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.71.attention.indexer.wq_b.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+4096,
+6144
+]
+},
+"layers.71.attention.indexer.wq_b.weight_scale": {
+"dtype": "F32",
+"shape": [
+32,
+1,
+48,
+1
+]
+},
+"layers.71.attention.ssmax_scaling.b": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.71.attention.ssmax_scaling.s": {
+"dtype": "BF16",
+"shape": [
+64
+]
+},
+"layers.71.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+16384,
+512
+]
+},
+"layers.71.attention.wo.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+8192
+]
+},
+"layers.71.attention.wo.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+64,
+1
+]
+},
+"layers.71.attention.wq.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+8192,
+6144
+]
+},
+"layers.71.attention.wq.weight_scale": {
+"dtype": "F32",
+"shape": [
+64,
+1,
+48,
+1
+]
+},
+"layers.71.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.71.experts.0.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.0.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.0.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.0.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.0.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.0.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.0.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.0.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.0.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.0.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.0.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.0.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w1.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w1.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.1.w1.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.1.w1.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w2.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w2.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.1.w2.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.1.w2.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w3.input_scale": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.experts.1.w3.weight": {
+"dtype": "U8",
+"shape": [
+6144,
+3072
+]
+},
+"layers.71.experts.1.w3.weight_scale": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+384
+]
+},
+"layers.71.experts.1.w3.weight_scale_2": {
+"dtype": "F32",
+"shape": []
+},
+"layers.71.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"layers.71.gate.weight": {
+"dtype": "BF16",
+"shape": [
+128,
+6144
+]
+},
+"layers.71.shared_experts.w1.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.71.shared_experts.w1.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.71.shared_experts.w2.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.71.shared_experts.w2.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"layers.71.shared_experts.w3.weight": {
+"dtype": "F8_E4M3",
+"shape": [
+6144,
+6144
+]
+},
+"layers.71.shared_experts.w3.weight_scale": {
+"dtype": "F32",
+"shape": [
+48,
+1,
+48,
+1
+]
+},
+"lerope.alpha": {
+"dtype": "BF16",
+"shape": [
+32
+]
+},
+"mtp_dspark.autoregressive_head.embedding.weight": {
+"dtype": "BF16",
+"shape": [
+204800,
+512
+]
+},
+"mtp_dspark.autoregressive_head.joint_proj.bias": {
+"dtype": "BF16",
+"shape": [
+1536
+]
+},
+"mtp_dspark.autoregressive_head.joint_proj.weight": {
+"dtype": "BF16",
+"shape": [
+1536,
+7168
+]
+},
+"mtp_dspark.autoregressive_head.output.weight": {
+"dtype": "BF16",
+"shape": [
+204800,
+512
+]
+},
+"mtp_dspark.backbone.final_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"mtp_dspark.backbone.layers.0.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"mtp_dspark.backbone.layers.0.attention.wo.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+8192
+]
+},
+"mtp_dspark.backbone.layers.0.attention.wq.weight": {
+"dtype": "BF16",
+"shape": [
+8192,
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.feed_forward.w1.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.feed_forward.w2.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+24576
+]
+},
+"mtp_dspark.backbone.layers.0.feed_forward.w3.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.0.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"mtp_dspark.backbone.layers.1.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"mtp_dspark.backbone.layers.1.attention.wo.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+8192
+]
+},
+"mtp_dspark.backbone.layers.1.attention.wq.weight": {
+"dtype": "BF16",
+"shape": [
+8192,
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.feed_forward.w1.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.feed_forward.w2.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+24576
+]
+},
+"mtp_dspark.backbone.layers.1.feed_forward.w3.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.1.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.attention.kv_a_norm.weight": {
+"dtype": "BF16",
+"shape": [
+512
+]
+},
+"mtp_dspark.backbone.layers.2.attention.wkv_a_with_mqa.weight": {
+"dtype": "BF16",
+"shape": [
+576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.attention.wkv_b.weight": {
+"dtype": "BF16",
+"shape": [
+12288,
+512
+]
+},
+"mtp_dspark.backbone.layers.2.attention.wo.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+8192
+]
+},
+"mtp_dspark.backbone.layers.2.attention.wq.weight": {
+"dtype": "BF16",
+"shape": [
+8192,
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.feed_forward.w1.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.feed_forward.w2.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+24576
+]
+},
+"mtp_dspark.backbone.layers.2.feed_forward.w3.weight": {
+"dtype": "BF16",
+"shape": [
+24576,
+6144
+]
+},
+"mtp_dspark.backbone.layers.2.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.mask_embedding": {
+"dtype": "BF16",
+"shape": [
+2,
+6144
+]
+},
+"mtp_dspark.backbone.target_norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"mtp_dspark.backbone.target_projection.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+30720
+]
+},
+"norm.weight": {
+"dtype": "BF16",
+"shape": [
+6144
+]
+},
+"output.weight": {
+"dtype": "BF16",
+"shape": [
+204800,
+6144
+]
+},
+"patch_merger.merging_layer.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+8192
+]
+},
+"pre_mm_projector_norm.weight": {
+"dtype": "BF16",
+"shape": [
+2048
+]
+},
+"tok_embeddings.weight": {
+"dtype": "BF16",
+"shape": [
+204800,
+6144
+]
+},
+"vision_encoder.ln_pre.weight": {
+"dtype": "BF16",
+"shape": [
+2048
+]
+},
+"vision_encoder.patch_conv.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+3,
+14,
+14
+]
+},
+"vision_encoder.transformer.layers.0.attention.wk.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.attention.wo.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.attention.wq.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.attention.wv.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.attention_norm.weight": {
+"dtype": "BF16",
+"shape": [
+2048
+]
+},
+"vision_encoder.transformer.layers.0.feed_forward.w1.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.feed_forward.w2.weight": {
+"dtype": "BF16",
+"shape": [
+2048,
+6144
+]
+},
+"vision_encoder.transformer.layers.0.feed_forward.w3.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+2048
+]
+},
+"vision_encoder.transformer.layers.0.ffn_norm.weight": {
+"dtype": "BF16",
+"shape": [
+2048
+]
+},
+"vision_language_adapter.w_in.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+2048
+]
+},
+"vision_language_adapter.w_out.weight": {
+"dtype": "BF16",
+"shape": [
+6144,
+6144
+]
+}
+}

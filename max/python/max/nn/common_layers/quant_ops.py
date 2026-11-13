@@ -46,9 +46,11 @@ from max.nn.kernels import (
     grouped_matmul_block_scaled,
     grouped_matmul_ragged,
     grouped_quantize_dynamic_block_scaled,
+    layer_norm_quantize_dynamic_scaled_float8,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
+    rms_norm_quantize_dynamic_scaled_float8_dual,
     silu_quantize_fp8,
 )
 from max.nn.kernels.quant import (
@@ -785,7 +787,97 @@ def _fp8_block_specs(
     )
 
 
-def matmul(x: Tensor, weight: QuantAwareTensor) -> Tensor:
+def layer_norm_quantize_fp8_block(
+    x: Tensor,
+    weight: FP8BlockTensor,
+    gamma: Tensor,
+    beta: Tensor,
+    epsilon: float,
+) -> FP8BlockActivation:
+    """Layer-normalizes ``x`` and FP8 block-quantizes the result in one launch.
+
+    The activation is quantized exactly as :func:`matmul` would quantize ``x``
+    for ``weight`` (same ``(1, block_k)`` activation blocks, float32 scales,
+    same scale layout), so handing the result back to :func:`matmul` computes
+    the same GEMM; only the normalized activation never round-trips through
+    HBM.
+
+    Args:
+        x: ``[rows, K]`` activations.
+        weight: The FP8 block-scaled weight that will consume the result; its
+            ``block_k`` is the quantize's group size.
+        gamma: ``[K]`` LayerNorm scale.
+        beta: ``[K]`` LayerNorm bias.
+        epsilon: The LayerNorm epsilon.
+
+    Returns:
+        The quantized activation and its block scales.
+    """
+    block_m, block_k = weight.block_size
+    input_spec, weight_spec = _fp8_block_specs(
+        (block_m, block_k), input_block=(1, block_k)
+    )
+    data, scales = layer_norm_quantize_dynamic_scaled_float8(
+        x,
+        gamma,
+        beta,
+        epsilon,
+        input_spec,
+        weight_spec,
+        group_size_or_per_token=block_k,
+        scales_type=DType.float32,
+        out_type=DType.float8_e4m3fn,
+    )
+    return FP8BlockActivation(data=data, scales=scales)
+
+
+def rms_norm_quantize_fp8_block(
+    x: Tensor,
+    weight: FP8BlockTensor,
+    gamma: Tensor,
+    epsilon: float,
+    *,
+    weight_offset: float = 0.0,
+    multiply_before_cast: bool = False,
+) -> tuple[Tensor, FP8BlockActivation]:
+    """RMS-normalizes ``x`` and FP8 block-quantizes it in one launch.
+
+    The activation is quantized exactly as :func:`matmul` would quantize ``x``
+    for ``weight``, and the normalized row comes back too, so a norm whose
+    output has another reader still costs one launch instead of two.
+
+    Args:
+        x: ``[rows, K]`` activations.
+        weight: The FP8 block-scaled weight that will consume the quantized
+            form; its ``block_k`` is the quantize's group size.
+        gamma: ``[K]`` RMSNorm weight, in ``x``'s dtype.
+        epsilon: The RMSNorm epsilon.
+        weight_offset: Constant added to ``gamma`` (Gemma-style norms).
+        multiply_before_cast: The RMSNorm gamma-multiply order.
+
+    Returns:
+        The normalized ``[rows, K]`` row and the quantized activation.
+    """
+    block_m, block_k = weight.block_size
+    input_spec, weight_spec = _fp8_block_specs(
+        (block_m, block_k), input_block=(1, block_k)
+    )
+    normed, data, scales = rms_norm_quantize_dynamic_scaled_float8_dual(
+        x,
+        gamma,
+        epsilon,
+        input_spec,
+        weight_spec,
+        weight_offset=weight_offset,
+        multiply_before_cast=multiply_before_cast,
+        group_size_or_per_token=block_k,
+        scales_type=DType.float32,
+        out_type=DType.float8_e4m3fn,
+    )
+    return normed, FP8BlockActivation(data=data, scales=scales)
+
+
+def matmul(x: Tensor | FP8BlockActivation, weight: QuantAwareTensor) -> Tensor:
     """Matmul ``x @ weight.T`` dispatching on the weight type.
 
     ``weight`` follows the Linear convention: shape ``[out_dim, in_dim]``.
@@ -810,6 +902,11 @@ def matmul(x: Tensor, weight: QuantAwareTensor) -> Tensor:
     """
     if isinstance(weight, FP8BlockTensor):
         return _matmul_fp8_block(x, weight)
+    # A pre-quantized activation is only meaningful for a block-scaled FP8
+    # weight; every other format quantizes the float activation itself.
+    assert isinstance(x, Tensor), (
+        "a pre-quantized activation needs an FP8 block weight"
+    )
     if isinstance(weight, NVFP4Tensor):
         return _matmul_nvfp4(x, weight)
     if isinstance(weight, CompressedTensorsNVFP4Tensor):
@@ -905,10 +1002,14 @@ def _matmul_nvfp4(x: Tensor, weight: NVFP4Tensor) -> Tensor:
     )
 
 
-def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
+def _matmul_fp8_block(
+    x: Tensor | FP8BlockActivation, weight: FP8BlockTensor
+) -> Tensor:
     """Block-scaled FP8 matmul ``x @ weight.T``.
 
-    Activations are quantized dynamically.
+    Activations are quantized dynamically, unless ``x`` is already an
+    :class:`FP8BlockActivation` -- a fused norm+quantize's output, or the EP
+    dispatch's -- in which case its bytes and scales are consumed as they are.
     The activation block is ``(1, block_k)`` and the weight block is
     ``(block_m, block_k) = weight.block_size``. The kernel returns bf16.
     """
@@ -917,14 +1018,22 @@ def _matmul_fp8_block(x: Tensor, weight: FP8BlockTensor) -> Tensor:
         (block_m, block_k), input_block=(1, block_k)
     )
 
-    x_fp8, x_scales = quantize_dynamic_scaled_float8(
-        x,
-        input_spec,
-        weight_spec,
-        group_size_or_per_token=block_k,
-        scales_type=DType.float32,
-        out_type=DType.float8_e4m3fn,
-    )
+    if isinstance(x, FP8BlockActivation):
+        x_fp8, x_scales = x.data, x.scales
+        assert x_scales.shape[0] == x_fp8.shape[1] // block_k, (
+            "a pre-quantized activation must carry one scale per "
+            f"{block_k}-wide block of the weight's contraction axis, got "
+            f"{x_scales.shape[0]} scales for {x_fp8.shape[1]} columns"
+        )
+    else:
+        x_fp8, x_scales = quantize_dynamic_scaled_float8(
+            x,
+            input_spec,
+            weight_spec,
+            group_size_or_per_token=block_k,
+            scales_type=DType.float32,
+            out_type=DType.float8_e4m3fn,
+        )
 
     return dynamic_scaled_matmul(
         x_fp8,

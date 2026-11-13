@@ -20,8 +20,12 @@ either serves the wrong graph or refuses a pairing that should work.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
+from max.pipelines.context.context_validators import validate_no_images
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _REFUSES_IMAGES_WITHOUT_VISION,
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
     _SpecDecodeModuleV3PipelineModel,
@@ -35,6 +39,46 @@ TARGET = "LlamaForCausalLM"
 # it to the draft architecture.
 EAGLE_DRAFT = "LlamaForCausalLM"
 DFLASH_DRAFT = "DFlashDraftModel"
+
+
+def test_only_mistral_large_4_refuses_images_in_a_text_only_pairing() -> None:
+    """The image refusal names one target, and every other pairing is untouched.
+
+    A pairing refuses images exactly when its target takes them but its fused
+    graph encodes none. Mistral Large 4 + DSpark is the only pair shipped that
+    way, and its own target proves the validator lands on the fused graph
+    (``test_spec_decode_layout``). Qwen3.5 + MTP has the same shape -- Qwen3.5
+    declares image input but builds no vision graph, and its MTP draft is
+    text-only -- and keeps main's behaviour, which drops the image at batch
+    preparation rather than refusing the request. A pairing that encodes -- its
+    target builds a vision graph and its draft declares images -- serves
+    images, as Inkling + MTP, DeepseekV41 + DSpark and Glm5Next + MTP do.
+    """
+    # Resolving Mistral Large 4's pairing imports its architecture package,
+    # which this shared target does not depend on; that target pins both ends
+    # -- the name below and the validator on the fused pairing.
+    assert _REFUSES_IMAGES_WITHOUT_VISION == {
+        "MistralLarge4ForConditionalGeneration_ModuleV3"
+    }
+
+    qwen = spec_decode_architecture(
+        "Qwen3_5ForConditionalGeneration", "mtp", None
+    )
+    assert qwen is not None
+    assert validate_no_images not in qwen.context_validators
+    assert InputModality.IMAGE not in qwen.input_modalities
+    assert qwen.input_modalities == {InputModality.TEXT}
+
+    vision_pairings: list[tuple[str, Literal["mtp", "dspark"]]] = [
+        ("InklingForConditionalGeneration", "mtp"),
+        ("DeepseekV41ForCausalLM", "dspark"),
+        ("Glm5NextForConditionalGeneration", "mtp"),
+    ]
+    for target, method in vision_pairings:
+        pairing = spec_decode_architecture(target, method, None)
+        assert pairing is not None, (target, method)
+        assert validate_no_images not in pairing.context_validators, target
+        assert InputModality.IMAGE in pairing.input_modalities, target
 
 
 def test_a_target_and_its_draft_resolve_to_the_fused_architecture() -> None:

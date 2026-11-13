@@ -167,6 +167,11 @@ def register_all_models() -> None:
             "dspark_deepseekV41_modulev3_draft_arch",
         ),
         _LazyArch(
+            "DSparkMistralLarge4DraftModel_ModuleV3",
+            ".dspark_mistral_large4_modulev3",
+            "dspark_mistral_large4_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DSparkDraftModel", ".dspark_draft", "dspark_speculators_draft_arch"
         ),
         _LazyArch(
@@ -388,6 +393,11 @@ def register_all_models() -> None:
         _LazyArch("MistralForCausalLM", ".mistral", "mistral_arch"),
         _LazyArch(
             "Mistral3ForConditionalGeneration", ".mistral3", "mistral3_arch"
+        ),
+        _LazyArch(
+            "MistralLarge4ForConditionalGeneration_ModuleV3",
+            ".mistral_large4_modulev3",
+            "mistral_large4_modulev3_arch",
         ),
         _LazyArch("MPNetForMaskedLM", ".mpnet", "mpnet_arch"),
         _LazyArch(

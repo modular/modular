@@ -659,15 +659,20 @@ class PipelineRegistry:
             )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
         if (
             arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
             and arch.tokenizer is TextTokenizer
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -677,9 +682,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(
@@ -920,6 +925,12 @@ class PipelineRegistry:
                 "Please ensure the model repository contains a valid config.json file."
             )
 
+        # A weights-only release loads its tokenizer files from the sibling repo
+        # its architecture pins; every other checkpoint from its own repo.
+        tokenizer_repo, tokenizer_revision = arch.tokenizer_source(
+            pipeline_config.model
+        )
+
         # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
         # and suffers from the whitespace decoding bug. So, we enable the fix
         # for only MistralModel in order to avoid any issues with performance
@@ -934,9 +945,9 @@ class PipelineRegistry:
         ):
             text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
             tokenizer = text_tokenizer(
-                pipeline_config.model.model_path,
+                tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -946,9 +957,9 @@ class PipelineRegistry:
             )
         else:
             tokenizer = arch.tokenizer(
-                model_path=pipeline_config.model.model_path,
+                model_path=tokenizer_repo,
                 pipeline_config=pipeline_config,
-                revision=pipeline_config.model.huggingface_model_revision,
+                revision=tokenizer_revision,
                 max_length=max_length,
                 trust_remote_code=pipeline_config.model.trust_remote_code,
                 chat_template=_retrieve_chat_template(

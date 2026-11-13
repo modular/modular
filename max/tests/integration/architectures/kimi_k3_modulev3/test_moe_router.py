@@ -515,6 +515,10 @@ def test_router_graph_takes_the_fused_gemv_on_gfx950() -> None:
             device=DeviceRef.GPU(),
         )
     assert _MIXED_GEMV_OP in text
+    # This router asks for neither bound, so its staged graph is exactly what
+    # it was before either existed: the op's own window, as no attribute.
+    assert "precise_max_m" not in text
+    assert "max_m" not in text
 
 
 @pytest.mark.parametrize(

@@ -293,8 +293,13 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         return g
 
     _ = attn.state_dict()
-    ir = str(construct())
+    g = construct()
+    # Both row-invariant decode paths are opt-in; a default graph emits
+    # neither the split pin nor the row-invariant matmul.
+    ir = str(g)
     assert '"attention.mla.graph.decode.paged.fp8.sparse.cp"' in ir
+    assert "split_rows_per_request" not in ir
+    assert "mo.matmul.row_invariant" not in ir
     assert re.search(r"dcp_interleave = 1\b", ir)
     assert re.search(r"dcp_interleave = 128\b", ir)
 
@@ -444,6 +449,25 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
             **sparse,
         )
         decode = mla_decode_graph(**decode_args, **sparse)
+        # The NVFP4 op takes no row-invariant split pin, so asking for one
+        # fails instead of dropping it.
+        with pytest.raises(ValueError, match="sparse_split_rows_per_request"):
+            mla_prefill_decode_graph(
+                q,
+                kv,
+                input_row_offsets,
+                freqs_cis,
+                attn.kv_a_proj_layernorm,
+                metadata.buffer_row_offsets,
+                metadata.cache_offsets,
+                metadata.buffer_lengths.to(DeviceRef.CPU()),
+                attn.w_k,
+                attn.w_uk,
+                attn.w_uv,
+                **common,
+                **sparse,
+                sparse_split_rows_per_request=4,
+            )
         cp_args = dict(decode_args)
         del cp_args["num_partitions_scalar"]
         cp_out, cp_lse = mla_decode_graph_cp(
@@ -784,3 +808,86 @@ def test_mla_indexer_cp_nvfp4_cache_rows_carry_scale_rows() -> None:
     assert '"attention.mla.indexer.ragged.float8.paged.remap.cp.nvfp4"' in ir
     assert '"attention.mla.cp_merge_topk"' in ir
     assert re.search(r"halves = 2\b", ir)
+
+
+def test_mla_indexer_deterministic_reaches_the_op() -> None:
+    """``deterministic=True`` becomes the op's parameter; the default adds none.
+
+    The kernel defaults the parameter to ``False``, so a default call that
+    named it would still select the same kernel, but it would change the graph
+    of every model that never asked for it.
+    """
+    num_heads = 8
+    index_head_dim = 128
+    top_k = 8
+    gpu = DeviceRef.GPU()
+    indexer_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=index_head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=index_head_dim
+        ),
+    )
+    mla_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=576,
+        num_layers=1,
+        page_size=128,
+        devices=[gpu],
+        num_q_heads=num_heads,
+    )
+    num_indexer_inputs = len(
+        tree.leaves(indexer_params.get_symbolic_inputs()[0])
+    )
+    input_types = [
+        TensorType(
+            DType.float8_e4m3fn,
+            ["total_tokens", num_heads, index_head_dim],
+            gpu,
+        ),
+        TensorType(DType.float32, ["total_tokens", num_heads], gpu),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+        *tree.leaves(indexer_params.get_symbolic_inputs()[0]),
+        *tree.leaves(mla_params.get_symbolic_inputs()[0]),
+    ]
+
+    def indexer_ops(deterministic: bool | None) -> list[str]:
+        with Graph("mla_indexer_deterministic", input_types=input_types) as g:
+            q, q_s, row_offsets = (x.tensor for x in g.inputs[:3])
+            flat = list(g.inputs[3:])
+            args = (
+                q,
+                q_s,
+                row_offsets,
+                paged_kv_from_flat_graph_inputs(
+                    indexer_params, flat[:num_indexer_inputs]
+                ),
+                paged_kv_from_flat_graph_inputs(
+                    mla_params, flat[num_indexer_inputs:]
+                ),
+                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+                top_k,
+                index_head_dim,
+            )
+            if deterministic is None:
+                out = mla_fp8_index_top_k_physical(*args)
+            else:
+                out = mla_fp8_index_top_k_physical(
+                    *args, deterministic=deterministic
+                )
+            g.output(out)
+        return [
+            line
+            for line in str(g).splitlines()
+            if '"attention.mla.indexer.ragged.float8.paged.remap"' in line
+        ]
+
+    for deterministic in (None, False):
+        (op,) = indexer_ops(deterministic)
+        assert "deterministic" not in op, op
+    (op,) = indexer_ops(True)
+    assert re.search(r"deterministic = true", op), op

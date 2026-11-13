@@ -40,6 +40,11 @@ NVFP4_BLOCK_SIZE = 16
 MXFP4_BLOCK_SIZE = 32
 """Inputs covered by one MXFP4 weight block scale."""
 
+DISABLE_FUSED_SWIGLU_NVFP4_ENV = "MAX_DISABLE_FUSED_SWIGLU_NVFP4"
+"""Environment variable that, set to ``1``, leaves
+:attr:`QuantConfig.can_use_fused_swiglu` false wherever a config is built, so
+the routed experts keep the unfused gate/up, SwiGLU and requantize chain."""
+
 _MXFP8_BLOCK_SIZE = 32
 """Inputs covered by one MXFP8 weight block scale."""
 

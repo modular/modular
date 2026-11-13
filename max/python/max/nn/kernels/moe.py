@@ -15,7 +15,7 @@
 
 from max import functional as F
 from max.dtype import DType
-from max.nn._graph_ops import _moe_sigmoid_gemv_router
+from max.nn._graph_ops import _mixed_gemv_epilogue, _moe_sigmoid_gemv_router
 from max.nn._graph_ops import grouped_matmul_ragged as _grouped_matmul_ragged
 from max.nn._graph_ops import moe_create_indices as _moe_create_indices
 from max.nn._graph_ops import (
@@ -31,7 +31,7 @@ from max.nn._graph_ops import (
 from max.nn._graph_ops.ep import fused_silu as _fused_silu
 from max.nn._graph_ops.ep import fused_silu_quantized as _fused_silu_quantized
 from max.nn.activation import GatedActivation
-from max.tensor.sharding import Sharded, Unknown
+from max.tensor.sharding import Sharded, Unknown, match_operand_placement
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
 from max.tensor.sharding.types import TensorLayout
@@ -179,11 +179,19 @@ moe_sigmoid_gemv_router = F.functional(
     _moe_sigmoid_gemv_router, rule=_moe_sigmoid_gemv_router_rule
 )
 
+# The epilogue GEMV runs on the placement of the activation it reads, which is
+# what a column-parallel projection's output keeps.
+mixed_gemv_epilogue = F.functional(
+    _mixed_gemv_epilogue,
+    rule=match_operand_placement(_mixed_gemv_epilogue, "hidden_states"),
+)
+
 
 __all__ = [
     "fused_silu",
     "fused_silu_quantized",
     "grouped_matmul_ragged",
+    "mixed_gemv_epilogue",
     "moe_create_indices",
     "moe_create_indices_packed",
     "moe_finalize",

@@ -25,6 +25,7 @@ from max.driver import (
     Device,
     Usage,
     batch_inplace_copy,
+    is_virtual_device_mode,
 )
 from max.dtype import DType
 
@@ -82,12 +83,27 @@ class _Arena:
     )
 
     def device_buffers(self) -> tuple[Buffer, ...]:
-        """Returns the per-destination buffers, allocating them on first use."""
+        """Returns the per-destination buffers, allocating them on first use.
+
+        They start zeroed, so a member no step has staged yet, or one staged
+        shorter than its described maximum, reads a deterministic value rather
+        than whatever the driver handed back. A virtual device refuses memory
+        operations outright, so there they stay uninitialized: nothing ever
+        runs on a target that exists only to compile against.
+        """
         if self._device is None:
-            self._device = tuple(
-                Buffer(shape=(self.size,), dtype=DType.uint8, device=device)
-                for device in self.destinations
-            )
+            if is_virtual_device_mode():
+                self._device = tuple(
+                    Buffer(dtype=DType.uint8, shape=(self.size,), device=device)
+                    for device in self.destinations
+                )
+            else:
+                self._device = tuple(
+                    Buffer.zeros(
+                        shape=(self.size,), dtype=DType.uint8, device=device
+                    )
+                    for device in self.destinations
+                )
         return self._device
 
 

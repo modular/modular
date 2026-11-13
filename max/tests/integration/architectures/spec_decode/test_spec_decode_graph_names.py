@@ -42,6 +42,9 @@ MACH_GRAPH_NAMES = {
         "dspark": "unified_dspark_kimi_k3_modulev3",
     },
     "MiMoV2ForCausalLM": {"dflash": "unified_dflash_mimo_v2"},
+    "MistralLarge4ForConditionalGeneration": {
+        "dspark": "UnifiedDSparkMistralLarge4Module"
+    },
     "Qwen3_5ForConditionalGeneration": {
         "dflash2": "qwen3_5_with_dflash2_graph",
         "mtp": "qwen3_5_with_mtp_graph",

@@ -1,0 +1,564 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Guards pipelines/architectures/mistral_large4_modulev3/model_config.py: the
+# per-layer lists resolved from params.json, the YaRN beta mapping, and the
+# generated config.json against the base repo's own published one.
+modular_py_test(
+    name = "test_model_config",
+    srcs = ["test_model_config.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+    ],
+)
+
+# Guards the repo-id serve path: the config derived from the NVFP4 release's
+# params.json (against the generator the bring-up staged and the HF converter's
+# oracle) and the params.json a Hub snapshot never holds. CPU only, no network.
+#
+# The one check that reads the native tokenizer's own pin needs
+# `ML4_TOKENIZER_PINNED_REVISIONS`, which this BUILD cannot supply:
+# `//tokenizer` is not part of the OSS overlay (`utils/oss-bazel.sh`), so a
+# label into it fails the smoke build's analysis. Point the variable at
+# `tokenizer/crates/tokenizer-core/data/pinned_revisions.json` to run it; it
+# skips otherwise.
+modular_py_test(
+    name = "test_repo_id_serve",
+    srcs = ["test_repo_id_serve.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    ignore_extra_deps = [
+        # Importing the pipelines package registers the architecture table and
+        # the config generators a config-less checkpoint is derived through,
+        # which the tests here exercise without naming the package.
+        "//max/python/max/pipelines",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
+        requirement("transformers"),
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/weight_contract.py:
+# MAX's name/shape/dtype/scale table against the golden Mach's loader must
+# reproduce. The real-checkpoint and gate/up-global gates are manual and skip
+# without ML4_HEADERS / ML4_RUST_CONTRACT / ML4_CHECKPOINT_DIR.
+modular_py_test(
+    name = "test_weight_contract",
+    srcs = ["test_weight_contract.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/weight_adapters.py:
+# the MAX-side adapter produces exactly the table the contract test checks.
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    # `max.graph`'s buffer utilities import `max.engine` at module scope, which
+    # this test reaches only through its `weight_adapters` import.
+    ignore_extra_deps = ["//max/python/max/engine"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards the text load path's vision filter: the vision-free safetensors
+# view drops every vision name (the same predicate the loader uses), keeps
+# the checkpoint's own text names, preserves each kept name's shard and shares
+# the parent's file handles -- no shard is opened or mapped twice -- and the
+# DSpark checkpoint_weights never hands the adapter a vision tensor. Two
+# synthetic shards, CPU only.
+modular_py_test(
+    name = "test_text_load_filter",
+    size = "small",
+    srcs = ["test_text_load_filter.py"],
+    deps = [
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards the M1 config-to-layer wiring and the LeRoPE frequency table: the
+# per-layer schedule counts, the reader-to-source slot mapping, and the pinned
+# YaRN ramp bounds and blended inverse frequencies. CPU only.
+modular_py_test(
+    name = "test_modulev3_wiring",
+    srcs = ["test_modulev3_wiring.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+# Guards the paged block graph's capturability: it stages at eight ranks with
+# the drafter's own paged leaf as its cache, with one window gather and one
+# context store per layer, no cross-device transfer and no host readback, and
+# the batch still symbolic. A transfer or a readback there would cost the whole
+# fused speculative graph its device-graph capture. Staged on virtual B200s: no
+# compile, no GPU.
+modular_py_test(
+    name = "test_dspark_paged_capture_safe",
+    size = "small",
+    srcs = ["test_dspark_paged_capture_safe.py"],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":dspark_paged_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# Guards the DSpark drafter's tensor-parallel split of its decoder layers: the
+# FFN's and attention's head-major projections take the target's layouts, the
+# staged intermediate is one rank's slice, the block lands two all-reduces per
+# layer, and a data-parallel mesh leaves every projection whole. Staged on
+# virtual B200s: no compile, no GPU.
+modular_py_test(
+    name = "test_dspark_tp_sharding",
+    size = "small",
+    srcs = ["test_dspark_tp_sharding.py"],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":dspark_paged_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# Guards the dense layer-0 FFN's TP-shard decision on both EP backends: sharded
+# under TP_TP and EP's allreduce backend, replicated under EP's reduce-scatter
+# backend, where a row-parallel down projection would leave a partial sum.
+# CPU only.
+modular_py_test(
+    name = "test_parallelism_dense_ffn",
+    srcs = ["test_parallelism_dense_ffn.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/dspark.py: the
+# drafter's window mask (the last 2048 context latents up to the anchor, plus
+# all three block rows, with no causal mask in the block) and its recurrent
+# head's state chaining, against a numpy transcription of the reference. CPU
+# only, on a geometry small enough to compile in about a minute; the target is
+# compile-bound, ~150-225 s end to end depending on how loaded the box is (the
+# file compiles four graphs: the attention layer, the whole step, and one per
+# block-position convention), so it asks for the large budget rather than
+# medium's 300 s.
+modular_py_test(
+    name = "test_dspark_drafter",
+    size = "large",
+    srcs = ["test_dspark_drafter.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime, and both
+    # the module's zero-filled parameters and its compiled graphs reach them.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The scenario walk both paged-block tests drive: a batch of requests whose
+# contexts grow by a known number of rows per step, written into a paged leaf,
+# drafted over the window that step extended, and compared against the dense
+# entry run on the same rows.
+modular_py_library(
+    name = "dspark_paged_fixtures",
+    testonly = True,
+    srcs = ["dspark_paged_fixtures.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/dspark.py's paged
+# entry: the drafter leaf's record arity (ten fields per device, the two
+# speculative-only slots included), the window's slot arithmetic on a symbolic
+# batch, and the paged block's agreement with the dense one -- at an anchor of
+# zero, inside the window, past it, for two requests of different lengths in
+# one batch, and across a second step that writes only the rows it verified.
+# CPU only, on the same miniature geometry as test_dspark_drafter: the two
+# engine builds (dense and paged) take ~150 s on a quiet box, so the target asks
+# for the large budget rather than medium's 300 s.
+modular_py_test(
+    name = "test_dspark_paged",
+    size = "large",
+    srcs = ["test_dspark_paged.py"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime, and both
+    # the module's zero-filled parameters and its compiled graphs reach them.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    deps = [
+        ":dspark_paged_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+# Guards pipelines/weights/hf_utils.py weight discovery for a checkpoint that
+# shards only as consolidated safetensors, and the training-snapshot rule that
+# must keep ignoring a snapshot's own consolidated shards. CPU only: the files
+# are empty stand-ins, because discovery reads no header.
+modular_py_test(
+    name = "test_hf_utils_weight_files",
+    srcs = ["test_hf_utils_weight_files.py"],
+    deps = [
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/weights",
+    ],
+)
+
+# Guards the decode graph's capturability: no tensor crosses devices by copy.
+# A cross-device `mo.transfer` lowers to `mgp.buffer.device_to_device` between
+# two `mgp.device_wait` host calls, which CUDA refuses inside a capture. Staged
+# on virtual B200s: no compile, no GPU.
+modular_py_test(
+    name = "test_decode_capture_safe",
+    size = "medium",
+    srcs = ["test_decode_capture_safe.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Pins the verify's dispatch split where the pipeline resolves it: the cache
+# tree the capture key reads carries the row-invariant pin exactly where the
+# sparse op takes it, so the key and the launch cannot disagree.
+modular_py_test(
+    name = "test_mla_verify_split_key",
+    size = "small",
+    srcs = ["test_mla_verify_split_key.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Pins every dense projection of the decode step, at its per-rank TP8/EP8
+# shape, to compute each row of a 1-3 row launch bit for bit as the 4-row DSpark
+# verify does.
+modular_py_test(
+    name = "test_row_invariant_gemms",
+    size = "large",
+    srcs = ["test_row_invariant_gemms.py"],
+    exec_properties = {
+        # About 1 GiB of weights; the largest is the 25600-row LM head shard.
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    # Manual: an expensive B200 numeric at production shapes, so `//...` skips
+    # it rather than presubmit rerunning it on any change to its dependencies.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("torch"),
+    ],
+)
+
+# Pins `mega_moe.tp` (MODULAR_MEGA_MOE_TP) at a TP8 rank's shapes against the
+# routed-expert chain it replaces, bit for bit: its fused launch at decode,
+# verify and c64 steps, and the chain it runs inside the op past that band.
+modular_py_test(
+    name = "test_mega_moe_tp_gpu",
+    size = "large",
+    srcs = ["test_mega_moe_tp_gpu.py"],
+    exec_properties = {
+        # Two W13 copies (checkpoint order and sigma-permuted) and W2: 1.6 GB.
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    # Manual: an expensive B200 numeric, and the largest GPU-memory ask in this
+    # package, so `//...` skips it rather than presubmit rerunning it on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    # Needs mega_moe.tp, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Guards the fused Mistral Large 4 DSpark graph's input layout against Mach's
+# positional slot map (`block_spec_step_executor.rs`): 419 slots at TP8/EP8/DP1,
+# the four KV record starts and widths (11/11/14/11 slots per device), the
+# indexer's folded-scales axes, the target's 22-slot EP tail between the KV
+# tree and the sampling run, and the trailing signal buffers. Signature only --
+# no module is traced, no device is touched -- so it runs anywhere bazel does.
+modular_py_test(
+    name = "test_spec_decode_layout",
+    size = "small",
+    srcs = ["test_spec_decode_layout.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    ignore_extra_deps = [
+        # The pairing resolves its target and drafter by name, through the
+        # architecture registry, and reads the spec signature's declarations.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/dspark_mistral_large4_modulev3",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_mistral_large4_modulev3",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/spec_adapters.py's
+# block boundary: only a block's first row is a token, so the fill id the
+# driver writes into the rest never reaches an embedding lookup, and the pack
+# ``embed_block`` hands ``forward_block`` is unpacked in that order. Eager CPU
+# tensors only: the proposer is driven with a stub target and drafter, and the
+# drafter's own GPU-bound forward is not run. Each ``ensure_context`` case
+# compiles a CPU graph, so the target needs more than the small-size budget.
+modular_py_test(
+    name = "test_spec_adapters",
+    size = "medium",
+    srcs = ["test_spec_adapters.py"],
+    ignore_extra_deps = ["//max/python/max/engine"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Guards pipelines/architectures/mistral_large4_modulev3/vision.py and
+# vision_inputs.py: the vision graph builds on the ragged attention ABI at the
+# production geometry, every block lowers to the ragged flash kernel, no rank-4
+# mask input exists, and the packer emits that ABI. Traced on a virtual B200,
+# so it runs on CPU boxes.
+modular_py_test(
+    name = "test_vision_graph",
+    srcs = ["test_vision_graph.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/context",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards S3's vision pipeline wiring: the architecture registers the
+# vision tokenizer, the vision context and image input, the processor's
+# placeholder expansion and sizing match the S1 golden record through the
+# real tokenizer (those cases skip without M4_FIXTURE_ROOT), graph_specs
+# traces both graph roles on a virtual B200 with the vision-merge inputs at
+# the decoder ABI tail and the encodes_images flag as the text-only
+# boundary the fused DSpark graph traces against, and a text-only batch
+# never enters vision encoding. Retires the S2 gate that held the wiring
+# out until the tokenizer and context landed. CPU only.
+modular_py_test(
+    name = "test_vision_pipeline",
+    srcs = ["test_vision_pipeline.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    ignore_extra_deps = [
+        # The graph_specs trace reaches the engine's buffer utilities
+        # through the graph module, without naming them.
+        "//max/python/max/engine",
+        # transformers imports it lazily from the chat template the fixture
+        # tokenizer renders.
+        requirement("jinja2"),
+    ],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("safetensors"),
+        requirement("transformers"),
+    ],
+)
+
+# Guards the TP_TP layout, the one an export without `--ep-size` lands on,
+# where each rank holds 1/8 of every expert's FFN width instead of 16 whole
+# experts. The block resolves the mode, the per-rank expert stacks are slices,
+# the layer still lands exactly one all-reduce, no dispatch/combine kernel is
+# staged, the row-invariant decode pins survive (they are attention-side, and
+# the DSpark verify's split-K count is staged on the combined graph), nothing
+# gathers the shared expert's gate/up intermediate, the export declares the
+# input count the Mach entry's slot table assumes, and the graph stages no
+# cross-device transfer, so decode capture still holds.
+# Staged on virtual B200s: no compile, no GPU.
+modular_py_test(
+    name = "test_tp_moe",
+    size = "medium",
+    srcs = ["test_tp_moe.py"],
+    data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)

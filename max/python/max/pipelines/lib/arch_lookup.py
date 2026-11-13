@@ -28,7 +28,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 from max.nn import Module
 from max.nn.legacy.layer import Module as GraphApiModule
@@ -77,6 +77,25 @@ PipelineModelType: TypeAlias = type[
 :class:`PipelineModel`, a :class:`PipelineExecutor`, or a
 :class:`~max.nn.Module`.
 """
+
+
+class TokenizerModelConfig(Protocol):
+    """The identity fields a tokenizer's repo and revision come from.
+
+    ``MAXModelConfig`` satisfies this as written.
+    """
+
+    @property
+    def model_path(self) -> str:
+        """The Hugging Face repo id or local model directory."""
+
+    @property
+    def huggingface_model_revision(self) -> str:
+        """The revision the checkpoint was requested at."""
+
+
+_TOKENIZER_FILE_NAMES = ("tokenizer.json", "tokenizer_config.json")
+"""The files a checkpoint's own directory must hold to own its tokenizer."""
 
 
 @dataclass(frozen=False)
@@ -230,6 +249,64 @@ class SupportedArchitecture:
     The pipeline builds one :class:`~max.pipelines.lib.WeightTransform` from the
     rules, loads the checkpoint through it, and exports it with the pipeline.
     """
+
+    tokenizer_artifacts: Callable[[], tuple[str, str | None]] | None = None
+    """The repo and revision this architecture's tokenizer files load from.
+
+    ``None``, the default, loads them from the checkpoint's own repo at the
+    configured revision. A release that ships weights and metadata only names
+    the sibling repo its ``tokenizer.json``, ``tokenizer_config.json`` and chat
+    template come from, at the revision they are pinned to: the returned
+    revision, or the configured one when it is empty, so a deployment boots
+    one tokenizer whatever the checkpoint's ``main`` moves to.
+    """
+
+    def tokenizer_source(
+        self, model_config: TokenizerModelConfig
+    ) -> tuple[str, str]:
+        """The ``(repo_id, revision)`` this architecture's tokenizer loads from.
+
+        Args:
+            model_config: The model config whose checkpoint is being served.
+
+        Returns:
+            The repo and revision to load ``tokenizer.json``,
+            ``tokenizer_config.json`` and the chat template from.
+        """
+        if self.tokenizer_artifacts is None:
+            return (
+                model_config.model_path,
+                model_config.huggingface_model_revision,
+            )
+        # A checkpoint served from a local directory keeps its own tokenizer
+        # files when it has them: the pinned sibling repo exists for a release
+        # that ships weights and metadata only, and a localized or patched
+        # tokenizer in that directory must not be overruled by it.
+        local = Path(model_config.model_path)
+        if local.is_dir() and any(
+            (local / name).is_file() for name in _TOKENIZER_FILE_NAMES
+        ):
+            return (
+                model_config.model_path,
+                model_config.huggingface_model_revision,
+            )
+        repo_id, revision = self.tokenizer_artifacts()
+        if not revision:
+            return repo_id, model_config.huggingface_model_revision
+        requested = model_config.huggingface_model_revision
+        # A pin is a deliberate answer, but a caller who asked for another
+        # revision of the tokenizer files should see that it was overruled
+        # rather than wonder why its flag did nothing. The default (`main`) is
+        # not a request for a revision, so it is not reported.
+        if requested and requested not in ("main", revision):
+            logger.info(
+                "%s pins its tokenizer artifacts to %s; the requested revision"
+                " %s is not used for them.",
+                repo_id,
+                revision,
+                requested,
+            )
+        return repo_id, revision
 
     use_weight_rules: bool = False
     """Whether the pipeline loads the checkpoint through :attr:`weight_rules`

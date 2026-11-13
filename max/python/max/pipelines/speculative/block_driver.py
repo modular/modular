@@ -468,7 +468,13 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT, _T, _B, _V]):
     def embed_block(
         self, batch: BlockBatch[_T, _B, _V], block_ids: _T
     ) -> list[_T]:
-        """Embeds the flattened block token ids, per device."""
+        """Embeds the flattened block token ids, per device.
+
+        The driver only carries the result to :meth:`forward_block`, so what
+        the list holds is this proposer's own convention: a draft that needs
+        more than one per-rank value packs them into it, as long as
+        :meth:`forward_block` unpacks them the same way.
+        """
         ...
 
     def forward_block(

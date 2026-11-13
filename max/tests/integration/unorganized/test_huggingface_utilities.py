@@ -11,9 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import json
+import logging
 import struct
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
@@ -23,6 +26,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo
 from max.pipelines.weights.hf_utils import (
     _hf_hub_download_with_retry,
+    fetch_repo_file,
     generate_local_model_path,
     validate_hf_repo_access,
 )
@@ -610,3 +614,182 @@ def test_hf_hub_download_does_not_retry_offline_miss() -> None:
         with pytest.raises(hf_hub_errors.LocalEntryNotFoundError):
             _hf_hub_download_with_retry(repo_id="org/model", filename="w.st")
     assert mock_download.call_count == 1
+
+
+class TestFetchRepoFile:
+    """``fetch_repo_file`` takes a cache hit only where a hit is the answer.
+
+    The cache resolves a *branch* from the ref it last saw, which can trail the
+    Hub, so a metadata file read that way can be a revision behind the weights
+    the same load downloads. A commit names one snapshot, so a hit is final.
+    """
+
+    _SHA = "b" * 40
+    _REPO_ID = "org/model"
+    _FILENAME = "params.json"
+
+    @staticmethod
+    def _repo(revision: str) -> HuggingFaceRepo:
+        """A Hub handle, without the access check's network call."""
+        with (
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+            patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        ):
+            return HuggingFaceRepo(
+                repo_id=TestFetchRepoFile._REPO_ID, revision=revision
+            )
+
+    @staticmethod
+    def _cached_snapshot(tmp_path: Path, revision: str) -> tuple[Path, Path]:
+        """A hub cache holding one snapshot of one repo, as hub lays it out."""
+        cache = tmp_path / "hub"
+        snapshot = (
+            cache
+            / f"models--{TestFetchRepoFile._REPO_ID.replace('/', '--')}"
+            / "snapshots"
+            / revision
+        )
+        snapshot.mkdir(parents=True)
+        cached = snapshot / TestFetchRepoFile._FILENAME
+        cached.write_text("{}")
+        return cache, cached
+
+    def test_a_commit_that_is_cached_is_not_downloaded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A commit names one snapshot, so a hit needs no network and no write."""
+        cache, cached = self._cached_snapshot(tmp_path, self._SHA)
+        monkeypatch.setattr(hf_hub_constants, "HF_HUB_CACHE", str(cache))
+
+        with patch(
+            "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download"
+        ) as download:
+            path = fetch_repo_file(self._repo(self._SHA), self._FILENAME)
+
+        assert path == cached
+        assert not download.called
+
+    def test_a_cached_absence_is_still_a_download(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A cached non-existence is not a path, so the fetch still happens."""
+        cache, _ = self._cached_snapshot(tmp_path, "c" * 40)
+        marker = (
+            cache
+            / f"models--{self._REPO_ID.replace('/', '--')}"
+            / ".no_exist"
+            / self._SHA
+        )
+        marker.mkdir(parents=True)
+        (marker / self._FILENAME).touch()
+        monkeypatch.setattr(hf_hub_constants, "HF_HUB_CACHE", str(cache))
+
+        with patch(
+            "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+            return_value="/fetched/params.json",
+        ) as download:
+            path = fetch_repo_file(self._repo(self._SHA), self._FILENAME)
+
+        assert path == Path("/fetched/params.json")
+        assert download.call_count == 1
+
+    def test_a_branch_that_is_cached_is_resolved_by_the_download(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A warm cache does not get to say what `main` is today.
+
+        The local ref is a snapshot of where the branch pointed at the last
+        fetch, so answering from it serves metadata from a commit the weights
+        download would not have taken. `hf_hub_download` re-resolves the branch
+        and is itself cache-first, and offline-safe, when the Hub is out of
+        reach.
+        """
+        cache, cached = self._cached_snapshot(tmp_path, self._SHA)
+        refs = cache / f"models--{self._REPO_ID.replace('/', '--')}" / "refs"
+        refs.mkdir(parents=True)
+        (refs / "main").write_text(self._SHA)
+        monkeypatch.setattr(hf_hub_constants, "HF_HUB_CACHE", str(cache))
+
+        with patch(
+            "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+            return_value="/fetched/params.json",
+        ) as download:
+            path = fetch_repo_file(self._repo("main"), self._FILENAME)
+
+        assert path == Path("/fetched/params.json")
+        assert path != cached
+        assert download.call_count == 1
+        assert download.call_args.kwargs["revision"] == "main"
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            hf_hub_errors.EntryNotFoundError("no such file"),
+            hf_hub_errors.LocalEntryNotFoundError("no hub"),
+        ],
+    )
+    def test_an_absent_file_is_read_as_absent(
+        self, error: Exception, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Not holding the file is the one failure a caller falls back on."""
+        with (
+            patch(
+                "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+                side_effect=error,
+            ),
+            caplog.at_level(logging.DEBUG, logger="max.pipelines"),
+        ):
+            assert fetch_repo_file(self._repo("main"), self._FILENAME) is None
+        assert "does not hold" in caplog.text
+
+    def test_a_failure_that_is_not_absence_is_visible(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An auth error is the operator's problem, so it is a warning.
+
+        It is still read as absent -- a caller can only fall back -- but not at
+        debug, where a gated repo's missing token would look like a checkpoint
+        that ships no metadata.
+        """
+        with (
+            patch(
+                "max.pipelines.weights.hf_utils.huggingface_hub.hf_hub_download",
+                side_effect=hf_hub_errors.GatedRepoError(
+                    "no access", response=MagicMock(status_code=403)
+                ),
+            ),
+            caplog.at_level(logging.DEBUG, logger="max.pipelines"),
+        ):
+            assert fetch_repo_file(self._repo("main"), self._FILENAME) is None
+        assert any(
+            record.levelno == logging.WARNING for record in caplog.records
+        ), caplog.text
+
+    def test_a_local_repo_answers_from_the_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """A local repo is read in place, and its absence needs no download."""
+        repo = HuggingFaceRepo(repo_id=str(tmp_path))
+        assert repo.repo_type == "local"
+        assert fetch_repo_file(repo, self._FILENAME) is None
+        (tmp_path / self._FILENAME).write_text("{}")
+        assert (
+            fetch_repo_file(repo, self._FILENAME) == tmp_path / self._FILENAME
+        )
+
+    def test_the_subfolder_is_joined_onto_the_name(
+        self, tmp_path: Path
+    ) -> None:
+        """A subfolder repo resolves the file under it, not at the root."""
+        source = SimpleNamespace(
+            repo_type="local",
+            repo_id="",
+            revision="main",
+            subfolder="metadata",
+            local_path=str(tmp_path),
+        )
+        assert fetch_repo_file(cast(Any, source), self._FILENAME) is None
+        (tmp_path / "metadata").mkdir()
+        joined = tmp_path / "metadata" / self._FILENAME
+        joined.write_text("{}")
+        assert fetch_repo_file(cast(Any, source), self._FILENAME) == joined

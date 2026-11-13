@@ -34,6 +34,7 @@ from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
 from max.nn.legacy.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
+    DISABLE_FUSED_SWIGLU_NVFP4_ENV,
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -1495,6 +1496,6 @@ def apply_fused_kernel_flags(
         config.is_nvfp4
         or (config.is_mxfp8 and accelerator_api() == "cuda")
         or (config.is_mxfp8 and on_gfx950)
-    ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
+    ) and (os.environ.get(DISABLE_FUSED_SWIGLU_NVFP4_ENV) != "1")
 
     return config

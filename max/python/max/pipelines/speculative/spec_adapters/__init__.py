@@ -55,6 +55,7 @@ __all__ = [
     "block_proposer",
     "check",
     "ep_input_types",
+    "ep_tail",
     "export_contract",
     "extra",
     "has_adapter",
@@ -105,6 +106,9 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
     "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
+    "MistralLarge4ForConditionalGeneration_ModuleV3": (
+        ".mistral_large4_modulev3.spec_adapters"
+    ),
     "MuseSparkForConditionalGeneration_ModuleV3": ".muse_spark.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "NemotronHForCausalLM_ModuleV3": ".nemotron_h_modulev3.spec_adapters",
@@ -180,6 +184,11 @@ def ep_input_types(
 ) -> Sequence[TensorType | BufferType]:
     """Returns the expert-parallel inputs of a built target module."""
     return _adapter(target_arch).ep_input_types(target)
+
+
+def ep_tail(target_arch: str, target: Module) -> bool:
+    """Returns whether the target declares them on an undistributed signature."""
+    return _adapter(target_arch).ep_tail(target)
 
 
 def batch_distributed_buffers(

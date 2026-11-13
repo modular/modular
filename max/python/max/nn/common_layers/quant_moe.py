@@ -82,6 +82,14 @@ from .quant_tensor import (
 
 _M = TypeVar("_M", bound=Module[..., Any])
 
+_SHARED_EXPERT_OVERLAP_ENV = "MODULAR_OVERLAP_SHARED_EXPERT"
+"""Selects where the shared expert runs: ``1`` on a side stream, ``0`` inline.
+
+Unset keeps each layer's own default (see :func:`_shared_expert_overlap`), and
+any value other than ``0`` means on, which is the rule every reader of the
+variable has always applied.
+"""
+
 _AMD_BLOCKWISE_MEGA_FFN_SHAPES = frozenset({(6144, 2048), (4096, 2048)})
 """``(hidden, expert width)`` pairs the blockwise-FP8 AMD MegaFFN is
 validated on: GLM-5.3 and GLM-5.3-Flash."""
@@ -98,6 +106,32 @@ def _blockwise_mega_ffn_amd_is_registered() -> bool:
     """
     with ensure_context():
         return _AMD_BLOCKWISE_MEGA_FFN_OP in Graph.current._kernel_library
+
+
+def _shared_expert_overlap(default: bool) -> bool:
+    """Reads ``MODULAR_OVERLAP_SHARED_EXPERT`` for one layer's own default.
+
+    ``0`` runs the shared expert inline and every other value on a side
+    stream, the rule the expert-parallel forward has applied since the
+    variable existed. Parsing it in one place is what keeps the readers
+    outside the legacy expert-parallel module agreeing on that. Unset keeps
+    the calling layout's shipped behaviour: on for the expert-parallel
+    layers, which overlap the shared expert with their dispatch and combine
+    (:meth:`QuantizedMoE._compute_shared_experts`), and whatever the layer
+    asks for elsewhere -- off in Mistral Large 4, both for its
+    expert-parallel layer, whose region is not reproducible, and for its
+    tensor-parallel one, which opts in only to measure the overlap.
+
+    Args:
+        default: What an unset variable means for this layer.
+
+    Returns:
+        Whether to run the shared expert on a side stream.
+    """
+    raw = os.environ.get(_SHARED_EXPERT_OVERLAP_ENV)
+    if raw is None:
+        return default
+    return raw != "0"
 
 
 def _on_device(module: _M, device: int) -> _M:
@@ -415,6 +449,65 @@ class QuantizedMoE(Module[..., Tensor]):
             self.combine_accum_dtype or x.dtype,
         )
 
+    def _shared_experts_inline(
+        self, x: Tensor, devices: Sequence[int]
+    ) -> list[Tensor]:
+        """Runs the shared expert on the main stream for ``devices``.
+
+        Returns:
+            One shared-expert output per entry of ``devices``, in order.
+        """
+        shared_experts = self.shared_experts
+        assert shared_experts is not None
+        return [
+            _on_device(shared_experts, device)(x.local_shards[device])
+            for device in list(devices)
+        ]
+
+    def _compute_shared_experts(
+        self, x: Tensor, devices: Sequence[int]
+    ) -> list[Tensor]:
+        """Runs the shared expert for ``devices`` on a side stream.
+
+        Honors ``MODULAR_OVERLAP_SHARED_EXPERT`` through
+        :func:`_shared_expert_overlap`, whose default here is on because the
+        expert-parallel models ship this schedule: ``0`` runs the shared expert
+        inline on the main stream instead. Each caller owns that decision, so
+        an override can decline the overlap outright
+        (:meth:`_shared_experts_inline`), as Mistral Large 4's expert-parallel
+        layer does, and a layer with no communication to hide under can call
+        this only when the variable is ``1``, as its tensor-parallel one does.
+
+        Args:
+            x: The hidden state, replicated or distributed over the mesh.
+            devices: The mesh positions to run, in order. These index
+                :meth:`Tensor.local_shards`, whose entries are positional: entry
+                ``i`` belongs to ``mesh.devices[i]`` whatever that device's id.
+
+        Returns:
+            One shared-expert output per entry of ``devices``, in order.
+        """
+        if not _shared_expert_overlap(default=True):
+            return self._shared_experts_inline(x, devices)
+
+        shared_experts = self.shared_experts
+        assert shared_experts is not None
+        devices = list(devices)
+
+        def run_shared_experts(*inputs: Tensor) -> list[Tensor]:
+            return [
+                _on_device(shared_experts, device)(shard)
+                for device, shard in zip(devices, inputs, strict=True)
+            ]
+
+        inputs = [x.local_shards[device] for device in devices]
+        return F.side_stream(
+            inputs,
+            run_shared_experts,
+            result_types=[shard.type for shard in inputs],
+            stream_id=_SHARED_EXPERT_STREAM_ID,
+        )
+
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass for the MoE layer.
 
@@ -563,17 +656,19 @@ class TensorParallelMoE(QuantizedMoE):
         distributed = _stack_experts(down_list, shard_axis=-1, mesh=self.mesh)
         return list(distributed.local_shards)
 
-    def routed_partial_sums(self, x: Tensor) -> Tensor:
-        """Runs the routed experts, without the shared experts.
+    def _routed_experts_out(
+        self, x: Tensor, router_idx: Tensor, router_weight: Tensor
+    ) -> Tensor:
+        """Runs the routed experts over ``x`` as every rank's partial sum.
 
         Args:
-            x: ``(seq_len, hidden_dim)``, replicated.
+            x: ``(seq_len, hidden_dim)``, replicated over the mesh.
+            router_idx: ``(seq_len, num_experts_per_token)``, the gate's picks.
+            router_weight: ``(seq_len, num_experts_per_token)``, their weights.
 
         Returns:
-            ``(seq_len, hidden_dim)``, each device's partial sum, in the
-            combine dtype.
+            ``(seq_len, hidden_dim)``, each device's partial sum.
         """
-        router_idx, router_weight = self.gate(x)
         gate_up = quant_ops.stack_device_shards(
             self.gate_up_proj, axis=1, mesh=self.mesh
         )
@@ -587,6 +682,19 @@ class TensorParallelMoE(QuantizedMoE):
             self.mesh,
             out_specs=DeviceMapping(self.mesh, (Partial(),)),
         )(x, router_idx, router_weight, gate_up, down)
+
+    def routed_partial_sums(self, x: Tensor) -> Tensor:
+        """Runs the routed experts, without the shared experts.
+
+        Args:
+            x: ``(seq_len, hidden_dim)``, replicated.
+
+        Returns:
+            ``(seq_len, hidden_dim)``, each device's partial sum, in the
+            combine dtype.
+        """
+        router_idx, router_weight = self.gate(x)
+        return self._routed_experts_out(x, router_idx, router_weight)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass for the tensor-parallel MoE layer.
@@ -1068,37 +1176,6 @@ class ExpertParallelMoE(QuantizedMoE):
             [TensorValue(s) for s in sums],
             mapping=DeviceMapping(self.mesh, (Partial(),)),
         )
-
-    def _compute_shared_experts(
-        self, x: Tensor, devices: Sequence[int]
-    ) -> list[Tensor]:
-        """Runs the shared expert for ``devices``.
-
-        Returns:
-            One shared-expert output per entry of ``devices``, in order.
-        """
-        shared_experts = self.shared_experts
-        assert shared_experts is not None
-        devices = list(devices)
-
-        def run_shared_experts(*inputs: Tensor) -> list[Tensor]:
-            return [
-                _on_device(shared_experts, device)(shard)
-                for device, shard in zip(devices, inputs, strict=True)
-            ]
-
-        inputs = [x.local_shards[device] for device in devices]
-        if os.environ.get("MODULAR_OVERLAP_SHARED_EXPERT", "1") == "0":
-            outputs = run_shared_experts(*inputs)
-        else:
-            outputs = F.side_stream(
-                inputs,
-                run_shared_experts,
-                result_types=[shard.type for shard in inputs],
-                stream_id=_SHARED_EXPERT_STREAM_ID,
-            )
-
-        return outputs
 
     def forward(
         self,

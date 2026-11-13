@@ -122,6 +122,28 @@ class SpecDecodeInputTypeSpec:
     each on the replica's leader device and holding that replica's rows, in
     place of the single device-0 tensor. Requires
     ``enable_sampled_draft_proposal`` and a distributed spec."""
+    ep_tail: bool = False
+    """Declare the target's expert-parallel collective buffers after the KV
+    tree, on a signature that is *not* distributed.
+
+    MAX's EP buffers are graph inputs, so a target that dispatches its routed
+    experts across the ranks has to declare them however many attention
+    replicas it runs. The canonical signature used to imply them from
+    ``distributed`` alone, which left an EP-at-DP1 target -- Mistral Large 4's
+    TP8 attention beside EP8 experts, the shape its base MEF already binds --
+    with no way to declare the buffers its own forward reads. This flag puts
+    them at the same position the distributed block does, and nothing else:
+    no host row offsets, no replica splits and no per-device context lengths,
+    which are the data-parallel scaffolding rather than EP's."""
+    ep_tail_arity: int = 0
+    """How many inputs that tail costs, counted where the graph is declared.
+
+    ``ep_tail`` says the tail is there; this says how wide it is. It is
+    recorded by whoever builds the signature, from the built target module's
+    own declarations -- the module is only in hand there, since a pairing's
+    arch config holds the target's *config* once its modules are built -- so a
+    batch processor can check what it staged against it without re-asking the
+    architecture, which would need the module it no longer has."""
     total_context_length: bool = False
     """Declare each device's context length as the ``uint32``
     ``total_length`` of its :class:`~max.nn.legacy.graph_groups.BatchContext`
@@ -597,8 +619,9 @@ def spec_decode_input_tree(
     [signals], kv, [batch_context_lengths, ep], spec, [bitmask], [ep] and
     [trailing], a bracketed group gated by ``spec`` or, for ``scratch``,
     by a model that declares workspace buffers. The expert-parallel inputs
-    sit beside the distributed group, or after the tail for a target whose
-    attention isn't data-parallel.
+    sit beside the distributed group, beside the KV tree when the spec sets
+    ``ep_tail``, or after the tail for a target whose attention isn't
+    data-parallel. ``inputs.leading`` stays outside the tree, ahead of it.
 
     The fields a decoder also takes keep a decoder's names and groups, so a
     serving engine feeds them as it feeds a decoder's; ``spec`` and
@@ -644,6 +667,11 @@ def spec_decode_input_tree(
         )
         if inputs.ep_inputs:
             named["ep"] = _laid_out(ep, inputs.ep_inputs)
+    elif spec.ep_tail and inputs.ep_inputs:
+        # An expert-parallel target at one attention replica declares its
+        # buffers beside the KV tree, which is where its base MEF binds them,
+        # rather than after the tail.
+        named["ep"] = _laid_out(ep, inputs.ep_inputs)
     tail, *bitmask = spec_decode_tail_groups(
         inputs,
         thinking=spec.include_in_thinking_phase,
@@ -652,7 +680,7 @@ def spec_decode_input_tree(
     named["spec"] = tail
     if bitmask:
         named["bitmask"] = bitmask[0]
-    if not spec.distributed and inputs.ep_inputs:
+    if not spec.distributed and inputs.ep_inputs and not spec.ep_tail:
         named["ep"] = _laid_out(ep, inputs.ep_inputs)
     if inputs.trailing:
         if trailing is None:

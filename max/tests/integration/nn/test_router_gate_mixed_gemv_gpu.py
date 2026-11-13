@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from max.driver import CPU, LaunchTraceEntry, launch_trace
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
@@ -214,6 +215,63 @@ def test_router_gate_mixed_gemv_unsupported_gemm_shape(
 
 @pytest.mark.skipif(
     torch.version.hip is not None,
+    reason="the op's own default window is SM100's 128",
+)
+def test_router_gate_mixed_gemv_binds_without_a_max_m_attribute(
+    gpu_session: InferenceSession,
+) -> None:
+    """A graph staged before ``max_m`` existed still binds, at the op's default.
+
+    The attribute is optional on both sides of the boundary, so a graph that
+    carries none must compile and run at the op's own window: 128 rows of SM100,
+    where the fused mixed-input GEMV still covers the launch. A default of 64
+    -- the window before this parameter existed -- would fall back to the cast
+    and the tile GEMM here instead.
+    """
+    with Graph(
+        "router_gate_mixed_gemv_default_window",
+        input_types=(
+            TensorType(DType.bfloat16, ["m", K], device=DeviceRef.GPU()),
+            TensorType(DType.float32, [N, K], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        graph.output(
+            ops.custom(
+                "moe.router.gate.mixed.gemv",
+                device=a.device,
+                values=[a, b],
+                parameters={},
+                out_types=[
+                    TensorType(DType.float32, ["m", N], device=a.device)
+                ],
+            )[0].tensor
+        )
+    compiled = gpu_session.load(graph)
+
+    torch.manual_seed(3)
+    a_t = torch.randn(128, K, dtype=torch.bfloat16, device="cuda")
+    b_t = torch.randn(N, K, dtype=torch.float32, device="cuda")
+    # Warm the graph, so no first-run work lands in the trace.
+    compiled.execute(a_t, b_t)
+    with launch_trace() as entries:
+        for buf in compiled.execute(a_t, b_t):
+            buf.to(CPU())
+    names = [
+        entry.name
+        for entry in entries
+        if entry.kind == LaunchTraceEntry.OperationKind.KERNEL_LAUNCH
+    ]
+    assert any(
+        name.startswith("gemv_split_k_float32_bfloat16") for name in names
+    ), (
+        "128 rows did not take the fused GEMV with no max_m attribute;"
+        f" launched {names}"
+    )
+
+
+@pytest.mark.skipif(
+    torch.version.hip is not None,
     reason="SM100 extends the fused path to M=128",
 )
 def test_router_gate_mixed_gemv_corrected_top4(
@@ -340,3 +398,84 @@ def test_router_gate_mixed_gemv_validation() -> None:
             pass
         else:
             raise AssertionError("dynamic gate shapes must be rejected")
+
+
+_PRECISE_BOUND = 256
+"""The bound the Mistral Large 4 gate passes; any positive value gates alike."""
+
+
+@pytest.mark.parametrize(
+    ("n", "k", "accepted"),
+    [
+        (N, K, True),
+        (256, 2048, True),
+        (257, K, False),
+        (256, 2047, False),
+        (256, 2050, False),
+        (512, K, False),
+    ],
+    ids=[
+        "served_gate",
+        "both_caps",
+        "wide_n",
+        "short_k",
+        "unaligned_k",
+        "tile_gemm_gate",
+    ],
+)
+def test_router_gate_mixed_gemv_gates_the_precise_route_on_shape(
+    n: int, k: int, accepted: bool
+) -> None:
+    """A bounded `precise_max_m` needs the shape the fp32 split-K GEMV serves.
+
+    The static-N cap (256) and the K floor (2048) are checked at their exact
+    edges, not just well inside them: 256x2048 is the smallest gate the precise
+    route covers and 257 or 2047 the first shapes it does not. 2050 clears the
+    floor and misses the fp32 SIMD width, which is the third term of the same
+    gate. Each case's activation matches its weight's K, so the shape check
+    under test is the precise-route one and not the earlier K mismatch.
+    """
+    with Graph(
+        f"router_gate_mixed_gemv_precise_{n}x{k}",
+        input_types=(
+            TensorType(DType.bfloat16, [8, k], device=DeviceRef.GPU()),
+            TensorType(DType.float32, [n, k], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        a, weight = (v.tensor for v in graph.inputs)
+        rejection: str | None
+        try:
+            logits = _router_gate_mixed_gemv(
+                a, weight, precise_max_m=_PRECISE_BOUND
+            )
+        except ValueError as error:
+            rejection = str(error)
+        else:
+            rejection = None
+            graph.output(logits)
+    if accepted:
+        assert rejection is None, (
+            f"precise_max_m must accept a {weight.shape} gate weight: {rejection}"
+        )
+        assert f"precise_max_m = {_PRECISE_BOUND}" in str(graph), (
+            f"an accepted {weight.shape} gate weight staged no bound: {graph}"
+        )
+    else:
+        assert rejection is not None, (
+            f"precise_max_m must reject a {weight.shape} gate weight"
+        )
+        assert "IEEE-fp32 split-K GEMV shape" in rejection, rejection
+    # The bound is what gates it: the default keeps the chain on any shape.
+    with Graph(
+        f"router_gate_mixed_gemv_default_{n}x{k}",
+        input_types=(
+            TensorType(DType.bfloat16, [8, k], device=DeviceRef.GPU()),
+            TensorType(DType.float32, [n, k], device=DeviceRef.GPU()),
+        ),
+    ) as default_graph:
+        a, weight = (v.tensor for v in default_graph.inputs)
+        default_graph.output(_router_gate_mixed_gemv(a, weight))
+    assert "precise_max_m" not in str(default_graph), (
+        f"an unbounded call on a {weight.shape} gate weight staged the"
+        " attribute anyway"
+    )

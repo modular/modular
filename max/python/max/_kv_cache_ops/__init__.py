@@ -92,6 +92,7 @@ def mla_dispatch_args_scalar(
     is_fp8_kv: bool,
     device: Device,
     sparse_indices_stride: int = 0,
+    row_invariant_verify: bool = False,
 ) -> tuple[int, int, int]:
     """Returns the MLA dispatch metadata scalars for the given request.
 
@@ -106,6 +107,10 @@ def mla_dispatch_args_scalar(
     split the sparse decode kernel launches. On NVIDIA it follows the
     SM100 sparse launch at head counts 8 through 64 in multiples of eight
     and at 128 heads.
+
+    ``row_invariant_verify`` says the launch this key describes is the
+    row-invariant pin's own verify, which sizes its split from the shape
+    rather than the live cache; the key has to follow the launch.
     """
     key = mla_dispatch_key(
         batch_size,
@@ -115,6 +120,7 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device,
         sparse_indices_stride,
+        row_invariant_verify=row_invariant_verify,
     )
     return key[0], key[1], key[2]
 
@@ -144,6 +150,7 @@ def mla_dispatch_key(
     fixed_topk: bool = True,
     physical_indices: bool = False,
     depth: int = 0,
+    row_invariant_verify: bool = False,
 ) -> tuple[int, int, int, int]:
     """Returns :func:`mla_dispatch_args_scalar`'s scalars and a kernel variant.
 
@@ -160,6 +167,10 @@ def mla_dispatch_key(
     NVFP4 always uses physical value and scale rows regardless of this flag.
     ``depth`` is the cache row width; its default of zero keeps policies that
     require a measured row width disabled.
+    ``row_invariant_verify`` says the launch this key describes is the
+    row-invariant pin's own verify: its split comes from the shape, not the
+    live cache, so the key has to take the same count or a captured graph
+    replays a launch the step does not make.
     """
     result = _mla_dispatch_args_scalar(
         batch_size,
@@ -174,6 +185,7 @@ def mla_dispatch_key(
         fixed_topk,
         physical_indices,
         depth,
+        row_invariant_verify,
     )
     return int(result[0]), int(result[1]), int(result[2]), int(result[3])
 

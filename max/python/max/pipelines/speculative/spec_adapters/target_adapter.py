@@ -43,6 +43,12 @@ def _default_ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     return ()
 
 
+def _default_ep_tail(target: Any) -> bool:
+    """Returns whether the target declares its collective buffers undivided."""
+    del target
+    return False
+
+
 def _default_batch_distributed_buffers(
     target_inputs: Any,
 ) -> tuple[Sequence[Buffer] | None, Sequence[Buffer]]:
@@ -238,6 +244,18 @@ class TargetAdapter:
         _default_ep_input_types
     )
     """Returns a built target module's expert-parallel inputs."""
+
+    ep_tail: Callable[[Any], bool] = _default_ep_tail
+    """Returns whether the target declares its expert-parallel buffers on a
+    signature that is not distributed.
+
+    The canonical spec signature declares them beside data parallelism, which
+    is where every pairing that runs EP today puts it. An EP target at one
+    attention replica -- one expert rank per device, no replica axis -- has no
+    data-parallel inputs to declare them beside, so it names the tail here
+    instead: :attr:`ep_input_types` are then declared after the KV tree and
+    nothing else of the distributed group is. ``False`` for every target that
+    keeps them on the distributed signature."""
 
     batch_distributed_buffers: Callable[
         [Any], tuple[Sequence[Buffer] | None, Sequence[Buffer]]

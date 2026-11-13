@@ -270,6 +270,118 @@ def test_small_inputs_share_one_arena() -> None:
     assert tokens._data_ptr() - offsets._data_ptr() == 256
 
 
+def _poison_allocations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dirties every buffer the stager allocates through its constructor.
+
+    A fresh allocation usually comes back zeroed, which would leave a test
+    unable to tell an arena the stager zeroed from one it never wrote. The
+    arena's own ``Buffer.zeros`` is a classmethod, which resolves through
+    ``__getattr__`` to the real one, so it bypasses the poison: only a stager
+    that allocates without zeroing ever has it read back.
+    """
+    real = graph_input_stager.Buffer
+
+    class Poisoned:
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            buffer = real(*args, **kwargs)
+            buffer.to_numpy()[:] = 0xFF
+            return buffer
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+    monkeypatch.setattr(graph_input_stager, "Buffer", Poisoned())
+
+
+def test_an_unstaged_member_of_a_shared_arena_reads_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member no step staged reads zero, not what the driver handed back.
+
+    The arena is one allocation holding several inputs, and a step sends only
+    the ranges it staged, so nothing ever writes this member's region.
+    """
+    _poison_allocations(monkeypatch)
+    stager = GraphInputStager(
+        [
+            describe(TOKENS, max_shape=(8,)),
+            describe(OFFSETS, dtype=DType.uint32, max_shape=(4,)),
+        ]
+    )
+
+    with stager.stage() as staging:
+        host, (tokens,) = staging.get(TOKENS, (8,))
+        host.to_numpy()[:] = [3] * 8
+
+    offsets = stager._slots[OFFSETS]
+    assert offsets.arena is stager._slots[TOKENS].arena
+    (device,) = offsets.arena.device_buffers()
+    unstaged = device[offsets.offset : offsets.region_end].to_numpy()
+
+    assert tokens.to_numpy().tolist() == [3] * 8
+    assert unstaged.tolist() == [0] * len(unstaged)
+
+
+def test_the_tail_a_step_did_not_stage_reads_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member staged shorter than its maximum keeps zeros past the copy.
+
+    Mirrors the KV page table, whose described shape covers the whole pool
+    while a step stages one batch's worth of columns.
+    """
+    _poison_allocations(monkeypatch)
+    stager = GraphInputStager([describe(TOKENS, max_shape=(8,))])
+
+    with stager.stage() as staging:
+        host, (tokens,) = staging.get(TOKENS, (2,))
+        host.to_numpy()[:] = [7, 8]
+
+    slot = stager._slots[TOKENS]
+    (device,) = slot.arena.device_buffers()
+    tail = device[slot.offset + 2 * 8 : slot.region_end].to_numpy()
+
+    assert tokens.to_numpy().tolist() == [7, 8]
+    assert tail.tolist() == [0] * len(tail)
+
+
+def test_a_virtual_device_gets_an_arena_without_a_fill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compile-only mode allocates the arena uninitialized, never zeroing it.
+
+    A virtual device refuses memory operations, so the fill would raise there;
+    nothing runs on a target that exists only to compile against.
+    """
+    fills: list[tuple[int, ...]] = []
+    real = graph_input_stager.Buffer
+
+    class Recording:
+        @staticmethod
+        def zeros(*args: Any, **kwargs: Any) -> Any:
+            fills.append(tuple(args))
+            return real.zeros(*args, **kwargs)
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            return real(*args, **kwargs)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+    monkeypatch.setattr(graph_input_stager, "Buffer", Recording())
+    monkeypatch.setattr(
+        graph_input_stager, "is_virtual_device_mode", lambda: True
+    )
+    stager = GraphInputStager([describe(TOKENS, max_shape=(8,))])
+
+    arena = stager._slots[TOKENS].arena
+    (device,) = arena.device_buffers()
+
+    assert fills == []
+    assert device.num_elements == arena.size
+    assert arena.device_buffers() == (device,)
+
+
 def _count_copies(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Records each copy the stager issues, then performs it."""
     calls: list[int] = []

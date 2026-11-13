@@ -23,6 +23,12 @@ from max import functional as F
 from max.nn._graph_ops import cp_merge_topk as _cp_merge_topk
 from max.nn._graph_ops import flare_mla_prefill_plan as _flare_mla_prefill_plan
 from max.nn._graph_ops import (
+    indexer_k_quantize_store as _indexer_k_quantize_store,
+)
+from max.nn._graph_ops import (
+    indexer_q_ssmax_rope_quantize as _indexer_q_ssmax_rope_quantize,
+)
+from max.nn._graph_ops import (
     kv_cache_pack_owned_rows as _kv_cache_pack_owned_rows,
 )
 from max.nn._graph_ops import (
@@ -71,6 +77,8 @@ mla_kpool_expand_topk = F.functional(_mla_kpool_expand_topk)
 mla_kpool_ring_close = F.functional(_mla_kpool_ring_close)
 mla_kpool_seed_tail = F.functional(_mla_kpool_seed_tail)
 cp_merge_topk = F.functional(_cp_merge_topk)
+indexer_k_quantize_store = F.functional(_indexer_k_quantize_store)
+indexer_q_ssmax_rope_quantize = F.functional(_indexer_q_ssmax_rope_quantize)
 _mla_decode_graph_cp_per_device = F.functional(_mla_decode_graph_cp)
 
 

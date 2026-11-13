@@ -176,6 +176,7 @@ def mla_dispatch_args_scalar(
     fixed_topk_obj: PythonObject,
     physical_indices_obj: PythonObject,
     depth_obj: PythonObject,
+    row_invariant_verify_obj: PythonObject,
 ) raises -> PythonObject:
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
@@ -188,6 +189,7 @@ def mla_dispatch_args_scalar(
     var fixed_topk = Int(py=fixed_topk_obj) != 0
     var physical_indices = Bool(py=physical_indices_obj)
     var depth = Int(py=depth_obj)
+    var row_invariant_verify = Bool(py=row_invariant_verify_obj)
     var ctx = _get_ctx(device_context_ptr)
 
     if batch_size < 1:
@@ -233,6 +235,7 @@ def mla_dispatch_args_scalar(
             fixed_topk=fixed_topk,
             physical_indices=physical_indices,
             depth=depth,
+            row_invariant_verify=row_invariant_verify,
         )
     else:
         raise Error(

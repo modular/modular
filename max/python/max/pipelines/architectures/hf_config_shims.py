@@ -20,6 +20,7 @@ transformers does not recognize natively.
 import copy
 from typing import Any, ClassVar
 
+from max.pipelines.lib._hf_config import register_config_generator
 from transformers import AutoConfig, DeepseekV3Config, PretrainedConfig
 
 # Use the native Gemma4Config if available (transformers >= 5.5.0.dev0),
@@ -1257,6 +1258,55 @@ class _K3DSparkHFConfig(PretrainedConfig):
     ) -> None:
         self.max_position_embeddings = max_position_embeddings
         super().__init__(**kwargs)
+        # transformers 5's ``PretrainedConfig`` does not keep every unknown
+        # kwarg as an attribute, and the drafter reads its own fields off this
+        # object.
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+class _MistralLarge4TextHFConfig(PretrainedConfig):
+    """The ``text_config`` half of a Mistral Large 4 config, verbatim.
+
+    ``mistral_large4_text`` is not a transformers model type, and MAX reads
+    every text field (the per-layer rope/NoPE, KV-source, indexer and MLP
+    schedules, the YaRN parameters, the MLA widths) off this object. Nothing is
+    aliased: the checkpoint's field names are the ones the model config reads.
+
+    transformers >= 5.12 standardizes RoPE parameters in ``__post_init__`` and,
+    for a scaling rope type such as this checkpoint's ``yarn``, eagerly reads
+    ``self.max_position_embeddings`` as the ``original_max_position_embeddings``
+    fallback. That field is not a declared field on a bare
+    ``PretrainedConfig``, so it is bound before the base initializer runs.
+
+    The same release validates ``layer_types`` against a closed enum
+    (``ALLOWED_LAYER_TYPES``, which lists the sparse-attention spellings of
+    other families -- ``deepseek_sparse_attention``, ``minimax_m3_sparse`` --
+    but not this checkpoint's ``indexed_attention``), and it reads the field off
+    the instance rather than the arguments. So the checkpoint's list is bound
+    after the base initializer: the config keeps the field verbatim for every
+    reader that serializes it back, and MAX's own schedules come from
+    ``indexer_types``, ``no_rope_layers`` and ``mlp_layer_types`` anyway.
+    """
+
+    model_type = "mistral_large4_text"
+
+    def __init__(
+        self,
+        max_position_embeddings: int = 1048576,
+        num_nextn_predict_layers: int = 0,
+        **kwargs: Any,
+    ) -> None:
+        self.max_position_embeddings = max_position_embeddings
+        # The DeepSeek-V3.2 memory planner reads this to reserve NextN/MTP
+        # layers. Mistral Large 4's in-checkpoint drafter is DSpark, not a
+        # NextN stack, so it holds no such layer.
+        self.num_nextn_predict_layers = num_nextn_predict_layers
+        layer_types = kwargs.pop("layer_types", None)
+        super().__init__(**kwargs)
+        if layer_types is not None:
+            self.layer_types = layer_types
         for key, value in kwargs.items():
             if not hasattr(self, key):
                 setattr(self, key, value)
@@ -1312,3 +1362,87 @@ class MuseSparkDSparkHFConfig(PretrainedConfig):
 
 
 AutoConfig.register("muse_spark_dspark", MuseSparkDSparkHFConfig, exist_ok=True)
+
+
+class _MistralLarge4VisionHFConfig(PretrainedConfig):
+    """The ``vision_config`` half of a Mistral Large 4 config, verbatim.
+
+    The Pixtral tower is deferred, but the multimodal wrapper still parses the
+    block, and its geometry (patch 14, hidden 2048, 30 layers) is not
+    ``PixtralVisionConfig``'s required field set, so it reads as a plain config.
+    """
+
+    model_type = "mistral_large4_vision"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+class MistralLarge4HFConfig(PretrainedConfig):
+    """HuggingFace configuration class for Mistral Large 4 models.
+
+    The checkpoint declares ``model_type: mistral_large4``, which no
+    transformers release knows and which the repo cannot resolve through
+    ``auto_map``, so ``AutoConfig.from_pretrained`` needs this class. Every
+    model field nests under ``text_config`` (and, for the deferred Pixtral
+    tower, ``vision_config``), so both become config objects whose fields read
+    as attributes; ``MistralLarge4Config.get_text_config`` unwraps the text
+    half for the model config and the KV plan.
+    """
+
+    model_type = "mistral_large4"
+    sub_configs = {
+        "text_config": _MistralLarge4TextHFConfig,
+        "vision_config": _MistralLarge4VisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _MistralLarge4TextHFConfig | None = None,
+        vision_config: dict[str, Any]
+        | _MistralLarge4VisionHFConfig
+        | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(text_config, dict) or text_config is None:
+            text_config = _MistralLarge4TextHFConfig(**(text_config or {}))
+        if isinstance(vision_config, dict) or vision_config is None:
+            vision_config = _MistralLarge4VisionHFConfig(
+                **(vision_config or {})
+            )
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+        for key, value in kwargs.items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+        # The DeepSeek-V3.2 spine this architecture forks reads the config flat:
+        # its max-length helper and memory planner ask the top-level object for
+        # `num_hidden_layers`, `moe_intermediate_size`, `index_topk`,
+        # `num_nextn_predict_layers` and the rest, none of which exist above
+        # `text_config` here. Expose the text config's every field (its class
+        # defaults included, which the file does not repeat) at the top level
+        # too, never shadowing one the file set.
+        for key, value in text_config.to_dict().items():
+            if not hasattr(self, key):
+                setattr(self, key, value)
+
+
+AutoConfig.register("mistral_large4", MistralLarge4HFConfig, exist_ok=True)
+AutoConfig.register(
+    "mistral_large4_text", _MistralLarge4TextHFConfig, exist_ok=True
+)
+
+# The NVFP4 release ships ``params.json`` and weights only: no ``config.json``.
+# The family's generator turns that ``params.json`` into the config.json a
+# hand-prepared export directory holds, so the model loads from its repo id.
+# The key set is the claim: a checkpoint of another family is dropped without
+# importing the architecture package to be told it is not ours.
+register_config_generator(
+    "max.pipelines.architectures.mistral_large4_modulev3.model_config",
+    "derive_hf_config",
+    params_keys=frozenset({"nope", "dsa", "kv_sharing", "ssmax_scaling"}),
+)

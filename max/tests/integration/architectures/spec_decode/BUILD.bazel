@@ -56,35 +56,48 @@ modular_py_test(
     ignore_extra_deps = [
         "//max/python/max/pipelines",
         # Resolve the targets and their drafts by name.
+        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/dflash_llama3",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_assistant",
         "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_inkling",
+        "//max/python/max/pipelines/architectures/mtp_qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_5",
     ],
     deps = [
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/dflash_llama3",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/architectures/eagle_llama3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_assistant",
         "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
         "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
         "//max/python/max/pipelines/architectures/mtp_inkling",
+        "//max/python/max/pipelines/architectures/mtp_qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
     ],
@@ -115,6 +128,26 @@ modular_py_test(
     ],
 )
 
+# Guards the batch the fused graph stages for a target that declares the
+# expert-parallel collectives at one attention replica: the target's own
+# batching holds no signal buffers, so the runtime's stand in for them, and a
+# batch that stages fewer collectives than the graph declares is refused where
+# it is built. CPU buffers only, no device and no trace.
+modular_py_test(
+    name = "test_ep_tail_batching",
+    srcs = ["test_ep_tail_batching.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/dspark_mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "test_spec_decode_graph_names",
     srcs = ["test_spec_decode_graph_names.py"],
@@ -128,6 +161,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
         "//max/python/max/pipelines/architectures/qwen3_5",
     ],
     deps = [
@@ -139,6 +173,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
     ],
