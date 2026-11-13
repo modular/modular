@@ -28,7 +28,9 @@ from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
+    HALDeviceFunction,
     HALDeviceStreamBase,
+    _check_config_dims,
 )
 from max._driver.max_license.hal import Event, Stream, get_device_spec
 from max._driver.max_license.hal.extensions.completion_flag import FlagCondition
@@ -63,7 +65,10 @@ from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host.info import default_accelerator
-from max.gpu.host.launch_config import GridBlockExecutionConfig
+from max.gpu.host.launch_config import (
+    ExecutionConfig,
+    GridBlockExecutionConfig,
+)
 from max._driver.max_license.device_context_dispatch.function import (
     DeviceExternalFunction,
     DeviceFunction,
@@ -360,6 +365,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         """
         self.wait_for_flag(flag, value)
 
+    @inline(.always)
     def enqueue_function[
         *Ts: DevicePassable
     ](
@@ -391,7 +397,8 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_function(
                 f.unwrap_legacy(),
                 *args,
@@ -402,9 +409,33 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 attributes=attributes^,
                 constant_memory=constant_memory^,
             )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        comptime if Self._HALHooks.Enqueuer.overrides:
+            var launch = HalLaunchOptions(
+                grid_dim,
+                block_dim,
+                cluster_dim,
+                shared_mem_bytes,
+                attributes^,
+                constant_memory^,
+                None,
+            )
+            Self._HALHooks.Enqueuer.enqueue_compiled[
+                hal_f.Wrapper, hal_f.declared_arg_types
+            ](self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
         else:
-            self._impl.enqueue_function(
-                f.unwrap_hal(),
+            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "grid_dim"
+                ](grid_dim, location=call_location())
+                _check_dim_in_range[
+                    "DeviceStream.enqueue_function", "block_dim"
+                ](block_dim, location=call_location())
+            hal_f._call_with_pack_checked(
+                self._hal_stream(),
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -412,6 +443,113 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
+                location=call_location(),
+            )
+
+    @inline(.always)
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
+    ](
+        self,
+        execution_config: ExecutionConfigType,
+        *args: *actual_arg_types,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel for execution on this stream.
+
+        Only available on the HAL `DeviceContext`.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            args: Variadic arguments which are passed to the `func`.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not use_legacy_backend(), (
+            "enqueue_function with an execution config is only available on a"
+            " HAL DeviceStream"
+        )
+        comptime if Self._HALHooks.Enqueuer.overrides:
+            Self._HALHooks.Enqueuer.enqueue_function[func](
+                self._hal_stream()[], execution_config, *args, host_args=()
+            )
+        else:
+            var hal_f: HALDeviceFunction[
+                ...
+            ] = self._impl._ctx.compile_function[func]()
+            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
+
+            hal_f._do_call_with_pack_checked(
+                self._hal_stream(),
+                execution_config,
+                *args,
+                location=location.or_else(call_location()),
+            )
+
+    @inline(.always)
+    def enqueue_function[
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        execution_config: ExecutionConfigType,
+        f: DeviceFunction,
+        *args: *Ts,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a pre-compiled checked function for execution on this stream.
+
+        Only available on the HAL `DeviceContext`.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration (usually inferred).
+            Ts: Argument dtypes.
+
+        Args:
+            execution_config: The execution configuration for the kernel launch.
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        comptime if Self._HALHooks.Enqueuer.overrides:
+            Self._HALHooks.Enqueuer.enqueue_compiled[
+                hal_f.Wrapper, hal_f.declared_arg_types
+            ](
+                self._hal_stream()[],
+                hal_f._inner[]._func_handle,
+                execution_config,
+                *args,
+            )
+        else:
+            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
+                _check_config_dims["DeviceStream.enqueue_function"](
+                    execution_config, location=call_location()
+                )
+
+            hal_f._do_call_with_pack_checked(
+                self._hal_stream(),
+                execution_config,
+                *args,
+                location=location.or_else(call_location()),
             )
 
     @inline(.always)
