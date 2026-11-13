@@ -6,11 +6,11 @@
 
 // CHECK-LABEL: kgen.struct.generator @StructLevel
 // CHECK-SAME:  annotations = [#kgen.annotation<7 : index, index>, #kgen.annotation<"tag" : !kgen.string, string>]
-lit.struct.decl @StructLevel register_passable attributes {
-  annotations = [#kgen.annotation<7 : index, index>, #kgen.annotation<"tag" : !kgen.string, !kgen.string>]
-} {
+lit.struct.decl @StructLevel register_passable {
   lit.struct.field value : index
-}
+} <
+  annotations = [#kgen.annotation<7 : index, index>, #kgen.annotation<"tag" : !kgen.string, !kgen.string>]
+>
 
 // -----
 
@@ -31,7 +31,7 @@ lit.struct.decl @Plain register_passable {
 // CHECK-LABEL: kgen.struct.generator @FieldLevel
 // CHECK-SAME:  (first: index[#kgen.annotation<1 : index, index>], second: i32)
 lit.struct.decl @FieldLevel {
-  lit.struct.field first {annotations = [#kgen.annotation<1 : index, index>]} : index
+  lit.struct.field first : index <annotations = [#kgen.annotation<1 : index, index>]>
   lit.struct.field second : i32
 }
 
@@ -42,8 +42,8 @@ lit.struct.decl @FieldLevel {
 
 // CHECK-LABEL: kgen.struct.generator @Parametric
 // CHECK-SAME:  annotations = [#kgen.annotation<#kgen.param.decl.ref<"N"> : index, index>]
-lit.struct.decl @Parametric<N: index, T: type> register_passable attributes {
-  annotations = [#kgen.annotation<#kgen.param.decl.ref<"N"> : index, index>]
-} {
+lit.struct.decl @Parametric<N: index, T: type> register_passable {
   lit.struct.field value : index
-}
+} <
+  annotations = [#kgen.annotation<#kgen.param.decl.ref<"N"> : index, index>]
+>

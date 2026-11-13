@@ -68,11 +68,16 @@ from nn.fold import fold, fold_shape
 from nn.gather_scatter import apply_packed_bitmask, normalize_neg_index
 from nn.irfft import irfft
 from nn.kv_cache import generic_get_paged_cache
-from nn.chunked_qkv_rope_store import chunked_qkv_rope_store_paged_ragged
+from nn.chunked_qkv_rope_store import (
+    chunked_qkv_rope_store_paged_ragged,
+    k_rope_v_store_paged_ragged,
+    rope_qkv_store_paged_ragged,
+)
 from nn.rope_split_store import (
     rope_split_store_paged_ragged,
     rope_split_store_paged_ragged_with_position_ids,
 )
+from nn.normalization import _rms_norm_impl
 from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_ragged,
     generic_flash_attention_kv_cache_ragged_sink,
@@ -1458,6 +1463,159 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         )
 
 
+@extensibility.register("kv_cache.rope_qkv_store.ragged.paged")
+struct Struct_rope_qkv_store_ragged_paged:
+    """Registers head-major Q/K rotation and paged K/V stores.
+
+    The drafter's counterpart to
+    `kv_cache.chunked_qkv_rope_store.ragged.paged`: it takes the three
+    projections separately, so a layer whose Q, K and V never share a buffer
+    writes its cache in one launch instead of storing K raw, storing V, and
+    then rotating K in place.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        layer_idx: UInt32,
+        value_scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_gpu(), "rope QKV store requires a GPU"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(k).rank == 3
+        comptime assert type_of(v).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert (
+            type_of(kv_blocks).dtype == DType.bfloat16
+        ), "kv_blocks must be a rank-6 BF16 cache"
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        comptime freq_dtype = type_of(freqs_cis).dtype
+        return rope_qkv_store_paged_ragged[freq_dtype](
+            q.to_tile_tensor[.bfloat16](),
+            k.to_tile_tensor[.bfloat16](),
+            v.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_tile_tensor[.bfloat16](),
+            value_scale,
+            ctx,
+        )
+
+
+@extensibility.register("kv_cache.k_rope_v_store.ragged.paged")
+struct Struct_k_rope_v_store_ragged_paged:
+    """Registers head-major K rotation and paged K/V stores, with no query.
+
+    The context-writing half of `kv_cache.rope_qkv_store.ragged.paged`: a call
+    that only fills a cache has no queries to rope, so this op covers a token's
+    key and value heads alone. It returns nothing, the K/V planes being the
+    whole of its work.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute(
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        layer_idx: UInt32,
+        value_scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_gpu(), "rope K/V store requires a GPU"
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(k).rank == 3
+        comptime assert type_of(v).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert (
+            type_of(kv_blocks).dtype == DType.bfloat16
+        ), "kv_blocks must be a rank-6 BF16 cache"
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        comptime freq_dtype = type_of(freqs_cis).dtype
+        k_rope_v_store_paged_ragged[freq_dtype](
+            k.to_tile_tensor[.bfloat16](),
+            v.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor(),
+            kv_collection,
+            layer_idx,
+            value_scale,
+            ctx,
+        )
+
+
 @extensibility.register("kv_cache.rope_split_store.ragged.paged")
 struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     """Registers the `kv_cache.rope_split_store.ragged.paged` graph op with the graph compiler.
@@ -1620,6 +1778,204 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 output.to_tile_tensor(),
                 ctx,
             )
+
+
+@inline(.always)
+def _rms_norm_heads[
+    dtype: DType,
+    //,
+    head_size: Int,
+    epsilon: Float32,
+](
+    src: TileTensor[mut=False, dtype, ...],
+    src_col: Int,
+    dst: TileTensor[mut=True, dtype, ...],
+    dst_col: Int,
+    num_heads: Int,
+    gamma: TileTensor[mut=False, dtype, ...],
+    ctx: DeviceContext,
+) raises:
+    """RMS-norms `num_heads` heads starting at column `src_col` of each `src`
+    row into `dst` at `dst_col`.
+    """
+
+    @inline(.always)
+    def input_fn[
+        width: Int, alignment: Int
+    ](coords: Coord) {var src, var src_col} -> SIMD[dtype, width]:
+        return src.load[width=width, alignment=alignment * size_of[dtype]()](
+            (
+                Int(coords[0]),
+                src_col + Int(coords[1]) * head_size + Int(coords[2]),
+            )
+        )
+
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var dst, var dst_col}:
+        dst.store[alignment=alignment * size_of[dtype]()](
+            (
+                Int(coords[0]),
+                dst_col + Int(coords[1]) * head_size + Int(coords[2]),
+            ),
+            val,
+        )
+
+    _rms_norm_impl[
+        dtype,
+        3,
+        epsilon=epsilon,
+        weight_offset=0.0,
+        multiply_before_cast=True,
+    ](
+        input_fn,
+        output_fn,
+        Coord(Int(src.dim[0]()), num_heads, head_size),
+        gamma,
+        ctx,
+    )
+
+
+@extensibility.register("kv_cache.rope_split_store.ragged.paged.with_qk_norm")
+struct Struct_rope_split_store_ragged_paged_with_qk_norm[interleaved: Bool]:
+    """Registers the `kv_cache.rope_split_store.ragged.paged.with_qk_norm` graph op with the graph compiler.
+
+    RMS-norms each Q, K and V head of `qkv` (Q and K by their gammas, V with
+    no gamma), then runs `kv_cache.rope_split_store.ragged.paged` on the result.
+    `qkv` is `[q|k|v]`, or `[q|k]` when `k_eq_v`, in which case V is the
+    gamma-free norm of the K head.
+
+    Parameters:
+        interleaved: Whether RoPE pairs adjacent real and imaginary
+            components (real, imag, real, imag, ...) as in GGUF, rather
+            than splitting them into halves (real, ..., real, imag, ...,
+            imag) as in safetensors.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        epsilon: Float32,
+        k_eq_v: Bool,
+    ](
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        q_gamma: Some[Input & Tensor],
+        k_gamma: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        layer_idx: UInt32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(q_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(k_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime dtype = type_of(qkv).dtype
+        comptime out_dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(q_gamma).rank == 1
+        comptime assert type_of(k_gamma).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        comptime kv_params = type_of(kv_collection).kv_params
+        comptime head_size = kv_params.head_size
+
+        var qkv_tt = qkv.to_tile_tensor()
+        var output_tt = output.to_tile_tensor()
+        var total_seq_len = Int(qkv_tt.dim[0]())
+        if total_seq_len == 0:
+            return
+
+        var q_dim = Int(output_tt.dim[1]())
+        var kv_dim = kv_params.num_heads * head_size
+        var normed_dim = q_dim + 2 * kv_dim
+        var normed_buf = ctx.enqueue_create_buffer[dtype](
+            total_seq_len * normed_dim
+        )
+        var normed = TileTensor(
+            normed_buf, row_major(total_seq_len, normed_dim)
+        )
+        var ones_buf = ctx.enqueue_create_buffer[dtype](head_size)
+        ones_buf.enqueue_fill(1)
+        comptime if ctx.target.is_cpu():
+            # The CPU norms below read and write host memory directly.
+            ctx.synchronize()
+        var ones = TileTensor(ones_buf, row_major(head_size)).as_imm()
+
+        var src = qkv_tt.as_imm()
+        _rms_norm_heads[head_size, epsilon](
+            src,
+            0,
+            normed,
+            0,
+            q_dim // head_size,
+            q_gamma.to_tile_tensor[dtype]().as_imm(),
+            ctx,
+        )
+        _rms_norm_heads[head_size, epsilon](
+            src,
+            q_dim,
+            normed,
+            q_dim,
+            kv_params.num_heads,
+            k_gamma.to_tile_tensor[dtype]().as_imm(),
+            ctx,
+        )
+        _rms_norm_heads[head_size, epsilon](
+            src,
+            q_dim if k_eq_v else q_dim + kv_dim,
+            normed,
+            q_dim + kv_dim,
+            kv_params.num_heads,
+            ones,
+            ctx,
+        )
+
+        rope_split_store_paged_ragged[
+            q_out_dtype=out_dtype,
+            interleaved=Self.interleaved,
+        ](
+            normed.as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor(),
+            kv_collection,
+            layer_idx,
+            output_tt,
+            ctx,
+        )
+        _ = normed_buf^
+        _ = ones_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3453,6 +3809,70 @@ struct Struct_gumbel_argmax_from_probs:
             probs.to_tile_tensor[.float32](),
             out_tokens.to_tile_tensor[.int64](),
             seed=seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
+        )
+
+
+@extensibility.register("sampler.gumbel_argmax_from_residual")
+struct Struct_gumbel_argmax_from_residual:
+    """Registers the `sampler.gumbel_argmax_from_residual` graph op.
+
+    Draws one token per row proportionally to `max(p - q, 0)`, the rejection
+    sampler's residual, by Gumbel-max over its `ln`. Both the subtract and the
+    clamp happen in registers inside the sampling pass, so the residual is
+    never written to or read from HBM: the alternative materializes the
+    proposal mass and the residual, two `[rows, vocab]` round-trips.
+
+    `fallback` carries one drafted token id per row; a non-negative entry
+    marks a row with no proposal distribution, and that row subtracts a
+    one-hot at the token instead of `q`. The value is bit-identical to
+    subtracting a materialized one-hot row, and it is what the caller
+    already has on hand, so passing the flag costs nothing.
+
+    Arity is fixed, so this is a separate registration rather than a mode on
+    `sampler.gumbel_argmax_from_probs`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        _trace_name: StaticString,
+    ](
+        out_tokens: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
+        probs: Some[Input & Tensor],
+        sub: Some[Input & Tensor],
+        fallback: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert conforms_to(type_of(sub), TileTensorable)
+        comptime assert conforms_to(type_of(fallback), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(probs).rank == 2
+        comptime assert type_of(sub).rank == 2
+        comptime assert type_of(fallback).rank == 1
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.gumbel_argmax_from_residual is GPU-only"
+        var sub_tt = sub.to_tile_tensor[.float32]()
+        var fallback_tt = fallback.to_tile_tensor[.int64]()
+        gumbel_sampling_fused_gpu[
+            from_probs=False,
+            subtract=True,
+            SubLayoutType=sub_tt.LayoutType,
+            SubEngine=sub_tt.Engine,
+            FallbackLayoutType=fallback_tt.LayoutType,
+            FallbackEngine=fallback_tt.Engine,
+        ](
+            ctx,
+            probs.to_tile_tensor[.float32](),
+            out_tokens.to_tile_tensor[.int64](),
+            seed=seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
+            sub=sub_tt.as_unsafe_any_origin().as_imm(),
+            fallback=fallback_tt.as_unsafe_any_origin().as_imm(),
         )
 
 

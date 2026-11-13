@@ -36,7 +36,7 @@ import yaml
 from pydantic import BaseModel, model_validator
 
 from .base_model import MAXBaseModel
-from .config_file_model import ConfigFileModel
+from .config_file_model import ConfigFileModel, ConfigModel
 
 logger = logging.getLogger("max.pipelines")
 
@@ -1108,4 +1108,5 @@ class MAXConfig:
 all = [
     "MAXBaseModel",
     "ConfigFileModel",
+    "ConfigModel",
 ]

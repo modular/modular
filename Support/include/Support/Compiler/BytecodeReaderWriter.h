@@ -60,9 +60,6 @@ OwningOpRef<T> readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr) {
   return readOpFromBytecodeFile<T>(bytecodeAttr, bytecodeAttr.getContext());
 }
 
-/// Write a single attribute to a bytecode file.
-LogicalResult writeAttrToBytecodeFile(Attribute attr, raw_ostream &os);
-
 /// Read a single attribute from a bytecode file.
 Attribute readAttrFromBytecodeFile(llvm::MemoryBufferRef buffer,
                                    MLIRContext *ctx);

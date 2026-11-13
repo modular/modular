@@ -69,7 +69,7 @@ from max.pipelines.lib.graph_specs import (
     compile_and_init_graphs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.weights.quant import parse_quant_config

@@ -652,7 +652,7 @@ def test_kv_cache_flags_without_recipe_apply_to_defaults() -> None:
     kv = config.models["main"].kv_cache
     assert kv.kv_connector_config.host_offload_max_gb == 50
     assert kv.kv_connector_config.type is KVConnectorType.null
-    assert kv.device_memory_utilization == 0.9
+    assert kv.device_memory_utilization == 0.95
 
 
 def test_recipe_kv_cache_intact_without_kv_flags(tmp_path: Path) -> None:

@@ -10,17 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Target-specific `DeviceContext` extensions.
 
 A plugin overlay replaces this file wholesale to add overloads for its target.
 Per-target behavior that base code dispatches on belongs in the plugin's
 `MaxPluginHooks` instead, so an overlay only carries what base can't express.
 """
-
-from .._launch_args import _IdentityWrapper
-from .device_context import DeviceContext
-
-
-__extension DeviceContext:
-    comptime FunctionWrapper = _IdentityWrapper

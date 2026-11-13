@@ -53,9 +53,6 @@ public:
   /// Unregisters the CPUDevice with the given index.
   void clearCPUDevice(uint8_t index);
 
-  /// Returns the number of active CPUDevices.
-  size_t numActiveCPUDevices() const;
-
   /// Index representing 'no CPUDevice'.
   static constexpr uint8_t kInvalidIndex = 255;
 

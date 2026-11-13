@@ -91,18 +91,32 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
   return success();
 }
 
+/// The witness name of a trait requirement: a method's mangled symbol (methods
+/// overload) or an alias's declared name.
+static StringAttr getWitnessName(Operation *traitMemberOp) {
+  if (auto fnOp = dyn_cast<FnOp>(traitMemberOp))
+    return fnOp.getSymNameAttr();
+  return cast<AliasDeclOp>(traitMemberOp).getDeclName();
+}
+
+/// Resolve the witness of `structDecl`'s conformance that the trait's
+/// `defaultedOp` stands in for.
 static LogicalResult resolveDefaultedOpFromTrait(DeclResolver &resolver,
                                                  Operation *defaultedOp,
                                                  StructASTDecl &structDecl) {
-  auto traitFnDecl = defaultedOp->getParentOfType<TraitDeclOp>();
-
+  auto traitDeclOp = defaultedOp->getParentOfType<TraitDeclOp>();
   auto traitSymbol =
-      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitFnDecl));
-  auto conformanceDecl =
-      structDecl.lookupInCurrentScope(traitSymbol.getFlattenedName());
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitDeclOp));
+  ConformanceASTDecl *conformanceDecl =
+      structDecl.lookupConformance(traitSymbol);
+  assert(conformanceDecl && "expected a conformance for the trait");
 
-  return resolver.resolveBody(*conformanceDecl.front(),
-                              conformanceDecl.front()->getLoc());
+  // Body resolving the conformance resolves the trait's members, which gives
+  // the default its symbol and so its witness name.
+  if (failed(resolver.resolveBody(*conformanceDecl, structDecl.getLoc())))
+    return failure();
+  return resolveConformanceMember(*conformanceDecl,
+                                  getWitnessName(defaultedOp));
 }
 //===----------------------------------------------------------------------===//
 // Decorator Support
@@ -4648,26 +4662,6 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
     }
   }
 
-  // Workaround: the conformances to a trait and to a trait that extends it
-  // aren't forced to be checked in order. `__Enum` extends
-  // `EnumLike`, and when the former's conformance is checked first, its default
-  // implementations of `EnumLike`'s methods cannot find the witnesses for
-  // `EnumLike`'s members. Check `EnumLike`'s conformance now, so that the
-  // witnesses exist by the time `__Enum`'s conformance is checked.
-  // TODO(MOCO-5078): remove once a refining trait's default implementations
-  // resolve in any verification order.
-  if (structOp.isEnum()) {
-    ASTDecl *enumLikeDecl = shared.lookupBuiltinTrait("EnumLike", getLoc());
-    assert(enumLikeDecl &&
-           "`__Enum` resolved, so its parent `EnumLike` exists");
-    ArrayRef<ASTDecl *> conformanceDecls = lookupInCurrentScope(
-        TraitSymbolAttr::get(enumLikeDecl->getSymbolRef()).getFlattenedName());
-    assert(!conformanceDecls.empty() &&
-           "an enum conforms to `EnumLike` through `__Enum`");
-    // The check records a failure on the conformance declaration, where every
-    // later use reads it; the enum itself stays resolvable, as for a struct.
-    (void)resolver.resolveBody(*conformanceDecls.front(), getLoc());
-  }
   return success();
 }
 
@@ -4888,12 +4882,6 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     payloadRequirements.push_back({traitName, std::move(assumptions)});
   }
 
-  // `NoneType` as a payload type marks a case without a payload.
-  ASTType noneType =
-      shared.lookupBuiltinType("NoneType", enumDecl, enumDecl.getLoc());
-  assert(!noneType.isTypeCheckErrorType() &&
-         "the builtin module resolved `__Enum`, so it has `NoneType`");
-
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
     IREmitter emitter(enumDecl, EC_Type);
@@ -4904,16 +4892,6 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
       shared.emitError(typeExpr->getLoc())
           << "enum case payloads do not support trait types; " << type
           << " is a trait, use a concrete type or compile-time generic";
-      return failure();
-    }
-    // TODO(MOCO-5080): `EnumLike` marks a case without a payload with
-    // `NoneType`, so a case cannot carry one; the marker goes away once every
-    // payload is a `Tuple`.
-    if (payload.size() == 1 && type.isEqualCanon(noneType)) {
-      shared.emitError(typeExpr->getLoc())
-          << "enum case payload must not be 'NoneType'; a case without a "
-             "payload is written 'case "
-          << caseName << "'" << typeExpr->getRange();
       return failure();
     }
     // The enum occurring as a payload implies an infinite type/layout.
@@ -5500,9 +5478,9 @@ LogicalResult ExtensionASTDecl::resolveBody(Lexer &lexer) {
       // Conformances are always created as signature-resolved because there's
       // no less-resolved state for it (see CALROC for more).
 
-      // Extension conformance verification follows the same pattern as structs
-      // and is handled in verifyAndBuildConformance() during ConformanceOp body
-      // resolution. The trait body will be resolved there.
+      // Extension conformances register their members like struct ones do,
+      // when the ConformanceOp body is resolved. The trait body will be
+      // resolved there.
     }
   }
 
@@ -5739,6 +5717,23 @@ StructASTDecl &ConformanceASTDecl::getStructDecl() const {
   return *structDecl;
 }
 
+TraitASTDecl &ConformanceASTDecl::getTraitDecl() const {
+  return cast<TraitASTDecl>(shared.getDeclResolver().getDeclForTypeSymbol(
+      getOp().getTraitSymbolAttr().getSymbol()));
+}
+
+ConformanceASTDecl *
+StructASTDecl::lookupConformance(TraitSymbolAttr traitSymbol) const {
+  ArrayRef<ASTDecl *> decls =
+      lookupInCurrentScope(traitSymbol.getFlattenedName());
+  if (decls.empty())
+    return nullptr;
+  // TODO: we might need to allow multiple conformance ops for parametric
+  // traits, and we need to filter it here.
+  assert(decls.size() == 1 && "expected exactly one conformance");
+  return &cast<ConformanceASTDecl>(*decls.front());
+}
+
 LogicalResult ConformanceASTDecl::resolveBody(Lexer &) {
   return resolveConformance();
 }
@@ -5749,17 +5744,71 @@ LogicalResult ConformanceASTDecl::resolveSyntheticBody() {
 
 LogicalResult ConformanceASTDecl::resolveConformance() {
   ConformanceOp op = getOp();
-  resolvedness = DeclResolvedness::body;
+  auto &resolver = shared.getDeclResolver();
+  StructASTDecl &structDecl = getStructDecl();
+  auto structDeclOp = structDecl.getOp();
 
   if (ConstraintAttr constraint = op.getConstraintAttr())
     if (!isTriviallyTrueConstraint(constraint))
       insertKnownAssumptions({constraint});
 
-  // Verify conformance explicitly.
-  std::optional<MojoInflightDiag> diag;
+  // Find extensions that target this struct and implement this trait.
+  // This implements a form of the orphan rule: extensions can be defined either
+  // in the same file as the struct or in the same file as the trait. This
+  // ensures that extensions/conformances are local to either the struct or the
+  // trait, preventing conflicting implementations across different files.
+  // TODO(MOCO-522): Turn this into arcana docs!
+  TraitASTDecl &traitDecl = getTraitDecl();
+  TraitSymbolAttr traitSymbol = op.getTraitSymbolAttr();
+  llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
+  if (auto *structFileScope =
+          structDecl.getNearestDeclOfType<FileModuleASTDecl>())
+    structFileScope->findExtensionsInScopeForStruct(
+        structDecl.getSymbolRef(), uniqueExtensions, traitSymbol);
+  if (auto *traitFileScope =
+          traitDecl.getNearestDeclOfType<FileModuleASTDecl>())
+    traitFileScope->findExtensionsInScopeForStruct(
+        structDecl.getSymbolRef(), uniqueExtensions, traitSymbol);
+  relevantExtensions.assign(uniqueExtensions.begin(), uniqueExtensions.end());
 
-  if (failed(verifyAndBuildConformance(*this, diag)))
+  // Make sure to fully resolve the trait first.
+  if (failed(resolver.resolveBody(traitDecl, getLoc())))
     return failure();
 
+  if (traitDecl.getOp().isRegisterPassable() &&
+      !structDeclOp.isRegisterPassable()) {
+    // Non-RP structs may conditionally conform to RP traits only when the
+    // conformance constraint implies the struct's RegisterPassable constraint.
+    // This guarantees that whenever the conformance is active, the struct is
+    // actually register-passable. Extension conformances skip the ancestor
+    // implication check in `StructASTDecl::resolveSignature`, so this is
+    // their only guard.
+    ConstraintAttr rpConstraint =
+        structDeclOp.getRegisterPassableConstraintAttr();
+    bool conformanceImpliesRP =
+        rpConstraint && op.getConstraintAttr() &&
+        isImplicationProven(rpConstraint.getProposition(),
+                            op.getConstraintAttr().getProposition());
+    if (!conformanceImpliesRP) {
+      shared.emitError(structDecl.getLoc(),
+                       "a struct must be register passable in order to "
+                       "inherit from a register passable trait");
+      return failure();
+    }
+  }
+
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
+        return failure();
+      if (isa<DefASTDecl, AliasASTDecl>(decl))
+        resolver.createConformanceMemberDecl(
+            *this, *decl, getWitnessName(decl->getIfOperation()));
+    }
+  }
   return success();
+}
+
+LogicalResult ConformanceWitnessASTDecl::resolveSyntheticBody() {
+  return verifyConformanceMember(*this);
 }

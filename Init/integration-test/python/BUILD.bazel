@@ -18,7 +18,6 @@ modular_nanobind_extension(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",

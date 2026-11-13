@@ -10,28 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Selects the `DeviceContext` implementation behind `max.gpu.host`.
+"""Selects the `DeviceContext` backend behind `max.gpu.host`.
 
-`max.gpu.host` takes the `device_context`, `device_graph`, `_nvidia_cuda`,
-and `_amdgpu_hip` names from here. This variant names the legacy
-implementation; an overlay replaces this file to swap in another one that
-exports the same names.
+The build system picks the backend by replacing this file with
+`max/_driver/max_license/device_context_hal/_dcc_overlay.mojo` under
+--config=hal-device-context. What differs between the two builds is the
+constant below and the `DeviceGraphInput` trait, which names a different trait
+per backend and so cannot be selected by a conditional alias.
 """
-
-from ._legacy.device_context import *
-from ._legacy.device_context import (
-    _CString,
-    _DeviceBufferCpp,
-    _DeviceContextPtr,
-    _DeviceFunctionPtr,
-    _DumpPath,
-    _check_dim_in_range,
-    _checked,
-)
-from ._legacy.device_graph import *
-from ._legacy._nvidia_cuda import *
-from ._legacy._nvidia_cuda import _CUstream_st
-from ._legacy._amdgpu_hip import HIP, HIP_MODULE, hipDevice_t, hipStream_t
 
 comptime HAL_DEVICE_CONTEXT = False
 """Whether `max.gpu.host` is the HAL `DeviceContext`."""
+
+from ._legacy.device_graph import LegacyDeviceGraphInput as DeviceGraphInput

@@ -273,108 +273,176 @@ M_driver_status_t M_driver_queue::enqueueBlit(MTL::Buffer *dst,
   return M_DRIVER_STATUS_SUCCESS;
 }
 
-M_driver_status_t M_driver_queue::setMemory(M_driver_memory_t dst,
-                                            uint64_t dstOffset, uint64_t size,
-                                            uint8_t value) {
-  // TRACY_ZONE_SCOPED_NC("MetalDeviceContext::enqueueSetMemory",
-  //                      TRACY_COLOR_PURPLE);
+namespace {
+// TODO(DRIV-712): copy of the legacy kernel in MetalDeviceContext.cpp; fix
+// both until the legacy one is removed. Edge blocks are written byte by byte
+// so bytes outside [begin, end) survive.
+constexpr const char kPatternFillSource[] = R"(
+#include <metal_stdlib>
+using namespace metal;
 
-  NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
-      NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
+struct PatternFillArgs {
+  uint4 pattern;
+  ulong begin;
+  ulong end;
+  ulong blocks;
+};
 
-  if (size == 0)
-    return M_DRIVER_STATUS_SUCCESS; // no-op
-
-  dstOffset += dst->offset;
-
-  if (dstOffset + size > dst->mBuffer->length())
-    return context->device->driver->status.create(
-        "Set size exceeds Metal buffer length");
-
-  void *dstContents = dst->mBuffer->contents();
-  if (dstContents == nullptr)
-    return context->device->driver->status.create(
-        "Shared buffer contents() returned null");
-
-  // Apply offset to get actual destination pointer
-  void *dstPtr = static_cast<char *>(dstContents) + dstOffset;
-
-  // A host memset into shared memory (see copyToDevice): drain, then write.
-  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
-  // flag wait; port the legacy blit/compute fill.
-  if (M_driver_status_t status = drainPriorWork();
-      status != M_DRIVER_STATUS_SUCCESS)
-    return status;
-  std::memset(dstPtr, value, size);
-  return M_DRIVER_STATUS_SUCCESS;
+kernel void pattern_fill(device uint4 *dst [[buffer(0)]],
+                         constant PatternFillArgs &args [[buffer(1)]],
+                         uint tid [[thread_position_in_grid]],
+                         uint threads [[threads_per_grid]]) {
+  for (ulong i = tid; i < args.blocks; i += threads) {
+    ulong lo = i * 16;
+    if (lo >= args.begin && lo + 16 <= args.end) {
+      dst[i] = args.pattern;
+      continue;
+    }
+    device uchar *out = reinterpret_cast<device uchar *>(dst + i);
+    constant uchar *pat = reinterpret_cast<constant uchar *>(&args.pattern);
+    for (uint b = 0; b < 16; ++b)
+      if (lo + b >= args.begin && lo + b < args.end)
+        out[b] = pat[b];
+  }
 }
+)";
+
+// Must match `PatternFillArgs` in kPatternFillSource.
+struct PatternFillArgs {
+  alignas(16) uint8_t pattern[16];
+  uint64_t begin;
+  uint64_t end;
+  uint64_t blocks;
+};
+static_assert(sizeof(PatternFillArgs) == 48, "layout of the MSL struct");
+
+DriverResult<MTL::ComputePipelineState *>
+getPatternFillPipeline(M_driver_context_t context) {
+  std::lock_guard<std::mutex> lock(context->patternFillMutex);
+  if (context->patternFill)
+    return context->patternFill.get();
+
+  MTL::Device *device = context->device->mDevice;
+  auto fail = [&](llvm::StringRef what, NS::Error *error) {
+    std::string message = "Failed to " + what.str();
+    if (error)
+      message += std::string(": ") +
+                 error->localizedDescription()->cString(NS::UTF8StringEncoding);
+    return tl::unexpected(context->device->driver->status.create(message));
+  };
+  NS::Error *error = nullptr;
+  NS::SharedPtr<MTL::Library> library = NS::TransferPtr(device->newLibrary(
+      NS::String::string(kPatternFillSource, NS::UTF8StringEncoding),
+      /*options=*/nullptr, &error));
+  if (!library)
+    return fail("compile the pattern fill kernel", error);
+  NS::SharedPtr<MTL::Function> function = NS::TransferPtr(library->newFunction(
+      NS::String::string("pattern_fill", NS::UTF8StringEncoding)));
+  if (!function)
+    return fail("find the pattern fill kernel", nullptr);
+  NS::SharedPtr<MTL::ComputePipelineState> pipeline =
+      NS::TransferPtr(device->newComputePipelineState(function.get(), &error));
+  if (!pipeline)
+    return fail("create the pattern fill pipeline", error);
+  context->patternFill = pipeline;
+  return pipeline.get();
+}
+
+void encodePatternFill(MTL::ComputeCommandEncoder *encoder,
+                       MTL::ComputePipelineState *pipeline, MTL::Buffer *dst,
+                       uint64_t dstOffset, uint64_t size, uint64_t value,
+                       uint64_t valueSize) {
+  // Aligned for the kernel's 16-byte stores. valueSize divides both 16 and
+  // dstOffset, so the pattern stays in phase.
+  const uint64_t bindOffset = dstOffset & ~uint64_t(15);
+  PatternFillArgs fillArgs;
+  for (size_t i = 0; i < sizeof(fillArgs.pattern); ++i)
+    fillArgs.pattern[i] = static_cast<uint8_t>(value >> (8 * (i % valueSize)));
+  fillArgs.begin = dstOffset - bindOffset;
+  fillArgs.end = fillArgs.begin + size;
+  fillArgs.blocks = (fillArgs.end + 15) / 16;
+
+  // The kernel loops over the range, so the grid only has to fill the GPU.
+  constexpr uint64_t kMaxThreadgroups = 1 << 16;
+  const NS::UInteger threadgroupSize =
+      std::min<NS::UInteger>(256, pipeline->maxTotalThreadsPerThreadgroup());
+  const NS::UInteger threadgroups = std::min<uint64_t>(
+      (fillArgs.blocks + threadgroupSize - 1) / threadgroupSize,
+      kMaxThreadgroups);
+
+  encoder->setComputePipelineState(pipeline);
+  encoder->setBuffer(dst, bindOffset, 0);
+  encoder->setBytes(&fillArgs, sizeof(fillArgs), 1);
+  encoder->dispatchThreadgroups(MTL::Size{threadgroups, 1, 1},
+                                MTL::Size{threadgroupSize, 1, 1});
+}
+} // namespace
 
 M_driver_status_t M_driver_queue::fillMemory(M_driver_memory_t dst,
                                              uint64_t dstOffset, uint64_t size,
                                              uint64_t value,
                                              uint64_t valueSize) {
-  if (valueSize == 1)
-    return setMemory(dst, dstOffset, size, static_cast<uint8_t>(value));
-
-  if (valueSize != 2 && valueSize != 4 && valueSize != 8)
+  if (valueSize != 1 && valueSize != 2 && valueSize != 4 && valueSize != 8)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (size % valueSize != 0)
     return M_DRIVER_STATUS_INVALID_ARG;
 
   NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
       NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
 
-  if (size == 0)
-    return M_DRIVER_STATUS_SUCCESS; // no-op
-
-  if ((size % valueSize) != 0)
-    return M_DRIVER_STATUS_INVALID_ARG;
-
   dstOffset += dst->offset;
-
   if (dstOffset + size > dst->mBuffer->length())
     return context->device->driver->status.create(
         "Fill size exceeds Metal buffer length");
-
-  void *dstContents = dst->mBuffer->contents();
-  if (dstContents == nullptr)
-    return context->device->driver->status.create(
-        "Shared buffer contents() returned null");
-
-  // Apply offset to get actual destination pointer
-  void *dstPtr = static_cast<char *>(dstContents) + dstOffset;
-
-  size_t count = size / valueSize;
-  if (reinterpret_cast<uintptr_t>(dstPtr) % valueSize != 0)
+  if (dstOffset % valueSize != 0)
     return context->device->driver->status.create(
         "destination buffer not properly aligned");
 
-  // A host fill into shared memory (see copyToDevice): drain, then write.
-  // TODO(DRIV-730): host write drains the queue, so it blocks behind a pending
-  // flag wait; port the legacy blit/compute fill.
-  if (M_driver_status_t status = drainPriorWork();
-      status != M_DRIVER_STATUS_SUCCESS)
-    return status;
-  switch (valueSize) {
-  case 2: {
-    uint16_t v16 = static_cast<uint16_t>(value);
-    uint16_t *p16 = static_cast<uint16_t *>(dstPtr);
-    for (size_t i = 0; i < count; ++i)
-      p16[i] = v16;
-    break;
+  // Encoded on the queue, like cuMemsetD*Async, so it orders behind pending
+  // waits without blocking the host. `fillBuffer` takes only one byte.
+  const auto fillByte = static_cast<uint8_t>(value);
+  bool byteUniform = true;
+  for (uint64_t i = 1; i < valueSize; ++i)
+    byteUniform &= static_cast<uint8_t>(value >> (8 * i)) == fillByte;
+
+  // Outside mMutex so a first-use compile does not stall other callers.
+  MTL::ComputePipelineState *pipeline = nullptr;
+  if (!byteUniform) {
+    DriverResult<MTL::ComputePipelineState *> compiled =
+        getPatternFillPipeline(context);
+    if (!compiled)
+      return compiled.error();
+    pipeline = *compiled;
   }
-  case 4: {
-    uint32_t v32 = static_cast<uint32_t>(value);
-    uint32_t *p32 = static_cast<uint32_t *>(dstPtr);
-    for (size_t i = 0; i < count; ++i)
-      p32[i] = v32;
-    break;
+
+  std::lock_guard<std::mutex> lock(mMutex);
+  MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
+  if (cmdBuffer == nullptr)
+    return context->device->driver->status.create(
+        "Failed to create command buffer for fill");
+  encodeDonatedWaits(cmdBuffer);
+  if (byteUniform) {
+    MTL::BlitCommandEncoder *encoder = cmdBuffer->blitCommandEncoder();
+    if (encoder == nullptr)
+      return context->device->driver->status.create(
+          "Failed to create blit encoder for fill");
+    encoder->fillBuffer(dst->mBuffer, NS::Range(dstOffset, size), fillByte);
+    encoder->updateFence(mOrderingFence.get());
+    encoder->endEncoding();
+  } else {
+    MTL::ComputeCommandEncoder *encoder = cmdBuffer->computeCommandEncoder();
+    if (encoder == nullptr)
+      return context->device->driver->status.create(
+          "Failed to create compute encoder for fill");
+    encodePatternFill(encoder, pipeline, dst->mBuffer, dstOffset, size, value,
+                      valueSize);
+    encoder->updateFence(mOrderingFence.get());
+    encoder->endEncoding();
   }
-  case 8: {
-    uint64_t *p64 = static_cast<uint64_t *>(dstPtr);
-    for (size_t i = 0; i < count; ++i)
-      p64[i] = value;
-    break;
-  }
-  }
+  commitWithTimeline(cmdBuffer);
+  mCommitSeq += 1;
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -717,7 +785,8 @@ M_driver_status_t M_driver_queue_set_memory(M_driver_queue_t queue,
     return M_DRIVER_STATUS_BAD_QUEUE;
   if (dst == nullptr)
     return M_DRIVER_STATUS_BAD_MEMORY;
-  return queue->setMemory(dst->memory, dst->offset, dst->size, value);
+  return queue->fillMemory(dst->memory, dst->offset, dst->size, value,
+                           /*valueSize=*/1);
 }
 
 M_driver_status_t M_driver_queue_fill(M_driver_queue_t queue,
@@ -814,12 +883,5 @@ M_driver_status_t
 M_driver_queue_launch_host_func([[maybe_unused]] M_driver_queue_t queue,
                                 [[maybe_unused]] void (*fn)(void *),
                                 [[maybe_unused]] void *user_data) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
-}
-
-M_driver_status_t
-M_driver_queue_wait_value64([[maybe_unused]] M_driver_queue_t queue,
-                            [[maybe_unused]] uint64_t device_address,
-                            [[maybe_unused]] uint64_t value) {
   return M_DRIVER_STATUS_UNIMPLEMENTED;
 }

@@ -23,7 +23,6 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
-from .memory_planner import DeepseekV41MemoryPlanner
 from .model import DeepseekV41Model
 from .model_config import DeepseekV41Config, dspark_draft_width
 from .tokenizer import DeepseekV41Tokenizer
@@ -47,7 +46,6 @@ deepseekV41_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=DeepseekV41Config,
-    memory_planner=DeepseekV41MemoryPlanner,
     # Speculative decoding drafts this many tokens per step, so the KV cache
     # reserves room for them.
     checkpoint_draft_width=dspark_draft_width,

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 import pytest
 from max.experimental.cascade import LocalRuntime, Runtime, Worker
@@ -104,3 +105,67 @@ async def test_serve_sizes_gpu_workers_only_when_unset_and_needed(
             ),
         )
     assert bool(calls) == sized
+
+
+def test_config_file_flag_binds_to_serve_not_sub_configs(
+    tmp_path: Path,
+) -> None:
+    """``--config-file`` must reach ``serve``'s own parameter.
+
+    Every flattened ``PipelineArgs`` sub-config inherits ``config_file``
+    from ``ConfigFileModel``. Without ``Parameter(parse=False)`` on those
+    inherited fields, each also binds ``--config-file`` and cyclopts
+    routes the token into a sub-config: a PipelineConfig-shaped recipe
+    then fails validation inside that sub-config, and the flag never
+    reaches the ``from_flat_kwargs`` merge in ``serve``.
+    """
+    recipe = tmp_path / "recipe.yaml"
+    recipe.write_text(
+        "model:\n  model_path: org/config-model\n  max_length: 2048\n"
+    )
+
+    coll = main.cli.assemble_argument_collection()
+    binding = [
+        arg
+        for arg in coll
+        if "--config-file" in arg.names and arg.parameter.parse
+    ]
+    assert len(binding) == 1, (
+        f"--config-file is bound by {len(binding)} arguments; only "
+        "serve() may bind it"
+    )
+    assert binding[0].keys == ()
+
+    # The real App must route the token to serve's own parameter. The
+    # rebuild must merge the recipe: the model section folds into the
+    # flat fields.
+    bound: dict[str, object] = {}
+
+    async def fake_deploy(
+        pipeline_args: PipelineArgs,
+        context_config: ContextConfig,
+        host: str,
+        port: int,
+    ) -> None:
+        bound["args"] = pipeline_args
+        raise _Stop
+
+    original = main._serve_deployed
+    main._serve_deployed = fake_deploy
+    try:
+        with pytest.raises(_Stop):
+            main.cli(
+                [
+                    "--model-path",
+                    "org/cli-model",
+                    "--config-file",
+                    str(recipe),
+                ]
+            )
+    finally:
+        main._serve_deployed = original
+
+    args = bound["args"]
+    assert isinstance(args, PipelineArgs)
+    assert args.model_path == "org/cli-model"
+    assert args.max_length == 2048

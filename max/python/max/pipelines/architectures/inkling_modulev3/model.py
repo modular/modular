@@ -36,7 +36,7 @@ from max.pipelines.lib import (
     SupportsSSMStateWarmup,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import override

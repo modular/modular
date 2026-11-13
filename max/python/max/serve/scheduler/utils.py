@@ -404,6 +404,12 @@ class BatchMetrics:
     dkv_peer_writeback_held_offloads: int = 0
     dkv_hinted_lookups: int = 0
     dkv_hinted_lookup_avg_ms: float = 0.0
+    # The peer attach wait: per-window counts published as counters on the
+    # same guard, and the window's mean wait, published as a histogram under
+    # its own > 0 guard like the hinted lookup's.
+    dkv_hinted_attach_waits: int = 0
+    dkv_hinted_attach_wait_avg_ms: float = 0.0
+    dkv_hinted_attach_wait_timeouts: int = 0
     # The dKV orphan queue: per-window outcome counts that publish as counters
     # and a depth level that publishes as a gauge, on the same guard. See
     # KVCacheMetrics for what each counts.
@@ -628,6 +634,9 @@ class BatchMetrics:
         dkv_peer_writeback_held_offloads = 0
         dkv_hinted_lookups = 0
         dkv_hinted_lookup_avg_ms = 0.0
+        dkv_hinted_attach_waits = 0
+        dkv_hinted_attach_wait_avg_ms = 0.0
+        dkv_hinted_attach_wait_timeouts = 0
         dkv_orphan_cleanups_reissued = 0
         dkv_orphan_cleanups_abandoned = 0
         dkv_orphan_cleanups_dropped = 0
@@ -840,6 +849,13 @@ class BatchMetrics:
             dkv_hinted_lookups = metrics_agg.dkv_hinted_lookups
             # Summed across replicas then averaged, like the rpc latencies.
             dkv_hinted_lookup_avg_ms = metrics_agg.dkv_hinted_lookup_avg_ms
+            dkv_hinted_attach_waits = metrics_agg.dkv_hinted_attach_waits
+            dkv_hinted_attach_wait_avg_ms = (
+                metrics_agg.dkv_hinted_attach_wait_avg_ms
+            )
+            dkv_hinted_attach_wait_timeouts = (
+                metrics_agg.dkv_hinted_attach_wait_timeouts
+            )
             dkv_orphan_cleanups_reissued = (
                 metrics_agg.dkv_orphan_cleanups_reissued
             )
@@ -1019,6 +1035,9 @@ class BatchMetrics:
             dkv_peer_writeback_held_offloads=dkv_peer_writeback_held_offloads,
             dkv_hinted_lookups=dkv_hinted_lookups,
             dkv_hinted_lookup_avg_ms=dkv_hinted_lookup_avg_ms,
+            dkv_hinted_attach_waits=dkv_hinted_attach_waits,
+            dkv_hinted_attach_wait_avg_ms=dkv_hinted_attach_wait_avg_ms,
+            dkv_hinted_attach_wait_timeouts=dkv_hinted_attach_wait_timeouts,
             dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=dkv_orphan_cleanups_abandoned,
             dkv_orphan_cleanups_dropped=dkv_orphan_cleanups_dropped,
@@ -1564,6 +1583,13 @@ class BatchMetrics:
             )
             extra["dkv_hinted_lookups"] = self.dkv_hinted_lookups
             extra["dkv_hinted_lookup_avg_ms"] = self.dkv_hinted_lookup_avg_ms
+            extra["dkv_hinted_attach_waits"] = self.dkv_hinted_attach_waits
+            extra["dkv_hinted_attach_wait_avg_ms"] = (
+                self.dkv_hinted_attach_wait_avg_ms
+            )
+            extra["dkv_hinted_attach_wait_timeouts"] = (
+                self.dkv_hinted_attach_wait_timeouts
+            )
             extra["dkv_orphan_cleanups_reissued"] = (
                 self.dkv_orphan_cleanups_reissued
             )
@@ -1776,6 +1802,10 @@ class BatchMetrics:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
         if self.dkv_hinted_lookup_avg_ms > 0:
             METRICS.dkv_hinted_lookup_latency(self.dkv_hinted_lookup_avg_ms)
+        if self.dkv_hinted_attach_wait_avg_ms > 0:
+            METRICS.dkv_hinted_attach_wait_latency(
+                self.dkv_hinted_attach_wait_avg_ms
+            )
         if self.dkv_peer_writeback_hold_avg_ms > 0:
             METRICS.dkv_peer_writeback_hold_latency(
                 self.dkv_peer_writeback_hold_avg_ms
@@ -1855,6 +1885,10 @@ class BatchMetrics:
                 self.dkv_peer_writeback_held_offloads
             )
             METRICS.dkv_hinted_lookups(self.dkv_hinted_lookups)
+            METRICS.dkv_hinted_attach_waits(self.dkv_hinted_attach_waits)
+            METRICS.dkv_hinted_attach_wait_timeouts(
+                self.dkv_hinted_attach_wait_timeouts
+            )
             METRICS.dkv_orphan_cleanups_reissued(
                 self.dkv_orphan_cleanups_reissued
             )

@@ -182,12 +182,12 @@ struct Complicated(Movable where False):
 # CHECK-LABEL: lit.fn @"testTakePointeeAsOwned1
 def testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # This should run the destructor.
-  # CHECK-NEXT: [[REF1:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: [[REF1:%.*]] = lit.ref.from_pointer %ptr "(reference value)" end_uninit :
   # CHECK-NEXT: lit.ownership.use [[REF1]]
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
-  # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr "(reference value)" end_uninit :
   # CHECK-NEXT: lit.ownership.use [[REF2]]
   _ = __get_address_as_owned_value(ptr)
   # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[REF2]])
@@ -199,12 +199,12 @@ def testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
                           i1ptr: __mlir_type.`!kgen.pointer<i1>`):
 
   # The RValue can be consumed directly.
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr "(reference value)" end_uninit :
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[REF]])
   consume(__get_address_as_owned_value(ptr))
 
   # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr end_uninit :
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr "(reference value)" end_uninit :
   # CHECK-NEXT: %ownedI1 = lit.var.decl
   # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume [[REF]]
   # CHECK-NEXT: lifetime.start %ownedI1
@@ -220,7 +220,7 @@ def testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
 def testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
    # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr "(reference value)" start_uninit :
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
@@ -235,7 +235,7 @@ def testCondGetAsUninitializedObject(exit_early: __mlir_type.`!kgen.scalar<bool>
   if exit_early:
       return
 
-  # CHECK: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
+  # CHECK: [[REF:%.*]] = lit.ref.from_pointer %ptr "(reference value)" start_uninit :
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   # CHECK-NEXT: %none = kgen.param.constant: none
   # CHECK-NEXT: hlcf.return %none

@@ -77,6 +77,21 @@ public:
   /// Return the path to the kgen-compiler-rt library.
   StringRef getCompilerRTPath();
 
+  /// Return the path to the kgen-compiler-rt library built with
+  /// ThreadSanitizer, which ThreadSanitizer executables link in place of the
+  /// default one.
+  StringRef getCompilerRTTSanPath();
+
+  /// Return the path to the driver runtime library (libMDriver) built with
+  /// ThreadSanitizer, which ThreadSanitizer executables link in place of the
+  /// default one.
+  StringRef getMDriverTSanPath();
+
+  /// Return the path to the AsyncRT runtime globals library built on the
+  /// system allocator, which ThreadSanitizer executables link in place of the
+  /// tcmalloc one.
+  StringRef getRuntimeGlobalsTSanPath();
+
   /// Return the path to the mgp-rt library.
   StringRef getMGPRTPath();
 
@@ -86,9 +101,6 @@ public:
 
   /// Return the path to the `mojo` driver in the mojo install.
   StringRef getDriverPath();
-
-  /// Return the path to the Mojo jupyter library.
-  StringRef getJupyterPath();
 
   /// Return the path to the Mojo LSP server.
   StringRef getLSPServerPath();

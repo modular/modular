@@ -158,6 +158,7 @@ MODELS: Mapping[str, set[str]] = {
     "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | VARIANT | _2xB200,
     "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3": NIGHTLY | VARIANT | _2xB200,
     "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3_dflash": NIGHTLY | VARIANT | _2xB200,
+    "zai-org/GLM-5.3-Flash__mtp_tpep_4xb200": NIGHTLY | VARIANT | MACH | _4xB200,
     "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": NIGHTLY | VARIANT | _2xMI355,
     "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | VARIANT | _4xB200,
     "zai-org/GLM-5.3-Flash__tpep_mi355": NIGHTLY | VARIANT | _2xMI355,

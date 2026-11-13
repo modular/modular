@@ -504,11 +504,22 @@ def test_simplify_perm():
     perm2 = IndexList[2](1, 0)
     shape2 = IndexList[2](20, 1)
     _simplify_transpose_perms[2](rank, shape2, perm2)
-    # CHECK: 0
+    # CHECK: (0, 0)
     print(perm2)
-    # CHECK: 20
+    # CHECK-NEXT: (20, 0)
     print(shape2)
-    # CHECK: 1
+    # CHECK-NEXT: 1
+    print(rank)
+
+    rank = 3
+    var perm3 = IndexList[3](2, 0, 1)
+    var shape3 = IndexList[3](4, 5, 1)
+    _simplify_transpose_perms[3](rank, shape3, perm3)
+    # CHECK: (0, 0, 0)
+    print(perm3)
+    # CHECK-NEXT: (20, 0, 0)
+    print(shape3)
+    # CHECK-NEXT: 1
     print(rank)
 
 

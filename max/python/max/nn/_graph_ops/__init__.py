@@ -600,7 +600,7 @@ def rope_split_store_ragged(
             interleaved=interleaved,
         )
 
-    parameters: dict[str, bool | int | str | DType] = {
+    parameters: dict[str, bool | int | float | str | DType] = {
         "interleaved": interleaved,
     }
 
@@ -643,14 +643,12 @@ def rope_split_store_ragged(
         ]
     elif q_norm_weight is not None:
         # Fused per-head Q/K/V RMS-norm folded into the RoPE+store op: q/k use
-        # the learned gammas, v is a bare norm. `eps` is passed as its integer
-        # reciprocal (custom-op params reject float; eps is negligible vs
-        # mean(x^2), so this is ample precision).
+        # the learned gammas, v is a bare norm.
         assert k_norm_weight is not None
         if rms_norm_eps is None:
             raise ValueError("rms_norm_eps is required with q_norm_weight")
         op_name = "kv_cache.rope_split_store.ragged.paged.with_qk_norm"
-        parameters["eps_recip"] = round(1.0 / rms_norm_eps)
+        parameters["epsilon"] = float(rms_norm_eps)
         # When `k_eq_v`, V has no projection: `qkv` is `[q|k]` and the kernel
         # reads the K region for both K and V (sharing one norm reduction)
         # rather than a duplicated V region.
@@ -15849,6 +15847,72 @@ def gumbel_argmax_from_probs(
             TensorType(
                 dtype=DType.int64, shape=[probs.shape[0]], device=probs.device
             )
+        ],
+    )[0].tensor
+
+
+def gumbel_argmax_from_residual(
+    probs: TensorValue,
+    proposal: TensorValue,
+    *,
+    fallback: TensorValue,
+    seed: TensorValue,
+) -> TensorValue:
+    """Draws one token per row, proportionally to ``max(probs - proposal, 0)``.
+
+    Gumbel-max over ``ln(max(p - q, 0))``: a token with no residual mass can
+    never win while the row has any, and row normalization does not matter.
+    The subtract and the clamp happen inside the sampling pass, so neither the
+    selected proposal mass nor the residual is written to or read from HBM. A
+    graph of ``ops.relu(p - q)`` feeding :func:`gumbel_argmax_from_probs` is
+    the same draw for two extra ``[rows, vocab_size]`` round-trips plus the
+    ops that select the one-hot rows below.
+
+    The noise is generated inside the kernel from the per-row ``seed``, with
+    the same per-element sequence :func:`gumbel_argmax_from_probs` uses, so a
+    row draws identically whichever of the two it goes through.
+
+    ``fallback`` carries one drafted token id per row: a non-negative entry
+    makes that row subtract a one-hot at the token instead of ``proposal``,
+    which is exactly the token a rejection step wants removed from a row with
+    no proposal distribution. ``-1`` subtracts ``proposal``. GPU-only, and not
+    supported on Apple GPUs, where the kernel's block reduction cannot cover a
+    full-sized block.
+
+    Args:
+        probs: Target probabilities ``[rows, vocab_size]``, float32.
+        proposal: Proposal probabilities ``[rows, vocab_size]``, float32 and
+            contiguous.
+        fallback: Per-row drafted token ids ``[rows]``, int64; ``-1`` for a row
+            that should subtract ``proposal``.
+        seed: Per-row RNG seed ``[rows]``, uint64.
+
+    Returns:
+        The drawn token id per row, ``int64 [rows]``.
+
+    Raises:
+        ValueError: If the shapes or dtypes do not match the contract.
+    """
+    rows = probs.shape[0]
+    if proposal.rank != 2:
+        raise ValueError(
+            f"gumbel_argmax_from_residual requires rank-2 proposal, got"
+            f" {proposal.rank}"
+        )
+    if fallback.rank != 1:
+        raise ValueError(
+            f"gumbel_argmax_from_residual requires a rank-1 fallback, got"
+            f" {fallback.rank}"
+        )
+    if probs.device == DeviceRef.CPU():
+        raise ValueError("gumbel_argmax_from_residual is GPU-only")
+
+    return ops.custom(
+        "sampler.gumbel_argmax_from_residual",
+        device=probs.device,
+        values=[seed, probs, proposal, fallback],
+        out_types=[
+            TensorType(dtype=DType.int64, shape=[rows], device=probs.device)
         ],
     )[0].tensor
 

@@ -34,6 +34,11 @@ from layout import (
     row_major,
 )
 from internal_utils.fp8_utils import cast_saturating
+from nn.indexer_qk_quantize import (
+    INDEX_HEAD_DIM,
+    indexer_k_quantize_store,
+    indexer_q_ssmax_rope_quantize,
+)
 from nn.kv_cache import (
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
@@ -418,6 +423,133 @@ struct Struct_kv_cache_store_k_scales_paged:
             input_fn,
             context,
             Int(dcp_rank),
+        )
+
+
+@extensibility.register("indexer.k.quantize_store.fp8.paged.ragged")
+struct Struct_indexer_k_quantize_store_fp8_paged:
+    """Registers `indexer.k.quantize_store.fp8.paged.ragged`.
+
+    Normalizes the 128 channels of each raw index key out of the merged
+    projection's row (they start at `key_col_offset`) with a biased LayerNorm,
+    rotates their leading `rope_dim` columns with interleaved RoPE,
+    FP8-quantizes them with one E8M0 scale each, and stores the keys and their
+    float32 scales in the paged indexer cache -- the chain
+    `reduce.layer_norm`, `rope_ragged`,
+    `quantize_dynamic_scaled_float8`, `kv_cache.store.paged.ragged` and
+    `kv_cache.store_k_scales.paged.ragged` run, in one launch.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        quantization_granularity: Int,
+        rope_dim: Int,
+        key_col_offset: Int,
+    ](
+        k: InputTensor[dtype=.bfloat16, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        k_scales_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        gamma: InputTensor[rank=1, ...],
+        beta: InputTensor[rank=1, ...],
+        epsilon: Float32,
+        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert context.target.is_gpu(), "only valid on GPUs"
+        # The kernel quantizes a whole 128-channel key with one scale and
+        # stores it at block 0, so a finer granularity would drop scales.
+        comptime assert (
+            quantization_granularity == INDEX_HEAD_DIM
+        ), "an indexer key takes one scale per 128 channels"
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
+
+        var k_collection = generic_get_paged_cache_with_scales[
+            DType.float8_e4m3fn,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
+            k_scales_blocks.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            k_scales_lookup_table.to_tile_tensor(),
+        )
+        indexer_k_quantize_store[
+            rope_dim=rope_dim,
+            key_col_offset=key_col_offset,
+            gamma_dtype=type_of(gamma).dtype,
+            beta_dtype=type_of(beta).dtype,
+        ](
+            k_collection.get_key_cache(Int(layer_idx)),
+            k.to_tile_tensor(),
+            gamma.to_tile_tensor(),
+            beta.to_tile_tensor(),
+            epsilon,
+            freqs_cis.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            start_pos.to_tile_tensor(),
+            context,
+        )
+
+
+@extensibility.register("indexer.q.ssmax_rope_quantize.fp8")
+struct Struct_indexer_q_ssmax_rope_quantize_fp8:
+    """Registers `indexer.q.ssmax_rope_quantize.fp8`.
+
+    Applies SSMax to a `[rows, heads, 128]` index query, rotates the leading
+    `rope_dim` columns of each head, and FP8-quantizes each head with one
+    E8M0 scale, in one launch. See `nn.indexer_qk_quantize`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        rope_dim: Int,
+    ](
+        q_out: OutputTensor[dtype=.float8_e4m3fn, rank=3, ...],
+        scale_out: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        q: InputTensor[dtype=.bfloat16, rank=3, ...],
+        positions: InputTensor[dtype=.uint32, rank=1, ...],
+        ssmax_s: InputTensor[dtype=.bfloat16, rank=1, ...],
+        ssmax_b: InputTensor[dtype=.bfloat16, rank=1, ...],
+        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert context.target.is_gpu(), "only valid on GPUs"
+        indexer_q_ssmax_rope_quantize[rope_dim](
+            q_out.to_tile_tensor(),
+            scale_out.to_tile_tensor(),
+            q.to_tile_tensor(),
+            positions.to_tile_tensor(),
+            ssmax_s.to_tile_tensor(),
+            ssmax_b.to_tile_tensor(),
+            freqs_cis.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            start_pos.to_tile_tensor(),
+            context,
         )
 
 

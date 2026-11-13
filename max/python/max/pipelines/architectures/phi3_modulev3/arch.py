@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
@@ -43,7 +42,6 @@ phi3_modulev3_arch = SupportedArchitecture(
         WeightsFormat.gguf: convert_gguf_state_dict,
     },
     config=Llama3DecoderConfig,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

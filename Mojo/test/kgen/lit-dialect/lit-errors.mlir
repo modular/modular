@@ -351,19 +351,19 @@ lit.struct.decl @NotAnEnum {
 
 // -----
 
-lit.struct.decl @EnumEmptyCaseName attributes {isEnum} {
+lit.struct.decl @EnumEmptyCaseName {
   // expected-error @below {{'lit.enum.case' op expected a non-empty case name}}
   "lit.enum.case"() <{name = "", payloadTypes = []}> : () -> ()
-}
+} <isEnum>
 
 // -----
 
-lit.struct.decl @EnumDuplicateCase attributes {isEnum} {
+lit.struct.decl @EnumDuplicateCase {
   // expected-note @below {{see previous declaration here}}
   lit.enum.case a : []
   // expected-error @below {{duplicate enum case "a"}}
   lit.enum.case a : [i32]
-}
+} <isEnum>
 
 // -----
 

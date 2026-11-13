@@ -80,10 +80,12 @@ void KGENDialect::registerTypes() {
   registerPrettyType(
       "non_struct_type", &NonStructTypeType::parse,
       mlir::TypeID::get<NonStructTypeType>(),
-      +[](AsmPrinter &p, Type) { p << "non_struct_type"; });
+      +[](AsmPrinter &p, Type) { p << "non_struct_type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "non_struct_type"; });
   registerPrettyType(
       "type", &TypeType::parse, mlir::TypeID::get<TypeType>(),
-      +[](AsmPrinter &p, Type) { p << "type"; });
+      +[](AsmPrinter &p, Type) { p << "type"; },
+      +[](AsmPrinter &p, Type, KGENParamPrinter &) { p << "type"; });
   registerMnemonicType<DTypeType>();
   registerMnemonicType<PointerType>();
   registerMnemonicType<NoneType>();
@@ -103,6 +105,9 @@ void KGENDialect::registerTypes() {
       +[](AsmPrinter &p, Type type) {
         KGENParamPrinter::createDiagnosticPrinter().printSIMDBody(
             p, cast<SIMDType>(type));
+      },
+      +[](AsmPrinter &p, Type type, KGENParamPrinter &printer) {
+        printer.printSIMDBody(p, cast<SIMDType>(type));
       });
   registerKeywordParser("scalar", [](AsmParser &p) -> Type {
     TypedAttr resultDType;
@@ -115,49 +120,37 @@ void KGENDialect::registerTypes() {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamPrintableTypeInterface
+// Param-aware printing
 //===----------------------------------------------------------------------===//
+// The mnemonic is emitted by the registration lambda, so these print only the
+// body.
 
-void StructInstanceType::printWith(AsmPrinter &p,
-                                   KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void StructInstanceType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printStructInstanceBody(p, *this);
 }
 
-void StructType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void StructType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printStructBody(p, *this);
 }
 
-void PointerType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void PointerType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printPointerBody(p, *this);
 }
 
-void ParamListType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void ParamListType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printParamListBody(p, *this);
 }
 
-void TypeValueType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void TypeValueType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printTypeValueBody(p, *this);
 }
 
-void VariantType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
-  p << getMnemonic();
+void VariantType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printVariantBody(p, *this);
 }
 
-void SIMDType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+void SIMDType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printSIMDBody(p, *this);
-}
-
-// Not registered as a pretty type, so it prints with its dialect prefix.
-void FuncLiteralType::printWith(AsmPrinter &p,
-                                KGENParamPrinter &printer) const {
-  p << "!kgen." << getMnemonic();
-  printer.printFuncLiteralBody(p, *this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2371,6 +2364,10 @@ SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
 
 SIMDType SIMDType::getScalarBoolType(MLIRContext *ctx) {
   return get(ctx, /*size=*/1, KGENDType::kBool);
+}
+
+SIMDType SIMDType::getScalarIndexType(MLIRContext *ctx) {
+  return get(ctx, /*size=*/1, KGENDType::index);
 }
 
 SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,

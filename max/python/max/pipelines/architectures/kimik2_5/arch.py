@@ -18,7 +18,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
-from .memory_planner import KimiK25MemoryPlanner
 from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
@@ -48,7 +47,6 @@ kimik2_5_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
     # Its language model is DeepseekV3's, whose Eagle3 drafts it takes too.
     # Its DFlash draft runs MHA over an MLA target, sharded like it.
     draft_architectures={
@@ -90,7 +88,6 @@ kimivl_arch = SupportedArchitecture(
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

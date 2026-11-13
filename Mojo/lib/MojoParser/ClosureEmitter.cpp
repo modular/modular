@@ -211,7 +211,7 @@ addConformanceTable(StructASTDecl &structDecl,
   // it during constraint checking.
   ASTDecl &conformDecl = structDecl.getShared().getDeclResolver().addDecl(
       witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
-  conformDecl.resolvedness = DeclResolvedness::signature;
+  conformDecl.resolvedness = DeclResolvedness::body;
 
   // Update the types of the struct wrapper.
   TraitType oldTraitType = structDeclOp.getCanonicalTrait();
@@ -1935,7 +1935,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
     ASTDecl &conformDecl = shared.declResolver->addDecl(
         witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
-    conformDecl.resolvedness = DeclResolvedness::signature;
+    conformDecl.resolvedness = DeclResolvedness::body;
 
     // Marker traits like AnyType have no methods -- empty ConformanceOp is
     // sufficient for TypeConformsToTraitAttr::simplify().

@@ -83,11 +83,6 @@ bool AsyncDataflowDependencies::maybeSameAs(Value lhs, Value rhs) const {
   return valueAnalysis.index->areEquivalent(maybeSameAsEquivalence, lhs, rhs);
 }
 
-AsyncDataflowDependencies::ValueSet
-AsyncDataflowDependencies::maybeSameAsSet(Value lhs) const {
-  return valueAnalysis.index->getEquivalenceClass(maybeSameAsEquivalence, lhs);
-}
-
 bool AsyncDataflowDependencies::isAlwaysReady(Value value) const {
   return valueAnalysis.index->setContains(alwaysReadyPredicate, value);
 }

@@ -17,16 +17,19 @@
 # COM: Synthesized constructors should not emit debuginfo.
 
 # CHECK: lit.struct.decl @MyValueStruct(!AnyType_Copyable_Deinitable_Movable)
-# CHECK-SAME: attributes {sourceName = #MyValueStruct_name}
+# CHECK: } <sourceName = #MyValueStruct_name>
 
 # Default trait methods for Copyable / Movable / Deinitable.
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "copy($0)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:$0$)"
 # CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__deinit__($0$)"
 
-# Bool EnumLike (and transitive SIMD stringification) from the stubs.
+# Bool EnumLike (and transitive SIMD stringification, and the copy and move
+# constructors of its `Tuple[]` payload type) from the stubs.
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__str__(::SIMD[$0, $1])"
 # CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "_unsafe_get_enum_payload{{.*}}(::Bool%)"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(copy:::Tuple[$0, $1])"
+# CHECK-DAG: #debuginfo.subprogram<compileUnit = #{{.*}}linkageName = "__init__(move:::Tuple[$0, $1]$)"
 
 # CHECK-NOT: #debuginfo.subprogram
 

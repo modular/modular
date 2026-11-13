@@ -12,34 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """CUDA native-handle accessors for the HAL `DeviceContext`."""
 
-from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
+from .device_context_hal import (
+    HALDeviceContext,
+    HALDeviceFunction,
+    HALDeviceStreamBase,
+)
 from std.memory.pointer import unsafe_cast
-
-
-struct _CUctx_st:
-    pass
-
-
-struct _CUstream_st:
-    pass
-
-
-struct _CUmod_st:
-    pass
-
-
-struct _CUevent_st:
-    pass
-
-
-comptime CUcontext = Optional[Pointer[_CUctx_st, UntrackedOrigin[mut=True]]]
-comptime CUstream = Optional[Pointer[_CUstream_st, UntrackedOrigin[mut=True]]]
-comptime CUmodule = Optional[Pointer[_CUmod_st, UntrackedOrigin[mut=True]]]
-comptime CUevent = Optional[Pointer[_CUevent_st, UntrackedOrigin[mut=True]]]
+from max.gpu.host._vendor_handles import (
+    _CUstream_st,
+    CUcontext,
+    CUstream,
+    CUmodule,
+)
 
 
 @inline(.always)
-def CUDA(ctx: DeviceContext) raises -> CUcontext:
+def CUDA(ctx: HALDeviceContext) raises -> CUcontext:
     raise Error(
         "CUcontext access is not wired for the HAL DeviceContext; the plugin"
         " exposes it via M_driver_context_get_current_driver_context"
@@ -47,7 +35,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
 
 
 @inline(.always)
-def CUDA(stream: DeviceStreamBase) raises -> CUstream:
+def CUDA(stream: HALDeviceStreamBase) raises -> CUstream:
     """Returns the `CUstream` backing a HAL stream.
 
     The HAL queue reports its backend stream through the `"native_handle"`
@@ -70,7 +58,7 @@ def CUDA(stream: DeviceStreamBase) raises -> CUstream:
 
 
 @inline(.always)
-def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
+def CUDA_MODULE(func: HALDeviceFunction) raises -> CUmodule:
     raise Error(
         "CUmodule access is not wired for the HAL DeviceContext; the plugin"
         " exposes it via M_DRIVER_FUNCTION_PROPERTY_NATIVE_HANDLE"

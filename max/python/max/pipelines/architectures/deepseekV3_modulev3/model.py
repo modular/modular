@@ -34,7 +34,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.registration_runtime import ModuleRuntime
 from max.tensor import default_device
 from max.tensor.sharding import DeviceMesh

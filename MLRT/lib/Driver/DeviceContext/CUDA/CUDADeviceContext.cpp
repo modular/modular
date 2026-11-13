@@ -328,8 +328,6 @@ const CUDADriver &CUDADevice::cudaDriver() const { return driver_; }
 
 CUdevice CUDADevice::cudaDevice() const { return cudaDevice_; }
 
-nvmlDevice_t *CUDADevice::getNvmlDevice() { return &nvmlDevice_; }
-
 ErrorOr<CUcontext> CUDADevice::cudaContext() const { return context_; }
 
 ErrorOr<int> CUDADevice::getApiVersion() const {

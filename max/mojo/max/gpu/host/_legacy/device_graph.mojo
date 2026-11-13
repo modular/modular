@@ -36,46 +36,51 @@ from std.reflection import call_location, SourceLocation
 from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.builtin.device_passable import DevicePassable
 
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+    DeviceContext,
+    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.function import (
+    DeviceExternalFunction,
+    DeviceFunction,
+)
 from max.runtime.async_value import AnyAsyncValueRef
 
 from .device_context import (
-    DeviceBuffer,
-    DeviceContext,
-    DeviceExternalFunction,
-    DeviceFunction,
-    HostBuffer,
+    LegacyDeviceBuffer,
+    LegacyDeviceContext,
+    LegacyDeviceExternalFunction,
+    LegacyDeviceFunction,
+    LegacyHostBuffer,
+    _FunctionEnqueuer,
+)
+from max.gpu.host._driver_common import (
     _check_dim_in_range,
     _checked,
+    _DumpPath,
+)
+from max.gpu.host._driver_handles import (
     _CString,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_handles import (
+    _DeviceContextPtr,
+    _DeviceBufferPtr,
+    _DeviceFunctionPtr,
+    _DeviceGraphBuilderPtr,
+    _DeviceGraphPtr,
+    _CString,
+)
+from max.gpu.host._driver_common import (
     _DumpPath,
-    _FunctionEnqueuer,
+    _checked,
+    _check_dim_in_range,
 )
 
 comptime _logger = Logger()
-
-
-struct _DeviceGraphBuilderCpp:
-    pass
-
-
-struct _DeviceGraphCpp:
-    pass
-
-
-comptime _DeviceGraphBuilderPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphBuilderCpp, origin]]
-
-comptime _DeviceGraphPtr[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = Optional[Pointer[_DeviceGraphCpp, origin]]
 
 
 struct _DeviceGraphMemoryPoolCpp:
@@ -90,7 +95,7 @@ comptime _DeviceGraphMemoryPoolPtr[
 
 
 @fieldwise_init
-struct DeviceGraphNode[arena_origin: ImmOrigin](
+struct LegacyDeviceGraphNode[arena_origin: ImmOrigin](
     TrivialRegisterPassable, Writable
 ):
     """A handle to a node in an under-construction device graph.
@@ -139,7 +144,7 @@ struct _GraphDepArgs[origin: ImmOrigin](TrivialRegisterPassable):
 @inline(.always)
 def _pack_dep_args[
     o: ImmOrigin
-](deps: Span[DeviceGraphNode[o], _]) -> _GraphDepArgs[deps.origin]:
+](deps: Span[LegacyDeviceGraphNode[o], _]) -> _GraphDepArgs[deps.origin]:
     """Packs an explicit dependency list into the (ids, count) pair used by
     the AsyncRT_DeviceGraphBuilder_add* C ABI exports.
 
@@ -158,7 +163,7 @@ def _pack_dep_args[
 
 
 @doc_hidden
-struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
+struct LegacyDeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
     """Owning handle to a device graph memory pool shared across graphs.
 
     Every allocation a device graph records must stay reserved for the graph's
@@ -177,7 +182,7 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
     """
 
     var _handle: _DeviceGraphMemoryPoolPtr[mut=True]
-    var _ctx: DeviceContext[]
+    var _ctx: LegacyDeviceContext[]
 
     def __init__(out self, ctx: DeviceContext[]):
         """Creates a fresh pool bound to the context's device.
@@ -185,14 +190,15 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
         Args:
             ctx: The device context whose device the pool allocates from.
         """
+        var legacy_ctx = ctx.unwrap_legacy()
         # DeviceGraphMemoryPool *AsyncRT_DeviceContext_createGraphMemoryPool(
         #     DeviceContext *ctx)
         self._handle = external_call[
             "AsyncRT_DeviceContext_createGraphMemoryPool",
             _DeviceGraphMemoryPoolPtr[mut=True],
             _DeviceContextPtr[mut=True],
-        ](ctx._handle)
-        self._ctx = ctx
+        ](legacy_ctx._handle)
+        self._ctx = legacy_ctx
 
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing pool handle by incrementing its
@@ -219,7 +225,7 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
             _DeviceGraphMemoryPoolPtr[mut=True],
         ](self._handle)
 
-    def __eq__(self, other: DeviceGraphMemoryPool) -> Bool:
+    def __eq__(self, other: LegacyDeviceGraphMemoryPool) -> Bool:
         return self._handle == other._handle
 
     def write_to(self, mut writer: Some[Writer]):
@@ -229,7 +235,7 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
 
 
 @fieldwise_init
-struct StableAddr(TrivialRegisterPassable):
+struct LegacyStableAddr(TrivialRegisterPassable):
     """Identifies a stable address slot.
 
     A slot is a graph-lifetime location in device memory holding one device data
@@ -249,7 +255,7 @@ struct StableAddr(TrivialRegisterPassable):
     """Device address of the slot; the slot holds the device data pointer."""
 
 
-struct DeviceGraphCache(Movable):
+struct LegacyDeviceGraphCache(Movable):
     """Holds the device graphs a model has already built, keyed for reuse.
 
     A graph is expensive to record and instantiate, so
@@ -264,13 +270,13 @@ struct DeviceGraphCache(Movable):
     recording rather than a single shared graph.
     """
 
-    var _cache: Dict[String, DeviceGraph]
-    var _pools: Dict[Int, DeviceGraphMemoryPool]
+    var _cache: Dict[String, LegacyDeviceGraph]
+    var _pools: Dict[Int, LegacyDeviceGraphMemoryPool]
     """Shared memory pools, one per device context the cache has seen, keyed
     by the context's pointer identity. Each pool retains its C++ context, so a
     key's referent stays alive for as long as its entry does."""
 
-    var _stable: Dict[String, List[DeviceBuffer[DType.uint64]]]
+    var _stable: Dict[String, List[LegacyDeviceBuffer[DType.uint64]]]
     """Stable address slots, one list per collective keyed by the collective's
     identity. Each slot is a one-pointer device buffer; the cache owns them so
     they outlive every graph variant that bakes in their addresses."""
@@ -289,9 +295,9 @@ struct DeviceGraphCache(Movable):
 
     @staticmethod
     def make_key[
-        *Ts: DeviceGraphInput
+        *Ts: LegacyDeviceGraphInput
     ](
-        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        build: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
         *inputs: *Ts,
     ) -> String:
         """Derives the cache key for a graph built from the given inputs.
@@ -315,7 +321,7 @@ struct DeviceGraphCache(Movable):
 
     @staticmethod
     def make_key[
-        *Ts: DeviceGraphInput
+        *Ts: LegacyDeviceGraphInput
     ](*inputs: *Ts,) -> String:
         """Derives the input-only cache key for a graph.
 
@@ -351,13 +357,13 @@ struct DeviceGraphCache(Movable):
     # which the variadic spelling above cannot express.
     @staticmethod
     def _make_key[
-        origin: ImmOrigin, //, *Ts: DeviceGraphInput
+        origin: ImmOrigin, //, *Ts: LegacyDeviceGraphInput
     ](
-        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        build: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
         inputs: VariadicPack[
-            origin=origin, element_trait=DeviceGraphInput, False, *Ts
+            origin=origin, element_trait=LegacyDeviceGraphInput, False, *Ts
         ],
-        ctx: DeviceContext.Optional = DeviceContext.NoneValue,
+        ctx: LegacyDeviceContext.Optional = LegacyDeviceContext.NoneValue,
     ) -> String:
         var key = Self._closure_key(build)
 
@@ -375,7 +381,7 @@ struct DeviceGraphCache(Movable):
 
         return key^
 
-    def lookup(mut self, key: String) -> Optional[DeviceGraph]:
+    def lookup(mut self, key: String) -> Optional[LegacyDeviceGraph]:
         """Returns the graph stored under a key, if there is one.
 
         Args:
@@ -389,7 +395,9 @@ struct DeviceGraphCache(Movable):
             # entry.
             return self._cache.find(key)
 
-    def cache(mut self, var key: String, var graph: DeviceGraph) -> DeviceGraph:
+    def cache(
+        mut self, var key: String, var graph: LegacyDeviceGraph
+    ) -> LegacyDeviceGraph:
         """Interns the device graph identified by the given key.
 
         If there is already a graph identified by the given key, that graph is
@@ -414,7 +422,7 @@ struct DeviceGraphCache(Movable):
     @doc_hidden
     def get_or_create_pool(
         mut self, ctx: DeviceContext[]
-    ) -> DeviceGraphMemoryPool:
+    ) -> LegacyDeviceGraphMemoryPool:
         """Returns the shared memory pool for a device context, creating it on
         first use.
 
@@ -429,7 +437,7 @@ struct DeviceGraphCache(Movable):
         Returns:
             The pool shared by every graph this cache builds against `ctx`.
         """
-        var key = Int(ctx._handle.unsafe_value())
+        var key = Int(ctx.unwrap_legacy()._handle.unsafe_value())
         # This is its own `_lock` acquisition: the lock is not reentrant, so
         # this method must never be called from inside `lookup` or `cache`.
         with BlockingScopedLock(self._lock):
@@ -437,7 +445,7 @@ struct DeviceGraphCache(Movable):
             if found:
                 return found.take()
 
-            var pool = DeviceGraphMemoryPool(ctx)
+            var pool = LegacyDeviceGraphMemoryPool(ctx)
             self._pools[key] = pool
             return pool^
 
@@ -449,7 +457,7 @@ struct DeviceGraphCache(Movable):
         key: String,
         ctxs: Array[DeviceContext[], N],
         devices: List[Int],
-    ) raises -> List[StableAddr]:
+    ) raises -> List[LegacyStableAddr]:
         """Returns the stable address slots of a collective, allocating them on
         first use.
 
@@ -481,7 +489,7 @@ struct DeviceGraphCache(Movable):
 
         # Allocate outside the lock. A caller that missed at the same time may
         # insert first, in which case its slots win, matching `cache()`.
-        var buffers = List[DeviceBuffer[DType.uint64]]()
+        var buffers = List[LegacyDeviceBuffer[DType.uint64]]()
         for device in devices:
             if device < 0 or device >= N:
                 raise Error(
@@ -490,7 +498,11 @@ struct DeviceGraphCache(Movable):
                         t" for a collective of {N} device(s)"
                     )
                 )
-            buffers.append(ctxs[device].enqueue_create_buffer[DType.uint64](1))
+            buffers.append(
+                ctxs[device]
+                .enqueue_create_buffer[DType.uint64](1)
+                .unwrap_legacy()
+            )
 
         with BlockingScopedLock(self._lock):
             var existing = self._stable.find(key)
@@ -502,13 +514,13 @@ struct DeviceGraphCache(Movable):
 
     @staticmethod
     def _slots_of(
-        buffers: List[DeviceBuffer[DType.uint64]],
-    ) -> List[StableAddr]:
-        var slots = List[StableAddr](capacity=len(buffers))
+        buffers: List[LegacyDeviceBuffer[DType.uint64]],
+    ) -> List[LegacyStableAddr]:
+        var slots = List[LegacyStableAddr](capacity=len(buffers))
         for i in range(len(buffers)):
             var buffer = buffers[i]
             slots.append(
-                StableAddr(
+                LegacyStableAddr(
                     buffer.unsafe_ptr()
                     .unsafe_bitcast[Pointer[NoneType, MutUntrackedOrigin]]()
                     .unsafe_origin_cast[MutUntrackedOrigin]()
@@ -518,7 +530,7 @@ struct DeviceGraphCache(Movable):
 
 
 @doc_hidden
-struct DeviceGraphInputKind(Equatable, TrivialRegisterPassable):
+struct LegacyDeviceGraphInputKind(Equatable, TrivialRegisterPassable):
     """How a tensor participates as a device graph input.
 
     The kind decides two things at once: what `DeviceGraphInput.allocate_stable`
@@ -542,16 +554,16 @@ struct DeviceGraphInputKind(Equatable, TrivialRegisterPassable):
 
     var value: Int
 
-    comptime data = DeviceGraphInputKind(0)
-    comptime mutable = DeviceGraphInputKind(1)
-    comptime host = DeviceGraphInputKind(2)
-    comptime shape_only = DeviceGraphInputKind(3)
+    comptime data = LegacyDeviceGraphInputKind(0)
+    comptime mutable = LegacyDeviceGraphInputKind(1)
+    comptime host = LegacyDeviceGraphInputKind(2)
+    comptime shape_only = LegacyDeviceGraphInputKind(3)
 
     def __init__(out self, value: Int):
         self.value = value
 
 
-trait DeviceGraphInput(ImplicitlyCopyable):
+trait LegacyDeviceGraphInput(ImplicitlyCopyable):
     """A device graph input that contributes to the graph's cache key."""
 
     def write_graph_key(self, mut writer: Some[Writer]):
@@ -568,7 +580,9 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         """
         ...
 
-    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+    def allocate_stable(
+        self, mut builder: LegacyDeviceGraphBuilder
+    ) raises -> Self:
         """Returns a graph-owned value of this type for the graph to record.
 
         Allocate through
@@ -604,7 +618,7 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         ...
 
 
-struct DeviceGraph(ImplicitlyCopyable, Writable):
+struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
     """Represents an instantiated device graph that can be replayed.
 
     A `DeviceGraph` captures a sequence of GPU operations (such as kernel
@@ -704,7 +718,10 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     @staticmethod
     def replay_collective[
         N: Int
-    ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext[], N],) raises:
+    ](
+        graphs: Array[LegacyDeviceGraph, N],
+        ctxs: Array[DeviceContext[], N],
+    ) raises:
         """Replays the graphs of a collective, publishing their stable
         addresses first.
 
@@ -778,12 +795,12 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         //,
     ](
         ctxs: Array[DeviceContext[], N],
-        build_for: Some[def[n: Int](mut DeviceGraphBuilder[_]) raises],
+        build_for: Some[def[n: Int](mut LegacyDeviceGraphBuilder[_]) raises],
         key_for: Some[def[n: Int]() raises -> String],
-        cache: Pointer[mut=True, DeviceGraphCache, _],
+        cache: Pointer[mut=True, LegacyDeviceGraphCache, _],
         *,
         stable_devices: List[Int] = [],
-    ) raises -> Array[DeviceGraph, N]:
+    ) raises -> Array[LegacyDeviceGraph, N]:
         """Builds a `DeviceGraph` for every device in `ctxs` against a shared
         cache.
 
@@ -867,23 +884,25 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        var result = Array[Optional[DeviceGraph], N]()
+        var result = Array[Optional[LegacyDeviceGraph], N]()
 
         # Slots are keyed by the collective alone: every device's graph, in
         # every variant, must see the same addresses.
-        var slots = List[StableAddr]()
+        var slots = List[LegacyStableAddr]()
         if len(stable_devices) > 0:
             slots = cache[].get_or_create_stable_slots(
-                DeviceGraphCache._closure_key(build_for), ctxs, stable_devices
+                LegacyDeviceGraphCache._closure_key(build_for),
+                ctxs,
+                stable_devices,
             )
 
         comptime for i in range(N):
             var ctx = ctxs[i]
-            var key = DeviceGraphCache._closure_key(build_for)
+            var key = LegacyDeviceGraphCache._closure_key(build_for)
             key.write(t"|Device({ctx.device().id})|")
             key.write(key_for[i]())
 
-            def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
+            def build(mut b: LegacyDeviceGraphBuilder[_]) raises {imm}:
                 b._set_stable_slots(slots.copy())
                 build_for[i](b)
 
@@ -910,21 +929,21 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             )
             result[i] = cache[].cache(key^, graph^)
 
-        return Array[DeviceGraph, N](
-            fill_with=lambda (i: Int) {mut result} -> DeviceGraph: result[
+        return Array[LegacyDeviceGraph, N](
+            fill_with=lambda (i: Int) {mut result} -> LegacyDeviceGraph: result[
                 i
             ].take()
         )
 
     @staticmethod
     def create[
-        *Ts: DeviceGraphInput,
+        *Ts: LegacyDeviceGraphInput,
     ](
         ctx: DeviceContext,
-        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        build: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
         *inputs: *Ts,
-        cache: Pointer[mut=True, DeviceGraphCache, _],
-    ) raises -> DeviceGraph:
+        cache: Pointer[mut=True, LegacyDeviceGraphCache, _],
+    ) raises -> LegacyDeviceGraph:
         """Builds and instantiates a device graph, reusing a cached one if it
         can.
 
@@ -979,11 +998,11 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
 
         def collective_key[n: Int]() {imm} -> String:
             comptime assert n == 0
-            return DeviceGraphCache._make_key(build, inputs)
+            return LegacyDeviceGraphCache._make_key(build, inputs)
 
         def collective_build[
             n: Int
-        ](mut builder: DeviceGraphBuilder[_]) raises {imm}:
+        ](mut builder: LegacyDeviceGraphBuilder[_]) raises {imm}:
             comptime assert n == 0
             build(builder)
 
@@ -999,8 +1018,8 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     @staticmethod
     def create(
         ctx: DeviceContext,
-        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
-    ) raises -> DeviceGraph:
+        build: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
+    ) raises -> LegacyDeviceGraph:
         """Builds and instantiates a device graph within a scoped callback.
 
         Calls `build` with a fresh `DeviceGraphBuilder`, then instantiates the
@@ -1064,11 +1083,11 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 _DeviceContextPtr[mut=True],
             ](
                 Pointer(to=result),
-                ctx.assert_default_target()._handle,
+                ctx.assert_default_target().unwrap_legacy()._handle,
             )
         )
         var arena: Int = 0
-        var builder = DeviceGraphBuilder[origin_of(arena)](
+        var builder = LegacyDeviceGraphBuilder[origin_of(arena)](
             result, ctx.assert_default_target()
         )
         build(builder)
@@ -1078,9 +1097,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     @staticmethod
     def _create(
         ctx: DeviceContext[],
-        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
-        pool: DeviceGraphMemoryPool,
-    ) raises -> DeviceGraph:
+        build: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
+        pool: LegacyDeviceGraphMemoryPool,
+    ) raises -> LegacyDeviceGraph:
         """Builds and instantiates a device graph that allocates from a shared
         memory pool.
 
@@ -1116,18 +1135,18 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 _DeviceGraphMemoryPoolPtr[mut=True],
             ](
                 Pointer(to=result),
-                ctx._handle,
+                ctx.unwrap_legacy()._handle,
                 pool._handle,
             )
         )
         var arena: Int = 0
-        var builder = DeviceGraphBuilder[origin_of(arena)](result, ctx)
+        var builder = LegacyDeviceGraphBuilder[origin_of(arena)](result, ctx)
         build(builder)
 
         return builder^.instantiate()
 
 
-struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
+struct LegacyDeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """Builder for explicit device graph construction.
 
     A `DeviceGraphBuilder` is handed to the callback passed to
@@ -1164,14 +1183,14 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     ```
     """
 
-    comptime Node = DeviceGraphNode[Self.arena_origin]
+    comptime Node = LegacyDeviceGraphNode[Self.arena_origin]
     """Node handle type produced by this builder, branded with the builder's
     `DeviceGraph.create` scope origin."""
 
     var _handle: _DeviceGraphBuilderPtr[mut=True]
     """Handle to the underlying ref-counted driver builder."""
 
-    var _ctx: DeviceContext[]
+    var _ctx: LegacyDeviceContext[]
     """The backing device context used to create the builder."""
 
     var _implicit_deps: List[Self.Node]
@@ -1196,7 +1215,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     `AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone` returns for an empty graph.
     """
 
-    var _stable: List[StableAddr]
+    var _stable: List[LegacyStableAddr]
     """The stable address slots this graph may reference by index; installed
     by `DeviceGraph.create_collective()` before the build callback runs."""
 
@@ -1209,7 +1228,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     lifetimes through all the APIs properly, after which memory will be kept
     live for all users."""
 
-    var _recording_ctx: DeviceContext[]
+    var _recording_ctx: LegacyDeviceContext[]
     """The one recording context this builder hands out. The emitted kernel
     wrappers request a context per kernel, but builds are sequential and only
     one is ever live, so `recording_context()` reseats this context's chain
@@ -1222,7 +1241,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ctx: DeviceContext[],
     ) raises:
         self._handle = handle
-        self._ctx = ctx
+        self._ctx = ctx.unwrap_legacy()
         self._implicit_deps = []
         self._region_floor = None
         self._stable = []
@@ -1249,11 +1268,11 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         # `checkRef` transferred ownership of the fresh reference to us, so the
         # stored context must release it on destruction.
-        self._recording_ctx = DeviceContext(ctx_ptr=result)
+        self._recording_ctx = LegacyDeviceContext(ctx_ptr=result)
         self._recording_ctx._owning = True
 
     @doc_hidden
-    def _set_stable_slots(mut self, var slots: List[StableAddr]):
+    def _set_stable_slots(mut self, var slots: List[LegacyStableAddr]):
         self._stable = slots^
 
     @inline(.always)
@@ -1267,7 +1286,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Returns:
             The `DeviceContext` backing this builder.
         """
-        return self._ctx
+        return DeviceContext[](
+            _impl=rebind_var[DeviceContext[]._Impl](self._ctx)
+        )
 
     @inline(.never)
     def recording_context(self) raises -> DeviceContext[]:
@@ -1330,7 +1351,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 seed.id,
             )
         )
-        return self._recording_ctx
+        return DeviceContext[](
+            _impl=rebind_var[DeviceContext[]._Impl](self._recording_ctx)
+        )
 
     @doc_hidden
     @inline(.always)
@@ -1468,7 +1491,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         # our C ABI, deps and all. (`_DeviceGraphBuilderEnqueuer` is defined
         # below `DeviceGraphBuilder` because it borrows `Self`.)
         var enqueuer = _DeviceGraphBuilderEnqueuer(self, dependencies^)
-        f._call_with_pack_checked(
+        f.unwrap_legacy()._call_with_pack_checked(
             enqueuer,
             *args,
             grid_dim=grid_dim,
@@ -1541,7 +1564,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         # C ABI, deps and all. (`_DeviceGraphBuilderEnqueuer` is defined
         # below `DeviceGraphBuilder` because it borrows `Self`.)
         var enqueuer = _DeviceGraphBuilderEnqueuer(self, dependencies^)
-        f._call_with_pack(
+        rebind[type_of(f)._Legacy](f._impl)._call_with_pack(
             enqueuer,
             *args,
             grid_dim=grid_dim,
@@ -1656,7 +1679,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             func_attribute, shared_mem_bytes
         )
 
-        var gpu_kernel = self._ctx.compile_function[
+        var gpu_kernel = self.context().compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -1752,9 +1775,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         dependencies = self._merge_implicit(dependencies^)
 
-        comptime launch_target = DeviceContext[].target
+        comptime launch_target = LegacyDeviceContext[].target
 
-        var gpu_kernel = DeviceFunction[
+        var gpu_kernel = LegacyDeviceFunction[
             FuncType.__call__,
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -1856,9 +1879,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         dependencies = self._merge_implicit(dependencies^)
 
-        comptime launch_target = DeviceContext[].target
+        comptime launch_target = LegacyDeviceContext[].target
 
-        var gpu_kernel = DeviceFunction[
+        var gpu_kernel = LegacyDeviceFunction[
             FuncType.__call__,
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -1928,8 +1951,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 _CString[],
             ](
                 self._handle,
-                dst_buf._handle,
-                src_buf._host_ptr,
+                dst_buf.unwrap_legacy()._handle,
+                src_buf.unwrap_legacy()._host_ptr,
                 dep_args.ids,
                 dep_args.count,
             )
@@ -1979,8 +2002,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 _CString[],
             ](
                 self._handle,
-                dst_buf._host_ptr,
-                src_buf._handle,
+                dst_buf.unwrap_legacy()._host_ptr,
+                src_buf.unwrap_legacy()._handle,
                 dep_args.ids,
                 dep_args.count,
             )
@@ -2032,8 +2055,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 _CString[],
             ](
                 self._handle,
-                dst_buf._handle,
-                src_buf._handle,
+                dst_buf.unwrap_legacy()._handle,
+                src_buf.unwrap_legacy()._handle,
                 dep_args.ids,
                 dep_args.count,
             )
@@ -2105,7 +2128,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 Int64,
             ](
                 self._handle,
-                dst._handle,
+                dst.unwrap_legacy()._handle,
                 value,
                 c_size_t(size_of[dtype]()),
                 dep_args.ids.as_unsafe_any_origin(),
@@ -2160,7 +2183,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     @inline(.never)
     def region(
         mut self,
-        work: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        work: Some[def[o: ImmOrigin](mut LegacyDeviceGraphBuilder[o]) raises],
         *,
         var dependencies: List[Self.Node] = [],
     ) raises -> Self.Node:
@@ -2295,7 +2318,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
 
     @inline(.never)
-    def add_input[T: DeviceGraphInput](mut self, input: T) raises -> T:
+    def add_input[T: LegacyDeviceGraphInput](mut self, input: T) raises -> T:
         """Gives an input a stable location the graph can record against.
 
         A recorded graph bakes in the addresses it was built with, so it cannot
@@ -2362,7 +2385,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
     @doc_hidden
     @inline(.never)
-    def instantiate(var self) raises -> DeviceGraph:
+    def instantiate(var self) raises -> LegacyDeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
 
         Finalizes the graph construction and produces a `DeviceGraph` that
@@ -2391,13 +2414,16 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 self._handle,
             )
         )
-        return DeviceGraph(result)
+        return LegacyDeviceGraph(result)
 
     @inline(.never)
     def create_buffer[
         dtype: DType
     ](
-        mut self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]
+        mut self,
+        size: Int,
+        is_host: Bool,
+        out result: DeviceBuffer[dtype],
     ) raises:
         """Allocates a buffer for use in the current device graph.
 
@@ -2428,7 +2454,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         comptime elem_size = size_of[dtype]()
 
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr: Optional[result._DevicePtr] = {}
+        var device_ptr: Optional[LegacyDeviceBuffer[dtype]._DevicePtr] = {}
 
         # const char * AsyncRT_DeviceGraph_createBuffer(DeviceBuffer **result, void **devicePtr, DeviceGraphBuilder *builder, size_t len, size_t elemSize, bool isHost)
         _checked(
@@ -2446,17 +2472,29 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             location=call_location(),
         )
 
-        result = {cpp_handle, device_ptr.value()}
+        var legacy: LegacyDeviceBuffer[dtype] = {cpp_handle, device_ptr.value()}
 
         # Retain a second owning reference to the block for the build's lifetime,
         # dropped in `instantiate()`.
-        self._pinned_allocations.append(AnyAsyncValueRef(storage_buf=result))
+        self._pinned_allocations.append(
+            AnyAsyncValueRef(
+                storage_buf=DeviceBuffer[dtype](
+                    _impl=rebind_var[DeviceBuffer[dtype]._Impl](legacy.copy())
+                )
+            )
+        )
+        result = DeviceBuffer[dtype](
+            _impl=rebind_var[DeviceBuffer[dtype]._Impl](legacy^)
+        )
 
     @inline(.never)
     def create_input_buffer[
         dtype: DType
     ](
-        mut self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]
+        mut self,
+        size: Int,
+        is_host: Bool,
+        out result: DeviceBuffer[dtype],
     ) raises:
         """Allocates a buffer and registers it as a stable graph input.
 
@@ -2488,9 +2526,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         external_call[
             "AsyncRT_DeviceGraphBuilder_addInput",
             NoneType,
-        ](self._handle, result._handle)
+        ](self._handle, result.unwrap_legacy()._handle)
 
-    def get_stable(mut self, index: Int) raises -> StableAddr:
+    def get_stable(mut self, index: Int) raises -> LegacyStableAddr:
         """Returns stable address slot `index` of this graph's collective.
 
         Args:
@@ -2509,7 +2547,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         mut self,
         index: Int,
         source: Pointer[mut=True, NoneType, _],
-    ) raises -> StableAddr:
+    ) raises -> LegacyStableAddr:
         """Records that this graph publishes `source` into stable address slot
         `index`.
 
@@ -2572,11 +2610,11 @@ struct _DeviceGraphBuilderEnqueuer[
             enqueuer cannot outlive the originating builder.
     """
 
-    comptime Node = DeviceGraphNode[Self.arena_origin]
+    comptime Node = LegacyDeviceGraphNode[Self.arena_origin]
     """Node handle type for this enqueuer's scope origin."""
 
     var _builder: Pointer[
-        DeviceGraphBuilder[Self.arena_origin], Self.builder_origin
+        LegacyDeviceGraphBuilder[Self.arena_origin], Self.builder_origin
     ]
     """Borrowed reference to the parent graph builder. The Mojo borrow
     checker uses `builder_origin` to ensure this enqueuer cannot outlive
@@ -2590,7 +2628,9 @@ struct _DeviceGraphBuilderEnqueuer[
     @inline(.always)
     def __init__(
         out self,
-        ref[Self.builder_origin] builder: DeviceGraphBuilder[Self.arena_origin],
+        ref[Self.builder_origin] builder: LegacyDeviceGraphBuilder[
+            Self.arena_origin
+        ],
         var dependencies: List[Self.Node],
     ):
         """Initializes the transient enqueuer with a borrowed builder and

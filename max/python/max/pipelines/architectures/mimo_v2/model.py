@@ -26,10 +26,6 @@ from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import MultiKVCacheParams, spec_decode_cache_slack
 from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.gpt_oss.batch_processor import (
-    GptOssBatchProcessor,
-    GptOssInputs,
-)
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -45,9 +41,10 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.weights import HuggingFaceRepo
 
+from .batch_processor import MiMoV2BatchProcessor, MiMoV2Inputs
 from .mimo_v2 import MiMoV2
 from .model_config import MiMoV2Config
 
@@ -96,14 +93,13 @@ class MiMoV2Model(
 ):
     """Pipeline model for MiMo-V2.6-Flash.
 
-    The graph takes GPT OSS's inputs (tokens, per-device row offsets, signal
-    buffers and a ``{sliding_attention, full_attention}`` KV tree), so GPT
-    OSS's inputs and batching are reused.
+    The graph takes tokens, per-device row offsets, signal buffers and a
+    ``{sliding_attention, full_attention}`` KV tree.
     """
 
     model_config_cls: ClassVar[type[Any]] = MiMoV2Config
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]]] = (
-        GptOssBatchProcessor
+        MiMoV2BatchProcessor
     )
     _strict_state_dict_loading = True
 
@@ -228,8 +224,8 @@ class MiMoV2Model(
         }
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Runs the model on inputs from :class:`GptOssBatchProcessor`."""
-        assert isinstance(model_inputs, GptOssInputs)
+        """Runs the model on inputs from :class:`MiMoV2BatchProcessor`."""
+        assert isinstance(model_inputs, MiMoV2Inputs)
         assert model_inputs.kv_cache_inputs is not None
         assert isinstance(model_inputs.input_row_offsets, list)
         outputs = self.model.execute(

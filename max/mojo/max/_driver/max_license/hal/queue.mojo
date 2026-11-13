@@ -18,7 +18,7 @@ from .plugin import (
     FunctionHandle,
     ContextHandle,
 )
-from ._plugin._impl import HalPluginForTarget
+from max._plugin import MaxPluginForTarget
 from .buffer import Buffer, BufferView
 from .context import Context
 from .memory import _enqueue_copy
@@ -55,9 +55,9 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     var _context: ArcPointer[Context[Self.device_spec]]
     var _self_ref: WeakPointer[Self]
 
-    comptime HALExtensions = HalPluginForTarget[
+    comptime HALExtensions = MaxPluginForTarget[
         DeviceSpec.target[Self.device_spec]()
-    ].extensions
+    ].HalHooks.extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 
@@ -402,13 +402,6 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             dst=dst,
             src=src,
         )
-
-    def wait_value64(
-        self, device_address: UInt64, value: UInt64
-    ) raises HALError:
-        """Enqueues a wait until the 64-bit slot at `device_address` is at
-        least `value` (cuStreamWaitValue64 with GEQ semantics)."""
-        self._raw[].queue_wait_value64(self._handle, device_address, value)
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,

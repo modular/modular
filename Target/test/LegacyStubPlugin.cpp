@@ -13,36 +13,55 @@
 //
 // A plugin that exports exactly the entry points `Plugin::loadPlugins`
 // requires, so `DriverPluginLoadTest` can load one without a vendor runtime. It
-// has no devices.
+// has no devices, unless `LEGACY_STUB_PLUGIN_DEVICE_COUNT` names a count: it
+// then claims that many without being able to open one, which is what lets a
+// test observe whether the plugin reached the registry the device lookup reads.
+//
+// Like a vendor runtime, it refuses a second live driver in one process, so two
+// copies of the loader cannot both register it without one of them reporting
+// the failure.
 //
 //===----------------------------------------------------------------------===//
 
 #include "HAL/M_driver_api.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
 int driverHandle;
+bool driverLive = false;
 } // namespace
 
 extern "C" {
 
-M_driver_status_t M_driver_status_message(M_driver_driver_t, M_driver_status_t,
+M_driver_status_t M_driver_status_message(M_driver_driver_t,
+                                          M_driver_status_t status,
                                           char *messageBuffer,
                                           int64_t messageBufferSize) {
-  if (messageBufferSize > 0)
-    messageBuffer[0] = '\0';
+  const char *message = status == M_DRIVER_STATUS_BAD_DRIVER
+                            ? "legacystub driver already created"
+                            : "";
+  if (messageBufferSize > 0) {
+    std::strncpy(messageBuffer, message, messageBufferSize - 1);
+    messageBuffer[messageBufferSize - 1] = '\0';
+  }
   return M_DRIVER_STATUS_SUCCESS;
 }
 
 M_driver_status_t M_driver_create(M_driver_version *,
                                   M_driver_driver_t *driver) {
+  *driver = nullptr;
+  if (driverLive)
+    return M_DRIVER_STATUS_BAD_DRIVER;
+  driverLive = true;
   *driver = reinterpret_cast<M_driver_driver_t>(&driverHandle);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
 M_driver_status_t M_driver_destroy(M_driver_driver_t) {
+  driverLive = false;
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -55,7 +74,8 @@ M_driver_status_t M_driver_property(M_driver_driver_t, const char *propertyName,
 }
 
 M_driver_status_t M_driver_device_count(M_driver_driver_t, int64_t *count) {
-  *count = 0;
+  const char *configured = std::getenv("LEGACY_STUB_PLUGIN_DEVICE_COUNT");
+  *count = configured ? std::atoll(configured) : 0;
   return M_DRIVER_STATUS_SUCCESS;
 }
 

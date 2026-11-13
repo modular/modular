@@ -15,14 +15,11 @@
 from pathlib import Path
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.gpt_oss.batch_processor import (
-    GptOssBatchProcessor,
-)
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
+from .batch_processor import MiMoV2BatchProcessor
 from .model import MiMoV2Model
 from .model_config import MiMoV2Config
 from .weight_adapters import mimo_v2_weight_rules
@@ -41,12 +38,8 @@ mimo_v2_arch = SupportedArchitecture(
     weight_rules=mimo_v2_weight_rules,
     use_weight_rules=True,
     config=MiMoV2Config,
-    batching=GptOssBatchProcessor,
+    batching=MiMoV2BatchProcessor,
     multi_gpu_supported=True,
-    # The checkpoint loads as stored, so its files size the weights.
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(
-        0, always_signal_buffers=True
-    ),
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
     # MiMo-V2's DFlash drafter declares the Llama 3 draft's name, but it is

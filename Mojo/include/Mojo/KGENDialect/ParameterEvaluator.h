@@ -179,8 +179,12 @@ public:
   /// resolved struct's generator.This is correct for every context except the
   /// parser, where conformances are instead resolved via `ASTDecl` lookup
   /// (might need a lazy resolution).
+  ///
+  /// `witnessName` is the entry the caller will read. The parser resolves only
+  /// that entry; the default ignores it.
   virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                                 TraitSymbolAttr traitSymbol);
+                                                 TraitSymbolAttr traitSymbol,
+                                                 StringAttr witnessName);
 
   /// Create an evaluator configured with the provided parameters.
   /// This callback style is necessary because we have derived evaluators that

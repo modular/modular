@@ -350,7 +350,7 @@ kgen.func @store_with_atomic(%p: !kgen.pointer<scalar<si32>>, %v: !kgen.scalar<s
 }
 
 // CHECK-LABEL: @offset
-kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
+kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: !kgen.scalar<index>) -> !kgen.pointer<scalar<f32>> {
   // CHECK: llvm.getelementptr inbounds %{{.*}}[{{.*}}]
   %0 = pop.offset %p[%i] : !kgen.pointer<scalar<f32>>
   hlcf.return %0 : !kgen.pointer<scalar<f32>>
@@ -755,11 +755,11 @@ kgen.func @call_intrinsic(%inp: !kgen.scalar<f32>) -> (!kgen.scalar<f32>, !kgen.
   // CHECK: %[[RESULT_1:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]])
   // CHECK-SAME: fastmathFlags = #llvm.fastmath<nnan, reassoc>
   // CHECK: %[[RES_CAST_1:.*]] = builtin.unrealized_conversion_cast %[[RESULT_1]]
-  %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) {fastmathFlags = #pop.fmf<reassoc|nnan>} : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
+  %0 = pop.call_llvm_intrinsic "llvm.round", (%inp) : (!kgen.scalar<f32>) -> !kgen.scalar<f32> <fastmathFlags = reassoc|nnan>
   // CHECK: %[[RESULT_2:.*]] = llvm.call_intrinsic "llvm.round"(%[[INP_CAST]])
   // CHECK-SAME: fastmathFlags = #llvm.fastmath<fast>
   // CHECK: %[[RES_CAST_2:.*]] = builtin.unrealized_conversion_cast %[[RESULT_2]]
-  %1 = pop.call_llvm_intrinsic "llvm.round", (%inp) {fastmathFlags = #pop.fmf<fast>} : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
+  %1 = pop.call_llvm_intrinsic "llvm.round", (%inp) : (!kgen.scalar<f32>) -> !kgen.scalar<f32> <fastmathFlags = fast>
   hlcf.return %0, %1 : !kgen.scalar<f32>, !kgen.scalar<f32>
 }
 

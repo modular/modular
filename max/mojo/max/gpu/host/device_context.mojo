@@ -19,20 +19,31 @@ accelerator, and compile and execute functions on the accelerator."""
 
 
 @__doc_inline
-from ._overlay import (
-    CompletionFlag,
-    DefaultDeviceTypeEncoder,
-    Device,
-    DeviceBuffer,
+from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
-    DeviceContextArray,
-    DeviceContextList,
-    DeviceEvent,
+)
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+)
+from max._driver.max_license.device_context_dispatch.host_buffer import (
+    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.device_pointer import (
+    DevicePointer,
+)
+from max._driver.max_license.device_context_dispatch.function import (
     DeviceExternalFunction,
     DeviceFunction,
-    DeviceMulticastBuffer,
-    DevicePointer,
-    DeviceStream,
-    HostBuffer,
-    StreamPriorityRange,
 )
+from max._driver.max_license.device_context_dispatch.host_types import (
+    CompletionFlag,
+    Device,
+    DeviceContextArray,
+    DeviceEvent,
+    DeviceMulticastBuffer,
+    DeviceStream,
+)
+from max._driver.max_license.device_context_dispatch.backend_names import (
+    DefaultDeviceTypeEncoder,
+)
+from max.gpu.host._driver_common import StreamPriorityRange

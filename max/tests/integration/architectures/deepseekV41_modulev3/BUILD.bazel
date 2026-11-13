@@ -212,26 +212,19 @@ modular_py_test(
     ],
 )
 
-# The memory plan's DP accounting: the export-time plan counts the
-# checkpoint once and leaves the EP dispatch's reserve to the engine's
-# sidecar, which keeps holding the comm buffers and receive pool back
-# (the KV pool is sized before the dispatch heaps allocate).
+# MXFP4-packed Engram tables: the quantization config's engram_embed_* keys,
+# the weight adapter's packed views, and the unpack to E4M3 as they are
+# pinned, bit-exact against FP8 twins. CPU only.
 modular_py_test(
-    name = "test_memory_planner",
-    srcs = ["test_memory_planner.py"],
+    name = "test_engram_mxfp4_tables",
+    srcs = ["test_engram_mxfp4_tables.py"],
     deps = [
-        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/kv_cache",
-        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
-        "//max/python/max/pipelines/kv_cache",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/speculative",
-        "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:runtime_config",
         requirement("numpy"),
+        requirement("transformers"),
     ],
 )
 

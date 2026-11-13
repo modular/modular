@@ -217,7 +217,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     check_remap: Bool = False,
     check_physical_only: Bool = False,
     check_scale_remap: Bool = False,
-    Topk: IndexerTopk = BlockSplitTopk,
+    Topk: IndexerTopk = BlockSplitTopk[],
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],

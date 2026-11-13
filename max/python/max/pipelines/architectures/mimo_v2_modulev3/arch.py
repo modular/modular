@@ -15,17 +15,14 @@
 from dataclasses import replace
 
 from ..mimo_v2.arch import mimo_v2_arch
-from .memory_planner import MiMoV2ModuleV3MemoryPlanner
 from .model import MiMoV2ModuleV3BatchProcessor, MiMoV2ModuleV3Model
 from .model_config import MiMoV2Config
 
 # Everything but the pipeline model matches the graph-API MiMo architecture:
-# the same tokenizer, parsers, context, weight rules and memory planning. The
-# batch processor must be replaced too: registration binds `batching` onto
-# the pipeline model, which would otherwise keep the graph-API one's
-# per-device-row-offsets, signals ABI. The planner is this package's own:
-# the expert-parallel build allocates communication buffers the graph-API
-# MoE never does.
+# the same tokenizer, parsers, context and weight rules. The batch processor
+# must be replaced too: registration binds `batching` onto the pipeline
+# model, which would otherwise keep the graph-API one's
+# per-device-row-offsets, signals ABI.
 mimo_v2_modulev3_arch = replace(
     mimo_v2_arch,
     name="MiMoV2ForCausalLM_ModuleV3",
@@ -35,5 +32,4 @@ mimo_v2_modulev3_arch = replace(
     config=MiMoV2Config,
     pipeline_model=MiMoV2ModuleV3Model,
     batching=MiMoV2ModuleV3BatchProcessor,
-    memory_planner=MiMoV2ModuleV3MemoryPlanner,
 )

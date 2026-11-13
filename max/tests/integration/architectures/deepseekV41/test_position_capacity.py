@@ -23,7 +23,6 @@ width the graph builds it.
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -35,7 +34,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ops
 from max.nn.kv_cache import spec_decode_cache_slack
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
-from max.pipelines.architectures.deepseekV41 import memory_planner
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (
     DeepseekV41,
     DeepseekV41Block,
@@ -49,7 +47,6 @@ from max.pipelines.architectures.deepseekV41.layers.attention import (
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
 )
-from transformers import AutoConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
 MAX_SEQ_LEN = 64
@@ -172,73 +169,3 @@ def test_drafter_gathers_last_speculative_position_on_cpu() -> None:
     drafted, trunk_rows = session.load(graph).execute()
     assert drafted.to_numpy().shape == (3, 32, 2)
     assert trunk_rows.to_numpy().shape == (3, 32, 2)
-
-
-@pytest.mark.parametrize(
-    "max_length, keep_blocks",
-    [
-        # ceil(16384 / 8) == candidate_topk_blocks: no committed row can
-        # reach a block past the top k, so the graph skips the keep step.
-        (16384, 0),
-        # From here the step runs; its blocks cover the slack's keys too.
-        (16400, 2053),
-        (40000, 5003),
-    ],
-)
-def test_planner_reserves_the_graphs_candidate_blocks(
-    max_length: int, keep_blocks: int, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The planner reserves the keep step the graph builds.
-
-    Speculative decoding is on, and the candidate-source layer uses the real
-    checkpoint's block sizes.
-    """
-    hf_config = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
-    text_config = DeepseekV41Config.get_text_config(hf_config)
-    config = dataclasses.replace(
-        _config(num_draft_tokens=5),
-        max_seq_len=max_length,
-        candidate_source_layer_id=0,
-        candidate_block_size=text_config.candidate_block_size,
-        candidate_topk_blocks=text_config.candidate_topk_blocks,
-    )
-    source = DeepseekV41(
-        config, DeviceRef.CPU(), engram_host_tables={}
-    ).trunk.layers[0]
-    assert isinstance(source, DeepseekV41Block)
-    assert isinstance(source.attn, CSA2Attention)
-    assert source.attn.layer_info.candidate_role == "source"
-    assert source.attn.candidate_blocks == keep_blocks
-
-    planned: list[int] = []
-    reserve = memory_planner.indexer_activation_bytes
-
-    def spy(
-        *,
-        live_rows: int,
-        candidate_blocks: int,
-        kept_blocks: int,
-        block_size: int,
-    ) -> int:
-        planned.append(candidate_blocks)
-        return reserve(
-            live_rows=live_rows,
-            candidate_blocks=candidate_blocks,
-            kept_blocks=kept_blocks,
-            block_size=block_size,
-        )
-
-    monkeypatch.setattr(memory_planner, "indexer_activation_bytes", spy)
-    pipeline_config = MagicMock()
-    pipeline_config.model.vision_config_overrides = {
-        "max_images_per_request": 0
-    }
-    pipeline_config.model.max_length = max_length
-    pipeline_config.model.device_specs = [MagicMock()]
-    pipeline_config.model.data_parallel_degree = 1
-    pipeline_config.runtime.max_num_input_tokens = 8192
-    pipeline_config.runtime.max_batch_input_tokens = 8192
-    memory_planner.DeepseekV41MemoryPlanner(config).estimate_activation_memory(
-        pipeline_config, hf_config
-    )
-    assert planned and set(planned) == {keep_blocks}

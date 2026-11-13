@@ -963,7 +963,11 @@ def match_optional_refined_payload(opt: Optional[Int]):
     # CHECK-NEXT:  [[IS_SOME:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[TAG]], [[SOME]])
     # CHECK-NEXT:  [[SOME_COND:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[IS_SOME]])
     # CHECK-NEXT:  hlcf.if [[SOME_COND]] {
-    # CHECK-NEXT:    [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
+    # CHECK-NEXT:    [[PAYLOAD_TUPLE:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
+    # CHECK-NEXT:    [[STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+    # CHECK-NEXT:    [[STORAGE_PTR:%.*]] = lit.ref.to_pointer [[STORAGE]]
+    # CHECK-NEXT:    [[ELEMENT_PTR:%.*]] = kgen.struct.gep [[STORAGE_PTR]][0]
+    # CHECK-NEXT:    [[PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[ELEMENT_PTR]] : <!Int> -> <!Int,
     # CHECK-NEXT:    [[VALUE:%.*]] = lit.ref.load [[PAYLOAD]]
     # CHECK-NEXT:    [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT:    [[IS_ZERO:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[VALUE]], [[ZERO]])
@@ -1067,11 +1071,17 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:        hlcf.match.next
 # CHECK-NEXT:      }
 # CHECK-NEXT:      [[PAYLOAD_REF:%.*]] = lit.ref.immut [[SUBJECT]]
-# CHECK-NEXT:      [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[PAYLOAD_REF]])
-# CHECK-NEXT:      [[CONSUMING_REF:%.*]] = lit.ref.immut [[SUBJECT]]
-# CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[CONSUMING_REF]])
-# CHECK-NEXT:      [[PAYLOAD_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
-# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[PAYLOAD_PTR]] end_uninit
+# CHECK-NEXT:      [[PAYLOAD_TUPLE:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[PAYLOAD_REF]])
+# CHECK-NEXT:      [[STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+# CHECK-NEXT:      [[STORAGE_PTR:%.*]] = lit.ref.to_pointer [[STORAGE]]
+# CHECK-NEXT:      [[ELEMENT_PTR:%.*]] = kgen.struct.gep [[STORAGE_PTR]][0]
+# CHECK-NEXT:      [[PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[ELEMENT_PTR]]
+# CHECK-NEXT:      [[CONSUMING_STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+# CHECK-NEXT:      [[CONSUMING_STORAGE_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_STORAGE]]
+# CHECK-NEXT:      [[CONSUMING_ELEMENT_PTR:%.*]] = kgen.struct.gep [[CONSUMING_STORAGE_PTR]][0]
+# CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[CONSUMING_ELEMENT_PTR]]
+# CHECK-NEXT:      [[TRANSFER_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
+# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[TRANSFER_PTR]] "(pattern child)" end_uninit
 # CHECK-NEXT:      lit.ownership.mark_consumed [[SUBJECT]]
 # CHECK-NEXT:      lit.ownership.use [[OWNED_PAYLOAD]]
 # CHECK-NEXT:      {{.*}}@"consume{{.*}}([[OWNED_PAYLOAD]])

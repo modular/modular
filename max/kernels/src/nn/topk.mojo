@@ -40,6 +40,7 @@ from max.gpu.memory import external_memory
 from std.sys.info import current_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
+    ComptimeInt,
     Coord,
     DefaultEngine,
     RowMajorLayout,
@@ -804,9 +805,7 @@ def _top_k_sampling[
         internal_bs, 1
     )
 
-    var reshaped_out_idxs = reshape(
-        out_idxs, coord_to_index_list(internal_out_idxs_shape)
-    )
+    var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
     var reshaped_out_vals = reshape(
         out_vals, coord_to_index_list(internal_out_shape)
     )
@@ -821,7 +820,7 @@ def _top_k_sampling[
         out_idxs_tmp_ptr,
         row_major(internal_out_shape),  # topk returns K as last dim
     )
-    var reshaped_input = reshape(input, coord_to_index_list(internal_in_shape))
+    var reshaped_input = reshape(input, internal_in_shape)
     _top_k_cpu[dtype=dtype, largest=True](
         reshaped_input,
         max_k,
@@ -2654,15 +2653,9 @@ def topk_gpu[
                 1, last_idx_dim
             )
             # Reshape 1D inputs to 2D
-            internal_input = reshape(
-                input, coord_to_index_list(internal_in_shape)
-            )
-            internal_out_idxs = reshape(
-                out_idxs, coord_to_index_list(internal_out_idxs_shape)
-            )
-            internal_out_vals = reshape(
-                out_vals, coord_to_index_list(internal_out_vals_shape)
-            )
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
         elif input.rank == internal_rank:
             # Input is already 2D, no reshaping needed
             internal_bs = Int(orig_in_shape[0])
@@ -2693,15 +2686,9 @@ def topk_gpu[
             )
 
             # Reshape higher dimensional inputs to 2D
-            internal_input = reshape(
-                input, coord_to_index_list(internal_in_shape)
-            )
-            internal_out_idxs = reshape(
-                out_idxs, coord_to_index_list(internal_out_idxs_shape)
-            )
-            internal_out_vals = reshape(
-                out_vals, coord_to_index_list(internal_out_vals_shape)
-            )
+            internal_input = reshape(input, internal_in_shape)
+            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
         # Short rows with a small k go to the single-warp, single-launch
         # kernel. An explicit `num_blocks_per_input` is a caller pinning the
@@ -3138,6 +3125,7 @@ comptime _GUMBEL_PARTIAL_BYTES = 16
 
 @__name(
     t"gumbel_argmax_fused_{dtype}_{out_idx_type}_{from_probs}_{multi_block}"
+    t"_{subtract}"
 )
 def _gumbel_argmax_fused_kernel[
     dtype: DType,
@@ -3146,6 +3134,7 @@ def _gumbel_argmax_fused_kernel[
     OutIdxLayoutType: TensorLayout,
     from_probs: Bool = False,
     multi_block: Bool = False,
+    subtract: Bool = False,
     InputEngine: TensorEngine = DefaultEngine[element_width=1],
     OutIdxEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
@@ -3164,6 +3153,8 @@ def _gumbel_argmax_fused_kernel[
     blocks_per_row: Int32 = Int32(1),
     partials: Optional[MutPointer[UInt8, MutAnyOrigin]] = None,
     counters: Optional[MutPointer[Int32, MutAnyOrigin]] = None,
+    sub: Optional[ImmPointer[Scalar[dtype], ImmutAnyOrigin]] = None,
+    fallback: Optional[ImmPointer[Scalar[DType.int64], ImmutAnyOrigin]] = None,
 ):
     """Fused Gumbel-noise + argmax.
 
@@ -3180,6 +3171,17 @@ def _gumbel_argmax_fused_kernel[
     not matter, because a per-row constant shifts every `ln(p)` equally.
     `temperature` is ignored in this mode.
 
+    With `subtract` the row enters the race as `ln(max(p - q, 0)) + g` instead
+    of `ln(p) + g`, where `q` is the same-shaped proposal row passed as `sub`.
+    Speculative decoding recovers a rejected draft token from the residual
+    `max(p - q, 0)`, and forming that residual in registers is what keeps it
+    off HBM: the alternative materializes two extra `[rows, vocab]` tensors
+    (the proposal mass and the residual) and reads the residual back here.
+    Rows whose `fallback` entry is non-negative carry no proposal
+    distribution, and subtract a one-hot at that token instead of `sub` --
+    exactly the token the target rejected. `subtract` requires `from_probs`
+    off and a float32 input.
+
     Parameters:
         dtype: Element type of the input logits.
         out_idx_type: Output index dtype.
@@ -3187,6 +3189,7 @@ def _gumbel_argmax_fused_kernel[
         OutIdxLayoutType: Layout of the `[batch, 1]` output indices.
         from_probs: Treat the input as unnormalized probabilities.
         multi_block: Split each input row across multiple blocks.
+        subtract: Read the input as `p` and race `ln(max(p - q, 0))`.
         InputEngine: Engine of the `[batch, vocab]` input.
         OutIdxEngine: Engine of the `[batch, 1]` output indices.
 
@@ -3198,17 +3201,25 @@ def _gumbel_argmax_fused_kernel[
         blocks_per_row: Number of blocks assigned to each row.
         partials: Cross-block partial score and index storage.
         counters: Zero-initialized per-row arrival counters.
+        sub: Proposal rows `q` `[batch, vocab]`, row-major and contiguous;
+            read in place and never written.
+        fallback: Optional per-row drafted token ids `[batch]`; a row whose
+            entry is non-negative subtracts a one-hot at that token instead
+            of `sub`. Ignored unless `subtract` is set.
     """
     # `_block_reduce_topk` caps its shared storage at WARP_SIZE on Apple while
     # this kernel launches `max_thread_block_size` threads, so the reduction
     # would not cover the block. The logits path predates that mismatch; the
     # from-probs path is new surface and refuses to build on it.
     comptime assert (
-        not from_probs or not is_apple_gpu()
-    ), "from_probs is not supported on Apple GPUs"
+        not (from_probs or subtract) or not is_apple_gpu()
+    ), "from_probs and subtract are not supported on Apple GPUs"
+    comptime assert not subtract or (
+        not from_probs and dtype == DType.float32
+    ), "subtract requires float32 rows and replaces the from_probs transform"
     comptime assert not multi_block or (
         current_accelerator().is_amd_gpu()
-        and from_probs
+        and (from_probs or subtract)
         and dtype == DType.float32
     ), "multi-block Gumbel requires AMD FP32 from-probs"
 
@@ -3252,7 +3263,26 @@ def _gumbel_argmax_fused_kernel[
     # Per-thread running argmax over the (noised) logits.
     var partial = TopK_2[dtype, True]()
 
+    # The proposal row of the residual is laid out exactly like `input`: both
+    # are `[batch, vocab]` row-major, so this row's base is `batch_id * N`.
+    # A non-negative `fallback` entry marks a row with no proposal
+    # distribution, which subtracts a one-hot at that token instead.
+    # Only the pointer arithmetic happens here; the row is read below.
+    var sub_row: Optional[ImmPointer[Scalar[dtype], ImmutAnyOrigin]] = None
+    comptime if subtract:
+        if case .Some(sub_ptr) = sub:
+            sub_row = sub_ptr.unsafe_offset(batch_id * N)
+    var fallback_id = -1
+
     with PDL():
+        # `fallback` is a per-row tensor written by an earlier kernel, so it is
+        # read past this region's entry: `with PDL()` waits for the
+        # predecessor grids on entry, and a load before it would race the
+        # producer on a PDL launch.
+        comptime if subtract:
+            if case .Some(fallback_ptr) = fallback:
+                fallback_id = Int(fallback_ptr[batch_id])
+
         # Main region: process vocab in `simd_width`-sized chunks. The RNG is
         # seeded per chunk index `i` exactly as `apply_gumbel_noise_kernel`, so
         # the noise added to each element is bit-identical.
@@ -3272,10 +3302,38 @@ def _gumbel_argmax_fused_kernel[
                     invariant=False,
                 ]((batch_id, i * simd_width))
             var noised_logits: SIMD[.float32, simd_width]
-            comptime if from_probs:
-                noised_logits = LOG2 * log2(input_val.cast[.float32]())
+            comptime if subtract:
+                # `max(p - q, 0)` in registers: the exact value the
+                # materialized residual tensor would hold, never written.
+                var proposal: SIMD[.float32, simd_width]
+                if fallback_id >= 0:
+                    proposal = SIMD[.float32, simd_width](0.0)
+                    comptime for lane in range(simd_width):
+                        proposal[lane] = Float32(
+                            1.0
+                        ) if fallback_id == i * simd_width + lane else Float32(
+                            0.0
+                        )
+                else:
+                    if case .Some(q_ptr) = sub_row:
+                        if N % simd_width == 0:
+                            proposal = q_ptr.unsafe_load[
+                                width=simd_width, alignment=align
+                            ](i * simd_width).cast[.float32]()
+                        else:
+                            proposal = q_ptr.unsafe_load[
+                                width=simd_width, alignment=align_of[dtype]()
+                            ](i * simd_width).cast[.float32]()
+                    else:
+                        proposal = SIMD[.float32, simd_width](0.0)
+                noised_logits = LOG2 * log2(
+                    max(input_val.cast[.float32]() - proposal, Float32(0.0))
+                )
             else:
-                noised_logits = input_val.cast[.float32]() / temp_val
+                comptime if from_probs:
+                    noised_logits = LOG2 * log2(input_val.cast[.float32]())
+                else:
+                    noised_logits = input_val.cast[.float32]() / temp_val
 
             comptime for loop_i in range(simd_width // 4):
                 var rnd_val = rng_state.step_uniform()
@@ -3305,10 +3363,25 @@ def _gumbel_argmax_fused_kernel[
                     ).cast[.float32]()
                 )
                 var noised_logit: Float32
-                comptime if from_probs:
-                    noised_logit = LOG2 * log2(input_val)
+                comptime if subtract:
+                    var proposal: Float32
+                    if fallback_id >= 0:
+                        proposal = Float32(1.0) if fallback_id == (
+                            N - N_res
+                        ) + tid else Float32(0.0)
+                    else:
+                        if case .Some(q_ptr) = sub_row:
+                            proposal = q_ptr[(N - N_res) + tid].cast[.float32]()
+                        else:
+                            proposal = Float32(0.0)
+                    noised_logit = LOG2 * log2(
+                        max(input_val - proposal, Float32(0.0))
+                    )
                 else:
-                    noised_logit = input_val / temp_val
+                    comptime if from_probs:
+                        noised_logit = LOG2 * log2(input_val)
+                    else:
+                        noised_logit = input_val / temp_val
                 var rnd_val = rng_state.step_uniform()[0]
                 rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
                 noised_logit += rnd_val
@@ -3383,6 +3456,16 @@ def gumbel_sampling_fused_gpu[
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
     from_probs: Bool = False,
+    subtract: Bool = False,
+    # `sub` and `fallback` are optional operands, so their layouts cannot come
+    # from a tile argument the way `input`'s does.
+    SubLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64, Int64].element_types,
+        stride_types=Coord[Int64, ComptimeInt[1]].element_types,
+    ],
+    SubEngine: TensorEngine = DefaultEngine[element_width=1],
+    FallbackLayoutType: TensorLayout = RowMajorLayout[Int64],
+    FallbackEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
     SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
@@ -3400,6 +3483,17 @@ def gumbel_sampling_fused_gpu[
     seed: Optional[
         TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
+    sub: Optional[
+        TileTensor[dtype, SubLayoutType, ImmUnsafeAnyOrigin, Engine=SubEngine]
+    ] = None,
+    fallback: Optional[
+        TileTensor[
+            .int64,
+            FallbackLayoutType,
+            ImmUnsafeAnyOrigin,
+            Engine=FallbackEngine,
+        ]
+    ] = None,
 ) raises:
     """
     Fused Gumbel sampling: applies Gumbel(0,1) noise and selects the argmax in a
@@ -3412,17 +3506,25 @@ def gumbel_sampling_fused_gpu[
     With `from_probs` the input rows are unnormalized probabilities and the
     draw is proportional to them; see `_gumbel_argmax_fused_kernel`.
 
+    With `subtract` the draw is over `max(input - sub, 0)`, the rejection
+    sampler's residual, formed in registers instead of in HBM; see
+    `_gumbel_argmax_fused_kernel`.
+
     Args:
         ctx: Device context for GPU operations.
         input: Input logits tensor [batch, vocab_size].
         out_idxs: Output tensor for sampled indices [batch, 1].
         temperature: Optional per-token temperature scaling [batch].
         seed: Optional per-token random seeds [batch] for reproducibility.
+        sub: Proposal rows `q` [batch, vocab_size]; required with
+            `subtract`, which also requires `q` to be contiguous.
+        fallback: Optional drafted token ids [batch]; a non-negative entry
+            makes that row subtract a one-hot at the token instead of `sub`.
     """
     # Mirrors the kernel's guard so a host caller fails at its own call site.
     comptime assert (
-        not from_probs or not is_apple_gpu()
-    ), "from_probs is not supported on Apple GPUs"
+        not (from_probs or subtract) or not is_apple_gpu()
+    ), "from_probs and subtract are not supported on Apple GPUs"
 
     var input_shape = input.layout.shape_coord()
 
@@ -3452,8 +3554,37 @@ def gumbel_sampling_fused_gpu[
         if case .Some(seed) = seed:
             seed_ptr = seed.ptr
 
+        # The kernel reads the proposal row at a `vocab` stride, so `sub` must
+        # be one contiguous [batch, vocab] block. The graph op only ever hands
+        # over a freshly written contiguous tensor, and checking here keeps a
+        # strided caller from silently reading the wrong row.
+        var sub_ptr: Optional[ImmPointer[Scalar[dtype], ImmutAnyOrigin]] = None
+        var fallback_ptr: Optional[
+            ImmPointer[Scalar[DType.int64], ImmutAnyOrigin]
+        ] = None
+        comptime if subtract:
+            if not sub:
+                raise Error("sub is required when subtract is set")
+            if Int(sub.unsafe_value().num_elements()) < batch_size * Int(
+                input.dim(1)
+            ):
+                raise Error("sub must be a contiguous [batch, vocab] tensor")
+            sub_ptr = (
+                sub.unsafe_value()
+                .ptr.as_imm()
+                .unsafe_origin_cast[ImmutAnyOrigin]()
+            )
+            if case .Some(fb) = fallback:
+                if Int(fb.num_elements()) != batch_size:
+                    raise Error("fallback must carry one entry per row")
+                fallback_ptr = fb.ptr.as_imm().unsafe_origin_cast[
+                    ImmutAnyOrigin
+                ]()
+
         comptime split_capable = (
-            ctx.target.is_amd_gpu() and from_probs and dtype == DType.float32
+            ctx.target.is_amd_gpu()
+            and (from_probs or subtract)
+            and dtype == DType.float32
         )
         comptime if split_capable:
             var vocab = Int(input.dim(1))
@@ -3477,6 +3608,7 @@ def gumbel_sampling_fused_gpu[
                     out_idxs.LayoutType,
                     from_probs=from_probs,
                     multi_block=True,
+                    subtract=subtract,
                     InputEngine=input.Engine,
                     OutIdxEngine=out_idxs.Engine,
                 ]
@@ -3488,6 +3620,8 @@ def gumbel_sampling_fused_gpu[
                     Int32(blocks_per_row),
                     partials_ptr,
                     counters_ptr,
+                    sub_ptr,
+                    fallback_ptr,
                     grid_dim=batch_size * blocks_per_row,
                     block_dim=block_size,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -3503,6 +3637,7 @@ def gumbel_sampling_fused_gpu[
             out_idxs.LayoutType,
             from_probs=from_probs,
             multi_block=False,
+            subtract=subtract,
             InputEngine=input.Engine,
             OutIdxEngine=out_idxs.Engine,
         ]
@@ -3514,6 +3649,8 @@ def gumbel_sampling_fused_gpu[
             Int32(1),
             Optional[MutPointer[UInt8, MutAnyOrigin]](None),
             Optional[MutPointer[Int32, MutAnyOrigin]](None),
+            sub_ptr,
+            fallback_ptr,
             grid_dim=batch_size,
             block_dim=block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),

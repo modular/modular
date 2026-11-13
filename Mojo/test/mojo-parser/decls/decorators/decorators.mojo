@@ -234,9 +234,9 @@ def register_internal(x: StaticString):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder1
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder1">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder1
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder1">
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
@@ -246,9 +246,9 @@ struct DecoratorOrder1(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder2
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder2">
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
 @fieldwise_init
@@ -258,9 +258,9 @@ struct DecoratorOrder2(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder3
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder3">
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
@@ -270,9 +270,9 @@ struct DecoratorOrder3(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder4">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder4
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder4">
 @fieldwise_init
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
@@ -413,7 +413,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 @fieldwise_init
 struct Foo(ImplicitlyCopyable):
     var a: Int

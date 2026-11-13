@@ -21,6 +21,7 @@ tensors instead of building a Graph.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -53,6 +54,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn import Module
+from max.nn.common_layers.mlp import MLP
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
@@ -322,6 +324,35 @@ def test_four_norms_per_layer(small_model: Gemma4TextModel) -> None:
         for norm_name in norm_names:
             key = f"layers.{i}.{norm_name}.weight"
             assert key in names, f"Missing {key}"
+
+
+def _ffn_scaling(model: Gemma4TextModel) -> set[tuple[float, float]]:
+    """The (MLP up scale, post-FFN norm eps) pairs across layers."""
+    pairs: set[tuple[float, float]] = set()
+    for layer in model.layers:
+        assert isinstance(layer, Gemma4TransformerBlock)
+        assert isinstance(layer.mlp, MLP)
+        assert layer.pre_feedforward_layernorm.eps == TEXT_RMS_NORM_EPS
+        pairs.add((layer.mlp.up_scale, layer.post_feedforward_layernorm.eps))
+    return pairs
+
+
+def test_bfloat16_leaves_ffn_unscaled(small_model: Gemma4TextModel) -> None:
+    """Without float16 activations the FFN loss scale is off."""
+    assert _ffn_scaling(small_model) == {(1.0, TEXT_RMS_NORM_EPS)}
+
+
+def test_float16_scales_ffn_and_post_ffn_eps() -> None:
+    """Float16 divides the up projection by the loss scale and the post-FFN
+    norm's eps by its square."""
+    config = _make_model_config(
+        [DeviceRef.CPU()],
+        num_hidden_layers=2,
+        layer_types=TEXT_LAYER_TYPES[:2],
+    )
+    model = _build_lazy_model(dataclasses.replace(config, dtype=DType.float16))
+    s = config.text_config.ffn_fp16_loss_scale
+    assert _ffn_scaling(model) == {(1.0 / s, TEXT_RMS_NORM_EPS / s**2)}
 
 
 def test_v_proj_only_on_sliding_layers(small_model: Gemma4TextModel) -> None:

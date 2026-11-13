@@ -21,6 +21,7 @@ head_dim=64.
 
 from std.math import isclose
 from std.random import rand
+from std.sys import has_amd_rdna_gpu_accelerator
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -236,3 +237,16 @@ def main() raises:
             num_heads=64,
             group=8,
         ](128, 128, ctx)
+
+        # Depth 72 prefill with sink: one MMA K-step holds valid and pad
+        # columns on gfx950.
+        comptime if (
+            ctx.target.is_amd_gpu() and not has_amd_rdna_gpu_accelerator()
+        ):
+            test[
+                DType.bfloat16,
+                DType.bfloat16,
+                depth=72,
+                num_heads=64,
+                group=8,
+            ](128, 128, ctx)

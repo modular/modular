@@ -35,6 +35,7 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4TextConfig,
     _resolve_head_dims,
     _resolve_num_global_kv_heads,
+    max_images_per_request,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.pipeline_parallel import PipelineStage
@@ -63,6 +64,7 @@ def _mock_pipeline_config() -> Mock:
     model.max_length = None
     model.data_parallel_degree = 1
     model.pipeline_stage = None
+    model.vision_config_overrides = {}
 
     pipeline_config = Mock()
     pipeline_config.model = model
@@ -179,6 +181,45 @@ def test_top_level_initialize_from_config() -> None:
     _, global_params = config.kv_params.children.values()
     assert isinstance(global_params, MHAKVCacheParams)
     assert global_params.n_kv_heads == 2
+
+
+def test_an_image_cap_of_zero_serves_text_only() -> None:
+    """``max_images_per_request`` 0 leaves the vision tower out."""
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config()
+    pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 0
+    }
+
+    config = Gemma4ForConditionalGenerationConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
+    assert config.vision_config is None
+
+    pipeline_config.model.vision_config_overrides = {
+        "max_images_per_request": 2
+    }
+    config = Gemma4ForConditionalGenerationConfig.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
+    assert config.vision_config is not None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"max_num_images": 0}, "accepts only"),
+        ({"max_images_per_request": -1}, "non-negative integer"),
+        ({"max_images_per_request": False}, "non-negative integer"),
+    ],
+)
+def test_bad_vision_config_overrides_raise(
+    overrides: dict[str, object], match: str
+) -> None:
+    pipeline_config = _mock_pipeline_config()
+    pipeline_config.model.vision_config_overrides = overrides
+    with pytest.raises(ValueError, match=match):
+        max_images_per_request(pipeline_config)
 
 
 def test_a_pipeline_stage_builds_only_its_layers() -> None:

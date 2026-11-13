@@ -73,17 +73,6 @@ def mla_kv_is_nvfp4[KVType: MHAOperand]() -> Bool:
     )
 
 
-def sparse_kv_gather_row_words[KVType: MHAOperand, input_q_depth: Int]() -> Int:
-    """The gathered row width of the sparse KV operand, in `int64` words.
-
-    An FP8 row is `input_q_depth` bytes; a packed NVFP4 row is the packed
-    latent plus the FP8 rope bytes.
-    """
-    comptime if mla_kv_is_nvfp4[KVType]():
-        return nvfp4_mla_row_bytes[input_q_depth]() // 8
-    return input_q_depth // 8
-
-
 @always_inline
 def e4m3_magnitude_lut(scale: Float32) -> SIMD[DType.uint32, 2]:
     """`e4m3(m * scale)` for the e2m1 magnitudes `{0, .5, 1, 1.5, 2, 3, 4, 6}`.

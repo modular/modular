@@ -37,7 +37,7 @@ from max.pipelines.lib import (
     compile_and_init_graphs,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.profiler import traced
 from typing_extensions import override
 

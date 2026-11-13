@@ -116,3 +116,55 @@ mo.graph @implemented(%x: !mo.tensor<[8, 128], f32>, %w: !mo.tensor<[128], f32>)
   %y = mo.composite.reduce.rms_norm(%x, %w) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = false} : (!mo.tensor<[8, 128], f32>, !mo.tensor<[128], f32>) -> !mo.tensor<[8, 128], f32>
   mo.output %y : !mo.tensor<[8, 128], f32>
 }
+
+// -----
+
+// With no kernel registered for it, softmax becomes the ops it is made of, as
+// the hand-written kernel computes it: a bf16 input accumulates in f32, and
+// the row's sum is inverted once and multiplied in.
+// CHECK-LABEL: mo.graph @softmaxBf16
+// CHECK-NOT:     mo.composite.reduce.softmax
+// CHECK:         %[[XA:.*]] = mo.cast(%arg0) : (!mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], f32>
+// CHECK:         %[[MAX:.*]] = mo.reduce.max(%[[XA]]) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
+// CHECK:         %[[MAXB:.*]] = mo.static.broadcast_to(%[[MAX]]) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
+// CHECK:         %[[D:.*]] = mo.sub(%[[XA]], %[[MAXB]]) : !mo.tensor<[8, 128], f32>
+// CHECK:         %[[E:.*]] = mo.exp(%[[D]]) : !mo.tensor<[8, 128], f32>
+// CHECK:         %[[SUM:.*]] = mo.reduce.add(%[[E]]) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
+// CHECK:         %[[ONEB:.*]] = mo.static.broadcast_to(%{{.*}}) : !mo.tensor<[], f32> -> !mo.tensor<[8, 1], f32>
+// CHECK:         %[[R:.*]] = mo.div(%[[ONEB]], %[[SUM]]) : !mo.tensor<[8, 1], f32>
+// CHECK:         %[[RB:.*]] = mo.static.broadcast_to(%[[R]]) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
+// CHECK:         %[[Y:.*]] = mo.mul(%[[E]], %[[RB]]) : !mo.tensor<[8, 128], f32>
+// CHECK:         %[[OUT:.*]] = mo.cast(%[[Y]]) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], bf16>
+// CHECK:         mo.output %[[OUT]]
+mo.graph @softmaxBf16(%x: !mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], bf16> {
+  %y = mo.composite.reduce.softmax(%x) [axis = 1] : (!mo.tensor<[8, 128], bf16>) -> !mo.tensor<[8, 128], bf16>
+  mo.output %y : !mo.tensor<[8, 128], bf16>
+}
+
+// -----
+
+// An f32 input accumulates in f32, along any axis.
+// CHECK-LABEL: mo.graph @softmaxF32Axis0
+// CHECK-NOT:     mo.cast(%arg0)
+// CHECK:         mo.reduce.max(%arg0) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[1, 128], f32>
+// CHECK:         mo.reduce.add(%{{.*}}) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[1, 128], f32>
+// CHECK-NOT:     mo.cast
+// CHECK:         mo.output
+mo.graph @softmaxF32Axis0(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %y = mo.composite.reduce.softmax(%x) [axis = 0] : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32>
+  mo.output %y : !mo.tensor<[8, 128], f32>
+}
+
+// -----
+
+// A target that registers a kernel for softmax keeps running it.
+// CHECK-LABEL: mo.graph @softmaxImplemented
+// CHECK:         mo.composite.reduce.softmax
+// CHECK-NOT:     mo.reduce.max
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @plugin_softmax registration = "mo.composite.reduce.softmax" execute = #kf struct_params = [] is_user_defined = false
+
+mo.graph @softmaxImplemented(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %y = mo.composite.reduce.softmax(%x) [axis = 1] : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32>
+  mo.output %y : !mo.tensor<[8, 128], f32>
+}

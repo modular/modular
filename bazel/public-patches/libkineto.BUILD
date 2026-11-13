@@ -36,6 +36,7 @@ load(
     "@libkineto//:libkineto/libkineto_defs.bzl",
     "KINETO_COMPILER_FLAGS",
     "get_libkineto_api_srcs",
+    "get_libkineto_cpu_only_srcs",
     "get_libkineto_cupti_srcs",
     "get_libkineto_rocprofiler_srcs",
 )
@@ -89,9 +90,11 @@ LIBKINETO_COPTS = KINETO_COMPILER_FLAGS + ["-Wno-ctad-maybe-unsupported"]
 # propagate to consumers — libkineto sources use these for internal
 # behavior (namespace, CUPTI gating) and don't need to be visible
 # downstream.
-LIBKINETO_LOCAL_DEFINES = [
-    # Required: namespace under which libkineto's symbols are defined.
-    "KINETO_NAMESPACE=libkineto",
+# Required by every flavor: namespace under which libkineto's symbols are
+# defined.
+LIBKINETO_BASE_DEFINES = ["KINETO_NAMESPACE=libkineto"]
+
+LIBKINETO_LOCAL_DEFINES = LIBKINETO_BASE_DEFINES + [
     # Enables the CUPTI activity backend. The initial spike confirmed this
     # works against torch 2.12.0+cu130's bundled libkineto at the same
     # SHA, so we ship CUPTI as the v1 backend.
@@ -106,17 +109,20 @@ LIBKINETO_LOCAL_DEFINES = [
 # path; it now selects the rocprofiler-sdk implementation unconditionally.
 # __HIP_PLATFORM_AMD__ propagates from the rocprofiler/HIP headers dep, so it
 # is not repeated here.
-LIBKINETO_ROCM_LOCAL_DEFINES = [
-    "KINETO_NAMESPACE=libkineto",
-    "HAS_ROCTRACER=1",
-]
+LIBKINETO_ROCM_LOCAL_DEFINES = LIBKINETO_BASE_DEFINES + ["HAS_ROCTRACER=1"]
+
+# Every platform some libkineto flavor builds on.
+_LINUX_OR_MACOS = select({
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
 
 # The shared API objects (libkineto_api.cpp, ThreadUtil.cpp). Split out
 # because libkineto's CMake build keeps these separate from the GPU
 # backend so the API surface stays linkable even when no GPU is detected.
-# Same platform constraint as `:libkineto` so the constraint lives with
-# the sources rather than relying on transitive enforcement through the
-# `:libkineto` consumer.
+# Shared by every flavor; neither file references a vendor API, so they
+# compile with the base defines only.
 cc_library(
     name = "libkineto_api_objs",
     srcs = [
@@ -124,8 +130,8 @@ cc_library(
         for src in get_libkineto_api_srcs()
     ],
     copts = LIBKINETO_COPTS,
-    local_defines = LIBKINETO_LOCAL_DEFINES,
-    target_compatible_with = ["@platforms//os:linux"],
+    local_defines = LIBKINETO_BASE_DEFINES,
+    target_compatible_with = _LINUX_OR_MACOS,
     deps = [
         ":libkineto_headers",
         ":libkineto_src_headers",
@@ -186,11 +192,6 @@ _LIBKINETO_ROCM_SRCS = sorted({
 # //max/internal/profiler:MAXProfilerPlugin under the //:amd_gpu config in
 # place of :libkineto — never link both into one binary (each registers its
 # own ActivityProfilerProxy).
-#
-# :libkineto_api_objs is shared with the CUPTI flavor. Its HAS_CUPTI define
-# is inert there — neither libkineto_api.cpp nor ThreadUtil.cpp references
-# any vendor API — and sharing keeps the two flavors from compiling the API
-# objects twice. Revisit on a SHA bump if those files grow vendor #ifdefs.
 cc_library(
     name = "libkineto_rocm",
     srcs = _LIBKINETO_ROCM_SRCS,
@@ -217,6 +218,28 @@ cc_library(
         # libamdhip64_stub_static) instead, so no vendor DT_NEEDED entries.
         "@//bazel/public-patches:rocprofiler_headers",
         "@dynolog//:ipcfabric_headers",
+        "@fmt",
+    ],
+)
+
+# CPU-only libkineto: host activity (ranges, trace metadata) with no GPU
+# backend. Selected by //max/internal/profiler:MAXProfilerPlugin on macOS,
+# which has no vendor-activity API libkineto supports. No ENABLE_IPC_FABRIC:
+# the Dynolog client is Linux-only upstream (#ifdef __linux__), so captures
+# here are in-process only.
+cc_library(
+    name = "libkineto_cpu",
+    srcs = [
+        "libkineto/" + src
+        for src in get_libkineto_cpu_only_srcs(with_api = False)
+    ],
+    copts = LIBKINETO_COPTS,
+    local_defines = LIBKINETO_BASE_DEFINES,
+    target_compatible_with = _LINUX_OR_MACOS,
+    deps = [
+        ":libkineto_api_objs",
+        ":libkineto_headers",
+        ":libkineto_src_headers",
         "@fmt",
     ],
 )

@@ -75,15 +75,6 @@ M::readOpFromBytecodeFile(DenseResourceElementsAttr bytecodeAttr,
   return op;
 }
 
-LogicalResult M::writeAttrToBytecodeFile(Attribute attr, raw_ostream &os) {
-  // There isn't an easy way to do this other than create a temporary operation
-  // and write it out.
-  OwningOpRef<ModuleOp> tempBytecodeOp =
-      ModuleOp::create(UnknownLoc::get(attr.getContext()));
-  (*tempBytecodeOp)->setAttr("bytecode.attr", attr);
-  return mlir::writeBytecodeToFile(tempBytecodeOp.get(), os);
-}
-
 //===----------------------------------------------------------------------===//
 // loadSymbolsFromBytecode
 //===----------------------------------------------------------------------===//

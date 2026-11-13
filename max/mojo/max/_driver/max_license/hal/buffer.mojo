@@ -13,7 +13,7 @@
 """HAL Buffer — device allocations and non-owning views into them."""
 
 from .plugin import M_driver_memory_view, MemoryHandle
-from ._plugin._impl import HalPluginForTarget
+from max._plugin import MaxPluginForTarget
 from .device import DeviceSpec
 from .context import Context
 
@@ -65,9 +65,9 @@ struct Buffer[device_spec: DeviceSpec](Movable):
     var is_host_pinned: Bool
     var _context: ArcPointer[Context[Self.device_spec]]
 
-    comptime HALExtensions = HalPluginForTarget[
+    comptime HALExtensions = MaxPluginForTarget[
         DeviceSpec.target[Self.device_spec]()
-    ].extensions
+    ].HalHooks.extensions
 
     var _extensions: Pointer[Self.HALExtensions, ImmUntrackedOrigin]
 

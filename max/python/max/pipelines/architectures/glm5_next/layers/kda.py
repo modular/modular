@@ -34,6 +34,7 @@ from max.nn import Linear, Module, RMSNorm
 from max.nn._graph_ops.state_space.kimi_delta import (
     STATE_LAYOUT,
     KdaGateMode,
+    kda_chunk_bf16_launch,
     kda_chunk_predicate,
     kda_chunk_servable,
     kda_gate_mode,
@@ -288,19 +289,16 @@ def kda_core(
             pin_fma=pin_decode_fma,
         )
 
-    # NVIDIA's chunk kernels take float32 q/k/v and output, as decode does.
-    # The gfx950 ones take only bf16, so that branch rounds at the op
-    # boundary and nowhere else; its state stays float32 because eligibility
-    # requires a float32 pool.
-    chunk_dtype = (
-        DType.bfloat16 if accelerator_api() == "hip" else DType.float32
-    )
+    # Both vendors' chunk ops take bf16 q/k/v, so this branch rounds at the op
+    # boundary and nowhere else. On NVIDIA, float32 q/k/v would fall back to
+    # the L1/L2/L3 pipeline instead of the fused compute-bound kernel.
+    chunk_output_dtype, use_computebound = kda_chunk_bf16_launch()
 
     def chunk(qkv_io: tuple[Tensor, Tensor, Tensor] | None = None) -> Tensor:
         q_io, k_io, v_io = qkv_io or (
-            q.cast(chunk_dtype),
-            k.cast(chunk_dtype),
-            v.cast(chunk_dtype),
+            q.cast(DType.bfloat16),
+            k.cast(DType.bfloat16),
+            v.cast(DType.bfloat16),
         )
         out = kda_chunk(
             q_io,
@@ -313,7 +311,8 @@ def kda_core(
             cu_seqlens,
             recurrent_pool,
             state_indices,
-            output_dtype=chunk_dtype,
+            output_dtype=chunk_output_dtype,
+            use_computebound=use_computebound,
             gate_mode=gate_mode,
             beta_mode="logits",
             state_layout=STATE_LAYOUT,
@@ -355,8 +354,9 @@ def kda_core(
     # `test_kda_chunk_prefill.py` grades it against `kda_decode`. A decode
     # batch (one token per sequence) stays on float32 `kda_decode`, and so
     # does the device graph captured for it: `F.cond` branches are separate
-    # regions. A mixed prefill+decode batch takes the chunk branch whole,
-    # decode rows included.
+    # regions, which also keeps NVIDIA `kda_chunk`'s host readback of
+    # `cu_seqlens` out of it. A mixed prefill+decode batch takes the chunk
+    # branch whole, decode rows included.
     chunked = kda_chunk_servable(head_dim, gate_mode, recurrent_pool.dtype)
     total_tokens = F.shape_to_tensor(q.shape)[0]
     batch_size = F.shape_to_tensor(input_row_offsets.shape)[0] - 1
@@ -387,7 +387,7 @@ def kda_core(
         # rides in the q/k/v split's kernel, where casting q, k and v apart
         # launches two more kernels per layer. Move it into the branch once
         # the pass is fixed.
-        conv_io = conv_out.cast(chunk_dtype)
+        conv_io = conv_out.cast(DType.bfloat16)
 
         def qkv_io() -> tuple[Tensor, Tensor, Tensor]:
             q_io, k_io, v_io = (

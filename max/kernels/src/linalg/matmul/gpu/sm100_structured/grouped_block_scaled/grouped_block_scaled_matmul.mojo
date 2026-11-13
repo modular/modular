@@ -605,35 +605,3 @@ def _grouped_block_scaled_matmul_impl[
 # =============================================================================
 # Helper: Calculate SMEM size for grouped kernel
 # =============================================================================
-
-
-def grouped_smem_size[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    sfa_dtype: DType,
-    sfb_dtype: DType,
-    transpose_b: Bool,
-    config: BlockScaledMatmulConfig[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
-    ],
-]() -> Int:
-    """Calculate shared memory size for grouped block-scaled kernel.
-
-    Parameters:
-        a_type: Element type of the A operand matrices.
-        b_type: Element type of the B operand matrices.
-        c_type: Element type of the C output matrices.
-        sfa_dtype: Element type of the A scaling factors.
-        sfb_dtype: Element type of the B scaling factors.
-        transpose_b: Whether B operands are stored transposed (must be True).
-        config: Block-scaled matmul configuration carrying tile, cluster, and
-            pipeline parameters.
-
-    Returns:
-        SMEM size in bytes, including tensormap descriptor storage.
-    """
-    comptime SmemType = GroupedBlockScaledSmem[
-        a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b, config=config
-    ]
-    return size_of[SmemType]()

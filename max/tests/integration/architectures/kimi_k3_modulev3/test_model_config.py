@@ -273,20 +273,6 @@ def test_latent_cache_reachable_at_real_k3_shape_and_tp(
         config.attn_kv_params.head_dim
         == _REAL_KV_LORA_RANK + _REAL_QK_ROPE_HEAD_DIM
     )
-    assert config.mla_prefill_scratch_bytes(_MAX_LENGTH) > 0
-
-
-def test_decompressed_cache_has_no_mla_prefill_window(
-    configs: tuple[Any, Any, Any],
-) -> None:
-    _, pipeline_config, _ = configs
-
-    config = KimiK3Config.initialize(
-        pipeline_config, pipeline_config.model, max_seq_len=_MAX_LENGTH
-    )
-
-    assert not config.mla_latent_cache
-    assert config.mla_prefill_scratch_bytes(_MAX_LENGTH) == 0
 
 
 def test_a_non_dspark_speculative_config_sizes_the_plain_leaf(
@@ -331,37 +317,6 @@ def test_max_seq_len_rejects_a_request_above_the_model_limit(
 
     with pytest.raises(ValueError, match="exceeds"):
         KimiK3Config.calculate_max_seq_len(huggingface_config, model_config)
-
-
-def test_ep_comm_buffer_is_zero_without_expert_parallelism(
-    configs: tuple[Any, Any, Any],
-) -> None:
-    _, pipeline_config, model_config = configs
-
-    config = KimiK3Config.initialize(
-        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
-    )
-
-    assert not config.expert_parallel
-    assert (
-        config.ep_comm_buffer_bytes(pipeline_config, use_allreduce=False) == 0
-    )
-
-
-def test_ep_comm_buffer_is_positive_under_expert_parallelism(
-    configs: tuple[Any, Any, Any],
-) -> None:
-    _, pipeline_config, model_config = configs
-    pipeline_config.runtime = PipelineRuntimeConfig(
-        **{**pipeline_config.runtime.model_dump(), "ep_size": 2}
-    )
-
-    config = KimiK3Config.initialize(
-        pipeline_config, model_config, max_seq_len=_MAX_LENGTH
-    )
-
-    assert config.expert_parallel
-    assert config.ep_comm_buffer_bytes(pipeline_config, use_allreduce=False) > 0
 
 
 def test_validate_tensor_parallel_split_rejects_indivisible_degree(

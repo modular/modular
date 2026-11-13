@@ -108,7 +108,7 @@ struct Bool(
         "False".value, "True".value
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
-        Trait=AnyType, NoneType, NoneType
+        Trait=AnyType, Tuple[], Tuple[]
     ].values
 
     # ===-------------------------------------------------------------------===#

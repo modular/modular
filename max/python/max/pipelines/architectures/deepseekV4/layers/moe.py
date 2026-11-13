@@ -533,9 +533,9 @@ class DeepseekV4RoutedExperts(Module):
         only when :attr:`_weight_after_down_proj` is False; otherwise the
         caller weights the returned rows.
         """
-        gate, up = ops.split(gate_up, [self.inter, self.inter], axis=1)
-        gate = ops.cast(gate, DType.float32)
-        up = ops.cast(up, DType.float32)
+        width = int(gate_up.shape[-1])
+        gate = ops.cast(gate_up[:, : self.inter], DType.float32)
+        up = ops.cast(gate_up[:, self.inter : width], DType.float32)
         if self.swiglu_limit > 0:
             limit = float(self.swiglu_limit)
             # Asymmetric on purpose: the reference clamps ``up`` on both sides

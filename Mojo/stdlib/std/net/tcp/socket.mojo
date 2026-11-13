@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides `TCPSocket`, a TCP socket to configure before it listens.
+"""Provides `TCPSocket`, a TCP socket to configure before it listens or
+connects.
 
 Examples:
 
@@ -39,15 +40,16 @@ from .._sys.unix import (
 )
 from ..option import GettableSocketOption, SettableSocketOption
 from .listener import TCPListener
+from .stream import TCPStream
 
 
 struct TCPSocket(Movable):
-    """A TCP socket to configure before it listens.
+    """A TCP socket to configure before it listens or connects.
 
     Create one with `TCPSocket.v4()` or `TCPSocket.v6()`, then set its options
-    with `set_option()`, such as `set_option[NoDelay](True)`. `bind()` then
-    binds it to a local address, and `listen()` turns it into a
-    `TCPListener`.
+    with `set_option()`, such as `set_option[NoDelay](True)`. `listen()` turns
+    it into a `TCPListener` after `bind()` gives it a local address, and
+    `connect()` turns it into a `TCPStream`.
 
     Examples:
 
@@ -163,7 +165,8 @@ struct TCPSocket(Movable):
 
         Args:
             addr: The local address, of the socket's IP version. Port 0 picks a
-                free port, which `TCPListener.local_addr()` returns.
+                free port, which `local_addr()` on the listener or stream
+                returns.
 
         Raises:
             If the bind fails, such as when another socket holds the address
@@ -191,3 +194,24 @@ struct TCPSocket(Movable):
         # `backlog` outside the `c_int` range instead of wrapping it.
         listener._socket.listen(backlog=c_int(backlog))
         return listener^
+
+    def connect(deinit self, addr: SocketAddr) raises IOError -> TCPStream:
+        """Connects the socket to a remote address, consuming the socket.
+
+        Args:
+            addr: The remote address, of the socket's IP version.
+
+        Returns:
+            The connection.
+
+        Raises:
+            If the connection fails, such as when nothing listens at `addr` or
+            `addr` isn't of the socket's IP version.
+        """
+        # TODO(https://github.com/modular/modular/issues/7474): on macOS, a
+        # `connect` that a signal interrupts can raise for a connection that
+        # succeeds; see `Socket.connect()`.
+        # The stream owns the socket from here, so it closes on any error.
+        var stream = TCPStream(self._socket^)
+        stream._socket.connect(addr)
+        return stream^

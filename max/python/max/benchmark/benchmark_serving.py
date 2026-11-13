@@ -647,6 +647,7 @@ async def benchmark(
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -699,6 +700,7 @@ async def benchmark(
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
                 disable_ignore_eos=args.disable_ignore_eos,
                 max_output_len=args.max_output_len,
+                strip_harmony_wire_tags=args.strip_harmony_wire_tags,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs

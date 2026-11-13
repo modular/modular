@@ -35,14 +35,6 @@ LoopOp HLCF::getParentLoop(Operation *op, StringAttr label) {
   return loop;
 }
 
-/// Check if the child loop is nested in the parentToCheck loop.
-bool HLCF::isParentLoop(LoopOp child, LoopOp parentToCheck) {
-  LoopOp parent = child;
-  while (parent && parent != parentToCheck)
-    parent = parent->getParentOfType<LoopOp>();
-  return parent == parentToCheck;
-}
-
 /// Get the parent operation of a terminator.
 Operation *HLCF::getParentNode(HLCF::ControlFlowTerminator term) {
   Operation *op = term->getParentOp();

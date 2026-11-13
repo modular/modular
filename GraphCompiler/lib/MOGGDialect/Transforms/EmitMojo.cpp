@@ -153,7 +153,6 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
     MOGG::EmitMojoState state(registry, enableOpTraceComments,
                               enableComputeLambdas,
                               moggDebugDumpFusedTensorSpecs);
-    state.moduleOp = moduleOp;
 
     // Import mojo stdlib packages and compiler directives.
     for (auto [package, as] : MOGG::kPackagesToImport) {

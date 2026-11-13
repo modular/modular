@@ -57,6 +57,7 @@ from max.nn._graph_ops import (
     block_scales_interleave,
     grouped_matmul_blocked_swiglu,
 )
+from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
 
 # ---------------------------------------------------------------------------
@@ -374,7 +375,7 @@ def _time_capture_replay(
     ],
 )
 @pytest.mark.skipif(
-    not torch.cuda.is_available(),
+    not is_b100_b200(),
     reason="Fused SwiGLU+NVFP4 kernel is SM100-only.",
 )
 def test_silent_eager_fallback_under_graph_capture(

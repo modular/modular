@@ -81,8 +81,8 @@ kgen.generator @clobber_pointer(%arg0: i16) -> i16 {
   %1 = pop.stack_allocation 1 x !kgen.pointer<i64>
   pop.store %0, %1 : !kgen.pointer<pointer<i64>>
   %2 = pop.pointer.bitcast %1 : !kgen.pointer<pointer<i64>> to !kgen.pointer<i16>
-  %idx1 = index.constant 1
-  %3 = pop.offset %2[%idx1] : !kgen.pointer<i16>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
+  %3 = pop.offset %2[%offidx1] : !kgen.pointer<i16>
   // CHECK-PARAM: failed to interpret operation pop.store
   // CHECK-PARAM: write clobbers a pointer region
   // expected-note @below {{failed to interpret operation pop.store}}
@@ -111,8 +111,8 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
   pop.store %0, %2 : !kgen.pointer<pointer<i64>>
   %3 = kgen.struct.gep %1[0] : <struct<(i64, !kgen.pointer<i64>)>>
   %4 = pop.pointer.bitcast %3 : !kgen.pointer<i64> to !kgen.pointer<i32>
-  %idx1 = index.constant 1
-  %5 = pop.offset %4[%idx1] : !kgen.pointer<i32>
+  %offidx2 = kgen.param.constant: scalar<index> = <1>
+  %5 = pop.offset %4[%offidx2] : !kgen.pointer<i32>
   %6 = pop.pointer.bitcast %5 : !kgen.pointer<i32> to !kgen.pointer<i64>
   // CHECK-PARAM: failed to interpret operation pop.store
   // CHECK-PARAM: write clobbers a pointer region

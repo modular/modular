@@ -939,7 +939,7 @@ kgen.func @pointer_bitcast_of_bitcast(%arg0: !kgen.pointer<si32>) -> !kgen.point
 // SROA see element-wise access instead of an opaque cast).
 // CHECK-LABEL: @pointer_bitcast_array_to_elem0
 kgen.func @pointer_bitcast_array_to_elem0(%arg0: !kgen.pointer<array<4, si32>>) -> !kgen.pointer<si32> {
-  // CHECK: %[[Z:.+]] = kgen.param.constant = <0>
+  // CHECK: %[[Z:.+]] = kgen.param.constant: scalar<index> = <0>
   // CHECK: %[[G:.+]] = pop.array.gep %arg0[%[[Z]]] : <array<4, si32>>
   // CHECK: return %[[G]]
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, si32>> to !kgen.pointer<si32>
@@ -972,7 +972,7 @@ kgen.func @pointer_bitcast_array_addrspace(%arg0: !kgen.pointer<array<4, si32>>)
 // is exactly the element-0 pointer type here, so the rewrite is valid.
 // CHECK-LABEL: @pointer_bitcast_array_src_addrspace
 kgen.func @pointer_bitcast_array_src_addrspace(%arg0: !kgen.pointer<array<4, si32>, 5>) -> !kgen.pointer<si32> {
-  // CHECK: %[[Z:.+]] = kgen.param.constant = <0>
+  // CHECK: %[[Z:.+]] = kgen.param.constant: scalar<index> = <0>
   // CHECK: %[[G:.+]] = pop.array.gep %arg0[%[[Z]]] : <array<4, si32>, 5>
   // CHECK: return %[[G]]
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, si32>, 5> to !kgen.pointer<si32>
@@ -983,7 +983,7 @@ kgen.func @pointer_bitcast_array_src_addrspace(%arg0: !kgen.pointer<array<4, si3
 // the outer array, so it is rewritten to `pop.array.gep %p[0]` as well.
 // CHECK-LABEL: @pointer_bitcast_nested_array_to_elem0
 kgen.func @pointer_bitcast_nested_array_to_elem0(%arg0: !kgen.pointer<array<4, array<2, si32>>>) -> !kgen.pointer<array<2, si32>> {
-  // CHECK: %[[Z:.+]] = kgen.param.constant = <0>
+  // CHECK: %[[Z:.+]] = kgen.param.constant: scalar<index> = <0>
   // CHECK: %[[G:.+]] = pop.array.gep %arg0[%[[Z]]] : <array<4, array<2, si32>>>
   // CHECK: return %[[G]]
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<4, array<2, si32>>> to !kgen.pointer<array<2, si32>>
@@ -1406,8 +1406,8 @@ kgen.func @fptrunc_and_fptrunc(%v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
 kgen.func @fptrunc_and_fptrunc_fast(
     %v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
   // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, f64> to !kgen.simd<2, f16>
-  %v1 = pop.cast %v0 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f64> to !kgen.simd<2, f32>
-  %v2 = pop.cast %v1 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  %v1 = pop.cast %v0 : !kgen.simd<2, f64> to !kgen.simd<2, f32> <fastmathFlags = fast>
+  %v2 = pop.cast %v1 : !kgen.simd<2, f32> to !kgen.simd<2, f16> <fastmathFlags = fast>
   hlcf.return %v2 : !kgen.simd<2, f16>
 }
 
@@ -1415,9 +1415,9 @@ kgen.func @fptrunc_and_fptrunc_fast(
 // CHECK-LABEL: @fptrunc_and_fptrunc_inner_fast_only
 kgen.func @fptrunc_and_fptrunc_inner_fast_only(
     %v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
-  // CHECK-NEXT: pop.cast %arg0 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, f64> to !kgen.simd<2, f32> <fastmathFlags = fast>
   // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, f32> to !kgen.simd<2, f16>
-  %v1 = pop.cast %v0 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  %v1 = pop.cast %v0 : !kgen.simd<2, f64> to !kgen.simd<2, f32> <fastmathFlags = fast>
   %v2 = pop.cast %v1 : !kgen.simd<2, f32> to !kgen.simd<2, f16>
   hlcf.return %v2 : !kgen.simd<2, f16>
 }
@@ -1622,9 +1622,9 @@ kgen.func @array_get_non_const_1(%arg0: index, %arg1: index) -> index {
 }
 
 // CHECK-LABEL: @array_gep
-kgen.func @array_gep(%array: !kgen.pointer<array<1, index>>, %idx: index) -> !kgen.pointer<index> {
-  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<1, index>>, %[[IDX:.*]]: index)
-  // CHECK-NEXT: %[[ZERO:.*]] = kgen.param.constant = <0>
+kgen.func @array_gep(%array: !kgen.pointer<array<1, index>>, %idx: !kgen.scalar<index>) -> !kgen.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<1, index>>, %[[IDX:.*]]: !kgen.scalar<index>)
+  // CHECK-NEXT: %[[ZERO:.*]] = kgen.param.constant: scalar<index> = <0>
   // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[ZERO]]]
   // CHECK-NEXT: hlcf.return %[[GEP]]
   %1 = pop.array.gep %array[%idx] : !kgen.pointer<array<1, index>>
@@ -1632,8 +1632,8 @@ kgen.func @array_gep(%array: !kgen.pointer<array<1, index>>, %idx: index) -> !kg
 }
 
 // CHECK-LABEL: @array_gep_unchanged
-kgen.func @array_gep_unchanged(%array: !kgen.pointer<array<2, index>>, %idx: index) -> !kgen.pointer<index> {
-  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<2, index>>, %[[IDX:.*]]: index)
+kgen.func @array_gep_unchanged(%array: !kgen.pointer<array<2, index>>, %idx: !kgen.scalar<index>) -> !kgen.pointer<index> {
+  // CHECK: (%[[ARRAY:.*]]: !kgen.pointer<array<2, index>>, %[[IDX:.*]]: !kgen.scalar<index>)
   // CHECK-NEXT: %[[GEP:.*]] = pop.array.gep %[[ARRAY]][%[[IDX]]]
   // CHECK-NEXT: hlcf.return %[[GEP]]
   %1 = pop.array.gep %array[%idx] : !kgen.pointer<array<2, index>>
@@ -1791,7 +1791,7 @@ kgen.func @dtype_from_ui8() -> !kgen.dtype {
 // CHECK: ([[ARG0:%.*]]:
 kgen.func @fold_offset(%arg0: !kgen.pointer<index>) -> (!kgen.pointer<index>) {
   // CHECK-NEXT: hlcf.return [[ARG0]]
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
   %1 = pop.offset %arg0[%0] : !kgen.pointer<index>
   hlcf.return %1 : !kgen.pointer<index>
 }
@@ -1829,19 +1829,20 @@ kgen.func @string_ops() -> index {
 
 // CHECK-LABEL: @offset_of_offset
 kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index> {
-  %idx3 = index.constant 3
+  %idx3 = kgen.param.constant: scalar<index> = <3>
   %0 = pop.offset %arg0[%idx3] : !kgen.pointer<index>
-  %idx200 = index.constant 200
-  // CHECK: %0 = pop.offset %arg0[%index203]
+  %idx200 = kgen.param.constant: scalar<index> = <200>
+  // CHECK: [[C203:%.*]] = kgen.param.constant: scalar<index> = <203>
+  // CHECK: [[OFF:%.*]] = pop.offset %arg0[[[C203]]]
   %1 = pop.offset %0[%idx200] : !kgen.pointer<index>
-  // CHECK: return %0
+  // CHECK: return [[OFF]]
   hlcf.return %1 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @array_gep_offset
-kgen.func @array_gep_offset(%arg1: !pop.array<4, index>, %arg2: index) -> index {
+kgen.func @array_gep_offset(%arg1: !pop.array<4, index>, %arg2: !kgen.scalar<index>) -> index {
   // CHECK: %0 = pop.stack_allocation 1 x array<4, index>
-  %0 = kgen.param.constant = <0>
+  %0 = kgen.param.constant: scalar<index> = <0>
   %array = pop.stack_allocation 1 x array<4, index>
   // CHECK-NEXT: pop.store %arg0, %0
   pop.store %arg1, %array : !kgen.pointer<array<4, index>>
@@ -2519,4 +2520,42 @@ kgen.func @same_width_sign_differs_does_not_fold(%v0 : !kgen.scalar<ui32>) -> !k
   hlcf.return %v2 : !kgen.scalar<si64>
 }
 
+}
+
+// A store of a zero-sized aggregate writes no bytes, so the canonicalizer
+// drops it.
+// CHECK-LABEL: @store_zero_sized_struct
+// CHECK-NOT: pop.store
+kgen.func @store_zero_sized_struct() {
+  %slot = pop.stack_allocation 1 x !kgen.struct<()>
+  %empty = kgen.struct.create() : !kgen.struct<()>
+  pop.store %empty, %slot : !kgen.pointer<!kgen.struct<()>>
+  hlcf.return
+}
+
+// -----
+
+// The aggregate is recognized through nesting, so a store of one still goes.
+// CHECK-LABEL: @store_nested_zero_sized_struct
+// CHECK-NOT: pop.store
+kgen.func @store_nested_zero_sized_struct() {
+  %slot = pop.stack_allocation 1 x !kgen.struct<(struct<()>)>
+  %inner = kgen.struct.create() : !kgen.struct<()>
+  %outer = kgen.struct.create(%inner) : !kgen.struct<(struct<()>)>
+  pop.store %outer, %slot : !kgen.pointer<!kgen.struct<(struct<()>)>>
+  hlcf.return
+}
+
+// -----
+
+// An array is zero-sized when it has no elements, or when its element type is.
+// CHECK-LABEL: @store_zero_sized_arrays
+// CHECK-NOT: pop.store
+kgen.func @store_zero_sized_arrays(%empty: !pop.array<0, index>,
+                                   %ofEmpty: !pop.array<2, struct<()>>) {
+  %noElements = pop.stack_allocation 1 x !pop.array<0, index>
+  %emptyElements = pop.stack_allocation 1 x !pop.array<2, struct<()>>
+  pop.store %empty, %noElements : !kgen.pointer<array<0, index>>
+  pop.store %ofEmpty, %emptyElements : !kgen.pointer<array<2, struct<()>>>
+  hlcf.return
 }

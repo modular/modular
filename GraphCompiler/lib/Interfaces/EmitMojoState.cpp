@@ -34,15 +34,6 @@ using namespace M;
 
 namespace M::MOGG {
 
-void EmitMojoState::setFusionStructLoweringFor(Value val, MojoValue instance,
-                                               StringLiteral bindMethod,
-                                               MojoValue typeName) {
-  [[maybe_unused]] auto [it, inserted] = lambdaLowerings.try_emplace(
-      val,
-      FusionStructInfo{std::move(instance), bindMethod, std::move(typeName)});
-  ASSERT_STREAM(inserted, << "value already bound to a lambda lowering");
-}
-
 void EmitMojoState::emitOutputStoreFusionDefsOnce() {
   if (emittedOutputStoreFusionArgDefs)
     return;

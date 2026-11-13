@@ -307,8 +307,7 @@ LogicalResult setLaunchParams(CallRowwiseOp op,
     addCost(fold.getBody());
 
   // The Row API's launch parameters, set as the hand-written kernels set
-  // them (rowwise_reductions.mojo, rowwise_normalization.mojo and
-  // rowwise_softmax.mojo):
+  // them (rowwise_reductions.mojo and rowwise_normalization.mojo):
   //
   //   body writes              num_phases  dtype_size       expensive
   //   one value per row (sum)  1           0                cost >= threshold

@@ -29,12 +29,12 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig, SpeculativeConfig
+from max.pipelines.speculative import DrafterExport
 
 from ..dflash2_qwen3_5.model_config import (
     Dflash2DraftHFConfig,
     parse_dflash2_draft_hf_config,
 )
-from ..dflash_mimo_v2 import DrafterExport
 
 __all__ = [
     "SERVING_BLOCK_SIZE",

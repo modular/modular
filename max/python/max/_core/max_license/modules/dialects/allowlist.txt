@@ -115,6 +115,7 @@ MOComposite_RMSNormResidualAddOp                     # CompositeRmsNormResidualA
 MOComposite_ReduceRMSNormFusedResidualAddOp          # CompositeRmsNormFusedResidualAddOp; declares output params; graph.py reaches it structurally
 MOComposite_ReduceRMSNormOp                          # CompositeReduceRmsNormOp
 MOComposite_ReduceRMSNormRoPEOp                      # CompositeRmsNormRopeOp; declares output params; graph.py reaches it structurally
+MOComposite_ReduceSoftmaxOp                          # CompositeReduceSoftmaxOp
 MOComposite_RopeRaggedOp                             # CompositeRopeRaggedOp
 MODialect                                            # required: module docstring for mo.cpp
 MOShape_FromTensorOp                                 # ShapeFromTensorOp
@@ -192,7 +193,6 @@ MO_LayerNormOp                                       # ReduceLayerNormOp
 MO_LayoutAttr                                        # LayoutAttr
 MO_Log1pOp                                           # Log1pOp
 MO_LogOp                                             # LogOp
-MO_LogSoftmaxOp                                      # ReduceLogsoftmaxOp
 MO_MatmulOp                                          # MatmulOp
 MO_MaxOp                                             # MaxOp
 MO_MaxPoolCeilOp                                     # MaxPoolCeilModeTrueOp
@@ -253,7 +253,6 @@ MO_SigmoidOp                                         # SigmoidOp
 MO_SiluOp                                            # SiluOp
 MO_SinOp                                             # SinOp
 MO_SliceOp                                           # SliceOp
-MO_SoftmaxOp                                         # ReduceSoftmaxOp
 MO_SplitOp                                           # SplitOp
 MO_SqrtOp                                            # SqrtOp
 MO_SqueezeShapeOp                                    # SqueezeShapeOp

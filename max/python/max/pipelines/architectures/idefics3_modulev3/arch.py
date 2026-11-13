@@ -15,7 +15,6 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -46,7 +45,6 @@ idefics3_modulev3_arch = SupportedArchitecture(
     config=Idefics3Config,
     weight_adapters={WeightsFormat.safetensors: convert_registered_state_dict},
     batching=Idefics3ModuleV3BatchProcessor,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

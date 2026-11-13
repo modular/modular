@@ -20,7 +20,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Generic
+from typing import TYPE_CHECKING, Generic
 
 from max.pipelines.context import BaseContextType
 from max.pipelines.modeling.types import (
@@ -30,6 +30,9 @@ from max.pipelines.modeling.types import (
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry.metrics import METRICS
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.memory_plan import MemoryPlan
 
 logger = logging.getLogger("max.serve")
 
@@ -72,6 +75,10 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
     # as a per-instance attribute on first use (int is immutable, so instances
     # never share state).
     _awaiting_admission_count: int = 0
+
+    memory_plan: MemoryPlan | None = None
+    """The plan the model worker serves with, its max length and batch size
+    as the worker sized them; set once the worker is ready."""
 
     def note_awaiting_admission(self, delta: int) -> None:
         """Adjust the ingress backlog (API-side, not yet handed to the worker).

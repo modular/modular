@@ -26,7 +26,7 @@ from max.nn._graph_ops import (
     apply_packed_bitmask,
     apply_packed_bitmask_with_penalties,
     apply_penalties_to_logits,
-    gumbel_argmax_from_probs,
+    gumbel_argmax_from_residual,
     keyed_uniform,
     topk_fused_sampling,
     topk_topp_masked_probs,
@@ -923,21 +923,22 @@ def _sampled_draft_verdict(
     # Residual: max(masked target - proposal, 0), both already normalized.
     # A row without a distribution subtracts a one-hot of its drafted
     # token instead, which removes exactly the token the target just
-    # rejected.
-    onehot = ops.range(
-        0, vocab_size, 1, device=device, dtype=DType.int64
-    ) == ops.unsqueeze(token_indices, axis=-1)
-    draft_mass = ops.where(
-        ops.unsqueeze(has_dist, axis=-1),
-        dist,
-        onehot.cast(DType.float32),
-    )
-    residual = ops.relu(target_masked - draft_mass)
-
+    # rejected. Both the subtract and that per-row choice happen inside the
+    # sampling pass, so the residual -- and the selected proposal mass that
+    # fed it -- never occupy a [rows, vocab] buffer.
     seed_rows = _recovery_seed_rows(seed, batch_size, num_steps, device)
     recovered = ops.reshape(
-        gumbel_argmax_from_probs(
-            ops.reshape(residual, [flat_rows, vocab_size]),
+        gumbel_argmax_from_residual(
+            ops.reshape(target_masked, [flat_rows, vocab_size]),
+            ops.reshape(dist, [flat_rows, vocab_size]),
+            fallback=ops.reshape(
+                ops.where(
+                    has_dist,
+                    ops.constant(-1, DType.int64, device),
+                    token_indices,
+                ),
+                [flat_rows],
+            ),
             seed=seed_rows,
         ),
         bk_shape,

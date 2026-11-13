@@ -69,17 +69,6 @@ public:
 
   StructEmitter(StructASTDecl &structDecl);
 
-  /// Generate empty stubs for the destructor, copy constructor, and move
-  /// constructor on the declOp if they are eligible and do not already exist.
-  ///
-  /// A struct is eligible for a destructor if one of its fields has a
-  /// destructor. It is possible that none of the fields of a struct have a
-  /// destructor but that struct has an init that allocates heap memory. In this
-  /// case set the forceGenerateDestructor flag to true to force destructor
-  /// generation.
-  std::optional<ValueInfo>
-  addMissingValueMemberStubsToStruct(bool forceGenerateDestructor = false);
-
   /// Given a struct that has no explicitly defined `__del__` member, define a
   /// new one with an empty body. This allows the CheckLifetimes pass to insert
   /// field dels as needed, and makes sure that anything that refers to this

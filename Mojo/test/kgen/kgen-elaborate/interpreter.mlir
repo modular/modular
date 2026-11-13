@@ -64,14 +64,18 @@ kgen.generator @alloc_load_store(%arg0: index) -> index {
 
   %p0 = pop.stack_allocation 4 x index
   pop.store %idx0, %p0 : !kgen.pointer<index>
-  %p1 = pop.offset %p0[%idx1] : !kgen.pointer<index>
+  %offidx1 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %p1 = pop.offset %p0[%offidx1] : !kgen.pointer<index>
   pop.store %idx1, %p1 : !kgen.pointer<index>
-  %p2 = pop.offset %p0[%idx2] : !kgen.pointer<index>
+  %offidx2 = pop.cast_from_builtin %idx2 : index to !kgen.scalar<index>
+  %p2 = pop.offset %p0[%offidx2] : !kgen.pointer<index>
   pop.store %idx2, %p2 : !kgen.pointer<index>
-  %p3 = pop.offset %p1[%idx2] : !kgen.pointer<index>
+  %offidx3 = pop.cast_from_builtin %idx2 : index to !kgen.scalar<index>
+  %p3 = pop.offset %p1[%offidx3] : !kgen.pointer<index>
   pop.store %idx3, %p3 : !kgen.pointer<index>
 
-  %ptr = pop.offset %p0[%arg0] : !kgen.pointer<index>
+  %offidx4 = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
+  %ptr = pop.offset %p0[%offidx4] : !kgen.pointer<index>
   %result = pop.load %ptr : !kgen.pointer<index>
   hlcf.return %result : index
 }
@@ -327,7 +331,8 @@ kgen.generator @fill_ptr() -> !ptr_t {
   pop.store %idx1, %1 : !kgen.pointer<index>
 
   // Store a pointer to the second element.
-  %2 = pop.offset %0[%idx1] : !ptr_t
+  %offidx5 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %2 = pop.offset %0[%offidx5] : !ptr_t
   %3 = pop.aligned_alloc %idx1, %idx1 : !kgen.pointer<none>
   %4 = pop.pointer.bitcast %2 : !ptr_t to !kgen.pointer<pointer<none>>
   pop.store %3, %4 : !kgen.pointer<pointer<none>>
@@ -923,7 +928,8 @@ kgen.generator @global_const_with_string() -> index {
   %idx1 = index.constant 1
   %0 = pop.global_constant: struct<(string)> = <{"a string nobody mapped yet"}>
   %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(string)>> to !kgen.pointer<index>
-  %2 = pop.offset %1[%idx1] : !kgen.pointer<index>
+  %offidx6 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %2 = pop.offset %1[%offidx6] : !kgen.pointer<index>
   %3 = pop.load %2 : !kgen.pointer<index>
   hlcf.return %3 : index
 }
@@ -953,17 +959,21 @@ kgen.generator @memcpy_1(%arg0: index) -> index {
   %q = pop.pointer.bitcast %p1 : !kgen.pointer<!kgen.struct<(index, index, index, index)>> to !kgen.pointer<index>
 
   pop.store %idx0, %p : !kgen.pointer<index>
-  %p2 = pop.offset %p[%idx1] : !kgen.pointer<index>
+  %offidx7 = pop.cast_from_builtin %idx1 : index to !kgen.scalar<index>
+  %p2 = pop.offset %p[%offidx7] : !kgen.pointer<index>
   pop.store %idx1, %p2 : !kgen.pointer<index>
-  %p3 = pop.offset %p[%idx2] : !kgen.pointer<index>
+  %offidx8 = pop.cast_from_builtin %idx2 : index to !kgen.scalar<index>
+  %p3 = pop.offset %p[%offidx8] : !kgen.pointer<index>
   pop.store %idx2, %p3 : !kgen.pointer<index>
-  %p4 = pop.offset %p2[%idx2] : !kgen.pointer<index>
+  %offidx9 = pop.cast_from_builtin %idx2 : index to !kgen.scalar<index>
+  %p4 = pop.offset %p2[%offidx9] : !kgen.pointer<index>
   pop.store %idx3, %p4 : !kgen.pointer<index>
 
   %len = kgen.param.constant: index = <get_sizeof(struct<(index, index, index, index)>, current_target())>
   pop.memcpy %q, %p, %len: !kgen.pointer<index> -> !kgen.pointer<index>
 
-  %ptr = pop.offset %q[%arg0] : !kgen.pointer<index>
+  %offidx10 = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
+  %ptr = pop.offset %q[%offidx10] : !kgen.pointer<index>
   %result = pop.load %ptr : !kgen.pointer<index>
   hlcf.return %result : index
 }

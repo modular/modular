@@ -92,8 +92,8 @@ def test_add_fuses_into_gather_indices(session: InferenceSession) -> None:
 
 
 def test_chain_fuses_into_prologue(session: InferenceSession) -> None:
-    """`softmax(cast(add(a, a)))` fuses the whole elementwise chain into one
-    prologue.
+    """`gather(cast(add(a, a)), indices)` fuses the whole elementwise chain into
+    one prologue.
 
     Mirrors `chain` in prologue_fusion.mlir: a dtype-changing `mo.cast`
     mid-chain, with `PrologueFuser` absorbing an already-`ElementwiseFuser`-
@@ -101,22 +101,24 @@ def test_chain_fuses_into_prologue(session: InferenceSession) -> None:
     """
     with Graph(
         "chain_fuses_into_prologue",
-        input_types=[TensorType(DType.float32, [2, 3], device=DeviceRef.CPU())],
+        input_types=[
+            TensorType(DType.float32, [3, 3], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [2, 2], device=DeviceRef.CPU()),
+        ],
     ) as graph:
-        (a,) = (v.tensor for v in graph.inputs)
+        a, indices = (v.tensor for v in graph.inputs)
         chained = (a + a).cast(DType.float64)
-        graph.output(ops.softmax(chained, axis=1))
+        graph.output(ops.gather(chained, indices, axis=0))
 
-    a_np = np.random.randn(2, 3).astype(np.float32)
+    a_np = np.random.randn(3, 3).astype(np.float32)
+    idx_np = np.array([[0, 2], [1, 0]], dtype=np.int32)
     # `a + a` canonicalizes to `a * 2` before fusion, so the fused sequence
     # has a mul (not an add) ahead of the cast.
     (out,) = run_and_verify_fusion(
-        session, graph, a_np, fused=r"mo\.mul.*mo\.cast.*mo\.reduce\.softmax"
+        session, graph, a_np, idx_np, fused=r"mo\.mul.*mo\.cast.*mo\.gather"
     )
 
-    doubled = (a_np + a_np).astype(np.float64)
-    exp = np.exp(doubled - np.max(doubled, axis=1, keepdims=True))
-    ref = exp / np.sum(exp, axis=1, keepdims=True)
+    ref = (a_np + a_np).astype(np.float64)[idx_np]
     np.testing.assert_allclose(out, ref, rtol=1e-6, atol=1e-6)
 
 

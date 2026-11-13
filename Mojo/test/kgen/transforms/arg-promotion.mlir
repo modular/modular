@@ -93,12 +93,13 @@ kgen.func @projection_access(%arg0: !kgen.pointer<index> mut) {
   %8 = pop.load %7 : !kgen.pointer<index>
   pop.store %8, %7 : !kgen.pointer<index>
 
-  %idx1 = index.constant 1
-  %9 = pop.array.gep %2[%idx1] : <array<2, index>>
+  %gepidx1 = kgen.param.constant: scalar<index> = <1>
+  %9 = pop.array.gep %2[%gepidx1] : <array<2, index>>
   %10 = pop.load %9 : !kgen.pointer<index>
   pop.store %10, %9 : !kgen.pointer<index>
 
-  %11 = pop.offset %arg0[%idx1] : !kgen.pointer<index>
+  %offidx1 = kgen.param.constant: scalar<index> = <1>
+  %11 = pop.offset %arg0[%offidx1] : !kgen.pointer<index>
   %12 = pop.load %11 : !kgen.pointer<index>
   pop.store %12, %11 : !kgen.pointer<index>
 
@@ -277,18 +278,16 @@ kgen.func @recursion(%arg0: !kgen.pointer<index> mut) {
 // A promoted 'out' leaves no argument behind, so its entry goes too.
 // CHECK-LABEL: kgen.func @arg_metadata_follows_promoted_args
 // CHECK-SAME: (%arg0: index, %arg1: !kgen.pointer<index> imm_mem) -> index
-// CHECK-SAME: fnArgAttrs = [{nvvm.grid_constant}, {llvm.noalias}]
+// CHECK: } <fnArgAttrs = [{nvvm.grid_constant}, {llvm.noalias}]>
 kgen.func @arg_metadata_follows_promoted_args(
     %arg0: !kgen.pointer<index> imm_mem,
     %arg1: !kgen.pointer<index> imm_mem,
-    %arg2: !kgen.pointer<index> byref_result) attributes {
-  fnArgAttrs = [{nvvm.grid_constant = unit}, {llvm.noalias = unit}, {}]
-} {
+    %arg2: !kgen.pointer<index> byref_result) {
   %0 = pop.load %arg0 : !kgen.pointer<index>
   pop.store %0, %arg2 : !kgen.pointer<index>
   %1 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg1, %1 : !kgen.pointer<pointer<index>>
   hlcf.return
-}
+} <fnArgAttrs = [{nvvm.grid_constant = unit}, {llvm.noalias = unit}, {}]>
 
 }

@@ -332,12 +332,17 @@ appears before the argument name.
 
 ### `mut`
 
-The caller's value is passed by mutable reference. Changes
-inside the function are visible to the caller:
+The function receives a mutable reference to the caller's value. Changes
+to that value inside the function are visible to the caller:
 
 ```mojo
 def double_it(mut x: Int):
     x *= 2
+
+def main():
+    var x = 5
+    double_it(x)
+    print(x)  # 10
 ```
 
 `mut` arguments can't have default values:
@@ -370,8 +375,12 @@ def main():
 
 ### `out`
 
-An `out` argument is the function's return slot. Only one
-`out` argument is allowed. It replaces the `->` return type:
+The argument is the function's result. The caller doesn't pass a value for the
+argument; the function must initialize it. The caller receives it as the
+return value.
+
+A function can have only one `out` argument. It's primarily used in type
+initializers.
 
 ```mojo
 def make_int(out result: Int):
@@ -406,8 +415,15 @@ struct Resource:
 
 ### `ref`
 
-Passes a reference with an explicit *origin* specifier. The
-origin tracks where the reference came from:
+The function receives a non-owning reference to the caller's value. The
+function can only read through the argument, but the reference's origin has
+parametric mutability: its mutability matches the value passed by the caller.
+This allows the function to return a mutable reference when the caller passes
+a mutable value, as shown in the following example.
+
+By default, Mojo infers the reference's origin. You can use `ref[origin]`
+instead of `ref` to specify the origin explicitly, such as to require a mutable
+origin or share the origin with another argument.
 
 ```mojo
 def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
@@ -421,12 +437,19 @@ def main():
     print(data)  # ['Первый', 'two', 'three']
 ```
 
-### Default convention
+### `imm` (default convention)
 
-Without a convention, the argument is an immutable read-only reference. The
-caller keeps ownership:
+The function receives a non-owning, immutable reference. The caller keeps
+ownership, and the function can't modify the value through the argument.
+
+`imm` is the default convention, so it's usually omitted.
+
+These two functions have the same behavior:
 
 ```mojo
+def length[T: Copyable](imm s: List[T]) -> Int:
+    return len(s)
+
 def length[T: Copyable](s: List[T]) -> Int:
     return len(s)
 ```

@@ -241,7 +241,10 @@ def load_kv_manager(
 
     if available_cache_memory is None:
         raise ValueError(
-            "available_cache_memory should have been set during memory estimation"
+            "No KV-cache budget was planned. With measuring disabled "
+            "(MAX_MEMORY_MEASURE_DISABLE=1), memory planning leaves none when "
+            "the model leaves no memory for a KV cache: try a higher "
+            "--device-memory-utilization, a smaller model, or more devices."
         )
 
     if max_batch_size is None:

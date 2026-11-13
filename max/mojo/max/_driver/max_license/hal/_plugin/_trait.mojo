@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import OptionalReg
-from std.collections.string.string_span import _get_kgen_string
-from std._plugin.selector import Plugin
 from std.sys.info import CompilationTarget
 
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
@@ -30,10 +28,6 @@ from .._machine import DeviceRef
 from max.gpu.host import ExecutionConfig
 from ..execution_config.cpu import CPUExecutionConfiguration
 from ..extensions.traits import DefaultHALExtensions, HALExtensions
-
-
-trait HalPlugin(Plugin):
-    comptime HookFor[target: CompilationTarget]: HalPluginHooks
 
 
 trait HalLauncher:
@@ -277,10 +271,6 @@ trait HalPluginHooks:
 
     comptime extensions: HALExtensions = DefaultHALExtensions
 
-    comptime FunctionWrapper: DeviceFunctionWrapper = _IdentityWrapper
-    """Selects the function `compile_function` compiles for a user kernel,
-    such as a generated entry point the plugin's runtime launches."""
-
     comptime Launcher: HalLauncher = DefaultHalLauncher
     """Launches `enqueue_function` calls the plugin takes over."""
 
@@ -291,17 +281,6 @@ trait HalPluginHooks:
 # ===-----------------------------------------------------------------------===#
 # DefaultPlugin
 # ===-----------------------------------------------------------------------===#
-
-
-struct DefaultHalPlugin(HalPlugin):
-    """Default `HalPluginHooks` implementation used when no plugin is active.
-
-    Every hook is left at its `HalPluginHooks` default, so the built-in stdlib
-    code paths are preserved.
-    """
-
-    comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultHalPluginHooks[target]
 
 
 struct DefaultHalPluginHooks[target: CompilationTarget](HalPluginHooks):

@@ -16,6 +16,7 @@ modular_py_library(
     ],
     test_docstring_examples = True,
     deps = [
+        requirement("av"),
         "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max:tree",
@@ -45,6 +46,7 @@ modular_py_library(
         "//max/python/max/pipelines/weights",
         "//max/python/max/profiler",
         "//max/python/max/support",
+        requirement("cyclopts"),
         requirement("hf-transfer"),
         requirement("httpx"),
         requirement("huggingface-hub"),

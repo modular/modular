@@ -44,14 +44,22 @@ ConformanceOps are modeled as ASTDecls inside StructDeclOps:
 each explicit conformance that the struct declares. At this point, they have
 empty bodies (marked as signature-resolved).
 
-- When checking conformance (doesNominalTypeConformTo), we ask to body resolve
-the conformance table for that trait, and all its parent traits, in that
-struct. This means only witness tables that are needed by the current program
-is body resolved.
+- Body resolving a conformance registers one member decl per trait
+requirement, under the witness name, and checks nothing itself.
+
+- Body resolving a member checks that one requirement and installs its
+WitnessOp, so a `get_witness` resolves only the entry it names. The first
+member found unsatisfied checks the rest and reports every unsatisfied
+requirement in one error, then marks the conformance erroneous so later
+members fail silently.
 
 - At the end of parsing, all reachable decls that are signature resolved will
-be automatically fully resolved. This will ensure every explicit conformance
-declared by a struct in the "main" module is checked.
+be automatically fully resolved. Members are reachable through their
+conformance, so every explicit conformance declared by a struct in the "main"
+module is still checked in full.
+
+Closure-wrapper conformances are created already filled, so they never get
+member decls. Bytecode conformances materialize their witnesses instead.
 
 Note that ConformanceOps are always created as signature-resolved because there
 is no less-resolved state for it (it is a synthesized entity after all).

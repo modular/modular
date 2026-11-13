@@ -19,7 +19,6 @@ from max.experimental.cascade.pipelines.common_textgen import (
 )
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
@@ -77,7 +76,6 @@ llama_arch = SupportedArchitecture(
     },
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3DecoderConfig,
-    memory_planner=PagedMemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
     # An EAGLE checkpoint names the Llama architecture of its one decoder layer.
     draft_architectures={

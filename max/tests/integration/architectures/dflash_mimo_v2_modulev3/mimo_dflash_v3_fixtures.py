@@ -42,7 +42,6 @@ from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2Config,
     DFlashMiMoV2DraftConfig,
-    DrafterExport,
 )
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
@@ -70,7 +69,11 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Pairing,
     _SpecDecodeModule,
 )
-from max.pipelines.speculative import SpeculativeConfig, spec_adapters
+from max.pipelines.speculative import (
+    DrafterExport,
+    SpeculativeConfig,
+    spec_adapters,
+)
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from transformers import PretrainedConfig

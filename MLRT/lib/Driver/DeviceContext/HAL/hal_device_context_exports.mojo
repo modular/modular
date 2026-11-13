@@ -26,19 +26,22 @@ frees it with `MojoHAL_strfree`.
 """
 
 from std.ffi import c_char, CStringSpan, external_call
-from max.gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
-    DeviceEvent,
-    DeviceStream,
-    HostBuffer,
-)
-from max.gpu.host import _CString
-from max.gpu.host import DeviceAttribute
+
+# The HAL types by their backend names rather than through `max.gpu.host`,
+# which serves the backend-dispatching wrappers.
 from max._driver.max_license.device_context_hal.device_context_hal import (
+    HALDeviceBuffer as DeviceBuffer,
+    HALDeviceContext as DeviceContext,
+    HALDeviceEvent as DeviceEvent,
+    HALDeviceStream as DeviceStream,
+    HALHostBuffer as HostBuffer,
     _CompletionFlagBox,
-    _DeviceContextScopeHAL,
+    _HALDeviceContextScope,
     _accelerator_api_and_arch,
+)
+from max.gpu.host import (
+    _CString,
+    DeviceAttribute,
 )
 from std.memory import (
     alloc,
@@ -70,7 +73,7 @@ comptime _DeviceBufferBoxPtr = Pointer[DeviceBuffer[.uint8], MutUntrackedOrigin]
 comptime _DeviceStreamBoxPtr = Pointer[DeviceStream, MutUntrackedOrigin]
 comptime _DeviceEventBoxPtr = Pointer[DeviceEvent, MutUntrackedOrigin]
 comptime _DeviceContextScopeBoxPtr = Pointer[
-    _DeviceContextScopeHAL, MutUntrackedOrigin
+    _HALDeviceContextScope, MutUntrackedOrigin
 ]
 # The C++ flag holds one reference; Mojo `CompletionFlag`s share the rest.
 comptime _CompletionFlagBoxPtr = Pointer[
@@ -925,7 +928,7 @@ def MojoHAL_DeviceContext_pushContext(
     # current; restored by MojoHAL_DeviceContextScope_pop.
     try:
         var pushed = ctx[].push_context()
-        var boxed = alloc(Layout[_DeviceContextScopeHAL].single())
+        var boxed = alloc(Layout[_HALDeviceContextScope].single())
         var ptr = boxed.unsafe_ptr()
         ptr.unsafe_write(pushed^)
         try:
@@ -950,7 +953,7 @@ def MojoHAL_DeviceContextScope_pop(scope: _DeviceContextScopeBoxPtr) abi("C"):
     boxed.unsafe_deinit_pointee()
     dealloc(
         ThinAllocation(unsafe_owned_ptr=boxed).unsafe_with_layout(
-            Layout[_DeviceContextScopeHAL].single()
+            Layout[_HALDeviceContextScope].single()
         )
     )
 

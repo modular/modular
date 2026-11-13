@@ -59,7 +59,6 @@ from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_hf_repo_access,
     mock_pipeline_config_resolve,
-    mock_plan_from_sizes,
 )
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
@@ -696,7 +695,6 @@ class TestDraftModelQuantizationEncoding:
         mock_draft_arch_config.get_max_seq_len.return_value = draft_max_seq_len
 
         mock_arch = Mock()
-        mock_arch.pipeline_model.estimate_weights_size.return_value = 0
         mock_arch.config.initialize.return_value = mock_draft_arch_config
 
         # Encodings settle at construction, so set them up front.
@@ -948,7 +946,6 @@ class TestFloat16WeightCast:
 
 
 @prepare_registry
-@mock_plan_from_sizes
 def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     # The config layer's model builder is what loads the repo; plain
@@ -992,7 +989,6 @@ def test_validate_model_path__correct_repo_id_provided(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1028,7 +1024,6 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting2(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1064,7 +1059,6 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting3(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1100,7 +1094,6 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     "TODO: This test is failing due to some int vs. MagicMock mismatch"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_retrieve_factory_with_known_architecture(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -1285,7 +1278,6 @@ def test_config__validates_lora_configuration(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__validates_lora_works_for_llama(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1320,7 +1312,6 @@ def test_config__validates_lora_works_for_llama(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 @pytest.mark.skipif(
     accelerator_count() < 2, reason="Test requires multiple GPUs"
 )

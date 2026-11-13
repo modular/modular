@@ -60,6 +60,7 @@ For example:
 from __future__ import annotations
 
 import copy
+import gc
 import logging
 import time
 from collections.abc import Callable, Container, Iterator, Sequence
@@ -129,7 +130,7 @@ from max.pipelines.graph_input_stager import (
     GraphInputStager,
     InputDescriptor,
 )
-from max.pipelines.kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.kv_cache import NullKVCache, PagedKVCacheManagerInterface
 from max.pipelines.kv_cache.paged_kv_cache._common import (
     cache_valid_length_for_context,
     prompt_tokens_for_context,
@@ -167,7 +168,8 @@ from max.pipelines.speculative.spec_width_policy import (
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
-from ..memory_estimation import MemoryPlan
+from .. import memory_ledger
+from ..memory_plan import MemoryPlan
 from ._label_scoring import BatchLabelScorer
 from .spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
@@ -711,10 +713,13 @@ class SpecDecodeState:
         max_batch_size: int,
         available_cache_memory: int | None = None,
         vocab_size: int | None = None,
+        kv_manager: PagedKVCacheManagerInterface | None = None,
     ) -> SpecDecodeState:
         """Load the spec decode state.
 
         Note: if vocab_size is None then structured output bitmask is not allocated.
+        ``kv_manager``, when given, is used instead of loading one from
+        ``available_cache_memory``.
         """
         if pipeline_config.speculative is None:
             raise ValueError(
@@ -728,16 +733,17 @@ class SpecDecodeState:
             CPU() if is_virtual_device_mode() else model.devices[0]
         )
 
-        kv_manager = load_kv_manager(
-            params=model.kv_params,
-            max_batch_size=max_batch_size,
-            max_seq_len=model.max_seq_len,
-            session=session,
-            available_cache_memory=available_cache_memory,
-            is_di_enabled=pipeline_config.runtime.is_disaggregated,
-            model_name=pipeline_config.model.model_name,
-            max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
-        )
+        if kv_manager is None:
+            kv_manager = load_kv_manager(
+                params=model.kv_params,
+                max_batch_size=max_batch_size,
+                max_seq_len=model.max_seq_len,
+                session=session,
+                available_cache_memory=available_cache_memory,
+                is_di_enabled=pipeline_config.runtime.is_disaggregated,
+                model_name=pipeline_config.model.model_name,
+                max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
+            )
 
         assert pipeline_config.speculative is not None
         num_speculative_tokens = (
@@ -2129,14 +2135,37 @@ class OverlapTextGenerationPipeline(
                 )
             )
 
-        available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
+        self.memory_plan = memory_plan
+        """The plan the pipeline runs with, its KV budget filled in."""
+        self.memory_ledger: memory_ledger.Ledger | None = None
+        """The warmups' measurement, once :meth:`size_kv_cache` ran."""
+        # With no budget planned, the pipeline builds against the null page
+        # and memory_ledger.size_kv_cache swaps the real cache in once the
+        # weights are resident (and the warmups measured, when they run).
+        measuring = (
+            memory_plan.available_cache_memory is None
+            and memory_ledger.sizes_after_load(self._devices)
+        )
+        null_cache = (
+            NullKVCache(
+                params=kv_params,
+                max_batch_size=max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
+            )
+            if measuring
+            else None
+        )
+        available_cache_memory = memory_plan.available_cache_memory
 
         # Load the KVCache manager.  For models with multiple KV caches
         # (e.g. sliding-window + global attention), a single manager
         # handles all caches natively via MultiKVCacheParams.
         self._spec_decode_state: SpecDecodeState | None = None
-        if not is_spec_decode:
+        if null_cache is not None and not is_spec_decode:
+            self._kv_manager: PagedKVCacheManagerInterface = null_cache
+        elif not is_spec_decode:
             self._kv_manager = load_kv_manager(
                 params=kv_params,
                 max_batch_size=max_batch_size,
@@ -2164,6 +2193,7 @@ class OverlapTextGenerationPipeline(
                     if pipeline_config.needs_bitmask_constraints
                     else None
                 ),
+                kv_manager=null_cache,
             )
             self._kv_manager = self._spec_decode_state.kv_manager
             policy = self._spec_decode_state.spec_width_policy
@@ -2191,8 +2221,11 @@ class OverlapTextGenerationPipeline(
         )
         self._vision_encoding = vision_encoding(self._pipeline_model)
         if self._vision_encoding is not None:
+            # A block reservation is carved from the measured budget, so
+            # the warmups run with the entry-count cache, which reserves
+            # nothing.
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
-                plan=memory_plan.vision_cache_plan,
+                plan=None if measuring else memory_plan.vision_cache_plan,
                 devices=self._devices,
             )
 
@@ -2332,6 +2365,45 @@ class OverlapTextGenerationPipeline(
             logger.info(
                 "disable_overlap: synchronizing after every execution."
                 " CPU/GPU overlap is off and throughput will drop."
+            )
+
+        # The pipeline (and the spec-decode state) hold the null cache now;
+        # this frame's reference would keep its slab alive past the swap.
+        del null_cache
+        if measuring:
+            memory_ledger.size_kv_cache(self, memory_plan)
+
+    def install_kv_manager(
+        self,
+        kv_manager: PagedKVCacheManagerInterface | None,
+        memory_plan: MemoryPlan,
+    ) -> None:
+        """Replaces the KV cache the pipeline runs against.
+
+        :func:`~max.pipelines.lib.memory_ledger.size_kv_cache` swaps the
+        null cache the warmups ran against for the real one, passing
+        ``None`` first so the null cache is gone before the real one
+        claims its memory.
+
+        Args:
+            kv_manager: The cache, or ``None`` to drop the current one.
+            memory_plan: The plan the cache was sized with.
+        """
+        self._kv_manager = kv_manager  # type: ignore[assignment]
+        if self._spec_decode_state is not None:
+            self._spec_decode_state.kv_manager = kv_manager  # type: ignore[assignment]
+        self._max_batch_size = memory_plan.planned_max_batch_size
+        self.memory_plan = memory_plan
+        if kv_manager is None:
+            self._prev_batch = None
+            gc.collect()
+        elif (
+            self._vision_encoding is not None
+            and memory_plan.vision_cache_plan is not None
+        ):
+            self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
+                plan=memory_plan.vision_cache_plan,
+                devices=self._devices,
             )
 
     @property

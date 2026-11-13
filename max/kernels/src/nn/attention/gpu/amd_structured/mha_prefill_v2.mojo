@@ -240,7 +240,6 @@ struct MhaPrefillV2[config: MhaConfigV2]:
 
     comptime NUM_THREADS = Self.NUM_WARPS * 64
     comptime BM = Self.NUM_WARPS * Self.Q_BLOCK_SIZE
-    comptime D_FRAG_PER_LANE = (Self.DEPTH * Self.Q_BLOCK_SIZE) // 64
 
     # MHA MMA operator (single source of truth for the MFMA shape, SMEM
     # sub-block geometry, register-tile layouts, and SMEM→register
@@ -417,10 +416,6 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     comptime _QPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._Q_ROW_STRIDE], ComptimeInt[1]].element_types,
-    ]
-    comptime _KVPerHeadLayoutT = Layout[
-        Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
-        Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
     # Per-tile K/V layout (valid_rows x DEPTH) used by the DMA loaders.
     # `dim[0]` is a RUNTIME row count (Int32): KV_BLOCK for a full tile,

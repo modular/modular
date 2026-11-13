@@ -33,7 +33,6 @@ modular_cc_test(
         ":bench_primitives.mef",
     ],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
         "@llvm-project//mlir:MLIR",

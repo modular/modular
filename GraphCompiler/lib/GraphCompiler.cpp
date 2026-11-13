@@ -360,14 +360,18 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   // the duplicate captures.
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
+  // Last, once views are hoisted out of the loop bodies.
+  pm.addNestedPass<GraphOp>(MAP::createInferMaxSimdWidth());
 }
 
 void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
                               const MoggPipelineOptions &opts) {
   pm.addPass(MOGG::createLegalizeRowwiseKernels());
   pm.addPass(MOGG::createConformCallOperands());
-  if (opts.enableGraphBlobs)
+  if (opts.enableGraphBlobs) {
     pm.addPass(MOGG::createFormGraphBlobs());
+    pm.addNestedPass<GraphOp>(MOGG::createReuseGraphBlobBuffers());
+  }
   pm.addPass(MOGG::createOutlineRoutines());
   pm.addPass(MOGG::createWrapFuncsWithTrace());
 

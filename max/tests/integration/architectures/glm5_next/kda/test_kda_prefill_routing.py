@@ -178,13 +178,16 @@ def _chunk_io_dtypes(line: str) -> list[str]:
     )
 
 
-def _assert_routed(mlir: str, io_dtype: str) -> None:
+def _assert_routed(
+    mlir: str, io_dtype: str, output_dtype: str | None = None
+) -> None:
     lines = _chunk_lines(mlir)
     assert lines, "prefill is not routed to kda_chunk"
     assert "kda_decode" in mlir, "decode must stay on kda_decode"
     assert "mo.if" in mlir, "the two ops must sit behind a conditional"
     for line in lines:
-        assert _chunk_io_dtypes(line) == [io_dtype] * 4, line
+        expected = [io_dtype] * 3 + [output_dtype or io_dtype]
+        assert _chunk_io_dtypes(line) == expected, line
 
 
 def _assert_sequential(mlir: str) -> None:
@@ -201,14 +204,29 @@ def test_gfx950_prefill_takes_bf16_chunk(
 
 
 @pytest.mark.parametrize("architecture", ["sm_100a", "sm_103"])
-def test_sm100_prefill_takes_float32_chunk(
+def test_sm100_prefill_takes_bf16_chunk(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
-    """NVIDIA keeps float32 q/k/v and ignores the AMD-only conditions."""
+    """NVIDIA takes bf16 q/k/v and a float32 output: the fused kernel.
+
+    It ignores the AMD-only gate and pool conditions.
+    """
     _patch_accelerator(monkeypatch, "cuda", architecture)
-    _assert_routed(_core_mlir(), "f32")
-    _assert_routed(_core_mlir(gate_mode="original"), "f32")
-    _assert_routed(_core_mlir(pool_dtype=DType.bfloat16), "f32")
+    for mlir in (
+        _core_mlir(),
+        _core_mlir(gate_mode="original"),
+        _core_mlir(pool_dtype=DType.bfloat16),
+    ):
+        _assert_routed(mlir, "bf16", "f32")
+        assert "use_computebound = true" in mlir
+
+
+def test_gfx950_chunk_is_not_computebound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AMD chunk op has no compute-bound variant."""
+    _patch_accelerator(monkeypatch, "hip", "gfx950")
+    assert "use_computebound = true" not in _core_mlir()
 
 
 @pytest.mark.parametrize(

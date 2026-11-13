@@ -23,10 +23,8 @@ modular_cc_binary(
     name = "bench_allocator",
     srcs = ["bench_allocator.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     deps = [
         "//AsyncRT:Runtime",

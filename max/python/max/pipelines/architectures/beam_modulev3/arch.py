@@ -20,7 +20,6 @@ from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from .beam import Beam
-from .memory_planner import BeamMemoryPlanner
 from .model_config import BeamConfig
 from .reasoning import BeamReasoningParser  # noqa: F401  registers "beam"
 from .tokenizer import BeamTokenizer
@@ -42,7 +41,6 @@ beam_modulev3_arch = SupportedArchitecture(
     weight_rules=beam_weight_rules,
     use_weight_rules=True,
     config=BeamConfig,
-    memory_planner=BeamMemoryPlanner,
     multi_gpu_supported=True,
     format_spec=Path(__file__).parent / "formatspec.json",
     # The name Mach finds the fused DFlash2 graph by.

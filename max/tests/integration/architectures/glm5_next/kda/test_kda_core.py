@@ -28,8 +28,8 @@ because the recurrence kernel is compiled per head-dimension pair and a
 narrowed fixture would exercise code the model never runs.
 
 Everything is float32, so the comparison is not blunted by bfloat16 rounding.
-The one exception is prefill on gfx950, where the core rounds q/k/v and the
-recurrence output through bf16 for the chunk kernel.
+The one exception is prefill on gfx950 and SM100, where the core rounds q/k/v
+(and on gfx950 the recurrence output) through bf16 for the chunk kernel.
 """
 
 from __future__ import annotations
@@ -82,8 +82,8 @@ PREFILL_LENGTHS = (5, 3)
 # meaningless on them. The bound is therefore RMSE-relative, the metric
 # `test_kda_chunk_fwd.mojo` and `test_kda_ops.py` use for this recurrence. It
 # is the budget the graph-API layer's test held the whole layer to, tensor-core
-# projections included, which leaves room for gfx950's bf16 chunk prefill. On
-# B200 the core is float32 throughout and measures 6e-7.
+# projections included, which leaves room for the bf16 chunk prefill: B200
+# measures 2.7e-3 against it.
 TENSOR_CORE_ULP = 2.0**-11
 LAYER_REL_RMS = 16 * TENSOR_CORE_ULP
 

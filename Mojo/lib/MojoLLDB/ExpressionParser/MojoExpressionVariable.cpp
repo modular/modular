@@ -121,12 +121,6 @@ bool MojoPersistentExpressionState::isExpressionModuleName(
 //===----------------------------------------------------------------------===//
 // Python Expression State
 
-bool MojoPersistentExpressionState::hasInitializedPython() const {
-  return llvm::any_of(expressionInstances, [](const auto &exprInst) {
-    return exprInst->pythonModuleName.has_value();
-  });
-}
-
 std::string MojoPersistentExpressionState::getNextPythonExpressionModuleName() {
   return (getPythonExpressionModuleNamePrefix() +
           std::to_string(nextPythonModuleID++))

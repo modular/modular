@@ -221,7 +221,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     comptime RopeStageElems = Self.NumRopeBlocks * Self.BlockElems
     comptime RopeStageBytes = Self.RopeStageElems * Self.bf16_bytes_per_element
     # Total KV stage: 32768 + 8192 = 40960 bytes
-    comptime KVStageTotalBytes = Self.ContentStageBytes + Self.RopeStageBytes
 
     # P stage element count (FP8): 1 block * 4096 elems = 4096
     comptime PStageElems = Self.BlockElems

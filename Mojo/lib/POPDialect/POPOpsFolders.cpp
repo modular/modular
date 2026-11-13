@@ -25,6 +25,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/Support/MathExtras.h"
 #include <mlir/IR/Diagnostics.h>
 #include <unistd.h>
 
@@ -468,11 +469,10 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 
   auto findOffsetValueAt = [&](GlobalConstantOp cst,
                                Value offset) -> OpFoldResult {
-    APInt idx;
-    if (!mlir::matchPattern(offset, mlir::m_ConstantInt(&idx)) ||
-        idx.isNegative())
+    std::optional<int64_t> idx = matchConstantIndex(offset);
+    if (!idx || *idx < 0)
       return {};
-    return findValueAt(cst, idx.getLimitedValue());
+    return findValueAt(cst, *idx);
   };
 
   // `load(gep(global_constant()))` is a load of a specific element, if the gep
@@ -935,7 +935,10 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
       // exception is if it changes it to zero, which is acceptable now, because
       // !pop.array is always within address space 0.
       if (op.getType() == PointerType::get(arrTy.getElementType())) {
-        auto zero = ParamConstantOp::create(b, op.getLoc(), b.getIndexAttr(0));
+        auto zero = ParamConstantOp::create(
+            b, op.getLoc(),
+            SIMDAttr::get(uint64_t(0),
+                          SIMDType::getScalarIndexType(b.getContext())));
         b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getInput(), zero);
         return success();
       }
@@ -1481,10 +1484,34 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
 // StoreOp
 //===----------------------------------------------------------------------===//
 
+/// True if `type` is recursively empty (zero-sized): an empty struct, a struct
+/// of recursively-empty fields, or an array thereof. False if unresolved.
+static bool isRecursivelyEmptyAggregate(Type type) {
+  if (auto structTy = dyn_cast<StructType>(type)) {
+    auto elementTypes = structTy.getElementTypes();
+    if (!elementTypes)
+      return false;
+    return llvm::all_of(*elementTypes, isRecursivelyEmptyAggregate);
+  }
+  if (auto arrayTy = dyn_cast<POP::ArrayType>(type)) {
+    std::optional<int64_t> size = arrayTy.getResolvedSize();
+    if (!size)
+      return false;
+    return *size == 0 || isRecursivelyEmptyAggregate(arrayTy.getElementType());
+  }
+  return false;
+}
+
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
   if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile stores.
     return failure();
+  }
+
+  // A zero-sized store writes no bytes.
+  if (isRecursivelyEmptyAggregate(op.getArg().getType())) {
+    b.eraseOp(op);
+    return success();
   }
 
   // Storing an unknown to a pointer is a nop as it is legal to assume the
@@ -1555,7 +1582,7 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
-  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  std::optional<int64_t> offset = getConstantIndex(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   // Stride by the alloc size, matching parametric_interpret and the LLVM GEP
@@ -1564,8 +1591,8 @@ ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
       state.getTarget(), cast<PointerType>(ptr.getType()).getElementType());
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
-  return state.mapResults(PointerAttr::get(
-      ptr.getAddr() + *elSize * offset.getInt(), ptr.getType()));
+  return state.mapResults(
+      PointerAttr::get(ptr.getAddr() + *elSize * *offset, ptr.getType()));
 }
 
 ErrorTreeOrSuccess
@@ -1575,7 +1602,7 @@ OffsetOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
-  auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
+  std::optional<int64_t> offset = getConstantIndex(operands[1]);
   if (!ptr || !offset)
     return ErrorTree(getLoc(), "non-constant inputs");
   auto ptrType = state.getReboundType(ptr.getType());
@@ -1586,15 +1613,11 @@ OffsetOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!elSize)
     return ErrorTree(getLoc(), "could not query pointer element size");
   return state.mapResults(
-      PointerAttr::get(ptr.getAddr() + *elSize * offset.getInt(), ptrType));
+      PointerAttr::get(ptr.getAddr() + *elSize * *offset, ptrType));
 }
 
 OpFoldResult OffsetOp::fold(FoldAdaptor adaptor) {
-  auto offset = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
-  if (!offset)
-    return {};
-
-  if (offset.getInt() != 0)
+  if (getConstantIndex(adaptor.getIndex()) != 0)
     return {};
 
   return getPtr();
@@ -1605,7 +1628,7 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
   // TODO: could generalize (offset (array.gep a, i), j) -> (array.gep a, i + j)
   // but we don't have a way to add two index values here.
   if (auto gep = op.getPtr().getDefiningOp<ArrayGEPOp>()) {
-    if (!mlir::matchPattern(gep.getIndex(), mlir::m_Zero()))
+    if (matchConstantIndex(gep.getIndex()) != 0)
       return b.notifyMatchFailure(op, "not a constant offset");
 
     b.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), gep.getArray(),
@@ -1615,27 +1638,27 @@ LogicalResult OffsetOp::canonicalize(OffsetOp op, PatternRewriter &b) {
 
   // Canonicalize `%ptr[%c0][%c1] -> %ptr[%c0 + %c1]`, where the indices are
   // constants.
-  APInt c1;
-  if (!mlir::matchPattern(op.getIndex(), mlir::m_ConstantInt(&c1)))
+  std::optional<int64_t> c1 = matchConstantIndex(op.getIndex());
+  if (!c1)
     return b.notifyMatchFailure(op, "not a constant offset");
   auto parent = op.getPtr().getDefiningOp<OffsetOp>();
   if (!parent)
     return b.notifyMatchFailure(op, "parent is not an offset");
-  APInt c0;
-  if (!mlir::matchPattern(parent.getIndex(), mlir::m_ConstantInt(&c0)))
+  std::optional<int64_t> c0 = matchConstantIndex(parent.getIndex());
+  if (!c0)
     return b.notifyMatchFailure(op, "parent is not a constant offset");
 
   // However unlikely, don't canonicalize if the arithmetic overflows. Note that
   // it is always valid to fold addition of index values, regardless of width.
-  bool ov = false;
-  APInt newOffset = c0.sadd_ov(c1, ov);
-  if (ov)
+  int64_t newOffset;
+  if (llvm::AddOverflow(*c0, *c1, newOffset))
     return b.notifyMatchFailure(op, "offset addition overflows");
 
+  auto indexTy = SIMDType::getScalarIndexType(b.getContext());
   b.replaceOpWithNewOp<OffsetOp>(
       op, parent.getPtr(),
       ParamConstantOp::create(b, op.getLoc(),
-                              b.getIndexAttr(newOffset.getSExtValue())));
+                              SIMDAttr::get(uint64_t(newOffset), indexTy)));
   return success();
 }
 
@@ -2205,7 +2228,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
-  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  std::optional<int64_t> index = getConstantIndex(operands[1]);
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
@@ -2215,7 +2238,7 @@ ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
-  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
+  int64_t addr = ptr.getAddr() + *index * *stride;
   return state.mapResults(
       PointerAttr::get(addr, PointerType::get(elementType)));
 }
@@ -2228,7 +2251,7 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "operation requires a target model");
 
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
-  auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
+  std::optional<int64_t> index = getConstantIndex(operands[1]);
   if (!ptr || !index)
     return ErrorTree(getLoc(), "non-constant inputs");
 
@@ -2239,7 +2262,7 @@ ArrayGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), elementType);
   if (!stride)
     return ErrorTree(getLoc(), "failed to get array element stride");
-  int64_t addr = ptr.getAddr() + index.getInt() * *stride;
+  int64_t addr = ptr.getAddr() + *index * *stride;
   return state.mapResults(
       PointerAttr::get(addr, PointerType::get(elementType)));
 }
@@ -2264,8 +2287,10 @@ LogicalResult ArrayGEPOp::canonicalize(ArrayGEPOp op,
   // is undefined behaviour for that to be anything but `0` so we can replace it
   // with the constant `0`. This frees the use to be DCE'd and unblocks other
   // optimizations.
-  auto zero =
-      ParamConstantOp::create(rewriter, op.getLoc(), rewriter.getIndexAttr(0));
+  auto zero = ParamConstantOp::create(
+      rewriter, op.getLoc(),
+      SIMDAttr::get(uint64_t(0),
+                    SIMDType::getScalarIndexType(rewriter.getContext())));
   rewriter.replaceOpWithNewOp<ArrayGEPOp>(op, op.getType(), op.getArray(),
                                           zero);
   return success();

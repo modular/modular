@@ -30,6 +30,9 @@ namespace {
 static Value createEntryAlloca(ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
                                Type allocType, Type storeType,
                                const M::KGEN::LLVMDataLayout &dl) {
+  // Allocate the larger of the two types. A coercion may round the size up.
+  if (dl.getTypeAllocSize(storeType) > dl.getTypeAllocSize(allocType))
+    allocType = storeType;
   uint64_t align =
       std::max(dl.getTypeABIAlign(allocType), dl.getTypeABIAlign(storeType));
   Value count = ConstantOp::create(b, b.getI32IntegerAttr(1));
@@ -160,12 +163,13 @@ void processCABIFunctionDefinition(LLVMFuncOp func, CABIInfo &abiInfo,
 
   // A signature that needs no coercion keeps its types, but still needs its
   // attributes, such as the extension of a narrow integer result.
+  SmallVector<NamedAttrList> paramAttrs =
+      sigClass.getParamAttrs(origArgTypes, origRetType, func.getArgAttrsAttr());
   auto applyCABIAttrs = [&] {
-    for (auto [paramIdx, attrs] :
-         llvm::enumerate(sigClass.getParamAttrs(origArgTypes, origRetType))) {
-      for (NamedAttribute attr : attrs)
-        func.setArgAttr(paramIdx, attr.getName(), attr.getValue());
-    }
+    func.setAllArgAttrs(llvm::map_to_vector(
+        paramAttrs, [&](const NamedAttrList &attrs) -> Attribute {
+          return attrs.getDictionary(ctx);
+        }));
     for (NamedAttribute attr : sigClass.getResultAttrs(ctx))
       func.setResultAttr(0, attr.getName(), attr.getValue());
   };

@@ -39,9 +39,7 @@ trait __Enum(EnumLike):
         abort()
 
     @staticmethod
-    def __enum_init[
-        id: Int, Case: AnyType, *Ts: Movable
-    ](var *payload: *Ts, out result: Self):
+    def __enum_init[id: Int, *Ts: Movable](var *payload: *Ts, out result: Self):
         abort()
 
     def _get_enum_discriminant(self) -> Int:

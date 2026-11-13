@@ -3525,10 +3525,6 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime KPairType = Self.PairType  # Alias for backward compatibility
 
     @inline(.always)
-    def get_k_smem[*, qk_stage: Int](self) -> Self.SMemType:
-        return self.get_smem[qk_stage=qk_stage]()
-
-    @inline(.always)
     def get_k[*, qk_stage: Int](self) -> Self.PairType:
         return self.get_tile[qk_stage=qk_stage]()
 
@@ -3539,10 +3535,6 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     @inline(.always)
     def acquire_k[*, qk_stage: Int](self):
         self.acquire[qk_stage=qk_stage]()
-
-    @inline(.always)
-    def get_v_smem(self) -> Self.SMemType:
-        return self.get_smem[qk_stage=0]()
 
     @inline(.always)
     def get_v(self, e: Int32) -> Self.PairType:
@@ -3601,9 +3593,6 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     ) if Self.is_k else (
         Self.config.BN * Self.config.v_cols_per_cta() * size_of[Self.dtype]()
     )
-    comptime staged_k_bytes = Self.config.k_rows_per_cta() * Self.config.BK0 * size_of[
-        Self.dtype
-    ]()
 
     # K uses full staging, V uses qk_stages=1
     comptime num_qk_stages_effective: Int = Self.config.num_qk_stages if Self.is_k else 1

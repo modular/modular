@@ -366,7 +366,8 @@ def LIT_FileModuleOp : LITOp<"file_module", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
+  let assemblyFormat =
+      "$sym_name $bodyRegion prop-dict attr-dict-with-keyword";
   let skipDefaultBuilders = 1;
 }
 
@@ -425,7 +426,8 @@ def LIT_PackageOp : LITOp<"package", [
     OpBuilder<(ins "StringAttr":$name)>
   ];
   let assemblyFormat = [{
-    (`namespace` $isNamespace^)? $sym_name attr-dict-with-keyword $bodyRegion
+    (`namespace` $isNamespace^)? $sym_name $bodyRegion prop-dict
+    attr-dict-with-keyword
   }];
   let hasVerifier = 1;
 }
@@ -513,10 +515,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $canonicalTrait) ``
-    custom<TypeConvention>($convention) attr-dict-with-keyword
+    custom<TypeConvention>($convention)
     (`\n` `move` custom<Symbol>($moveInit)^ ``)?
     (`\n` `copy` custom<Symbol>($copyInit)^ ``)?
-    custom<OptionalDecorators>($decorators) $fields
+    custom<OptionalDecorators>($decorators) $fields prop-dict
+    attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -610,7 +613,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     // library wraps as `reflect[T].field_annotation[field, index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
-  let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
+  let assemblyFormat =
+      "custom<KeywordAsString>($name) `:` $type prop-dict attr-dict";
 
   let builders = [
     OpBuilder<(ins "StringAttr":$name, "Type":$type)>,
@@ -658,7 +662,7 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let assemblyFormat = [{
-    custom<KeywordAsString>($name) (`:` $payloadTypes^)? attr-dict
+    custom<KeywordAsString>($name) (`:` $payloadTypes^)? prop-dict attr-dict
   }];
 
   let hasVerifier = 1;
@@ -792,7 +796,7 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature)
-    attr-dict-with-keyword $fields
+    $fields prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -862,7 +866,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $canonicalTrait)
-    custom<TypeConvention>($convention) attr-dict-with-keyword $fields
+    custom<TypeConvention>($convention) $fields prop-dict
+    attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -959,7 +964,7 @@ def LIT_TryOp : LITOp<"try",
     ($label^)? ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
     `except` custom<RegionWithArgs>($exceptRegion)
     `else` custom<RegionWithArgs>($elseRegion)
-    (`finally` $finallyRegions^)? attr-dict
+    (`finally` $finallyRegions^)? prop-dict attr-dict
   }];
 
   let builders = [
@@ -1064,7 +1069,7 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     UnitAttr:$hasDocHiddenDecorator
   );
   let assemblyFormat = [{
-    custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
+    custom<AliasDeclOpValue>($paramDecl, $value) prop-dict attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -1518,8 +1523,8 @@ def LIT_ImportOp : LITOp<"import", [NoRegionArguments, SymbolName,
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    $sym_name `path` $modulePath
-    attr-dict-with-keyword $bodyRegion
+    $sym_name `path` $modulePath $bodyRegion prop-dict
+    attr-dict-with-keyword
   }];
 
   let skipDefaultBuilders = 1;
@@ -1805,7 +1810,7 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
                        UnitAttr:$endUninit);
   let results = (outs LIT_RefType:$ref);
   let assemblyFormat = [{
-    $ptr (`start_uninit` $startUninit^)? (`end_uninit` $endUninit^)?
+    $ptr $name (`start_uninit` $startUninit^)? (`end_uninit` $endUninit^)?
     `:` type($ref) attr-dict
   }];
 
@@ -1832,7 +1837,7 @@ def LIT_RefFromPointerREPLOp : LITOp<"ref.from_pointer.repl",
 
   let arguments = (ins PointerType:$ptr, StrAttr:$name);
   let results = (outs LIT_RefType:$ref);
-  let assemblyFormat = "$ptr `:` type($ref) attr-dict";
+  let assemblyFormat = "$ptr $name `:` type($ref) attr-dict";
 }
 
 

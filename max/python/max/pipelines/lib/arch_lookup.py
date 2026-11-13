@@ -50,7 +50,6 @@ if TYPE_CHECKING:
         TextContext,
     )
     from max.pipelines.diffusion.config import TaylorSeerDefaults
-    from max.pipelines.kv_cache.memory_planner import MemoryPlanner
     from max.pipelines.modeling.config_enums import SupportedEncoding
     from max.pipelines.modeling.types import (
         EmbeddingsContext,
@@ -504,46 +503,6 @@ class SupportedArchitecture:
 
     When ``False``, ``--enable-spec-decode-mixed-batches`` falls back to
     plain in-flight batching for this architecture.
-    """
-
-    memory_planner: type[MemoryPlanner] | None = None
-    """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
-    this architecture.
-
-    When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, and signal-buffer memory.
-    Autoregressive text-generation models should set this to
-    :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
-    architecture-specific overrides).
-
-    ``None`` means the architecture manages its own memory estimation (for
-    example, diffusion pipelines that skip KV cache estimation entirely).
-    Without a planner, memory estimation budgets no activation memory and
-    does not infer ``max_batch_size``, so architectures that use a KV cache
-    should always set this field.
-
-    To reserve a fixed chunk of activation memory (vision headroom, for
-    example) without writing a planner subclass, register the class returned
-    by
-    :meth:`~max.pipelines.kv_cache.PagedMemoryPlanner.with_activation_reservation`.
-
-    .. code-block:: python
-
-        from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-
-        # Most architectures register the planner class directly:
-        #     SupportedArchitecture(..., memory_planner=PagedMemoryPlanner)
-        # A configured subclass reserves activation memory:
-        planner = PagedMemoryPlanner.with_activation_reservation(
-            15 * 1024**3  # 15 GiB
-        )
-
-    .. invisible-code-block: python
-
-        from max.pipelines.kv_cache.memory_planner import MemoryPlanner
-
-        assert issubclass(PagedMemoryPlanner, MemoryPlanner)
-        assert issubclass(planner, PagedMemoryPlanner)
     """
 
     cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None

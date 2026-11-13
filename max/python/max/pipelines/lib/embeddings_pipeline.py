@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 from max.support.algorithm import flatten2d
 
 from .interfaces import PipelineModel
-from .memory_estimation import MemoryPlan
+from .memory_plan import MemoryPlan
 
 logger = logging.getLogger("max.pipelines")
 

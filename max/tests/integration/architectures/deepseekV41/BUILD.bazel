@@ -74,24 +74,6 @@ modular_py_test(
     ],
 )
 
-# Guards the KV cache budget in pipelines/lib/memory_estimation.py
-# (MemoryEstimator) and the planner interface in
-# pipelines/kv_cache/memory_planner.py.
-modular_py_test(
-    name = "test_memory_planner",
-    srcs = ["test_memory_planner.py"],
-    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/kv_cache",
-        "//max/python/max/pipelines/lib",
-        requirement("transformers"),
-    ],
-)
-
 modular_py_library(
     name = "dsml_fixtures",
     testonly = True,
@@ -358,8 +340,7 @@ modular_py_test(
 )
 
 # Guards that the trunk and DSpark drafter rotary tables cover speculative
-# positions past max_seq_len (nn/kv_cache spec_decode_cache_slack), and that
-# memory_planner.py reserves the candidate keep step the graph builds. CPU only.
+# positions past max_seq_len (nn/kv_cache spec_decode_cache_slack). CPU only.
 modular_py_test(
     name = "test_position_capacity",
     srcs = ["test_position_capacity.py"],
@@ -373,7 +354,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 

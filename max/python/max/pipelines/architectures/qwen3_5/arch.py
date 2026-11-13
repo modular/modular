@@ -23,7 +23,6 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Qwen3_5BatchProcessor
-from .memory_planner import Qwen3_5MemoryPlanner
 from .model import Qwen3_5Model
 from .model_config import Qwen3_5Config
 from .reasoning import Qwen3_5ReasoningParser  # noqa: F401  registers "qwen3_5"
@@ -56,7 +55,6 @@ qwen3_5_arch = SupportedArchitecture(
     tool_parser="qwen3_5",
     format_spec=Path(__file__).parent / "formatspec.json",
     reasoning_parser="qwen3_5",
-    memory_planner=Qwen3_5MemoryPlanner,
     # A warmup probe's state pages are freed with its KV, so a sweep of probes
     # cannot exhaust them.
     supports_device_graph_capture=True,

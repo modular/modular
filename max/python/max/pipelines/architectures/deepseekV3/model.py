@@ -48,9 +48,9 @@ from .batch_processor import (
     DeepseekV3BatchProcessorBase,
 )
 from .deepseekV3 import DeepseekV3
-from .memory_planner import (
-    _ep_max_rank_send_tokens_for_pipeline,
-    _get_mtp_draft_ep_dispatch_dtype,
+from .ep_dispatch import (
+    ep_max_rank_send_tokens_for_pipeline,
+    mtp_draft_ep_dispatch_dtype,
 )
 from .model_config import DeepseekV3Config
 
@@ -209,7 +209,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             n_nodes = ep_size // num_devices
 
-            ep_max_rank_send_tokens = _ep_max_rank_send_tokens_for_pipeline(
+            ep_max_rank_send_tokens = ep_max_rank_send_tokens_for_pipeline(
                 pipeline_config
             )
 
@@ -313,7 +313,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # When EAGLE/MTP speculative decoding shares EP buffers between
         # target (FP4) and draft (BF16) models, allocate buffers
         # large enough for the draft model's dispatch dtype.
-        draft_ep_dtype = _get_mtp_draft_ep_dispatch_dtype(self.pipeline_config)
+        draft_ep_dtype = mtp_draft_ep_dispatch_dtype(self.pipeline_config)
         if draft_ep_dtype is not None:
             ep_alloc_config = replace(
                 model_config.ep_config,

@@ -17,6 +17,11 @@ import os
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from max.driver import (
+    accelerator_api,
+    get_virtual_device_api,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.nn.quant_config import QuantConfig
 from max.support.math import ceildiv
@@ -152,6 +157,13 @@ class EPConfig:
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
 
+    tokens_split_evenly: bool = False
+    """Whether every device holds within one token of every other at each EP
+    step, as tensor-parallel attention's even reduce-scatter leaves them. The
+    P2P small path needs it: each device decides from its own count whether
+    the protocol kernels run, so devices with unrelated counts (data-parallel
+    attention) would disagree and hang."""
+
     max_batch_size: int = 0
     """Decode concurrency cap sizing the AMD MXFP4 preb direct grid.y on the
     decode bands. 0 disables (full-stride fallback)."""
@@ -201,6 +213,39 @@ class EPConfig:
     physical slot count and this preserves the original logical count, which
     is the leading dim of ``log2phy`` / ``logcnt``."""
 
+    @property
+    def uses_p2p_small_path(self) -> bool:
+        """Whether the EP buffers carry the P2P small path's flags and words.
+
+        The EP kernels take the small path for decode-sized steps only on AMD
+        GPUs, on a single node, without allreduce and with a fused shared
+        expert, and only when the sync-counter buffers end in its words. Every
+        other configuration keeps the buffers it had without the small path.
+        The GPU vendor is the graph's target (see :func:`_ep_targets_amd`), not
+        the host's. It also needs :attr:`tokens_split_evenly`, and a dispatch
+        format other than NVFP4, whose dispatch the small kernel cannot serve.
+        The remaining terms mirror the bounds of ``ep_p2p_small_on`` in
+        ``ep.mojo``, so the buffers are sized for the small path only when the
+        kernels will take it.
+        """
+        return (
+            self.fused_shared_expert
+            and self.tokens_split_evenly
+            and not (
+                self.dispatch_quant_config is not None
+                and self.dispatch_quant_config.is_nvfp4
+            )
+            and not self.use_allreduce
+            and self.n_nodes == 1
+            and self.n_gpus_per_node <= _EP_MAX_GPUS_PER_NODE
+            and self.max_tokens_per_rank >= _EP_P2P_SMALL_MAX_TOKENS
+            and self.n_experts // self.n_gpus_per_node + 1 < 256
+            and self.top_k * _EP_P2P_SMALL_MAX_TOKENS * 4
+            <= _EP_P2P_SMALL_COMBINE_BYTES
+            and self.hidden_size % _EP_P2P_SMALL_HIDDEN_MULTIPLE == 0
+            and _ep_targets_amd()
+        )
+
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
 
@@ -217,6 +262,7 @@ class EPConfig:
             n_gpus_per_node=self.n_gpus_per_node,
             top_k=self.top_k,
             use_allreduce=self.use_allreduce,
+            p2p_small=self.uses_p2p_small_path,
             dispatch_element_dtype=(
                 self.dispatch_quant_config.mx_element_dtype
                 if self.dispatch_quant_config is not None
@@ -345,6 +391,19 @@ class EPConfig:
                 )
 
 
+def _ep_targets_amd() -> bool:
+    """Returns whether the EP graph's devices are AMD GPUs.
+
+    A graph's ``DeviceRef`` carries no vendor; the devices it compiles for
+    do. A compile-only export (``gen_mef --virtual-target-arch``) targets
+    its virtual devices whatever GPU the builder has, so their API decides;
+    otherwise the attached accelerator does.
+    """
+    if is_virtual_device_mode():
+        return get_virtual_device_api() == "hip"
+    return accelerator_api() == "hip"
+
+
 def estimate_ep_memory_usage(
     *,
     hidden_size: int,
@@ -356,6 +415,7 @@ def estimate_ep_memory_usage(
     n_gpus_per_node: int,
     top_k: int,
     use_allreduce: bool = False,
+    p2p_small: bool = False,
     dispatch_element_dtype: DType | None = None,
 ) -> int:
     """Estimate the EP communication memory usage per device per buffer group.
@@ -376,6 +436,8 @@ def estimate_ep_memory_usage(
         use_allreduce: Whether allreduce is used for cross-device communication.
             The EP kernels then route tokens within each device, so ``ep.init``
             sizes the buffers for that device's experts on one rank.
+        p2p_small: Whether the single-node receive buffers carry the P2P small
+            path's flags (see :attr:`EPConfig.uses_p2p_small_path`).
         dispatch_element_dtype: The logical element dtype behind a packed
             ``uint8`` dispatch dtype (see
             :attr:`~max.nn.quant_config.QuantConfig.mx_element_dtype`). ``uint8``
@@ -420,6 +482,12 @@ def estimate_ep_memory_usage(
             n_gpus_per_node * max_tokens_per_rank * d_token_size
             + n_experts * max_tokens_per_rank * _EP_TOKEN_INDEX_BYTES
         )
+        if p2p_small:
+            dispatch_header, combine_header = _ep_p2p_header_bytes(
+                n_experts, n_gpus_per_node, max_tokens_per_rank, top_k
+            )
+            dispatch_recv_buf_size += dispatch_header
+            combine_recv_buf_size += combine_header
         combine_send_buf_size = 0
     else:
         dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
@@ -475,6 +543,68 @@ def calculate_ep_max_tokens_per_rank(
 _EP_TOKEN_INDEX_BYTES = 32
 """Bytes of one token index in a single-node EP dispatch receive buffer.
 Mirrors ``EP_TOKEN_INDEX_BYTES`` in ``ep_comm.mojo``."""
+
+
+_EP_MAX_GPUS_PER_NODE = 8
+"""Mirrors ``MAX_GPUS_PER_NODE`` in ``ep_comm.mojo``."""
+
+_EP_P2P_SMALL_MAX_TOKENS = 32
+"""Mirrors ``EP_P2P_SMALL_MAX_TOKENS`` in ``ep_comm.mojo``."""
+
+_EP_P2P_SMALL_WORDS = 8
+"""Int32 words the P2P small path owns at the end of an EP sync-counter
+buffer. Mirrors ``EP_P2P_SMALL_WORDS`` in ``ep_comm.mojo``."""
+
+_EP_P2P_SMALL_DISPATCH_BYTES = 4096
+"""Mirrors ``EP_P2P_SMALL_DISPATCH_BYTES`` in ``ep_comm.mojo``."""
+
+_EP_P2P_SMALL_COMBINE_BYTES = 4096
+"""Mirrors ``EP_P2P_SMALL_COMBINE_BYTES`` in ``ep_comm.mojo``."""
+
+
+_EP_P2P_SMALL_HIDDEN_MULTIPLE = 64 * 16
+"""Mirrors ``EP_P2P_SMALL_HIDDEN_MULTIPLE`` in ``ep_comm.mojo``."""
+
+
+def _ep_p2p_header_bytes(
+    n_experts: int, n_ranks: int, max_tokens_per_rank: int, top_k: int
+) -> tuple[int, int]:
+    """Returns the header bytes before the P2P receive buffers.
+
+    Mirrors ``ep_p2p_dispatch_header_bytes`` and
+    ``ep_p2p_combine_header_bytes`` in ``ep_comm.mojo``: the small path's
+    flags, and the prefill scratch when ``ep_p2p_prefill_on`` holds.
+    """
+    dispatch = _EP_P2P_SMALL_DISPATCH_BYTES
+    combine = _EP_P2P_SMALL_COMBINE_BYTES
+    prefill_on = (
+        top_k % 4 == 0
+        and top_k > n_ranks
+        and top_k & (top_k - 1) == 0
+        and n_experts // n_ranks + 1 < 128
+    )
+    if prefill_on:
+        n_local = n_experts // n_ranks
+        dispatch += (
+            ceildiv(
+                2 * _EP_MAX_GPUS_PER_NODE * max_tokens_per_rank * 4
+                + 2 * n_local * 4,
+                256,
+            )
+            * 256
+        )
+        per_src = max_tokens_per_rank * top_k
+        combine += (
+            ceildiv(
+                n_ranks * per_src * 4
+                + 256
+                + n_ranks * per_src * 8
+                + n_ranks * max_tokens_per_rank * 4,
+                256,
+            )
+            * 256
+        )
+    return dispatch, combine
 
 
 _EP_LOCAL_SYNC_RESERVED_WORDS = 262144

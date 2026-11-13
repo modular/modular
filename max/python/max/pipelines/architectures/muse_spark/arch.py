@@ -22,7 +22,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import MuseSparkBatchProcessor
-from .memory_planner import MuseSparkMemoryPlanner
 from .model_config import MuseSparkConfig
 from .modules import MuseSparkDecoder, MuseSparkVision
 
@@ -46,7 +45,6 @@ muse_spark_arch = SupportedArchitecture(
     },
     config=MuseSparkConfig,
     batching=MuseSparkBatchProcessor,
-    memory_planner=MuseSparkMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
     # The name Mach finds the fused DSpark graph by.

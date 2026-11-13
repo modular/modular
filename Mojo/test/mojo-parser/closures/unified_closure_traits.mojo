@@ -230,7 +230,7 @@ def bar[U: DoB](x: U):
 # COM: Verify that a register_passable closure capturing a generic
 # COM: register_passable closure and a concrete register_passable struct gets
 # COM: convention register_passable (not trivial)
-# S7-DAG: lit.struct.decl @"{{.*}}s7_call_inner{{.*}}::outer::__storage"{{.*}} register_passable attributes
+# S7-DAG: lit.struct.decl @"{{.*}}s7_call_inner{{.*}}::outer::__storage"{{.*}} register_passable{{$}}
 
 
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
@@ -254,7 +254,7 @@ def s7_call_inner[
 # COM: Verify that a register_passable closure capturing a trivially
 # COM: register_passable callback and a trivial struct gets convention
 # COM: register_passable_trivial.
-# S8-DAG: lit.struct.decl @"{{.*}}s8_call_inner{{.*}}::outer::__storage"{{.*}} register_passable_trivial attributes
+# S8-DAG: lit.struct.decl @"{{.*}}s8_call_inner{{.*}}::outer::__storage"{{.*}} register_passable_trivial {{[{]$}}
 
 
 struct TrivialPayload(TrivialRegisterPassable):

@@ -224,6 +224,28 @@ def FormGraphBlobs
   ];
 }
 
+def ReuseGraphBlobBuffers : Pass<"mogg-reuse-graph-blob-buffers"> {
+  let summary = "Let a graph blob's outputs share buffers whose uses are over.";
+  let description = [{
+    Gives each output of a graph blob routine the buffer of an earlier output
+    that no later member uses, then drops the outputs that no longer have
+    buffers of their own, so the routine has only the buffers its members use
+    at once. A barrier separates consecutive
+    members, so a buffer whose last use is member `i` is free from member
+    `i + 1` on. An output that something outside the routine reads keeps its
+    buffer to the end. Assumes each routine whose body is a `mogg.graph_blob`
+    reaches its outputs only through the operands of the blob's calls.
+
+    Only outputs of the same type share a buffer, and the routine's inputs
+    keep theirs.
+  }];
+
+  let dependentDialects = [
+    "M::MO::MODialect",
+    "M::MOGG::MOGGDialect",
+  ];
+}
+
 def OutlineRoutines
     : Pass<"mogg-outline-routines", "mlir::ModuleOp"> {
   let summary = "Outline each `mogg.routine` body into a `mogg.func`.";

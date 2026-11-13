@@ -1464,6 +1464,10 @@ def test_add_host_input(ctx: DeviceContext[]) raises:
     for i in range(length):
         assert_equal(host_dst[i], UInt8(0x71))
 
+    # `caller_input` holds an untracked pointer into `caller_buf`, so the buffer
+    # must outlive the last `DeviceGraph.create` that reads through it.
+    _ = caller_buf^
+
 
 def test_host_input_key_bakes_contents(ctx: DeviceContext[]) raises:
     print("Test host-input cache keys separate by contents.")

@@ -225,6 +225,35 @@ public:
     assert(result == value && "non-deterministic interpreter results");
     return result;
   }
+  /// Interpret `func` on `operands` through the interpreter result cache.
+  /// `interpret` runs on a miss and may replace `operands` (e.g. by
+  /// concretizing symbols within it); the global cache is keyed on the final
+  /// value. It returns the interpreted value, a null value to return
+  /// uncached, or an error to propagate. Only successes are cached.
+  ErrorTreeOr<TypedAttr> interpretWithCache(
+      Location loc, FuncOp func, ParameterExprArrayAttr &operands,
+      function_ref<ErrorTreeOr<TypedAttr>(ParameterExprArrayAttr &)>
+          interpret) {
+    ParameterExprArrayAttr lookupKey = operands;
+    TypedAttr &cached = lookupCachedInterpretation(func, lookupKey);
+    if (cached) {
+      recordInterpreterCall(loc, func, /*cpuNanos=*/std::nullopt);
+      return cached;
+    }
+
+    ErrorTreeOr<TypedAttr> result = interpret(operands);
+    if (result.isError())
+      return result.takeError();
+    TypedAttr value = result.takeValue();
+    if (!value)
+      return TypedAttr();
+    value = writeGlobalCachedInterpretation(func, operands, value);
+
+    // Re-look up the slot: `interpret` may have run nested interpretations
+    // that rehashed the thread-local cache, dangling the reference above.
+    (*tlInterp)[{func, lookupKey}] = value;
+    return value;
+  }
 
   //===--------------------------------------------------------------------===//
   // Entry Point

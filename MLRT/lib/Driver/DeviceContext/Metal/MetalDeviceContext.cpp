@@ -779,6 +779,7 @@ ErrorOrSuccess MetalDeviceContext::memCopyDtoD(DeviceBuffer &dst,
   return success();
 }
 
+// Copied into Target/lib/Metal/Queue.cpp for the HAL; fix both.
 // Fills bytes [begin, end) of `dst` with a pattern that repeats every 16
 // bytes: byte `p` gets `pattern` byte `p % 16`. Whole 16-byte blocks take one
 // vector store each; only the two edge blocks are written byte by byte, so the

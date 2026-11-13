@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from max.config import ConfigFileModel
+from max.config import ConfigModel
 from max.pipelines.diffusion.config import (
     DEFAULT_DENOISING_CACHE_CONFIG,
     DenoisingCacheConfig,
@@ -45,7 +45,7 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _ENV_FLAG_TRUE
 
 
-class PipelineRuntimeConfig(ConfigFileModel):
+class PipelineRuntimeConfig(ConfigModel):
     """Model-agnostic runtime settings for pipeline execution.
 
     Contains batching, scheduling, and execution configuration that is

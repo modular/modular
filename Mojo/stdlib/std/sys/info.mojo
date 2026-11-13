@@ -748,9 +748,8 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
                 return False
             case .gpu:
                 return True
-            case .other(other):
-                # The payload is the device's name and whether it accelerates.
-                return other[1]
+            case .other(_, accelerates):
+                return accelerates
 
     # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
@@ -768,7 +767,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
                 return False
             case .gpu:
                 return True
-            case .other(_):
+            case .other(_, _):
                 return False
 
     # NOTE: Uses a sentinel instead of Optional to avoid recursive elaboration.
@@ -1474,7 +1473,7 @@ struct Endian(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     ].values
     comptime _enum_case_types: _MLIR.KGENParamListType[
         AnyType
-    ] = TypeList.splat[2, NoneType].values
+    ] = TypeList.splat[2, Tuple[]].values
 
     @inline(.always)
     def _get_enum_discriminant(self) -> Int:

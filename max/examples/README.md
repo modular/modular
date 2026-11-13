@@ -53,12 +53,6 @@ A tiled matrix multiplication that demonstrates block-level and warp-level
 synchronization, accompanying [GPU block and warp operations and
 synchronization](https://max.modular.com/gpu/block-and-warp/).
 
-## [Layouts](layouts/)
-
-Using the `Layout` type to describe how multidimensional data is arranged in
-memory, accompanying [Introduction to
-layouts](https://max.modular.com/layout/layouts/).
-
 ## [Music generation](music_generation/)
 
 Rendering a full-length song from a caption and lyrics with MiniMax-Music3,

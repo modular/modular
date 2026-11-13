@@ -14,7 +14,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -38,7 +37,6 @@ olmo3_arch = SupportedArchitecture(
     weight_rules=olmo3_weight_rules,
     use_weight_rules=True,
     config=Olmo3Config,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

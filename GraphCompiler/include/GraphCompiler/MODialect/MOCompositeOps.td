@@ -87,6 +87,41 @@ def MOComposite_ReduceRMSNormOp : MO_CompositeOp<"reduce.rms_norm", [
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceSoftmaxOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_ReduceSoftmaxOp : MO_CompositeOp<"reduce.softmax", [
+  AllDTypesMatch<["input", "result"]>,
+  AllShapeAttrsMatch<["input", "result"]>,
+  MO_ParamDeclaration,
+  MO_SingleDevice,
+  Pure,
+]> {
+  let summary = "Softmax operation";
+  let description = [{
+    Returns `exp(x) / sum(exp(x))`, summing along `axis`.
+
+    A composite: a target that registers a kernel for it runs that kernel;
+    elsewhere `mo-tmp-decompose-composites` replaces it with the ops it is
+    made of.
+
+    Example:
+
+    ```mlir
+      %res = mo.composite.reduce.softmax(%arg) [axis = 1] :
+        (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
+    ```
+  }];
+
+  let arguments = (ins MO_Tensor:$input, IndexAttr:$axis);
+  let results = (outs MO_Tensor:$result);
+  let assemblyFormat = [{
+    `(` $input `)` `[` `axis` `=` $axis `]` attr-dict `:`
+    functional-type($input, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 

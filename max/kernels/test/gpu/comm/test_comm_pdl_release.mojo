@@ -29,6 +29,13 @@ Each collective is probed launched both with and without the PDL attribute. The
 attribute that lets a dependent start early sits on the dependent's launch, so a
 collective launched without it still releases a dependent that carries it.
 
+The allreduce's Lamport probe covers the decode path, whose kernel reads only
+this rank's *own* input: no peer touches it. The overwriting dependent is still
+the hazard, standing in for the next kernel that reuses a buffer this rank has
+yet to load. It runs at a 24 KiB per-rank message, inside the small-message
+bucket the tuning table sends to the Lamport path, and, on a host with eight
+GPUs, at eight ranks, where the shipped launch geometry applies.
+
 The allgather is probed twice: with a 16-byte-aligned length it takes the TMA
 kernel on SM100, and with an odd element count the non-TMA P2P kernel. Its
 wrapper launches both with the PDL attribute, so its reference differs from the
@@ -83,6 +90,12 @@ comptime KIND_REDUCESCATTER = 4
 comptime KIND_REDUCESCATTER_RMSNORM = 5
 comptime KIND_ALLGATHER_P2P = 6
 comptime KIND_ALLGATHER_RMSNORM = 7
+comptime KIND_ALLREDUCE_LAMPORT = 8
+
+# The Lamport probe's per-rank message: 24 KiB of bf16. Small enough to stay
+# under the 1 MiB ceiling that routes the tuning table to Lamport, large enough
+# that the load spans several CTAs.
+comptime LAMPORT_LENGTH = 12288
 
 # Output buffers a rank owns: the allgather writes one per peer, and the fused
 # reduce-scatter and all-gather norms their normed and summed outputs; the rest
@@ -101,6 +114,12 @@ comptime OutOdd = TileTensor[
     mut=True, dtype, type_of(row_major(ODD)), MutAnyOrigin
 ]
 comptime Row2D = type_of(row_major(Coord(Index(0, COLS))))
+comptime InSmall = TileTensor[
+    dtype, type_of(row_major(LAMPORT_LENGTH)), ImmutAnyOrigin
+]
+comptime OutSmall = TileTensor[
+    mut=True, dtype, type_of(row_major(LAMPORT_LENGTH)), MutAnyOrigin
+]
 comptime In2D = TileTensor[dtype, Row2D, ImmutAnyOrigin]
 comptime Shard2D = TileTensor[mut=True, dtype, Row2D, MutAnyOrigin]
 comptime Gamma1D = TileTensor[
@@ -187,6 +206,25 @@ def _launch_collective[
             rank_sigs,
             ctxs[rank],
             my_rank=rank,
+        )
+    elif kind == KIND_ALLREDUCE_LAMPORT:
+        # The same buffers, viewed as the Lamport path's small message. The
+        # dispatch picks the kernel from the message size, so this is the same
+        # call as above with a shorter length and it lands on Lamport.
+        var small_in = Array[InSmall, ngpus](
+            fill_with=lambda (j: Int) -> InSmall: InSmall(
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    ins[j].unsafe_ptr()
+                ),
+                row_major(LAMPORT_LENGTH),
+            )
+        )
+        var small_out = OutSmall(
+            outs[rank * NUM_OUTS].unsafe_ptr().as_unsafe_any_origin(),
+            row_major(LAMPORT_LENGTH),
+        )
+        allreduce[ngpus=ngpus, pdl_level=pdl_level](
+            small_in, small_out, rank_sigs, ctxs[rank], my_rank=rank
         )
     elif kind == KIND_ALLGATHER:
         comptime assert ngpus <= NUM_OUTS
@@ -323,6 +361,11 @@ def _run_once[
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     overwrite: Bool,
 ) raises:
+    # The Lamport probe reads only a short prefix of the input, so the
+    # dependent must zero exactly that much.
+    comptime probe_len = (
+        LAMPORT_LENGTH if kind == KIND_ALLREDUCE_LAMPORT else LENGTH
+    )
     group_start()
     for rank in range(ngpus):
         _launch_collective[kind, ngpus, pdl_level](
@@ -331,7 +374,7 @@ def _run_once[
         if overwrite:
             ctxs[rank].enqueue_function[_early_overwrite](
                 ins[rank],
-                Int32(LENGTH),
+                Int32(probe_len),
                 grid_dim=128,
                 block_dim=256,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -367,6 +410,9 @@ def _probe[
     carries the PDL attribute, so the `OFF` probe covers a default-launched
     collective followed by a PDL kernel.
     """
+    comptime probe_len = (
+        LAMPORT_LENGTH if kind == KIND_ALLREDUCE_LAMPORT else LENGTH
+    )
     var ins = List[DeviceBuffer[dtype]](capacity=ngpus)
     var golden = List[DeviceBuffer[dtype]](capacity=ngpus)
     var outs = List[DeviceBuffer[dtype]](capacity=ngpus * NUM_OUTS)
@@ -486,7 +532,7 @@ def _probe[
                 ctxs[i].enqueue_function[_flag_diff](
                     outs[i * NUM_OUTS + k],
                     refs[i * NUM_OUTS + k],
-                    Int32(LENGTH),
+                    Int32(probe_len),
                     flags[i],
                     grid_dim=128,
                     block_dim=256,
@@ -546,6 +592,9 @@ def main() raises:
             bad = _probe[KIND_ALLREDUCE, ngpus, pdl](ctxs)
             print(t"allreduce (1-stage, {tag}): corrupted {bad} of {ITERS}")
             failed += bad
+            bad = _probe[KIND_ALLREDUCE_LAMPORT, ngpus, pdl](ctxs)
+            print(t"allreduce (Lamport, {tag}): corrupted {bad} of {ITERS}")
+            failed += bad
             bad = _probe[KIND_BROADCAST, ngpus, pdl](ctxs)
             print(t"broadcast (1-stage, {tag}): corrupted {bad} of {ITERS}")
             failed += bad
@@ -561,6 +610,31 @@ def main() raises:
             bad = _probe[KIND_ALLGATHER_RMSNORM, ngpus, pdl](ctxs)
             print(t"allgather_rmsnorm ({tag}): corrupted {bad} of {ITERS}")
             failed += bad
+
+        # The Lamport geometry that ships is the eight-rank band on sm_100a, so
+        # repeat the probe at eight ranks when this host has them. A host with
+        # fewer GPUs compiles it but cannot reach the band.
+        var num_devices = DeviceContext.number_of_devices()
+        if num_devices >= 8:
+            var ctxs8 = List[DeviceContext[]]()
+            for i in range(8):
+                ctxs8.append(DeviceContext(device_id=i))
+            comptime for level in range(2):
+                comptime pdl = PDLLevel.ON if level == 1 else PDLLevel.OFF
+                comptime tag = "pdl ON" if level == 1 else "pdl OFF"
+                bad = _probe[KIND_ALLREDUCE_LAMPORT, 8, pdl](ctxs8)
+                print(
+                    t"allreduce (Lamport, 8 GPUs, {tag}): corrupted {bad} of"
+                    t" {ITERS}"
+                )
+                failed += bad
+            _ = ctxs8^
+        else:
+            print(
+                String("allreduce (Lamport, 8 GPUs): skipped, "),
+                num_devices,
+                " GPUs",
+            )
 
         assert_true(
             failed == 0,

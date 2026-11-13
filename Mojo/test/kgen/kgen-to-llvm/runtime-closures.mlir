@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s --lower-runtime-closures -allow-unregistered-dialect -split-input-file | FileCheck %s
+// RUN: kgen-opt %s --lower-kgen-to-llvm -allow-unregistered-dialect -split-input-file | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @take_closure_no_args

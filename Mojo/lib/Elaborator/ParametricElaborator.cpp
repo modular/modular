@@ -256,9 +256,17 @@ static ElaborationState processParamAssertOp(PImplNode *inode,
 
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
-/// StringAttr.
+/// StringAttr. The Mojo parser wraps non-`TypedAttr` values (e.g. `ArrayAttr`)
+/// in `#kgen.deferred` to satisfy PValue's typed-attribute contract; strip
+/// those wrappers so the assembled dict exposes concrete attributes.
 static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
                                                               ArrayAttr array) {
+  mlir::AttrTypeReplacer stripDeferred;
+  stripDeferred.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
+
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -274,7 +282,7 @@ static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
       continue;
     }
     seenMetadataNames.insert(name);
-    llvmMetadata.append(name, array[i + 1]);
+    llvmMetadata.append(name, stripDeferred.replace(array[i + 1]));
   }
   return llvmMetadata.getDictionary(array.getContext());
 }

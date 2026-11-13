@@ -58,9 +58,10 @@ struct Socket(not Deinitable, Movable):
         """Closes the socket."""
         self._fd^.close()
 
-    # TODO: this really shouldn't be "unsafe". Getting the `c_int` of the
-    # underlying descriptor is perfectly safe. The only unsafe thing would be
-    # initializing a Socket/FD from a raw `c_int`.
+    # TODO(https://github.com/modular/modular/issues/7477): this really
+    # shouldn't be "unsafe". Getting the `c_int` of the underlying descriptor is
+    # perfectly safe. The only unsafe thing would be initializing a Socket/FD
+    # from a raw `c_int`.
     def unsafe_fd(self) -> c_int:
         """Returns the descriptor, which stays owned by this socket.
 
@@ -135,8 +136,9 @@ struct Socket(not Deinitable, Movable):
         """Connects the socket to a remote address."""
         var storage = to_sockaddr_storage(addr)
 
-        # TODO: return nothing once the compiler can infer `None` as the
-        # result type of a closure passed to `retry_io_interrupted`.
+        # TODO(https://github.com/modular/modular/issues/7478): return nothing
+        # once the compiler can infer `None` as the result type of a closure
+        # passed to `retry_io_interrupted`.
         def attempt() raises IOError {imm} -> c_int:
             var result = unix.connect(
                 self.unsafe_fd(),
@@ -149,12 +151,13 @@ struct Socket(not Deinitable, Movable):
                 )
             return result
 
-        # TODO: an interrupted `connect` carries on in the kernel. On macOS the
-        # retry fails with `EISCONN` even while the connection is still
-        # pending, so this can raise for a connection that succeeds; treating
-        # `EISCONN` as success, as Rust's std does, would instead return before
-        # the socket is connected. After `EINTR`, `poll` for `POLLOUT` and read
-        # the outcome from `SO_ERROR`, as CPython does.
+        # TODO(https://github.com/modular/modular/issues/7474): an interrupted
+        # `connect` carries on in the kernel. On macOS the retry fails with
+        # `EISCONN` even while the connection is still pending, so this can
+        # raise for a connection that succeeds; treating `EISCONN` as success,
+        # as Rust's std does, would instead return before the socket is
+        # connected. After `EINTR`, `poll` for `POLLOUT` and read the outcome
+        # from `SO_ERROR`, as CPython does.
         _ = retry_io_interrupted(attempt)
 
     def accept(self) raises IOError -> Tuple[Socket, SocketAddr]:
@@ -198,8 +201,9 @@ struct Socket(not Deinitable, Movable):
         """Reads into `buffer` with the given `MSG_*` flags, and returns how
         many bytes it read: 0 once the peer has closed its end."""
 
-        # TODO: macOS fails a `recv` of more than `INT_MAX` bytes with `EINVAL`
-        # instead of reading less. Cap the length there.
+        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
+        # `recv` of more than `INT_MAX` bytes with `EINVAL` instead of reading
+        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.recv(
@@ -222,12 +226,13 @@ struct Socket(not Deinitable, Movable):
         macOS ignores `MSG_DONTWAIT` here, and blocks on a full buffer anyway.
         """
 
-        # TODO: a send to a peer that has closed raises `SIGPIPE`, which ends
-        # the process by default. Suppress it with `MSG_NOSIGNAL` on each send
-        # on Linux, and with `SO_NOSIGPIPE` on macOS, set in `open_socket` and
-        # `accept_socket`.
-        # TODO: macOS fails a `send` of more than `INT_MAX` bytes with `EINVAL`
-        # instead of writing less. Cap the length there.
+        # TODO(https://github.com/modular/modular/issues/7475): a send to a peer
+        # that has closed raises `SIGPIPE`, which ends the process by default.
+        # Suppress it with `MSG_NOSIGNAL` on each send on Linux, and with
+        # `SO_NOSIGPIPE` on macOS, set in `open_socket` and `accept_socket`.
+        # TODO(https://github.com/modular/modular/issues/7476): macOS fails a
+        # `send` of more than `INT_MAX` bytes with `EINVAL` instead of writing
+        # less. Cap the length there.
         def attempt() raises IOError {imm} -> Int:
             return check(
                 unix.send(

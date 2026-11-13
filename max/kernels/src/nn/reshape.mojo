@@ -13,10 +13,60 @@
 """Implements the reshape operation that reinterprets a contiguous tensor's data under a new shape."""
 
 from layout import Coord, TileTensor
-from layout.coord import DynamicCoord
+from layout.coord import CoordLike, DynamicCoord
 from layout.layout import Layout
 
 from std.utils.index import IndexList
+
+
+# Reshape assumes inputs are contiguous. It should always be fused last and
+# a non-contiguous tensor cannot be fused *into* this as input.
+@inline(.always)
+def reshape[
+    dtype: DType,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    //,
+](
+    input: TileTensor[dtype, ...],
+    new_shape: Coord[*shape_types],
+) -> TileTensor[
+    dtype,
+    Layout[
+        shape_types=DynamicCoord[.int64, shape_types.length].element_types,
+        stride_types=DynamicCoord[.int64, shape_types.length].element_types,
+    ],
+    input.origin,
+    address_space=input.address_space,
+    Engine=input.Engine,
+]:
+    """Returns a view of the contiguous `input` tensor reinterpreted under a `Coord` shape.
+
+    Overload of the `IndexList` form for callers that already hold the shape as
+    a `Coord`, so the shape does not need converting to an `IndexList` first.
+
+    Parameters:
+        dtype: Element type of the input tensor.
+        shape_types: Element types of the requested output shape.
+
+    Args:
+        input: Contiguous source tensor whose data is reinterpreted.
+        new_shape: Desired output shape, whose element product must match
+            the number of elements in `input`.
+
+    Returns:
+        A `TileTensor` view over the same buffer with the new shape and
+        contiguous strides.
+    """
+    comptime output_rank = shape_types.length
+    var shape = DynamicCoord[.int64, output_rank]()
+    var stride = DynamicCoord[.int64, output_rank]()
+    var acc = 1
+    comptime for i in reversed(range(output_rank)):
+        var dim = Int(new_shape[i])
+        shape.replace_dynamic[i](Scalar[.int64](dim))
+        stride.replace_dynamic[i](Scalar[.int64](acc))
+        acc *= dim
+    return {input._storage, Layout(shape, stride)}
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and

@@ -87,9 +87,7 @@ from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-
-    # TODO(MXF-517): Remove the interfaces/memory_estimation import cycle.
-    from max.pipelines.lib.memory_estimation import MemoryPlan
+    from max.pipelines.lib.memory_plan import MemoryPlan
 
     from .batch_processor import BatchProcessor
 

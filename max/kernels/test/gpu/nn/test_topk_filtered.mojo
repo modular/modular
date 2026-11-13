@@ -128,7 +128,9 @@ def _run[
     """
     var B = len(bounds)
     var scores_dev = ctx.enqueue_create_buffer[dtype](B * N)
-    var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
+    # A spare row past the last: a planted fault that writes one key too many
+    # spills into it, not past the buffer.
+    var idxs_dev = ctx.enqueue_create_buffer[.int32]((B + 1) * K)
     idxs_dev.enqueue_fill(Int32(-2))
     var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
     var flags_dev = ctx.enqueue_create_buffer[.uint8](B)
@@ -159,7 +161,7 @@ def _run[
             rb,
             rebind[MutPointer[UInt8, MutAnyOrigin]](flags_dev.unsafe_ptr()),
         )
-    var idxs = ctx.enqueue_create_host_buffer[.int32](B * K)
+    var idxs = ctx.enqueue_create_host_buffer[.int32]((B + 1) * K)
     var flags = ctx.enqueue_create_host_buffer[.uint8](B)
     ctx.enqueue_copy(dst_buf=idxs, src_buf=idxs_dev)
     ctx.enqueue_copy(dst_buf=flags, src_buf=flags_dev)
@@ -176,6 +178,9 @@ def _run[
             got.append(Int(idxs[b * K + k]))
         if not _check_row(seen, got, b * N, min(N, bounds[b]), exact):
             bad += 1
+    comptime if poison == 0:
+        for k in range(K):
+            assert_equal(idxs[B * K + k], Int32(-2), "write past the last row")
     _ = scores_dev
     _ = bounds_dev
     return Outcome(bad, filtered)

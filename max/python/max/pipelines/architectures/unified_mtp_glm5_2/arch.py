@@ -17,7 +17,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
 from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.model_config import Glm5_1Config
 from ..glm5_1.reasoning import (
@@ -51,7 +50,6 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
-    memory_planner=DeepseekV3MemoryPlanner,
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",

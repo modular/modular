@@ -115,6 +115,19 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `PipelineArgs` sub-config flags are now flat, matching `max serve`'s
+  spellings everywhere the class is bound with cyclopts. The benchmark
+  engine's `--pipeline.runtime.max-batch-size` becomes
+  `--pipeline.max-batch-size`, `--pipeline.kv-cache.enable-prefix-caching`
+  becomes `--pipeline.enable-prefix-caching`, and
+  `--pipeline.profiling.gpu-profiling` becomes `--pipeline.gpu-profiling`;
+  the `MODULAR_PIPELINE_*` environment variable names change with them
+  (`MODULAR_PIPELINE_MAX_BATCH_SIZE`, not
+  `MODULAR_PIPELINE_RUNTIME_MAX_BATCH_SIZE`). The experimental cascade
+  serve CLI (`//mach:cascade`) now accepts the full `max serve` flag
+  surface, including `--config-file` recipes and the `--model`,
+  `--devices`, and `--use-dummy-weights` aliases.
+
 - `max generate` runs image generation models such as FLUX.2 and saves the
   images to `--output`, which defaults to `image.png` and whose suffix picks
   the format. A path without a suffix is a directory, created with its parents
@@ -357,14 +370,14 @@ This version is still a work in progress.
   `ThreadScope` now lives in `layout.tile_io`.
 
 - The legacy `Layout` and `IntTuple` types have been removed from the `layout`
-  package, along with the `layout.layout` and `layout.int_tuple` modules, the
-  `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and the legacy
-  `tile_layout_k_major()`, `tile_layout_mn_major()` and
-  `tile_sf_layout_k_major()` constructors. Use the typed layouts in
-  `layout.tile_layout` (`Layout`, also exported as `MixedLayout`) for layout
-  values, `Coord` for shapes, strides and indices, and the `*_typed` tile
-  layout constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()`
-  and `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
+  package, along with the original `layout.layout` and `layout.int_tuple`
+  modules, the `to_layout()`, `LTToTTLayout` and `print_layout()` bridges, and
+  the legacy `tile_layout_k_major()`, `tile_layout_mn_major()` and
+  `tile_sf_layout_k_major()` constructors. Use the typed layouts in the new
+  `layout.layout` (`Layout`, also exported as `MixedLayout`) for layout values,
+  `Coord` for shapes, strides and indices, and the `*_typed` tile layout
+  constructors in `layout.tensor_core_async`. `wgmma_desc_sbo_lbo()` and
+  `wgmma_canonical_strides()` replace `tile_to_descriptor()`, and `print()`
   accepts a typed layout directly.
 
 - `TileTensor.tile()` on a nested layout now indexes each mode first leaf

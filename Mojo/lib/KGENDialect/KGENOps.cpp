@@ -237,15 +237,36 @@ void ParamAssertOp::walkDefinitions(
 bool ParamAssertOp::isImplicitlyParametric() { return true; }
 
 //===----------------------------------------------------------------------===//
+// WitnessOp
+//===----------------------------------------------------------------------===//
+
+/// Parses an optional `public`, `private` or `nested` keyword, as `func.func`
+/// spells symbol visibility.
+static ParseResult parseSymVisibility(AsmParser &p, StringAttr &visibility) {
+  StringRef keyword;
+  if (succeeded(
+          p.parseOptionalKeyword(&keyword, {"public", "private", "nested"})))
+    visibility = p.getBuilder().getStringAttr(keyword);
+  return success();
+}
+
+static void printSymVisibility(AsmPrinter &p, Operation *,
+                               StringAttr visibility) {
+  if (visibility)
+    p << visibility.getValue() << ' ';
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
-                 StringAttr &symName, TypeAttr &signatureAttr,
-                 TypeAttr &functionTypeAttr, ParamDeclArrayAttr &inputParams,
-                 Attribute &inlineLevel, DecoratorsAttr &decorators,
-                 NamedAttrList &attrs, Region &body) {
+static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
+                                    StringAttr &symName,
+                                    TypeAttr &signatureAttr,
+                                    TypeAttr &functionTypeAttr,
+                                    ParamDeclArrayAttr &inputParams,
+                                    Attribute &inlineLevel,
+                                    DecoratorsAttr &decorators, Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(symName))
     return failure();
 
@@ -263,18 +284,15 @@ parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
   functionTypeAttr = TypeAttr::get(functionType);
 
   if (parseOptionalInline(p, inlineLevel) ||
-      parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs))
+      parseOptionalDecorators(p, decorators))
     return failure();
 
   // The printer spells out a signature the printed types cannot rebuild.
-  if (Attribute explicitSignature = attrs.erase("funcTypeGenerator")) {
-    auto typeAttr = dyn_cast<TypeAttr>(explicitSignature);
-    if (!typeAttr || !isa<FuncTypeGeneratorType>(typeAttr.getValue()))
-      return p.emitError(p.getCurrentLocation(),
-                         "expected 'funcTypeGenerator' to be a function "
-                         "type generator");
-    signatureAttr = typeAttr;
+  if (succeeded(p.parseOptionalKeyword("signature"))) {
+    FuncTypeGeneratorType explicitSignature;
+    if (p.parseType(explicitSignature))
+      return failure();
+    signatureAttr = TypeAttr::get(explicitSignature);
   }
 
   if (p.parseRegion(body, args, /*enableNameShadowing=*/true))
@@ -287,7 +305,7 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
                              TypeAttr signature, TypeAttr functionType,
                              ParamDeclArrayAttr inputParams,
                              Attribute inlineLevel, DecoratorsAttr decorators,
-                             DictionaryAttr attrs, Region &body) {
+                             Region &body) {
   printSymbolExport(p, op, exportKind);
   p << ' ';
   p.printSymbolName(symName);
@@ -298,12 +316,6 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
   printOptionalInline(p, inlineLevel);
   printOptionalDecorators(p, op, decorators);
 
-  auto gen = cast<GeneratorOp>(op);
-  SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),   gen.getSymNameAttrName(),
-      gen.getFunctionTypeAttrName(), gen.getInputParamsAttrName(),
-      gen.getInlineLevelAttrName(),  gen.getDecoratorsAttrName()};
-
   // The parser rebuilds `funcTypeGenerator` from the printed body-view types,
   // which only works when they reference nothing but the input parameters. A
   // signature that names a parameter the body lifts, for example, has to be
@@ -313,14 +325,10 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
   if (FuncTypeGeneratorType::remapToFuncTypeGenerator(
           inputParams.getValue(), cast<FunctionType>(functionType.getValue()),
           signatureBody.getArgConventions(),
-          signatureBody.getFnEffects()) == signatureType)
-    elidedAttrs.push_back(gen.getFuncTypeGeneratorAttrName());
-  ArrayAttr emptyArray = ArrayAttr::get(op->getContext(), {});
-  if (attrs.get(gen.getFnAttrsAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getFnAttrsAttrName());
-  if (attrs.get(gen.getFnArgAttrsAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getFnArgAttrsAttrName());
-  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
+          signatureBody.getFnEffects()) != signatureType) {
+    p << " signature ";
+    p.printType(signatureType);
+  }
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
@@ -366,8 +374,7 @@ LogicalResult GeneratorOp::verify() {
 static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
                                StringAttr &name, TypeAttr &signature,
                                Attribute &inlineLevel,
-                               DecoratorsAttr &decorators, NamedAttrList &attrs,
-                               Region &body) {
+                               DecoratorsAttr &decorators, Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
     return failure();
 
@@ -395,7 +402,6 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs) ||
       p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
@@ -404,10 +410,8 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 static void printFuncOp(OpAsmPrinter &p, Operation *op,
                         ExportKindAttr exportKind, StringAttr name,
                         TypeAttr signature, Attribute inlineLevel,
-                        DecoratorsAttr decorators, DictionaryAttr attrs,
-                        Region &body) {
+                        DecoratorsAttr decorators, Region &body) {
   FuncType sig = cast<FuncTypeGeneratorType>(signature.getValue()).getBody();
-  auto func = cast<FuncOp>(op);
 
   printSymbolExport(p, op, exportKind);
   p << ' ';
@@ -421,18 +425,6 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
                        /*optionalResultList=*/true);
   printOptionalInline(p, inlineLevel);
   printOptionalDecorators(p, op, decorators);
-
-  SmallVector<StringRef, 8> elidedAttrs{
-      func.getExportKindAttrName(), func.getSymNameAttrName(),
-      func.getFuncTypeGeneratorAttrName(), func.getInlineLevelAttrName(),
-      func.getDecoratorsAttrName()};
-  if (attrs.get(func.getFnAttrsAttrName()) ==
-      DictionaryAttr::get(op->getContext()))
-    elidedAttrs.push_back(func.getFnAttrsAttrName());
-  if (attrs.get(func.getFnArgAttrsAttrName()) ==
-      ArrayAttr::get(op->getContext(), {}))
-    elidedAttrs.push_back(func.getFnArgAttrsAttrName());
-  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);

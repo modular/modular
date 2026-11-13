@@ -97,8 +97,8 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   // Returns nullopt when `handle` has no matching conformance.
   auto simplifyFrom =
       [&](ResolvedStructHandle handle) -> std::optional<FailureOr<TypedAttr>> {
-    Operation *conformanceOp =
-        context.resolveConformanceForStruct(handle, getTraitSymbol());
+    Operation *conformanceOp = context.resolveConformanceForStruct(
+        handle, getTraitSymbol(), getWitnessName());
     if (!conformanceOp)
       return std::nullopt;
 

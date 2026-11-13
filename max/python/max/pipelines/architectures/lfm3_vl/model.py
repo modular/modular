@@ -45,7 +45,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_gemma_multimodal_language_symbolic_inputs,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor import default_dtype
 

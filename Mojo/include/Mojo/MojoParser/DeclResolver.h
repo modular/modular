@@ -103,6 +103,12 @@ public:
                     TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
                     ASTDecl &traitDecl, StringAttr name);
 
+  /// Create the declaration for one witness of a conformance and install it in
+  /// the conformance's scope under the witness name.
+  ConformanceWitnessASTDecl &
+  createConformanceMemberDecl(ConformanceASTDecl &conformanceDecl,
+                              ASTDecl &traitMember, StringAttr witnessName);
+
   /// Attach a declaration to its parent's name table.  For use with
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
@@ -458,6 +464,19 @@ private:
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;
+
+  /// Set while `resolveReferencedDecls` walks `parsedDeclList` by index. Erased
+  /// entries then stay in place, marked retired, and are dropped when the walk
+  /// ends.
+  /// TODO: Remove this. It may be better not to put default decls in
+  /// parsedDeclList to begin with. See:
+  /// https://linear.app/modularml/issue/MOCO-4712/parser-massively-simplify-how-astdecl-for-traits-is-formed
+  bool sweepingParsedDecls = false;
+
+  /// Allocate a synthetic child of `parent`, list it, and register it in the
+  /// parent's name table under `name`.
+  template <typename DeclT, typename... Args>
+  DeclT &createChildDecl(ASTDecl &parent, StringAttr name, Args &&...args);
 
   /// Removed declarations retained until the resolver is destroyed so active
   /// resolution frames can unwind safely.

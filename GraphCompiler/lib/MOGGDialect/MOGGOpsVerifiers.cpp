@@ -75,6 +75,17 @@ static LogicalResult verifySymbolUsesForKernelDeclCall(
   return check(decl);
 }
 
+// A launch takes a static or a run-time width limit, not both.
+template <typename LaunchOpT>
+static LogicalResult verifyMaxSimdWidth(LaunchOpT op) {
+  if (op.getMaxSimdWidth() && op.getDynamicMaxSimdWidth())
+    return op.emitOpError("expected a static or a dynamic max_simd_width, not "
+                          "both");
+  return success();
+}
+
+LogicalResult CallForeachOp::verify() { return verifyMaxSimdWidth(*this); }
+
 LogicalResult RoutineOp::verify() {
   // A chain result, if present, is last (mirrors `IterElementwiseOp::verify()`
   // / `RoutineOp::maybeGetOutChain()`) and never gets a body block argument.
@@ -278,6 +289,8 @@ LogicalResult TileStoreOp::verify() {
 }
 
 LogicalResult CallRowwiseOp::verify() {
+  if (failed(verifyMaxSimdWidth(*this)))
+    return failure();
   Block &body = getBody().front();
   bool afterMap = false;
   for (Operation &op : body) {

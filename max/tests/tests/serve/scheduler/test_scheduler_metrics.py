@@ -2315,6 +2315,9 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_peer_writeback_held_offloads.assert_not_called()
     mock_metrics.dkv_hinted_lookups.assert_not_called()
     mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
+    mock_metrics.dkv_hinted_attach_waits.assert_not_called()
+    mock_metrics.dkv_hinted_attach_wait_timeouts.assert_not_called()
+    mock_metrics.dkv_hinted_attach_wait_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
 
 
@@ -2911,3 +2914,40 @@ def test_disaggregated_executor_interval_excludes_advancement(
     assert result.execution_time_s == 0.25
     assert result.output_tokens == 1
     assert clock[0] == 10.25
+
+
+def test_dkv_attach_wait_metrics_reach_the_log_and_the_counters() -> None:
+    """The peer attach wait's counts publish beside the hinted lookup's, and
+    its summed time and count become one mean."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_hinted_attach_waits=4,
+        dkv_hinted_attach_wait_ms_total=600.0,
+        dkv_hinted_attach_wait_timeouts=1,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_hinted_attach_waits.assert_called_once_with(4)
+    mock_metrics.dkv_hinted_attach_wait_timeouts.assert_called_once_with(1)
+    mock_metrics.dkv_hinted_attach_wait_latency.assert_called_once_with(150.0)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_hinted_attach_waits"] == 4
+    assert extra["dkv_hinted_attach_wait_timeouts"] == 1
+    assert extra["dkv_hinted_attach_wait_avg_ms"] == 150.0

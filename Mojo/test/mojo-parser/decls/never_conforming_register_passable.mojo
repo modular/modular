@@ -33,11 +33,11 @@
 
 # --- Positive controls: the conventions still apply unconditionally ---------
 
-# CHECK: lit.struct.decl @RPUncond(!AnyType_Deinitable_Movable_RegisterPassable) register_passable attributes
+# CHECK: lit.struct.decl @RPUncond(!AnyType_Deinitable_Movable_RegisterPassable) register_passable{{$}}
 struct RPUncond(RegisterPassable):
     pass
 
-# CHECK: lit.struct.decl @TRPUncond({{.*}}_TrivialRegisterPassable) register_passable_trivial attributes
+# CHECK: lit.struct.decl @TRPUncond({{.*}}_TrivialRegisterPassable) register_passable_trivial{{$}}
 struct TRPUncond(TrivialRegisterPassable):
     pass
 
@@ -46,11 +46,11 @@ struct TRPUncond(TrivialRegisterPassable):
 
 # The false slot is erased from the canonical trait, so neither the marker nor a
 # convention keyword mentions RegisterPassable.
-# CHECK: lit.struct.decl @RPFalse(!AnyType_Deinitable_Movable) attributes
+# CHECK: lit.struct.decl @RPFalse(!AnyType_Deinitable_Movable){{$}}
 struct RPFalse(RegisterPassable where False):
     pass
 
-# CHECK: lit.struct.decl @TRPFalse(!AnyType_Deinitable_Movable) attributes
+# CHECK: lit.struct.decl @TRPFalse(!AnyType_Deinitable_Movable){{$}}
 struct TRPFalse(TrivialRegisterPassable where False):
     pass
 
@@ -62,7 +62,7 @@ struct TRPFalse(TrivialRegisterPassable where False):
 # contradicted case). The observable verdict is what matters and it matches
 # TRPFalse: no `register_passable_trivial` convention keyword and no error.
 # CHECK: lit.struct.decl @TRPContradicted
-# CHECK-SAME: _TrivialRegisterPassable) attributes
+# CHECK-SAME: _TrivialRegisterPassable){{$}}
 struct TRPContradicted[n: Int](
     TrivialRegisterPassable where not (n > 0)
 ) where n > 0:

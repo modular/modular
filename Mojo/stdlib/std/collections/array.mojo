@@ -837,7 +837,7 @@ struct Array[T: AnyType, length: Int](
     def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._array)._get_kgen_pointer(),
-            index(idx).__mlir_index__(),
+            index(idx)._mlir_value,
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 

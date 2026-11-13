@@ -88,9 +88,6 @@ class Gemma4Attention(Module[..., Tensor]):
 
         self.q_norm = Gemma4RMSNorm(self.head_dim, eps=qk_norm_eps)
         self.k_norm = Gemma4RMSNorm(self.head_dim, eps=qk_norm_eps)
-        self.v_norm = Gemma4RMSNorm(
-            self.head_dim, eps=qk_norm_eps, with_weight=False
-        )
 
         # Global layers with attention_k_eq_v share K weights for V: the
         # checkpoint has no v_proj there.
@@ -187,22 +184,13 @@ class Gemma4Attention(Module[..., Tensor]):
         )
         per_device_n_heads = self.n_heads // kv_collection.n_devices
         head_dim = self.head_dim
-        q_dim, kv_dim = self.q_weight_dim, self.kv_weight_dim
-        num_kv_heads = self.num_key_value_heads
 
         x_q, x_k, x_v = self._project_qkv(x)
-
-        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
-            (-1, q_dim)
+        # The q/k/v norms run inside the RoPE + store op. Without a v_proj the
+        # op reads V from the K region.
+        qkv = F.concat(
+            [x_q, x_k, x_v] if self._has_v_proj else [x_q, x_k], axis=-1
         )
-        x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
-            (-1, kv_dim)
-        )
-        x_v = self.v_norm(x_v.reshape((-1, num_kv_heads, head_dim))).reshape(
-            (-1, kv_dim)
-        )
-
-        qkv = F.concat([x_q, x_k, x_v], axis=-1)
         rope = self.rope_local if self.use_local else self.rope_global
 
         xq = rope_split_store_ragged(
@@ -217,6 +205,10 @@ class Gemma4Attention(Module[..., Tensor]):
             # flash_attention_ragged reads Q in the cache dtype (FP8 under
             # an FP8 KV cache).
             q_out_dtype=self.kv_params.dtype,
+            q_norm_weight=self.q_norm.weight,
+            k_norm_weight=self.k_norm.weight,
+            rms_norm_eps=self.q_norm.eps,
+            k_eq_v=not self._has_v_proj,
         ).rebind_mapping(qkv.mapping)
         xq = xq.reshape((-1, self.n_heads, head_dim))
 

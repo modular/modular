@@ -374,6 +374,16 @@ def test_nicheable_size() raises:
     assert_equal(size_of[Optional[PointerType]](), size_of[PointerType]())
     assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
+    # A tuple has the niches of its element with the most niches.
+    comptime Pair = Tuple[Int, PointerType]
+    assert_equal(
+        size_of[Optional[Tuple[PointerType]]](), size_of[PointerType]()
+    )
+    assert_equal(size_of[Optional[Pair]](), size_of[Pair]())
+    assert_true(
+        size_of[Optional[Tuple[Int, Int]]]() > size_of[Tuple[Int, Int]]()
+    )
+
 
 def test_optional_reg_nicheable_size() raises:
     comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]

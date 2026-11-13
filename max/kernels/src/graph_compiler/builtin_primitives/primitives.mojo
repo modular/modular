@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.logger import Logger
+from std.bit import bit_width
 from std.math import gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
@@ -19,10 +20,11 @@ from std.sys.info import CompilationTarget
 
 from max.algorithm.functional import elementwise
 from algorithm.reduce_op import ReduceOp
+from algorithm.cpu.rowwise import CPU_WIDE_ACCUMULATOR_FACTOR
 from algorithm.rowwise import Row, launch, pick_simd_width
 from algorithm.rowwise_types import ContextParams, RowBody
 
-from extensibility import GridBlockLaunchConfig, StaticTensorSpec
+from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
@@ -35,6 +37,7 @@ from extensibility import (
 from std.collections import Array
 from max.gpu import block_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
+from max.gpu.host import GridBlockExecutionConfig
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
@@ -52,7 +55,7 @@ from max.gpu.host import _DeviceContextPtr
 # context, import their extensions through `max.gpu.host`, or drop this import
 # if HAL launches need none.
 from max.gpu.host._legacy.device_context import (
-    DeviceContext as _DeviceContextExtensions,
+    LegacyDeviceContext as _DeviceContextExtensions,
 )
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
@@ -1531,7 +1534,9 @@ def mogg_launch_declarative[
     //,
     func: def(*args: *declared_arg_types) thin -> None,
     *Ts: DevicePassable,
-](ctx: DeviceContext, config: Some[GridBlockLaunchConfig], *args: *Ts) raises:
+](
+    ctx: DeviceContext, config: Some[GridBlockExecutionConfig], *args: *Ts
+) raises:
     """Compiles a declarative kernel's device function and launches it with
     the grid and block dims of `config`.
 
@@ -2325,20 +2330,34 @@ def _foreach[
     Lambda: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int = 1](Coord) -> None,
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
     //,
     *,
     simd_width: Int,
     _trace_name: StaticString = "mogg.foreach",
-](shape: Coord, lambda_: Lambda, ctx: DeviceContext,) raises:
+](
+    shape: Coord,
+    lambda_: Lambda,
+    ctx: DeviceContext,
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+) raises:
     """Call `lambda_` once per index in `shape`; `lambda_` does its own store.
 
     Unlike `foreach_fusion`, this forwards straight to `elementwise[...]`
     with no intermediate adapter: the closure already captures its own
     tensors and does its own load-compute-store round trip.
 
+    The width must divide `max_simd_width`. A static limit caps
+    `simd_width` at compile time to its largest power-of-two
+    divisor. A run-time one picks, at launch, the widest of
+    `simd_width`, half of it, and so on down to 1, that divides
+    it: one kernel per step, compiled only when the limit is dynamic.
+
     Parameters:
         Lambda: The per-index closure's concrete type.
-        simd_width: The SIMD width to use.
+        MaxSimdWidth: The type of `max_simd_width`, static (`Idx[n]`) or
+            dynamic (`Scalar[DType.int]`).
+        simd_width: The SIMD width to use when the limit allows it.
         _trace_name: Name of the executed operation displayed in the trace.
 
     Args:
@@ -2346,16 +2365,68 @@ def _foreach[
         lambda_: The per-index closure, capturing its own input/output
             tensors.
         ctx: The call context (forward this from the custom operation).
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
     """
-    elementwise[
-        simd_width=simd_width,
-        _trace_description=_trace_name,
-    ](lambda_, shape, ctx)
+    # `min(simd_width, limit & -limit)` divides the limit only when both are
+    # powers of two.
+    comptime assert (
+        simd_width & (simd_width - 1) == 0
+    ), "simd_width must be a power of two"
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        elementwise[
+            simd_width=width,
+            _trace_description=_trace_name,
+        ](lambda_, shape, ctx)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            comptime if width == 1:
+                elementwise[
+                    simd_width=1,
+                    _trace_description=_trace_name,
+                ](lambda_, shape, ctx)
+            else:
+                if limit % width == 0:
+                    elementwise[
+                        simd_width=width,
+                        _trace_description=_trace_name,
+                    ](lambda_, shape, ctx)
+                    return
+
+
+@inline(.always)
+def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
+    """Returns the largest power of two dividing every dim in `dims`.
+
+    It is the lowest set bit of the dims' OR, which is also that of their
+    GCD, without computing the GCD.
+
+    Parameters:
+        rank: The number of dims.
+
+    Args:
+        dims: The dims, read at run time.
+
+    Returns:
+        The power of two, or 0 when every dim is 0, which no width limits.
+    """
+    var bits = 0
+    comptime for i in range(rank):
+        bits |= dims[i]
+    return bits & -bits
 
 
 @register_internal("mogg.call.rowwise")
 def _rowwise[
     Body: RowBody,
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
     //,
     SimdMonoid: ReduceOp,
     dtype: DType,
@@ -2365,8 +2436,16 @@ def _rowwise[
     num_phases: Int,
     computationally_expensive: Bool,
     dtype_size: Int,
-](body: Body, shape: Coord, ctx: DeviceContext) raises:
+](
+    body: Body,
+    shape: Coord,
+    ctx: DeviceContext,
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+) raises:
     """Runs a Row API body once per row of `shape` along `axis`.
+
+    The width must divide `max_simd_width`, as for `_foreach`: a static
+    limit caps it at compile time, a run-time one picks it at launch.
 
     Parameters:
         Body: The body's concrete type.
@@ -2391,17 +2470,58 @@ def _rowwise[
         body: The per-row body.
         shape: The iteration domain.
         ctx: The call context (forward this from the custom operation).
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
     """
     comptime simd_width = pick_simd_width[
         SimdMonoid, ctx.target, 64, dtype, accum
     ]()
-    launch[
-        axis=axis,
-        simd_width=simd_width,
-        num_phases=num_phases,
-        computationally_expensive=computationally_expensive,
-        dtype_size=dtype_size,
-    ](body, shape, ctx)
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        launch[
+            axis=axis,
+            simd_width=width,
+            num_phases=num_phases,
+            computationally_expensive=computationally_expensive,
+            dtype_size=dtype_size,
+            # The widest power of two the limit allows, which may exceed
+            # `width`: the CPU path widens its accumulator up to it.
+            max_simd_width=0 if limit == 0 else limit & -limit,
+        ](body, shape, ctx)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            # On CPU, a limit that allows the widened accumulator too (0, or
+            # a multiple of it) launches uncapped, as no limit does. A limit
+            # between the two keeps `width` as its cap.
+            comptime if step == 0 and ctx.target.is_cpu():
+                if (
+                    limit == 0
+                    or limit % (width * CPU_WIDE_ACCUMULATOR_FACTOR) == 0
+                ):
+                    launch[
+                        axis=axis,
+                        simd_width=width,
+                        num_phases=num_phases,
+                        computationally_expensive=computationally_expensive,
+                        dtype_size=dtype_size,
+                    ](body, shape, ctx)
+                    return
+            if width == 1 or limit % width == 0:
+                launch[
+                    axis=axis,
+                    simd_width=width,
+                    num_phases=num_phases,
+                    computationally_expensive=computationally_expensive,
+                    dtype_size=dtype_size,
+                    max_simd_width=width,
+                ](body, shape, ctx)
+                return
 
 
 @register_internal("mogg.rowwise.splat_lane")

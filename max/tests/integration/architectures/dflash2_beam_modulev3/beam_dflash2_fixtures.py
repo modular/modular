@@ -46,7 +46,6 @@ from max.pipelines.architectures.dflash2_beam_modulev3 import (
 from max.pipelines.architectures.dflash2_beam_modulev3.model_config import (
     drafter_kv_params,
 )
-from max.pipelines.architectures.dflash_mimo_v2 import DrafterExport
 from max.pipelines.kv_cache import KVCacheConfig
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.module_registration import device_mesh
@@ -56,7 +55,7 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Pairing,
     _SpecDecodeModule,
 )
-from max.pipelines.speculative import SpeculativeConfig
+from max.pipelines.speculative import DrafterExport, SpeculativeConfig
 from max.tensor import default_device, default_dtype
 
 TESTDATA = Path(__file__).parent / "testdata"

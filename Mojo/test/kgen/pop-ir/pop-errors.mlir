@@ -359,7 +359,7 @@ kgen.generator @global_alloc_initializer_count_not_1() {
 // packs expand into operands after this runs; see pop-to-llvm/globals-error.mlir.
 kgen.func @external_call_negative_num_fixed_args(%a: !kgen.simd<1, ui32>) {
   // expected-error @below {{'pop.external_call' op 'numFixedArgs' must be non-negative, found -1}}
-  pop.external_call @bar(%a) attributes {numFixedArgs = -1 : index}
-    : (!kgen.simd<1, ui32>) -> ()
+  pop.external_call @bar(%a)
+    : (!kgen.simd<1, ui32>) -> () <numFixedArgs = -1 : index>
   hlcf.return
 }

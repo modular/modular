@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.memory_estimation import MemoryEstimator, MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan, plan_memory
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .arch_lookup import (
@@ -785,8 +785,10 @@ class PipelineRegistry:
                 planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
-            memory_plan = MemoryEstimator.plan(
-                pipeline_config, arch, draft_arch=draft_arch
+            memory_plan = plan_memory(
+                pipeline_config,
+                arch,
+                draft_arch=draft_arch,
             )
 
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
@@ -1106,11 +1108,32 @@ class PipelineRegistry:
         retrieved = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
-        return retrieved.tokenizer, retrieved.factory()
+        pipeline = retrieved.factory()
+        clamp_tokenizer_to_pipeline(retrieved.tokenizer, pipeline)
+        return retrieved.tokenizer, pipeline
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""
         self._arch_lookup.reset()
+
+
+def clamp_tokenizer_to_pipeline(tokenizer: Any, pipeline: Any) -> None:
+    """Lowers ``tokenizer.max_length`` to the length ``pipeline`` serves.
+
+    A pipeline sizes its KV cache once loaded and may lower the planned max
+    length; a caller that builds the pipeline in its own process
+    (``retrieve``, offline generation) calls this so the tokenizer refuses
+    prompts past it.
+    """
+    plan = getattr(pipeline, "memory_plan", None)
+    tokenizer_length = getattr(tokenizer, "max_length", None)
+    if (
+        plan is not None
+        and plan.planned_max_length is not None
+        and isinstance(tokenizer_length, int)
+        and plan.planned_max_length < tokenizer_length
+    ):
+        tokenizer.max_length = plan.planned_max_length
 
 
 PIPELINE_REGISTRY = PipelineRegistry([], arch_lookup=ARCH_LOOKUP)

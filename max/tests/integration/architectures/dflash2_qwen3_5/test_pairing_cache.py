@@ -41,9 +41,6 @@ from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,
 )
-from max.pipelines.architectures.qwen3_5.memory_planner import (
-    Qwen3_5MemoryPlanner,
-)
 from max.pipelines.architectures.qwen3_5.state_cache import (
     ATTN_CACHE_KEY,
     RING_LEAF_ID,
@@ -188,17 +185,12 @@ def test_the_draft_leaf_reserves_the_targets_draft_width() -> None:
     assert draft.page_size == target_kv.page_size
 
 
-def test_a_request_is_priced_its_block_long_ring() -> None:
-    """Checks the planner prices the ring the served cache holds."""
+def test_a_request_holds_a_block_long_ring() -> None:
+    """Checks the served cache holds a block-long ring as a scratch leaf."""
     config = target_config(Geometry())
-    planner = Qwen3_5MemoryPlanner(config)
-    pipeline_config = cast(
-        "PipelineConfig", SimpleNamespace(speculative=_speculative())
-    )
 
     ring_bytes = config._per_request_ring_bytes(ring_len_for_window(BLOCK))
     assert ring_bytes > 0
-    assert planner.spec_state_bytes(pipeline_config) == ring_bytes
     assert {r.leaf_id for r in state_regions(config) if r.scratch} == {
         RING_LEAF_ID
     }

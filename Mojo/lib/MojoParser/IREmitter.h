@@ -670,6 +670,12 @@ public:
 /// Returns the refined type if refinement applies, otherwise the original type.
 Type maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope);
 
+/// Select the arm of a conditional type (`A if c else B`) that `assumptions`
+/// decide. Returns the original type if it is not a conditional type or the
+/// assumptions do not decide its condition.
+Type maybeRefineCondTypeWithAssumptions(Type type,
+                                        ArrayRef<ConstraintAttr> assumptions);
+
 /// Refine a type-valued parameter expression based on where-clause constraints
 /// in the scope. Returns the refined type value if refinement applies,
 /// otherwise the original type value.

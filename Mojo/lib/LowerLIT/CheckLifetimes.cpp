@@ -987,9 +987,6 @@ struct ValueRef {
     assert(startBit >= offset && "not offset by this base");
     return ValueRef(valueId, startBit - offset, endBit - offset, isIndirect);
   }
-  ValueRef getWithBaseOffset(unsigned offset) const {
-    return ValueRef(valueId, startBit + offset, endBit + offset, isIndirect);
-  }
 
   /// Return true if this value ref is equal or a superset of the specified one.
   bool contains(ValueRef other) const {
@@ -1473,6 +1470,17 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
     ValueRef baseVal = getDirectValueRef(structGER.getContainer(), isDeref);
     if (!baseVal || !baseVal.isIndirect)
       return {};
+
+    // The container can be a rebind of a value that is tracked under a
+    // non-struct type, such as a conditional type `A if c else B` refined to
+    // one arm. That value is tracked as a single element, so the arm's field
+    // offsets don't apply to its bit range. Treat the access as one to the
+    // whole value.
+    Type trackedType =
+        RefImmutOp::stripRebinds(structGER.getContainer()).getType();
+    if (auto trackedRef = dyn_cast<RefType>(trackedType))
+      if (!sugarDynCast<LIT::StructType>(trackedRef.getElementType()))
+        return baseVal;
 
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();

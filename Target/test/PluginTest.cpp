@@ -12,9 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "Fixture.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <future>
 #include <thread>
 #include <vector>
 
@@ -572,6 +574,48 @@ TEST_F(DriverPluginQueueTest, Fill) {
   }
 }
 
+TEST_F(DriverPluginQueueTest, FillSubrangeKeepsNeighbors) {
+  // Mid-block ends catch a fill that writes whole 16-byte blocks. The 1 MiB
+  // case needs more than one threadgroup.
+  struct Case {
+    uint64_t bufferSize, offset, size, value, valueSize;
+  };
+  constexpr uint64_t kMiB = 1 << 20;
+  for (const Case &c :
+       {Case{96, 6, 20, 0xABCD, 2}, Case{96, 4, 40, 0x11223344, 4},
+        Case{96, 8, 72, 0x0123456789ABCDEFull, 8}, Case{96, 3, 5, 0x5A, 1},
+        Case{96, 12, 8, 0x77777777, 4}, Case{kMiB, 6, kMiB - 12, 0xABCD, 2}}) {
+    for (size_t i = 0; i < contexts.size(); i++) {
+      M_driver_context_t context = contexts[i];
+      M_driver_queue_t queue = queues[i];
+
+      M_driver_memory_t memory = nullptr;
+      ASSERT_SUCCESS(memory_alloc_sync(context, c.bufferSize, &memory));
+      auto defer =
+          llvm::scope_exit([&]() { memory_free_sync(context, memory); });
+
+      M_driver_memory_view whole{memory, /*offset=*/0, c.bufferSize};
+      ASSERT_SUCCESS(queue_set_memory(queue, &whole, uint8_t(0xEE)));
+      M_driver_memory_view fillView{memory, c.offset, c.size};
+      ASSERT_SUCCESS(queue_fill(queue, &fillView, c.value, c.valueSize));
+      std::vector<uint8_t> result(c.bufferSize);
+      ASSERT_SUCCESS(queue_copy_from_device(queue, result.data(), &whole));
+      ASSERT_SUCCESS(queue_synchronize(queue));
+
+      std::vector<uint8_t> expected(c.bufferSize, 0xEE);
+      for (uint64_t b = 0; b < c.size; ++b)
+        expected[c.offset + b] =
+            static_cast<uint8_t>(c.value >> (8 * (b % c.valueSize)));
+      auto mismatch =
+          std::mismatch(expected.begin(), expected.end(), result.begin());
+      ASSERT_EQ(mismatch.first, expected.end())
+          << "byte " << (mismatch.first - expected.begin()) << " of buffer "
+          << c.bufferSize << ", offset " << c.offset << " size " << c.size
+          << " valueSize " << c.valueSize;
+    }
+  }
+}
+
 TEST_F(DriverPluginQueueTest, CopyIntraDevice) {
   constexpr size_t size = 256;
   std::array<uint8_t, size> content;
@@ -835,27 +879,6 @@ TEST_F(DriverPluginQueueTest, QueueLaunchHostFunc) {
   ASSERT_SUCCESS(queue_launch_host_func(queues[0], bumpHostFlag, &flag));
   ASSERT_SUCCESS(queue_synchronize(queues[0]));
   EXPECT_EQ(flag, 42u);
-}
-
-TEST_F(DriverPluginQueueTest, QueueWaitValue64) {
-  if (api != "CUDA" && api != "HIP")
-    GTEST_SKIP() << "stream wait-value requires a CUDA or HIP driver";
-  // Pinned host memory is device-visible; pre-set the value so the wait is
-  // already satisfied when the queue reaches it, whether it lands on the
-  // target or has passed it.
-  M_driver_memory_t mem = nullptr;
-  ASSERT_SUCCESS(memory_alloc_pinned(contexts[0], sizeof(uint64_t), &mem));
-  void *addr = nullptr;
-  ASSERT_SUCCESS(memory_property(mem, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &addr));
-  *static_cast<uint64_t *>(addr) = 42;
-  ASSERT_SUCCESS(
-      queue_wait_value64(queues[0], reinterpret_cast<uint64_t>(addr), 42));
-  ASSERT_SUCCESS(queue_synchronize(queues[0]));
-  *static_cast<uint64_t *>(addr) = 43;
-  ASSERT_SUCCESS(
-      queue_wait_value64(queues[0], reinterpret_cast<uint64_t>(addr), 42));
-  ASSERT_SUCCESS(queue_synchronize(queues[0]));
-  ASSERT_SUCCESS(memory_free_pinned(contexts[0], mem));
 }
 
 TEST_F(DriverPluginContextTest, MemoryWrapUnwrapErrors) {
@@ -1344,6 +1367,53 @@ TEST_F(DriverPluginFlagTest, FlagDestroyWithQueuedWait) {
     ASSERT_SUCCESS(flags.destroy(contexts[0], flag));
     ASSERT_SUCCESS(queue_synchronize(queues[0]));
   }
+}
+
+TEST_F(DriverPluginFlagTest, SetMemoryAndFillDoNotBlockOnPendingWait) {
+  constexpr size_t size = 64;
+  M_driver_memory_t a = nullptr, b = nullptr;
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], size, &a));
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], size, &b));
+  auto freeMemory = llvm::scope_exit([&]() {
+    memory_free_sync(contexts[0], a);
+    memory_free_sync(contexts[0], b);
+  });
+  M_driver_memory_view aView{a, 0, size}, bView{b, 0, size};
+  // Keeps a first-use kernel compile out of the timed window.
+  ASSERT_SUCCESS(queue_fill(queues[0], &bView, 0x01020304, 4));
+
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 1, M_DRIVER_FLAG_CONDITION_GEQ));
+
+  // Off-thread so a host-blocking fill fails the test instead of hanging it.
+  auto enqueued = std::async(std::launch::async, [&]() {
+    return std::array<M_driver_status_t, 2>{
+        queue_set_memory(queues[0], &aView, uint8_t(0xAB)),
+        queue_fill(queues[0], &bView, 0x11223344, 4)};
+  });
+  // Below Metal's ~5 s command buffer timeout, which unblocks a host wait.
+  bool returnedBeforeSignal =
+      enqueued.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+  // Signal before get() so a blocked enqueue can finish.
+  M_driver_status_t signalStatus = flags.signal(flag, 1);
+  std::array<M_driver_status_t, 2> statuses = enqueued.get();
+  ASSERT_SUCCESS(signalStatus);
+  ASSERT_TRUE(returnedBeforeSignal)
+      << "set_memory/fill waited on the host for the flag";
+  for (M_driver_status_t enqueueStatus : statuses)
+    ASSERT_SUCCESS(enqueueStatus);
+
+  std::array<uint8_t, size> aResult;
+  std::array<uint32_t, size / 4> bResult;
+  ASSERT_SUCCESS(queue_copy_from_device(queues[0], aResult.data(), &aView));
+  ASSERT_SUCCESS(queue_copy_from_device(queues[0], bResult.data(), &bView));
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  for (uint8_t v : aResult)
+    ASSERT_EQ(v, 0xAB);
+  for (uint32_t v : bResult)
+    ASSERT_EQ(v, 0x11223344u);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
 }
 
 TEST_F(DriverPluginFlagTest, FlagNullArgs) {

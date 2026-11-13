@@ -273,7 +273,6 @@ struct Conv2dFpropKernel[
     ]
     comptime FilterTileLoaderType = TileLoaderTMA[..., cta_group=Self.cta_group]
     # Source C tile loader for residual (same structure as output)
-    comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_elements * size_of[

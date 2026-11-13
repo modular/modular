@@ -52,7 +52,8 @@
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
 /bazel/public-patches/rules_rust_link_interface_libraries.patch @modular/sdlc
 /bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
-/bazel/public-patches/jemalloc-no-private-namespace.patch @modular/public-repo-maintainers
+/bazel/public-patches/jemalloc-no-debug.patch @modular/sdlc
+/bazel/public-patches/jemalloc-no-private-namespace.patch @modular/sdlc
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc

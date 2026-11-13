@@ -16,7 +16,7 @@ kgen.func @trivial_conversions(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>, %
   // CHECK: llvm.intr.fma
   %4 = pop.fma %a, %b, %c : !kgen.simd<4, f32>
   // CHECK: llvm.intr.fma{{.*}} fastmath<nsz>
-  %5 = pop.fma %a, %b, %c {fastmathFlags = #pop.fmf<nsz>} : !kgen.simd<4, f32>
+  %5 = pop.fma %a, %b, %c : !kgen.simd<4, f32> <fastmathFlags = nsz>
   // CHECK: llvm.select
   %6 = pop.simd.select %d, %a, %b : !kgen.simd<4, f32>
   hlcf.return
@@ -142,7 +142,7 @@ kgen.func @fmul_simd_default_contract(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, 
 // CHECK-LABEL: @fmul_simd_with_reassoc
 kgen.func @fmul_simd_with_reassoc(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
   // CHECK: llvm.fmul {{.*}} fastmath<reassoc> : vector<4xf32>
-  %0 = pop.mul %a, %b {fastmathFlags = #pop.fmf<reassoc>} : !kgen.simd<4, f32>
+  %0 = pop.mul %a, %b : !kgen.simd<4, f32> <fastmathFlags = reassoc>
   hlcf.return %0 : !kgen.simd<4, f32>
 }
 
@@ -158,14 +158,14 @@ kgen.func @div_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !
 // CHECK-LABEL: @div_simd_exact
 kgen.func @div_simd_exact(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
   // CHECK: llvm.sdiv exact
-  %0 = pop.div %arg0, %arg1 {isExact} : !kgen.simd<4, si32>
+  %0 = pop.div %arg0, %arg1 : !kgen.simd<4, si32> <isExact>
   hlcf.return %0 : !kgen.simd<4, si32>
 }
 
 // CHECK-LABEL: @udiv_exact
 kgen.func @udiv_exact(%arg0: !kgen.scalar<uindex>, %arg1: !kgen.scalar<uindex>) -> !kgen.scalar<uindex> {
   // CHECK: llvm.udiv exact
-  %0 = pop.div %arg0, %arg1 {isExact} : !kgen.scalar<uindex>
+  %0 = pop.div %arg0, %arg1 : !kgen.scalar<uindex> <isExact>
   hlcf.return %0 : !kgen.scalar<uindex>
 }
 
@@ -425,7 +425,7 @@ kgen.func @simd_shuffle_1xf32(%a: !kgen.scalar<f32>, %b: !kgen.scalar<f32>) -> (
 }
 
 // CHECK-LABEL: @simd_load_store
-kgen.func @simd_load_store(%i: index, %p0: !kgen.pointer<simd<4, f32>>) {
+kgen.func @simd_load_store(%i: !kgen.scalar<index>, %p0: !kgen.pointer<simd<4, f32>>) {
   // CHECK: llvm.getelementptr inbounds %{{.*}} : (!llvm.ptr, {{.*}}) -> !llvm.ptr
   %0 = pop.offset %p0[%i] : !kgen.pointer<simd<4, f32>>
   // CHECK: llvm.load

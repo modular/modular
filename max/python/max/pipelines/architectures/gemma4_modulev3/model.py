@@ -51,7 +51,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.compilation import CompiledCallable

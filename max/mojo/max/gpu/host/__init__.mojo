@@ -17,30 +17,54 @@ from .info import default_accelerator, get_gpu_target
 
 from ._legacy.constant_memory_mapping import ConstantMemoryMapping
 from ._legacy.device_attribute import DeviceAttribute
-from ._overlay import (
-    CompletionFlag,
-    DefaultDeviceTypeEncoder,
-    Device,
-    DeviceBuffer,
+from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
-    DeviceContextArray,
-    DeviceContextList,
-    DeviceEvent,
+)
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+)
+from max._driver.max_license.device_context_dispatch.host_buffer import (
+    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.device_pointer import (
+    DevicePointer,
+)
+from max._driver.max_license.device_context_dispatch.function import (
     DeviceExternalFunction,
     DeviceFunction,
+)
+from max._driver.max_license.device_context_dispatch.host_types import (
+    CompletionFlag,
+    Device,
+    DeviceContextArray,
+    DeviceEvent,
     DeviceMulticastBuffer,
-    DevicePointer,
     DeviceStream,
-    DeviceTypeEncoder,
-    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.backend_names import (
+    DefaultDeviceTypeEncoder,
+    CUDA_get_current_context,
+)
+from max.gpu.host._driver_handles import (
     _CString,
     _DeviceBufferCpp,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
+)
+from max.gpu.host._driver_common import _checked
+from max.gpu.host._vendor_handles import (
+    CUcontext,
+    CUmodule,
+    CUstream,
+    _CUstream_st,
+    hipDevice_t,
+    hipStream_t,
+)
+from max.gpu.host._driver_common import (
     _DumpPath,
     _check_dim_in_range,
-    _checked,
 )
+from std.builtin.device_passable import DeviceTypeEncoder
 from ._legacy.dim import Dim
 from .launch_config import (
     BlockExecutionConfig,
@@ -57,25 +81,21 @@ from ._legacy.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from ._overlay import (
+from ._overlay import DeviceGraphInput
+from max._driver.max_license.device_context_dispatch.graph_names import (
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
-    DeviceGraphInput,
     DeviceGraphInputKind,
     DeviceGraphNode,
     StableAddr,
 )
-from ._overlay import (
+from max._driver.max_license.device_context_dispatch.vendor import (
     CUDA,
     CUDA_MODULE,
-    CUDA_get_current_context,
-    CUcontext,
-    CUmodule,
-    CUstream,
-    _CUstream_st,
+    HIP,
+    HIP_MODULE,
 )
-from ._overlay import HIP, HIP_MODULE, hipDevice_t, hipStream_t
 from ._legacy._kernel_load_gate import (
     CollectiveEnqueueScope,
     CollectiveGate,

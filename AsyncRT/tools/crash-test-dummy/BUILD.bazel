@@ -18,7 +18,6 @@ modular_cc_binary(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     env = {
         "MODULAR_CRASH_REPORTING_ENABLED": "true",

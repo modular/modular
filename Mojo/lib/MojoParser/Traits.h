@@ -28,16 +28,19 @@ class ConformanceASTDecl;
 class DeclResolver;
 class SharedState;
 class FnTypeGeneratorType;
-class MojoInflightDiag;
+class ConformanceWitnessASTDecl;
 
-/// Check conformance of a struct against a given trait decl, build the
-/// conformance op along the way. Inherited methods are not checked, so to
-/// verify full conformance of an inheriting trait decl, its full ancestor chain
-/// of decls must also be checked here too. This logic is left for the caller so
-/// optimizations is possible when the struct is already known to conform to
-/// certain ancestors. On success, the `ConformanceOp` will be populated.
-LogicalResult verifyAndBuildConformance(ConformanceASTDecl &conformanceDecl,
-                                        std::optional<MojoInflightDiag> &diag);
+/// Check the trait requirement `member` stands for and install its witness.
+/// The first member found unsatisfied checks the rest and reports them all in
+/// one error. After that, or after a signature error, the conformance is
+/// erroneous and later members fail silently.
+LogicalResult verifyConformanceMember(ConformanceWitnessASTDecl &member);
+
+/// Resolve only the witness named `witnessName`. Tables without member decls
+/// (closure wrappers, bytecode) are complete once the conformance itself is
+/// body resolved.
+LogicalResult resolveConformanceMember(ConformanceASTDecl &conformanceDecl,
+                                       StringAttr witnessName);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(

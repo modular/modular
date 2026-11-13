@@ -458,15 +458,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         assert self.vision_model is not None
         assert self._session is not None
         vision_outputs = self.vision_model.execute(
-            packed.pixel_values,
-            packed.weights,
-            packed.indices,
-            packed.vision_position_ids,
-            packed.max_grid_size,
-            packed.grid_thw,
-            packed.cu_seqlens,
-            packed.max_seqlen,
-            *self.signal_buffers,
+            *packed.graph_inputs(devices), *self.signal_buffers
         )
         assert isinstance(vision_outputs[0], Buffer)
         embeddings = cast_tensors_to(

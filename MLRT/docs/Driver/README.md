@@ -16,10 +16,11 @@ Python bindings in `max/python/max/_core/driver.pyi`.
 
 `MLRT/include/MLRT/Driver/CAPI/DriverCAPI.h` declares opaque, refcounted
 handles for devices (a device plus its process-wide context), streams, events,
-buffers and registered host mappings, and the operations on them: stream
-creation and synchronization, `wait_for` ordering, event recording, timed
-events, pointer-level asynchronous copies on a chosen stream, registration of
-foreign host memory for DMA, and peer-access queries and peer copies.
+buffers, registered host mappings and chunked pinned host regions, and the
+operations on them: stream creation and synchronization, `wait_for` ordering,
+event recording, timed events, pointer-level asynchronous copies on a chosen
+stream, registration of foreign host memory for DMA, pinned staging regions
+too large to register in one call, and peer-access queries and peer copies.
 
 It is a translation layer over the same `M::Driver` objects the Python bindings
 use, so a handle obtained through it executes on the contexts MAX itself uses,

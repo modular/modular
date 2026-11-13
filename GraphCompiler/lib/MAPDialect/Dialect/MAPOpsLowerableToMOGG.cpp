@@ -32,6 +32,8 @@
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "llvm/ADT/SetVector.h"
 
+#include <type_traits>
+
 using namespace mlir;
 
 namespace M::MAP {
@@ -965,34 +967,28 @@ static LogicalResult verifyIterElementwiseBody(IterElementwiseBodyOp foreach,
   return success();
 }
 
-// Lowers `foreach`'s body into a new `ForeachOpT`.
-template <typename ForeachOpT>
-static LogicalResult buildForeach(IterElementwiseBodyOp foreach,
-                                  MAPToMOGGState &state, Value loopShape,
-                                  Type indexType) {
+// `foreach`'s captures, lowered: each (kernel I/O or hoisted view) is defined,
+// and so lowered, earlier in the block.
+static SmallVector<Value> lowerCaptures(IterElementwiseBodyOp foreach,
+                                        MAPToMOGGState &state) {
+  SmallVector<Value> capturing;
+  for (Value v : foreach.getCaptures())
+    capturing.push_back(state.mapping.lookup(v));
+  return capturing;
+}
+
+// Lowers `foreach`'s body into `callForeach`'s region, whose block takes one
+// argument per capture, then the index.
+static LogicalResult lowerForeachBody(IterElementwiseBodyOp foreach,
+                                      Operation *callForeach,
+                                      MAPToMOGGState &state,
+                                      ArrayRef<Value> capturing,
+                                      Type indexType) {
   Location loc = foreach.getLoc();
   Block &body = foreach.getBody().front();
-  ValueRange captures = foreach.getCaptures();
   Block::BlockArgListType captureBlockArgs =
-      body.getArguments().take_back(captures.size());
-
-  // Every capture (kernel I/O or hoisted view) is defined, and so lowered,
-  // earlier in the block.
-  SmallVector<Value> capturing;
-  for (Value v : captures)
-    capturing.push_back(state.mapping.lookup(v));
-
-  // A foreach kernel is single-device, so it has exactly one context.
-  MOGG::PrimitiveDeclOp foreachPrim =
-      state.registry.lookupPrimitive(ForeachOpT::getOperationName());
-  auto callForeach = ForeachOpT::create(
-      state.builder, loc,
-      FlatSymbolRefAttr::get(foreach.getContext(), foreachPrim.getSymName()),
-      loopShape, state.contextArgs.front(), capturing,
-      state.builder.getStringAttr(state.device.getLabel()));
-
-  // One arg per capture, then the index.
-  Block *foreachBlock = state.builder.createBlock(&callForeach.getBody());
+      body.getArguments().take_back(capturing.size());
+  Block *foreachBlock = state.builder.createBlock(&callForeach->getRegion(0));
   for (auto [i, v] : llvm::enumerate(captureBlockArgs))
     state.mapping.map(v,
                       foreachBlock->addArgument(capturing[i].getType(), loc));
@@ -1005,6 +1001,70 @@ static LogicalResult buildForeach(IterElementwiseBodyOp foreach,
 
   state.builder.setInsertionPointAfter(callForeach);
   return success();
+}
+
+// The callee and device of a foreach kernel, which is single-device, so it has
+// exactly one context.
+template <typename ForeachOpT>
+static std::pair<FlatSymbolRefAttr, StringAttr>
+foreachCallee(IterElementwiseBodyOp foreach, MAPToMOGGState &state) {
+  MOGG::PrimitiveDeclOp prim =
+      state.registry.lookupPrimitive(ForeachOpT::getOperationName());
+  return {FlatSymbolRefAttr::get(foreach.getContext(), prim.getSymName()),
+          state.builder.getStringAttr(state.device.getLabel())};
+}
+
+// A body's width limit as a launch takes it: a static limit as a number, one
+// with run-time dims as a shape whose dims' GCD the launch takes, which gives
+// each dim its `!mogg.dim` value. Neither for no limit.
+static std::pair<IntegerAttr, Value> lowerWidthLimit(TypedAttr limit,
+                                                     MOSH::ShapeType shapeType,
+                                                     Location loc,
+                                                     MAPToMOGGState &state) {
+  TypedAttr widthLimit = MAP::simplifyWidthLimit(limit);
+  if (!widthLimit)
+    return {};
+  if (std::optional<int64_t> constant =
+          MOSH::ShapeAttr::getStaticDim(widthLimit))
+    return {*constant ? state.builder.getI64IntegerAttr(*constant)
+                      : IntegerAttr(),
+            Value()};
+  SmallVector<TypedAttr> dims;
+  MAP::collectWidthLimitDims(widthLimit, dims);
+  return {IntegerAttr(),
+          buildShape(loc, MOSH::ShapeAttr::get(dims, shapeType), state)};
+}
+
+// Lowers `foreach` into a `mogg.call.foreach`, passing on its width limit.
+static LogicalResult buildSimdForeach(IterElementwiseBodyOp foreach,
+                                      MAPToMOGGState &state, Value loopShape,
+                                      Type indexType) {
+  Location loc = foreach.getLoc();
+  SmallVector<Value> capturing = lowerCaptures(foreach, state);
+  auto [maxSimdWidth, dynamicMaxSimdWidth] = lowerWidthLimit(
+      foreach.getMaxSimdWidthAttr(), foreach.getShape().getType(), loc, state);
+  auto [callee, device] = foreachCallee<MOGG::CallForeachOp>(foreach, state);
+  auto callForeach = MOGG::CallForeachOp::create(
+      state.builder, loc, callee, loopShape, state.contextArgs.front(),
+      capturing, dynamicMaxSimdWidth, device, maxSimdWidth);
+  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
+}
+
+// Lowers `foreach` into a `mogg.call.foreach.tile`, which has no width limit
+// to pass on: running such a loop at its tile width could cross the
+// boundaries a limit stands for.
+static LogicalResult buildTileForeach(IterElementwiseBodyOp foreach,
+                                      MAPToMOGGState &state, Value loopShape,
+                                      Type indexType) {
+  if (MAP::simplifyWidthLimit(foreach.getMaxSimdWidthAttr()))
+    return foreach.emitOpError("a tile foreach cannot take a SIMD width limit");
+  SmallVector<Value> capturing = lowerCaptures(foreach, state);
+  auto [callee, device] =
+      foreachCallee<MOGG::CallForeachTileOp>(foreach, state);
+  auto callForeach = MOGG::CallForeachTileOp::create(
+      state.builder, foreach.getLoc(), callee, loopShape,
+      state.contextArgs.front(), capturing, device);
+  return lowerForeachBody(foreach, callForeach, state, capturing, indexType);
 }
 
 // The tile half of `IterElementwiseBodyOp::lowerToMOGG`.
@@ -1038,7 +1098,7 @@ static LogicalResult lowerTileForeach(IterElementwiseBodyOp foreach,
 
   auto index = cast<MAP::IndexType>(body.getArgument(0).getType());
   return state.withTileBody([&] {
-    return buildForeach<MOGG::CallForeachTileOp>(
+    return buildTileForeach(
         foreach, state, loopShape,
         MOGG::TileCoordType::get(foreach.getContext(), index.getRank()));
   });
@@ -1057,8 +1117,8 @@ LogicalResult IterElementwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
 
   if (state.tileBasedFusionEnabled)
     return lowerTileForeach(*this, state, loopShape);
-  return buildForeach<MOGG::CallForeachOp>(
-      *this, state, loopShape, getBody().front().getArgument(0).getType());
+  return buildSimdForeach(*this, state, loopShape,
+                          getBody().front().getArgument(0).getType());
 }
 
 // map.iter.rowwise.body -> mogg.call.rowwise.
@@ -1076,13 +1136,18 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   for (Value v : captures)
     capturing.push_back(state.mapping.lookup(v));
 
+  // A width limit, as for a foreach.
+  auto [maxSimdWidth, dynamicMaxSimdWidth] =
+      lowerWidthLimit(getMaxSimdWidthAttr(), getShape().getType(), loc, state);
+
   auto callRowwise = MOGG::CallRowwiseOp::create(
       state.builder, loc, rowShape, getAxisAttr(), state.contextArgs.front(),
-      capturing, state.builder.getStringAttr(state.device.getLabel()),
+      capturing, dynamicMaxSimdWidth,
+      state.builder.getStringAttr(state.device.getLabel()),
       /*accum=*/nullptr, /*is_cached=*/nullptr, /*cols=*/nullptr,
       /*num_phases=*/nullptr,
       /*dtype_size=*/nullptr, /*computationally_expensive=*/nullptr,
-      /*simd_monoid=*/nullptr);
+      /*simd_monoid=*/nullptr, maxSimdWidth);
 
   // One arg per capture, then the row index.
   Block *rowwiseBlock = state.builder.createBlock(&callRowwise.getBody());

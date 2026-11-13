@@ -585,25 +585,25 @@ trait GreatGrandFather:
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: GreatGrandFather)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GreatGrandFather>]>
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.fn @"bar
+# CHECK: } <{{.*}}immediateParents = [<@traits::@GreatGrandFather>]
     def bar(self):
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: GrandFather_GreatGrandFather)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GrandFather>]>
 trait Father(GrandFather):
     # CHECK: lit.fn @"baz
+# CHECK: } <{{.*}}immediateParents = [<@traits::@GrandFather>]
     def baz(self):
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @UnevenDiamond
 # CHECK-SAME: Father_GrandFather_GreatGrandFather_UnevenDiamond)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@Father>]>
+# CHECK: } <{{.*}}immediateParents = [<@traits::@Father>]
 trait UnevenDiamond(GreatGrandFather, Father):
     ...
 

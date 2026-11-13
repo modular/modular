@@ -12,40 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """HIP native-handle accessors for the HAL `DeviceContext`."""
 
-from .device_context_hal import DeviceContext, DeviceFunction, DeviceStreamBase
+from .device_context_hal import (
+    HALDeviceContext,
+    HALDeviceFunction,
+    HALDeviceStreamBase,
+)
 from std.memory.pointer import unsafe_cast
-
-
-struct _ihipDevice_t:
-    pass
-
-
-struct _ihipStream_t:
-    pass
-
-
-struct _ihipModule_t:
-    pass
-
-
-comptime hipDevice_t = Optional[
-    Pointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
-]
-comptime hipStream_t = Optional[
-    Pointer[_ihipStream_t, UntrackedOrigin[mut=True]]
-]
-comptime hipModule_t = Optional[
-    Pointer[_ihipModule_t, UntrackedOrigin[mut=True]]
-]
+from max.gpu.host._vendor_handles import (
+    _ihipStream_t,
+    hipDevice_t,
+    hipStream_t,
+    hipModule_t,
+)
 
 
 @inline(.always)
-def HIP(ctx: DeviceContext) raises -> hipDevice_t:
+def HIP(ctx: HALDeviceContext) raises -> hipDevice_t:
     raise Error("hipDevice_t access is not wired for the HAL DeviceContext")
 
 
 @inline(.always)
-def HIP(stream: DeviceStreamBase[_]) raises -> hipStream_t:
+def HIP(stream: HALDeviceStreamBase[_]) raises -> hipStream_t:
     """Returns the `hipStream_t` backing a HAL stream.
 
     Args:
@@ -63,7 +50,7 @@ def HIP(stream: DeviceStreamBase[_]) raises -> hipStream_t:
 
 
 @inline(.always)
-def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
+def HIP_MODULE(func: HALDeviceFunction) raises -> hipModule_t:
     raise Error(
         "hipModule_t access is not wired for the HAL DeviceContext; the HIP"
         " plugin does not answer M_DRIVER_FUNCTION_PROPERTY_NATIVE_HANDLE"

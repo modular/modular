@@ -10,36 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Selects the HAL `DeviceContext` behind `max.gpu.host`.
+"""Selects the HAL `DeviceContext` backend behind `max.gpu.host`.
 
 Replaces `max/gpu/host/_overlay.mojo` under --config=hal-device-context (see
-`:dcc_overlay` in this package's BUILD.bazel), and exports the same names as
-that file, plus the HAL-only ones. It imports absolutely so it resolves the same
-staged there as here, where it also compiles in every configuration.
+`:dcc_overlay` in this package's BUILD.bazel) and holds the same two names: the
+backend constant and the `DeviceGraphInput` trait.
 """
-
-from max._driver.max_license.device_context_hal.device_context_hal import *
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    _CString,
-    _DeviceBufferCpp,
-    _DeviceContextPtr,
-    _DeviceContextScopeHAL,
-    _DeviceFunctionPtr,
-    _DumpPath,
-    _check_dim_in_range,
-    _checked,
-)
-from max._driver.max_license.device_context_hal.device_graph_hal import *
-from max._driver.max_license.device_context_hal._nvidia_cuda_hal import *
-from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
-    _CUstream_st,
-)
-from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
-    HIP,
-    HIP_MODULE,
-    hipDevice_t,
-    hipStream_t,
-)
 
 comptime HAL_DEVICE_CONTEXT = True
 """Whether `max.gpu.host` is the HAL `DeviceContext`."""
+
+from max._driver.max_license.device_context_hal.device_graph_hal import (
+    HALDeviceGraphInput as DeviceGraphInput,
+)

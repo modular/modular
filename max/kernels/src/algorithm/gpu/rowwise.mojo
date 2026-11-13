@@ -1459,7 +1459,7 @@ def launch[
             ctx.enqueue_function(
                 _BlockKernel[shape.rank, wide_params, Body, True](
                     body,
-                    Coord(coord_to_index_list(shape)),
+                    shape.make_dynamic[.int64](),
                 ),
                 grid_dim=num_blocks,
                 block_dim=COOPERATIVE_BLOCK_SIZE,

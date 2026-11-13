@@ -1,0 +1,7 @@
+package(default_visibility = ["//max:consumers"])
+
+# The formatspec crate embeds this document, so it reaches across the fence.
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
+)

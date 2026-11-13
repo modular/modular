@@ -109,7 +109,14 @@ from std.atomic import Atomic, Ordering, fence
 from std.collections import Array
 from std.math.uutils import ualign_down
 from std.math import ceildiv, clamp
-from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of, size_of
+from std.sys import (
+    align_of,
+    get_defined_int,
+    is_amd_gpu,
+    is_nvidia_gpu,
+    simd_width_of,
+    size_of,
+)
 from std.sys._assembly import inlined_assembly
 
 from layout import (
@@ -170,6 +177,44 @@ from .device_query import (
 )
 from internal_utils import Table
 
+# Launch geometry for the Lamport path at `ngpus=8` on `sm_100a`. The kernel
+# runs one 128-bit pack per thread, so the block size alone sets the CTA count,
+# `ceil(num_packs / BLOCK_SIZE)`, and therefore how much of the machine a
+# decode-sized collective occupies. Two geometries cover the decode sizes, a
+# narrow one over the middle message band and the wide one either side of it.
+# `us` per call, median of three passes of
+# `max/kernels/benchmarks/gpu/comm/bench_allreduce_lamport_geometry.yaml` on
+# 8x B200, bf16, with `ALLREDUCE_PDL=True`. The graph op passes no PDL
+# attribute, so at the `ngpus == 8` these bands cover, the default is off:
+#
+#   bytes    128 threads   256 threads
+#   12288         10.10          8.92
+#   49152          9.76         10.28
+#   98304         10.06         10.49
+#   196608        14.91         11.72
+#
+# Both choices hold with PDL off too (narrow vs wide: 9.78 vs 9.44 at 12 KiB,
+# 10.11 vs 12.32 at 48 KiB, 10.46 vs 10.85 at 96 KiB, 11.90 vs 12.01 at
+# 192 KiB), so the geometry does not depend on the launch attribute. The
+# 192 KiB row is what fixes the upper edge, and it is the only row where the
+# attribute flips the sign: without it the two geometries tie there.
+#
+# Below the band a 12 KiB message is 768 packs, three CTAs at the wide geometry
+# and six at the narrow one, so splitting the threads further only adds
+# per-CTA cost. Above the band a 128-thread launch is 96 CTAs, a second
+# resident collective's worth of blocks competing with the grid it waits on.
+comptime LAMPORT_NARROW_BLOCK_SIZE = 128
+"""Block size for the Lamport path's middle message band on 8x sm_100a."""
+
+comptime LAMPORT_WIDE_BLOCK_SIZE = 256
+"""Block size for the Lamport path's small and large bands on 8x sm_100a."""
+
+comptime LAMPORT_NARROW_BAND_MIN_BYTES = 16 * KB
+"""Per-rank message size (exclusive) above which the narrow launch wins."""
+
+comptime LAMPORT_NARROW_BAND_MAX_BYTES = 128 * KB
+"""Per-rank message size (exclusive) below which the narrow launch wins."""
+
 # Tuning table to get num_blocks for allreduce.
 
 
@@ -198,7 +243,7 @@ struct AllReduceAlgorithm(EnumLike, TrivialRegisterPassable, Writable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -865,6 +910,10 @@ def _allreduce_2stage_kernel[
 
     comptime num_tensors = 1 if use_multimem else ngpus
 
+    # Safety invariant: this wait is all that orders the device read below it
+    # behind the peer's store, so nothing may be hoisted above it whenever the
+    # launch grants `PDLLevel.ON`, which the graph op leaves to `allreduce`'s
+    # own default: on at up to two GPUs, off wider.
     with PDL():
         # --- Define tmp buffers by offsetting for Signal struct ---
         # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -1180,6 +1229,10 @@ def _allreduce_1stage_kernel[
             )
         ).copy()
 
+    # Safety invariant: this wait is all that orders the device read below it
+    # behind the peer's store, so nothing may be hoisted above it whenever the
+    # launch grants `PDLLevel.ON`, which the graph op leaves to `allreduce`'s
+    # own default: on at up to two GPUs, off wider.
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
             rank_sigs, my_sig, _my_rank
@@ -1404,6 +1457,10 @@ def _allreduce_lamport_kernel[
 
     var sentinel = set_neg_zero[dtype, atomic_width]()
 
+    # Safety invariant: this wait is all that orders the device read below it
+    # behind the peer's store, so nothing may be hoisted above it whenever the
+    # launch grants `PDLLevel.ON`, which the graph op leaves to `allreduce`'s
+    # own default: on at up to two GPUs, off wider.
     with PDL():
         var state = rank_sigs[_my_rank][].lamport_state_ptr()
         var flag = Int(
@@ -1633,16 +1690,175 @@ def _allreduce_lamport_p2p[
     )
 
     comptime sm_version = ctx.default_device_info.version
-    comptime BLOCK_SIZE = 512 if sm_version == "CDNA4" else 256
-    var num_packs = num_elements // atomic_width
-    var grid_size = clamp(
-        ceildiv(num_packs, BLOCK_SIZE), 1, dispatch_config.num_blocks
+    # The kernel runs one 128-bit pack per thread, so the block size is the
+    # only knob that sets how many CTAs the collective spreads over: the grid
+    # is `ceil(num_packs / BLOCK_SIZE)`, clamped to the tuning config's
+    # `num_blocks`, which is 512 on the 8x sm_100a Lamport bucket. Every
+    # Lamport-eligible message is at most `Lamport.MAX_SMALL_MESSAGE_BYTES`
+    # (1 MiB), i.e. 65536 packs, so no shipped geometry reaches that clamp:
+    # `512 * 128` packs is exactly the ceiling. A `-D` override below 128 can
+    # reach it, which only makes each thread walk more than one pack; the
+    # grid-strided loop covers the same packs however the clamp lands.
+    #
+    # `ALLREDUCE_LAMPORT_BLOCK_SIZE` is a benchmark knob: the geometry sweep
+    # drives one block size across every message size with it. It folds into
+    # both band values rather than bypassing them, so a build that sets it keeps
+    # the band decision -- and the two geometries it instantiates -- unchanged.
+    # It is capped at 512, the largest geometry this kernel is built at
+    # anywhere.
+    comptime override_block_size = get_defined_int[
+        "ALLREDUCE_LAMPORT_BLOCK_SIZE", 0
+    ]()
+    comptime assert override_block_size == 0 or (
+        override_block_size >= 32
+        and override_block_size <= 512
+        and override_block_size % 32 == 0
+    ), "Lamport block size must be a multiple of 32 in [32, 512]"
+
+    # Bands only exist for the configuration they were measured on; every
+    # other target keeps its single historical block size, so both band
+    # values collapse onto the same kernel there.
+    comptime banded = ngpus == 8 and sm_version == "sm_100a"
+    comptime default_block_size = 512 if sm_version == "CDNA4" else 256
+    comptime narrow_block_size = (
+        override_block_size if override_block_size
+        != 0 else LAMPORT_NARROW_BLOCK_SIZE if banded else default_block_size
     )
+    comptime wide_block_size = (
+        override_block_size if override_block_size
+        != 0 else LAMPORT_WIDE_BLOCK_SIZE if banded else default_block_size
+    )
+    var in_narrow_band = (
+        num_bytes > LAMPORT_NARROW_BAND_MIN_BYTES
+        and num_bytes < LAMPORT_NARROW_BAND_MAX_BYTES
+    )
+
+    comptime if narrow_block_size == wide_block_size:
+        # One geometry covers every message size, so there is no band to pick.
+        _enqueue_lamport[
+            dtype,
+            ngpus,
+            FlatLayout,
+            in_engine,
+            out_layout,
+            OutputLambdaType,
+            use_fence=use_fence,
+            pdl_level=pdl_level,
+            BLOCK_SIZE=narrow_block_size,
+        ](
+            output_layout,
+            flat_inputs,
+            rank_sigs,
+            num_elements,
+            my_rank,
+            dispatch_config.num_blocks,
+            ctx,
+            output_lambda,
+        )
+    else:
+        if in_narrow_band:
+            _enqueue_lamport[
+                dtype,
+                ngpus,
+                FlatLayout,
+                in_engine,
+                out_layout,
+                OutputLambdaType,
+                use_fence=use_fence,
+                pdl_level=pdl_level,
+                BLOCK_SIZE=narrow_block_size,
+            ](
+                output_layout,
+                flat_inputs,
+                rank_sigs,
+                num_elements,
+                my_rank,
+                dispatch_config.num_blocks,
+                ctx,
+                output_lambda,
+            )
+        else:
+            _enqueue_lamport[
+                dtype,
+                ngpus,
+                FlatLayout,
+                in_engine,
+                out_layout,
+                OutputLambdaType,
+                use_fence=use_fence,
+                pdl_level=pdl_level,
+                BLOCK_SIZE=wide_block_size,
+            ](
+                output_layout,
+                flat_inputs,
+                rank_sigs,
+                num_elements,
+                my_rank,
+                dispatch_config.num_blocks,
+                ctx,
+                output_lambda,
+            )
+
+
+@inline(.always)
+def _enqueue_lamport[
+    dtype: DType,
+    ngpus: Int,
+    flat_layout: TensorLayout,
+    in_engine: TensorEngine,
+    out_layout: TensorLayout,
+    OutputLambdaType: CollectiveEpilogueFn,
+    *,
+    use_fence: Bool,
+    pdl_level: PDLLevel,
+    BLOCK_SIZE: Int,
+](
+    output_layout: out_layout,
+    flat_inputs: Array[
+        TileTensor[dtype, flat_layout, ImmutAnyOrigin, Engine=in_engine], ngpus
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    num_elements: Int,
+    my_rank: Int,
+    num_blocks: Int,
+    ctx: DeviceContext,
+    output_lambda: OutputLambdaType,
+) raises:
+    """Launches the Lamport kernel over one fixed launch geometry.
+
+    Split out of `_allreduce_lamport_p2p` so the block size can be a comptime
+    parameter chosen per message-size band without repeating the launch.
+
+    Parameters:
+        dtype: Data dtype of tensor elements.
+        ngpus: Number of GPUs participating.
+        flat_layout: Layout of the flattened input TileTensors.
+        in_engine: Storage engine of the input TileTensors.
+        out_layout: Layout of the output TileTensor.
+        OutputLambdaType: The type of `output_lambda`.
+        use_fence: Whether the kernel fences around each push and poll.
+        pdl_level: Controls PDL behavior for this launch.
+        BLOCK_SIZE: Threads per block, and so the CTA count (`ceil(packs /
+            BLOCK_SIZE)`).
+
+    Args:
+        output_layout: Layout of the output.
+        flat_inputs: The flattened inputs from all `ngpus` devices.
+        rank_sigs: Signal pointers, indexed by global device rank.
+        num_elements: Number of elements to reduce.
+        my_rank: This device's global rank.
+        num_blocks: Upper bound on the grid size from the tuning config.
+        ctx: Device context for this device.
+        output_lambda: Elementwise output epilogue.
+    """
+    comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+    var num_packs = num_elements // atomic_width
+    var grid_size = clamp(ceildiv(num_packs, BLOCK_SIZE), 1, num_blocks)
 
     comptime lamport_kernel = _allreduce_lamport_kernel[
         dtype,
         ngpus,
-        FlatLayout,
+        flat_layout,
         in_engine,
         out_layout,
         BLOCK_SIZE=BLOCK_SIZE,

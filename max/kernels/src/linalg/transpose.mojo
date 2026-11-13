@@ -477,8 +477,11 @@ def _simplify_transpose_perms_impl[
         return
 
     else:
-        for i in range(rank - 1):
-            if simplified_perms[i] + 1 == simplified_perms[i + 1]:
+        for i in range(rank):
+            if (
+                i + 1 < rank
+                and simplified_perms[i] + 1 == simplified_perms[i + 1]
+            ):
                 _collapse_unpermuted_dims[rank](
                     simplified_shape, simplified_perms, i
                 )

@@ -20,7 +20,6 @@ from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import MuseGlimmerBatchProcessor
-from .memory_planner import MuseGlimmerMemoryPlanner
 from .model_config import MuseGlimmerConfig
 from .modules import MuseGlimmerDecoder, MuseGlimmerVision
 from .reasoning import (
@@ -51,7 +50,6 @@ muse_glimmer_arch = SupportedArchitecture(
     use_weight_rules=True,
     config=MuseGlimmerConfig,
     batching=MuseGlimmerBatchProcessor,
-    memory_planner=MuseGlimmerMemoryPlanner,
     supports_overlap_scheduler=True,
     supports_device_graph_capture=True,
     tool_parser="muse_glimmer",

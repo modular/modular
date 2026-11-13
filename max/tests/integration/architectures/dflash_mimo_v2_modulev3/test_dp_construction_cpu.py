@@ -46,12 +46,10 @@ from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
-from max.pipelines.architectures.mimo_v2_modulev3.memory_planner import (
-    ep_dispatch_row_budget,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.model import (
     MiMoV2ModuleV3Model,
     _ep_config,
+    ep_dispatch_row_budget,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -483,8 +481,7 @@ def test_the_ep_config_counts_the_verify_rows() -> None:
     """A speculative build's dispatch buffers hold a full decode step's
     merged verify rows -- the scheduler's active-token budget plus every
     request's drafts -- where the base target's hold the budget alone,
-    and nothing else about the config differs. The planner reserves the
-    same budget the build sizes the buffers with."""
+    and nothing else about the config differs."""
     config, _draft, _kv_tree = build_parts(
         _gpu_refs(), data_parallel_degree=N_DEVICES
     )

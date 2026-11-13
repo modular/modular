@@ -3030,8 +3030,10 @@ struct PagedKVCache[
         """Returns the TMA row of a sparse selection's logical token, or `-1`.
 
         A slot is `-1` when it is unused (negative), when its page lies past
-        the lookup table, or when the page is unallocated (the table holds the
-        `total_num_pages` sentinel, which is at least `blocks.dim[0]`).
+        the lookup table, or when the page's block id lies outside the pool.
+        The manager's unassigned-slot fill is not one of those: it stages
+        `total_num_pages`, which is the null page `allocate_buffers` appends
+        after the pool and so in bounds by design.
 
         Args:
             batch_idx: Batch entry the selection belongs to.
@@ -3891,26 +3893,21 @@ struct PagedKVCache[
     ):
         """Stores an element at the given index.
 
-        Skips the write when the LUT entry for ``(bs, tok_idx // page_size)``
-        is the unassigned-slot sentinel, i.e. when the resolved
-        ``block_idx`` is outside ``[0, total_num_blocks)``. The cache
-        manager fills LUT columns past a request's allocated block count
-        with the sentinel value ``total_num_pages`` (see
-        ``cache_manager.py``'s ``lut_table_np.fill(self._total_num_pages)``)
-        so that SIMD over-reads of the LUT row are safe, but the *value*
-        of the sentinel times the page stride lands one page past the
-        end of the cache buffer. Without this guard a sentinel-resolved
-        store corrupts whatever device allocation happens to sit
-        immediately after the KV cache.
+        Silently skips the write when the LUT entry for
+        ``(bs, tok_idx // page_size)`` resolves outside the block pool, i.e.
+        when ``block_idx`` is not in ``[0, total_num_blocks)``. The table is a
+        staged graph input, so a cell no step wrote reads ``0`` (the staging
+        arena is zeroed when it is allocated, except on a compile-only virtual
+        device, where nothing runs); this guard bounds any other word, which a
+        corrupted arena or a caller staging an id outside the pool can produce.
+
+        The cache manager's own unassigned-slot fill does *not* resolve out of
+        the pool: it stages ``total_num_pages`` (see ``cache_manager.py``'s
+        ``lut_table_np.fill(self._total_num_pages)``), and ``allocate_buffers``
+        appends that null page after the pool. That address is in bounds by
+        design, so it stores like any other.
         """
         var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
-        var block_idx = Int(self.lookup_table.load((bs, lut_block_idx)))
-        debug_assert(
-            block_idx < Int(self.blocks.dim[0]()),
-            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
-            block_idx,
-            ")",
-        )
         debug_assert(
             head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
@@ -3923,6 +3920,9 @@ struct PagedKVCache[
         assert tok_in_block_idx < Int(
             self.blocks.dim[1]()
         ), "KVCache tok_idx out of range"
+        var block_idx = Int(self.lookup_table.load((bs, lut_block_idx)))
+        if block_idx >= Int(self.blocks.dim[0]()):
+            return
         self.blocks.store(
             (block_idx, tok_in_block_idx, head_idx, head_dim_idx), val
         )
@@ -3975,7 +3975,11 @@ struct PagedKVCache[
         head_dim_idx: Int,
         scales: SIMD[scales_dtype, width],
     ):
-        """Stores the quantization scales at the given index."""
+        """Stores the quantization scales at the given index.
+
+        Silently skips the write when the LUT entry resolves outside the scale
+        pool, for the same reason :meth:`store` does.
+        """
         # `scales_dtype`/`width` are inferred from the `scales` argument.
         # `scales_dtype` is definitionally equal to `Self.scale_dtype` (the
         # derived `scale_dtype_.or_else(dtype_)` alias) but the compiler cannot
@@ -3987,15 +3991,8 @@ struct PagedKVCache[
         ), "scales element dtype must match the cache's scale_dtype"
         var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
         var block_idx = Int(self.scales_lookup_table[bs, lut_block_idx])
-        debug_assert(
-            block_idx < Int(self.blocks.dim[0]()),
-            (
-                "KVCache scales block_idx resolved to sentinel/unassigned LUT"
-                " entry ("
-            ),
-            block_idx,
-            ")",
-        )
+        if block_idx >= Int(self.scales.value().dim[0]()):
+            return
         var scale_block_idx = head_dim_idx // Self.quantization_granularity
         self.scales.value().store(
             (block_idx, tok_in_block_idx, head_idx, scale_block_idx),

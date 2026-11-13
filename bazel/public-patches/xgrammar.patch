@@ -8772,15 +8772,15 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
 +          spec.property_names, value_rule, spec.min_properties, spec.max_properties
 +      );
 +    }
-+    if (xml_require_paired_tags_ &&
-+        spec.min_properties > static_cast<int>(spec.properties.size())) {
++    bool needs_undeclared = spec.min_properties > static_cast<int>(spec.properties.size());
++    if (xml_require_paired_tags_ && nested && needs_undeclared) {
 +      XGRAMMAR_LOG(FATAL)
 +          << "unsupported: XML object requires undeclared keys whose tags cannot be paired";
 +    }
 +    // Variable close tags cannot backreference their open key. The paired-tag
-+    // policy drops them; legacy mode keeps extras when minProperties needs them.
-+    bool keep_undeclared = !xml_require_paired_tags_ &&
-+                           spec.min_properties > static_cast<int>(spec.properties.size());
++    // policy drops them; legacy mode keeps extras when minProperties needs them,
++    // and so does a paired root, which has no tag to hold them as a JSON leaf.
++    bool keep_undeclared = needs_undeclared;
 +    ObjectSpec declared_only = spec;
 +    declared_only.allow_additional_properties = keep_undeclared && spec.allow_additional_properties;
 +    declared_only.allow_unevaluated_properties = keep_undeclared && spec.allow_unevaluated_properties;

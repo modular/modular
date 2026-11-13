@@ -46,19 +46,20 @@ from max._entrypoints.cli.quant_error_report import JSON_NAME
 class _Model:
     repo_id: str
     gated: bool
-    # Fraction of the GPU's *free* memory the model may use. Must clear the
-    # weights with room for a KV cache: free * utilization > weights.
+    # Fraction of the memory pool the model may use. CI sizes the pool to the
+    # test's gpu-memory resource, so it must clear the weights, the measured
+    # transients and a 1 GiB margin with room for one prefill chunk of KV.
     memory_utilization: float
 
 
 MODELS = {
     # 1.86 GiB of weights.
     "gemma3_1b": _Model(
-        "google/gemma-3-1b-it", gated=True, memory_utilization=0.5
+        "google/gemma-3-1b-it", gated=True, memory_utilization=0.9
     ),
     # About 3 GB of weights.
     "olmo2_1b": _Model(
-        "allenai/OLMo-2-0425-1B-Instruct", gated=False, memory_utilization=0.5
+        "allenai/OLMo-2-0425-1B-Instruct", gated=False, memory_utilization=0.9
     ),
 }
 

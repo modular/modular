@@ -50,9 +50,11 @@ protected:
   /// underlying `lit.fn`.
   FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;
 
-  /// Resolve conformance using ASTDecl lookup in the parser context.
+  /// Resolve a conformance through ASTDecl lookup, verifying only the member
+  /// `witnessName` names.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         TraitSymbolAttr traitSymbol) override;
+                                         TraitSymbolAttr traitSymbol,
+                                         StringAttr witnessName) override;
 
   /// Provide a ParameterEvaluator configured for the struct parameters.
   void withEvaluator(

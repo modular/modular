@@ -408,7 +408,6 @@ modular_py_library(
     testonly = True,
     srcs = [
         "mocks/__init__.py",
-        "mocks/memory_estimation.py",
         "mocks/pipeline_config.py",
         "mocks/pipeline_model.py",
         "mocks/tokenizer.py",

@@ -614,9 +614,18 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 hidden_states, ep_config, ep_buffers
             )
 
-        topk_idx, topk_weight = self.gate(hidden_states)
-
-        latent = self.routed_expert_down_proj(hidden_states)
+        mesh = self.routed_expert_down_proj.weight.mesh
+        sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
+        if sharded:
+            shared_gate_up, latent, logits = self._merged_entry(hidden_states)
+            topk_idx, topk_weight = (
+                self.gate(hidden_states)
+                if logits is None
+                else self.gate.route(logits)
+            )
+        else:
+            topk_idx, topk_weight = self.gate(hidden_states)
+            latent = self.routed_expert_down_proj(hidden_states)
 
         flat_idx = F.cast(F.reshape(topk_idx, [-1]), DType.int32)
 
@@ -770,8 +779,6 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         combined = moe_finalize(
             expert_out, restore_token_order, topk_weight, latent.dtype
         )
-        mesh = self.routed_expert_down_proj.weight.mesh
-        sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         if sharded:
             # The norm rides the allreduce in one collective launch. The
             # attributes mirror `routed_expert_norm` exactly:
@@ -787,20 +794,90 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             )
         else:
             normed = self.routed_expert_norm(combined)
-        if sharded:
-            # The exit is row-parallel: each device multiplies its local
-            # slice of the replicated latent by its slice of the weight's
-            # input axis. The routed and shared partial sums then share one
-            # allreduce.
-            normed = normed.to(NamedMapping(mesh, (None, TP)))
-        routed = self.routed_expert_up_proj(normed)
-
         # The shared branch reads the ORIGINAL full-width input, not the
         # latent.
-        out = routed + self.shared_experts(hidden_states)
-        if sharded:
-            out = F.allreduce_sum(out, mesh_axis=TP)
-        return out
+        if not sharded:
+            return self.routed_expert_up_proj(normed) + self.shared_experts(
+                hidden_states
+            )
+
+        # The exit is row-parallel, and the shared expert's down projection
+        # sums over the same rows: both write a [T, hidden] partial sum that
+        # a single allreduce then reduces. So they run as ONE GEMM whose K is
+        # the local latent slice followed by the local shared activation, and
+        # whose weight is the two input-axis slices side by side. The concat
+        # reads parameters only, so it runs once at model initialization.
+        weight = F.concat(
+            [
+                self.routed_expert_up_proj.weight,
+                self.shared_experts.down_proj.weight,
+            ],
+            axis=-1,
+        )
+        dtype = weight.dtype
+        act = F.concat(
+            [
+                normed.to(NamedMapping(mesh, (None, TP))).cast(dtype),
+                self.shared_experts.situ_and_mul(shared_gate_up).cast(dtype),
+            ],
+            axis=-1,
+        )
+        return F.allreduce_sum(act @ weight.T, mesh_axis=TP)
+
+    def _merged_entry(
+        self, hidden_states: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor | None]:
+        """Runs the shared gate/up, the routed entry and the router as ONE GEMM.
+
+        All three read the same ``hidden_states``, and at decode row counts
+        each GEMM alone is too narrow to fill the GPU. Every device's merged
+        weight is its own gate/up rows followed by the whole replicated
+        entry and router weights, so the merged weight is TP-sharded with
+        those two repeated in every shard, and the split below acts per
+        device too. The concat reads parameters only, so it runs once at
+        model initialization.
+
+        The router joins only when its weight has the others' dtype, as a
+        checkpoint loads it. The GEMM then writes fp32, so the router logits
+        keep their fp32 accumulation, and the gate/up and latent round to the
+        weight dtype once, as their own GEMMs would.
+
+        Returns:
+            The shared expert's ``gate_up_proj`` output, sharded as
+            ``gate_up_proj`` itself returns it, the replicated latent, and the
+            replicated fp32 router logits, or ``None`` when the router did not
+            join.
+        """
+        entry = self.routed_expert_down_proj.weight
+        router = self.gate.gate_score.weight
+        mesh = entry.mesh
+        dtype = entry.dtype
+        tp_size = mesh.axis_size(TP)
+        weights = [self.shared_experts.gate_up_proj.weight, entry]
+        widths = [
+            2 * self.shared_experts.intermediate_size,
+            tp_size * self.latent_size,
+        ]
+        if router.dtype == dtype:
+            weights.append(router)
+            widths.append(tp_size * self.num_experts)
+        weight = F.call_on_mesh(
+            lambda *parts: ops.concat(parts, axis=0),
+            mesh,
+            out_specs=NamedMapping(mesh, (TP, None)),
+        )(*weights)
+        out = F.matmul(
+            hidden_states.cast(dtype),
+            weight.T,
+            out_dtype=DType.float32 if len(weights) == 3 else dtype,
+        )
+        shared_gate_up, latent, *logits = out.split(widths, axis=-1)
+        replicated = NamedMapping(mesh, (None, None))
+        return (
+            shared_gate_up.cast(dtype),
+            latent.cast(dtype).rebind_mapping(replicated),
+            logits[0].rebind_mapping(replicated) if logits else None,
+        )
 
     def expert_parallel_forward(
         self,
@@ -886,6 +963,37 @@ def tensor_parallel_latent_moe(
             latent_size=layer.latent_size,
             per_device_ffn=layer.moe_intermediate_size // tp_size,
         )
+    # `forward()` runs the exit and the shared expert's down projection as
+    # one GEMM over the two weights' input-axis slices, so the merged K has
+    # to be exactly the two TP-sharded widths the layer was built for.
+    assert (
+        layer.routed_expert_up_proj.weight.shape[1] == layer.latent_size
+        and layer.shared_experts.down_proj.weight.shape[1]
+        == layer.shared_experts.intermediate_size
+    ), "the merged exit GEMM's K must be the latent plus the shared FFN"
+    # `forward()` likewise runs the shared gate/up, the routed entry and the
+    # router as one unquantized GEMM, whose output it splits at the three
+    # layer widths.
+    merged = (
+        (
+            layer.shared_experts.gate_up_proj,
+            2 * layer.shared_experts.intermediate_size,
+        ),
+        (layer.routed_expert_down_proj, layer.latent_size),
+        (layer.gate.gate_score, layer.num_experts),
+    )
+    if any(linear.quant_config is not None for linear, _ in merged):
+        raise ValueError(
+            "Kimi K3 MoE: the merged entry GEMM needs unquantized shared"
+            " gate/up, routed entry and router weights"
+        )
+    assert all(
+        int(linear.weight.shape[0]) == rows for linear, rows in merged
+    ), "the merged entry GEMM's N must be the shared gate/up, latent and router"
+    assert (
+        layer.shared_experts.gate_up_proj.weight.dtype
+        == layer.routed_expert_down_proj.weight.dtype
+    ), "the merged entry GEMM needs one dtype for the gate/up and the entry"
     layer.routed_expert_up_proj.weight = layer.routed_expert_up_proj.weight.to(
         NamedMapping(mesh, (None, TP))
     )

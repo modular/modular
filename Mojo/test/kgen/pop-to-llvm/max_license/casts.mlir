@@ -13,7 +13,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu9.42-amd-amdhsa", a
     // CHECK-NEXT: %[[SHIFTED_I32:.*]] = llvm.lshr %[[FLOAT_BITS]], %[[MANTISSA_DIFF]] : i32
     // CHECK-NEXT: %[[SHIFTED_I16:.*]] = llvm.trunc %[[SHIFTED_I32]] : i32 to i16
     // CHECK-NEXT: llvm.bitcast %[[SHIFTED_I16]] : i16 to bf16
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.scalar<f32> to !kgen.scalar<bf16>
+    %0 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16> <fastmathFlags = fast>
     // CHECK-NEXT: llvm.fptrunc %{{.*}} : f32 to bf16
     %1 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16>
     hlcf.return %0, %1 :
@@ -49,7 +49,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu9.42-amd-amdhsa", a
     // CHECK-NEXT: %[[SHIFTED_I16_1:.*]] = llvm.trunc %[[SHIFTED_I32_1]] : i32 to i16
     // CHECK-NEXT: %[[BF16_1:.*]] = llvm.bitcast %[[SHIFTED_I16_1]] : i16 to bf16
     // CHECK-NEXT: %[[BF16x2_1:.*]] = llvm.insertelement %[[BF16_1]], %[[BF16x2_0]][%[[ONE]] : i32] : vector<2xbf16>
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
+    %0 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16> <fastmathFlags = fast>
     // CHECK: llvm.fptrunc %arg0 : vector<2xf32> to vector<2xbf16>
     %1 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
     hlcf.return %0, %1 :
@@ -479,7 +479,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu11.00-amd-amdhsa", 
     // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : f32 to bf16
     // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(bf16, bf16)>
     // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(bf16, bf16)>
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.scalar<f32> to !kgen.scalar<bf16>
+    %0 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16> <fastmathFlags = fast>
     %1 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16>
     // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(bf16, bf16)>
     hlcf.return %0, %1 :
@@ -494,7 +494,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu11.00-amd-amdhsa", 
     // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : vector<2xf32> to vector<2xbf16>
     // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
     // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
+    %0 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16> <fastmathFlags = fast>
     %1 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
     // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
     hlcf.return %0, %1 :
@@ -513,7 +513,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu9.50-amd-amdhsa", a
     // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : f32 to bf16
     // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(bf16, bf16)>
     // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(bf16, bf16)>
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.scalar<f32> to !kgen.scalar<bf16>
+    %0 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16> <fastmathFlags = fast>
     %1 = pop.cast %f32 : !kgen.scalar<f32> to !kgen.scalar<bf16>
     // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(bf16, bf16)>
     hlcf.return %0, %1 :
@@ -528,7 +528,7 @@ module attributes {M.target_info = #M.target<triple = "amdgpu9.50-amd-amdhsa", a
     // CHECK-DAG: %[[VAL1:.+]] = llvm.fptrunc %arg0 : vector<2xf32> to vector<2xbf16>
     // CHECK-DAG: %[[VAL2:.+]] = llvm.insertvalue %[[VAL0]], %[[UNDEF]][0] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
     // CHECK-DAG: %[[VAL3:.+]] = llvm.insertvalue %[[VAL1]], %[[VAL2]][1] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
-    %0 = pop.cast %f32 {fastmathFlags = #pop.fmf<fast>} : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
+    %0 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16> <fastmathFlags = fast>
     %1 = pop.cast %f32 : !kgen.simd<2, f32> to !kgen.simd<2, bf16>
     // CHECK-DAG: llvm.return %[[VAL3]] : !llvm.struct<(vector<2xbf16>, vector<2xbf16>)>
     hlcf.return %0, %1 :

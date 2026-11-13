@@ -199,3 +199,17 @@ func.func @cacheStores(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tenso
   }
   return
 }
+
+// -----
+
+func.func @staticAndDynamicLimit(%shape: !mogg.shape, %ctx: !mogg.context, %limit: !mogg.shape, %x: !mogg.tensor, %out: !mogg.tensor) {
+  // expected-error @below{{expected a static or a dynamic max_simd_width, not both}}
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) dynamic_max_simd_width(%limit) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" attributes {max_simd_width = 2 : i64} {
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.tensor.store %co[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+  }
+  return
+}

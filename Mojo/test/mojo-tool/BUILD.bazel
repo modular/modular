@@ -11,6 +11,7 @@ lit_tests(
         ],
         exclude = [
             "**/inputs/**",
+            "build/mojo_build_sanitize*.mojo",
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
             "package/test_package_fixit/**/*.mojo",
@@ -50,5 +51,38 @@ lit_tests(
     ],
     deps = [
         "//Mojo/tools/mblack",
+    ],
+)
+
+# Kept apart so that only these tests build the TSan runtime libraries, which
+# is a second LLVM build. Skipped in the sanitizer CI lanes (the test builds
+# its own TSan runtimes) and in the external CI (too expensive for one test).
+lit_tests(
+    name = "mojo-tool-sanitize",
+    srcs = glob(["build/mojo_build_sanitize*.mojo"]),
+    data = [
+        "//AsyncRT:RuntimeGlobalsTSan",
+        "//MLRT:Driver/RuntimeTSan",
+        "//Mojo:CompilerRTTSan",
+    ],
+    env = {
+        "MODULAR_MOJO_MAX_COMPILERRT_TSAN_PATH": "$(rootpath //Mojo:CompilerRTTSan)",
+        "MODULAR_MOJO_MAX_MDRIVER_TSAN_PATH": "$(rootpath //MLRT:Driver/RuntimeTSan)",
+        "MODULAR_MOJO_MAX_RUNTIME_GLOBALS_TSAN_PATH": "$(rootpath //AsyncRT:RuntimeGlobalsTSan)",
+    },
+    force_strip = True,  # TODO(MOTO-1190): Debug and fix this duplicate symbol issue
+    mojo_deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+    tags = [
+        "skip-ci-asan",
+        "skip-ci-ubsan",
+        "skip-external-ci",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    tools = [
+        "//Mojo/tools/mojo",
+        "@llvm-project//llvm:llvm-objdump",
     ],
 )

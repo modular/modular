@@ -852,6 +852,8 @@ LITStructAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 }
 
 bool LITStructAttr::isConstant() const {
+  if (isParameterizedType(getType()))
+    return false;
   return llvm::all_of(getValues(), [&](const auto &value) {
     return ParameterAttr::isSimpleConstant(std::get<1>(value));
   });

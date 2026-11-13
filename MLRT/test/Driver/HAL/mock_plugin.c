@@ -808,20 +808,6 @@ M_driver_status_t M_driver_queue_launch_host_func(M_driver_queue_t queue,
   return M_DRIVER_STATUS_SUCCESS;
 }
 
-M_DRIVER_API_EXPORT
-M_driver_status_t M_driver_queue_wait_value64(M_driver_queue_t queue,
-                                              uint64_t device_address,
-                                              uint64_t value) {
-  mock_maybe_stall(__func__);
-  if (!queue)
-    return M_DRIVER_STATUS_BAD_QUEUE;
-  // The mock queue is synchronous, so the wait cannot be satisfied later:
-  // check once instead of blocking.
-  if (*(const uint64_t *)(uintptr_t)device_address < value)
-    return M_DRIVER_STATUS_UNKNOWN_ERROR;
-  return M_DRIVER_STATUS_SUCCESS;
-}
-
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------

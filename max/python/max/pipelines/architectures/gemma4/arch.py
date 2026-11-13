@@ -25,7 +25,6 @@ from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Gemma4BatchProcessor
 from .context import Gemma4Context
-from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
@@ -70,7 +69,6 @@ gemma4_arch = SupportedArchitecture(
         else "thinking",
     ),
     reasoning_parser="gemma4",
-    memory_planner=Gemma4MemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,
     supports_spec_decode_mixed_batches=True,
     spec_decode_graph_names={"mtp": "gemma4_with_mtp_graph"},

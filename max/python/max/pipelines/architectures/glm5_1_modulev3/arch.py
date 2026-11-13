@@ -18,9 +18,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_modulev3.memory_planner import (
-    DeepseekV3ModuleV3MemoryPlanner,
-)
 from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
@@ -56,7 +53,6 @@ glm5_1_modulev3_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     supports_nvfp4_kv_cache=True,
     config=Glm5_1Config,
-    memory_planner=DeepseekV3ModuleV3MemoryPlanner,
     tool_parser="glm45",
     format_spec=glm_format_spec,
     reasoning_parser="glm45",

@@ -287,7 +287,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
     case _:
         pass
 
-    # Cannot destructure a case whose payload is NoneType.
+    # Cannot destructure a case without a payload.
     match opt:
     # expected-error @+1 {{enum case 'None' has no associated value}}
     case Optional.None(value):
@@ -322,6 +322,54 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
     # Can only pattern match on concrete types.
     match someEnum:
     case .What: # expected-error {{cannot match on a parametric enum type}}
+        pass
+
+
+__enum Payloads:
+    case three(Int, String, Bool)
+    case pairi(Int, Int)
+    case word(String)
+    case none
+    case linear(SomeLinearType, SomeLinearType)
+
+
+def match_enum_payload_arity(v: Payloads):
+    # A case pattern takes one subpattern per payload element, as the case's
+    # constructor takes one argument per element.
+    match v:
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi(s):
+        pass
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi(_):
+        pass
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi((a, b)):
+        pass
+    # expected-error @+1 {{expected 3 subpatterns for enum case 'three', found 4}}
+    case .three(a, b, c, d):
+        pass
+    # expected-error @+1 {{expected 1 subpattern for enum case 'word', found 2}}
+    case .word(a, b):
+        pass
+    # expected-error @+1 {{enum case 'none' has no associated value}}
+    case .none(x):
+        pass
+    # expected-error @+1 {{enum case 'pairi' requires a payload pattern inside the parentheses}}
+    case .pairi():
+        pass
+    case _:
+        pass
+
+
+def match_enum_consume_multi_element_payload(var v: Payloads):
+    # A consuming match copies the elements of a multi-element payload.
+    match v^:
+    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    case .linear(var a, var b):
+        a^.consume()
+        b^.consume()
+    case _:
         pass
 
 

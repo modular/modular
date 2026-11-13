@@ -22,11 +22,9 @@ module {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=64>} {
   // expected-error @below {{'"unknown_attribute"' is not defined}}
   // expected-error @below {{failed to legalize operation 'kgen.func' that was explicitly marked illegal}}
-  kgen.func export @llvm_metadata() attributes {
-    fnAttrs = {
-      unknown_attribute = #pop.array<256, 1, 4> : !pop.array<3, i32>
-    }
-  } {
+  kgen.func export @llvm_metadata() {
     hlcf.return
-  }
+  } <fnAttrs = {
+      unknown_attribute = #pop.array<256, 1, 4> : !pop.array<3, i32>
+    }>
 }

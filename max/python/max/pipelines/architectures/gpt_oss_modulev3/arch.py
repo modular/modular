@@ -17,7 +17,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..gpt_oss.memory_planner import GptOssMemoryPlanner
 from . import weight_adapters
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
@@ -41,7 +40,6 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=GptOssConfig,
-    memory_planner=GptOssMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

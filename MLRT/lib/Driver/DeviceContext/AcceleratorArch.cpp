@@ -18,26 +18,118 @@
 #include "AcceleratorArch.h"
 
 #include "CUDA/NVML.h"
+#include "HAL/M_driver_api.h"
 #include "HIP/HIPDriver.h"
+#include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "MLRT/Driver/DeviceContext/DriverPluginSpec.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "Metal/MetalDriver.h"
 #include "Support/ErrorOr.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/LineIterator.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Process.h"
+
+#include <dlfcn.h>
 
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace M::Driver {
+
+namespace {
+
+// "<vendor>:<arch>" of device 0, or "" when it has no device. `std::nullopt`
+// when the plugin doesn't load, doesn't implement the HAL C ABI, is the CPU's,
+// or has no api to name the vendor, so the caller tries the next.
+//
+// A named entry's name is its api, as in the HAL runtime's own query: a HAL
+// process links both copies of `getAcceleratorArchOrEmpty`, and either may
+// answer its graph compiles, so the two must agree. A bare path names no api,
+// so the plugin's own api is used only when it's a Mojo vendor.
+std::optional<std::string> queryHALPluginArch(const DriverPluginEntry &plugin) {
+  void *lib = ::dlopen(std::string(plugin.path).c_str(), RTLD_NOW);
+  if (!lib)
+    return std::nullopt;
+  auto closeLib = llvm::scope_exit([&] { ::dlclose(lib); });
+
+  auto create = reinterpret_cast<M_driver_create_func_ptr_t>(
+      ::dlsym(lib, "M_driver_create"));
+  auto destroy = reinterpret_cast<M_driver_destroy_func_ptr_t>(
+      ::dlsym(lib, "M_driver_destroy"));
+  auto property = reinterpret_cast<M_driver_property_func_ptr_t>(
+      ::dlsym(lib, "M_driver_property"));
+  auto deviceGet = reinterpret_cast<M_driver_device_get_func_ptr_t>(
+      ::dlsym(lib, "M_driver_device_get"));
+  auto deviceProperty = reinterpret_cast<M_driver_device_property_func_ptr_t>(
+      ::dlsym(lib, "M_driver_device_property"));
+  if (!create || !destroy || !property || !deviceGet || !deviceProperty)
+    return std::nullopt;
+
+  M_driver_version version{M_DRIVER_INTERFACE_VERSION_MAJOR,
+                           M_DRIVER_INTERFACE_VERSION_MINOR,
+                           M_DRIVER_INTERFACE_VERSION_PATCH};
+  M_driver_driver_t driver = nullptr;
+  if (create(&version, &driver) != M_DRIVER_STATUS_SUCCESS || !driver)
+    return std::nullopt;
+  auto destroyDriver = llvm::scope_exit([&] { destroy(driver); });
+
+  // Plugins spell their api in any case ("CUDA", "Metal", "cpu").
+  const char *apiName = nullptr;
+  if (property(driver, M_DRIVER_PROPERTY_API, &apiName) !=
+          M_DRIVER_STATUS_SUCCESS ||
+      !apiName)
+    return std::nullopt;
+  std::string pluginAPI =
+      canonicalDeviceAPI(llvm::StringRef(apiName).lower()).str();
+  if (pluginAPI == "cpu")
+    return std::nullopt;
+  std::string api;
+  if (!plugin.name.empty())
+    api = canonicalDeviceAPI(plugin.name.lower()).str();
+  else if (hasMojoVendor(pluginAPI))
+    api = pluginAPI;
+  else
+    return std::nullopt;
+
+  M_driver_device_t device = nullptr;
+  char archName[M_DRIVER_DEVICE_PROPERTY_MAX_LEN + 1] = {};
+  if (deviceGet(driver, /*device_id=*/0, &device) != M_DRIVER_STATUS_SUCCESS ||
+      !device ||
+      deviceProperty(device, M_DRIVER_DEVICE_PROPERTY_ARCH, archName) !=
+          M_DRIVER_STATUS_SUCCESS ||
+      archName[0] == '\0')
+    return std::string();
+  return (llvm::Twine(apiToVendorPrefix(api)) + ":" + archName).str();
+}
+
+} // namespace
+
+std::optional<std::string> getHALPluginAcceleratorArch() {
+  std::optional<std::string> spec =
+      llvm::sys::Process::GetEnv("MODULAR_DRIVER_PLUGINS");
+  if (!spec)
+    return std::nullopt;
+  for (const DriverPluginEntry &plugin : parseDriverPluginSpec(*spec)) {
+    // A bare path names no api, so only the plugin can say whether it's the
+    // CPU's.
+    if (plugin.name.equals_insensitive("cpu"))
+      continue;
+    if (std::optional<std::string> arch = queryHALPluginArch(plugin))
+      return arch;
+  }
+  return std::nullopt;
+}
 
 MODULAR_CXX_EXPORT std::string cudaCCToSM(int major, int minor) {
   std::string sm = "sm_";

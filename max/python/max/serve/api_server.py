@@ -242,7 +242,26 @@ async def lifespan(
         # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
-        app.state.memory_plan = serving_settings.memory_plan
+        # The worker sized its KV cache once loaded and may have lowered the
+        # planned max length; the tokenizer refuses prompts past it.
+        app.state.memory_plan = (
+            model_worker.memory_plan or serving_settings.memory_plan
+        )
+        served_length = (
+            app.state.memory_plan.planned_max_length
+            if app.state.memory_plan is not None
+            else None
+        )
+        tokenizer_length = getattr(
+            serving_settings.tokenizer, "max_length", None
+        )
+        if (
+            served_length is not None
+            and isinstance(tokenizer_length, int)
+            and served_length < tokenizer_length
+        ):
+            tokenizer: Any = serving_settings.tokenizer
+            tokenizer.max_length = served_length
         # The served task, for routes that only mean something for one of them:
         # every API type is mounted regardless, so a route with no counterpart
         # in the served model has to refuse the request itself.

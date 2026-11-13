@@ -1,0 +1,21 @@
+{
+  "format": "formatspec.spec",
+  "spec_version": 1,
+  "argument_syntax": "json",
+  "call": {
+    "begin": {"id": 9, "text": "[TOOL_CALLS]"},
+    "end": {"id": 2, "text": "</s>"},
+    "name_layout": {"kind": "id_then_sep", "strip_prefix": "", "strip_index": false},
+    "section": null,
+    "sep": {"id": 32, "text": "[ARGS]"}
+  },
+  "delivery": {"kind": "id"},
+  "json_whitespace": "spaced",
+  "reasoning": {
+    "open": {"id": 34, "text": "[THINK]"},
+    "close": {"id": 35, "text": "[/THINK]"},
+    "default": "on",
+    "prompt_start": "model_emits_open"
+  },
+  "terminators": [{"id": 2, "text": "</s>"}]
+}

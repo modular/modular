@@ -27,6 +27,7 @@
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/POPDialect/POPOps.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 
@@ -62,10 +63,15 @@ static MojoValue getTraceNameValue(FusionInfoAttr fusionInfo) {
   return MojoValue(fusionInfo.toString()).quote();
 }
 
-static MojoValue getHasEpilogueFusionValue(mlir::Operation *) {
-  // Fused epilogues set `CallOpaqueOp::getHasEpilogueFusion`, which the call's
-  // `emitMojo` honors; a kernel without that flag has none.
-  return false;
+// MAP sets `hasEpilogueFusion` on a call when it fuses an epilogue into an
+// output, since no `mogg.bind` is left to show the fusion. Only older kernels
+// read the parameter: a kernel should run its output lambda whether or not an
+// epilogue is fused, so declarative calls don't carry the flag.
+static MojoValue getHasEpilogueFusionValue(mlir::Operation *callOp) {
+  return llvm::TypeSwitch<mlir::Operation *, bool>(callOp)
+      .Case<CallOpaqueOp, CallBuildGraphOp>(
+          [](auto call) { return call.getHasEpilogueFusion(); })
+      .Default(false);
 }
 
 ErrorOr<MojoValue> EmitMojoState::inferDefaultKernelParamValue(

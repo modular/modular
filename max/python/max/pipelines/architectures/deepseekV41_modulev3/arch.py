@@ -23,7 +23,6 @@ from .. import deepseekV4 as _deepseekV4  # noqa: F401
 # Registers the ``deepseekv41`` tool parser at import.
 from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
 from . import weight_adapters
-from .memory_planner import DeepseekV41MemoryPlanner
 from .registration import (
     RegisteredDeepseekV41BatchProcessor,
     RegisteredDeepseekV41Config,
@@ -62,7 +61,6 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     required_arguments={"enable_prefix_caching": False},
     config=RegisteredDeepseekV41Config,
     batching=RegisteredDeepseekV41BatchProcessor,
-    memory_planner=DeepseekV41MemoryPlanner,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",
     checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},

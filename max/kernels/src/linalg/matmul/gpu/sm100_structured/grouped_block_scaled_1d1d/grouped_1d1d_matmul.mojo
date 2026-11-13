@@ -93,6 +93,7 @@ def grouped_matmul_block_scaled[
     swiglu_use_inplace: Bool = False,
     swiglu_inplace_token_per_lane: Bool = False,
     RowScalesT: RowScales = NullRowScales,
+    grid_scale: Int = 1,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -153,6 +154,8 @@ def grouped_matmul_block_scaled[
             for MXFP8. Defaults to `False`.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
+        grid_scale: CTAs launched per SM. The scheduler strides the tile list
+            by the grid, so this only decides how many CTAs share the walk.
 
     Args:
         c_device: Output tensor (total_tokens, N).
@@ -441,7 +444,7 @@ def grouped_matmul_block_scaled[
     comptime kernel = matmul_kernel.run
 
     var grid_dim = (
-        B200.sm_count,
+        B200.sm_count * grid_scale,
         1,
         1,
     )

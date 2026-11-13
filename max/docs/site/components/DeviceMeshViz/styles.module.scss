@@ -1,0 +1,385 @@
+.root {
+  --viz-surface: var(--ifm-background-color);
+  --viz-panel: var(--color-code-bg, var(--ifm-background-color));
+  --viz-border: var(--color-code-border, var(--ifm-color-emphasis-300));
+  --viz-muted: var(--secondary-txt, var(--ifm-color-emphasis-700));
+  --viz-device-zero: var(--color-mod-blue);
+  --viz-device-one: var(--color-mod-nebula);
+  --viz-device-two: var(--color-mod-super-nebula);
+  --viz-device-three: var(--color-mod-light-blue);
+  --viz-selection-border: var(--color-mod-blue);
+  --cell-accent: var(--viz-device-zero);
+
+  margin: 0 0 1rem;
+  color: var(--ifm-font-color-base);
+  font-family: var(--inter, var(--ifm-font-family-base));
+}
+
+.instructions {
+  margin: 1rem 0 0;
+  color: var(--viz-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.scene {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 0.85fr)
+    minmax(64px, 0.32fr)
+    minmax(340px, 1.45fr);
+  gap: 16px;
+  align-items: center;
+  padding: 0.75rem 0 0;
+}
+
+.globalPanel,
+.device {
+  min-width: 0;
+}
+
+.panelHeading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 24px;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+
+  code {
+    padding: 0;
+    color: var(--ifm-heading-color);
+    font-size: 0.8125rem;
+    background: transparent;
+    border: 0;
+  }
+}
+
+.shape {
+  color: var(--viz-muted);
+  font-family: var(--roboto, var(--ifm-font-family-monospace));
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: center;
+  color: var(--viz-muted);
+}
+
+.connectorLabel {
+  order: 1;
+  margin-bottom: 10px;
+  font-family: var(--roboto, var(--ifm-font-family-monospace));
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.connectorLine {
+  order: 2;
+  width: 100%;
+  height: 1px;
+  background: currentcolor;
+}
+
+.connectorArrow {
+  order: 3;
+  align-self: flex-end;
+  margin-top: -11px;
+  font-size: 1.125rem;
+  line-height: 1;
+  background: var(--viz-surface);
+}
+
+.devices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+
+.device,
+.device0 {
+  --cell-accent: var(--viz-device-zero);
+}
+
+.device1 {
+  --cell-accent: var(--viz-device-one);
+}
+
+.device2 {
+  --cell-accent: var(--viz-device-two);
+}
+
+.device3 {
+  --cell-accent: var(--viz-device-three);
+}
+
+.tensorGrid {
+  display: grid;
+  gap: 4px;
+}
+
+.tensorCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0;
+  color: var(--ifm-font-color-base);
+  font-family: var(--roboto, var(--ifm-font-family-monospace));
+  font-size: 0.75rem;
+  line-height: 1;
+  background: color-mix(in srgb, var(--cell-accent) 32%, var(--viz-panel));
+  border: 1px solid
+    color-mix(in srgb, var(--cell-accent) 70%, var(--viz-border));
+  border-radius: 3px;
+  transition:
+    opacity 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.tensorCellCoordinate {
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tensorCellMuted {
+  opacity: 0.18;
+}
+
+button.tensorCell {
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--cell-accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-mod-blue);
+    outline-offset: 2px;
+  }
+}
+
+.tensorCellSelected {
+  z-index: 1;
+  border-color: var(--viz-selection-border);
+  outline: 2px solid var(--viz-selection-border);
+  outline-offset: 1px;
+}
+
+
+.placementControl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.placementLabel {
+  color: var(--ifm-heading-color);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.reshardScene {
+  width: min(100%, 520px);
+}
+
+.reshardDevices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.gatherCue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--viz-muted);
+  font-family: var(--roboto, var(--ifm-font-family-monospace));
+  font-size: 0.75rem;
+}
+
+.gatherCueHidden {
+  visibility: hidden;
+}
+
+.gatherArrow {
+  color: var(--color-mod-blue);
+  font-size: 1.125rem;
+}
+
+.placementToggle {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--viz-border);
+  border-radius: 8px;
+}
+
+.placementOption {
+  min-height: 34px;
+  padding: 6px 12px;
+  color: var(--viz-muted);
+  font-family: var(--roboto, var(--ifm-font-family-monospace));
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+
+  &:hover {
+    color: var(--ifm-heading-color);
+  }
+
+  &:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--color-mod-blue);
+    outline-offset: 2px;
+  }
+}
+
+.placementOptionActive {
+  color: var(--ifm-heading-color);
+  font-weight: 600;
+  background: var(--viz-surface);
+  box-shadow: 0 2px 6px var(--ifm-color-emphasis-300);
+}
+
+.mapping {
+  overflow-wrap: anywhere;
+  margin-top: 12px;
+
+  code {
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+    background: transparent;
+    border: 0;
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .scene {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .globalPanel {
+    width: min(100%, 360px);
+    margin: 0 auto;
+  }
+
+  .connector {
+    width: 70px;
+    margin: 0 auto;
+  }
+
+  .connectorLabel {
+    margin-bottom: 4px;
+  }
+
+  .connectorLine {
+    width: 1px;
+    height: 20px;
+  }
+
+  .connectorArrow {
+    align-self: center;
+    margin-top: -9px;
+    transform: rotate(90deg);
+  }
+
+  .devices {
+    width: min(100%, 520px);
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .scene {
+    gap: 8px;
+  }
+
+  .tensorGrid {
+    gap: 3px;
+  }
+
+  .devices {
+    gap: 12px;
+  }
+
+  .reshardDevices {
+    grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  }
+
+  .gatherCue > span:first-child {
+    display: none;
+  }
+
+  .panelHeading {
+    font-size: 0.8125rem;
+
+    code {
+      font-size: 0.75rem;
+    }
+  }
+
+  .tensorCell {
+    min-height: 32px;
+  }
+
+  .tensorCellCoordinate {
+    font-size: 0.625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .root *::before,
+  .root *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media print {
+  .root {
+    break-inside: avoid;
+  }
+}

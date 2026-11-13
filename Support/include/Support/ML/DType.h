@@ -270,9 +270,6 @@ public:
   void print(raw_ostream &os) const;
   void dump() const;
 
-  // Get the maximum and minimum representable value for the given dtype.
-  ErrorOr<std::pair<int32_t, int32_t>> getMaxAndMinValue() const;
-
 private:
   Cases value;
 };

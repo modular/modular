@@ -22,9 +22,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .deepseekV3 import DeepseekV3Decoder
-from .memory_planner import (
-    DeepseekV3ModuleV3MemoryPlanner,
-)
 from .model_config import DeepseekV3Config
 
 deepseekV3_modulev3_arch = SupportedArchitecture(
@@ -46,5 +43,4 @@ deepseekV3_modulev3_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
     tool_parser=resolve_deepseekv3_tool_parser,
-    memory_planner=DeepseekV3ModuleV3MemoryPlanner,
 )

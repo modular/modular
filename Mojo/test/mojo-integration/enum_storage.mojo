@@ -29,19 +29,19 @@ struct Token(ImplicitlyCopyable, Writable, __Enum):
         "eof".value, "ident".value, "span".value
     ].values
     comptime _enum_case_types = TypeList.of[
-        Trait=AnyType, NoneType, String, Tuple[Int, Int]
+        Trait=AnyType, Tuple[], Tuple[String], Tuple[Int, Int]
     ].values
     var __enum_storage: __EnumStorage[Self._enum_case_types]
 
-    comptime eof: Self = Self.__enum_init[0, NoneType]()
+    comptime eof: Self = Self.__enum_init[0]()
 
     @staticmethod
     def ident(var payload: String) -> Self:
-        return Self.__enum_init[1, String](payload^)
+        return Self.__enum_init[1](payload^)
 
     @staticmethod
     def span(var payload0: Int, var payload1: Int) -> Self:
-        return Self.__enum_init[2, Tuple[Int, Int]](payload0, payload1)
+        return Self.__enum_init[2](payload0, payload1)
 
 
 def describe(token: Token) -> String:
@@ -50,8 +50,8 @@ def describe(token: Token) -> String:
             return "eof"
         case .ident(ref name):
             return "ident " + name
-        case .span(ref range):
-            return "span " + String(range[0]) + ".." + String(range[1])
+        case .span(ref start, ref end):
+            return "span " + String(start) + ".." + String(end)
 
 
 def main():
@@ -76,5 +76,5 @@ def main():
     var moved = original^
     # CHECK-NEXT: Token.ident(copied) Token.ident(copied)
     print(copy, moved)
-    # CHECK-NEXT: Token.eof Token.span((1, 2))
+    # CHECK-NEXT: Token.eof Token.span(1, 2)
     print(Token.eof, Token.span(1, 2))

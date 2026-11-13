@@ -576,6 +576,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Mean wall time of a hinted dKV lookup round in a batch's window, from routing to the assembled plan, for rounds in which some entry routed to an attached peer. What MODULAR_DKV_OVERLAP_PEER_LOOKUPS shortens.",
     ),  # type: ignore
+    "max.dkv.hinted_attach_wait_latency": _meter.create_histogram(
+        "max.dkv.hinted_attach_wait_latency",
+        unit="ms",
+        description="Mean time an async dKV lookup waited for a hinted peer's attach in a batch's window, under MODULAR_DKV_PEER_ATTACH_WAIT_MS, before asking the peers. The prompts queued behind the lookup on the replica wait as long.",
+    ),  # type: ignore
     "max.dkv.peer_writeback_hold_latency": _meter.create_histogram(
         "max.dkv.peer_writeback_hold_latency",
         unit="ms",
@@ -755,6 +760,14 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.dkv.hinted_lookups": _create_counter(
         "max.dkv.hinted_lookups",
         description="dKV lookup rounds in which some entry routed to an attached peer. The rounds max.dkv.hinted_lookup_latency times.",
+    ),
+    "max.dkv.hinted_attach_waits": _create_counter(
+        "max.dkv.hinted_attach_waits",
+        description="Async dKV lookups that waited for a hinted peer's attach before asking the peers, under MODULAR_DKV_PEER_ATTACH_WAIT_MS. Zero with the option off. The waits max.dkv.hinted_attach_wait_latency averages over; read against max.dkv.hint_blocks_unserved for whether they earn hits.",
+    ),
+    "max.dkv.hinted_attach_wait_timeouts": _create_counter(
+        "max.dkv.hinted_attach_wait_timeouts",
+        description="Waits max.dkv.hinted_attach_waits counts that ended at MODULAR_DKV_PEER_ATTACH_WAIT_MS with the attach still dialing, which cost the full wait for no peer hit.",
     ),
     # The dKV orphan queue, where failed reader-pin releases and Filling aborts
     # wait to be sent again. Counters for the outcomes, since take_metrics
@@ -2397,6 +2410,15 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_hinted_attach_wait_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_attach_wait_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
     def dkv_connected_clients(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2781,6 +2803,24 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.hinted_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hinted_attach_waits(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_attach_waits",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hinted_attach_wait_timeouts(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_attach_wait_timeouts",
                 value,
                 self.extra_attributes,
             ),

@@ -10,11 +10,11 @@
 // `%arg0` is unused, so it is pruned from the signature of the rewritten
 // `@callee_REMOVED_ARG` — but the snapshot still carries both arguments.
 // CHECK-LABEL: kgen.generator @callee_REMOVED_ARG(%arg0: !kgen.pointer<index>) -> index
-// CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type
-kgen.generator @callee(%arg0: index, %arg1: !kgen.pointer<index>) -> index attributes {sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type} {
+// CHECK: } <{{.*}}sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type
+kgen.generator @callee(%arg0: index, %arg1: !kgen.pointer<index>) -> index {
   %l = pop.load %arg1 : !kgen.pointer<index>
   hlcf.return %l : index
-}
+} <sourceFuncTypeGenerator = #kgen.type<(index, !kgen.pointer<index>) -> index> : !kgen.type>
 
 kgen.generator export @entry(%arg0: index, %arg1: !kgen.pointer<index>) {
   %0 = kgen.call @callee(%arg0, %arg1) : (index, !kgen.pointer<index>) -> index

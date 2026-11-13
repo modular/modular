@@ -125,6 +125,44 @@ def _k_group[K: Int, regime: Int]() -> Int:
     return 1
 
 
+# Measured MXFP8/W4A8 decode k groupings as (N, K, k-tiles per stage). A
+# decode launch walks one weight tile per active expert, so its k-loop runs at
+# the mbarrier arrival rate (one arrival per 128-element k-tile), and grouping
+# k-tiles per stage covers the same bytes with fewer arrivals. A shape absent
+# from this table keeps one k-tile per stage. Every row is a B200 result from
+# `bench_moe_w4a8_decode`, bit-identical to the one-k-tile schedule; the NVFP4
+# rule above (2 at 8 stages) was measured on NVFP4 shapes and does not carry
+# over, so don't add a row without a measurement.
+comptime MXFP8_DECODE_K_GROUPS = [
+    # MiMo-V2-Flash TP4 routed experts, gate/up (32 k-tiles), measured -14%
+    # at c1 and -7% at 232 experts against one k-tile per stage.
+    (1024, 4096, 4),
+    # MiMo-V2-Flash TP4 routed experts, down (4 k-tiles), measured -16% at c1
+    # and -9% at 232 experts. A grouping of 4 tied at c1 and lost 1.7% at 232
+    # experts.
+    (4096, 512, 2),
+]
+
+
+def _decode_k_group[N: Int, K: Int]() -> Int:
+    """Returns the k-tiles per pipeline stage an MXFP8 decode launch takes.
+
+    Parameters:
+        N: Output N dimension.
+        K: Reduction dimension (unpacked element count).
+
+    Returns:
+        The `MXFP8_DECODE_K_GROUPS` row for (N, K), else 1.
+    """
+    comptime for row in MXFP8_DECODE_K_GROUPS:
+        comptime if row[0] == N and row[1] == K:
+            comptime assert (
+                ceildiv(K, 128) % row[2] == 0
+            ), "a decode k grouping must divide the k-tile count"
+            return row[2]
+    return 1
+
+
 def _tuned_stages[N: Int, K: Int, regime: Int]() -> Optional[Int]:
     """Look up the tuned pipeline depth for one (N, K, regime).
 
@@ -165,6 +203,7 @@ def _launch_grouped_block_scaled[
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
     RowScalesT: RowScales = NullRowScales,
+    grid_scale: Int = 1,
 ](
     c: TileTensor,
     a: TileTensor,
@@ -213,6 +252,7 @@ def _launch_grouped_block_scaled[
             Default False keeps the cooperative path.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
+        grid_scale: CTAs launched per SM, forwarded to the launcher.
     """
     # `grouped_matmul_block_scaled` feeds the weights into the kernel's A slot
     # when `AB_swapped`, so the config's per-operand dtypes have to follow the
@@ -261,6 +301,7 @@ def _launch_grouped_block_scaled[
         TraceBufT=TraceBufT,
         swiglu_use_inplace=_swiglu_use_inplace,
         RowScalesT=RowScalesT,
+        grid_scale=grid_scale,
     ](
         c,
         a,
@@ -532,6 +573,13 @@ def grouped_matmul_nvfp4_dispatch[
 
 def grouped_matmul_mxfp8_dispatch[
     transpose_b: Bool = True,
+    override: Bool = False,
+    AB_swapped: Bool = True,
+    mma_bn: Int = 8,
+    cta_group: Int = 1,
+    num_pipeline_stages: Int = -1,
+    k_group_size: Int = 1,
+    grid_scale: Int = 1,
     pdl_level: PDLLevel = PDLLevel.ON,
     fuse_swiglu: Bool = False,
     SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput[
@@ -573,11 +621,12 @@ def grouped_matmul_mxfp8_dispatch[
     except that the decode row of two shapes (hidden 6144, moe_dim 2048
     experts) takes mma_bn=32; tile choice does not change the matmul
     output, which the fused dispatch test checks byte for byte. Pipeline
-    stages are auto-computed; per-(N, K) stage tuning like NVFP4's is a
-    follow-up. Note: the dtype-routing dispatch
-    `grouped_matmul_block_scaled_sm100_dispatch` still uses
-    `AB_swapped=False, cta_group=1` for MXFP8 except one decode shape;
-    reconciling the two is a follow-up.
+    stages come from the stage budget except where a measured (N, K) row
+    pins them, and the decode k grouping comes from
+    `MXFP8_DECODE_K_GROUPS`. Note: the dtype-routing dispatch
+    `grouped_matmul_block_scaled_sm100_dispatch` sends all W4A8 here, and
+    MXFP8 only at one decode shape (N=6144, K=2048); every other MXFP8
+    shape launches plain with `AB_swapped=False, mma_bn=128, cta_group=1`.
 
     When `fuse_swiglu=True`, the kernel emits packed MXFP8 plus a 5D
     E8M0 scale tile in place of the BF16 C store. Caller must
@@ -586,6 +635,21 @@ def grouped_matmul_mxfp8_dispatch[
 
     Parameters:
         transpose_b: Whether B is transposed (must be True).
+        override: If True, use the caller's `AB_swapped`/`mma_bn`/
+            `cta_group`/`num_pipeline_stages`/`k_group_size` directly
+            (ablation and benchmarking).
+            If False (production), select from the tuning table keyed on
+            (N, K, avg tokens per expert) and ignore them.
+        AB_swapped: A/B swap (only used when override=True).
+        mma_bn: MMA tile N dimension (only used when override=True).
+        cta_group: CTA group size (only used when override=True).
+        num_pipeline_stages: Pipeline depth (only used when
+            override=True). Any value <= 0 keeps the stage budget's own
+            pick, the same sentinel the tuning rows use.
+        k_group_size: K-tiles per pipeline stage (only used when
+            override=True).
+        grid_scale: CTAs launched per SM (only used when override=True;
+            every tuning row launches one).
         pdl_level: Programmatic dependent launch level.
         fuse_swiglu: When True, the kernel fuses SwiGLU + MXFP8 quant
             into the epilogue.
@@ -619,8 +683,8 @@ def grouped_matmul_mxfp8_dispatch[
         trace_buf: Per-CTA timestamp buffer when trace is on.
     """
     # Per-(N, K) decode pipeline-stage override. The stage auto-maximizer
-    # picks 12 stages for the (mma_bn=8, cta_group=1) decode tile, but this
-    # thin, weight-load-BW-bound decode regime runs ~5-7% faster at 6 stages
+    # picks 12 stages for the (mma_bn=8, cta_group=1) decode tile, but the
+    # (N=6144, K=6144/3072) MXFP8 thin-decode shapes run ~5-7% faster at 6
     # (better weight-TMA cadence; numerically identical -- stages is pipeline
     # depth only). Scoped per-(N, K) so only the measured shapes change and
     # all others keep auto; decode regime only (the prefill rows below keep
@@ -650,13 +714,22 @@ def grouped_matmul_mxfp8_dispatch[
     # W4A8 decode at these shapes is bound by per-CTA issue rate, not DRAM.
     # Four k-tiles per stage at the same SMEM depth amortize each stage's
     # barrier and SFB handoff over four times the weight bytes. Groups of 6
-    # and 12 do not compile.
-    comptime _decode_k_group = 4 if (
+    # and 12 do not compile. Other shapes take their `MXFP8_DECODE_K_GROUPS`
+    # row.
+    comptime _w4a8_decode_kg = 4 if (
         not fuse_swiglu
         and is_w4a8_operand_pair[a.dtype, b.dtype]()
         and _decode_N == 4096
         and (_decode_K == 4096 or _decode_K == 2048)
     ) else (2 if _h6144_moe2048 else 1)
+    comptime _decode_kg = _w4a8_decode_kg if _w4a8_decode_kg > 1 else (
+        _decode_k_group[_decode_N, _decode_K]()
+    )
+    # The config rounds the depth down to a multiple of the grouping, so a
+    # shape with both a pinned depth and a grouping would silently lose stages.
+    comptime assert (
+        _decode_stages <= 0 or _decode_stages % _decode_kg == 0
+    ), "a pinned decode depth must be a multiple of the decode k grouping"
 
     # Large-prefill k-tiles per pipeline stage for DeepSeek-V4.1's W4A8
     # experts (E2M1 weights, MXFP8 tokens). Two k-tiles a stage halve the
@@ -684,17 +757,27 @@ def grouped_matmul_mxfp8_dispatch[
     # Factor the call here and select via the same ordered (upper-bound,
     # config) table as the NVFP4 path. Stages travel per-row as an Int with
     # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
+    # One forwarder for both paths: only (AB_swapped, mma_bn, cta_group,
+    # stages, k_group, grid) differ between the caller's override and a
+    # tuning row, so every other forwarding parameter and the 13 runtime
+    # arguments appear once.
     @inline(.always)
     def _go[
-        mma_bn: Int, cta_group: Int, stages: Optional[Int], k_group: Int
+        mma_bn: Int,
+        cta_group: Int,
+        stages: Optional[Int],
+        k_group: Int,
+        grid: Int,
+        ab_swapped: Bool,
     ]() raises {imm}:
         _launch_grouped_block_scaled[
             transpose_b,
-            AB_swapped=True,
+            AB_swapped=ab_swapped,
             mma_bn=mma_bn,
             cta_group=cta_group,
             num_pipeline_stages=stages,
             k_group_size=k_group,
+            grid_scale=grid,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -720,6 +803,20 @@ def grouped_matmul_mxfp8_dispatch[
             trace_buf,
         )
 
+    comptime if override:
+        comptime _override_stages = Optional[Int](
+            num_pipeline_stages
+        ) if num_pipeline_stages > 0 else Optional[Int](None)
+        _go[
+            mma_bn,
+            cta_group,
+            _override_stages,
+            k_group_size,
+            grid_scale,
+            AB_swapped,
+        ]()
+        return
+
     # (upper_avg_m, mma_bn, cta_group, stages_int, k_group). upper_avg_m < 0
     # = unbounded (large prefill). Only the decode row carries a stage
     # override; prefill rows use -1 (= auto). The decode and large-prefill
@@ -727,14 +824,14 @@ def grouped_matmul_mxfp8_dispatch[
     # First-match-and-return reproduces the original decode / small-prefill /
     # large-prefill cascade exactly.
     comptime regimes = [
-        (DECODE_AVG_M, _decode_bn, 1, _decode_stages, _decode_k_group),
+        (DECODE_AVG_M, _decode_bn, 1, _decode_stages, _decode_kg),
         (SMALL_PREFILL_AVG_M, 64, 2, -1, 1),
         (-1, 128, 2, -1, _prefill_k_group),
     ]
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
         if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
-            _go[r[1], r[2], _s, r[4]]()
+            _go[r[1], r[2], _s, r[4], 1, True]()
             return
 
 

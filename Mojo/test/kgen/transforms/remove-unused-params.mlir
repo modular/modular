@@ -76,9 +76,9 @@ kgen.generator export @recursive_test_2_entry<X: index, Y: index, Z: index>() {
 // -----
 
 
-kgen.generator @test_argument_captured_in_attr<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]} {
+kgen.generator @test_argument_captured_in_attr<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
   hlcf.return
-}
+} attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]}
 
 kgen.generator export @test_argument_captured_in_attr_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
   kgen.call @test_argument_captured_in_attr<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> ()
@@ -88,7 +88,9 @@ kgen.generator export @test_argument_captured_in_attr_entry<T: dtype>(%arg0: ind
 // CHECK-LABEL: kgen.generator  export @test_argument_captured_in_attr_entry<T: dtype>
 // CHECK-NEXT: kgen.call @test_argument_captured_in_attr_REMOVED_ARG<:dtype T>() : () -> (
 
-// CHECK-LABEL: kgen.generator  @test_argument_captured_in_attr_REMOVED_ARG<T: dtype>() attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]}
+// CHECK-LABEL: kgen.generator  @test_argument_captured_in_attr_REMOVED_ARG<T: dtype>() {
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]}
 
 // -----
 
@@ -169,18 +171,18 @@ kgen.generator export @hanoi_entry<T: dtype>(%arg0: !kgen.scalar<si8>, %arg1: !k
 
 // Test that a parameter referenced only in linkageName is not removed.
 
-kgen.generator @linkage_name_keeps_param<Name: string>() attributes {
-  linkageName = #kgen.linkage_name<#kgen.param.decl.ref<"Name"> : !kgen.string, false>
-} {
+kgen.generator @linkage_name_keeps_param<Name: string>() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<#kgen.param.decl.ref<"Name"> : !kgen.string, false>>
 
 kgen.generator export @linkage_name_keeps_param_entry<Name: string>() {
   kgen.call @linkage_name_keeps_param<:string Name>() : () -> ()
   hlcf.return
 }
 
-// CHECK-LABEL: kgen.generator @linkage_name_keeps_param<Name: string>() attributes {linkageName = #kgen.linkage_name<#kgen.param.decl.ref<"Name"> : !kgen.string, false> : !kgen.string}
+// CHECK-LABEL: kgen.generator @linkage_name_keeps_param<Name: string>() {
+// CHECK-NEXT: hlcf.return
+// CHECK-NEXT: } <linkageName = <#kgen.param.decl.ref<"Name"> : !kgen.string, false>>
 
 // CHECK-LABEL: kgen.generator export @linkage_name_keeps_param_entry<Name: string>()
 // CHECK-NEXT: kgen.call @linkage_name_keeps_param<:string Name>() : () -> ()

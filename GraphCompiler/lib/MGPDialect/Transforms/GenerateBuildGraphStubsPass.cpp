@@ -42,7 +42,7 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
   }
 
   if (auto foreachRegion = dyn_cast<CallForeachOp>(op))
-    return {op, foreachRegion.getContext()};
+    return {op, foreachRegion.getDeviceContext()};
 
   if (auto foreachTile = dyn_cast<CallForeachTileOp>(op))
     return {op, foreachTile.getContext()};
@@ -51,7 +51,7 @@ ProducerDispatch matchProducerDispatch(Operation *op) {
     return {op, viewCopy.getContext()};
 
   if (auto rowwise = dyn_cast<CallRowwiseOp>(op))
-    return {op, rowwise.getContext()};
+    return {op, rowwise.getDeviceContext()};
 
   return {};
 }

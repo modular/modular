@@ -52,6 +52,7 @@ from max._artifact.kv_cache import (
 from max._artifact.metadata import ARTIFACT_VERSION
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
+from max._artifact.sampling_defaults import SamplingDefaults
 from max._artifact.serialization import deserialize, serialize
 from max._artifact.tokenizer import Tokenizer
 from max._artifact.value_types import sha256_file
@@ -490,6 +491,7 @@ def test_component_types() -> None:
         "kv_cache": KVCacheLayout,
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
+        "sampling_defaults": SamplingDefaults,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
@@ -501,6 +503,7 @@ def test_component_types() -> None:
         "kv_cache": KVCacheLayout,
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
+        "sampling_defaults": SamplingDefaults,
         "scratch": FakeComponent,
         "extra": FakeComponent,
     }
@@ -832,6 +835,51 @@ def test_tokenizer_round_trip(tmp_path: Path) -> None:
         sampleable_vocab_size=262144,
         eos_token_ids=(1, 106),
     )
+
+
+def test_sampling_defaults_round_trip(tmp_path: Path) -> None:
+    defaults = SamplingDefaults(
+        temperature=1.0, top_k=None, top_p=0.95, repetition_penalty=1.05
+    )
+    dest = serialize(ModelArtifact(sampling_defaults=defaults), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections["sampling_defaults"] == {
+        "temperature": 1.0,
+        "top_k": None,
+        "top_p": 0.95,
+        "repetition_penalty": 1.05,
+    }
+    assert deserialize(dest).sampling_defaults == defaults
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"temperature": 1.0, "top_k": None, "top_p": 1.0},
+        {
+            "temperature": "1",
+            "top_k": None,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+        },
+        {
+            "temperature": 1.0,
+            "top_k": 1.5,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+        },
+        {
+            "temperature": 1.0,
+            "top_k": None,
+            "top_p": 1.0,
+            "repetition_penalty": 1.0,
+            "min_p": 0.1,
+        },
+    ],
+)
+def test_malformed_sampling_defaults_rejected(value: dict[str, Any]) -> None:
+    with pytest.raises(ArtifactError):
+        SamplingDefaults.__deserialize__(value)
 
 
 def test_malformed_tokenizer_rejected(tmp_path: Path) -> None:

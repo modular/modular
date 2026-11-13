@@ -42,9 +42,9 @@ kgen.generator export @get_gpu_linkage_name() {
 // COM: - Adds "_" prefix to digit-starting names
 // COM: - Replaces invalid characters with underscores
 // COM: - Appends a hash suffix derived from the function's sym_name and type
-kgen.generator @"42kernel"() attributes { linkageName = #kgen.linkage_name<"42.sanitize.this/kernel" : !kgen.string, true> } {
+kgen.generator @"42kernel"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"42.sanitize.this/kernel" : !kgen.string, true>>
 
 // CHECK-LABEL: kgen.func export @get_gpu_linkage_name
 kgen.generator export @get_gpu_linkage_name() {
@@ -66,9 +66,11 @@ kgen.generator export @get_gpu_linkage_name() {
 
 // A parametric linkage name concatenating the linkage name of its function
 // parameter with a constant string.
-kgen.generator @HELLO<x: () -> index>() -> !kgen.none
- attributes {
-   linkageName = #kgen.linkage_name<
+kgen.generator @HELLO<x: () -> index>() -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  %0 = kgen.call_param[() -> index: x]()
+  hlcf.return %none : !kgen.none
+} <linkageName = #kgen.linkage_name<
      #pop.string_concat<
        #kgen.get_linkage_name<
          current_target(),
@@ -76,25 +78,18 @@ kgen.generator @HELLO<x: () -> index>() -> !kgen.none
        >  : !kgen.string,
        "_hello"
       > : !kgen.string,
-     false>
-  } {
-  %none = kgen.param.constant: none = <#kgen.none>
-  %0 = kgen.call_param[() -> index: x]()
-  hlcf.return %none : !kgen.none
-}
+     false>>
 
-kgen.generator @FOO() -> index
-    attributes { linkageName = #kgen.linkage_name<"bar" : !kgen.string, false> } {
+kgen.generator @FOO() -> index {
   %0 = index.constant 1
   hlcf.return %0 : index
-}
+} <linkageName = #kgen.linkage_name<"bar" : !kgen.string, false>>
 
 // This linkage name needs sanitization for the nvptx target
-kgen.generator @FLIP() -> index
-    attributes { linkageName = #kgen.linkage_name<"1bar" : !kgen.string, false> } {
+kgen.generator @FLIP() -> index {
   %0 = index.constant 1
   hlcf.return %0 : index
-}
+} <linkageName = #kgen.linkage_name<"1bar" : !kgen.string, false>>
 
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {

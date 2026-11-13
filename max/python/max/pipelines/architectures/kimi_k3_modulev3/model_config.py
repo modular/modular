@@ -24,8 +24,7 @@ apart. No vision support, but composable later as a VLM wrapper's
 not ``initialize()``: neither is available then. Mutually exclusive: EP
 doesn't support MXFP4 routed experts yet.
 
-Deliberately leaves out the DSpark drafter itself and checkpoint
-weight-size estimation (:mod:`memory_planner`'s job). The speculative
+Deliberately leaves out the DSpark drafter itself. The speculative
 pieces that reach here are the draft-aware cache sizing (the MLA leaf's
 draft width and the verify ring's length, both sized in :mod:`spec_mla`)
 and the draft-tap stamps a pairing's build writes onto this config
@@ -175,8 +174,7 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
 
     max_batch_context_length: int
     """Cap on context tokens resident across a batch; sizes the MLA layers'
-    one-shot prefill decompression buffer (see
-    :meth:`mla_prefill_scratch_bytes`). Required rather than defaulted:
+    one-shot prefill decompression buffer. Required rather than defaulted:
     ``arch.py``'s ``requires_max_batch_context_length=True`` guarantees the
     registry always resolves a value before this config is built."""
 
@@ -644,24 +642,6 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         )
         return len(self.model.kda_layer_indices) * (conv + rec)
 
-    def mla_prefill_scratch_bytes(self, max_batch_context_length: int) -> int:
-        """GPU bytes ALL devices together hold the MLA prefill window in.
-
-        The prefill branch decompresses a bounded window back into per-head
-        K and V -- the one cost the latent cache's 64x-smaller footprint
-        trades for. Counted over the FULL head count, summed across devices
-        rather than per-device. Zero without the latent cache, whose padded
-        parity form never opens this window.
-        """
-        if not self.mla_latent_cache or not self.model.full_attn_layer_indices:
-            return 0
-        return (
-            max_batch_context_length
-            * self.model.num_attention_heads
-            * (self.model.qk_nope_head_dim + self.model.v_head_dim)
-            * self.dtype.size_in_bytes
-        )
-
     def routed_expert_row_bound(self, pipeline_config: PipelineConfig) -> int:
         """Returns an upper bound on the tokens one forward can carry.
 
@@ -698,52 +678,6 @@ class KimiK3Config(ArchConfigWithKVCache, ExpertParallelDeploymentConfig):
         )
         max_requests = runtime.max_batch_size or floor
         return charged + num_speculative_tokens * max_requests
-
-    def ep_comm_buffer_bytes(
-        self, pipeline_config: PipelineConfig, *, use_allreduce: bool
-    ) -> int:
-        """GPU bytes ONE device holds the EP dispatch/combine buffers in.
-
-        Deliberately not ``estimate_ep_memory_usage``: that helper sizes the
-        dispatch buffer at ``n_experts`` rows per token, while what's
-        actually allocated caps it at ``ep_size * top_k`` -- the two diverge
-        7x at K3's 896 experts over EP8, enough to fail planning outright.
-        Mirrors ``get_max_recv_tokens`` instead.
-
-        Single-node only: a multi-node caller must add the combine SEND
-        buffer separately.
-
-        Args:
-            pipeline_config: Supplies the row bound (see
-                :meth:`routed_expert_row_bound`).
-            use_allreduce: ``runtime.ep_use_allreduce``. The allreduce variant
-                keeps dispatch and combine device-local, so its receive
-                buffer covers only the local experts.
-
-        Returns:
-            Bytes per device, or 0 when expert parallelism is off.
-        """
-        if not self.expert_parallel:
-            return 0
-        n_ranks = self.ep_size
-        top_k = self.model.num_experts_per_token
-        max_tokens = self.routed_expert_row_bound(pipeline_config)
-        if use_allreduce:
-            recv_rows = max_tokens * min(
-                self.model.num_experts // n_ranks, top_k
-            )
-        else:
-            recv_rows = max_tokens * min(
-                self.model.num_experts, n_ranks * top_k
-            )
-        # The dispatch carries the LATENT, not the hidden state; see
-        # `KimiK3LatentMoE`'s class docstring.
-        latent = self.model.routed_expert_hidden_size
-        dispatch_elem = self.dtype.size_in_bytes
-        return (
-            (max_tokens + recv_rows) * latent * dispatch_elem
-            + top_k * max_tokens * latent * self.dtype.size_in_bytes
-        )
 
     def validate_tensor_parallel_split(self) -> None:
         """Raises unless every split axis divides by the device count.

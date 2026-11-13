@@ -34,9 +34,8 @@ On gfx950, under the bounded "safe" gate with bf16 q/k/v and a float32
 state pool, a prefill batch runs the chunk-parallel pipeline inside the op
 while every other batch -- decode included -- runs the token-sequential
 kernel; on any other target, and under the "original" gate, every batch
-runs the token-sequential kernel. The K3 memory planner still reserves the
-chunk workspaces host-side (see ``memory_planner.py``); KERN-3869 tracks
-moving them into graph-planned buffers.
+runs the token-sequential kernel. The chunk workspaces are allocated
+host-side; KERN-3869 tracks moving them into graph-planned buffers.
 
 The speculative-decoding VERIFY arm: when a binding is set on the layer
 (see :class:`KdaVerifyBinding`), the conv runs

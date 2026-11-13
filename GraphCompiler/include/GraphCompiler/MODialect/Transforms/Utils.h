@@ -45,11 +45,6 @@ inline void printOp(llvm::raw_ostream &os, Operation *op) {
   op->getName().print(os);
 }
 
-inline void printGraph(llvm::raw_ostream &os, GraphOp graphOp) {
-  graphOp.print(os, mlir::OpPrintingFlags().printGenericOpForm());
-  os << "\n";
-}
-
 } // namespace M::MO
 
 #endif // GENERICML_GRAPHCOMPILER_TRANSFORMS_MODIALECT_UTILS_H

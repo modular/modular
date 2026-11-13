@@ -400,7 +400,10 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
     `OutlineStructuredKernelBodies` wraps it in a `map.iter.opaque`. The
     opaque's input and output block arguments are its `$captures` (see
     `CapturingFusionClosure`); the leading block argument is the index.
-    `shape` is copied from the wrapped `map.iter.elementwise`.
+    `shape` is copied from the wrapped `map.iter.elementwise`. `max_simd_width`,
+    set by `map-infer-max-simd-width`, is a limit every SIMD width the loop
+    runs at must divide (a constant, a parameter or a `#map.gcd`); unset
+    means no limit.
 
     Example:
     ```mlir
@@ -421,7 +424,8 @@ def MAP_IterElementwiseBodyOp : MAP_Op<"iter.elementwise.body", [
   }];
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
-                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures);
+                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
+                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -560,7 +564,8 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 
   let arguments = (ins MOSH_ShapeAttr:$shape,
                        I64Attr:$axis,
-                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures);
+                       Variadic<AnyTypeOf<[MO_Tensor, MO_Buffer]>>:$captures,
+                       OptionalAttr<MAP_WidthLimitAttr>:$max_simd_width);
   let regions = (region SizedRegion<1>:$body);
 
   let hasCustomAssemblyFormat = 1;
@@ -579,6 +584,8 @@ def MAP_IterRowwiseBodyOp : MAP_Op<"iter.rowwise.body", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   RecursiveMemoryEffects,
@@ -624,6 +631,8 @@ def MAP_IterReduceOp : MAP_Op<"iter.reduce", [
 //===----------------------------------------------------------------------===//
 
 def MAP_IterCacheOp : MAP_Op<"iter.cache", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   RecursiveMemoryEffects,
@@ -688,6 +697,8 @@ def MAP_IterCacheLoadOp : MAP_Op<"iter.cache.load", [
 }
 
 def MAP_IterMapOp : MAP_Op<"iter.map", [
+  // Its index is the rowwise kernel's; the ops it holds limit the width.
+  MAP_MaxSimdWidthInterface,
   ParentOneOf<["IterRowwiseOp", "IterRowwiseBodyOp"]>,
   SingleBlock,
   NoTerminator,
@@ -903,6 +914,9 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
   SingleBlock,
   NoTerminator,
   RecursiveMemoryEffects,
+  // The verifier keeps the innermost dim whole, so the body's index has the
+  // loop's innermost coordinate and its width limits hold as they are.
+  MAP_MaxSimdWidthInterface,
   DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
   DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
 ]> {

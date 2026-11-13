@@ -28,6 +28,7 @@ from .engine_config import EngineConfig
 from .format_spec import FormatSpec
 from .kv_cache import KVCacheLayout
 from .pipeline_modules import PipelineModules
+from .sampling_defaults import SamplingDefaults
 from .tokenizer import Tokenizer
 from .value_types import ArtifactComponent, ArtifactError, HuggingFaceRef
 from .vision import VisionMetadata
@@ -44,6 +45,7 @@ class ModelArtifact:
     kv_cache: KVCacheLayout | None = None
     batch_processor: BatchProcessorDims | None = None
     vision: VisionMetadata | None = None
+    sampling_defaults: SamplingDefaults | None = None
     weight_loader: WeightNaming | None = None
 
     @classmethod

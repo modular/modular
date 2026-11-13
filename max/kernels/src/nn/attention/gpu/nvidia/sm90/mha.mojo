@@ -1288,7 +1288,6 @@ def _mha_sm90[
     comptime o_frag_cols = o_frag_size // (
         num_row_blocks_per_mma * frag_simdwidth
     )
-    comptime num_cols_p = p_frag_cols * num_n_mmas
     comptime num_cols_output = o_frag_cols * num_n_mmas
 
     # Rowwise max and sum for online softmax

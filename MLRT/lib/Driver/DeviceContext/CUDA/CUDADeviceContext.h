@@ -69,7 +69,6 @@ public:
 
   const CUDADriver &cudaDriver() const;
   CUdevice cudaDevice() const;
-  nvmlDevice_t *getNvmlDevice();
   ErrorOr<CUcontext> cudaContext() const;
 
   ErrorOr<int> getApiVersion() const override;

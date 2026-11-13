@@ -19,6 +19,7 @@
 #include "ClosureEmitter.h"
 #include "DLValues.h"
 #include "IREmitter.h"
+#include "Mojo/LITDialect/LITAttrs.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -1095,9 +1096,56 @@ static TraitType getTypeValueTraitBound(Type metaType) {
   return {};
 }
 
+/// Select the arm of a conditional type value (`A if c else B`) that the
+/// assumptions decide, looking through nested conditionals. Returns a null
+/// attribute if no arm is selected.
+///
+/// TODO(MOCO-4110): This selects arms by hand because the parameter evaluator
+/// does not understand the assumptions of the current scope. Evaluating
+/// conditional types through it would unify this with other type refinement.
+static TypedAttr selectCondTypeArm(TypedAttr typeValue,
+                                   ArrayRef<ConstraintAttr> assumptions) {
+  SmallVector<TypedAttr> propositions;
+  for (ConstraintAttr assumption : assumptions)
+    propositions.push_back(assumption.getProposition());
+
+  TypedAttr selected;
+  TypedAttr current = typeValue;
+  while (auto condOp = dyn_cast<ParamOperatorAttr>(getCanonicalAttr(current))) {
+    if (condOp.getOpcode() != POC::Cond || condOp.getOperands().size() != 3)
+      break;
+    ArrayRef<TypedAttr> operands = condOp.getOperands();
+    TriBool decided = isPropositionImplied(operands[0], propositions);
+    if (decided.isUnknown())
+      break;
+    selected = decided.isTrue() ? operands[1] : operands[2];
+    current = selected;
+  }
+  return selected;
+}
+
+Type LIT::maybeRefineCondTypeWithAssumptions(
+    Type type, ArrayRef<ConstraintAttr> assumptions) {
+  auto paramType = sugarDynCast<ParamType>(type);
+  if (!paramType || assumptions.empty())
+    return type;
+  if (TypedAttr arm = selectCondTypeArm(paramType.getParam(), assumptions))
+    return ASTType(arm);
+  return type;
+}
+
 /// Refine a non-reference ParamType using assumptions in `declScope`.
 static Type maybeRefineParamType(Type varType, ParamType paramType,
                                  ASTDecl &declScope) {
+  {
+    SmallVector<ConstraintAttr> condAssumptions;
+    declScope.getKnownAssumptionsIncludingParents(condAssumptions);
+    Type condRefined =
+        maybeRefineCondTypeWithAssumptions(varType, condAssumptions);
+    if (condRefined != varType)
+      return condRefined;
+  }
+
   // Resolve the underlying ParamDeclRefAttr so assumption lookup matches
   // against the plain type parameter. `extractParamDeclRef` peels UpcastAttr
   // and TypeParamAttr; peel DowncastAttr here as well so that incoming
@@ -1937,8 +1985,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       diagType = meta.getType();
     } else if (auto generator = sugarDynCast<GeneratorType>(diagType)) {
       if (auto mt = dyn_cast<MetaType>(generator.getBody())) {
-        diagType = ASTType(mt.getType())
-                       .getWithUnknownParametersReplaced(emitter.shared);
+        diagType =
+            ASTType(mt.getType()).extractAndRelinkParamRef(emitter.shared);
       }
     }
 
@@ -2523,27 +2571,25 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     auto paramRef = cast<ParamDeclRefAttr>(parameter.get());
     auto baseRVMetaType = baseRVType.extractMetaType();
 
-    // Two possible cases: 1) a partially bound struct type, 2) a generator
-    auto paramValues = ArrayRef<TypedAttr>();
-    if (auto baseDecl = sugarDynCast<StructMetaType>(baseRVMetaType)) {
-      paramValues = baseDecl.getParamValues();
-    } else if (auto genType = sugarDynCast<GeneratorType>(baseRVMetaType)) {
-      // Get the param values for the generator attr body.
-      auto genBodyType = sugarDynCast<StructMetaType>(genType.getBody());
-      if (genBodyType) {
-        paramValues = ASTType(genBodyType.getType())
-                          .getWithUnknownParametersReplaced(shared)
-                          .getParamBindings();
-      }
-    }
-
-    if (!paramValues.empty()) {
+    // Two possible cases: 1) a fully-bound struct type, 2) a generator
+    if (auto st = sugarDynCast<StructMetaType>(baseRVMetaType)) {
+      assert(!llvm::any_of(st.getParamValues(), llvm::IsaPred<UnboundAttr>));
       for (auto [name, value] :
-           llvm::zip(structDecl->getOp().getParams(), paramValues)) {
+           llvm::zip(structDecl->getOp().getParams(), st.getParamValues())) {
+        if (name.getName() == paramRef.getName())
+          return emitter.emitResult(value, this, dest);
+      }
+    } else if (auto genType = StructTypeGenerator::dynCast(baseRVType)) {
+      // A binding that refers to the generator's own input parameters (depth
+      // 0) is not known yet.
+      ParamIndexRefAttrFinder finder;
+      for (auto [name, value] :
+           llvm::zip(structDecl->getOp().getParams(),
+                     genType.getStructType().getParamValues())) {
         // If this binding is for this parameter propagate the bound
         // parameter.
         if (name.getName() == paramRef.getName()) {
-          if (isa<UnboundAttr>(value)) {
+          if (finder.hasReferences(value)) {
             // Detect if we are accessing a unbound parameter.
             emitter.emitError(getLoc(), "'")
                 << spelling << "' refers to an unbound parameter in "

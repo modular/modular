@@ -393,6 +393,13 @@ def moe_create_indices_kernel[
 # chunk, so the histogram and scatter kernels see the same token ranges.
 comptime _MULTI_CTA_TOKENS_PER_CTA = 512
 
+# Most experts per thread in the multi-CTA path: its histogram and its
+# scatter cursors live in shared memory indexed by expert, so one workgroup
+# covers `experts_per_thread * block_threads` experts. A launch uses the
+# fewest experts per thread that cover its expert count, since each extra
+# expert per thread serializes that thread's per-CTA count exchange.
+comptime _MULTI_CTA_MAX_EXPERTS_PER_THREAD = 2
+
 # Below this many token slots one CTA's two passes are cheaper than two
 # launches plus a per-CTA count exchange.
 comptime _MULTI_CTA_MIN_TOKENS = 16384
@@ -404,6 +411,7 @@ comptime _MULTI_CTA_MIN_TOKENS = 16384
 def _moe_histogram_kernel[
     input_type: DType,
     block_threads: Int,
+    experts_per_thread: Int,
 ](
     cta_counts: MutPointer[UInt32, MutUntrackedOrigin],
     topk_ids: ImmPointer[Scalar[input_type], ImmUntrackedOrigin],
@@ -414,16 +422,22 @@ def _moe_histogram_kernel[
 
     CTA `g` owns token slots `[g * _MULTI_CTA_TOKENS_PER_CTA, ...)` and writes
     its histogram to `cta_counts[g * num_experts : (g + 1) * num_experts]`.
+    Thread `t` owns experts `t * experts_per_thread + r`, which
+    covers more experts than there are threads when it exceeds one.
     """
     comptime atomic_scope = _cta_atomic_scope()
+    comptime assert (
+        block_threads > 0 and block_threads % WARP_SIZE == 0
+    ), "the block scans need whole warps"
     var total_tokens = Int(total_tokens_i32)
     var num_experts = Int(num_experts_i32)
     var tid = thread_idx.x
     var counts = tensor_alloc[.uint32, address_space=.SHARED](
-        row_major[block_threads]()
+        row_major[experts_per_thread * block_threads]()
     )
     with PDL[overlap_at_beginning=True]():
-        counts[tid] = 0
+        comptime for r in range(experts_per_thread):
+            counts[tid * experts_per_thread + r] = 0
         barrier()
         var begin = block_idx.x * _MULTI_CTA_TOKENS_PER_CTA
         var end = min(begin + _MULTI_CTA_TOKENS_PER_CTA, total_tokens)
@@ -435,10 +449,12 @@ def _moe_histogram_kernel[
                 ordering=Ordering.RELAXED
             ](counts.ptr.unsafe_offset(e), UInt32(1))
         barrier()
-        if tid < num_experts:
-            cta_counts[unsafe_offset=block_idx.x * num_experts + tid] = counts[
-                tid
-            ]
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            if e < num_experts:
+                cta_counts[
+                    unsafe_offset=block_idx.x * num_experts + e
+                ] = counts[e]
 
 
 @__llvm_metadata(
@@ -447,6 +463,7 @@ def _moe_histogram_kernel[
 def _moe_scatter_kernel[
     input_type: DType,
     block_threads: Int,
+    experts_per_thread: Int,
     _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: MutPointer[UInt32, MutUntrackedOrigin],
@@ -468,53 +485,94 @@ def _moe_scatter_kernel[
     before it. CTA 0 also writes the per-expert outputs. As in
     `moe_create_indices_kernel`, the order of slots within an expert follows
     the shared cursor and is not load-bearing.
+
+    Thread `t` owns experts `t * experts_per_thread + r`, so the
+    block scans run over per-thread sums and each thread carries the running
+    offsets across its own experts.
     """
     comptime atomic_scope = _cta_atomic_scope()
+    comptime assert (
+        block_threads > 0 and block_threads % WARP_SIZE == 0
+    ), "the block scans need whole warps"
+    comptime experts = experts_per_thread * block_threads
     var total_tokens = Int(total_tokens_i32)
     var num_experts = Int(num_experts_i32)
     var num_ctas = Int(num_ctas_i32)
     var tid = thread_idx.x
+    var counts = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[experts]()
+    )
     var cursor = tensor_alloc[.uint32, address_space=.SHARED](
-        row_major[block_threads]()
+        row_major[experts]()
     )
     with PDL[overlap_at_beginning=True]():
         var total = UInt32(0)
-        var before = UInt32(0)
-        if tid < num_experts:
-            for c in range(num_ctas):
-                var n = cta_counts[unsafe_offset=c * num_experts + tid]
-                total += n
-                if c < block_idx.x:
-                    before += n
+        var thread_max = UInt32(0)
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            var n = UInt32(0)
+            var prior = UInt32(0)
+            if e < num_experts:
+                for c in range(num_ctas):
+                    var v = cta_counts[unsafe_offset=c * num_experts + e]
+                    n += v
+                    if c < block_idx.x:
+                        prior += v
+            counts[e] = n
+            # Parked here until the scan gives each expert its launch-wide
+            # start, which is what turns this into the CTA's cursor.
+            cursor[e] = prior
+            total += n
+            thread_max = max(thread_max, n)
 
         var g_offset = block.prefix_sum[
             block_size=block_threads, exclusive=True
         ](total)
         barrier()
-        cursor[tid] = g_offset + before
 
+        var aligned_g_offset = UInt32(0)
+        var max_count = UInt32(0)
         if block_idx.x == 0:
-            var aligned_val = align_up(total, _scale_alignment)
-            var aligned_g_offset = block.prefix_sum[
+            # The aligned offsets only ever describe the whole launch, so only
+            # the CTA that writes them pays for this scan.
+            var aligned_total = UInt32(0)
+            comptime for r in range(experts_per_thread):
+                aligned_total += align_up(
+                    counts[tid * experts_per_thread + r],
+                    _scale_alignment,
+                )
+            aligned_g_offset = block.prefix_sum[
                 block_size=block_threads, exclusive=True
-            ](aligned_val)
+            ](aligned_total)
             barrier()
-            var max_count = block.max[
-                block_size=block_threads, broadcast=False
-            ](total)
-            if tid < num_experts:
-                expert_ids[tid] = Int32(tid)
-                expert_start_indices[tid] = g_offset
-                if case .Some(scales_offset) = scales_offset_p:
-                    scales_offset[unsafe_offset=tid] = (
-                        aligned_g_offset // _scale_alignment
-                        - g_offset // _scale_alignment
-                    )
-            if tid == num_experts - 1:
-                expert_start_indices[num_experts] = g_offset + total
-            if tid == 0:
-                expert_usage_stats[0] = max_count
-                expert_usage_stats[1] = UInt32(num_experts)
+            max_count = block.max[block_size=block_threads, broadcast=False](
+                thread_max
+            )
+
+        var start = g_offset
+        var aligned_start = aligned_g_offset
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            var n = counts[e]
+            cursor[e] += start
+            if block_idx.x == 0:
+                if e < num_experts:
+                    expert_ids[unsafe_offset=e] = Int32(e)
+                    expert_start_indices[unsafe_offset=e] = start
+                    if case .Some(scales_offset) = scales_offset_p:
+                        scales_offset[unsafe_offset=e] = (
+                            aligned_start // _scale_alignment
+                            - start // _scale_alignment
+                        )
+                    if e == num_experts - 1:
+                        expert_start_indices[unsafe_offset=num_experts] = (
+                            start + n
+                        )
+                aligned_start += align_up(n, _scale_alignment)
+            start += n
+        if block_idx.x == 0 and tid == 0:
+            expert_usage_stats[0] = max_count
+            expert_usage_stats[1] = UInt32(num_experts)
         barrier()
 
         var begin = block_idx.x * _MULTI_CTA_TOKENS_PER_CTA
@@ -552,7 +610,11 @@ def moe_create_indices[
     """Launches the MoE index creation kernel on GPU.
 
     Groups tokens by their assigned expert so that downstream kernels such as
-    grouped matmul can process each expert's tokens contiguously. One CTA
+    grouped matmul can process each expert's tokens contiguously. At 16384
+    or more token slots, with stride-1 tensors and at most
+    `_MULTI_CTA_MAX_EXPERTS_PER_THREAD * block_threads` experts, a histogram
+    kernel counts each CTA's slots per expert and a scatter kernel turns the
+    per-CTA counts into CSR offsets and places the slots. Otherwise one CTA
     histograms the expert ids in shared memory, scans the histogram into CSR
     offsets, and scatters the tokens.
 
@@ -591,7 +653,7 @@ def moe_create_indices[
         # layout-aware single-CTA path.
         if (
             total_tokens >= _MULTI_CTA_MIN_TOKENS
-            and num_experts <= block_threads
+            and num_experts <= _MULTI_CTA_MAX_EXPERTS_PER_THREAD * block_threads
             and Int(token_expert_order.layout.stride[0]().value()) == 1
             and Int(expert_start_indices.layout.stride[0]().value()) == 1
             and Int(restore_token_order.layout.stride[0]().value()) == 1
@@ -603,36 +665,40 @@ def moe_create_indices[
             var cta_counts = context.enqueue_create_buffer[.uint32](
                 num_ctas * num_experts
             )
-            comptime histogram = _moe_histogram_kernel[
-                input_type, block_threads
-            ]
-            context.enqueue_function[histogram](
-                cta_counts.unsafe_ptr(),
-                topk_ids.unsafe_ptr(),
-                Int32(total_tokens),
-                Int32(num_experts),
-                grid_dim=num_ctas,
-                block_dim=block_threads,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            )
-            comptime scatter = _moe_scatter_kernel[input_type, block_threads]
-            context.enqueue_function[scatter](
-                token_expert_order.unsafe_ptr(),
-                expert_start_indices.unsafe_ptr(),
-                restore_token_order.unsafe_ptr(),
-                expert_ids.unsafe_ptr(),
-                expert_usage_stats.unsafe_ptr(),
-                scales_offset_p,
-                cta_counts.unsafe_ptr(),
-                topk_ids.unsafe_ptr(),
-                Int32(total_tokens),
-                Int32(num_experts),
-                Int32(num_ctas),
-                grid_dim=num_ctas,
-                block_dim=block_threads,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            )
-            return
+            comptime for ept in range(1, _MULTI_CTA_MAX_EXPERTS_PER_THREAD + 1):
+                if num_experts <= ept * block_threads:
+                    comptime histogram = _moe_histogram_kernel[
+                        input_type, block_threads, ept
+                    ]
+                    context.enqueue_function[histogram](
+                        cta_counts.unsafe_ptr(),
+                        topk_ids.unsafe_ptr(),
+                        Int32(total_tokens),
+                        Int32(num_experts),
+                        grid_dim=num_ctas,
+                        block_dim=block_threads,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
+                    )
+                    comptime scatter = _moe_scatter_kernel[
+                        input_type, block_threads, ept
+                    ]
+                    context.enqueue_function[scatter](
+                        token_expert_order.unsafe_ptr(),
+                        expert_start_indices.unsafe_ptr(),
+                        restore_token_order.unsafe_ptr(),
+                        expert_ids.unsafe_ptr(),
+                        expert_usage_stats.unsafe_ptr(),
+                        scales_offset_p,
+                        cta_counts.unsafe_ptr(),
+                        topk_ids.unsafe_ptr(),
+                        Int32(total_tokens),
+                        Int32(num_experts),
+                        Int32(num_ctas),
+                        grid_dim=num_ctas,
+                        block_dim=block_threads,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
+                    )
+                    return
 
         comptime kernel = moe_create_indices_kernel[
             input_type,
@@ -1050,7 +1116,6 @@ def group_limited_router_kernel[
     comptime assert (
         WARP_SIZE % group_size == 0
     ), "WARP_SIZE must be divisible by group_size"
-    comptime n_groups_per_warp = WARP_SIZE // group_size
     comptime assert (
         topk_group * n_experts_per_tok <= WARP_SIZE
     ), "topk_group * n_experts_per_tok must be less than or equal to WARP_SIZE"

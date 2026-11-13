@@ -5,6 +5,12 @@ pagination_label: Distributed tensors
 description: Learn what a distributed tensor is in MAX, how its global shape relates to the per-device shards, and what each placement records.
 ---
 
+import {
+  LocalShardsViz,
+  ReshardingViz,
+  UnevenShardsViz,
+} from '../../components/DeviceMeshViz';
+
 A distributed tensor is logically an N-dimensional array whose data can be laid
 out on one or more devices. Use one to split data and computation across devices
 while your code continues to refer to one global array. MAX uses the same
@@ -20,33 +26,20 @@ The runtime launches each kernel on one device with the local buffers for that
 device's shard. A collective such as
 [`allreduce_sum()`](/api/python/functional/#max.functional.allreduce_sum)
 communicates across devices to combine their values.
-[`Tensor.shape`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.shape)
-reports each axis's global size when the placements define one, and
-[`Tensor.local_shards`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.local_shards)
-returns the per-device tensors and their local shapes.
 
-A [`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/)
-describes the devices and their axes. A placement describes how the data is laid
-out on one mesh axis: devices can hold the same copy, slices along a tensor
-axis, terms of a sum, or values with no established relation. A
+## Global shape
+
+The global shape describes the dimensions of the full array, regardless of how
+its values are distributed across devices. A
+[`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/) describes
+the devices and their axes. A
 [`DeviceMapping`](/api/python/generated/max.tensor.sharding.DeviceMapping/)
 combines a mesh with one placement per mesh axis. It serves as the multi-device
 counterpart of a [`Device`](/api/python/generated/max.driver.Device/) in APIs
 that create or move tensors.
 
-To compare a sharded result with an unsharded run, gather it first:
-[`materialize()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.materialize)
-allreduces [`Partial`](/api/python/generated/max.tensor.sharding.Partial/) axes
-and allgathers [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)
-ones, and
-[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy)
-does the same.
-
-## Global shape
-
-The global shape describes the dimensions of the full array, regardless of how
-its values are distributed across devices. This example splits 8 rows across 2
-CPU devices on a mesh axis named `tp` (tensor parallelism):
+This example splits 8 rows across 2 CPU devices on a mesh axis named `tp`
+(tensor parallelism):
 
 ```python
 from max.driver import CPU
@@ -96,6 +89,8 @@ total of `8`.
 `Sharded(0)` places rows 0 through 3 in `x.local_shards[0]` and rows 4 through
 7 in `x.local_shards[1]`. A shard is the whole tensor only when every mesh axis
 is replicated or the mesh has one device.
+
+<LocalShardsViz />
 
 ## What a placement means
 
@@ -173,6 +168,14 @@ sharded: [8, 4] Sharded(axis=0)   partial: [8, 4] Partial()   unknown: [8, 4] Un
 └──────────┘
 ```
 
+To compare a sharded result with an unsharded run, gather it first:
+[`materialize()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.materialize)
+allreduces [`Partial`](/api/python/generated/max.tensor.sharding.Partial/) axes
+and allgathers [`Sharded`](/api/python/generated/max.tensor.sharding.Sharded/)
+ones, and
+[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy)
+does the same.
+
 ## Uneven shards
 
 The shards on a mesh axis share one shape only when the number of devices
@@ -207,6 +210,8 @@ device 3: (2, 4)
 `x.shape[0]` reports the global 10 rows, and each entry of `local_shards`
 reports the rows its device holds.
 
+<UnevenShardsViz />
+
 ## Resharding
 
 A reshard changes the placement of a tensor's values on its mesh. For example,
@@ -215,6 +220,37 @@ and changing `Partial` to `Replicated` sums their terms. These transitions can
 require communication between devices. Use
 [`transfer_to()`](/api/python/functional/#max.functional.transfer_to) to
 request a target `DeviceMapping` explicitly.
+
+This example gathers the shards of `x` so every device holds the full
+`(8, 4)` tensor:
+
+```python
+from max.driver import CPU
+from max.functional import full, transfer_to
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated, Sharded
+
+mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+x = full([8, 4], 1.0, device=DeviceMapping(mesh, (Sharded(0),)))
+y = transfer_to(x, DeviceMapping(mesh, (Replicated(),)))
+
+print("x placements:", x.placements)
+print("y placements:", y.placements)
+for shard in y.local_shards:
+    print(tuple(int(d) for d in shard.shape))
+```
+
+```output
+x placements: (Sharded(axis=0),)
+y placements: (Replicated(),)
+(8, 4)
+(8, 4)
+```
+
+`transfer_to()` returns `y` with the requested placement on the same mesh, and
+`x` keeps its placement. Every entry of `y.local_shards` holds the whole
+tensor, and each device runs the `allgather()` that fills it.
+
+<ReshardingViz />
 
 An op's sharding rule describes the input placements it accepts and the output
 placements it produces. MAX chooses a placement plan from that rule. If the

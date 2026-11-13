@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false print-stats=true" -allow-unregistered-dialect -o /dev/null 2>&1 | FileCheck %s
+// RUN: kgen-opt %s -elaborate-generators="use-parametric-interpret=false print-stats=true" -allow-unregistered-dialect -mlir-disable-threading -o /dev/null 2>&1 | FileCheck %s
 
 // The report groups the loop's instantiations: one line for the two calls of
 // `sum_from_zero`, with their iteration range, the body's size, and the ops
@@ -7,10 +7,13 @@
 // elaborate-errors.mlir, so only the concrete one runs here.
 
 // The interpreter tables group the calls by callee, then by operation and
-// callee. The loop's iterator calls are never cached:
-// `@count_to_zero_has_next` runs once per iteration plus the last check, 5 + 3
-// times, and `@count_to_zero` 4 + 2 times. The second `kgen.param.apply` of
-// `@fma` hits the cache the first filled, and the two share a callee row.
+// callee. The loop's iterator calls go through the interpreter result cache.
+// The first instantiation interprets `@count_to_zero_has_next` once per
+// iteration plus the last check (5 times) and `@count_to_zero` 4 times. The
+// second instantiation's 3 + 2 calls all hit the cache. Which instantiation
+// fills the cache depends on scheduling, so the run is single-threaded to
+// keep the counts exact. The second `kgen.param.apply` of `@fma` hits the
+// cache the first filled, and the two share a callee row.
 
 // CHECK: ===--- Elaboration statistics (--elaboration-stats): host
 // CHECK-NEXT: comptime for: 1 loops, 2 instantiations, {{[0-9]+}} ops produced (after elaboration, before inlining)
@@ -18,17 +21,17 @@
 // CHECK-NEXT: ops produced  instances   iterations  body ops  loop
 // CHECK-NEXT: {{[0-9]+}} 2 2-4 3 {{.*}}elaborate-stats.mlir:[[#LOOP:@LINE+18]]:{{[0-9]+}} @sum_from_zero
 // CHECK-EMPTY:
-// CHECK-NEXT: interpreter: 16 calls, 1 cache hits, 15 interpreted in {{[0-9.]+}} s CPU
+// CHECK-NEXT: interpreter: 16 calls, 6 cache hits, 10 interpreted in {{[0-9.]+}} s CPU
 // CHECK-EMPTY:
 // CHECK-NEXT: By callee, each function's calls summed over all its call sites:
 // CHECK-NEXT: CPU s interpreted cache hits max s call sites callee
-// CHECK-DAG: {{[0-9.]+}} 8 0 {{[0-9.]+}} 1 @count_to_zero_has_next
-// CHECK-DAG: {{[0-9.]+}} 6 0 {{[0-9.]+}} 1 @count_to_zero{{$}}
+// CHECK-DAG: {{[0-9.]+}} 5 3 {{[0-9.]+}} 1 @count_to_zero_has_next
+// CHECK-DAG: {{[0-9.]+}} 4 2 {{[0-9.]+}} 1 @count_to_zero{{$}}
 // CHECK-DAG: {{[0-9.]+}} 1 1 {{[0-9.]+}} 2 @fma
 // CHECK: By call site, one operation's calls to one function:
 // CHECK-NEXT: CPU s interpreted cache hits max s call site callee
-// CHECK-DAG: {{[0-9.]+}} 8 0 {{[0-9.]+}} {{.*}}elaborate-stats.mlir:[[#LOOP]]:{{[0-9]+}} @count_to_zero_has_next
-// CHECK-DAG: {{[0-9.]+}} 6 0 {{[0-9.]+}} {{.*}}elaborate-stats.mlir:[[#LOOP]]:{{[0-9]+}} @count_to_zero{{$}}
+// CHECK-DAG: {{[0-9.]+}} 5 3 {{[0-9.]+}} {{.*}}elaborate-stats.mlir:[[#LOOP]]:{{[0-9]+}} @count_to_zero_has_next
+// CHECK-DAG: {{[0-9.]+}} 4 2 {{[0-9.]+}} {{.*}}elaborate-stats.mlir:[[#LOOP]]:{{[0-9]+}} @count_to_zero{{$}}
 // CHECK-DAG: {{[0-9.]+}} 1 0 {{[0-9.]+}} {{.*}}elaborate-stats.mlir:[[#FMA:@LINE+47]]:{{[0-9]+}} @fma
 // CHECK-DAG: 0.0000 0 1 0.0000 {{.*}}elaborate-stats.mlir:[[#FMA+1]]:{{[0-9]+}} @fma
 

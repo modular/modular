@@ -19,7 +19,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .decoder import HYV4Decoder
-from .memory_planner import HYV4MemoryPlanner
 from .model_config import HYV4Config
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
@@ -42,7 +41,6 @@ hy_v4_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=HYV4Config,
-    memory_planner=HYV4MemoryPlanner,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",
 )

@@ -82,7 +82,6 @@ _MOE_INTERMEDIATE_SIZE = 5
 _NUM_EXPERTS = 3
 _NUM_EXPERTS_PER_TOKEN = 2
 _NUM_SHARED_EXPERTS = 1
-_SHARED_INTERMEDIATE_SIZE = _MOE_INTERMEDIATE_SIZE * _NUM_SHARED_EXPERTS
 
 _TEXT = "language_model.model"
 _RNG = np.random.default_rng(0)
@@ -218,6 +217,7 @@ def _checkpoint(
             (``weight_packed``/``weight_scale``) instead of dense ``.weight``.
     """
     bf16 = DType.bfloat16
+    shared_intermediate_size = moe_intermediate_size * _NUM_SHARED_EXPERTS
     ck: dict[str, Any] = {
         f"{_TEXT}.embed_tokens.weight": _weight(
             _fp32((_VOCAB_SIZE, _HIDDEN_SIZE)), "embed", bf16
@@ -396,13 +396,13 @@ def _checkpoint(
                     bf16,
                 )
             ck[f"{moe}.shared_experts.gate_proj.weight"] = _weight(
-                _fp32((_SHARED_INTERMEDIATE_SIZE, _HIDDEN_SIZE)), "sg", bf16
+                _fp32((shared_intermediate_size, _HIDDEN_SIZE)), "sg", bf16
             )
             ck[f"{moe}.shared_experts.up_proj.weight"] = _weight(
-                _fp32((_SHARED_INTERMEDIATE_SIZE, _HIDDEN_SIZE)), "su", bf16
+                _fp32((shared_intermediate_size, _HIDDEN_SIZE)), "su", bf16
             )
             ck[f"{moe}.shared_experts.down_proj.weight"] = _weight(
-                _fp32((_HIDDEN_SIZE, _SHARED_INTERMEDIATE_SIZE)), "sd", bf16
+                _fp32((_HIDDEN_SIZE, shared_intermediate_size)), "sd", bf16
             )
     return ck
 
@@ -1042,6 +1042,8 @@ def _pipeline_config(
         model=SimpleNamespace(
             device_specs=[object()] * n_devices,
             data_parallel_degree=data_parallel_degree,
+            quantization_encoding="bfloat16",
+            _resolved_dtype_cast=(None, None),
         ),
         runtime=SimpleNamespace(ep_size=ep_size),
     )
@@ -1053,3 +1055,102 @@ def test_tp_degree_follows_the_mesh() -> None:
     # An ``ep`` mesh shards nothing along TP.
     assert tp_degree(_pipeline_config(8, ep_size=8)) == 1
     assert tp_degree(_pipeline_config(8, data_parallel_degree=8)) == 1
+
+
+# Both widths must divide by 8 for the merged exit's TP=8 layout below.
+_MERGED_LATENT = 8
+_MERGED_SHARED = 8
+
+
+def _ramp(rows: int, cols: int, base: int) -> np.ndarray:
+    """A column-ramped block, integer-valued so a bf16 cast is exact."""
+    return np.tile(np.arange(base, base + cols, dtype=np.float32), (rows, 1))
+
+
+def _moe_only_checkpoint(latent: int, shared: int) -> dict[str, Any]:
+    """`_checkpoint` with every layer an MLA + latent MoE layer.
+
+    The default fixture's KDA layer fuses a 2-row ``b_proj`` block and its
+    single dense layer a 12-wide FFN, so neither splits over a TP degree
+    above 2 and the adaptation raises before the exit weights are reached.
+    """
+    checkpoint = _checkpoint(
+        routed_expert_hidden_size=latent, moe_intermediate_size=shared
+    )
+    # Layer 1 is already the layer shape wanted; give layer 0 its tensors.
+    src = f"{_TEXT}.layers.1"
+    dst = f"{_TEXT}.layers.0"
+    for key in [
+        k
+        for k in checkpoint
+        if k.startswith((f"{dst}.self_attn.", f"{dst}.mlp."))
+    ]:
+        del checkpoint[key]
+    for key in [k for k in checkpoint if k.startswith(f"{src}.")]:
+        checkpoint[key.replace(f"{src}.", f"{dst}.")] = checkpoint[key]
+    return checkpoint
+
+
+@pytest.mark.parametrize("tp_size", [2, 8])
+def test_merged_exit_weights_shard_into_one_gemm_per_rank(tp_size: int) -> None:
+    """The TP path runs the routed exit and the shared expert's down
+    projection as one GEMM over `[W_exit_r | W_sdown_r]`.
+
+    The loader splits a weight contiguously along its input axis, so rank
+    ``r`` lands on exactly `[W_exit[:, r] | W_sdown[:, r]]` only if neither
+    weight is interleaved per TP rank -- unlike the fused gate/up, which
+    must be.
+    """
+    checkpoint = _moe_only_checkpoint(_MERGED_LATENT, _MERGED_SHARED)
+    moe = f"{_TEXT}.layers.1.block_sparse_moe"
+    checkpoint[f"{moe}.routed_expert_up_proj.weight"] = _weight(
+        _ramp(_HIDDEN_SIZE, _MERGED_LATENT, 1), "up_proj", DType.bfloat16
+    )
+    checkpoint[f"{moe}.shared_experts.down_proj.weight"] = _weight(
+        _ramp(_HIDDEN_SIZE, _MERGED_SHARED, 64), "sd", DType.bfloat16
+    )
+    text_config = _text_config(
+        routed_expert_hidden_size=_MERGED_LATENT,
+        moe_intermediate_size=_MERGED_SHARED,
+    )
+    text_config.first_k_dense_replace = 0
+    text_config.linear_attn_config["kda_layers"] = []
+    text_config.linear_attn_config["full_attn_layers"] = list(
+        range(1, _NUM_HIDDEN_LAYERS + 1)
+    )
+    converted = convert_kimi_k3_state_dict(
+        checkpoint,
+        text_config,
+        pipeline_config=_pipeline_config(tp_size),
+    )
+    exit_w = _to_numpy(converted["layers.1.ffn.routed_expert_up_proj.weight"])
+    down_w = _to_numpy(
+        converted["layers.1.ffn.shared_experts.down_proj.weight"]
+    )
+    latent_per_rank = _MERGED_LATENT // tp_size
+    shared_per_rank = _MERGED_SHARED // tp_size
+    assert exit_w.shape == (_HIDDEN_SIZE, _MERGED_LATENT)
+    assert down_w.shape == (_HIDDEN_SIZE, _MERGED_SHARED)
+
+    for rank in range(tp_size):
+        got = np.concatenate(
+            [
+                exit_w[:, rank * latent_per_rank :][:, :latent_per_rank],
+                down_w[:, rank * shared_per_rank :][:, :shared_per_rank],
+            ],
+            axis=-1,
+        )
+        want = np.concatenate(
+            [
+                _ramp(
+                    _HIDDEN_SIZE, latent_per_rank, 1 + rank * latent_per_rank
+                ),
+                _ramp(
+                    _HIDDEN_SIZE, shared_per_rank, 64 + rank * shared_per_rank
+                ),
+            ],
+            axis=-1,
+        )
+        np.testing.assert_array_equal(
+            got, want, err_msg=f"rank {rank}'s merged exit weight"
+        )

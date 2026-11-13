@@ -43,7 +43,3 @@ void DiagnosticHandler::emitDiagnostics(
   for (Diagnostic &diag : diagnostics)
     emitFn(diag);
 }
-
-mlir::DiagnosticEngine::HandlerID DiagnosticHandler::getHandlerID() {
-  return handlerID;
-}

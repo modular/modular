@@ -442,6 +442,15 @@ class KVCacheMetrics:
     dkv_hinted_lookup_ms_total: float = 0.0
     """Cumulative wall time of the rounds ``dkv_hinted_lookups`` counts, in
     milliseconds."""
+    dkv_hinted_attach_waits: int = 0
+    """Async lookups that waited for a hinted peer's attach, under
+    ``MODULAR_DKV_PEER_ATTACH_WAIT_MS``, before asking the peers."""
+    dkv_hinted_attach_wait_ms_total: float = 0.0
+    """Cumulative wall time of the waits ``dkv_hinted_attach_waits`` counts,
+    in milliseconds."""
+    dkv_hinted_attach_wait_timeouts: int = 0
+    """Waits ``dkv_hinted_attach_waits`` counts that ended at their bound with
+    the attach still dialing."""
 
     # The dKV orphan queue, where a failed reader-pin release or Filling abort
     # waits to be sent again. The outcome counts are per-window deltas like the
@@ -539,6 +548,15 @@ class KVCacheMetrics:
         if self.dkv_hinted_lookups == 0:
             return 0.0
         return self.dkv_hinted_lookup_ms_total / self.dkv_hinted_lookups
+
+    @property
+    def dkv_hinted_attach_wait_avg_ms(self) -> float:
+        """Average wait for a hinted peer's attach in milliseconds."""
+        if self.dkv_hinted_attach_waits == 0:
+            return 0.0
+        return (
+            self.dkv_hinted_attach_wait_ms_total / self.dkv_hinted_attach_waits
+        )
 
     @property
     def dkv_peer_writeback_hold_avg_ms(self) -> float:
@@ -755,6 +773,16 @@ class KVCacheMetrics:
             + other.dkv_hinted_lookups,
             dkv_hinted_lookup_ms_total=self.dkv_hinted_lookup_ms_total
             + other.dkv_hinted_lookup_ms_total,
+            dkv_hinted_attach_waits=self.dkv_hinted_attach_waits
+            + other.dkv_hinted_attach_waits,
+            dkv_hinted_attach_wait_ms_total=(
+                self.dkv_hinted_attach_wait_ms_total
+                + other.dkv_hinted_attach_wait_ms_total
+            ),
+            dkv_hinted_attach_wait_timeouts=(
+                self.dkv_hinted_attach_wait_timeouts
+                + other.dkv_hinted_attach_wait_timeouts
+            ),
             dkv_orphan_cleanups_reissued=self.dkv_orphan_cleanups_reissued
             + other.dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=self.dkv_orphan_cleanups_abandoned

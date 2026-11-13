@@ -30,7 +30,7 @@ tuned one.
 
 Exactness holds while `K <= 10922`: the largest achievable partial sum is
 `384 * K`, and FP32 represents every multiple of 0.25 up to 2**24, i.e. while
-`1536 * K <= 2**24`. The shapes below sit 3x or more inside that, but a larger
+`1536 * K <= 2**24`. The shapes below sit 2.5x or more inside that, but a larger
 K would silently make the reference wrong rather than merely imprecise.
 """
 
@@ -56,6 +56,10 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled_sm100_dispatch,
+    grouped_matmul_mxfp8_dispatch,
+)
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
+    _decode_k_group,
 )
 
 comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
@@ -78,11 +82,20 @@ def _test_w4a8_grouped[
     K: Int,
     num_experts: Int,
     c_type: DType = .bfloat16,
+    pin_schedule: Bool = False,
 ](
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
     ctx: DeviceContext,
 ) raises:
+    """Runs one W4A8 grouped matmul shape and checks it against the host.
+
+    With `pin_schedule`, the launch repeats through the ablation entry point
+    at one k-tile per pipeline stage and must reproduce the production bytes
+    exactly. That is what keeps a decode schedule change from moving the
+    arithmetic: the two runs differ only in TMA and mbarrier granularity, so
+    any byte that differs is a real defect in the schedule.
+    """
     seed(1234)
     comptime a_type = W4A8_A_DTYPE
     comptime b_type = W4A8_B_DTYPE
@@ -345,6 +358,66 @@ def _test_w4a8_grouped[
                     rtol=BF16_RTOL,
                 )
 
+    # The schedule is not allowed to move a byte. Run the same launch at one
+    # k-tile per pipeline stage through the ablation entry and compare.
+    comptime if pin_schedule:
+        var c_pinned_dev = ctx.enqueue_create_buffer[c_type](M * N)
+        ctx.enqueue_memset(c_pinned_dev, Scalar[c_type](0))
+        grouped_matmul_mxfp8_dispatch[
+            transpose_b=True,
+            override=True,
+            mma_bn=8,
+            cta_group=1,
+            num_pipeline_stages=-1,
+            k_group_size=1,
+        ](
+            TileTensor(
+                c_pinned_dev, row_major(M, Idx[N])
+            ).as_unsafe_any_origin(),
+            TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
+            TileTensor(
+                b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
+            ).as_unsafe_any_origin(),
+            TileTensor(a_scales_dev, a_scales_shape).as_unsafe_any_origin(),
+            TileTensor(
+                b_scales_dev,
+                row_major(
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
+                ),
+            ).as_unsafe_any_origin(),
+            TileTensor(
+                a_offsets_dev, row_major(num_active_experts + 1)
+            ).as_unsafe_any_origin(),
+            TileTensor(
+                a_scale_offsets_dev, row_major(num_active_experts)
+            ).as_unsafe_any_origin(),
+            TileTensor(
+                expert_ids_dev, row_major(num_active_experts)
+            ).as_unsafe_any_origin(),
+            TileTensor(
+                expert_scales_dev, row_major(Idx[num_experts])
+            ).as_unsafe_any_origin(),
+            num_active_experts,
+            M,
+            ctx,
+        )
+        var pinned_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+        ctx.enqueue_copy(pinned_host, c_pinned_dev)
+        ctx.synchronize()
+        var moved = 0
+        for i in range(M * N):
+            if pinned_host[i] != c_host_ptr[i]:
+                moved += 1
+        print(t"  one-k-tile schedule diff={moved} of {M * N}")
+        assert_equal(moved, 0)
+        _ = c_pinned_dev^
+        _ = pinned_host^
+
     # With no active experts the kernel returns early; the output must be
     # untouched rather than partially written.
     if num_active_experts == 0:
@@ -375,10 +448,32 @@ def main() raises:
             [64, 200, 8, 129], [2, 0, 3, 1], ctx
         )
 
-        # Decode-shaped: one token per expert exercises the mma_bn=8 regime.
+        # Decode-shaped: one token per expert exercises the mma_bn=8 regime
+        # at a shape with no k grouping row.
         _test_w4a8_grouped[N=256, K=512, num_experts=4](
             [1, 1, 1, 1], [0, 1, 2, 3], ctx
         )
+
+        # An odd k-tile count, ceildiv(384, 128) = 3, through the decode row.
+        _test_w4a8_grouped[N=256, K=384, num_experts=4](
+            [1, 2, 1, 1], [0, 1, 2, 3], ctx
+        )
+
+        # The shipped decode k groupings, each held to the one-k-tile schedule
+        # byte for byte.
+        comptime assert _decode_k_group[1024, 4096]() == 4
+        _test_w4a8_grouped[N=1024, K=4096, num_experts=2, pin_schedule=True](
+            [1, 2], [1, 0], ctx
+        )
+        comptime assert _decode_k_group[4096, 512]() == 2
+        _test_w4a8_grouped[N=4096, K=512, num_experts=2, pin_schedule=True](
+            [1, 2], [1, 0], ctx
+        )
+        # Unmeasured shapes keep one k-tile per stage: the pinned 6144-wide
+        # rows and DeepSeek-V4.1's gate/up.
+        comptime assert _decode_k_group[6144, 6144]() == 1
+        comptime assert _decode_k_group[6144, 3072]() == 1
+        comptime assert _decode_k_group[4608, 5120]() == 1
 
         # Small-prefill regime: the dispatch keys on avg_m per active expert,
         # and 8 < 32 <= 64 is the only band the shapes above skip.

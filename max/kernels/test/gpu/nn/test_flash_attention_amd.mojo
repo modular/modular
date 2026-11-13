@@ -572,13 +572,18 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 80, 128, 256, 512]
+        comptime depths = [64, 72, 80, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]
             test_context_encoding[1, depth](ctx)
 
-            comptime for batch_size in range(1, 5, 3):
-                test_decoding[batch_size, depth, 1](ctx, False)
-                test_decoding[batch_size, depth, 1, DType.float32](ctx, False)
-            test_decoding[1, depth, None](ctx, False)
+            # Decode at depth 72 takes the naive kernel, which is also the
+            # reference, so only prefill runs there.
+            comptime if depth != 72:
+                comptime for batch_size in range(1, 5, 3):
+                    test_decoding[batch_size, depth, 1](ctx, False)
+                    test_decoding[batch_size, depth, 1, DType.float32](
+                        ctx, False
+                    )
+                test_decoding[1, depth, None](ctx, False)

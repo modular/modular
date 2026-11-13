@@ -3698,9 +3698,10 @@ MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
   // If there's no provided size or if the provided size is larger than
   // the free memory, use a percentage of the available memory
   if (isDefaultCacheSize || maxCacheSize > freeMemory) {
-    // By default use 90% of the available memory
+    // By default use 95% of the available memory. The serving memory ledgers
+    // measure what forwards allocate, so they need less unmanaged headroom.
     int64_t percentMemoryLimit =
-        DeviceContext::configAsInt("memory_manager_size_percent", 90);
+        DeviceContext::configAsInt("memory_manager_size_percent", 95);
     if (percentMemoryLimit == 0) // User has explicitly set to 0 => disable
       return disabledMemoryManager();
 

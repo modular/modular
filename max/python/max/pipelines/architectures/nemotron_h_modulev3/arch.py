@@ -34,7 +34,6 @@ from ..qwen3_5.reasoning import (
 from ..qwen3_5.tool_parser import (
     Qwen3_5ToolParser,  # noqa: F401
 )
-from .memory_planner import NemotronHMemoryPlanner
 from .model_config import NemotronHConfig
 from .nemotron_h import NemotronH
 from .weight_adapters import nemotron_h_weight_rules
@@ -78,7 +77,6 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
     # The name Mach finds the fused DSpark graph by.
     spec_decode_graph_names={"dspark": "UnifiedDSparkNemotronHModule"},
     config=NemotronHConfig,
-    memory_planner=NemotronHMemoryPlanner,
     multi_gpu_supported=True,
     reasoning_parser="qwen3_5",
     tool_parser="qwen3_5",

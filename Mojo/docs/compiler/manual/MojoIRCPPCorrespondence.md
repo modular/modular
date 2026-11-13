@@ -174,7 +174,7 @@ def main():
 ```mlir
 module {
   lit.file_module @example {
-    lit.struct.decl @Person(!AnyType) attributes {sourceName = #Person_name}
+    lit.struct.decl @Person(!AnyType)
       destructor :!lit.signature<[1]("self": !lit.ref<!Person, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @example::@Person::@"__del__(example::Person)" {
       lit.struct.field name : !String
       lit.struct.field age : !Int
@@ -201,7 +201,7 @@ module {
         lit.return %none : !kgen.none
         lit.end_func
       }
-    }
+    } <sourceName = #Person_name>
     lit.func @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind = 0 : i8} {
       %me = lit.var.decl "me" var : !lit.ref<!Person, mut *"me`">
       %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!String, mut *"anonymous*`1">

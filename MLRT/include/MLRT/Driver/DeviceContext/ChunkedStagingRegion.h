@@ -66,6 +66,14 @@ struct ChunkedStagingRegion {
          size_t byteSize, size_t rowBytes, unsigned threads, size_t chunkBytes,
          bool driverAlloc, bool mlockPages, ChunkedStagingRegionError &error);
 
+  /// Like the overload above, but touches pages on `threads` threads it starts
+  /// and joins itself, for callers that have no AsyncRT runtime. The calling
+  /// thread registers each chunk once it has been touched.
+  static std::unique_ptr<ChunkedStagingRegion>
+  create(const DeviceContextRef &ctx, size_t byteSize, size_t rowBytes,
+         unsigned threads, size_t chunkBytes, bool driverAlloc, bool mlockPages,
+         ChunkedStagingRegionError &error);
+
   /// Drains the device, then unregisters every chunk and unmaps, or frees
   /// every driver-allocated chunk.
   ~ChunkedStagingRegion();
@@ -104,7 +112,8 @@ struct ChunkedStagingRegion {
 private:
   ChunkedStagingRegion(const DeviceContextRef &ctx, size_t byteSize,
                        size_t rowBytes);
-  bool init(M::AsyncRT::CPUDevice &cpu, size_t byteSize, size_t rowBytes,
+  // A null `cpu` touches on threads `init` starts itself.
+  bool init(M::AsyncRT::CPUDevice *cpu, size_t byteSize, size_t rowBytes,
             unsigned threads, size_t chunkBytes, bool driverAlloc,
             bool mlockPages, ChunkedStagingRegionError &error);
 

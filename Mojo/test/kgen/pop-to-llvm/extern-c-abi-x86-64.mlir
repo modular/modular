@@ -67,8 +67,9 @@
 //
 // Group H — Attribute remapping
 //   H1  func_attrs_passthrough    funcAttrs = ["noinline"]    → passthrough on llvm.func
-//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  → attr on first register
+//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  -> no noundef on the struct
 //   H3  arg_attrs_sret            argAttrs with sret return   → attr shifted past sret ptr
+//   H4  res_attrs_struct          resAttrs on a struct result -> no noundef on the result
 //
 // Group I - Narrow integer extension (MOCO-5051)
 //   I1  arg_narrow_ints           ui8, si16, bool, si32 args  -> zeroext, signext, zeroext, none
@@ -76,16 +77,22 @@
 //   I2  arg_single_field_structs  {si8}, {ui16}, {bool} args  -> i8, i16, i8, unmarked
 //                                 {si8} result                -> i8, unmarked
 //
-// Group F — Vector type fields: SSE classification (regression guards)
+// Group F — Vector type fields: classified by vector size
 //   F1  arg_vec2xf32_struct       {vector<2xf32>}       correct: f64 (SSE)
 //   F2  arg_vec2xf32_and_f64      {vector<2xf32>,f64}   correct: SSEPair(f64,f64)
+//   F3  arg_vec4xf32_struct       {vector<4xf32>}       correct: vector<2xf64> (SSE+SSEUP)
+//   F4  arg_vec2xi32_struct       {vector<2xi32>}       correct: f64 (SSE)
+//   F5  arg_misaligned_vec        {f32,vector<2xf32>}   correct: ptr byval (vector crosses byte 8)
 //
-// Group N — Nested struct fields (LLVMStructType)
+// Group N — Nested struct and array fields
 //   N1  arg_nested_float_4        {struct<(f32)>}          correct: f32  (SSE)
 //   N2  arg_nested_float_8        {struct<(f32,f32)>}      correct: f64  (SSE)
 //   N3  arg_nested_float_and_f64  {struct<(f32,f32)>,f64}  correct: SSEPair(f64,f64)
 //   N4  arg_nested_int_8          {struct<(i32,i32)>}      correct: i64  (regression guard)
 //   N5  arg_nested_int_and_i64    {struct<(i32,i32)>,i64}  correct: IntegerPair(i64,i64)
+//   N6  arg_array_member          {[3 x f32]}              correct: SSEPair(f64,f32)
+//   N7  arg_empty_member          {f32,{},f32}             correct: f64  (SSE)
+//   N8  arg_zero_array_member     {f32,{[0 x f32]},f32}    correct: f64  (SSE)
 //
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
@@ -445,8 +452,8 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @variadic_scalars
 llvm.func @variadic_scalars(%fixed: i32, %extra: i32) {
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i32) -> ()
-  pop.external_call @c_g1(%fixed, %extra) attributes {numFixedArgs = 1 : index}
-    : (i32, i32) -> ()
+  pop.external_call @c_g1(%fixed, %extra)
+    : (i32, i32) -> () <numFixedArgs = 1 : index>
   llvm.return
 }
 // CHECK: llvm.func @c_g1(i32, ...)
@@ -466,8 +473,8 @@ llvm.func @variadic_large_struct(%fixed: i32,
                                   %s: !llvm.struct<(i64, i64, i64)>) {
   // CHECK: llvm.call @c_g2
   // CHECK-SAME: llvm.byval = !llvm.struct<(i64, i64, i64)>
-  pop.external_call @c_g2(%fixed, %s) attributes {numFixedArgs = 1 : index}
-    : (i32, !llvm.struct<(i64, i64, i64)>) -> ()
+  pop.external_call @c_g2(%fixed, %s)
+    : (i32, !llvm.struct<(i64, i64, i64)>) -> () <numFixedArgs = 1 : index>
   llvm.return
 }
 // The function declaration does NOT have byval — only the call does.
@@ -536,7 +543,7 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @func_attrs_passthrough
 llvm.func @func_attrs_passthrough(%arg0: i32) {
   // CHECK: llvm.call @c_h1
-  pop.external_call @c_h1(%arg0) attributes {funcAttrs = ["noinline"]} : (i32) -> ()
+  pop.external_call @c_h1(%arg0) : (i32) -> () <funcAttrs = ["noinline"]>
   llvm.return
 }
 // CHECK: llvm.func @c_h1
@@ -546,19 +553,21 @@ llvm.func @func_attrs_passthrough(%arg0: i32) {
 // -----
 
 // H2: argAttrs remapped through two-register coercion.
-// The POP call has one struct arg with {llvm.noundef}. After IntegerPair
-// coercion (12-byte struct → (i64, i32)), the argAttr is placed on the first
-// LLVM parameter (i64) and the second (i32) gets empty attrs.
+// The POP call has a struct arg and an i32 arg. Both have {llvm.noundef}.
+// IntegerPair coercion changes the 12-byte struct to (i64, i32). The struct
+// does not keep noundef, because its registers can contain bytes that are
+// not defined. The attributes of the i32 arg move to param 2.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_attrs_two_reg
-llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>) {
+llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>, %arg1: i32) {
   // CHECK: llvm.call @c_h2
-  pop.external_call @c_h2(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (!llvm.struct<(i32, i32, i32)>) -> ()
+  pop.external_call @c_h2(%arg0, %arg1)
+    : (!llvm.struct<(i32, i32, i32)>, i32) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}]>
   llvm.return
 }
-// POP arg 0 → LLVM params 0 (i64) and 1 (i32).  argAttr goes to param 0.
-// CHECK: llvm.func @c_h2(i64 {llvm.noundef}, i32)
+// POP arg 0 becomes LLVM params 0 (i64) and 1 (i32). POP arg 1 becomes
+// LLVM param 2.
+// CHECK: llvm.func @c_h2(i64, i32, i32 {llvm.noundef})
 }
 
 // -----
@@ -572,28 +581,48 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @arg_attrs_sret
 llvm.func @arg_attrs_sret(%arg0: i32) {
   // CHECK: llvm.call @c_h3
-  %r = pop.external_call @c_h3(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (i32) -> !llvm.struct<(i64, i64, i64)>
+  %r = pop.external_call @c_h3(%arg0)
+    : (i32) -> !llvm.struct<(i64, i64, i64)> <argAttrs = [{llvm.noundef}]>
   llvm.return
 }
 // sret ptr at param 0, original arg with user attr at param 1.
 // CHECK: llvm.func @c_h3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32 {llvm.noundef})
 }
 
+// -----
+
+// H4: resAttrs on a struct result.
+// Both POP calls have resAttrs {llvm.noundef}. The struct result is coerced
+// to i64, and bytes 5-7 of the struct are padding, so the declaration does
+// not keep noundef. The scalar result keeps it.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @res_attrs_struct
+llvm.func @res_attrs_struct() {
+  // CHECK: llvm.call @c_h4_struct
+  %s = pop.external_call @c_h4_struct()
+    : () -> !llvm.struct<(i32, i8)> <resAttrs = {llvm.noundef}>
+  // CHECK: llvm.call @c_h4_scalar
+  %i = pop.external_call @c_h4_scalar()
+    : () -> i32 <resAttrs = {llvm.noundef}>
+  llvm.return
+}
+// CHECK: llvm.func @c_h4_struct() -> i64
+// CHECK-NOT: noundef
+// CHECK: llvm.func @c_h4_scalar() -> (i32 {llvm.noundef})
+}
+
 //===----------------------------------------------------------------------===//
-// Group F: Vector type fields — SSE classification (regression guards)
+// Group F: Vector type fields
 //
-// In the MLIR assembly context, vector<N x f32> inside !llvm.struct<(...)> is
-// parsed as mlir::VectorType (MLIR built-in), which IS handled by the existing
-// dyn_cast<mlir::VectorType> check in isAllFloatStruct and classifyEightbyte.
-// These tests verify that vector fields remain correctly classified as SSE.
+// As in clang, a vector member is classified by its size: up to 32 bits is
+// INTEGER, 64 bits is SSE whatever the element type, and 128 bits fills one
+// SSE register (SSE, then SSEUP).
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// F1: {vector<2 x f32>} (8 bytes, all-float via VectorType) → SSE → f64.
-// The vector field is recognized by isAllFloatStruct (VectorType with float
-// elements); 8-byte all-float struct → f64 (SSE). Regression guard.
+// F1: {vector<2 x f32>} (8 bytes) → 64-bit vector → SSE → f64. Regression
+// guard.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_vec2xf32_struct
 llvm.func @arg_vec2xf32_struct(%arg0: !llvm.struct<(vector<2 x f32>)>) {
@@ -620,19 +649,64 @@ llvm.func @arg_vec2xf32_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
 // CHECK: llvm.func @c_f2(f64, f64)
 }
 
+// -----
+
+// F3: {vector<4 x f32>} (16 bytes) → SSE, then SSEUP → one SSE register,
+// passed and returned as <2 x double>, as clang does for such a struct.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec4xf32_struct
+llvm.func @arg_vec4xf32_struct(%arg0: !llvm.struct<(vector<4 x f32>)>) {
+  // CHECK: llvm.call @c_f3(%{{.*}}) : (vector<2xf64>) -> vector<2xf64>
+  %r = pop.external_call @c_f3(%arg0) : (!llvm.struct<(vector<4 x f32>)>) -> !llvm.struct<(vector<4 x f32>)>
+  llvm.return
+}
+// CHECK: llvm.func @c_f3(vector<2xf64>) -> vector<2xf64>
+}
+
+// -----
+
+// F4: {vector<2 x i32>} (8 bytes) → 64-bit vector → SSE → f64. As in clang,
+// a 64-bit vector is SSE whatever its element type.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec2xi32_struct
+llvm.func @arg_vec2xi32_struct(%arg0: !llvm.struct<(vector<2 x i32>)>) {
+  // CHECK: llvm.call @c_f4(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_f4(%arg0) : (!llvm.struct<(vector<2 x i32>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f4(f64)
+}
+
+// -----
+
+// F5: {f32, vector<2 x f32>} (12 bytes) → the vector is aligned only to its
+// element, so it sits at bytes 4-11 and crosses byte 8. As in clang, an
+// unaligned member sends the struct to memory → ptr byval. (Mojo normally
+// inserts explicit padding before such a field; this guards the case where
+// it does not.)
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_misaligned_vec
+llvm.func @arg_misaligned_vec(%arg0: !llvm.struct<(f32, vector<2 x f32>)>) {
+  // CHECK: llvm.call @c_f5(%{{.*}}) : (!llvm.ptr {llvm.byval = !llvm.struct<(f32, vector<2xf32>)>}) -> ()
+  pop.external_call @c_f5(%arg0) : (!llvm.struct<(f32, vector<2 x f32>)>) -> ()
+  llvm.return
+}
+}
+
 //===----------------------------------------------------------------------===//
-// Group N: Nested struct fields (LLVMStructType)
+// Group N: Nested struct and array fields
 //
-// isAllFloatStruct and classifyEightbyte now recurse into nested LLVMStructType
-// fields, so float nested structs receive correct SSE classification.
+// As in clang's X86_64ABIInfo::classify, each member of a struct without
+// vector members is classified at its offset, looking inside nested structs
+// and arrays, and the classes are merged per eightbyte.
 // N1-N3: nested float structs → SSE. N4-N5: integer regression guards.
+// N6-N8: array, empty struct and zero-length array members.
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// N1: {struct<(f32)>} (4 bytes) — CORRECT: isAllFloatStruct now recurses into
-// nested LLVMStructType fields. Inner struct<(f32)> is all-float → outer is
-// all-float → 4-byte SSE struct → f32.
+// N1: {struct<(f32)>} (4 bytes) — CORRECT: the f32 inside the nested struct
+// is SSE → 4-byte SSE struct → f32.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_4
 llvm.func @arg_nested_float_4(%arg0: !llvm.struct<(!llvm.struct<(f32)>)>) {
@@ -645,8 +719,8 @@ llvm.func @arg_nested_float_4(%arg0: !llvm.struct<(!llvm.struct<(f32)>)>) {
 
 // -----
 
-// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: isAllFloatStruct recurses into
-// nested struct<(f32,f32)> → all-float → 8-byte SSE struct → f64.
+// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: both f32 inside the nested
+// struct are SSE → 8-byte SSE struct → f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_8
 llvm.func @arg_nested_float_8(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>)>) {
@@ -659,9 +733,8 @@ llvm.func @arg_nested_float_8(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>)>) {
 
 // -----
 
-// N3: {struct<(f32,f32)>, f64} (16 bytes) — CORRECT: classifyEightbyte now
-// recurses into nested LLVMStructType fields.
-// Eightbyte 0 (bytes 0-7): struct<(f32,f32)> → recursive classify → SSE → f64.
+// N3: {struct<(f32,f32)>, f64} (16 bytes) — CORRECT.
+// Eightbyte 0 (bytes 0-7): the two f32 of struct<(f32,f32)> → SSE → f64.
 // Eightbyte 1 (bytes 8-15): f64 → SSE → f64.
 // Both SSE → SSEPair (f64, f64).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
@@ -676,10 +749,8 @@ llvm.func @arg_nested_float_and_f64(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)
 
 // -----
 
-// N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer fields.
-// isAllFloatStruct correctly returns false (not all float). classifyEightbyte:
-// the LLVMStructType field defaults to INTEGER, which is correct here.
-// Regression guard: integer nested structs must remain i64.
+// N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer
+// fields → INTEGER. Regression guard: integer nested structs must remain i64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_int_8
 llvm.func @arg_nested_int_8(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>)>) {
@@ -703,6 +774,50 @@ llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>,
   llvm.return
 }
 // CHECK: llvm.func @c_n5(i64, i64)
+}
+
+// -----
+
+// N6: {[3 x f32]} (12 bytes) — the array is classified element by element:
+// eightbyte 0 holds two f32 → SSE, eightbyte 1 holds one f32 → SSE.
+// SSEPair (f64, f32), the same registers as clang's (<2 x float>, float).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_array_member
+llvm.func @arg_array_member(%arg0: !llvm.struct<(array<3 x f32>)>) {
+  // CHECK: llvm.call @c_n6(%{{.*}}, %{{.*}}) : (f64, f32) -> ()
+  pop.external_call @c_n6(%arg0) : (!llvm.struct<(array<3 x f32>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n6(f64, f32)
+}
+
+// -----
+
+// N7: {f32, {}, f32} (8 bytes) — as in clang, the empty struct adds no class,
+// so the eightbyte is SSE → f64, the same register as clang's <2 x float>.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_empty_member
+llvm.func @arg_empty_member(%arg0: !llvm.struct<(f32, struct<()>, f32)>) {
+  // CHECK: llvm.call @c_n7(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n7(%arg0) : (!llvm.struct<(f32, struct<()>, f32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n7(f64)
+}
+
+// -----
+
+// N8: {f32, {[0 x f32]}, f32} (8 bytes) — as in clang, the zero-length array
+// adds no class, so the eightbyte is SSE → f64. The middle member is how
+// InlineArray[Float32, 0] lowers. (On arm64 the same struct is not an HFA.)
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_zero_array_member
+llvm.func @arg_zero_array_member(%arg0: !llvm.struct<(f32, struct<(array<0 x f32>)>, f32)>) {
+  // CHECK: llvm.call @c_n8(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n8(%arg0) : (!llvm.struct<(f32, struct<(array<0 x f32>)>, f32)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n8(f64)
 }
 
 //===----------------------------------------------------------------------===//

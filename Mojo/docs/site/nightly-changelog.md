@@ -73,6 +73,29 @@ This version is still a work in progress.
   Unpacking the same pack twice into a `mut` pack argument, such as
   `update(*args, *args)`, is an aliasing error.
 
+- A conditional type `A if c else B` now refines to the selected arm inside a
+  `comptime if c:` branch, its `else` branch, and after a `comptime assert c`.
+  You can call the arm's methods and read its fields without a `rebind`:
+
+  ```mojo
+  def describe[present: Bool](value: Int if present else NoneType):
+      comptime if present:
+          print("value:", value + 1)  # `value` is an `Int` here
+      else:
+          print("empty")
+  ```
+
+  A value of the selected arm also converts to the conditional type, so you can
+  return or pass it without a `rebind`:
+
+  ```mojo
+  def make[present: Bool]() -> Int if present else NoneType:
+      comptime if present:
+          return 42  # an `Int` converts to the return type
+      else:
+          return None
+  ```
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
@@ -430,6 +453,14 @@ This version is still a work in progress.
     exported from the prelude.
 
 ## Fixed
+
+- `std.ffi.c_pid_t` is now `c_int` instead of `Int`, matching the 32-bit C
+  `pid_t` on Linux and macOS. As an `Int`, a `-1` returned by a function such
+  as `waitpid()` read back as a large positive number, so checks for `-1` or a
+  negative result never fired.
+
+- On Apple GPUs, building a `SIMD` from device-buffer elements in a kernel, as
+  in `SIMD[DType.float32, 2](src[i], src[i])`, no longer reads zeros.
 
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not
   a multiple of the output width, which LLVM rejects. A wide slice at such an

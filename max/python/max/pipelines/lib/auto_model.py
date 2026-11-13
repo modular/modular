@@ -40,6 +40,7 @@ from PIL import Image
 from transformers import AutoTokenizer as _HFAutoTokenizer
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
+from . import memory_ledger
 from .config import PipelineArgs, PipelineConfig
 from .generate import (
     GenerateIterator,
@@ -413,6 +414,7 @@ class AutoModel:
                 )
             start = time.monotonic()
             pipeline.warmup_graph_capture()
+            memory_ledger.check_capture(pipeline)
             _logger.info(
                 "Device graph capture warmup completed in %.2fs "
                 "(max_batch_size=%d).",

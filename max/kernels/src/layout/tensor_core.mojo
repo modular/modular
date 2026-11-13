@@ -205,15 +205,6 @@ struct TensorCore[
         and (Self.shape == shape_16x16x32 or Self.shape == shape_32x32x64)
     )
     """Whether float8 is supported for this tensor core configuration."""
-    comptime supported_fp64 = Self.in_type == DType.float64 and Self.out_type == DType.float64 and (
-        (
-            Self.shape == shape_8x8x4
-            or Self.shape == shape_16x8x4
-            or Self.shape == shape_16x8x8
-            or Self.shape == shape_16x8x16
-        )
-    ) if is_nvidia_gpu() else False
-    """Whether float64 is supported for this tensor core configuration."""
 
     # Operand register types.
     comptime a_reg_type = SIMD[

@@ -70,6 +70,50 @@ using namespace MOGG;
 static llvm::StringRef primitiveMojoName(PrimitiveDeclOp decl) {
   return decl.getSymNameAttr().strref();
 }
+
+// A kernel entry point and the parameters inferred for one call to it. A call
+// that is a statement emits through `MojoBuilder::call`; a call whose result
+// the caller uses builds the expression with `operator()`.
+struct KernelCallee {
+  // `Kernel[...].fn`, with the kernel's struct parameters applied.
+  MojoValue function;
+  // The entry point's own parameters.
+  SmallVector<MojoValue> parameters;
+
+  // Returns `Kernel[...].fn[...](operands...)`.
+  MojoValue operator()(ArrayRef<MojoValue> operands) const {
+    return function(parameters, operands);
+  }
+};
+
+// Resolves `op`'s call to the `kind` entry point of `adaptor`'s kernel,
+// inferring the parameters from `op` and `kernelParams`. Every call to a
+// kernel's `execute`, `build_graph`, `execute_configuration` or
+// `execute_device` resolves here, so they infer parameters the same way. Two
+// calls don't: an elementwise kernel's (`emitElementwiseCallExpr`) infers its
+// dtype from its output and calls a free function, and a shape function's
+// (`CallShapeOp::emitMojo`) infers against a `ShapeFunctionDeclOp`, which isn't
+// a kernel.
+static FailureOr<KernelCallee>
+resolveKernelCallee(Operation *op, EmitMojoState &state,
+                    KernelDeclAdaptor &adaptor, KernelFunctionKind kind,
+                    DictionaryAttr kernelParams) {
+  const KernelDeclFunctionAdaptor &fn = *adaptor.getFunction(kind);
+  auto params = inferKernelParameters(adaptor, kind, [&](StringRef paramName) {
+    return state.inferDefaultKernelParamValue(op, paramName, kernelParams);
+  });
+  if (params.isError()) {
+    op->emitError() << "Failed to infer all the parameters of '"
+                    << fn.fullyResolvedName.strref()
+                    << "': " << params.takeError();
+    return failure();
+  }
+  auto [kernel, method] =
+      EmitMojoState::splitFunctionName(fn.fullyResolvedName.strref());
+  return KernelCallee{kernel[params->structParameters].get(method),
+                      std::move(params->functionParameters)};
+}
+
 namespace {
 
 /// Check if input value is a mutable tensor
@@ -169,29 +213,15 @@ LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
   // The launch argument is the device-graph builder (not a context).
   kernelOperands.push_back(state.getMojoValueFor(getGraphBuilder()));
 
-  // Infer the kernel parameters against the `build_graph` function. The
-  // fusion flag was copied from the recorded dispatch, so they answer the
-  // fusion parameters the way `CallOpaqueOp::emitMojo` does.
-  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
-    if (getHasEpilogueFusion() &&
-        paramName == MOGG::kMoggHasEpilogueFusionParameterName)
-      return MojoValue(true);
-    return state.inferDefaultKernelParamValue(*this, paramName);
-  };
-  auto maybeParams = inferKernelParameters(
-      buildGraphAdaptor, KernelFunctionKind::BuildGraph, inferParam);
-  if (maybeParams.isError())
-    return emitError() << "Failed to infer all the kernel parameters: "
-                       << maybeParams.takeError();
-
-  auto [prefixSymbolName, buildGraphFunc] = EmitMojoState::splitFunctionName(
-      buildGraphFnAdaptor.fullyResolvedName.strref());
-  MojoValue structType = prefixSymbolName[maybeParams->structParameters];
-  MojoValue fullBuildGraphFunc = structType.get(buildGraphFunc);
+  FailureOr<KernelCallee> buildGraph =
+      resolveKernelCallee(*this, state, buildGraphAdaptor,
+                          KernelFunctionKind::BuildGraph, getKernelParamAttr());
+  if (failed(buildGraph))
+    return failure();
 
   // `build_graph` records the dispatch into the builder; ordering comes from
   // the enclosing `mgp.device_graph.dependencies` op, so this is a void call.
-  state.builder.call(fullBuildGraphFunc, maybeParams->functionParameters,
+  state.builder.call(buildGraph->function, buildGraph->parameters,
                      kernelOperands);
   state.genAllKeepAliveStatements();
   return success();
@@ -357,7 +387,6 @@ LogicalResult FuncOp::emitMojoMGPABI(EmitMojoState &state) {
       {MOGG::NamedMojoDef("arg", vPointer[{vOpaquePointer, vMutAnyOrigin}])},
       std::nullopt, /*exported=*/true, /*raises=*/false,
       /*isAlwaysInline=*/false, [&](const MOGG::FunctionBody &functionBody) {
-        state.currentFunctionBody = functionBody;
         state.builder.comment(
             "This is the entry point of the kernel. The argument is a "
             "pointer to a list of inputs and outputs.");
@@ -463,8 +492,6 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
       /*exported=*/false,
       /*raises=*/isThrows(), /*isAlwaysInline=*/false,
       [&](const MOGG::FunctionBody &functionBody) {
-        state.currentFunctionBody = functionBody;
-
         for (auto &&[mlirArg, mojoArg] :
              llvm::zip(getBody().getArguments(), functionBody.arguments))
           state.setMojoValueFor(mlirArg, mojoArg);
@@ -770,11 +797,10 @@ enum class DeviceArgKind {
 
 // Holds state for emitting a call to a device-side entry point.
 struct DeclarativeCall {
-  using Callee = std::function<MojoValue(ArrayRef<MojoValue>)>;
   // def execute_configuration(...)
-  Callee executeConfiguration;
+  KernelCallee executeConfiguration;
   // def execute_device(...)
-  Callee executeDevice;
+  KernelCallee executeDevice;
   // The IR value of each of `operands`. `DeviceKernelArgs::add` keys on it, so
   // an operand shared by several calls in a graph blob becomes one argument.
   SmallVector<Value> values;
@@ -857,12 +883,11 @@ struct DeviceKernelArgs {
 //
 //   Kernel[...].execute_configuration[...](operand0, operand1, ...)
 //   Kernel[...].execute_device[...](operand0, operand1, ...)
-static FailureOr<DeclarativeCall> prepareDeclarativeCall(
-    Operation *op, ValueRange outputs, ValueRange inputs,
-    KernelDeclAdaptor &adaptor, ArrayRef<MojoValue> operands,
-    const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
+static FailureOr<DeclarativeCall>
+prepareDeclarativeCall(Operation *op, EmitMojoState &state, ValueRange outputs,
+                       ValueRange inputs, KernelDeclAdaptor &adaptor,
+                       DictionaryAttr kernelParams) {
   DeclarativeCall call;
-  call.operands.assign(operands.begin(), operands.end());
   SmallVector<Value> operandValues(outputs.begin(), outputs.end());
   llvm::append_range(operandValues, inputs);
   for (Value value : operandValues) {
@@ -898,35 +923,15 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
     }
     call.kinds.push_back(DeviceArgKind::Tile);
   }
+  call.operands = llvm::map_to_vector(
+      operandValues, [&](Value value) { return state.getMojoValueFor(value); });
   call.values = std::move(operandValues);
 
-  // Calls `Kernel[...].method[...]` with the given operands.
-  auto calleeFor =
-      [&](const KernelDeclFunctionAdaptor &fn,
-          KernelFunctionKind kind) -> FailureOr<DeclarativeCall::Callee> {
-    auto params = inferKernelParameters(
-        adaptor, kind,
-        std::function<ErrorOr<MojoValue>(StringRef)>(inferParam));
-    if (params.isError()) {
-      op->emitError() << "Failed to infer all the parameters of '"
-                      << fn.fullyResolvedName.strref()
-                      << "': " << params.takeError();
-      return failure();
-    }
-    auto [kernel, method] =
-        EmitMojoState::splitFunctionName(fn.fullyResolvedName.strref());
-    MojoValue callee = kernel[params->structParameters].get(method);
-    return DeclarativeCall::Callee(
-        [callee, functionParameters =
-                     params->functionParameters](ArrayRef<MojoValue> args) {
-          return callee(functionParameters, args);
-        });
-  };
-  FailureOr<DeclarativeCall::Callee> executeConfiguration =
-      calleeFor(*adaptor.executeConfigurationFunction,
-                KernelFunctionKind::ExecuteConfiguration);
-  FailureOr<DeclarativeCall::Callee> executeDevice = calleeFor(
-      *adaptor.executeDeviceFunction, KernelFunctionKind::ExecuteDevice);
+  FailureOr<KernelCallee> executeConfiguration = resolveKernelCallee(
+      op, state, adaptor, KernelFunctionKind::ExecuteConfiguration,
+      kernelParams);
+  FailureOr<KernelCallee> executeDevice = resolveKernelCallee(
+      op, state, adaptor, KernelFunctionKind::ExecuteDevice, kernelParams);
   if (failed(executeConfiguration) || failed(executeDevice))
     return failure();
   call.executeConfiguration = std::move(*executeConfiguration);
@@ -970,7 +975,7 @@ static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
 }
 
 // Emits the launch of a declarative kernel. `execute_configuration` returns a
-// `GridBlockLaunchConfig`, which provides grid and block dims for the launch:
+// `GridBlockExecutionConfig`, which provides the launch's grid and block dims:
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand
@@ -978,14 +983,14 @@ static void emitLaunch(EmitMojoState &state, const MojoValue &ctx,
 //       Kernel[...].execute_device[...](T0(a0), a1, ...)
 //   mogg_launch_declarative[execute_device_N](ctx, config, operand0,
 //                                             operand1, ...)
-static LogicalResult emitDeclarativeLaunch(
-    CallOpaqueOp op, EmitMojoState &state, KernelDeclAdaptor &adaptor,
-    ArrayRef<MojoValue> operands,
-    const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
+static LogicalResult emitDeclarativeLaunch(CallOpaqueOp op,
+                                           EmitMojoState &state,
+                                           KernelDeclAdaptor &adaptor) {
   if (op.getDeviceContexts().size() != 1)
     return op.emitOpError("a declarative launch takes one device context");
-  FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
-      op, op.getOutputs(), op.getInputs(), adaptor, operands, inferParam);
+  FailureOr<DeclarativeCall> call =
+      prepareDeclarativeCall(op, state, op.getOutputs(), op.getInputs(),
+                             adaptor, op.getKernelParamAttr());
   if (failed(call))
     return failure();
 
@@ -997,7 +1002,9 @@ static LogicalResult emitDeclarativeLaunch(
   SmallVector<unsigned> indices = args.add(builder, *call);
   MojoValue kernel =
       emitDeviceKernel(builder, args, [&](const FunctionBody &body) {
-        builder.verbatim(call->executeDevice(args.rebuild(body, indices)));
+        builder.call(call->executeDevice.function,
+                     call->executeDevice.parameters,
+                     args.rebuild(body, indices));
       });
   emitLaunch(state, ctx, kernel, args, config);
   return success();
@@ -1010,38 +1017,32 @@ static LogicalResult emitDeclarativeLaunch(
 // or, for a kernel that returns an `!mo.opaque`, binds the result:
 //
 //   var result = Kernel[...].execute[...](input0, ctx)
-static LogicalResult emitExecuteCall(
-    CallOpaqueOp op, EmitMojoState &state, KernelDeclAdaptor &adaptor,
-    SmallVector<MojoValue> operands,
-    const std::function<ErrorOr<MojoValue>(StringRef)> &inferParam) {
-  const KernelDeclFunctionAdaptor &execFnAdaptor = *adaptor.executeFunction;
-
+static LogicalResult emitExecuteCall(CallOpaqueOp op, EmitMojoState &state,
+                                     KernelDeclAdaptor &adaptor) {
+  // DPS: outputs, then inputs, then `$device_contexts` (wired by `MAPToMOGG`)
+  // to match the execute signature's trailing `ctx`. For a distributed kernel
+  // `ConformCallOperands` packed it into one tuple that emits as a
+  // `DeviceContextArray`.
+  SmallVector<MojoValue> operands;
+  for (Value out : op.getOutputs())
+    operands.push_back(state.getMojoValueFor(out));
+  for (Value in : op.getInputs())
+    operands.push_back(state.getMojoValueFor(in));
   for (Value ctx : op.getDeviceContexts())
     operands.push_back(state.getMojoValueFor(ctx));
 
-  auto maybeParams = inferKernelParameters(
-      adaptor, KernelFunctionKind::Execute,
-      std::function<ErrorOr<MojoValue>(StringRef)>(inferParam));
-  if (maybeParams.isError())
-    return op.emitError() << "Failed to infer all the kernel parameters: "
-                          << maybeParams.takeError();
-
-  auto [prefixSymbolName, executeFunc] = EmitMojoState::splitFunctionName(
-      execFnAdaptor.fullyResolvedName.strref());
-  MojoValue structType = prefixSymbolName[maybeParams->structParameters];
-  MojoValue fullExecuteFunc = structType.get(executeFunc);
+  FailureOr<KernelCallee> execute = resolveKernelCallee(
+      op, state, adaptor, KernelFunctionKind::Execute, op.getKernelParamAttr());
+  if (failed(execute))
+    return failure();
 
   // A kernel returning an `!mo.opaque` returns it by value, so bind the call's
   // result to a var the enclosing `mogg.output` can forward, instead of
   // emitting the call as a bare statement.
-  if (Value opaqueRes = op.getOpaqueResult()) {
-    MojoValue returned = state.builder.var(
-        fullExecuteFunc(maybeParams->functionParameters, operands));
-    state.setMojoValueFor(opaqueRes, returned);
-  } else {
-    state.builder.call(fullExecuteFunc, maybeParams->functionParameters,
-                       operands);
-  }
+  if (Value opaqueRes = op.getOpaqueResult())
+    state.setMojoValueFor(opaqueRes, state.builder.var((*execute)(operands)));
+  else
+    state.builder.call(execute->function, execute->parameters, operands);
   state.genAllKeepAliveStatements();
   return success();
 }
@@ -1067,56 +1068,24 @@ struct M::MOGG::GraphBlobEmission {
 };
 
 LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
-  KernelDeclOp execKernelDecl =
-      state.registry.lookupKernelBySymName(getCallee());
-  KernelDeclAdaptor execAdaptor(execKernelDecl);
-
-  // DPS: outputs, then inputs, then `$device_contexts` (wired by `MAPToMOGG`)
-  // to match the execute signature's trailing `ctx`. For a distributed kernel
-  // `ConformCallOperands` packed it into one tuple that emits as a
-  // `DeviceContextArray`.
-  SmallVector<MojoValue> kernelOperands;
-  for (Value out : getOutputs())
-    kernelOperands.push_back(state.getMojoValueFor(out));
-  for (Value in : getInputs())
-    kernelOperands.push_back(state.getMojoValueFor(in));
-
-  // There is no `mogg.bind` for `getHasEpilogueFusionValue` to detect, so
-  // force `has_epilogue_fusion` True to match the execute-call wiring.
-  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
-    if (getHasEpilogueFusion() &&
-        paramName == MOGG::kMoggHasEpilogueFusionParameterName)
-      return MojoValue(true);
-    return state.inferDefaultKernelParamValue(*this, paramName,
-                                              getKernelParamAttr());
-  };
+  KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
   // A call lowers one of two ways. A declarative kernel gets the launch the
   // graph compiler writes; any other kernel is a call to its `execute`, which
-  // launches it itself. What every call needs belongs above, so no lowering can
-  // miss it; each lowering owns the rest, including the keep-alives that must
-  // follow its launch. In a graph blob, `mogg.call.execute_device` calls a
-  // declarative kernel instead.
-  if (execAdaptor.isDeclarative())
-    return emitDeclarativeLaunch(*this, state, execAdaptor, kernelOperands,
-                                 inferParam);
-  return emitExecuteCall(*this, state, execAdaptor, kernelOperands, inferParam);
+  // launches it itself. Both resolve their callees through
+  // `resolveKernelCallee`, so they infer parameters the same way, and each owns
+  // the keep-alives that must follow its launch. In a graph blob,
+  // `mogg.call.execute_device` calls a declarative kernel instead.
+  if (adaptor.isDeclarative())
+    return emitDeclarativeLaunch(*this, state, adaptor);
+  return emitExecuteCall(*this, state, adaptor);
 }
 
 // Emits the call's `execute_configuration` and adds the call to the enclosing
 // blob, which launches it.
 LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
   KernelDeclAdaptor adaptor(state.registry.lookupKernelBySymName(getCallee()));
-  SmallVector<MojoValue> operands;
-  for (Value out : getOutputs())
-    operands.push_back(state.getMojoValueFor(out));
-  for (Value in : getInputs())
-    operands.push_back(state.getMojoValueFor(in));
-  auto inferParam = [&](StringRef paramName) -> ErrorOr<MojoValue> {
-    return state.inferDefaultKernelParamValue(*this, paramName,
-                                              getKernelParamAttr());
-  };
   FailureOr<DeclarativeCall> call = prepareDeclarativeCall(
-      *this, getOutputs(), getInputs(), adaptor, operands, inferParam);
+      *this, state, getOutputs(), getInputs(), adaptor, getKernelParamAttr());
   if (failed(call))
     return failure();
 
@@ -1193,9 +1162,10 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
             builder.call(graphBlob.get("barrier"));
           MojoValue isActive = graphBlob.get("is_thread_active")(
               {}, {body.arguments[active[i]]});
+          const KernelCallee &executeDevice = member.call.executeDevice;
           builder.if_(isActive, [&] {
-            builder.verbatim(member.call.executeDevice(
-                blob.args.rebuild(body, member.indices)));
+            builder.call(executeDevice.function, executeDevice.parameters,
+                         blob.args.rebuild(body, member.indices));
           });
         }
       });
@@ -1888,6 +1858,38 @@ static LogicalResult lowerPhaseBody(EmitMojoState &state,
   return success();
 }
 
+// Appends a launch's width limit to its arguments: a static one as an `Idx`,
+// a run-time one as the largest power of two dividing its dims (widths are
+// powers of two, so that is all the launch needs, not their GCD).
+static void appendMaxSimdWidthArg(SmallVectorImpl<MojoValue> &arguments,
+                                  std::optional<int64_t> maxSimdWidth,
+                                  Value dynamicMaxSimdWidth,
+                                  EmitMojoState &state) {
+  if (maxSimdWidth)
+    arguments.push_back(
+        MojoValue(kArgMaxSimdWidth).equal(MojoValue(kAliasIdx)[*maxSimdWidth]));
+  if (!dynamicMaxSimdWidth)
+    return;
+  MojoValue dims = MojoValue(kFnCoordToIndexList)(
+      {}, {state.getMojoValueFor(dynamicMaxSimdWidth)});
+  MojoValue divisor =
+      state.builder.var(MojoValue(kFnPow2DivisorOfDims)({}, {dims}));
+  MojoValue scalarInt =
+      MojoValue(kStructScalar)[MojoValue(kStructDType).get(kEnumDTypeInt)];
+  arguments.push_back(
+      MojoValue(kArgMaxSimdWidth).equal(scalarInt({}, {divisor})));
+}
+
+// The launch's arguments; a width limit is passed as on `_foreach`.
+static SmallVector<MojoValue>
+rowwiseLaunchArgs(CallRowwiseOp op, EmitMojoState &state, MojoValue bodyFn,
+                  MojoValue shape, MojoValue context) {
+  SmallVector<MojoValue> arguments = {bodyFn, shape, context};
+  appendMaxSimdWidthArg(arguments, op.getMaxSimdWidth(),
+                        op.getDynamicMaxSimdWidth(), state);
+  return arguments;
+}
+
 // Prints the kernel as a Row API body and launches it. The body and its
 // closures are always inlined, so the row loop makes no call per row:
 //
@@ -1913,7 +1915,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
   MojoValue accum = state.mlirDTypeToMojoType(*accumOr);
 
   MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getContext());
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
   FailureOr<SmallVector<FusedCaptureInfo>> captureInfosOr =
       collectFusedCaptureInfos(state, *this, getCapturing());
   if (failed(captureInfosOr))
@@ -1992,7 +1994,7 @@ LogicalResult CallRowwiseOp::emitMojo(EmitMojoState &state) {
        MojoValue("computationally_expensive")
            .equal(MojoValue(getComputationallyExpensive())),
        MojoValue("dtype_size").equal(MojoValue(*getDtypeSize()))},
-      {bodyFn, shape, context});
+      rowwiseLaunchArgs(*this, state, bodyFn, shape, context));
   return success();
 }
 
@@ -2617,8 +2619,6 @@ static MojoValue instantiateTileFusionStruct(EmitMojoState &state,
 /// `_FusedOutputTileTensor`) onto a slice over `$outputPtr`. A pass-through
 /// body binds the "no fusion" sentinel, so the kernel stores by itself.
 LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
-  // Shared with the SIMD store fusions.
-  state.emitOutputStoreFusionDefsOnce();
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
   if (dtypeOr.isError())
     return emitOpError("failed to convert epilogue element type to Mojo");
@@ -3076,7 +3076,7 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
   // `state.currentLambdaInfo` (set via `LambdaInfosGuard` below), since the
   // epilogue `__call__` has a different list.
   MojoValue shape = state.getMojoValueFor(getShape());
-  MojoValue context = state.getMojoValueFor(getContext());
+  MojoValue context = state.getMojoValueFor(getDeviceContext());
   ValueRange capturing = getCapturing();
 
   // Decompose each capture into the (ptr, layout) the closure captures plus its
@@ -3131,9 +3131,16 @@ LogicalResult CallForeachOp::emitMojo(EmitMojoState &state) {
   if (errOccurred)
     return failure();
 
-  state.builder.call(MojoValue(getCallee()),
-                     {MojoValue(kParameterSimdWidth).equal(simdWidth)},
-                     {shape, lambdaVal, context});
+  // `_foreach` picks a width that divides the limit: at compile time when it
+  // is an `Idx`, at launch when it is known only at run time. Widths are
+  // powers of two, so a run-time limit only needs the largest power of two
+  // dividing its dims, not their GCD.
+  SmallVector<MojoValue> parameters = {
+      MojoValue(kParameterPreferredSimdWidth).equal(simdWidth)};
+  SmallVector<MojoValue> arguments = {shape, lambdaVal, context};
+  appendMaxSimdWidthArg(arguments, getMaxSimdWidth(), getDynamicMaxSimdWidth(),
+                        state);
+  state.builder.call(MojoValue(getCallee()), parameters, arguments);
   return success();
 }
 

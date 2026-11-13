@@ -133,6 +133,7 @@ from nn.softmax import (
     _exp_concrete,
     _online_softmax_iter_for_mma_output,
 )
+from .amd_structured.config import mla_decode_dma_warp
 from .amd_structured.mla_decode import Attention
 from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
@@ -308,6 +309,11 @@ trait MLAKernels:
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the vendor's kernels.
 
@@ -438,6 +444,9 @@ trait MLAKernels:
             split_len_bound: With `lse_out`, an upper bound on the per-token
                 lengths that sizes split-K in place of `indices_stride` (0 keeps
                 the stride).
+            row_invariant_verify: Whether this launch is the row-invariant pin's
+                own verify, which the SM100 dispatcher sizes at the pin's count
+                instead of from the live cache; the other targets ignore it.
         """
         ...
 
@@ -602,6 +611,11 @@ struct AMDMLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the AMD kernels."""
         comptime num_heads = config.num_heads
@@ -767,8 +781,14 @@ struct AMDMLA(MLAKernels):
                 num_heads <= 16 or depth % 128 == 0
             )
             comptime BK = 128 if amd_fp8_16x16x128 else (64 if amd_fp8 else 32)
-            # num warps in M and N, multiplied by warp size.
-            comptime num_threads = (BM // WM) * (BN // WN) * warp_size
+            # num warps in M and N (plus the fold's DMA producer warp),
+            # multiplied by warp size.
+            comptime dma_warp = mla_decode_dma_warp[
+                q.dtype, k_t, mask_t, BM, BN, WM, WN, depth, q_seq_len
+            ]()
+            comptime num_threads = (
+                (BM // WM) * (BN // WN) + Int(dma_warp)
+            ) * warp_size
 
             comptime accum_type = get_accum_type[q.dtype]()
             comptime num_pipeline_stages = 6
@@ -1352,6 +1372,11 @@ struct SM100MLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decoding request to the SM100 kernels."""
         comptime num_heads = config.num_heads
@@ -1460,6 +1485,7 @@ struct SM100MLA(MLAKernels):
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -1532,6 +1558,7 @@ struct SM100MLA(MLAKernels):
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
             _ = local_args^
 
@@ -1692,6 +1719,11 @@ struct LegacyNVMLA(MLAKernels):
         # with it; see `mla_decode_sm100_dispatch`.
         lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
         split_len_bound: Int = 0,
+        # Whether this launch belongs to the row-invariant pin's verify: the
+        # capture key takes its count from the flag, while the SM100 launch is
+        # overridden by the pin. Other targets ignore it. See
+        # `_mla_decode_split`.
+        row_invariant_verify: Bool = False,
     ) raises:
         """Dispatches an MLA decode to the pre-Blackwell NVIDIA kernels."""
         comptime num_heads = config.num_heads
@@ -2171,6 +2203,9 @@ def flare_mla_decoding[
     # with it; see `mla_decode_sm100_dispatch`.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # Whether this launch is the row-invariant pin's own verify; forwarded to
+    # the SM100 dispatcher and ignored elsewhere.
+    row_invariant_verify: Bool = False,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -2306,6 +2341,9 @@ def flare_mla_decoding[
         split_len_bound: With `lse_out`, an upper bound on the per-token
             lengths that sizes split-K in place of `indices_stride` (0 keeps
             the stride).
+        row_invariant_verify: Whether this launch is the row-invariant pin's
+            own verify, which the SM100 dispatcher sizes at the pin's count
+            instead of from the live cache; other targets ignore it.
     """
     comptime assert (
         ragged or rank == 4
@@ -2407,6 +2445,7 @@ def flare_mla_decoding[
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -2454,6 +2493,7 @@ def flare_mla_decoding[
                 selection_lag=selection_lag,
                 lse_out=lse_out,
                 split_len_bound=split_len_bound,
+                row_invariant_verify=row_invariant_verify,
             )
 
 
@@ -3078,6 +3118,10 @@ def mla_decoding_amd[
             num_keys,
             0,
         )
+        comptime AttentionT = type_of(attention)
+        comptime assert num_threads == (
+            AttentionT.num_threads + Int(AttentionT.mla_dma_warp) * WARP_SIZE
+        ), "num_threads must add one warp exactly when mla_dma_warp is set"
         attention.mla_decode(
             exp_sum_batch_ptr,
             qk_max_batch_ptr,

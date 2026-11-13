@@ -645,9 +645,10 @@ def _set_up_macos_socket(
             fcntl(fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC),
             "fcntl",
         )
-        # TODO: Maybe set `macos.SO_NOSIGPIPE` socket option, we should already
-        # likely set MSG_NOSIGNAL in each send/recv call so it may not be
-        # necessary, but also it doesn't hurt either.
+        # TODO(https://github.com/modular/modular/issues/7475): Maybe set
+        # `macos.SO_NOSIGPIPE` socket option, we should already likely set
+        # MSG_NOSIGNAL in each send/recv call so it may not be necessary, but
+        # also it doesn't hurt either.
     except e:
         # ignore an error returned from close, and re-raise the op above
         # that failed.

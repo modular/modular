@@ -622,7 +622,7 @@ kgen.generator @pop_load_alignment_generator<alignment>(%ptr: !kgen.pointer<scal
 }
 
 // CHECK-LABEL: @pop_offset
-kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: index) {
+kgen.generator @pop_offset<type: dtype>(%p: !kgen.pointer<scalar<f32>>, %idx: !kgen.scalar<index>) {
   // pop.offset %{{.*}}[{{.*}}] : !kgen.pointer<scalar<f32>>
   %0 = pop.offset %p[%idx] : !kgen.pointer<scalar<f32>>
   hlcf.return
@@ -660,7 +660,7 @@ kgen.generator @pop_generic_load_store<ty: type, dt: dtype, size>(
 kgen.generator @pop_generic_offset<ty: type>(
     %p0: !kgen.pointer<ty>,
     %p1: !kgen.pointer<simd<4, f32>>,
-    %i: index) {
+    %i: !kgen.scalar<index>) {
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<ty>
   %0 = pop.offset %p0[%i] : !kgen.pointer<ty>
   // CHECK: pop.offset %{{.*}} : !kgen.pointer<simd<4, f32>>
@@ -703,12 +703,11 @@ kgen.generator @external_call<ty: type, dt: dtype>(%a: !kgen.param<ty>, %b: !kge
   // CHECK: pop.external_call @foo(%{{.*}}, %{{.*}})
   %0 = pop.external_call @foo(%a, %b) : (!kgen.param<ty>, !kgen.scalar<dt>) -> !kgen.simd<4, f32>
   // CHECK: pop.external_call @bar(%arg0, %arg1)
-  // CHECK-SAME: attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-  // CHECK-SAME: numFixedArgs = 1 : index}
+  // CHECK-SAME: <numFixedArgs = 1 : index,
+  // CHECK-SAME: funcAttrs = ["noinline", ["alignstack", "16"]]>
   pop.external_call @bar(%a, %b)
-    attributes {funcAttrs = ["noinline", ["alignstack", "16"]],
-                numFixedArgs = 1 : index}
     : (!kgen.param<ty>, !kgen.scalar<dt>) -> ()
+    <numFixedArgs = 1 : index, funcAttrs = ["noinline", ["alignstack", "16"]]>
   hlcf.return
 }
 
@@ -853,8 +852,8 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
 
   // CHECK: %[[ARR_PTR:.*]] = pop.stack_allocation 1 x array<4, T>
   %5 = pop.stack_allocation 1 x !pop.array<4, T>
-  // CHECK: %[[IDX:.*]] = index.constant
-  %6 = index.constant 2
+  // CHECK: %[[IDX:.*]] = kgen.param.constant: scalar<index> = <2>
+  %6 = kgen.param.constant: scalar<index> = <2>
   // CHECK: pop.array.gep %[[ARR_PTR]][%[[IDX]]] : <array<4, T>>
   %7 = pop.array.gep %5[%6] : <array<4, T>>
 

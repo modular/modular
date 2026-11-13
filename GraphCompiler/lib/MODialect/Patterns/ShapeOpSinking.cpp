@@ -896,83 +896,6 @@ struct SinkStaticReshapeLikeOpThroughBroadcastedElementwiseUnaryOp
   }
 };
 
-/// Drops reshape ops through SoftmaxOp as long as the reshape doesn't affect
-/// the last axis (the compute axis of softmax).
-///                    ┌─────┐     ┌─────┐
-///                    │input│     │input│
-///                    └──┬──┘     └──┬──┘
-///                       │           │
-///                    reshape        │
-///                       │           │
-///                    softmax ──► softmax
-///                       │           │
-///                       │        reshape
-///                       │           │
-///                    ┌──┴───┐    ┌──┴───┐
-///                    │output│    │output│
-///                    └──────┘    └──────┘
-struct SinkStaticReshapeOpThroughSoftmaxOp
-    : public DeviceAwareRewritePattern<OpRewritePattern, SoftmaxOp> {
-  SinkStaticReshapeOpThroughSoftmaxOp(MLIRContext *ctx)
-      : DeviceAwareRewritePattern(ctx, 2) {}
-
-  LogicalResult
-  deviceAwareMatchAndRewrite(SoftmaxOp op,
-                             DeviceAwareRewriter &rewriter) const override {
-    TensorValue inputTensor;
-    auto reshapeP =
-        m_Op<Static::ReshapeOp>(rewriter.pushOp(), m_Any(&inputTensor));
-    auto softmaxOpP = m_Op<SoftmaxOp>(reshapeP);
-
-    if (!softmaxOpP.match(op))
-      return rewriter.notifyMatchFailure(op, "Pattern not matched.");
-
-    if (!inputTensor)
-      return rewriter.notifyMatchFailure(op, "Null values found in pattern.");
-
-    TensorType inputTy = inputTensor.getType();
-    TensorType reshapedTy = op.getInput().getType();
-
-    if (!inputTy.hasRank() || !reshapedTy.hasRank())
-      return rewriter.notifyMatchFailure(op, "Shape must be ranked");
-
-    int64_t axisVal = op.getAxisAttr().getInt();
-
-    // Only support sinking when the final axis is used.
-    if (axisVal != clampAxis(-1, (int64_t)reshapedTy.getRank()))
-      return rewriter.notifyMatchFailure(op, "Can't sink non-last axis");
-
-    // Ensure the shape of the last axis is not changed
-    if (inputTy.getRank() > 0 && (reshapedTy.getRank() == 0 ||
-                                  inputTy.getShape().getValues().back() !=
-                                      reshapedTy.getShape().getValues().back()))
-      return rewriter.notifyMatchFailure(op, "Last axis is modified");
-
-    if (!rewriter.addOps()) {
-      return rewriter.notifyMatchFailure(
-          op, "matched ops have inconsistent devices");
-    }
-
-    auto newOp = cast<SoftmaxOp>(rewriter.clone(*op));
-
-    // We cannot assume output will be the same dtype as input (e.g. mo.cast)
-    DType outputDType = newOp.getResult().getType().getDtype();
-    newOp.getInputMutable().set(inputTensor);
-    newOp.getResult().setType(inputTensor.getType().cloneWith(outputDType));
-
-    // Ensure the softmax axis still points to the last axis.
-    newOp.setAxisAttr(
-        mlir::Builder(newOp.getContext())
-            .getIndexAttr(clampAxis(-1, (int64_t)inputTy.getRank())));
-
-    TensorValue output = rewriter.create<Static::ReshapeOp>(
-        op->getLoc(), op.getResult().getType(), newOp.getResult());
-
-    rewriter.replaceAllUsesWith(op.getResult(), output);
-    return mlir::success();
-  }
-};
-
 /// Sinks operands which are reshapes through binary operators if
 /// it can be proven `input1` and `input2` are the same shape
 /// ┌──────┐     ┌──────┐    ┌──────┐   ┌──────┐
@@ -2265,7 +2188,6 @@ void populateShapeOpSinkingPatterns(mlir::RewritePatternSet &patterns) {
                SinkTransposeThroughStaticBroadcastToOpPattern>(context);
 
   patterns.add<
-      SinkStaticReshapeOpThroughSoftmaxOp,
       SinkStaticReshapeLikeOpThroughBroadcastedElementwiseUnaryOp<
           Static::ReshapeOp>,
       SinkStaticReshapeLikeOpThroughBroadcastedElementwiseUnaryOp<RebindOp>,

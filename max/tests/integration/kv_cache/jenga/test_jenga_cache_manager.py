@@ -643,7 +643,7 @@ def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
     assert row_blocks > paged_blocks
 
     # Replica 0's staged page table, as the stager declares it.
-    declared = mgr._stager._slots[f"0/{attn_id}"].descriptor
+    declared = mgr._inputs._stager._slots[f"0/{attn_id}"].descriptor
     assert declared.max_shape == (
         max_batch_size,
         padded_lut_cols(1),
@@ -681,7 +681,7 @@ def test_quantized_lut_staging_uses_logical_sequence_pages(
     capture_length = max_seq_len + spec_decode_cache_slack(params)
     logical_pages = (capture_length + 127) // 128
     for leaf_id in params.leaves():
-        slot = manager._stager._slots[f"0/{leaf_id}"]
+        slot = manager._inputs._stager._slots[f"0/{leaf_id}"]
         assert slot.descriptor.max_shape == (32, padded_lut_cols(logical_pages))
         assert slot.descriptor.nbytes < 8192
     # The physical scale-page capacity must be much wider than a logical row.
@@ -695,7 +695,7 @@ def test_quantized_lut_staging_uses_logical_sequence_pages(
     manager.claim(ctx)
     manager.alloc(ctx)
     manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
-    arenas = {slot.arena for slot in manager._stager._slots.values()}
+    arenas = {slot.arena for slot in manager._inputs._stager._slots.values()}
     buffers = {arena: arena._device for arena in arenas}
     manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
     assert all(arena._device is buffers[arena] for arena in arenas)

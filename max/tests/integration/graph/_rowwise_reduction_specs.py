@@ -87,10 +87,9 @@ _BOTH_DEVICES = ("cpu", "gpu")
 # Inner-axis matrix: precision-sensitive ops in both dtypes; exact
 # selection/compare ops (max/min_and_max/arg) in bfloat16 only.
 #
-# reduce_min/logsoftmax/argmin are deliberately absent: each is redundant with
-# a sibling already in this matrix (reduce_max, softmax, argmax respectively)
-# -- same monoid/combine mechanics, differing only in comparison direction or
-# the elementwise map after the shared OnlineLogSumExp reduce. reduce_mean
+# reduce_min/argmin are deliberately absent: each is redundant with a sibling
+# already in this matrix (reduce_max, argmax respectively) -- same
+# monoid/combine mechanics, differing only in comparison direction. reduce_mean
 # stays: it is a sum with a division by the symbolic axis length fused in. A bug in the
 # shared scaffolder path shows up in the sibling that's still tested; the two
 # confirmed bugs that genuinely needed both directions tested (the bool
@@ -102,6 +101,7 @@ _INNER_BOTH = [
     "reduce_mean",
     "reduce_product",
     "softmax",
+    "logsoftmax",
     "layer_norm",
     "rms_norm",
     "row_mean_of_squares",
@@ -290,6 +290,54 @@ RMS_NORM_SPECS = (
     ]
 )
 
+
+@dataclass(frozen=True)
+class SoftmaxSpec:
+    """One compiled softmax-like graph for the edge-case shapes."""
+
+    op: str
+    """``"softmax"`` or ``"logsoftmax"``."""
+
+    dtype: DType
+    """Element type of the input."""
+
+    rank: int
+    """Rank of the input."""
+
+    device: str
+    """``"cpu"`` or ``"gpu"``."""
+
+    static_cols: int | None = None
+    """The row width when the graph knows it, symbolic otherwise."""
+
+    @property
+    def name(self) -> str:
+        cols = f"_c{self.static_cols}" if self.static_cols else ""
+        return (
+            f"{self.op}_{_DTYPE_TAGS[self.dtype]}_rank{self.rank}{cols}"
+            f"_{self.device}"
+        )
+
+
+# softmax and logsoftmax compile to a generated rowwise kernel with two folds.
+# Rank 2 runs in both precisions; ranks 1 and 5 check the row indexing. On a
+# GPU, a static row width keeps the row in registers when the SIMD width
+# divides it (4096) and streams it otherwise (557).
+SOFTMAX_SPECS = (
+    [
+        SoftmaxSpec(op, dtype, 2, device)
+        for op in ("softmax", "logsoftmax")
+        for device in _BOTH_DEVICES
+        for dtype in (DType.float32, DType.bfloat16)
+    ]
+    + [SoftmaxSpec("softmax", DType.float32, 1, d) for d in _BOTH_DEVICES]
+    + [SoftmaxSpec("softmax", DType.bfloat16, 5, d) for d in _BOTH_DEVICES]
+    + [
+        SoftmaxSpec("softmax", DType.bfloat16, 3, "gpu", static_cols=4096),
+        SoftmaxSpec("softmax", DType.float32, 3, "gpu", static_cols=557),
+    ]
+)
+
 SPECS_BY_NAME: dict[str, RowwiseSpec] = {
     spec.name: spec
     for spec in (
@@ -376,6 +424,26 @@ def build_rms_norm_graph(spec: RmsNormSpec) -> Graph:
                 multiply_before_cast=spec.multiply_before_cast,
             )
         )
+    return graph
+
+
+def build_softmax_graph(spec: SoftmaxSpec) -> Graph:
+    """Builds ``spec``'s softmax-like graph with symbolic dimensions.
+
+    Args:
+        spec: The parametrization to build.
+
+    Returns:
+        The constructed :class:`~max.graph.Graph`, ready to compile.
+    """
+    dims: list[str | int] = [f"d{i}" for i in range(spec.rank)]
+    if spec.static_cols:
+        dims[-1] = spec.static_cols
+    x_t = TensorType(spec.dtype, dims, device=_DEVICE_REFS[spec.device])
+    with Graph(spec.name, input_types=[x_t]) as graph:
+        x = graph.inputs[0].tensor
+        op = ops.softmax if spec.op == "softmax" else ops.logsoftmax
+        graph.output(op(x))
     return graph
 
 

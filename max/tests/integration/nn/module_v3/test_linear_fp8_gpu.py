@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.nn import Linear
@@ -72,8 +73,13 @@ def test_matches_the_dequantized_reference(rows: int) -> None:
     weight = (torch.randn(OUT_DIM, IN_DIM) * 4).to(torch.float8_e4m3fn)
 
     device = Accelerator()
-    linear = Linear(IN_DIM, OUT_DIM, bias=False, quant_config=_quant_config())
-    linear.to(device)
+    # The parameters realize when the compiled model binds them, so the
+    # compile needs no device.
+    with F.lazy():
+        linear = Linear(
+            IN_DIM, OUT_DIM, bias=False, quant_config=_quant_config()
+        )
+        linear.to(device)
     weight_bytes = weight.view(torch.uint8).numpy()
     run = linear.compile(
         TensorType(DType.bfloat16, ["rows", IN_DIM], device),

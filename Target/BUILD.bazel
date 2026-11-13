@@ -252,11 +252,8 @@ modular_cc_binary(
         "lib/CPU/*.h",
     ]),
     dynamic_deps = [
-        "@llvm-project//clang:clangBasic",
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
     ],
     linkshared = True,
     linkstatic = False,
@@ -300,7 +297,7 @@ modular_cc_binary(
     srcs = ["test/LegacyStubPlugin.cpp"],
     linkshared = True,
     linkstatic = False,
-    visibility = ["//visibility:private"],
+    visibility = ["//max/internal/driver/test:__pkg__"],
     deps = ["//SDK:HAL"],
 )
 

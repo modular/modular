@@ -110,6 +110,7 @@ public:
   void printColonTypeOrIndex(AsmPrinter &p, Type type);
   void printGenerator(AsmPrinter &p, GeneratorType generator);
   void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait);
   void printBindParams(AsmPrinter &p, TypedAttr generator,
                        ArrayRef<TypedAttr> paramValues,
                        DenseBoolArrayAttr discharged = {});
@@ -258,11 +259,6 @@ MODULAR_CXX_EXPORT EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 ///   memoryOnly(<expr>)-> i1-typed constraint proposition for conditional RP
 void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
 ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
-
-/// Parser & printer for explicit minimum alignment (e.g., "align(64)").
-/// Uses TypedAttr to support future parametric alignment.
-void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
-ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
 
 /// Parser & printer for a single simplified StructDefFieldAttr, spelled
 /// `name: type` with an optional trailing `[annotations...]`.
@@ -724,7 +720,6 @@ SIMDType getEquivalentSIMDType(Type type);
 
 /// Splat a value of a builtin type to a SIMD type of the given size.
 TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);
-TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
 MODULAR_CXX_EXPORT TypedAttr splatIntLiteralToSIMD(uint64_t literal,
                                                    SIMDType target);
 
@@ -741,6 +736,22 @@ inline bool isAllIntLikeOne(SIMDAttr simdAttr) {
   return llvm::all_of(simdAttr.getValues(),
                       [](const DTypeValue &v) { return v.getData().isOne(); });
 }
+
+/// The value of a constant index: a builtin `index` or a `!kgen.scalar<index>`.
+inline std::optional<int64_t> getConstantIndex(mlir::Attribute attr) {
+  if (auto integer = dyn_cast_if_present<mlir::IntegerAttr>(attr))
+    return integer.getInt();
+  auto simd = dyn_cast_if_present<SIMDAttr>(attr);
+  if (!simd || simd.getValues().size() != 1)
+    return std::nullopt;
+  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  if (!dtype || !dtype->isIndex())
+    return std::nullopt;
+  return simd.getValues().front().getIndexVal();
+}
+
+/// The constant value of an index-typed SSA value, if it is a constant.
+std::optional<int64_t> matchConstantIndex(mlir::Value value);
 
 //===----------------------------------------------------------------------===//
 // Constraint Utilities

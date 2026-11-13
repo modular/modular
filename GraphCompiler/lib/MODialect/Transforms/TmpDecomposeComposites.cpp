@@ -21,6 +21,12 @@
 //                                                 %inv = mo.rsqrt(%s / N + eps)
 //                                                 %y = %xa * %inv * %w
 //
+//   %y = mo.composite.reduce.softmax(%x)          %xa = mo.cast(%x)
+//                                           =>    %m = mo.reduce.max(%xa)
+//                                                 %e = mo.exp(%xa - %m)
+//                                                 %s = mo.reduce.add(%e)
+//                                                 %y = %e * (1 / %s)
+//
 // Temporary, until no pattern depends on a composite (rms_norm + rope, for
 // example).
 //
@@ -190,6 +196,51 @@ struct DecomposeRMSNorm final
   const MOGG::MojoRegistry &registry;
 };
 
+// As the hand-written softmax computes it, in `accum` = get_accum_type[dtype]:
+//
+//   xa  = cast(x, accum)
+//   e   = exp(xa - reduce.max(xa))
+//   y   = cast(e * (1 / reduce.add(e)), dtype)     the divide once per row
+struct DecomposeSoftmax final
+    : public OpRewritePattern<Composite::ReduceSoftmaxOp> {
+  DecomposeSoftmax(MLIRContext *ctx, const MOGG::MojoRegistry &registry)
+      : OpRewritePattern(ctx), registry(registry) {}
+
+  LogicalResult matchAndRewrite(Composite::ReduceSoftmaxOp op,
+                                PatternRewriter &rewriter) const override {
+    if (hasKernel(registry, op))
+      return rewriter.notifyMatchFailure(op, "a kernel implements it");
+    Location loc = op.getLoc();
+    TensorValue x = op.getInput();
+    MO::TensorType type = x.getType();
+    DType dtype = type.getDtype();
+    DType accum = accumDType(dtype);
+    int64_t axis = op.getAxisAttr().getInt();
+
+    TensorValue xa = castTo(rewriter, loc, x, accum);
+    TensorValue max = ReduceMaxOp::create(rewriter, loc, xa, axis);
+    TensorValue shifted = SubOp::create(
+        rewriter, loc, xa, broadcastTo(rewriter, loc, max, type.getShape()));
+    TensorValue e = ExpOp::create(rewriter, loc, shifted.getType(), shifted);
+    TensorValue sum = ReduceAddOp::create(rewriter, loc, e, axis);
+    TensorValue one = castTo(
+        rewriter, loc,
+        ConstantOp::create(rewriter, loc, 1.0f, type.getDeviceRef()), accum);
+    TensorValue recip = DivOp::create(
+        rewriter, loc,
+        broadcastTo(rewriter, loc, one, sum.getType().getShape()), sum);
+    TensorValue result = castTo(
+        rewriter, loc,
+        MulOp::create(rewriter, loc, e,
+                      broadcastTo(rewriter, loc, recip, type.getShape())),
+        dtype);
+    rewriter.replaceOp(op, result);
+    return mlir::success();
+  }
+
+  const MOGG::MojoRegistry &registry;
+};
+
 struct TmpDecomposeCompositesPass final
     : public MO::impl::TmpDecomposeCompositesBase<TmpDecomposeCompositesPass> {
   using Base::Base;
@@ -198,7 +249,7 @@ struct TmpDecomposeCompositesPass final
     MOGG::MojoRegistry registry(
         getOperation()->getParentOfType<mlir::ModuleOp>());
     RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeRMSNorm>(&getContext(), registry);
+    patterns.add<DecomposeRMSNorm, DecomposeSoftmax>(&getContext(), registry);
     walkAndApplyPatterns(getOperation(), std::move(patterns));
   }
 };

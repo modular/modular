@@ -183,6 +183,10 @@ single_version_override(
         # just disable the feature. This is not a flag but just a setting,
         # so annoyingly we have to patch it.
         "//bazel/public-patches:jemalloc-no-private-namespace.patch",
+        # The repository defaults to compilation_mode=dbg, which would otherwise
+        # enable jemalloc's assertions in every default build. Use
+        # --define=jemalloc_debug=1 to enable them.
+        "//bazel/public-patches:jemalloc-no-debug.patch",
     ],
 )
 

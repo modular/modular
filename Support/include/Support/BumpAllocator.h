@@ -175,23 +175,8 @@ public:
   /// Returns a stable identifier for an allocator-owned pointer.
   int64_t identifyKnownObject(const void *ptr) const;
 
-  /// Returns a stable identifier scaled by `T`'s alignment.
-  template <typename T>
-  int64_t identifyKnownAlignedObject(const void *ptr) const {
-    int64_t result = identifyKnownObject(ptr);
-    assert(result % alignof(T) == 0 && "incorrect alignment information");
-    return result / alignof(T);
-  }
-
   /// Returns the total number of bytes reserved by all slabs.
   size_t getTotalMemory() const;
-
-  /// Sets the sanitizer red-zone size when ABI checks are enabled.
-  void setRedZoneSize([[maybe_unused]] size_t size) {
-#if LLVM_ENABLE_ABI_BREAKING_CHECKS
-    redZoneSize = size;
-#endif
-  }
 
   /// Prints allocator statistics to stderr.
   void printStats() const;

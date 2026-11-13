@@ -58,7 +58,11 @@ from linalg.matmul.gpu.amd import (
     block_scaled_grouped_matmul_amd,
     block_scaled_grouped_matmul_amd_preb,
 )
-from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
+from linalg.gemv import (
+    mixed_gemv_store_epilogue,
+    router_gate_mixed_gemv,
+    router_gate_use_mixed_gemv,
+)
 from linalg.router_gate_gemm import router_gate_tf32_gemm
 from linalg.matmul.gpu.amd.smallm_streaming_matmul import (
     smallm_streaming_matmul,
@@ -489,6 +493,47 @@ struct MatmulGPU:
             a.to_tile_tensor(),
             b.to_tile_tensor(),
             ctx,
+        )
+
+
+@extensibility.register("mo.matmul.row_invariant")
+struct MatmulRowInvariant:
+    """Registers the `mo.matmul.row_invariant` graph op with the graph compiler.
+
+    Computes `c = a @ b.T` for BF16 `a`, `b` and `c` as `mo.matmul` does,
+    except that a one-row launch stays off the GEMV and runs the multi-row
+    dispatch instead. A model whose decode step must match its multi-row
+    speculative verify opts in per projection. Only the SM100 dispatch honors
+    the opt-in, so another target fails to compile, and an `N = 1` output
+    still takes the GEMV at every row count.
+
+    That removes the GEMV arm and nothing else: the SM100 heuristic it lands on
+    still picks its kernel and its `num_split_k` by the runtime row count, from
+    tables bucketed in `m`. Two row counts in the same bucket reduce K in the
+    same order and so agree bit for bit; two that straddle a bucket edge do
+    not, and that edge is a property of the `(N, K)` shape, not of this op.
+    Pinning one configuration across the whole range would give the bit
+    identity the name suggests, at the cost of the decode bucket's tuned
+    split-K geometry above it, so it is not what this op does; a caller that
+    needs it for a shape whose buckets differ has to pin the split itself.
+    """
+
+    @staticmethod
+    def execute[](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+        comptime assert (
+            ctx.target._has_blackwell_tcgen05()
+        ), "mo.matmul.row_invariant is row-invariant only on SM100"
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        _matmul_gpu[use_tensor_core=True, transpose_b=True, row_invariant=True](
+            c.to_tile_tensor(), a.to_tile_tensor(), b.to_tile_tensor(), ctx
         )
 
 
@@ -2972,6 +3017,10 @@ struct Struct_router_gate_mixed_gemv:
       baseline chain — with a bf16 `b`, one bf16 x bf16 -> fp32 matmul; with
       an fp32 `b`, cast `a` to fp32 then an ordinary fp32 matmul (two
       launches, matching baseline).
+      `precise_max_m` keeps that matmul on the IEEE-fp32 split-K GEMV up to
+      that row count instead of crossing to the TF32 tile GEMM above 64 rows,
+      so a caller can make the launch fp32-precise up to the batch it actually
+      serves and leave larger (prefill) batches on the baseline's speed.
 
     Because bf16->fp32 widening is lossless, every route is fp32 arithmetic
     over exactly the widened bf16 values: at the same launch config the fused
@@ -2982,7 +3031,29 @@ struct Struct_router_gate_mixed_gemv:
     so those bands match the fp32 GEMV only to fp32 rounding, not
     bit-for-bit. On SM100 the baseline's fp32 matmul switches to TF32 tensor
     cores above `M = 64`, so the fused GEMV's IEEE-fp32 result there is the
-    more precise of the two.
+    more precise of the two, not the same value.
+
+    A caller whose own fp32 chain keeps the split-K GEMV above `M = 64` is
+    unaffected, because both routes reduce identically. A caller that needs
+    the fused route to stay bit-identical to the chain above that edge must
+    cap it with `max_m`: Mistral Large 4's router is such a caller, and passes
+    the 64 its chain's crossover sits at.
+
+    A caller that needs one consistent precision up to some row count — not
+    just bit-identity with a chain that itself changes precision at 64 rows —
+    sets `precise_max_m`. Up to that count the fused window then only chooses
+    between one launch and two, both of which compute the same IEEE-fp32
+    product, so a row's result no longer depends on how many rows share the
+    launch. That is Mistral Large 4's router: with speculative decoding a
+    verify step and a context step run different row counts, and a precision
+    change between them made a served answer depend on the scheduler's step
+    mix. Past that count the route passes `matmul` its default
+    `use_tf32=True`: the baseline's own call, at every row count. At 64 rows and
+    below both routes run the IEEE split-K GEMV regardless of `use_tf32`, which
+    only separates TF32 from IEEE above 64 rows, and there the route and the
+    baseline cross together. The route is also fp32-weight only: a bf16 weight
+    takes the bf16 matmul arm below before this one is reached, so a
+    `precise_max_m` set for it has no effect at any row count.
 
     This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router
     emits this explicit graph op on MI355X and SM100, and the Kimi K3 router
@@ -2996,7 +3067,10 @@ struct Struct_router_gate_mixed_gemv:
 
     @inline(.always)
     @staticmethod
-    def execute(
+    def execute[
+        max_m: Int = 128,
+        precise_max_m: Int = 0,
+    ](
         c: Some[Output & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
@@ -3004,6 +3078,27 @@ struct Struct_router_gate_mixed_gemv:
     ) raises:
         """Executes the mixed bf16-A router-gate GEMV with an M-based route to
         the baseline matmuls for large (prefill) M.
+
+        Parameters:
+            max_m: The caller's cap on the fused launch's row count -- the
+                largest M the fused path serves, since
+                `router_gate_use_mixed_gemv` takes it as the window's last row.
+                The effective window is the smaller of this and the target's
+                tuned one (64 on MI355X, 128 on SM100), so the default of 128
+                leaves every target at its own window. A graph staged before
+                this parameter existed carries no `max_m` attribute and binds
+                to that same default.
+            precise_max_m: The last row count whose above-window fp32 matmul
+                stays on the IEEE-fp32 split-K GEMV instead of truncating its
+                operands to TF32 on tensor cores. `0`, the default, is the
+                baseline at every row count. A positive value bounds the
+                precise route: the row count is runtime-dynamic, so both
+                matmuls are staged and `M` picks one per launch. It requires
+                the shape that dispatch supports (`N` at most 256, `K` at
+                least 2048 and a multiple of the fp32 SIMD width) and SM100's
+                tcgen05 tensor cores; the op is a compile error otherwise. It
+                also requires an fp32 weight: the op's bf16 matmul arm runs
+                first for a bf16 weight and leaves this value unused.
 
         Constraints:
             The weight `b` must have a static `[N, K]` shape (both dims known at
@@ -3053,9 +3148,12 @@ struct Struct_router_gate_mixed_gemv:
         var c_tt = c.to_tile_tensor[.float32]().reshape(row_major(M, Idx[N]))
 
         # SM100's fused window reaches M = 128 (c128 decode); above it the
-        # TF32 tile GEMM below wins on weight reuse.
-        comptime max_m = 64 if context.target.is_amd_gpu() else 128
-        if router_gate_use_mixed_gemv(M, max_m):
+        # TF32 tile GEMM below wins on weight reuse. `max_m` only narrows the
+        # window: a caller whose chain still reduces with the fp32 GEMV further
+        # up gets the same bits either way, but a caller whose chain crosses to
+        # the TF32 tile GEMM at 64 pins the window there to stay bit-identical.
+        comptime window = min(max_m, 64 if context.target.is_amd_gpu() else 128)
+        if router_gate_use_mixed_gemv(M, window):
             # Tiny-M decode: fused mixed bf16-A GEMV against the fp32 or
             # bf16 weight, one launch.
             var a_tt = a.to_tile_tensor[.bfloat16]().reshape(
@@ -3078,6 +3176,19 @@ struct Struct_router_gate_mixed_gemv:
         # TMA requires a 16-byte bf16 row stride.
         # fp32 weight only: `router_gate_tf32_gemm` binds an fp32 `b`; a
         # bf16 weight takes the plain bf16 matmul fallback below.
+        # The precise route owns every row count it covers, so the TF32 arm
+        # below must not fire inside it: the two windows are disjoint by
+        # construction, and a caller that breaks that is a compile error rather
+        # than a silent precision change.
+        comptime assert precise_max_m == 0 or precise_max_m < (
+            _ROUTER_GATE_TF32_MIN_M
+        ), "precise_max_m must stay below _ROUTER_GATE_TF32_MIN_M"
+        # The precise route is the SM100 fp32 split-K GEMV, and `use_tf32=False`
+        # asserts that in the dispatch. Stating it here too keeps the refusal on
+        # the op, which is where a caller reads the requirement.
+        comptime assert (
+            precise_max_m == 0 or context.target._has_blackwell_tcgen05()
+        ), "precise_max_m requires SM100's tcgen05 tensor cores"
         comptime if (
             b_type == .float32
             and _is_sm10x_gpu(context.default_device_info)
@@ -3133,10 +3244,221 @@ struct Struct_router_gate_mixed_gemv:
                 simd_width_of[DType.bfloat16, target=context.target](),
             ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
 
-            matmul[transpose_b=True](
-                c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
-            )
+            comptime if precise_max_m > 0:
+                if M <= precise_max_m:
+                    matmul[transpose_b=True, use_tf32=False](
+                        c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
+                    )
+                else:
+                    matmul[transpose_b=True, use_tf32=True](
+                        c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
+                    )
+            else:
+                matmul[transpose_b=True](
+                    c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context
+                )
             _ = a_f32^
+
+
+comptime _MIXED_GEMV_EPILOGUE_MAX_M = 64
+"""The last row count `mo.mixed.gemv.epilogue` launches the fused GEMV at.
+
+It is the SM100 fp32 dispatch's own crossover: `dispatch.mojo` keeps an fp32
+`transpose_b` matmul on the split-K GEMV for `m <= 64` and crosses to the UMMA
+tile GEMM above it, so 64 is the row count at which the fused launch stops
+being the chain's launch. A caller passes the same number as its own
+`max_m`; Mistral Large 4's wrapper names it `MIXED_GEMV_EPILOGUE_MAX_M`, which
+ships with #110435. The two move together or the op's route changes under the
+caller.
+"""
+
+
+@extensibility.register("mo.mixed.gemv.epilogue")
+struct Struct_mixed_gemv_epilogue:
+    """MOGG wrapper for the mixed GEMV whose store carries the graph's epilogue.
+
+    Computes `c = a @ b^T` in fp32 for a bf16 activation `a` and an fp32 weight
+    `b`, storing every output element through the epilogue the graph fused onto
+    `c`. `moe.router.gate.mixed.gemv` does the same arithmetic but writes its
+    result plainly, so it cannot serve a caller whose projection carries
+    elementwise work: that work would become a launch of its own and the cast
+    the fused form removes would be paid for by the chain it leaves behind.
+
+    `M` is runtime-dynamic -- one graph serves both decode and prefill -- so the
+    op branches on runtime `M`:
+
+    - `M == 0` (graph-capture warmup): no launch.
+    - tiny `M` (`M <= max_m`, at most SM100's window of 64; decode): one fused
+      mixed GEMV, the activation read as bf16 and widened in registers, written
+      through the epilogue.
+    - large `M` (prefill): the chain the caller would otherwise have staged --
+      the activation widened in a launch of its own, then the fp32 matmul, both
+      storing through that same epilogue. Those two launches and the kernel the
+      matmul picks at that row count are the baseline's.
+
+    Because bf16->fp32 widening is lossless, every route is fp32 arithmetic over
+    exactly the widened bf16, so at the default window the result is
+    bit-identical to today's `cast` + fp32 `gemv_split_k_epilogue_fn` chain at
+    every row count: inside the window the fused GEMV is that kernel with the
+    cast folded into the load, and above it the op stages that chain. A caller
+    narrowing `max_m` below the chain's 64-row crossover only shortens the fused
+    window, and the rows it gives up take that staged chain.
+
+    Only SM100 (Blackwell) is served, and the gate below says exactly that. Its
+    launch table and the fp32 GEMV this launch must reproduce are that target's,
+    so every other target -- AMD, and NVIDIA targets below SM100, whose fp32
+    matmuls take a dispatch of their own -- gets an empty window and the staged
+    chain below: today's launches, unchanged.
+
+    `N` and `K` are read from the weight `b`'s static `[N, K]` layout at compile
+    time -- the op carries no redundant `N`/`K` custom-op parameters.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        max_m: Int = _MIXED_GEMV_EPILOGUE_MAX_M
+    ](
+        c: Some[Output & Fused & StoreAccess],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        """Executes the mixed bf16-A x fp32-B GEMV through `c`'s epilogue.
+
+        Parameters:
+            max_m: The last row count the fused launch serves. SM100's own
+                window is `_MIXED_GEMV_EPILOGUE_MAX_M` (64), the row count at
+                which an fp32 matmul of this shape crosses to the TF32 tile
+                GEMM, so the effective window is the smaller of this and 64.
+
+        Constraints:
+            The weight `b` must have a static `[N, K]` shape (both dims known at
+            compile time).
+
+        Args:
+            c: Output `[M, N]` fp32 tensor; its fused epilogue owns the stores.
+            a: Activation `[M, K]` bf16 tensor.
+            b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert context.target.is_gpu(), "mixed GEMV is GPU-only"
+
+        var M = Int(c.shape()[0].value())
+        # Empty-launch guard: a graph-capture warmup can call with M == 0.
+        if M == 0:
+            return
+
+        # `b` carries the static `[N, K]` weight shape from the graph, so the
+        # standard projection drives the compile-time N/K specialization.
+        var b_tt = b.to_tile_tensor[.float32]()
+        comptime N = type_of(b_tt).static_shape[0]
+        comptime K = type_of(b_tt).static_shape[1]
+        comptime assert (
+            N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
+        ), "mixed GEMV requires a static [N, K] weight shape"
+
+        # The epilogue owns every store, so the launches get only the output's
+        # shape: a tile over a null pointer the kernels never read, as the
+        # store-epilogue matmul does. The static `N` it carries is what the
+        # GEMV's PDL peel and bounds guards are chosen from.
+        var c_tt = TileTensor(
+            MutPointer[
+                Scalar[DType.float32], MutUntrackedOrigin
+            ].unsafe_dangling(),
+            row_major(M, Idx[N]),
+        )
+
+        # The fused output's access-enabled view: `store` runs the graph's
+        # epilogue, including the write. A projection whose epilogue changes
+        # the store index (a fused reshape) or the dtype arrives this way, and
+        # so does one with no fused epilogue at all.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+        var c_view = unsafe_fused_view(c)
+        comptime assert conforms_to(type_of(c_view), Storable)
+
+        @inline(.always)
+        def epilogue_fn[
+            val_dtype: DType, width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[val_dtype, width]) {var c_view}:
+            comptime assert (
+                coords.rank == 2
+            ), "the mixed GEMV's epilogue contract is rank 2"
+            c_view.store[width=Int(width), element_alignment=alignment](
+                coords,
+                rebind[SIMD[type_of(c_view).dtype, Int(width)]](val),
+            )
+
+        # SM100's fused window; `max_m` only narrows it. The gate is the
+        # Blackwell check, not `is_nvidia_gpu()`: an NVIDIA target that is not
+        # SM100 routes its fp32 matmuls to a dispatch of its own (sm90's
+        # `matmul_dispatch_sm90_bf16_fp32`), so the fused launch is not that
+        # target's chain and must not be reached there.
+        comptime serves_fused = context.target._has_blackwell_tcgen05()
+        comptime window = (
+            min(max_m, _MIXED_GEMV_EPILOGUE_MAX_M) if serves_fused else 0
+        )
+        # `comptime if`: instantiating the launcher is what carries its
+        # SM100-only assert, and a runtime `if` elaborates both arms, so a
+        # target the launch does not serve must not elaborate it at all. Those
+        # targets -- every non-SM100 one -- take the staged chain below.
+        comptime if serves_fused:
+            if router_gate_use_mixed_gemv(M, window):
+                var a_tt = (
+                    a.to_tile_tensor[.bfloat16]()
+                    .as_unsafe_any_origin()
+                    .reshape(row_major(M, Idx[K]))
+                )
+                mixed_gemv_store_epilogue[N](
+                    c_tt,
+                    a_tt.as_imm(),
+                    b_tt.as_imm(),
+                    M,
+                    N,
+                    K,
+                    epilogue_fn,
+                    context,
+                )
+                return
+
+        # Above the window: the baseline's own chain, staging the widening it
+        # stages and leaving the matmul to pick its kernel by row count. Both
+        # store through the same epilogue, so the result is the chain's.
+        var a_f32 = context.enqueue_create_buffer[.float32](M * K)
+        var a_bf16_tt = (
+            a.to_tile_tensor[.bfloat16]()
+            .as_unsafe_any_origin()
+            .reshape(row_major(M, Idx[K]))
+        )
+        var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
+
+        @inline(.always)
+        def _cast_bf16_to_fp32[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
+            var a_vec = a_bf16_tt.load[
+                width, alignment=align_of[SIMD[.bfloat16, width]]()
+            ](idx)
+            a_f32_tt.store[alignment=align_of[SIMD[.float32, width]]()](
+                idx, a_vec.cast[.float32]()
+            )
+
+        elementwise[simd_width_of[DType.bfloat16, target=context.target](),](
+            _cast_bf16_to_fp32, Coord(M, Idx[K]), context
+        )
+        matmul[transpose_b=True, use_tf32=True](
+            c_tt,
+            a_f32_tt.as_imm(),
+            b_tt.as_imm(),
+            epilogue_fn,
+            context,
+        )
+        _ = a_f32^
 
 
 @extensibility.register("matmul.smallm.streaming")

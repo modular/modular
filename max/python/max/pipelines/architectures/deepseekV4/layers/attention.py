@@ -262,28 +262,27 @@ class DeepseekV4Attention(Module):
         """
         b, s = o.shape[0], o.shape[1]
         group_width = self.n_heads * self.head_dim // self.o_groups
-        rank = self.o_lora_rank
-        rows = ops.reshape(o, [b * s, self.o_groups * group_width])
+        # The group axis is the only batch dim and tokens are the rows, so
+        # neither operand is broadcast. Broadcasting wo_a over tokens would
+        # materialize a per-layer constant that grows with sequence length.
+        grouped = ops.transpose(
+            ops.reshape(o, [b * s, self.o_groups, group_width]), 0, 1
+        )
         weight = self.wo_a.weight.to(o.device)
         if self.wo_a.weight_scale is not None:
             weight = dequantize_fp8_blocks(
                 weight, self.wo_a.weight_scale, o.dtype
             )
-        # One 2D [b*s, d] @ [d, r] GEMM per group takes the tensor-core path;
-        # a rank-3 [g, b*s, d] @ [g, d, r] matmul lowers to the naive batched
-        # kernel. Broadcasting wo_a over tokens instead would materialize a
-        # per-layer constant that grows with sequence length.
-        flattened = ops.concat(
-            [
-                ops.matmul(
-                    rows[:, g * group_width : (g + 1) * group_width],
-                    ops.transpose(weight[g * rank : (g + 1) * rank, :], 0, 1),
-                )
-                for g in range(self.o_groups)
-            ],
-            axis=-1,
+        wo_a = ops.reshape(
+            weight, [self.o_groups, self.o_lora_rank, group_width]
         )
-        flattened = ops.reshape(flattened, [b, s, self.o_groups * rank])
+        # The graph compiler folds this transpose into transpose_b, so the
+        # product runs as one batched GEMM over K-major wo_a.
+        projected = ops.matmul(grouped, ops.transpose(wo_a, -1, -2))
+        flattened = ops.reshape(
+            ops.transpose(projected, 0, 1),
+            [b, s, self.o_groups * self.o_lora_rank],
+        )
         return self.wo_b(flattened)
 
     def project(self, x: TensorValue) -> tuple[TensorValue, TensorValue]:
@@ -381,11 +380,11 @@ class DeepseekV4Attention(Module):
         index_score: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
-            x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
+            x2 = ops.reshape(x, [t, x.shape[2]])
             windows = rows.windows[ratio]
             stream = compressed_stream(
                 self.compressor,
-                x32,
+                x2,
                 rows,
                 windows,
                 freqs_table,
@@ -401,7 +400,7 @@ class DeepseekV4Attention(Module):
             if self.indexer is not None:
                 idx_stream = compressed_stream(
                     self.indexer.compressor,
-                    x32,
+                    x2,
                     rows,
                     windows,
                     freqs_table,
@@ -410,7 +409,6 @@ class DeepseekV4Attention(Module):
                     cache.idx_comp if cache is not None else None,
                     index,
                 )
-                x2 = ops.reshape(x, [t, x.shape[2]])
                 qr2 = ops.reshape(qr, [t, qr.shape[2]])
                 if cache is not None:
                     index_score = self.indexer.score_cached(

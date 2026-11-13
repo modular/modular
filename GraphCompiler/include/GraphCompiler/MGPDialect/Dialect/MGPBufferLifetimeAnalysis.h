@@ -54,10 +54,6 @@ public:
   // terminator
   static DependencyTree getDependencyTree(Block *block);
 
-  // Dumps the tree as a GraphViz dot file, with dashed red edges
-  // indicating uses of allocs
-  void dumpToDot(llvm::raw_ostream &os) const;
-
   // Returns nullptr if the op is not in the tree.
   DependencyTreeNode *get(Operation *) const;
 

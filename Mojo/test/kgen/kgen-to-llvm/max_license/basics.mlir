@@ -25,8 +25,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-SAME: nvvm.maxntid = array<i32: 256, 1, 4>
 // CHECK-SAME: nvvm.unitattr
 // CHECK-SAME: passthrough = [{{.*}}, ["intval", "2"], ["strval", "hello"], "unitattr"]
-kgen.func export @llvm_metadata() attributes {
-  fnAttrs = {
+kgen.func export @llvm_metadata() {
+  hlcf.return
+} <fnAttrs = {
     llvm.unitattr,
     llvm.intval = 2,
     llvm.strval = "hello",
@@ -34,10 +35,7 @@ kgen.func export @llvm_metadata() attributes {
     nvvm.unitattr,
     nvvm.intval = 4,
     nvvm.maxntid = #pop.array<256, 1, 4> : !pop.array<3, i32>
-  }
-} {
-  hlcf.return
-}
+  }>
 
 }
 
@@ -111,12 +109,12 @@ kgen.func @kgen_fp6_e3m2_ptr_arg(%arg0: !kgen.pointer<scalar<f6e3m2fn>>) -> !kge
 
 module attributes {M.target_info = #M.target<triple = "amdgpu9.42-amd-amdhsa", arch = "gfx942", data_layout = "", simd_bit_width = 128, index_bit_width = 64>} {
   // CHECK: llvm.func amdgpu_kernelcc @test() attributes {{{.*}}rocdl.flat_work_group_size = "1, 128"{{.*}}}
-  kgen.func export @test() attributes {fnAttrs = {rocdl.flat_work_group_size = #pop.array<128> : !pop.array<1, scalar<si32>>}} {
+  kgen.func export @test() {
     hlcf.return
-  }
+  } <fnAttrs = {rocdl.flat_work_group_size = #pop.array<128> : !pop.array<1, scalar<si32>>}>
 
   // CHECK: llvm.func amdgpu_kernelcc @test1() attributes {{{.*}}rocdl.flat_work_group_size = "2, 128"{{.*}}}
-  kgen.func export @test1() attributes {fnAttrs = {rocdl.flat_work_group_size = #pop.array<2, 128> : !pop.array<2, scalar<si32>>}} {
+  kgen.func export @test1() {
     hlcf.return
-  }
+  } <fnAttrs = {rocdl.flat_work_group_size = #pop.array<2, 128> : !pop.array<2, scalar<si32>>}>
 }

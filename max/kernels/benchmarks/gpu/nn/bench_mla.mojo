@@ -611,6 +611,7 @@ def bench_dense[
     num_partitions: Int,
     mode: String,
     ctx: DeviceContext[],
+    skip_prefill: Bool = False,
 ) raises:
     bench_decode[
         cfg.qkv_type,
@@ -631,6 +632,8 @@ def bench_dense[
         ctx,
     )
 
+    if skip_prefill:
+        return
     bench_prefill[
         cfg.qkv_type,
         cfg.output_type,
@@ -669,6 +672,23 @@ def main() raises:
     var batch_size = Int(arg_parse("batch_size", 1))
     var num_partitions = Int(arg_parse("num_partitions", 0))
     var mode = String(arg_parse("mode", "decode"))
+    # Comma-separated lists sweep the split-K ladder and the cache length in
+    # one run; a partition count of 0 means auto.
+    var np_list = String(arg_parse("np_list", ""))
+    var nk_list = String(arg_parse("nk_list", ""))
+    var skip_prefill = arg_parse("skip_prefill", False)
+    var partitions = List[Int]()
+    if np_list:
+        for item in np_list.split(","):
+            partitions.append(Int(item))
+    else:
+        partitions.append(num_partitions)
+    var key_counts = List[Int]()
+    if nk_list:
+        for item in nk_list.split(","):
+            key_counts.append(Int(item))
+    else:
+        key_counts.append(num_keys)
 
     comptime cfg = MLA_cfg(
         qkv_type=qkv_type,
@@ -697,9 +717,20 @@ def main() raises:
                     m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
                 )
             elif ctx.target.is_amd_gpu():
-                bench_dense[cfg, AMDMLA](
-                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
-                )
+                for nk in key_counts:
+                    for np in partitions:
+                        bench_dense[cfg, AMDMLA](
+                            m,
+                            seq_len,
+                            nk,
+                            batch_size,
+                            np,
+                            mode,
+                            ctx,
+                            # Prefill takes no partition count: time it once
+                            # per key count.
+                            skip_prefill or np != partitions[0],
+                        )
             else:
                 bench_dense[cfg, LegacyNVMLA](
                     m, seq_len, num_keys, batch_size, num_partitions, mode, ctx

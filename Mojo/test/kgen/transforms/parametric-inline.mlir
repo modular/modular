@@ -241,9 +241,9 @@ kgen.generator @callee() always_inline {
       hlcf.comptime.yield
     } else {
       hlcf.comptime.yield
-    } {elseIsolated, thenIsolated}
+    } <elseIsolated, thenIsolated>
     hlcf.comptime.yield
-  } {elseIsolated, thenIsolated}
+  } <elseIsolated, thenIsolated>
   hlcf.return
 }
 

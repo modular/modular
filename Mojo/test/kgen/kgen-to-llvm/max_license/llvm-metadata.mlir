@@ -7,11 +7,9 @@ kgen.func export @kernel() {
 }
 
 // CHECK: void @kernel_grid_constant(ptr noundef nonnull byval({}) %0, ptr noundef nonnull byval({}) align 64 "nvvm.grid_constant" %1)
-kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> imm_mem, %1: !kgen.pointer<none> imm_mem) attributes {
-  fnArgAttrs = [{}, {nvvm.grid_constant = unit}]
-} {
+kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> imm_mem, %1: !kgen.pointer<none> imm_mem) {
   hlcf.return
-}
+} <fnArgAttrs = [{}, {nvvm.grid_constant = unit}]>
 
 // CHECK: !llvm.module.flags = !{![[LLVM_MODULE_FLAGS:.+]]}
 // CHECK: ![[LLVM_MODULE_FLAGS]] = !{i32 2, !"Debug Info Version", i32 3}
@@ -34,11 +32,9 @@ kgen.func export @kernel() {
 // CHECK: void @kernel_grid_constant(ptr addrspace(4) noundef nonnull byref({}) %0, ptr addrspace(4) noundef nonnull byref({}) %1)
 // CHECK: addrspacecast ptr addrspace(4) %{{[0-9]+}} to ptr
 // CHECK: addrspacecast ptr addrspace(4) %{{[0-9]+}} to ptr
-kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> imm_mem, %1: !kgen.pointer<none> imm_mem) attributes {
-  fnArgAttrs = [{}, {nvvm.grid_constant = unit}]
-} {
+kgen.func export @kernel_grid_constant(%0: !kgen.pointer<none> imm_mem, %1: !kgen.pointer<none> imm_mem) {
   hlcf.return
-}
+} <fnArgAttrs = [{}, {nvvm.grid_constant = unit}]>
 
 // CHECK: !llvm.module.flags = !{![[LLVM_MODULE_FLAGS:.+]]}
 // CHECK: ![[LLVM_MODULE_FLAGS]] = !{i32 2, !"Debug Info Version", i32 3}

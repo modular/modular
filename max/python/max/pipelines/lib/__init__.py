@@ -84,7 +84,7 @@ from .interfaces import (
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
-from .memory_estimation import MemoryEstimator, MemoryPlan
+from .memory_plan import FreeMemory, MemoryPlan, plan_memory
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
@@ -134,6 +134,7 @@ __all__ = [
     "DenoisingCacheSettings",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
+    "FreeMemory",
     "GraphPipelineModelWithKVCache",
     "GraphRole",
     "GraphSpec",
@@ -146,7 +147,6 @@ __all__ = [
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
-    "MemoryEstimator",
     "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
@@ -200,6 +200,7 @@ __all__ = [
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
+    "plan_memory",
     "process_ragged_kv_outputs",
     "ragged_kv_symbolic_inputs",
     "rejection_sampler",

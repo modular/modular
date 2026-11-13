@@ -51,7 +51,7 @@ functional changes) should contain tests.
 defined in `Mojo/test/mojo-parser/lit.cfg.py`. It expands to:
 
 ```bash
-kgen-translate -import-mojo -mojo-enable-prebuilt-packages -mojo-search-paths=Mojo/test/test-packages
+kgen-translate -import-mojo -mojo-enable-prebuilt-packages -mojo-search-paths=<absolute path to Mojo/test/test-packages>
 ```
 
 This runs the parser with minimal stdlib stubs instead of the full standard

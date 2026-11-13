@@ -1,0 +1,35 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# The Lamport one-shot allreduce at 8-GPU decode message sizes, swept over the
+# two launch knobs that are not the protocol: the block size (which alone sets
+# the CTA count on this path) and PDL. The four `num_bytes` points are
+# `rows x 6144 x 2 B` for 1, 4, 8 and 16 concurrent decode rows.
+#
+# `ALLREDUCE_LAMPORT_BLOCK_SIZE` forces one block size on every message size,
+# overriding the banded defaults `comm/allreduce.mojo` picks; every arm below
+# pins it, so none of them measures the shipped geometry. `ALLREDUCE_PDL` sets
+# the launch attribute directly; the graph op passes none, so at 8 GPUs — the
+# only world size these bands cover — the shipped launch is the `False` arm.
+name: bench_allreduce_lamport_geometry
+file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_allreduce.mojo
+
+params:
+- dtype: [DType.bfloat16]
+  num_gpus: [8]
+  $num_bytes: "[12288, 49152, 98304, 196608]"
+  TUNE_MAX_NUM_BLOCKS: [0] # To force picking the tuning results
+  use_multimem: [False]
+  use_vendor_ccl: [False]
+  ALLREDUCE_LAMPORT_BLOCK_SIZE: [32, 64, 128, 256]
+  ALLREDUCE_PDL: [False, True]

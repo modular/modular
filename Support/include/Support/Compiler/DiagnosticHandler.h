@@ -34,9 +34,6 @@ public:
   /// Manually remove the handler from the context.
   void release();
 
-  /// Get the global HandlerID which is a unique identifier for this Handler.
-  mlir::DiagnosticEngine::HandlerID getHandlerID();
-
   /// Return true if there is any diagnostic to emit
   bool hasDiagnostics() const { return !diagnostics.empty(); }
 

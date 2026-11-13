@@ -409,7 +409,7 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !kgen.sc
     // CHECK-SAME: [retvals (%[[V3]], %[[V4]], %[[V5]], %[[V6]] : index, index, index, !kgen.scalar<f32>)]
     // CHECK-SAME: [iterargs (%[[V6]], %[[V3]], %[[V4]], %[[V5]], %[[V6]] : !kgen.scalar<f32>, index, index, index, !kgen.scalar<f32>)]
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs (%v07: !kgen.scalar<f32>)]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
 
   %r0 = pop.load %var0 : !kgen.pointer<index>
   %r1 = pop.load %var1 : !kgen.pointer<index>
@@ -470,7 +470,7 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
       // CHECK-SAME: [retvals (%[[V5]] : index)]
       // CHECK-SAME: [iterargs (%[[V5]], %[[V5]] : index, index)]
       hlcf.for.yield [induction_var (%v10 : index)] [retvals ()] [iterargs (%4: index)]
-    } {unrollLevel = #hlcf<unroll_level full>}
+    } <unrollLevel = #hlcf<unroll_level full>>
     %v04 = pop.load %v01 : !kgen.pointer<index>
     pop.store %v04, %v0 : !kgen.pointer<index>
     // CHECK-DAG:  hlcf.for.yield
@@ -478,7 +478,7 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
     // CHECK-SAME: [retvals (%[[V3]] : index)]
     // CHECK-SAME: [iterargs (%[[V3]], %[[V3]] : index, index)]
     hlcf.for.yield [induction_var (%v00 : index)] [retvals ()] [iterargs (%v04: index)]
-  } {unrollLevel = #hlcf<unroll_level full>}
+  } <unrollLevel = #hlcf<unroll_level full>>
 
   %v1 = pop.load %v0 : !kgen.pointer<index>
   // CHECK-DAG: hlcf.return %[[V0]]

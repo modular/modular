@@ -358,14 +358,14 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // --- Device context ---
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContext))
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContext))
     return KernelDeclContextPtrAdaptor{};
 
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceContextArray))
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContextArray))
     return KernelDeclContextPtrListAdaptor{};
 
   // --- Device graph builder (launch arg of build_graph) ---
-  if (symbolMatchesRootAndLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))
+  if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))
     return KernelDeclGraphBuilderAdaptor{};
 
   // --- Opaque: unrecognised struct ---

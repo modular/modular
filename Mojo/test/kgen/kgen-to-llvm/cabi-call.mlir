@@ -1,11 +1,11 @@
-// RUN: kgen-opt -lower-kgen-to-llvm -lower-runtime-closures -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -split-input-file %s | FileCheck %s
 //
 // Tests for kgen.call / kgen.call_indirect → llvm.call lowering for abi("C")
 // callees.
 //
 // TRANSFORM UNDER TEST:
-//   Mojo/lib/KGENToLLVM/LowerKGENToLLVM.cpp  — ConvertKGENCall
-//   Mojo/lib/KGENToLLVM/LowerKGENClosuresToLLVM.cpp  — CallIndirectOpConversion
+//   Mojo/lib/KGENToLLVM/LowerKGENToLLVM.cpp  — ConvertKGENCall,
+//                                              ConvertKGENCallIndirect
 //   Mojo/lib/KGENToLLVM/CABICallHelpers.cpp  — CABICallHelper
 //
 // Focus: interaction between TailKind and the sret return convention (T1-T4)
@@ -240,7 +240,7 @@ kgen.func @caller_indirect_narrow(
 // clang does not extend, so neither the definition nor the call marks it,
 // whatever the sign of the field.
 // CHECK-LABEL: llvm.func internal @callee_single_field
-// CHECK-SAME:    (%{{.*}}: i8 {llvm.noundef}, %{{.*}}: i16 {llvm.noundef}, %{{.*}}: i8 {llvm.noundef}) -> i8 attributes
+// CHECK-SAME:    (%{{.*}}: i8, %{{.*}}: i16, %{{.*}}: i8) -> i8 attributes
 kgen.func @callee_single_field(%s: !kgen.struct<(scalar<si8>)>, %u: !kgen.struct<(scalar<ui16>)>, %b: !kgen.struct<(scalar<bool>)>) cabi -> !kgen.struct<(scalar<si8>)> {
   hlcf.return %s : !kgen.struct<(scalar<si8>)>
 }
@@ -277,6 +277,76 @@ kgen.func @callee_narrow_linux(%u: !kgen.scalar<ui8>, %s: !kgen.scalar<si16>) ca
 kgen.func @caller_narrow_linux(%u: !kgen.scalar<ui8>, %s: !kgen.scalar<si16>) -> !kgen.scalar<si8> {
   %r = kgen.call @callee_narrow_linux(%u, %s) : (!kgen.scalar<ui8>, !kgen.scalar<si16>) -> !kgen.scalar<si8>
   hlcf.return %r : !kgen.scalar<si8>
+}
+
+} // module
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+
+// The 6-byte struct here is coerced to an 8-byte f64. Check that we allocate
+// enough memory to store the coerced type.
+
+// CHECK-LABEL: llvm.func internal @callee_ret_6byte
+// CHECK-SAME:    (%{{.*}}: !llvm.ptr {llvm.noundef}) -> f64
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 {alignment = 8 : i64}
+// CHECK:         llvm.store %{{.*}}, [[SLOT]] : !llvm.struct<(f16, f16, f16)>, !llvm.ptr
+// CHECK:         [[VAL:%.*]] = llvm.load [[SLOT]] : !llvm.ptr -> f64
+// CHECK:         llvm.return [[VAL]] : f64
+kgen.func @callee_ret_6byte(%p: !llvm.ptr) cabi -> !llvm.struct<(f16, f16, f16)> {
+  %s = llvm.load %p : !llvm.ptr -> !llvm.struct<(f16, f16, f16)>
+  hlcf.return %s : !llvm.struct<(f16, f16, f16)>
+}
+
+// CHECK-LABEL: llvm.func internal @callee_larger_coerced_ty_6byte
+// CHECK-SAME:    ([[ARG:%.*]]: f64) -> f16
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 {alignment = 8 : i64}
+// CHECK:         llvm.store [[ARG]], [[SLOT]] : f64, !llvm.ptr
+// CHECK:         llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f16, f16, f16)>
+kgen.func @callee_larger_coerced_ty_6byte(%s: !llvm.struct<(f16, f16, f16)>) cabi -> f16 {
+  %r = llvm.extractvalue %s[0] : !llvm.struct<(f16, f16, f16)>
+  hlcf.return %r : f16
+}
+
+// CHECK-LABEL: llvm.func internal @caller_larger_coerced_ty_6byte
+// CHECK-SAME:    ([[ARG:%.*]]: !llvm.struct<(f16, f16, f16)> {llvm.noundef}) -> f16
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64
+// CHECK:         llvm.store [[ARG]], [[SLOT]]
+// CHECK:         [[VAL:%.*]] = llvm.load [[SLOT]]
+// CHECK:         llvm.call tail @callee_larger_coerced_ty_6byte([[VAL]]) : (f64) -> f16
+kgen.func @caller_larger_coerced_ty_6byte(%s: !llvm.struct<(f16, f16, f16)>) -> f16 {
+  %r = kgen.call tail @callee_larger_coerced_ty_6byte(%s) : (!llvm.struct<(f16, f16, f16)>) -> f16
+  hlcf.return %r : f16
+}
+
+// The 10-byte struct here is coerced to an 8-byte f64 and a 4-byte f32. Check
+// that we allocate enough memory to store the coerced type.
+
+// CHECK-LABEL: llvm.func internal @callee_larger_coerced_ty_10byte
+// CHECK-SAME:    ([[ARG0:%.*]]: f64, [[ARG1:%.*]]: f32) -> f32
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x !llvm.struct<(f64, f32)> {alignment = 8 : i64}
+// CHECK:         [[T0:%.*]] = llvm.mlir.undef : !llvm.struct<(f64, f32)>
+// CHECK:         [[T1:%.*]] = llvm.insertvalue [[ARG0]], [[T0]][0] : !llvm.struct<(f64, f32)>
+// CHECK:         [[T2:%.*]] = llvm.insertvalue [[ARG1]], [[T1]][1] : !llvm.struct<(f64, f32)>
+// CHECK:         llvm.store [[T2]], [[SLOT]] : !llvm.struct<(f64, f32)>, !llvm.ptr
+// CHECK:         llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f32, f32, f16)>
+kgen.func @callee_larger_coerced_ty_10byte(%s: !llvm.struct<(f32, f32, f16)>) cabi -> f32 {
+  %r = llvm.extractvalue %s[0] : !llvm.struct<(f32, f32, f16)>
+  hlcf.return %r : f32
+}
+
+// CHECK-LABEL: llvm.func internal @caller_larger_coerced_ty_10byte
+// CHECK-SAME:    ([[ARG:%.*]]: !llvm.struct<(f32, f32, f16)> {llvm.noundef}) -> f32
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x !llvm.struct<(f64, f32)>
+// CHECK:         llvm.store [[ARG]], [[SLOT]]
+// CHECK:         [[VAL0:%.*]] = llvm.load [[SLOT]]
+// CHECK:         [[GEP1:%.*]] = llvm.getelementptr inbounds [[SLOT]][8]
+// CHECK:         [[VAL1:%.*]] = llvm.load [[GEP1]]
+// CHECK:         llvm.call tail @callee_larger_coerced_ty_10byte([[VAL0]], [[VAL1]]) : (f64, f32) -> f32
+kgen.func @caller_larger_coerced_ty_10byte(%s: !llvm.struct<(f32, f32, f16)>) -> f32 {
+  %r = kgen.call tail @callee_larger_coerced_ty_10byte(%s) : (!llvm.struct<(f32, f32, f16)>) -> f32
+  hlcf.return %r : f32
 }
 
 } // module

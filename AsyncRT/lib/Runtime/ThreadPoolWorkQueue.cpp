@@ -324,8 +324,9 @@ struct WorkQueueThread {
 
   /// The system's identifier for the thread associated with this
   /// WorkQueueThread, either a 'worker' or the 'main' thread if in
-  /// mainWillDonate mode.
-  uint64_t threadID = 0;
+  /// mainWillDonate mode. Atomic because getOwningWorkQueueThread reads it from
+  /// any thread.
+  std::atomic<uint64_t> threadID = 0;
 
   /// The underlying worker thread, or none if this WorkQueueThread represents
   /// the 'main' thread in mainWillDonate mode. llvm::thread (not std::thread)
@@ -381,8 +382,9 @@ struct WorkQueueThread {
       // We can leave localWorkerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
       // await to process work items.
-      threadID = llvm::get_threadid();
-      assert(threadID && "get_threadid returned zero for the main thread");
+      uint64_t id = llvm::get_threadid();
+      assert(id && "get_threadid returned zero for the main thread");
+      threadID.store(id, std::memory_order_relaxed);
     } else {
       // Lambda because llvm::thread calls the callable directly, not via
       // std::invoke (so it can't bind a pointer-to-member + this).
@@ -538,8 +540,9 @@ void WorkQueueThread::runOnThread() {
 
   // Capture the worker's thread id so we can distinguish worker threads
   // from different work queues.
-  threadID = llvm::get_threadid();
-  assert(threadID && "get_threadid returned zero for a worker thread");
+  uint64_t id = llvm::get_threadid();
+  assert(id && "get_threadid returned zero for a worker thread");
+  threadID.store(id, std::memory_order_relaxed);
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
@@ -931,7 +934,9 @@ private:
 
     WorkQueueThread *worker = workers + localWorkerID;
 
-    if (worker->threadID != llvm::get_threadid())
+    // Relaxed is enough: a thread only matches the ID it stored itself.
+    if (worker->threadID.load(std::memory_order_relaxed) !=
+        llvm::get_threadid())
       // A 'foreign' thread.
       return nullptr;
 

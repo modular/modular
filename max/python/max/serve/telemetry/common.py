@@ -254,6 +254,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "max.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "max.dkv.rpc_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "max.dkv.hinted_lookup_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "max.dkv.hinted_attach_wait_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "max.dkv.peer_writeback_hold_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     # Percentages
     "max.dp_active_token_occupancy": HISTOGRAM_PERCENT_BUCKETS,

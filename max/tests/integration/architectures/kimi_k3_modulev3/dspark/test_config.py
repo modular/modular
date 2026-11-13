@@ -42,7 +42,7 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.support.math import ceildiv
 from transformers import AutoConfig

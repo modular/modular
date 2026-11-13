@@ -95,6 +95,9 @@ comptime _CPU_POINTWISE_SPLIT_MAX_SPLITS = 8
 # reorders no differently. Row-size gated so small rows keep native width;
 # decoupled from the non-inner tiled tier.
 comptime _CPU_ILP_ACCUMULATORS = 4
+# How much `launch` may widen a long row's accumulator; `_rowwise` reads it to
+# tell when a width limit allows that widening.
+comptime CPU_WIDE_ACCUMULATOR_FACTOR = _CPU_ILP_ACCUMULATORS
 comptime _CPU_WIDE_ACC_MIN_ROW = 2048
 
 
@@ -570,6 +573,7 @@ def launch[
     reduce_shaped: Bool = False,
     supports_splitk: Bool = False,
     num_phases: Int = 0,
+    max_simd_width: Int = 0,
 ](body: Body, shape: Coord) raises:
     """Top-level CPU scaffolder. Picks the tier from `axis` and
     `supports_tiled`, parallelizes over outputs (or output tiles), and
@@ -607,6 +611,8 @@ def launch[
             tier: `num_phases - 1` dependent reduces, then the
             per-element write, each run as its own `sync_parallelize`.
             `<= 1` disables it.
+        max_simd_width: The widest load the body may take, `0` for any;
+            the wide-accumulator path widens only up to it.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -820,12 +826,23 @@ def launch[
             # `_CPU_ILP_ACCUMULATORS * simd_width`-wide monoid (same dtype)
             # breaks the serial accumulate chain into lane-parallel steps,
             # recovering bandwidth. Small rows run the native width.
-            comptime if reduce_shaped and effective_simd > 1 and _CPU_ILP_ACCUMULATORS > 1:
+            # A width limit (`max_simd_width`) caps the widening too.
+            comptime wide_simd = (
+                effective_simd * _CPU_ILP_ACCUMULATORS if max_simd_width
+                == 0 else min(
+                    effective_simd * _CPU_ILP_ACCUMULATORS, max_simd_width
+                )
+            )
+            comptime if (
+                reduce_shaped
+                and effective_simd > 1
+                and wide_simd > effective_simd
+            ):
                 comptime params_wide = ContextParams(
                     axis=axis,
                     emit_tile_width=1,
                     BLOCK_SIZE=1,
-                    simd_width=effective_simd * _CPU_ILP_ACCUMULATORS,
+                    simd_width=wide_simd,
                     target="cpu",
                 )
                 if axis_size >= _CPU_WIDE_ACC_MIN_ROW:

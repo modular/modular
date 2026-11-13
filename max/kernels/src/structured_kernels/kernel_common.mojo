@@ -191,11 +191,6 @@ struct WarpRole1D1D[
     comptime TOTAL_THREADS = (
         Self.NUM_EPILOGUE_THREADS + Self.NUM_LOAD_THREADS + Self.NUM_MMA_THREADS
     )
-    comptime TOTAL_THREADS_WITH_SFB = (
-        Self.TOTAL_THREADS
-        + Self.NUM_SFB_TMA_LOAD_THREADS
-        + Self.NUM_SFB_LOAD_THREADS
-    )
     # Send warps sit at the TOP of the thread space so every role below keeps
     # its exact thread range: at `num_send_warps == 0` this is a no-op and
     # `TOTAL_THREADS_WITH_SCHED` is unchanged.
@@ -298,22 +293,6 @@ struct WarpRole1D1D[
         sits in the block. Only meaningful when `is_epilogue()`.
         """
         return ufloordiv(thread_idx.x - Self.EPILOGUE_WARP_START, WARP_SIZE)
-
-    @staticmethod
-    @inline(.always)
-    def is_epilogue_leader() -> Bool:
-        """Returns True for the single leader thread of the epilogue pool.
-
-        This is the election callers mean when they write
-        `thread_idx.x == 0`: lane 0 of the pool's first warp. Writing it
-        as a role predicate keeps the election correct if the pool ever
-        stops starting at thread 0.
-        """
-        return (
-            Self.is_epilogue()
-            and Self.epilogue_role_index() == 0
-            and lane_id() == 0
-        )
 
 
 # =============================================================================

@@ -546,7 +546,10 @@ def depth_supported_by_gpu[
     comptime head_depth_supported = depth == 128 or (
         depth == 64 and (is_sm90or100 or info == A100 or target.is_amd_gpu())
     ) or (
-        depth == 80 and config.dtype == .bfloat16 and target.is_amd_gpu()
+        depth in (72, 80)
+        and config.dtype == .bfloat16
+        and target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
     ) or (
         depth == 256
         and (
@@ -2861,11 +2864,12 @@ def mha[
                     sink_weights,
                 )
         elif is_amd_gpu():
-            # Single unified prefill kernel — handles BF16+FP8, any mask,
-            # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
-            # live in the kernel itself. Branches on `_is_amd_rdna()` because
-            # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
-            # geometry / wave size / WMMA intrinsics.
+            # The prefill kernel supports all masks, with or without sink.
+            # BF16 supports depth∈{64,72,80,128,256,512}, and FP8 supports
+            # depth∈{128,256}. The kernel asserts the depth. CDNA (gfx950)
+            # and RDNA (gfx11/12) use different fragment geometry, wave
+            # size, and WMMA intrinsics, so each has its own kernel. RDNA
+            # does not support depth 72 or 80.
             var sink_weights_ptr = OptionalReg[
                 ImmPointer[Scalar[q_type], ImmutAnyOrigin]
             ]()

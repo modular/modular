@@ -13,11 +13,14 @@
 """``kda_chunk`` against ``kda_decode`` at GLM-5.3-Flash's prefill contract.
 
 GLM's KDA layer routes prefill through ``kda_chunk`` and decode through
-``kda_decode``, so the two must agree on everything the layer passes: float32
-q/k/v, the bounded ``"safe"`` gate, sigmoid-applied beta logits, a float32
-``K_FIRST`` pool, and one TP8 rank's 8 heads of 128. The op's own suite checks
-sequences of a few dozen tokens; these run thousands, from a non-zero state, so
-a chunked prefill that resumes a prefix-cache checkpoint is covered too.
+``kda_decode``, so the two must agree on everything the layer passes: the
+bounded ``"safe"`` gate, sigmoid-applied beta logits, a float32 ``K_FIRST``
+pool, and one TP8 rank's 8 heads of 128. On NVIDIA the layer casts q/k/v to
+bf16 so the op takes the fused compute-bound kernel. It is graded against
+float32 decode over the same bf16-representable q/k/v, so the comparison
+measures the kernel, not the rounding. The op's own suite checks sequences
+of a few dozen tokens; these run thousands, from a non-zero state, so a
+chunked prefill that resumes a prefix-cache checkpoint is covered too.
 
 On gfx950 the chunk op takes bf16 q/k/v and output, so the layer casts at the
 op boundary while decode stays float32. The AMD cases grade that cast chunk
@@ -28,6 +31,7 @@ graded against the same core built decode-only.
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import max.driver as md
@@ -69,6 +73,11 @@ def _is_sm100_gpu() -> bool:
     )
 
 
+def _bf16_exact(x: np.ndarray) -> np.ndarray:
+    """Rounds ``x`` through bf16 so the chunk arm's cast is lossless."""
+    return torch.from_numpy(x).to(torch.bfloat16).float().numpy()
+
+
 def _rel_rmse(actual: np.ndarray, desired: np.ndarray) -> float:
     actual64, desired64 = actual.astype(np.float64), desired.astype(np.float64)
     diff = np.sqrt(np.mean((actual64 - desired64) ** 2))
@@ -89,7 +98,11 @@ def _load(
     batch: int,
     pool_shape: tuple[int, ...],
 ) -> Model:
-    """Compiles one op at fixed shapes."""
+    """Compiles one op at fixed shapes.
+
+    The chunk arm casts q/k/v to bf16 and selects the fused compute-bound
+    kernel, as the layer does on NVIDIA.
+    """
     gpu = DeviceRef.GPU()
     f32 = DType.float32
     with Graph(
@@ -108,12 +121,17 @@ def _load(
         ],
     ) as graph:
         t = [inp.tensor for inp in graph.inputs[:8]]
-        op = kda_chunk if chunked else kda_decode
+        qkv = [ops.cast(x, DType.bfloat16) if chunked else x for x in t[:3]]
+        op = (
+            functools.partial(kda_chunk, use_computebound=True)
+            if chunked
+            else kda_decode
+        )
         graph.output(
             op(
-                t[0],
-                t[1],
-                t[2],
+                qkv[0],
+                qkv[1],
+                qkv[2],
                 t[3],
                 t[4],
                 t[5],
@@ -168,9 +186,7 @@ def test_chunk_matches_decode(seq_lens: list[int]) -> None:
     # The layer feeds the recurrence silu(conv(...)) outputs; unit-scale
     # inputs over 8K steps keep the state well away from both zero and
     # overflow, which is where a carry bug shows.
-    q = normal(total_t, HEADS, HEAD_DIM)
-    k = normal(total_t, HEADS, HEAD_DIM)
-    v = normal(total_t, HEADS, HEAD_DIM)
+    q, k, v = (_bf16_exact(normal(total_t, HEADS, HEAD_DIM)) for _ in range(3))
     raw_gate = normal(total_t, HEADS, HEAD_DIM)
     beta_logits = normal(total_t, HEADS)
     a_log = normal(HEADS, scale=0.5)

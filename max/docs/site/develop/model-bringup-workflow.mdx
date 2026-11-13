@@ -68,10 +68,9 @@ Each file serves a distinct role:
 - `arch.py`: registers the architecture with MAX. It declares the architecture's
   name, supported encodings, and the classes that implement the config, model,
   and weight adapter. The name must match the `architectures[0]` value in the
-  model's Hugging Face `config.json`. Models that use a KV cache also set the
-  `memory_planner` field (usually
-  [`PagedMemoryPlanner`](/api/python/generated/max.pipelines.kv_cache.PagedMemoryPlanner/))
-  so MAX can size the KV cache and batch limits.
+  model's Hugging Face `config.json`. You don't declare memory estimates: at
+  startup the model worker measures peak memory during warmups and sizes the
+  KV cache from it.
 - `batch_processor.py`: optional batch processor that prepares model inputs for
   each scheduled batch and declares the input types your module compiles
   against. Create one only when the model has unique batching logic. If batching
@@ -414,8 +413,8 @@ class method. The default implementation reads these Hugging Face fields:
 
 Override `get_head_dim()`, `get_num_layers()`, or `construct_kv_params()` when
 your Hugging Face config names these values differently. MAX sizes the cache
-with the overrides on your pipeline model's `model_config_cls`, and memory
-planning uses the `config` class in `arch.py`, so point both at your config
+with the overrides on your pipeline model's `model_config_cls`, and the
+registry uses the `config` class in `arch.py`, so point both at your config
 class. The `kv_params` that `initialize()` stores must come from the same
 overrides. Some reference configs name the class explicitly instead of using
 `cls`: `Llama3Config.initialize()` calls `Llama3Config.construct_kv_params()`.
@@ -724,7 +723,6 @@ from max.pipelines.architectures.llama3_modulev3.batch_processor import (
     Llama3ModuleV3BatchProcessor,
 )
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
@@ -746,9 +744,8 @@ your_model_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
-    # Reuse the Llama 3 family's batch processor and the paged memory planner.
+    # Reuse the Llama 3 family's batch processor.
     batching=Llama3ModuleV3BatchProcessor,
-    memory_planner=PagedMemoryPlanner,
     multi_gpu_supported=False,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

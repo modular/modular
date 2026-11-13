@@ -134,6 +134,26 @@ def test_kv_cache_metrics_add_sums_the_dkv_hint_loss_fields() -> None:
     assert total.dkv_hint_blocks_unserved == 33
 
 
+def test_kv_cache_metrics_add_sums_the_dkv_attach_wait_fields() -> None:
+    """The peer attach wait's counts and time sum across replicas."""
+    first = KVCacheMetrics(
+        dkv_hinted_attach_waits=1,
+        dkv_hinted_attach_wait_ms_total=10.0,
+        dkv_hinted_attach_wait_timeouts=1,
+    )
+    second = KVCacheMetrics(
+        dkv_hinted_attach_waits=3,
+        dkv_hinted_attach_wait_ms_total=30.0,
+        dkv_hinted_attach_wait_timeouts=0,
+    )
+
+    total = first + second
+
+    assert total.dkv_hinted_attach_waits == 4
+    assert total.dkv_hinted_attach_wait_ms_total == 40.0
+    assert total.dkv_hinted_attach_wait_timeouts == 1
+
+
 def test_kv_cache_metrics_add_sums_the_connector_lookup_drop_fields() -> None:
     """Dropped lookups and the samples behind their histograms sum across
     replicas, key by key."""

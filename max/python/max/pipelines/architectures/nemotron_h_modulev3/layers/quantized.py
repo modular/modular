@@ -342,13 +342,6 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the quantized linear over ``x``."""
-        with ensure_context():
-            shards = [
-                nvfp4_matmul(TensorValue(shard), *params)
-                for shard, params in zip(
-                    x.local_shards, self.device_params(x.mesh), strict=True
-                )
-            ]
         if (
             x.mesh.num_devices == 1
             or self.parallelism is Parallelism.REPLICATED
@@ -358,7 +351,16 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
             mapping = DeviceMapping(x.mesh, (Sharded(x.rank - 1),))
         else:
             mapping = DeviceMapping(x.mesh, (Partial(),))
-        return Tensor.from_shard_values(shards, mapping)
+        # Called eagerly, a context runs its ops when it closes, and its graph
+        # values can't be used after it closes, so they all stay in one block.
+        with ensure_context():
+            shards = [
+                nvfp4_matmul(TensorValue(shard), *params)
+                for shard, params in zip(
+                    x.local_shards, self.device_params(x.mesh), strict=True
+                )
+            ]
+            return Tensor.from_shard_values(shards, mapping)
 
 
 class RowGroupedLinear(Linear):

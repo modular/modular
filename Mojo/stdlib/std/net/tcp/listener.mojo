@@ -30,6 +30,7 @@ from ..addr import SocketAddr
 from .._socket import Socket as _Socket
 from ..option import GettableSocketOption, ReuseAddress, SettableSocketOption
 from .socket import TCPSocket
+from .stream import TCPStream
 
 
 struct TCPListener(Movable):
@@ -42,8 +43,11 @@ struct TCPListener(Movable):
     from std.net.tcp import TCPListener
 
     def main() raises:
-        var listener = TCPListener(bind=.v4(SocketAddrV4(.localhost, 0)))
-        print(listener.local_addr())
+        var listener = TCPListener(bind=.v4(SocketAddrV4(.localhost, 8080)))
+        while True:
+            var stream, addr = listener.accept()
+            print(t"connection from {addr}")
+            stream.write_all("hello\\n".as_bytes())
     ```
     """
 
@@ -96,6 +100,18 @@ struct TCPListener(Movable):
             If the close fails.
         """
         self._socket^.close()
+
+    def accept(self) raises IOError -> Tuple[TCPStream, SocketAddr]:
+        """Waits for a connection and returns it with the peer's address.
+
+        Returns:
+            The connection, and the address it came from.
+
+        Raises:
+            If accepting fails.
+        """
+        var socket, addr = self._socket.accept()
+        return (TCPStream(socket^), addr)
 
     def local_addr(self) raises IOError -> SocketAddr:
         """Returns the address the listener is bound to.

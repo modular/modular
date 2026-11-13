@@ -14,8 +14,8 @@
 """Graph-compiler reduce-along-axis model cache for the MO interpreter.
 
 Covers the reduce-along-axis family: the reductions (``ReduceMax``/``Min``/
-``Add``/``Mul``/``Mean``), ``Softmax``/``Logsoftmax``, ``ArgMax``/``ArgMin``
-(emit ``int64`` indices), and ``Cumsum``.
+``Add``/``Mul``/``Mean``), ``Softmax``, ``ArgMax``/``ArgMin`` (emit
+``int64`` indices), and ``Cumsum``.
 
 Every op applies one operation along a single ``axis``, which is a compile-time
 attribute, not an operand. To keep the cache key ``(op, device, dtype)`` without
@@ -43,7 +43,7 @@ Models serve the eager handler via :func:`reduce_model`. Must not import from
 ``handlers.py``.
 
 The swept dtype set is deliberately conservative (the IR type category is only a
-ceiling): softmax/logsoftmax sweep floats only; the reductions, argmax/argmin,
+ceiling): softmax sweeps floats only; the reductions, argmax/argmin,
 and cumsum sweep floats + ints; ``ReduceMax``/``ReduceMin`` additionally sweep
 ``bool`` (the logical-OR/AND reductions, issue #6067); cumsum excludes ``bool``.
 CPU floats are f32/f64 (no 16-bit); GPU floats are f16/f32/bf16 (no f64).
@@ -130,11 +130,6 @@ def _b_softmax(x: TensorValue, v: Variant) -> TensorValue:
     return ops.transpose(ops.softmax(xt, axis=-1), 1, 2)
 
 
-def _b_logsoftmax(x: TensorValue, v: Variant) -> TensorValue:
-    xt = ops.transpose(x, 1, 2)
-    return ops.transpose(ops.logsoftmax(xt, axis=-1), 1, 2)
-
-
 def _b_argmax(x: TensorValue, v: Variant) -> TensorValue:
     xt = ops.transpose(x, 1, 2)
     return ops.transpose(ops.argmax(xt, axis=-1), 1, 2)
@@ -154,8 +149,7 @@ _REDUCE_OPS: dict[type[_core.Operation], ReduceSpec] = {
     mo.ReduceMinOp: ReduceSpec(_b_min, DTypeClass.NUMERIC_BOOL),
     mo.ReduceAddOp: ReduceSpec(_b_sum, DTypeClass.NUMERIC),
     mo.ReduceMulOp: ReduceSpec(_b_prod, DTypeClass.NUMERIC),
-    mo.ReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
-    mo.ReduceLogsoftmaxOp: ReduceSpec(_b_logsoftmax, DTypeClass.FLOAT),
+    mo.CompositeReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
     mo.ReduceArgMaxOp: ReduceSpec(_b_argmax, DTypeClass.NUMERIC),
     mo.ReduceArgMinOp: ReduceSpec(_b_argmin, DTypeClass.NUMERIC),
     mo.CumsumOp: ReduceSpec(

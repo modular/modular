@@ -86,6 +86,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     # MXFP4 packing uses the SM100 conversion instructions.
+    "gpu/nn/bench_acceptance_residual.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # The subtract and from_probs sampling modes are not supported on Metal
     "gpu/nn/bench_indexer_k_store.mojo": ["//:b200_gpu"],
     "gpu/nn/bench_fused_dual_qk_rms_norm_rope_nvfp4.mojo": ["//:b200_gpu"],  # NVFP4 packing uses the SM100 conversion instructions
     "algorithm/parallelize_overhead.mojo": select({
@@ -111,6 +115,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist; needs P2P
+    "gpu/comm/bench_mcast_rmsnorm.mojo": select({
+        "//:b200_gpu": [],
+        "//:h100_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),  # The window needs ::multimem, which only SM90+ NVIDIA GPUs have
     "gpu/comm/bench_reducescatter_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -193,6 +202,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Kernel uses block-scope atomics (BLOCK_SCOPE) unsupported on Metal.
+    # Thread-block clusters, sized for B200's GPC layout.
+    "gpu/nn/bench_topk_det_decode.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "gpu/nn/trace_topk_bitonic.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -207,6 +221,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_block_scaled_matmul_compute_fn.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_router_gate_prefill_sm100.mojo": ["//:b200_gpu"],  # SM100-specific split-bf16 router GEMM
+    "gpu/linalg/bench_router_gate_gemv_mimo.mojo": ["//:b200_gpu"],  # Times the SM100 router-gate band tables
     "gpu/linalg/bench_o_proj_matmul_mxfp8_amd.mojo": ["//:mi355_gpu"],  # CDNA4 block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
     "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
@@ -384,6 +399,13 @@ mojo_binary(
             "gpu/bench_tile.mojo",
             # Dedicated `mojo_test` below, timed on remote B200.
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
+            # Same reason: the MoE decode-shape ablation, timed on remote B200.
+            "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Dedicated `mojo_binary` below: the multicast arm the boundary's
+            # window serves is compiled in only under
+            # `MODULAR_MULTICAST_ALLREDUCE_RMS_NORM`, which the generic glob
+            # cannot pass.
+            "gpu/comm/bench_mcast_rmsnorm.mojo",
         ],
     )
 ]
@@ -430,9 +452,59 @@ mojo_binary(
             "gpu/bench_tile.mojo",
             # Dedicated `mojo_test` below, timed on remote B200.
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
+            # Same reason: the MoE decode-shape ablation, timed on remote B200.
+            "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Dedicated `mojo_binary` below, with the arm's define.
+            "gpu/comm/bench_mcast_rmsnorm.mojo",
         ],
     )
 ]
+
+# The multicast residual boundary's window and kernel arms, timed per call at
+# the shapes MiMo-V2's decode step runs. The arm is compiled in only under
+# `MODULAR_MULTICAST_ALLREDUCE_RMS_NORM`, which is why this source leaves the
+# generic glob: the same reason `bench_qwen38_decode_attn` carries its defines.
+mojo_binary(
+    name = "gpu/comm/bench_mcast_rmsnorm",
+    srcs = ["gpu/comm/bench_mcast_rmsnorm.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM=1",
+    ],
+    data = select({
+        "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+        "//conditions:default": [],
+    }),
+    enable_assertions = False,
+    env = select({
+        "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+        "//conditions:default": {},
+    }),
+    # The arm stores through `multimem` and exchanges through a team-wide
+    # window, so it needs an SM90+ NVIDIA team: the same constraint its sibling
+    # test carries.
+    target_compatible_with = select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/comm/bench_mcast_rmsnorm.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/comm/bench_mcast_rmsnorm"],
+)
 
 # SM100 BF16 grouped matmul per token tile width at one routed-rows shape
 # (`--test_arg=--counts=...`, `--ids=...`); timed on remote B200.
@@ -457,6 +529,38 @@ mojo_test(
         "//max:max_mojo",
         "@mojo//:std",
     ],
+)
+
+# SM100 W4A8 grouped matmul at the MiMo-V2 routed-expert decode shapes, one
+# arm per launch configuration (`--test_arg=--counts=...`, `--ids=...`);
+# timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_moe_w4a8_decode.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_moe_w4a8_decode.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_moe_w4a8_decode.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_moe_w4a8_decode.mojo.run"],
 )
 
 build_test(
@@ -909,6 +1013,46 @@ _FA4_WS_DEPS = [
     for cols in [
         50016,
         200064,
+    ]
+]
+
+# Kimi K3 MLA decode cells on MI355 (TP8, fp8 KV, bf16 out, depth 576): the
+# target verify (12 heads per rank) and the DSpark drafter (8 heads per rank).
+# Shapes past the head count (seq_len, num_keys, batch_size, np_list) stay
+# runtime args.
+[
+    mojo_test(
+        name = "gpu/nn/bench_mla.mojo.run_k3_" + cell + "_amd",
+        size = "enormous",
+        srcs = ["gpu/nn/bench_mla.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "qkv_type=DType.float8_e4m3fn",
+            "-D",
+            "num_heads=" + str(heads),
+            "-D",
+            "group=" + str(heads),
+        ],
+        enable_assertions = False,
+        exec_properties = {
+            "test.resources:gpu-memory": "64",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:amd_gpu"],
+        deps = [
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for cell, heads in [
+        ("target", 12),
+        ("drafter", 8),
     ]
 ]
 

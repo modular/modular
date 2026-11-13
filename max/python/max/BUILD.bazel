@@ -91,11 +91,8 @@ modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["//max/python/max/_core/max_license:_core.cpp"],
     dynamic_deps = [
-        "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//GraphCompiler:MGPRT",
-        "//MLRT:Driver/Compilation",
-        "//MLRT:Driver/DeviceContext",
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",

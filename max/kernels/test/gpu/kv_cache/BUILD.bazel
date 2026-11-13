@@ -64,6 +64,7 @@ _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_split_head_store_rope.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_rope_qkv_store_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_paged_decode_d64_gqa8_32k.mojo": select({
         # Covers the SM100 FA4 workspace split-K combine.
         "//:b200_gpu": [],
@@ -293,12 +294,13 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
 #
 # head_size:
 #   64, 128: all GPUs (subject to page_size).
-#   80:      MI355 only.
+#   72, 80:  MI355 only.
 #   256:     depth512 kernel, H100 and B200 only.
 #   512:     depth512 kernel, B200 only.
 _PAGED_FA_GPU_MEMORY = {
     ("16", "256"): "6",
     ("16", "512"): "6",
+    ("256", "72"): "2",
     ("256", "80"): "2",
     ("64", "256"): "6",
     ("64", "512"): "6",
@@ -307,6 +309,11 @@ _PAGED_FA_GPU_MEMORY = {
 _PAGED_FA_CONFIGS = [
     # (page_size, head_size, extra_constraints)
     ("256", "64", _APPLE_GPU_INCOMPATIBLE),
+    (
+        "256",
+        "72",
+        ["//:mi355_gpu"],
+    ),
     (
         "256",
         "80",

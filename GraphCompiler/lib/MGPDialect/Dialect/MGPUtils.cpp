@@ -77,33 +77,12 @@ TypedValue<MGP::ContextType> MGP::getContextForBlock(Block *block) {
   ASSERT_STREAM(false, << "unable to locate an !mgp.context");
 }
 
-TypedValue<MEF::ChainType> MGP::getRootChainForBlock(Block *block) {
-  while (true) {
-    for (Value arg : block->getArguments()) {
-      if (isa<MEF::ChainType>(arg.getType()))
-        return cast<TypedValue<MEF::ChainType>>(arg);
-    }
-    for (auto createOp : block->getOps<GRT::ChainCreateOp>()) {
-      if (createOp->getNumOperands() == 0)
-        return createOp.getResult();
-    }
-    ASSERT_STREAM(!isa<ModelOp>(block->getParentOp()),
-                  << "unable to locate a !mef.chain");
-    block = block->getParentOp()->getBlock();
-  }
-  ASSERT_STREAM(false, << "unable to locate a !mef.chain");
-}
-
 void MGP::setInOutSignature(Operation *op, InOutSignatureAttr inOutSig) {
   ASSERT_STREAM(!isa<MGPInOutSemanticsOpInterface>(op),
                 << "op already implements MGPInOutSemanticsOpInterface");
   ASSERT_STREAM(inOutSig.size() == op->getNumOperands(),
                 << "mismatched operation and in/out signature arity");
   op->setAttr(kInOutSigAttribute, inOutSig);
-}
-
-void MGP::removeInOutSignature(Operation *op) {
-  op->removeAttr(kInOutSigAttribute);
 }
 
 InOutSignatureAttr::InOutSemantics
@@ -127,11 +106,6 @@ MGP::getInOutSemantics(OpOperand &opOperand) {
 bool MGP::isMutated(OpOperand &opOperand) {
   InOutSignatureAttr::InOutSemantics inOut = getInOutSemantics(opOperand);
   return inOut == InOutSignatureAttr::kOut || inOut == InOutSignatureAttr::kMut;
-}
-
-bool MGP::isRead(OpOperand &opOperand) {
-  InOutSignatureAttr::InOutSemantics inOut = getInOutSemantics(opOperand);
-  return inOut == InOutSignatureAttr::kIn || inOut == InOutSignatureAttr::kMut;
 }
 
 DeviceRefAttr MGP::graphInputDevice(Value v) {

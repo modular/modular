@@ -171,15 +171,23 @@ static llvm::StringRef getExtAttrName(IntExtKind kind) {
 }
 
 llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
-    mlir::TypeRange argTypes, mlir::Type retType, size_t numArgs) const {
+    mlir::TypeRange argTypes, mlir::Type retType, mlir::ArrayAttr argAttrs,
+    size_t numArgs) const {
   numArgs = std::min(numArgs, args.size());
   llvm::SmallVector<mlir::NamedAttrList> attrs(getLLVMParamIndex(numArgs));
   if (ret.useSRet)
     attrs[0].set(mlir::LLVM::LLVMDialect::getStructRetAttrName(),
                  mlir::TypeAttr::get(retType));
   unsigned paramIdx = getLLVMParamIndex(0);
-  for (auto [coercion, type] :
-       llvm::zip(llvm::ArrayRef(args).take_front(numArgs), argTypes)) {
+  for (auto [argIdx, coercion] :
+       llvm::enumerate(llvm::ArrayRef(args).take_front(numArgs))) {
+    mlir::Type type = argTypes[argIdx];
+    if (argAttrs && argIdx < argAttrs.size()) {
+      if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[argIdx]))
+        attrs[paramIdx].append(dict.begin(), dict.end());
+      if (!coercion.useIndirect && isa<mlir::LLVM::LLVMStructType>(type))
+        attrs[paramIdx].erase(mlir::LLVM::LLVMDialect::getNoUndefAttrName());
+    }
     if (coercion.useIndirect && coercion.useByval)
       attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
                           mlir::TypeAttr::get(type));
@@ -294,6 +302,47 @@ bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
     return false;
 
   return getLeafFloatBitWidth(type) != 0;
+}
+
+void CabiUtils::forEachMember(
+    mlir::Type type, int64_t offset, const LLVMDataLayout &dataLayout,
+    llvm::function_ref<void(mlir::Type, int64_t)> callback) {
+  // A type without size is not opened: an empty struct, a zero-length array,
+  // or an array of either.
+  if (dataLayout.getTypeAllocSize(type) == 0) {
+    callback(type, offset);
+    return;
+  }
+
+  if (auto arrayType = dyn_cast<mlir::LLVM::LLVMArrayType>(type)) {
+    mlir::Type elementType = arrayType.getElementType();
+    int64_t elementSize = dataLayout.getTypeAllocSize(elementType);
+    for (int64_t i = 0, e = arrayType.getNumElements(); i < e; ++i)
+      forEachMember(elementType, offset + i * elementSize, dataLayout,
+                    callback);
+    return;
+  }
+
+  if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
+    // The offsets below assume aligned fields. A packed struct would break
+    // them; Mojo does not emit one.
+    // TODO(MOCO-3369): Use LLVMDataLayout::getStructFieldOffsets() once it
+    // exists.
+    assert(!structType.isPacked() &&
+           "packed structs are not supported; their fields may be unaligned");
+    int64_t fieldOffset = 0;
+    for (mlir::Type fieldType : structType.getBody()) {
+      // Lay out the fields as LLVMDataLayout::getTypeSizeInBits does for a
+      // struct: align each field, then add its alloc size.
+      fieldOffset =
+          llvm::alignTo(fieldOffset, dataLayout.getTypeABIAlign(fieldType));
+      forEachMember(fieldType, offset + fieldOffset, dataLayout, callback);
+      fieldOffset += dataLayout.getTypeAllocSize(fieldType);
+    }
+    return;
+  }
+
+  callback(type, offset);
 }
 
 mlir::IntegerType CabiUtils::getIntegerTypeForSize(int64_t size,

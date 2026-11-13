@@ -14,40 +14,25 @@
 from std.ffi import external_call
 
 from .device_context import (
-    DeviceContext,
-    DeviceFunction,
-    DeviceStream,
-    _CString,
-    _checked,
+    LegacyDeviceContext,
+    LegacyDeviceFunction,
+    LegacyDeviceStream,
 )
-
-
-struct _CUctx_st:
-    pass
-
-
-struct _CUstream_st:
-    pass
-
-
-struct _CUmod_st:
-    pass
-
-
-struct _CUevent_st:
-    pass
-
-
-comptime CUcontext = Optional[Pointer[_CUctx_st, UntrackedOrigin[mut=True]]]
-comptime CUstream = Optional[Pointer[_CUstream_st, UntrackedOrigin[mut=True]]]
-comptime CUmodule = Optional[Pointer[_CUmod_st, UntrackedOrigin[mut=True]]]
-comptime CUevent = Optional[Pointer[_CUevent_st, UntrackedOrigin[mut=True]]]
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._driver_common import _checked
+from max.gpu.host._driver_handles import _CString
+from max.gpu.host._vendor_handles import (
+    CUcontext,
+    CUstream,
+    CUmodule,
+)
+from max.gpu.host._driver_common import _checked
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
 # Use `var cuda_ctx: CUcontext = CUDA(ctx)` where ctx is a `DeviceContext` to get access to the underlying CUcontext.
 @inline(.always)
-def CUDA(ctx: DeviceContext) raises -> CUcontext:
+def CUDA(ctx: LegacyDeviceContext) raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_context(CUcontext *result, const DeviceContext *ctx)
     _checked(
@@ -65,7 +50,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
 # Accessor function to get access to the underlying CUstream from a abstract DeviceStream.
 # Use `var cuda_stream: CUstream = CUDA(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying CUstream.
 @inline(.always)
-def CUDA(stream: DeviceStream) raises -> CUstream:
+def CUDA(stream: LegacyDeviceStream) raises -> CUstream:
     var result = CUstream()
     # const char *AsyncRT_DeviceStream_cuda_stream(CUstream *result, const DeviceStream *stream)
     _checked(
@@ -82,7 +67,7 @@ def CUDA(stream: DeviceStream) raises -> CUstream:
 
 # Accessor function to get access to the underlying CUmodule from a DeviceFunction.
 @inline(.always)
-def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
+def CUDA_MODULE(func: LegacyDeviceFunction) raises -> CUmodule:
     var result = CUmodule()
     # const char *AsyncRT_DeviceFunction_cuda_module(CUmodule *result, const DeviceFunction *func)
     _checked(

@@ -19,7 +19,7 @@ __all__ = ["KVCacheConfig", "KVConnectorConfig", "cache_dtype_for_encoding"]
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from max.config import ConfigFileModel
+from max.config import ConfigFileModel, ConfigModel
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
@@ -285,7 +285,7 @@ class KVConnectorConfig(ConfigFileModel):
     """
 
 
-class KVCacheConfig(ConfigFileModel):
+class KVCacheConfig(ConfigModel):
     """Configuration for the paged KV cache."""
 
     model_config = ConfigDict(frozen=True)
@@ -333,12 +333,11 @@ class KVCacheConfig(ConfigFileModel):
     """KV cache connector configuration, including the connector ``type``."""
 
     device_memory_utilization: float = Field(
-        default=0.9,
+        default=0.95,
         description=(
-            "The fraction of available device memory that the process "
-            "should consume. The remaining headroom holds the KV cache: "
-            "``kv_cache_workspace = (total_free_memory * "
-            "device_memory_utilization) - model_weights_size``."
+            "The fraction of device memory the process may use. The KV "
+            "cache gets what is left of it after the weights, the measured "
+            "warmup peaks, graph capture and a fixed margin."
         ),
     )
     """The fraction of available device memory the process should consume."""

@@ -137,7 +137,7 @@ def _enum_payload_eq[
     comptime for i in range(names.length):
         if discriminant == i:
             comptime PayloadType = types[i]
-            comptime if PayloadType != NoneType:
+            comptime if PayloadType != Tuple[]:
                 comptime assert conforms_to(PayloadType, Equatable), (
                     "the payload of every case must conform to `Equatable` to"
                     " use the default `Equatable` implementation for an"

@@ -129,7 +129,7 @@ def _enum_payload_hash[
     comptime for i in range(names.length):
         if discriminant == i:
             comptime PayloadType = types[i]
-            comptime if PayloadType != NoneType:
+            comptime if PayloadType != Tuple[]:
                 comptime assert conforms_to(PayloadType, Hashable), (
                     "the payload of every case must conform to `Hashable` to"
                     " use the default `Hashable` implementation for an"

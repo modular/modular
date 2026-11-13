@@ -235,8 +235,8 @@ def blockscaled_pair_cta_mxfp8[
     comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (
-        a_expected_bytes + b_expected_bytes
-    ) + a_scales_bytes + b_scales_bytes
+        a_expected_bytes + b_expected_bytes + a_scales_bytes + b_scales_bytes
+    )
 
     var tma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.unsafe_bitcast[Int64]().unsafe_offset(2)
@@ -373,7 +373,9 @@ def blockscaled_pair_cta_mxfp8[
                 b_multicast_mask,
             )
 
-            a_scales_tma_op.async_copy_4d(
+            # The leader's tcgen05_cp below also reads the peer's scales, so
+            # the peer's scale load must signal the leader's barrier.
+            a_scales_tma_op.async_copy_4d[cta_group](
                 a_scales_smem_tile,
                 tma_mbar[0],
                 (
@@ -384,7 +386,7 @@ def blockscaled_pair_cta_mxfp8[
                 ),
             )
 
-            b_scales_tma_op.async_copy_4d(
+            b_scales_tma_op.async_copy_4d[cta_group](
                 b_scales_smem_tile,
                 tma_mbar[0],
                 (

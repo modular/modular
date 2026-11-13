@@ -118,12 +118,6 @@ M::KGEN::getMachineFunctionsFromMachineModuleInfo(
   return std::invoke(getMFAccessor(), machineModuleInfo);
 }
 
-void M::KGEN::setMachineFunctionNumber(llvm::MachineFunction &mf,
-                                       unsigned number) {
-  unsigned &origNumber = std::invoke(getMFNumberAccessor(), mf);
-  origNumber = number;
-}
-
 void M::KGEN::setNextFnNum(llvm::MachineModuleInfo &mmi, unsigned value) {
   unsigned &nextFnNum = std::invoke(getNextFnNumAccessor(), mmi);
   nextFnNum = value;

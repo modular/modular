@@ -129,11 +129,6 @@ public:
       : MEFType(pointer, attrEnd) {}
 
   /// Decode the rank and dimensions and return the element type for the tensor.
-  /// This will assert fail if the tensor is dynamically ranked or has an
-  /// unknown dimension.
-  MEFType decodeStatic(SmallVectorImpl<int64_t> &dims) const;
-
-  /// Decode the rank and dimensions and return the element type for the tensor.
   /// If the tensor is dynamically ranked then hasRank will be false and dims
   /// will be left empty. Negative dimension values denote dynamic dims.
   MEFType decode(bool &hasRank, SmallVectorImpl<int64_t> &dims) const;

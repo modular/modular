@@ -28,4 +28,4 @@ def hello():
 def main() raises:
     with DeviceContext() as ctx:
         var t1 = ctx.compile_function[hello]()
-        print(t1._func_impl.asm)
+        print(t1.unwrap_legacy()._func_impl.asm)

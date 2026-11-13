@@ -15,12 +15,15 @@
 Examples:
 
 ```mojo
-from std.net.tcp import TCPSocket
-from std.net.tcp.option import NoDelay
+from std.net import SocketAddrV4, TCPListener, TCPStream
 
 def main() raises:
-    var socket = TCPSocket.v4()
-    socket.set_option[NoDelay](True)
+    var listener = TCPListener(bind=.v4(SocketAddrV4(.localhost, 0)))
+    var client = TCPStream(connect=listener.local_addr())
+    var server, _ = listener.accept()
+    client.write_all("ping".as_bytes())
+    var buffer = List[Byte](length=4, fill=0)
+    var n = server.read(buffer)
 ```
 """
 
@@ -32,4 +35,4 @@ from .addr import (
     SocketAddrV4,
     SocketAddrV6,
 )
-from .tcp import TCPListener, TCPSocket
+from .tcp import TCPListener, TCPSocket, TCPStream

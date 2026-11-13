@@ -343,4 +343,40 @@ def MAP_StrideViewOpInterface : OpInterface<"StrideViewOpInterface"> {
   ];
 }
 
+def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
+  let description = [{
+    An op in a fused kernel body (`map.iter.elementwise.body` or
+    `map.iter.rowwise.body`) that limits the SIMD width the kernel may run at,
+    or whose regions see an index other than the kernel's own.
+
+    `getMaxSimdWidth` returns a limit, a number every width must divide (see
+    `MAP::GCDAttr`), for the op and everything nested in its regions,
+    stated for the index the op itself sees; null means no limit. An op
+    implementing the interface vouches for
+    its regions' index arguments: it translates what its regions require into
+    its own index. The default is right for an op whose regions see the same
+    innermost coordinate as its own index, and that limits nothing itself.
+
+    Every other index in a kernel body, an op's index result or the index
+    argument of a region of an op without the interface, is index computation
+    the width inference can't follow, and limits the width to 1 (see
+    `getMaxSimdWidth(Region &)`).
+  }];
+
+  let cppNamespace = "::M::MAP";
+
+  let methods = [
+    InterfaceMethod<
+      "Returns a number every SIMD width must divide, null for no limit.",
+      "::mlir::TypedAttr", "getMaxSimdWidth", (ins),
+      [{}], [{
+        ::llvm::SmallVector<::mlir::TypedAttr> widths;
+        for (::mlir::Region &region : $_op->getRegions())
+          widths.push_back(::M::MAP::getMaxSimdWidth(region));
+        return ::M::MAP::GCDAttr::getSimplified($_op->getContext(), widths);
+      }]
+    >,
+  ];
+}
+
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPINTERFACES_TD

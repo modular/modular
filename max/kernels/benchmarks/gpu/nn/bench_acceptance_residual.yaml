@@ -1,0 +1,37 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_acceptance_residual
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_acceptance_residual.mojo
+
+params:
+# Plain keys, not `$`-prefixed ones: kbench reads a `$key` as a variable and
+# passes it through the environment, which a `get_defined_int` in the driver
+# never sees, so every shape would silently run the default. See the audit in
+# #108418 for the general shape of that mistake.
+#
+# `rows` is the flattened row count the verify step samples -- one row per
+# (request, draft position) -- for 1/2/4/8 candidates over batch 1/8/32. The
+# kernel sees only `rows` and `vocab`, so one entry covers every (batch,
+# candidates) pair that flattens to it: `rows=32` is batch 8 x 4 candidates
+# and batch 32 x 1 candidate alike. The two vocabularies are Llama-3.1's and
+# Gemma-3's tokenizers.
+#
+# `fuse` selects the arm, and both values are here so one run configures the
+# comparison: `fuse: 0` materializes `max(p - q, 0)` in HBM and samples it with
+# the two kernels that exist on `main`, `fuse: 1` is the fused residual draw
+# this PR adds. The arms share a `BenchId`, so the `spec` column is what
+# separates them; normalize it (`sed 's|/fuse=[01]||'`) before `kplot -c`.
+- rows: [1, 2, 4, 8, 16, 32, 64, 128, 256]
+  vocab: [128256, 256000]
+  fuse: [0, 1]

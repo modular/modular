@@ -104,13 +104,13 @@ struct GEMVAlgorithm(
     """
 
     comptime _enum_case_types = TypeList.of[
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
-        NoneType,
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
+        Tuple[],
     ].values
     comptime _enum_case_names = ParameterList.of[
         "GemvKernel".value,
@@ -490,8 +490,6 @@ def _gemv_kernel_vector_impl[
 
     # Every warp processes a single row of the resultant vector
     var local_accum = SIMD[accum_type, simd_width](0)
-
-    comptime local_accum_type = type_of(local_accum)
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
@@ -1760,6 +1758,170 @@ def router_gate_use_mixed_gemv(m: Int, max_m: Int = 64) -> Bool:
     return m > 0 and m <= max_m
 
 
+# Cold-weight launch tables for the SM100 router gate, one per gate shape,
+# swept on B200 over every legal `gemv_split_k` config against a cold ring of 47
+# layer weights -- how a decode step's own layers evict each other.
+#
+# `tile_m * tile_n` decides how often a launch re-reads an operand -- the weight
+# once per row block (`m / tile_m`), the activation once per weight-row group
+# (`n / tile_n`) -- and it is also all the accumulators a thread holds, so the
+# table trades re-read traffic against the launch's parallelism. `unroll_factor`
+# drops to 1 where the K loop's two-iteration unroll spilled a wide tile's
+# accumulators.
+#
+# A row only covers a row count its `tile_m` divides, because that is what lets
+# the launch skip `check_bounds_m`: the guard sits in the innermost K loop and
+# costs a wide tile more than its extra reuse earns (2.0 us of a 13.2 us launch
+# at 64 rows -- one band, guard on against off, not two bands' wall times).
+# `_sm100_router_gate_band` takes the first row of the gate's shape
+# that covers `m` and divides it, so a decode step's multiple-of-8 row count
+# runs unguarded. A row count no row divides takes the first row that is allowed
+# to run guarded (the `guarded` column), and a count above every row takes the
+# shape's last band with the guard on. A row is allowed to run guarded only
+# where that measured at least as fast as the alternative band, so the launcher
+# compiles a guarded variant for those rows alone.
+#
+# `False` is MiniMax-M3's `[128, 6144]` gate and every other gate shape. Its
+# bands are the ones this launcher shipped with -- `(1, 1)` to 8 rows, `(4, 1)`
+# to 24, `(4, 2)` to 32, `(8, 2)` above -- for every row count, with the guard
+# dropped wherever a `tile_m` divides the count. `(4, 1)` and `(4, 2)` keep the
+# guard for the counts they do not divide because they are much faster there
+# than the `(8, 2)` fallback: at 9 rows 6.8 us against 9.6, at 25 7.1 against
+# 9.8 (measured in `max/kernels/benchmarks/gpu/linalg/bench_router_gate_gemv_mimo`).
+# `True` is MiMo-V2.6-Flash's `[256, 4096]` gate, which wants a far wider tile
+# at every row count: against the `[128, 6144]` bands the same launcher runs 8%
+# faster at c1's 8 rows, 11% at 32, 18% at 64 and 21% at 128 (same bench). Its
+# rows are keyed to the decode row counts a batch of requests reaches. `(1, 1)`
+# covers 2 and 3 rows, where the `(8, 4)` fallback measured 6.0 and 6.7 us
+# against 3.5 and 3.8, and `(4, 1)` keeps the guard to 16 rows because it beats
+# that fallback there: 5.3 us against 9.1 at 6 rows, 5.6 against 11.3 at 9.
+# Counts from 17 to 63 that no row covering them divides take the guarded
+# `(8, 4)` fallback, which measured 11.2 us at 20 rows and 12.7 at 36, where
+# `(4, 2)` ran 6.0 and 8.6; `(4, 2)` has no row there because one would also
+# move counts that run unguarded today, such as 40.
+#
+# Rows are `(gate shape, max_m, _SM100_ROUTER_GATE_BANDS index, guarded)`, one
+# band index per row. A shape lists the wide rows it wants first and the band it
+# falls back to last, so a row count no row divides still gets a band that
+# behaves there.
+comptime _SM100_ROUTER_GATE_BANDS = (
+    (1, 1, 256, 1),
+    (4, 1, 256, 1),
+    (4, 2, 256, 2),
+    (8, 2, 256, 2),
+    (8, 4, 256, 1),
+    (16, 4, 256, 1),
+)
+comptime _SM100_ROUTER_GATE_ROWS = (
+    (False, 8, 0, False),
+    (False, 24, 1, True),
+    (False, 32, 2, True),
+    (False, 128, 3, True),
+    (True, 3, 0, False),
+    (True, 16, 1, True),
+    (True, 32, 3, False),
+    (True, 64, 5, False),
+    (True, 128, 4, True),
+)
+
+
+def _sm100_router_gate_has_guarded_band[wide: Bool]() -> Bool:
+    """Returns whether this gate's shape lists a row allowed to run guarded.
+
+    The band walk's fallback is the shape's last such row, so a shape without
+    one would launch band 0 for every row count above its last row. The walk
+    asserts this, so a table edit cannot take its own fallback away.
+
+    Parameters:
+        wide: Whether the gate is the `[256, 4096]` shape, which has its own
+            rows, rather than the `[128, 6144]` bands the launcher shipped
+            with.
+
+    Returns:
+        True when the shape has at least one row that may run guarded.
+    """
+    comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
+        comptime row = _SM100_ROUTER_GATE_ROWS[i]
+        comptime if row[0] == wide and row[3]:
+            return True
+    return False
+
+
+def _sm100_router_gate_bands_distinct[wide: Bool]() -> Bool:
+    """Returns whether this gate's shape gives every row its own band index.
+
+    The launch walk finds a band's row by index and takes the guard from it, so
+    two rows sharing an index could send an indivisible row count through an
+    unguarded launch.
+
+    Parameters:
+        wide: Whether the gate is the `[256, 4096]` shape, which has its own
+            rows, rather than the `[128, 6144]` bands the launcher shipped
+            with.
+
+    Returns:
+        True when no two rows of the shape share a band index.
+    """
+    comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
+        comptime for j in range(i + 1, len(_SM100_ROUTER_GATE_ROWS)):
+            comptime a = _SM100_ROUTER_GATE_ROWS[i]
+            comptime b = _SM100_ROUTER_GATE_ROWS[j]
+            comptime if a[0] == wide and b[0] == wide and a[2] == b[2]:
+                return False
+    return True
+
+
+def _sm100_router_gate_band[wide: Bool](m: Int) -> Int:
+    """Returns the index in `_SM100_ROUTER_GATE_BANDS` this row count takes.
+
+    The first row of this gate's shape that covers `m` and whose `tile_m`
+    divides it wins, so the launch can drop its row guard. A row count no row
+    divides takes the first row allowed to run guarded, and a count above every
+    row keeps the band of the shape's last guarded row -- which both shapes are
+    required to keep, by the assert below.
+
+    Parameters:
+        wide: Whether the gate is the `[256, 4096]` shape, which has its own
+            rows, rather than the `[128, 6144]` bands the launcher shipped
+            with.
+
+    Args:
+        m: The runtime row count of the router-gate activation.
+
+    Returns:
+        The index of the launch band for `m`.
+    """
+    comptime assert (
+        _sm100_router_gate_has_guarded_band[False]()
+        and _sm100_router_gate_has_guarded_band[True]()
+    ), (
+        "router gate: a shape's rows list no band allowed to run guarded, so a"
+        " row count the table does not cover would launch band 0"
+    )
+    comptime assert (
+        _sm100_router_gate_bands_distinct[False]()
+        and _sm100_router_gate_bands_distinct[True]()
+    ), (
+        "router gate: two rows of one shape share a band index, so the launch"
+        " walk could take the guard from the wrong row"
+    )
+    comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
+        comptime row = _SM100_ROUTER_GATE_ROWS[i]
+        comptime if row[0] == wide:
+            if m <= row[1] and m % _SM100_ROUTER_GATE_BANDS[row[2]][0] == 0:
+                return row[2]
+    # Overwritten by every guarded row, so it ends as the band a row count
+    # above the whole shape takes.
+    var band = 0
+    comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
+        comptime row = _SM100_ROUTER_GATE_ROWS[i]
+        comptime if row[0] == wide and row[3]:
+            if m <= row[1]:
+                return row[2]
+            band = row[2]
+    return band
+
+
 @fieldwise_init
 struct _RouterGateGemvConfig(Copyable, Equatable, ImplicitlyCopyable, Movable):
     """One `gemv_split_k` launch configuration of an AMD router-gate band.
@@ -1992,8 +2154,9 @@ def router_gate_mixed_gemv[
     while the standard dispatch uses TF32 tensor cores. Larger `tile_m * tile_n`
     reuses each weight and activation load across more outputs, which cuts the
     L2 traffic that bounds this launch (the weight is re-read once per row
-    block), at the price of a longer warp-reduce tail; the tiling below is
-    the B200 sweep winner per `M` bucket.
+    block, the activation once per weight-row group), at the price of a longer
+    warp-reduce tail; the tiling is the B200 sweep winner per gate shape and
+    `M` bucket, held in `_SM100_ROUTER_GATE_ROWS`.
 
     On SM100, `b` must be initialized before execution and remain unchanged:
     the kernel prefetches its first weight tile before waiting for dependent
@@ -2046,6 +2209,7 @@ def router_gate_mixed_gemv[
         expert_major_grid: Bool = False,
         act_wide_k: Bool = False,
         simd_width: Int = default_simd_width,
+        check_bounds_m: Bool = tile_m > 1,
     ]() raises {imm}:
         comptime kernel = gemv_split_k[
             DType.float32,
@@ -2063,7 +2227,7 @@ def router_gate_mixed_gemv[
             num_threads=num_threads,
             unroll_factor=unroll_factor,
             weight_non_temporal=weight_non_temporal,
-            check_bounds_m=tile_m > 1,
+            check_bounds_m=check_bounds_m,
             check_bounds_n=static_N % tile_n != 0,
             pdl_level=pdl_level,
             small_m_static_k=small_m_static_k,
@@ -2179,15 +2343,191 @@ def router_gate_mixed_gemv[
             else:
                 _launch[1, 4, 128, 2, PDLLevel.OFF]()
     else:
-        # B200 sweep winners for the `N=128, K=6144` router gate, M = 8..128.
-        if m <= 8:
-            _launch[1, 1, 256, 1, PDLLevel.OVERLAP_AT_BEGINNING]()
-        elif m <= 24:
-            _launch[4, 1, 256, 1, PDLLevel.OVERLAP_AT_BEGINNING]()
-        elif m <= 32:
-            _launch[4, 2, 256, 2, PDLLevel.OVERLAP_AT_BEGINNING]()
-        else:
-            _launch[8, 2, 256, 2, PDLLevel.OVERLAP_AT_BEGINNING]()
+        # SM100 bands per gate shape and row count: `_sm100_router_gate_band`
+        # picks the band, and this walk turns its runtime answer into the
+        # matching compile-time launch.
+        comptime static_K = type_of(a).static_shape[1]
+        # `a`'s static K selects the rows above, so it has to be the contraction
+        # dimension `b` is laid out with.
+        comptime assert (
+            static_K == type_of(b).static_shape[1]
+        ), "router gate: activation K and weight K disagree"
+        comptime wide = static_N == 256 and static_K == 4096
+        var band = _sm100_router_gate_band[wide](m)
+        comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
+            comptime row = _SM100_ROUTER_GATE_ROWS[i]
+            comptime if row[0] == wide:
+                comptime tiling = _SM100_ROUTER_GATE_BANDS[row[2]]
+                if band == row[2]:
+                    # Only a row that measured as fast guarded as the band it
+                    # would otherwise fall to is compiled with the guard, so
+                    # a row without it is only reachable for a count its
+                    # `tile_m` divides.
+                    comptime if row[3]:
+                        if m % tiling[0] == 0:
+                            _launch[
+                                tiling[0],
+                                tiling[1],
+                                tiling[2],
+                                tiling[3],
+                                PDLLevel.OVERLAP_AT_BEGINNING,
+                                check_bounds_m=False,
+                            ]()
+                        else:
+                            _launch[
+                                tiling[0],
+                                tiling[1],
+                                tiling[2],
+                                tiling[3],
+                                PDLLevel.OVERLAP_AT_BEGINNING,
+                                check_bounds_m=True,
+                            ]()
+                    else:
+                        debug_assert(
+                            m % tiling[0] == 0,
+                            (
+                                "router gate band picked for an indivisible row"
+                                " count"
+                            ),
+                        )
+                        _launch[
+                            tiling[0],
+                            tiling[1],
+                            tiling[2],
+                            tiling[3],
+                            PDLLevel.OVERLAP_AT_BEGINNING,
+                            check_bounds_m=False,
+                        ]()
+                    return
+
+
+def mixed_gemv_store_epilogue[
+    static_N: Int,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+](
+    c: TileTensor[.float32, c_layout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[.float32, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    m: Int,
+    n: Int,
+    k: Int,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launches the mixed GEMV with its output stored through `epilogue_fn`.
+
+    The bf16 activation is widened to fp32 in registers and dotted against the
+    unchanged fp32 weight in one launch, as `router_gate_mixed_gemv` does, and
+    every output element goes through `epilogue_fn` instead of a plain store.
+    That is what lets a caller whose projection carries elementwise work -- a
+    scale chain the graph would otherwise stage as a launch of its own -- keep
+    one launch for the whole projection. `gemv_split_k_epilogue_fn` is the same
+    kernel `gemv_split_k` is, so an epilogue that stores the untouched value
+    reproduces the plain launch bit for bit, and the fp32 form of the same
+    kernel over a pre-cast activation is the reference both are compared to.
+
+    The B200 bands are `router_gate_mixed_gemv`'s: `tile_m` and `tile_n` move
+    with the row count, and neither reorders the K reduction. Only the SM100
+    launch is served here -- the `[896, 7168]` cold-weight table and the gfx950
+    `[128, 6144]` sweep are expressed through `gemv_split_k` parameters
+    (`small_m_static_k`, `small_m_k_chunk`, `expert_major_grid`, `act_wide_k`)
+    that this kernel variant does not take, and a non-SM100 NVIDIA target's fp32
+    matmuls take a dispatch of its own -- so a caller on another target stages
+    its own chain instead.
+
+    Parameters:
+        static_N: Static output width (weight rows); selects the
+            `check_bounds_n` guard at compile time.
+        c_layout: Layout of the fp32 output tensor. Only its shape is read: the
+            epilogue owns every store.
+        a_layout: Layout of the bf16 activation tensor.
+        b_layout: Layout of the fp32 weight tensor.
+        c_engine: Engine of the fp32 output tensor.
+        a_engine: Engine of the bf16 activation tensor.
+        b_engine: Engine of the fp32 weight tensor.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+
+    Args:
+        c: Output `[M, N]` fp32 tensor, read for its shape alone.
+        a: Activation `[M, K]` bf16 tensor.
+        b: Weight `[N, K]` fp32 tensor (transpose_b layout).
+        m: Runtime row count (`M`).
+        n: Output width (`N`).
+        k: Contraction dim (`K`).
+        epilogue_fn: Stores each output element, carrying the graph's epilogue.
+        ctx: The device context.
+    """
+    # `ctx.target`, not `is_nvidia_gpu()`: the latter reads the compiler's
+    # target triple, which is the host's while this graph-compiler side
+    # elaborates. The gate is the Blackwell check, because on a non-SM100 NVIDIA
+    # target the fp32 matmul this launch must reproduce is not served by
+    # `gemv_split_k`; those targets stage the cast and the matmul instead.
+    comptime assert ctx.target._has_blackwell_tcgen05(), (
+        "the store-epilogue mixed GEMV is launched on SM100 only; other"
+        " targets stage the cast and the matmul instead"
+    )
+    # A 16 B fp32 vector load is 4 elements, the same element count the fp32
+    # GEMV's K tiling uses; `router_gate_mixed_gemv` sets it the same way.
+    comptime simd_width = 16 // size_of[DType.float32]()
+    # Empty-launch guard, as in `router_gate_mixed_gemv`: a graph-capture
+    # warmup can reach here with M == 0.
+    if m == 0 or n == 0:
+        return
+    # The M-major grid walks the weight rows in grid.y, capped at 65535 blocks
+    # on every supported target.
+    comptime assert (
+        static_N <= 65535
+    ), "mixed GEMV N exceeds the grid.y block limit"
+
+    def _launch[tile_m: Int, tile_n: Int, unroll_factor: Int]() raises {imm}:
+        comptime kernel = gemv_split_k_epilogue_fn[
+            DType.float32,
+            DType.bfloat16,
+            DType.float32,
+            c_layout,
+            a_layout,
+            b_layout,
+            c_engine,
+            a_engine,
+            b_engine,
+            EpilogueFnType,
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=256,
+            unroll_factor=unroll_factor,
+            weight_non_temporal=False,
+            check_bounds_m=tile_m > 1,
+            check_bounds_n=static_N % tile_n != 0,
+            pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            Int32(m),
+            Int32(n),
+            Int32(k),
+            host_args=(epilogue_fn,),
+            grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+            block_dim=256,
+            attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_BEGINNING),
+        )
+
+    if m <= 8:
+        _launch[1, 1, 1]()
+    elif m <= 24:
+        _launch[4, 1, 1]()
+    elif m <= 32:
+        _launch[4, 2, 2]()
+    else:
+        _launch[8, 2, 2]()
 
 
 # Row Vector-Matrix multiplication

@@ -153,12 +153,6 @@ public:
   bool isProvablyImplicitlyTriviallyCopyable(llvm::SMLoc loc,
                                              SharedState &shared,
                                              ASTDecl &scope) const;
-  /// Return true if this type is provably 'trivially' moveable, as defined by
-  /// its '__move_ctor_is_trivial' member.
-  bool isProvablyTriviallyMoveable(llvm::SMLoc loc, SharedState &shared) const;
-  /// Return true if this type is provably 'trivially' deletable, as defined by
-  /// its '__del__is_trivial' member.
-  bool isProvablyTriviallyDeletable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is implicitly/explicitly copyable, either because
   /// it is trivial or conforms to (Implicitly)Copyable trait. Note:
@@ -181,11 +175,6 @@ public:
   /// `scope` is required so where-clause assumptions from the scope are used
   /// to prove conditional conformances.
   bool isMovable(llvm::SMLoc loc, SharedState &shared, ASTDecl &scope) const;
-
-  /// Return true if this type is register passable or conforms to
-  /// RegisterPassable trait.
-  /// Note: this resolves the body of a struct type.
-  bool isRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return true if this type is trivial register passable
   /// or conforms to TrivialRegisterPassable trait.
@@ -280,20 +269,24 @@ public:
   /// needed.  This does NOT strip off the RefType for a 'ref[]' result.
   ASTType getSignatureUserResultType() const;
 
-  /// If this type is parameterized, and if any of the parameters refer to a
-  /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
-  /// will infer it.
+  /// If this type is has any index ref referencing to parameter defined in the
+  /// current scope, extract those out and construct a new StructTypeGenerator
+  /// independent from the current scope. E.g., it turns
+  ///
+  /// def [a : Int, b : Int](a : Param[b]), in which,
+  /// `Param[*(0, 1)]` into
+  /// `#gen<b : Int> Param[*(0, 0)]`
   ///
   /// This makes parameter inference sensitive to what to propagate vs infer.
   /// For example, if expectedType is known to be 'SIMD[uint8, 1]', then we can
   /// infer which constructor to use when the input is an IntLiteral.
   ///
-  /// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-  /// argument is an Int8, then we need the implicit conversion to infer the
-  /// base element.  Our solution to this is to rip and replace parameters that
-  /// contain unbound parameters, replacing them with UnboundAttr so inference
-  /// can find them.
-  ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
+  /// On the other hand, if expectedType is something like 'SIMD[*(0, 1), 1]'
+  /// and the argument is an Int8, then we need the implicit conversion to infer
+  /// the base element.  Our solution to this is to rip and replace parameters
+  /// that contain unresolved the parameter, and construct an new partially
+  /// bound struct type such that parameter inferences knows now to infer it.
+  ASTType extractAndRelinkParamRef(SharedState &shared) const;
 
   /// Return true if this type contains any origins that are unmaterializable
   /// from comptime to runtime.

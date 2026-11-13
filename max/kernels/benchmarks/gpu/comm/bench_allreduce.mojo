@@ -37,6 +37,7 @@ from comm.sync import enable_p2p, init_signal_buffer
 from comm.allreduce import allreduce
 from comm import Signal
 import comm.vendor.ccl as vendor_ccl
+from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
@@ -80,12 +81,28 @@ def bench_reduce[
     ragged: Bool,
 ) raises:
     comptime assert ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"
+    # PDL is a launch attribute, not a kernel change, so the sweep toggles it
+    # here rather than in the collective.
+    comptime pdl_level = (
+        PDLLevel.ON if get_defined_bool[
+            "ALLREDUCE_PDL", False
+        ]() else PDLLevel.OFF
+    )
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
             ngpus, num_bytes, max_num_blocks.or_else(0), ragged
         )
     )
+    # The test string's own fields cannot carry the two launch knobs a geometry
+    # sweep varies, so tag them here rather than print eight identical names.
+    comptime lamport_block_size = get_defined_int[
+        "ALLREDUCE_LAMPORT_BLOCK_SIZE", 0
+    ]()
+    if lamport_block_size != 0:
+        name += String("-lamport_bs", lamport_block_size)
+    if pdl_level == PDLLevel.ON:
+        name += "-pdl"
 
     # Create cache busting template on GPU 0 for metadata (stride, alloc_size,
     # offset). In non-multimem path, also serves as GPU 0's input buffer.
@@ -264,6 +281,7 @@ def bench_reduce[
             else:
                 allreduce[
                     ngpus=ngpus,
+                    pdl_level=pdl_level,
                     use_multimem=use_multimem,
                 ](
                     in_tensors,

@@ -288,8 +288,8 @@ def _c_type_decl(c_type: CType) raises -> String:
     match c_type:
         case .type(name):
             return String(t"{name} *ptr")
-        case .array(payload):
-            return String(t"{payload[0]} (*ptr)[{payload[1]}]")
+        case .array(name, count):
+            return String(t"{name} (*ptr)[{count}]")
         case .default:
             raise Error("CType.default spells no C type")
 

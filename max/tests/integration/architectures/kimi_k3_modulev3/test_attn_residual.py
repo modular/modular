@@ -341,7 +341,6 @@ def test_fused_matches_unfused_chain_on_gpu(dtype: DType) -> None:
     )
 
 
-@pytest.mark.compile_on_gpu("attn_res_mix_norm has no custom.declare")
 def test_fused_graph_runs_no_unfused_mix_kernels() -> None:
     """The fused site lowers to the fused pair only: the compiled graph
     must not contain the candidate-stack concat, the unfused

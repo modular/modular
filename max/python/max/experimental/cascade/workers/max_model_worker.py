@@ -190,6 +190,11 @@ class MAXModelWorker(ModelWorker):
                     memory_plan=self._memory_plan,
                 )
             )
+            # The worker sized its KV cache once loaded and may serve a
+            # shorter max_length than the plan made here.
+            served = self._proxy.memory_plan
+            if served is not None and served.planned_max_length is not None:
+                self.max_length = served.planned_max_length
             logger.info("MAXModelWorker ready in %.1fs", time.monotonic() - t0)
             try:
                 yield self

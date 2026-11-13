@@ -29,6 +29,8 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # The key tail's LayerNorm tree asserts a 32-lane warp.
+    "test_indexer_k_quantize_store.mojo": ["//:nvidia_gpu"],
     # MXFP4 packing uses SM100 conversion instructions.
     "test_indexer_k_store.mojo": select({
         "//:b200_gpu": [],
@@ -308,6 +310,14 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_sparse_nope512_graph.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_sparse_verify_rows_graph.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_prefill_sparse_qkv_nvfp4.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -377,6 +387,16 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_fp8_q_graph_nope.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Thread-block clusters, sized for B200's GPC layout.
+    "test_topk_cluster_det.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The indexer's SM100 scorer and the SM100 sparse MLA decode it feeds.
+    "test_mla_index_fp8_deterministic.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -671,6 +691,7 @@ _EXTRA_CONSTRAINTS = {
 
 _EXTRA_DEPS = {
     "test_mla_index_fp8_cp.mojo": ["//max:kv_cache"],
+    "test_indexer_k_quantize_store.mojo": ["//max:kv_cache"],
     "test_mla_index_windowed_keep.mojo": ["//max:kv_cache"],
     "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
@@ -697,7 +718,15 @@ _EXTRA_DEPS = {
     "test_ws_intracta_combine.mojo": ["//max:max_mojo"],
 }
 
+# Helper modules compiled alongside a test's main file.
+_EXTRA_SRCS = {
+    "test_rowwise_determinism.mojo": ["_rowwise_softmax.mojo"],
+    "test_rowwise_pdl_race.mojo": ["_rowwise_softmax.mojo"],
+}
+
 _GPU_MEMORY = {
+    # The 8192-row case's wide operand and page pool.
+    "test_indexer_k_quantize_store.mojo": "3",
     # The bs22 x 35k-context case needs ~3 GiB beyond the 4 GiB default.
     "attention/test_mha_sm100_1q_sink.mojo": "3",
     "attention/test_mha_sm100_d256_pack_gqa.mojo": "7",
@@ -787,7 +816,7 @@ _FILECHECK_TESTS = [
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [src],
+        srcs = [src] + _EXTRA_SRCS.get(src, []),
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS + (
             [
                 "-D",
@@ -809,6 +838,7 @@ _FILECHECK_TESTS = [
         exec_properties = {
             "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
+        main = src,
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
@@ -858,6 +888,7 @@ _FILECHECK_TESTS = [
             # below.
             "_index_select_grade.mojo",
             "test_mla_index_mxfp4.mojo",
+            "_rowwise_softmax.mojo",
             # SM100 FA4 1Q split-K combine test: fully covered by the explicit
             # b200-gated (mask, depth, P) registrations below. Exclude the default
             # catch-all target, which would otherwise be gated only by //:has_gpu

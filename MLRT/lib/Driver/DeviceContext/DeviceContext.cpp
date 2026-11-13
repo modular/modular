@@ -2125,9 +2125,6 @@ bool DeviceContext::syncMode() const {
 void DeviceContext::incSyncMode() {
   syncMode_.fetch_add(1, std::memory_order_relaxed);
 }
-void DeviceContext::decSyncMode() {
-  syncMode_.fetch_add(-1, std::memory_order_relaxed);
-}
 
 bool DeviceContext::isGraphCapturing() const { return false; }
 

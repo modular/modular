@@ -34,7 +34,6 @@ from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from .kimi_k3 import KimiK3Decoder
-from .memory_planner import KimiK3ModuleV3MemoryPlanner
 from .model_config import KimiK3Config
 from .weight_adapters import convert_kimi_k3_state_dict
 
@@ -59,7 +58,6 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
         "enable_prefix_caching": False,
     },
     config=KimiK3Config,
-    memory_planner=KimiK3ModuleV3MemoryPlanner,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
     # The fused graph the `Inferact/Kimi-K3-DSpark` drafter builds with this
