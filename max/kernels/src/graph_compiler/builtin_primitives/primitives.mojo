@@ -2198,6 +2198,93 @@ def mogg_index_slice_select[
     return (result, in_slice)
 
 
+@register_internal("mogg.index.concat.select")
+@inline(.always)
+def mogg_index_concat_select[
+    rank: Int,
+    //,
+    dtype: DType,
+    width: Int,
+    num_inputs: Int,
+    axis: Int,
+    static_sizes: Coord,
+    InputsFnType: ImplicitlyCopyable
+    & def[input_index: Int](Coord) -> SIMD[dtype, width],
+](
+    index: IndexList[rank],
+    inputs_fn: InputsFnType,
+    sizes: IndexList[num_inputs] = _reshape_types_sentinels[
+        num_inputs, static_sizes.element_types
+    ](),
+) -> SIMD[dtype, width]:
+    """Returns the `width` lanes of a concat at `index`, read from its inputs.
+
+    Backs `mogg.index.concat.select`: picks the input holding `index`, as the
+    fused concat kernel does, and reads it there through
+    `inputs_fn[r]` at the index rebased into input `r`. The vector must stay
+    inside that input, which the kernel launch guarantees along the
+    innermost axis by running only widths that divide every input's
+    extent.
+
+    Parameters:
+        rank: The rank of the concat's output.
+        dtype: The element type the inputs yield.
+        width: The number of lanes read.
+        num_inputs: The number of concat inputs.
+        axis: The concat axis, normalized.
+        static_sizes: The axis extent of every input, where statically
+            known.
+        InputsFnType: The type of `inputs_fn`.
+
+    Args:
+        index: An index into the concat's output.
+        inputs_fn: Reads `width` lanes of input `input_index` at an index
+            into that input.
+        sizes: The runtime axis extent of every input.
+
+    Returns:
+        The concat's `width` lanes at `index`.
+    """
+    # Along the innermost axis a vector's lanes run along the concat axis, so
+    # all of them must stay inside the input read; along an outer axis they
+    # share the coordinate there.
+    comptime lanes = width if axis == rank - 1 else 1
+    var k = index[axis]
+    var offset = 0
+    comptime for r in range(num_inputs - 1):
+        var size: Int
+        comptime if static_sizes.element_types[r].is_static_value:
+            size = static_sizes.element_types[r].static_value
+        else:
+            size = sizes[r]
+        if k - offset < size:
+            var in_index = index
+            in_index[axis] = k - offset
+            _assert_inside_concat_input[lanes](in_index[axis], size, r)
+            return inputs_fn[r](Coord(in_index))
+        offset += size
+    # The last input holds whatever the others leave.
+    comptime last = num_inputs - 1
+    var last_size: Int
+    comptime if static_sizes.element_types[last].is_static_value:
+        last_size = static_sizes.element_types[last].static_value
+    else:
+        last_size = sizes[last]
+    var in_index = index
+    in_index[axis] = k - offset
+    _assert_inside_concat_input[lanes](in_index[axis], last_size, last)
+    return inputs_fn[last](Coord(in_index))
+
+
+@always_inline
+def _assert_inside_concat_input[lanes: Int](k: Int, size: Int, input: Int):
+    debug_assert(
+        k + lanes <= size,
+        "concat select reads past the end of input ",
+        input,
+    )
+
+
 # ===----------------------------------------------------------------------===#
 # POP operations
 # ===----------------------------------------------------------------------===#

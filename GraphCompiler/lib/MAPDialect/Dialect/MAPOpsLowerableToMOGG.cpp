@@ -292,6 +292,56 @@ LogicalResult SliceSelectOp::lowerToMOGG(MAPToMOGGState &state) {
   return state.lowerRegionBody(getBody().front());
 }
 
+// map.index.concat.select -> mogg.index.concat.select, lowered in place
+// inside the foreach closure and wired to the runtime shapes it threaded in
+// when a leading input's axis extent is dynamic. Each region lowers into the
+// new op's own, its `map.yield` becoming a `mogg.yield`.
+LogicalResult ConcatSelectOp::lowerToMOGG(MAPToMOGGState &state) {
+  ConcatSpecAttr spec = getSpec();
+  int64_t axis = spec.getAxis();
+  ValueRange dynamicShapes;
+  if (!getDynamicShapes().empty()) {
+    auto it = state.indexShapeArgs.find(getOperation());
+    if (it == state.indexShapeArgs.end())
+      return emitOpError("MAPToMOGG: a dynamic concat select has no shape "
+                         "captures; its kernel did not thread them in");
+    dynamicShapes = ValueRange(it->second);
+  }
+
+  // Every input's extent on the axis: the select reads all but the last's,
+  // and the kernel launch checks them all against the vector width.
+  SmallVector<TypedAttr> sizes;
+  for (MOSH::ShapeAttr in : spec.getInputShapes())
+    sizes.push_back(in[axis]);
+  auto sizesAttr = MOSH::ShapeAttr::get(sizes, spec.getResultShape().getType());
+
+  auto select = MOGG::IndexConcatSelectOp::create(
+      state.builder, getLoc(), MOGG::SimdType::get(getResult().getType()),
+      state.mapping.lookup(getIndex()), axis, sizesAttr, dynamicShapes,
+      getInputs().size());
+
+  for (auto [region, moggRegion] :
+       llvm::zip_equal(getInputs(), select.getInputs())) {
+    OpBuilder::InsertionGuard guard(state.builder);
+    Block &block = region.front();
+    BlockArgument inIdx = block.getArgument(0);
+    Block *body = state.builder.createBlock(
+        &moggRegion, moggRegion.end(), {inIdx.getType()}, {inIdx.getLoc()});
+    state.mapping.map(inIdx, body->getArgument(0));
+    if (failed(state.lowerRegionBody(
+            block, [](Operation *op) { return !isa<YieldOp>(op); })))
+      return failure();
+    auto yield = cast<YieldOp>(block.getTerminator());
+    SmallVector<Value> yielded;
+    for (Value v : yield.getOperands())
+      yielded.push_back(state.mapping.lookup(v));
+    MOGG::YieldOp::create(state.builder, yield.getLoc(), yielded);
+  }
+
+  state.mapping.map(getResult(), select.getResult());
+  return success();
+}
+
 namespace {
 // The operands both lowerings of a `map.call.elementwise` pass.
 struct ElementwiseCallOperands {

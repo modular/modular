@@ -2,9 +2,10 @@
 // RUN:   --map-outline-structured-kernel-bodies --map-livm \
 // RUN:   --map-infer-max-simd-width | FileCheck %s
 
-// No op limits the SIMD width yet, so no loop gets a `max_simd_width`. Views on
-// loads are hoisted out of the body before the pass runs, and a slice select
-// keeps the loop's innermost coordinate, so neither is index computation.
+// Nothing in these loops limits the SIMD width, so none gets a
+// `max_simd_width`. Views on loads are hoisted out of the body before the pass
+// runs, and a slice select keeps the loop's innermost coordinate, so neither is
+// index computation.
 
 // CHECK-LABEL: mo.graph @elementwise
 // CHECK:       map.iter.elementwise.body<[4, 16]>

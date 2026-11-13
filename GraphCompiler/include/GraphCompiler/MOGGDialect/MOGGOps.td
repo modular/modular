@@ -689,7 +689,8 @@ def MOGG_YieldOp : MOGG_Op<"yield", [
     Yields the results of a mogg.try / except, the value a
     `mogg.tensor.create.prologue` body returns to the reading kernel, the
     value a compute `mogg.tensor.create.epilogue` body returns for the kernel
-    to store, or an element's contribution to a `mogg.rowwise.reduce`.
+    to store, an element's contribution to a `mogg.rowwise.reduce`, or the
+    value a `mogg.index.concat.select` region reads from its input.
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
@@ -2220,6 +2221,53 @@ def MOGG_IndexSliceSelectOp : MOGG_Op<"index.slice.select", [
         `staticStep` `=` qualified($staticStep) `>`
     attr-dict `:` qualified(type($index))
     $body
+  }];
+}
+
+def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
+  RecursiveMemoryEffects,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Read a concat at its output index, from the one input holding it.";
+  let description = [{
+    Lowering of `map.index.concat.select`, in place inside a
+    `mogg.call.foreach` closure: of the regions, one per input, only the one
+    holding `$index` runs, its block argument bound to `$index` rebased into
+    that input, and the op returns what it yields.
+
+    `$axis` is the concat axis and `$staticConcatSizes` every input's extent on it
+    (`dyn` where unknown). Along the output's innermost dim a vector could
+    cross from one input into the next, so the enclosing
+    `mogg.call.foreach` then launches only widths that divide every extent.
+    `$dynamicShapes` holds every input's runtime shape when an extent in
+    `$staticConcatSizes` is dynamic, and is empty otherwise.
+
+    Example:
+    ```mlir
+    %v = mogg.index.concat.select(%idx) <axis = 1, sizes = #mosh<ape[512, 768]> : !mosh.ape> : !map.index<2> -> f32 {
+    ^bb0(%i: !map.index<2>):
+      %a = mogg.tensor.load %lhs[%i] : !mogg.tensor, !map.index<2> -> f32
+      mogg.yield %a : f32
+    }, {
+    ^bb0(%i: !map.index<2>):
+      %b = mogg.tensor.load %rhs[%i] : !mogg.tensor, !map.index<2> -> f32
+      mogg.yield %b : f32
+    }
+    ```
+  }];
+  let arguments = (ins
+    AnyType:$index,
+    I64Attr:$axis,
+    MOSH_ShapeAttr:$staticConcatSizes,
+    Variadic<MOGG_Shape>:$dynamicShapes
+  );
+  let results = (outs AnyType:$result);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$inputs);
+  let assemblyFormat = [{
+    `(` $index (`,` $dynamicShapes^)? `)`
+    `<` `axis` `=` $axis `,` `sizes` `=` qualified($staticConcatSizes) `>`
+    attr-dict `:` qualified(type($index)) `->` type($result)
+    $inputs
   }];
 }
 

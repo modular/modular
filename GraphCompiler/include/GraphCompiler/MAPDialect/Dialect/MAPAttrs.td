@@ -98,6 +98,31 @@ def MAP_SliceSpecAttr : MAP_Attr<"SliceSpec", "index.slice.spec"> {
   ];
 }
 
+def MAP_ConcatSpecAttr : MAP_Attr<"ConcatSpec", "index.concat.spec"> {
+  let summary = "Input and output shapes and the axis of a concat view";
+  let description = [{
+    Static shape metadata for a `mo.concat` view: the shape of each input,
+    the output's, and the concat axis, normalized to `[0, rank)`. Every dim
+    but the axis matches the output's, and the axis extents sum to the
+    output's where all are static.
+
+    Example:
+    ```mlir
+    #cspec = #map.index.concat.spec<[?, 512], [?, 768] -> [?, 1280], axis = 1>
+    ```
+  }];
+
+  let parameters = (ins
+    ArrayRefParameter<"MOSH::ShapeAttr">:$inputShapes,
+    "MOSH::ShapeAttr":$resultShape,
+    "int64_t":$axis
+  );
+
+  let hasCustomAssemblyFormat = 1;
+
+  let genVerifyDecl = 1;
+}
+
 def MAP_BroadcastSpecAttr : MAP_Attr<"BroadcastSpec", "index.broadcast.spec"> {
   let summary = "Static input/output shape signature for a broadcast view";
   let description = [{

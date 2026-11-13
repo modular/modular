@@ -522,7 +522,8 @@ LogicalResult SliceIndexOp::verify() {
 // The shape `index` addresses, where that is known locally: at an epilogue's
 // own index, the tensor the kernel hands the epilogue; at a foreach's loop
 // index (the last argument, or the first once outlined), its loop shape; at a
-// select body's argument, that select's out-shape. Null elsewhere.
+// select body's argument, that select's out-shape; at a concat select
+// region's argument, its input's shape. Null elsewhere.
 static MOSH::ShapeAttr getIndexedShape(Value index) {
   auto arg = llvm::dyn_cast<BlockArgument>(index);
   if (!arg)
@@ -530,6 +531,9 @@ static MOSH::ShapeAttr getIndexedShape(Value index) {
   Operation *owner = arg.getOwner()->getParentOp();
   if (auto select = llvm::dyn_cast<SliceSelectOp>(owner))
     return select.getSpec().getSignature().getOut();
+  if (auto select = llvm::dyn_cast<ConcatSelectOp>(owner))
+    return select.getSpec()
+        .getInputShapes()[arg.getOwner()->getParent()->getRegionNumber()];
   if (auto foreach = llvm::dyn_cast<IterElementwiseOp>(owner))
     return arg == arg.getOwner()->getArguments().back() ? foreach.getShape()
                                                         : MOSH::ShapeAttr();
@@ -618,6 +622,64 @@ LogicalResult SliceSelectOp::verify() {
                            << signature.getOut();
   }
   return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// map.index.concat.select
+//===----------------------------------------------------------------------===//
+
+LogicalResult ConcatSelectOp::verify() {
+  ConcatSpecAttr spec = getSpec();
+  int64_t rank = spec.getResultShape().getRank();
+  if (static_cast<int64_t>(cast<IndexType>(getIndex().getType()).getRank()) !=
+      rank)
+    return emitOpError() << "index rank does not match spec's rank " << rank;
+
+  // The select runs at the loaded vector's first index, so the index must run
+  // along the out-shape's innermost dim with the vector: a loop index or an
+  // enclosing select's argument, never one an index op computed.
+  auto arg = dyn_cast<BlockArgument>(getIndex());
+  MOSH::ShapeAttr indexed;
+  if (arg && isa<IterElementwiseOp, IterElementwiseBodyOp, SliceSelectOp,
+                 ConcatSelectOp>(arg.getOwner()->getParentOp()))
+    indexed = getIndexedShape(arg);
+  if (!indexed)
+    return emitOpError() << "index must be its foreach's loop index or an "
+                            "enclosing select's argument";
+  if (indexed != spec.getResultShape())
+    return emitOpError() << "spec's out-shape " << spec.getResultShape()
+                         << " does not match the shape " << indexed
+                         << " its index addresses";
+
+  ArrayRef<MOSH::ShapeAttr> ins = spec.getInputShapes();
+  if (getInputs().size() != ins.size())
+    return emitOpError() << "expected one region per input, " << ins.size()
+                         << ", got " << getInputs().size();
+  for (auto [r, region] : llvm::enumerate(getInputs())) {
+    Block &block = region.front();
+    if (block.getNumArguments() != 1 ||
+        block.getArgument(0).getType() != getIndex().getType())
+      return emitOpError() << "region " << r
+                           << " must take one index of the spec's rank";
+    auto yield = llvm::dyn_cast<YieldOp>(block.getTerminator());
+    if (!yield || yield.getOperandTypes() != (*this)->getResultTypes())
+      return emitOpError() << "region " << r
+                           << " must yield one value of the op's result type";
+
+    // A load at the region's argument addresses its input. Nested ops are
+    // not verified yet, hence the checked cast.
+    for (Operation *user : block.getArgument(0).getUsers()) {
+      auto load = llvm::dyn_cast<LoadOp>(user);
+      M::MO::TensorType tensorTy =
+          load ? M::MO::dynCastFromTensorLike(load.getTensor().getType())
+               : M::MO::TensorType();
+      if (tensorTy && tensorTy.getShape() != ins[r])
+        return emitOpError()
+               << "tensor shape " << tensorTy.getShape() << " loaded in region "
+               << r << " does not match the input's shape " << ins[r];
+    }
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

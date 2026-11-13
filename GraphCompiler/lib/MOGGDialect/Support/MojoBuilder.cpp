@@ -154,7 +154,7 @@ void MojoBuilder::def(const MojoValue &name, ArrayRef<NamedMojoDef> parameters,
 }
 
 MojoValue
-MojoBuilder::lambda(StringLiteral lambdaName, ArrayRef<NamedMojoDef> parameters,
+MojoBuilder::lambda(StringRef lambdaName, ArrayRef<NamedMojoDef> parameters,
                     ArrayRef<NamedMojoDef> arguments,
                     std::optional<MojoValue> returnType,
                     LambdaInline inlineKind, bool isAsync, bool raises,

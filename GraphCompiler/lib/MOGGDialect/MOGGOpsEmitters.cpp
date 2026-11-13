@@ -652,6 +652,114 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
   return failure(failed);
 }
 
+// Input `r`'s extent on the select's axis: the static one, or the runtime one
+// read from the input's shape, a kernel-scope `Coord`.
+static MojoValue concatExtent(EmitMojoState &state, IndexConcatSelectOp select,
+                              unsigned r) {
+  int64_t extent = select.getStaticConcatSizes().getIntDims()[r];
+  if (!ShapedType::isDynamic(extent))
+    return MojoValue(extent);
+  Value shape = select.getDynamicShapes()[r];
+  return MojoValue(kFnCoordToIndexList)(
+      {state.getMojoValueFor(shape)})[MojoValue(uint64_t(select.getAxis()))];
+}
+
+LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
+  // Emits the regions as one closure, `concat_inputs[input_index](i)`, whose
+  // `comptime if` branches each read one input at an index into it, as wide
+  // as the enclosing closure's vectors, then hands it to the primitive, which
+  // picks the input holding the vector at `$index`, rebases the index and
+  // calls the branch. Sharing the width lets a region use values the
+  // enclosing closure computed, such as a constant hoisted out of it.
+  // Only a foreach closure holds a select so far: it enters an
+  // `ElementwiseLambdaRegion` with the width used here, and its launch keeps
+  // every vector inside one input (`CallForeachOp::emitMojo`), so a rebased
+  // index keeps the vector's alignment.
+  auto primDecl =
+      state.registry.lookupPrimitive(IndexConcatSelectOp::getOperationName());
+  ASSERT_STREAM(primDecl, "Primitive not found for "
+                              << IndexConcatSelectOp::getOperationName());
+  MojoValue primitive(primitiveMojoName(primDecl));
+
+  ASSERT_STREAM(state.findRegion<ElementwiseLambdaRegion>(),
+                "IndexConcatSelectOp::emitMojo reached outside a foreach "
+                "closure; a concat select is not lowered into functors yet");
+  MojoValue width = state.currentRegion<ElementwiseLambdaRegion>().width();
+  MojoBuilder &builder = *state.file;
+
+  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(
+      cast<SimdType>(getResult().getType()).getElementType());
+  if (dtypeOr.isError())
+    return emitOpError("concat select yields a non-scalar value");
+  MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
+
+  // A foreach closure's index is a `Coord` of the loop's own rank.
+  MojoValue idxList = builder.var(
+      MojoValue(kFnCoordToIndexList)({state.getMojoValueFor(getIndex())}));
+
+  MojoValue simdType = MojoValue(kStructSIMD)[{dtype, width}];
+  bool failed = false;
+  MojoValue closure = builder.lambda(
+      "concat_inputs", {NamedMojoDef::asVerbatim("input_index", kStructInt)},
+      {NamedMojoDef::asVerbatim("i", kStructCoord)},
+      /*returnType=*/simdType, MojoBuilder::LambdaInline::kAlways,
+      /*isAsync=*/false, /*raises=*/false,
+      /*captureConvention=*/"var", [&](const FunctionBody &fb) {
+        auto emitRegion = [&](Region &region) {
+          return [&, regionPtr = &region] {
+            Block &block = regionPtr->front();
+            state.setMojoValueFor(block.getArgument(0),
+                                  fb.arguments[0].resolvedName);
+            for (Operation &op : block.without_terminator())
+              if (state.lowerOpToMojo(&op).failed())
+                failed = true;
+            auto yield = cast<YieldOp>(block.getTerminator());
+            builder.returnsValue(
+                state.getMojoValueFor(yield.getOperand(0)).rebind(simdType));
+          };
+        };
+        MutableArrayRef<Region> regions = getInputs();
+        auto isRegion = [&](size_t r) {
+          return fb.parameters[0].resolvedName.eq(MojoValue(uint64_t(r)));
+        };
+        if (regions.size() == 1) {
+          emitRegion(regions[0])();
+          return;
+        }
+        MojoBuilder &chain =
+            builder.if_(isRegion(0), emitRegion(regions[0]), /*comptime=*/true);
+        for (size_t r = 1; r + 1 < regions.size(); ++r)
+          (void)chain.elif_(isRegion(r), emitRegion(regions[r]));
+        chain.else_(emitRegion(regions.back()));
+      });
+  if (failed)
+    return failure();
+
+  // Every input's extent: the primitive picks the input from all but the
+  // last's, and checks a debug build's reads against each. The runtime ones
+  // are read only where a static one is unknown.
+  unsigned numInputs = getInputs().size();
+  SmallVector<int64_t> staticSizes(getStaticConcatSizes().getIntDims());
+  SmallVector<MojoValue> args = {idxList, closure};
+  if (!getDynamicShapes().empty()) {
+    SmallVector<MojoValue> extents;
+    for (unsigned r = 0; r < numInputs; ++r)
+      extents.push_back(concatExtent(state, *this, r));
+    args.push_back(builder.var(MojoValue(
+        kStructIndexList)[MojoValue(uint64_t(extents.size()))](extents)));
+  }
+
+  MojoValue result = builder.var(primitive[{
+      MojoValue("dtype").equal(dtype), MojoValue("width").equal(width),
+      MojoValue("num_inputs").equal(MojoValue(uint64_t(numInputs))),
+      MojoValue("axis").equal(MojoValue(uint64_t(getAxis()))),
+      MojoValue("static_sizes")
+          .equal(builder.comptime(
+              EmitMojoState::getAsCoordMojoValue(staticSizes)))}](args));
+  state.setMojoValueFor(getResult(), result);
+  return success();
+}
+
 LogicalResult TensorCreateTransposeOp::emitMojo(EmitMojoState &state) {
   // Mojo infers dtype/rank/perm_type from $input/$perm.
   // output_static_shape/static_permutations carry the compile-time-known parts

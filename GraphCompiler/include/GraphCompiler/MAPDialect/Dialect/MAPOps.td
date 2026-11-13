@@ -164,7 +164,8 @@ def MAP_YieldOp : MAP_Op<"yield", [Terminator]> {
   let summary = "Terminates a map.iter.opaque body, yielding its results.";
   let description = [{
     Terminates a `map.iter.prologue`, a `map.iter.reduce` (yielding its
-    contribution), or a `map.iter.opaque` body whose `map.call.opaque` returns
+    contribution), a `map.index.concat.select` region (yielding the value its
+    input holds), or a `map.iter.opaque` body whose `map.call.opaque` returns
     a by-value result.
   }];
 
@@ -909,8 +910,6 @@ def MAP_SliceIndexOp : MAP_Op<"index.slice", [
 //===----------------------------------------------------------------------===//
 
 def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
-  ParentOneOf<["IterEpilogueOp", "IterElementwiseOp", "IterElementwiseBodyOp",
-               "SliceSelectOp"]>,
   SingleBlock,
   NoTerminator,
   RecursiveMemoryEffects,
@@ -973,6 +972,58 @@ def MAP_SliceSelectOp : MAP_Op<"index.slice.select", [
         SliceSpecAttr spec, ::mlir::Value index,
         ::llvm::function_ref<::mlir::InFlightDiagnostic()> emitError = {});
   }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// map.index.concat.select
+//===----------------------------------------------------------------------===//
+
+def MAP_ConcatSelectOp : MAP_Op<"index.concat.select", [
+  RecursiveMemoryEffects,
+  DeclareOpInterfaceMethods<MAP_MaxSimdWidthInterface, ["getMaxSimdWidth"]>,
+  DeclareOpInterfaceMethods<MAP_DynamicShapeIndexOpInterface>,
+  DeclareOpInterfaceMethods<LowerableToMOGGInterface>,
+]> {
+  let summary = "Read a concat at its output index, from the one input holding it";
+  let description = [{
+    The load-side view of a `mo.concat`: `index` addresses the concat's
+    output (the spec's out-shape), and of the regions, one per input, only
+    the one whose part of the axis holds `index` runs. Its one block argument
+    is `index` rebased into that input: with `k` the index on the axis and
+    `o_r` the sum of the axis extents of the inputs before `r`, region `r`
+    runs where `o_r <= k < o_r + extent_r`, at `k - o_r`. The op returns what
+    that region yields. The other regions do not run, so a load in them
+    never sees an index outside its tensor.
+
+    The lowering evaluates the op once per loaded vector, which runs along
+    the output's innermost dim, so `index` must be one the vector runs along:
+    a foreach's own index or an enclosing select's argument, never a
+    transformed one. Along the innermost axis a vector could cross from one
+    input into the next; the kernel launch rules that out, running only
+    widths that divide every input's extent.
+
+    Example:
+    ```mlir
+    %v = map.index.concat.select<#map.index.concat.spec<[256, 512], [256, 768] -> [256, 1280], axis = 1>> (%idx) : !map.index<2> -> f32 (%i: !map.index<2>) {
+      %a = map.load %lhs[%i] : !mo.tensor<[256, 512], f32>
+      map.yield %a : f32
+    }, (%i: !map.index<2>) {
+      %b = map.load %rhs[%i] : !mo.tensor<[256, 768], f32>
+      map.yield %b : f32
+    }
+    ```
+  }];
+
+  let arguments = (ins
+    MAP_ConcatSpecAttr:$spec,
+    MAP_AnyIndex:$index
+  );
+  let results = (outs AnyType:$result);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$inputs);
+
+  let hasCustomAssemblyFormat = 1;
 
   let hasVerifier = 1;
 }

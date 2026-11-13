@@ -329,6 +329,49 @@ SmallVector<MOSH::ShapeAttr> SliceSelectOp::getDynamicShapes() {
   return {sig.getIn(), sig.getOut()};
 }
 
+SmallVector<MOSH::ShapeAttr> ConcatSelectOp::getDynamicShapes() {
+  // Every input's extent, the last's included: the kernel launch checks that
+  // each is a multiple of the vector width before it runs vectors that may
+  // not cross from one input into the next.
+  ArrayRef<MOSH::ShapeAttr> ins = getSpec().getInputShapes();
+  int64_t axis = getSpec().getAxis();
+  if (llvm::all_of(ins, [&](MOSH::ShapeAttr in) {
+        return !ShapedType::isDynamic(in.getIntDims()[axis]);
+      }))
+    return {};
+  return SmallVector<MOSH::ShapeAttr>(ins);
+}
+
+// The width must divide every input's extent along the innermost axis, since a
+// vector starts in the input holding its first element and must end where that
+// input does. Along an outer axis a vector stays in one input, so the extents
+// set no limit. A region reads this index shifted by an input boundary, a
+// multiple of any valid width, so the region's own limit holds as it is.
+//
+//   ins [4, 6],  [4, 10], axis 1  ->  2                    gcd(6, 10)
+//   ins [4, 8],  [4, 16], axis 1  ->  8                    gcd(8, 16)
+//   ins [M, N0], [M, N1], axis 1  ->  #map.gcd<[N0, N1]>   known at run time
+//   ins [2, 8],  [3, 8],  axis 0  ->  no limit from the extents
+TypedAttr ConcatSelectOp::getMaxSimdWidth() {
+  MLIRContext *ctx = getContext();
+  ConcatSpecAttr spec = getSpec();
+  int64_t axis = spec.getAxis();
+  SmallVector<TypedAttr> widths;
+  if (axis == static_cast<int64_t>(spec.getResultShape().getRank()) - 1) {
+    for (MOSH::ShapeAttr in : spec.getInputShapes()) {
+      TypedAttr extent = in.getValues()[axis];
+      // An expression of parameters can't be passed to the kernel as a
+      // limit; width 1 is always valid.
+      if (!isWidthLimit(extent))
+        return MOSH::ShapeAttr::getDim(ctx, 1);
+      widths.push_back(extent);
+    }
+  }
+  for (Region &region : getInputs())
+    widths.push_back(MAP::getMaxSimdWidth(region));
+  return GCDAttr::getSimplified(ctx, widths);
+}
+
 Value BroadcastIndexOp::createStridedView(OpBuilder &builder, Value tensor,
                                           const IRMapping &) {
   auto inputTy = M::MO::castFromTensorLike(tensor.getType());

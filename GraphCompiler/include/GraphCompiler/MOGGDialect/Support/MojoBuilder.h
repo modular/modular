@@ -426,7 +426,7 @@ public:
   /// independent. A non-empty `captureConvention` (e.g. "var") emits a
   /// `{<captureConvention>}` clause, which Mojo requires for closures that
   /// capture by name; empty emits none.
-  MojoValue lambda(StringLiteral lambdaName, ArrayRef<NamedMojoDef> parameters,
+  MojoValue lambda(StringRef lambdaName, ArrayRef<NamedMojoDef> parameters,
                    ArrayRef<NamedMojoDef> arguments,
                    std::optional<MojoValue> returnType, LambdaInline inlineKind,
                    bool isAsync, bool raises, llvm::StringRef captureConvention,

@@ -246,6 +246,86 @@ void ViewSignatureAttr::print(AsmPrinter &printer) const {
 }
 
 //===----------------------------------------------------------------------===//
+// ConcatSpecAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseShape(AsmParser &parser, MOSH::ShapeAttr &shape) {
+  TypedAttr shapeAttr;
+  auto result = MOSH::parseShapeAttr(parser, shapeAttr);
+  if (!result.has_value())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected '[' for shape");
+  if (failed(*result))
+    return failure();
+  shape = llvm::cast<MOSH::ShapeAttr>(shapeAttr);
+  return success();
+}
+
+// `<[in0], [in1], ... -> [out], axis = N>`
+Attribute ConcatSpecAttr::parse(AsmParser &parser, Type /*type*/) {
+  SmallVector<MOSH::ShapeAttr> ins;
+  MOSH::ShapeAttr out;
+  int64_t axis;
+  if (parser.parseLess())
+    return {};
+  do {
+    if (failed(parseShape(parser, ins.emplace_back())))
+      return {};
+  } while (succeeded(parser.parseOptionalComma()));
+  if (parser.parseArrow() || failed(parseShape(parser, out)) ||
+      parser.parseComma() || parser.parseKeyword("axis") ||
+      parser.parseEqual() || parser.parseInteger(axis) || parser.parseGreater())
+    return {};
+  return parser.getChecked<ConcatSpecAttr>(parser.getContext(), ins, out, axis);
+}
+
+void ConcatSpecAttr::print(AsmPrinter &printer) const {
+  printer << "<";
+  llvm::interleaveComma(getInputShapes(), printer, [&](MOSH::ShapeAttr in) {
+    MOSH::printShapeTypedAttr(printer, in);
+  });
+  printer << " -> ";
+  MOSH::printShapeTypedAttr(printer, getResultShape());
+  printer << ", axis = " << getAxis() << ">";
+}
+
+LogicalResult
+ConcatSpecAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       ArrayRef<MOSH::ShapeAttr> ins, MOSH::ShapeAttr out,
+                       int64_t axis) {
+  if (ins.empty())
+    return emitError() << "a concat needs at least one input";
+  int64_t rank = out.getRank();
+  if (axis < 0 || axis >= rank)
+    return emitError() << "axis " << axis << " out of range for rank " << rank;
+  SmallVector<int64_t> outDims = out.getIntDims();
+  int64_t sum = 0;
+  bool sumKnown = true;
+  for (auto [i, in] : llvm::enumerate(ins)) {
+    if (static_cast<int64_t>(in.getRank()) != rank)
+      return emitError() << "input " << i << " has rank " << in.getRank()
+                         << ", the output " << rank;
+    SmallVector<int64_t> inDims = in.getIntDims();
+    for (int64_t d = 0; d < rank; ++d) {
+      if (d == axis || ShapedType::isDynamic(inDims[d]) ||
+          ShapedType::isDynamic(outDims[d]))
+        continue;
+      if (inDims[d] != outDims[d])
+        return emitError() << "input " << i << " dim " << d << " is "
+                           << inDims[d] << ", the output's " << outDims[d];
+    }
+    if (ShapedType::isDynamic(inDims[axis]))
+      sumKnown = false;
+    else
+      sum += inDims[axis];
+  }
+  if (sumKnown && !ShapedType::isDynamic(outDims[axis]) && sum != outDims[axis])
+    return emitError() << "input extents on axis " << axis << " sum to " << sum
+                       << ", the output's is " << outDims[axis];
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SliceSpecAttr
 //===----------------------------------------------------------------------===//
 

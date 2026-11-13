@@ -978,3 +978,48 @@ void SliceSelectOp::print(OpAsmPrinter &p) {
   p << " : " << getIndex().getType() << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }
+
+// `<spec> (index) : index-type -> result-type` then one region per input,
+// `(%k: index-type) { ... }`, its argument written before its body.
+ParseResult ConcatSelectOp::parse(OpAsmParser &parser, OperationState &result) {
+  ConcatSpecAttr spec;
+  OpAsmParser::UnresolvedOperand index;
+  Type indexType;
+  if (parser.parseLess() || parser.parseAttribute(spec) ||
+      parser.parseGreater() || parser.parseLParen() ||
+      parser.parseOperand(index) || parser.parseRParen() ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(indexType) ||
+      parser.resolveOperand(index, indexType, result.operands) ||
+      parser.parseArrow())
+    return failure();
+  Type resultType;
+  if (parser.parseType(resultType))
+    return failure();
+  result.addTypes(resultType);
+  result.addAttribute(getSpecAttrName(result.name), spec);
+  // Each region is `(%k: !map.index<N>) { ... }`: its arguments, then its
+  // body, with no `^bb0` header.
+  do {
+    SmallVector<OpAsmParser::Argument> args;
+    if (parser.parseArgumentList(args, OpAsmParser::Delimiter::Paren,
+                                 /*allowType=*/true) ||
+        parser.parseRegion(*result.addRegion(), args))
+      return failure();
+  } while (succeeded(parser.parseOptionalComma()));
+  return success();
+}
+
+void ConcatSelectOp::print(OpAsmPrinter &p) {
+  p << "<" << getSpec() << "> (" << getIndex() << ")";
+  p.printOptionalAttrDict((*this)->getAttrs(), {getSpecAttrName()});
+  p << " : " << getIndex().getType() << " -> " << getResult().getType() << " ";
+  llvm::interleaveComma(getInputs(), p, [&](Region &region) {
+    p << "(";
+    llvm::interleaveComma(region.getArguments(), p, [&](BlockArgument arg) {
+      p.printRegionArgument(arg);
+    });
+    p << ") ";
+    p.printRegion(region, /*printEntryBlockArgs=*/false);
+  });
+}
