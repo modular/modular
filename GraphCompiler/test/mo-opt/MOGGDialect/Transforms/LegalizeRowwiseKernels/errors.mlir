@@ -21,7 +21,7 @@ mogg.kernel.decl @builtin_kernels.monoids.ArgMax registration = "mo.reduce.arg_m
 mogg.kernel.decl @builtin_kernels.monoids.Welford registration = "mo.reduce.mean_var.tmp" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"count", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"mean", #kgen.param.decl.ref<"dtype"> : !DType>, #mogg.kernel_reduction_output<"M2", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
 func.func @noElementLoad(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor) {
-  // expected-error @below{{has a first fold reading neither a captured tensor nor a concat select at its element index}}
+  // expected-error @below{{has no input its first fold loads at the element index}}
   mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor} device = "cpu" {
     %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
       %v = mogg.tensor.load %cx[%row] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>

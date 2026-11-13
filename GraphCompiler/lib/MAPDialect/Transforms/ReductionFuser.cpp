@@ -132,24 +132,6 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
         (!llvm::all_of(arg.getUsers(), llvm::IsaPred<LoadOp>) ||
          anyLoadCrossesReshape(arg)))
       return false;
-  // A concat select fuses only into a fold reading it at the fold's own
-  // index: a map phase has no lowering for it, and a transformed index would
-  // break the vector it picks its input for.
-  //
-  //   %c = concat(%a, %b); %s = reduce.add(%c)             -> fuses
-  //   %c = concat(%a, %b); %y = add(%c, reduce.add(%c))    -> no: map phase
-  //   %c = concat(%a, %b); %s = reduce.add(transpose(%c))  -> no: transformed
-  auto atFoldIndex = [](Value index) {
-    auto fold = dyn_cast<IterReduceOp>(index.getParentRegion()->getParentOp());
-    return fold &&
-           index ==
-               cast<RowwisePhaseOpInterface>(fold.getOperation()).getIndexArg();
-  };
-  if (holdsConcatSelect(src))
-    for (auto [input, arg] :
-         llvm::zip(dst.getInputs(), dst.getInputBlockArgs()))
-      if (input == result && !loadsOnlyAt(arg, atFoldIndex))
-        return false;
   return true;
 }
 
@@ -232,9 +214,11 @@ bool canFuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
       continue;
     if (!perRowStore(dst, result.getResultNumber()))
       return false;
-    if (!loadsOnlyAt(body.getArgument(i),
-                     [&](Value index) { return index == loopIdx; }))
-      return false;
+    for (Operation *user : body.getArgument(i).getUsers()) {
+      auto load = dyn_cast<LoadOp>(user);
+      if (!load || load.getIndex() != loopIdx)
+        return false;
+    }
   }
   return !needsSink(dst, consumer) || canSinkTo(dst, consumer);
 }

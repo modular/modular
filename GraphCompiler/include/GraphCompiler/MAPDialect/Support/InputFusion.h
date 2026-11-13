@@ -31,24 +31,14 @@
 
 namespace M::MAP {
 
-/// Whether `op`'s body contains any `IndexTransformOpInterface` op or
-/// `map.index.concat.select`. A pure elementwise kernel has none.
+/// Whether `op`'s body contains any `IndexTransformOpInterface` op. A pure
+/// elementwise kernel has none.
 bool isViewForeach(IterElementwiseOp op);
 
-/// Whether `store`'s value flows from a transformed load or a concat select,
-/// i.e. its kernel is a view producer. Follows the store's dataflow, not mere
-/// presence of a transform.
+/// Whether `store`'s value flows from a transformed load, i.e. its kernel is a
+/// view producer. Follows the store's dataflow, not mere presence of a
+/// transform.
 bool producesThroughView(StoreOp store);
-
-/// Whether `store`'s value flows from a `map.index.concat.select`.
-bool producesThroughConcatSelect(StoreOp store);
-
-/// Whether `load` sits in a foreach and every load of its tensor there,
-/// through any input slot passing it, reads at a block argument (a loop index
-/// or a select's argument), never at a transformed index. Only there may a
-/// concat select be spliced in: the select must index along the vector the loop
-/// runs.
-bool readsAtIndexArgsOnly(LoadOp load);
 
 /// Whether `op` is a view and nothing else: it has an index transform but no
 /// elementwise compute. Once a view fuses into an elementwise kernel the result

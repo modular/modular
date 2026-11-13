@@ -34,44 +34,16 @@ namespace M::MAP {
 #define GEN_PASS_DEF_FUSEINPUT
 #include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h.inc"
 
-// A concat select changes the index space between its inputs and its result
-// the way an index transform does, so a kernel holding one is a view too.
-static bool isViewIndexOp(Operation *op) {
-  return isa<IndexTransformOpInterface, ConcatSelectOp>(op);
-}
-
 bool isViewForeach(IterElementwiseOp op) {
   return op.getBody()
-      .walk([&](Operation *o) {
-        return isViewIndexOp(o) ? WalkResult::interrupt()
-                                : WalkResult::advance();
-      })
+      .walk([&](IndexTransformOpInterface) { return WalkResult::interrupt(); })
       .wasInterrupted();
 }
 
 bool producesThroughView(StoreOp store) {
   return dataflowGraphContains<WalkDirection::Producers>(
-      store.getValue().getDefiningOp(), isViewIndexOp);
-}
-
-bool producesThroughConcatSelect(StoreOp store) {
-  return dataflowGraphContains<WalkDirection::Producers>(
-      store.getValue().getDefiningOp(), llvm::IsaPred<ConcatSelectOp>);
-}
-
-bool readsAtIndexArgsOnly(LoadOp load) {
-  auto foreach = load->getParentOfType<IterElementwiseOp>();
-  auto arg = dyn_cast<BlockArgument>(load.getTensor());
-  if (!foreach || !arg || arg.getOwner() != &foreach.getBody().front() ||
-      arg.getArgNumber() >= foreach.getInputs().size())
-    return false;
-  // A tensor passed twice is two block arguments: check the loads of each.
-  Value tensor = foreach.getInputs()[arg.getArgNumber()];
-  for (auto [operand, slot] :
-       llvm::zip(foreach.getInputs(), foreach.getBody().getArguments()))
-    if (operand == tensor && !loadsOnlyAt(slot, llvm::IsaPred<BlockArgument>))
-      return false;
-  return true;
+      store.getValue().getDefiningOp(),
+      [](Operation *o) { return isa<IndexTransformOpInterface>(o); });
 }
 
 bool isPureViewForeach(IterElementwiseOp op) {

@@ -121,18 +121,5 @@ SmallVector<StoreOp> M::MAP::getOutputStores(Block &body) {
   return stores;
 }
 
-bool M::MAP::loadsOnlyAt(BlockArgument slot,
-                         function_ref<bool(Value)> atIndex) {
-  return llvm::all_of(slot.getUsers(), [&](Operation *user) {
-    auto load = dyn_cast<LoadOp>(user);
-    return load && atIndex(load.getIndex());
-  });
-}
-
-bool M::MAP::holdsConcatSelect(Operation *op) {
-  return op->walk([](ConcatSelectOp) { return WalkResult::interrupt(); })
-      .wasInterrupted();
-}
-
 #define GET_OP_CLASSES
 #include "GraphCompiler/MAPDialect/Dialect/MAP.cpp.inc"

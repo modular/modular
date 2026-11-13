@@ -218,8 +218,8 @@ def test_concat_slice_projection_window(
     cache_t = torch.randn(2, 8, 2, 32, dtype=torch.bfloat16)
     proj_t = torch.randn(2, 3, 192, dtype=torch.bfloat16)
     fused = (
-        r"Horizontal\(View\(mo\.static\.reshape, mo\.slice, mo\.concat\), "
-        r"mo\.slice\)"
+        r"Epilogue\(Prologue\(mo\.static\.reshape, mo\.slice, mo\.concat.*\), "
+        r"mo\.slice"
     )
     full_out, window = _run_bf16(session, graph, cache_t, proj_t, fused=fused)
     new_rows = proj_t.reshape(2, 3, 6, 32)[:, :, 4:]

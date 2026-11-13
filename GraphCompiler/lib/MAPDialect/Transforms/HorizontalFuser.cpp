@@ -278,11 +278,6 @@ bool fuseEscapingReader(IterOpaqueOp &dst) {
     SmallVector<StoreOp> srcStores = getOutputStores(srcBody);
     if (epilogueStores.size() != 1 || srcStores.size() != src.getNumResults())
       continue;
-    // A concat select can't go into the epilogue: the kernel calls it at its
-    // own SIMD width, ignoring the select's width limit, so a vector could run
-    // from one input into the next.
-    if (holdsConcatSelect(src))
-      continue;
     // A select in the consumer moves into the epilogue whole, so it must hold
     // at the epilogue's store index.
     if (llvm::any_of(
@@ -302,7 +297,10 @@ bool fuseEscapingReader(IterOpaqueOp &dst) {
     BlockArgument srcLoopIdx = srcBody.getArguments().back();
     SliceIndexOp slice;
     SliceSpecAttr sliceSpec;
-    if (!loadsOnlyAt(fusionArg, [&](Value i) { return i == srcLoopIdx; })) {
+    if (llvm::any_of(fusionArg.getUsers(), [&](Operation *user) {
+          auto load = dyn_cast<LoadOp>(user);
+          return !load || load.getIndex() != srcLoopIdx;
+        })) {
       StoreOp epilogueStore = epilogueStores.front();
       if (!isa<MO::TensorType>(epilogueStore.getTensor().getType()))
         continue;

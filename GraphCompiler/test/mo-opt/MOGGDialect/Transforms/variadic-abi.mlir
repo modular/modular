@@ -16,14 +16,22 @@
 // ops. Every kernel here takes its variadic operands as a trait-bound
 // `TensorTuple`, fused or not.
 
+// TENSOR TUPLE: mo.concat takes its fused variadic inputs as a trait-bound
+// `TensorTuple`, so each element is its own fused load wrapper.
+// CHECK: extensibility.TensorTuple[
+mo.graph @tensor_tuple(%a: !mo.tensor<[2], si32>, %b: !mo.tensor<[3], si32>, %c: !mo.tensor<[4], si32>) -> !mo.tensor<[9], si32> {
+  %result = mo.concat[0](%a, %b, %c) : (
+    !mo.tensor<[2], si32>, !mo.tensor<[3], si32>, !mo.tensor<[4], si32>
+  ) -> !mo.tensor<[9], si32>
+  mo.output %result : !mo.tensor<[9], si32>
+}
+
 // FUSED INPUT: the kernel's fused variadic inputs are a trait-bound
 // `TensorTuple`, so each element is its own fused load wrapper.
 // CHECK: extensibility.TensorTuple[
-mo.graph @fused_input(%a: !mo.tensor<[4], si32>, %b: !mo.tensor<[4], si32>, %c: !mo.tensor<[4], si32>) -> !mo.tensor<[4], si32> {
-  %result = mo.custom [symbol = "variadic_add", device = #M.device_ref<"cpu", 0>](%a, %b, %c) : (
-    !mo.tensor<[4], si32>, !mo.tensor<[4], si32>, !mo.tensor<[4], si32>
-  ) -> !mo.tensor<[4], si32>
-  mo.output %result : !mo.tensor<[4], si32>
+mo.graph @fused_input(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
+  %c = mo.custom [symbol = "variadic_add", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+  mo.output %c : !mo.tensor<[4], f32>
 }
 
 // FUSED OUTPUT: the kernel's store-epilogue-fused variadic outputs pack into a

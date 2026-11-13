@@ -76,6 +76,16 @@ struct OutputFusionEdge {
   ReshapeIndexOp reshape;
 };
 
+// Whether every use of `fusionArg` reads at the loop index.
+bool readsAtLoopIndex(BlockArgument fusionArg, Value loopIdx) {
+  for (Operation *user : fusionArg.getUsers()) {
+    auto load = dyn_cast<LoadOp>(user);
+    if (!load || load.getIndex() != loopIdx)
+      return false;
+  }
+  return true;
+}
+
 // The single `map.index.reshape` of the loop index that every use of
 // `fusionArg` loads through, or null if a use reads directly, through another
 // transform, or through a different reshape.
@@ -166,17 +176,11 @@ findFusibleEdge(IterOpaqueOp dst, const OutputFusionConfig &config) {
     // Only a single reshape can be inverted onto the store (it preserves the
     // row-major offset).
     ReshapeIndexOp reshape = nullptr;
-    if (!loadsOnlyAt(fusionArg, [&](Value i) { return i == loopIdx; })) {
+    if (!readsAtLoopIndex(fusionArg, loopIdx)) {
       reshape = reshapeOnFusedInput(srcBody, fusionArg);
       if (!reshape)
         continue;
     }
-
-    // A concat select can't go into the epilogue: the kernel calls it at its
-    // own SIMD width, ignoring the select's width limit, so a vector could run
-    // from one input into the next.
-    if (holdsConcatSelect(src))
-      continue;
 
     // A `map.index.slice.select` in `src` moves into the epilogue whole (see
     // `fuseOutputOnce`), so it must hold at the epilogue's store index, which

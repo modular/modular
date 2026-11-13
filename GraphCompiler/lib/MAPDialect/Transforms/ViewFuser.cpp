@@ -39,17 +39,9 @@ struct FuseViewsPass : public MAP::impl::FuseViewsBase<FuseViewsPass> {
   void runOnOperation() override {
     InputFusionConfig config;
     // The consumer is a foreach or an opaque, the only kinds input fusion
-    // offers. A concat select picks its input once per vector, so a producer
-    // holding one fuses only where it is read at a loop index or a select's
-    // argument, which a prologue's load never is. Inside a concat's region any
-    // producer may fuse: its load sits at the region's argument, the index of
-    // the one input that region reads.
-    config.shouldFuse = [](StoreOp srcStore, LoadOp dstLoad) {
-      if (producesThroughConcatSelect(srcStore) &&
-          !readsAtIndexArgsOnly(dstLoad))
-        return false;
-      return producesThroughView(srcStore) ||
-             dstLoad->getParentOfType<ConcatSelectOp>();
+    // offers.
+    config.shouldFuse = [](StoreOp srcStore, LoadOp) {
+      return producesThroughView(srcStore);
     };
     // A pure view is a cheap index computation, always fine to re-derive per
     // consumer. A view already fused into elementwise compute is not: cloning

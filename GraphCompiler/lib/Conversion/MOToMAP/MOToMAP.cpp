@@ -499,72 +499,6 @@ LogicalResult lowerSliceToForeach(MO::SliceOp op) {
   return success();
 }
 
-// Lowers mo.concat to a map.iter.elementwise over the output shape: the body
-// reads each element from the one input holding it, through a
-// map.index.concat.select whose region per input loads at the rebased index,
-// and stores it unchanged. The concat is then a view like a slice, which
-// producers fuse into and which fuses into its readers.
-LogicalResult lowerConcatToForeach(MO::ConcatOp op) {
-  MLIRContext *ctx = op->getContext();
-  Location loc = op->getLoc();
-  OpBuilder builder(op);
-
-  auto outputTy = cast<MO::TensorType>(op.getResult().getType());
-  int64_t rank = outputTy.getShape().getRank();
-  int64_t axis = op.getAxisAttr().getInt();
-  if (axis < 0)
-    axis += rank;
-
-  SmallVector<MOSH::ShapeAttr> inShapes;
-  for (Value input : op.getInputs())
-    inShapes.push_back(cast<MO::TensorType>(input.getType()).getShape());
-
-  // Verify first: `get` asserts on a rejected spec.
-  auto emitConcatError = [&] { return op->emitOpError("MOToMAP: "); };
-  if (failed(MAP::ConcatSpecAttr::verify(emitConcatError, inShapes,
-                                         outputTy.getShape(), axis)))
-    return failure();
-  auto spec =
-      MAP::ConcatSpecAttr::get(ctx, inShapes, outputTy.getShape(), axis);
-
-  auto foreachOp = MAP::IterElementwiseOp::create(
-      builder, loc,
-      /*resultTypes=*/SmallVector<Type>{outputTy},
-      /*shape=*/outputTy.getShape(),
-      /*inputs=*/op.getInputs(),
-      /*chain=*/Value(),
-      /*fusionInfo=*/
-      MOGG::FusionInfoAttr::get(ctx, MOGG::createFusionLeaf(op)));
-  stampAsyncLaunch(foreachOp, op);
-
-  // Body block args: [inputs..., output, map.index<rank>].
-  Block *body = &foreachOp.getBody().emplaceBlock();
-  for (Value input : op.getInputs())
-    body->addArgument(input.getType(), loc);
-  BlockArgument outputArg = body->addArgument(outputTy, loc);
-  auto indexTy = MAP::IndexType::get(ctx, rank);
-  BlockArgument idxArg = body->addArgument(indexTy, loc);
-
-  OpBuilder bodyBuilder = OpBuilder::atBlockEnd(body);
-  auto select = MAP::ConcatSelectOp::create(
-      bodyBuilder, loc, outputTy.getElementType(), spec, idxArg,
-      /*inputsCount=*/op.getInputs().size());
-  for (auto [r, region] : llvm::enumerate(select.getInputs())) {
-    Block *regionBody = bodyBuilder.createBlock(&region, {}, {indexTy}, {loc});
-    OpBuilder regionBuilder = OpBuilder::atBlockEnd(regionBody);
-    Value loaded =
-        MAP::LoadOp::create(regionBuilder, loc, outputTy.getElementType(),
-                            body->getArgument(r), regionBody->getArgument(0));
-    MAP::YieldOp::create(regionBuilder, loc, loaded);
-  }
-  bodyBuilder.setInsertionPointAfter(select);
-  MAP::StoreOp::create(bodyBuilder, loc, outputArg, idxArg, select.getResult());
-
-  op->replaceAllUsesWith(foreachOp.getResults());
-  op->erase();
-  return success();
-}
-
 // Lowers mo.static.broadcast_to like lowerSliceToForeach, via
 // map.index.broadcast. Broadcast can add rank, so the load index rank may
 // differ from the loop's.
@@ -859,13 +793,6 @@ FailureOr<Operation *> lowerOp(Operation *op, MOGG::MojoRegistry &registry) {
       })
       .Case([&](MO::Static::ReshapeOp view) {
         return lowerView(view, registry, lowerReshapeToForeach);
-      })
-      // A concat registers a kernel but runs as a view so it fuses, unless
-      // the build can't lower the view.
-      .Case([&](MO::ConcatOp concat) -> FailureOr<Operation *> {
-        if (MAP::concatLowersAsView())
-          return toLowerResult(lowerConcatToForeach(concat));
-        return lowerThroughKernel(concat, registry);
       })
       .Case([&](MO::MutableStoreOp store) {
         return lowerMutableStore(store, registry);
