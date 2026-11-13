@@ -649,7 +649,8 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     }
 
     // Project self to the right field and store the RValue.
-    auto fieldRef = RefStructGEROp::create(builder, selfValue, fieldOp);
+    auto fieldRef = RefStructGEROp::create(builder, selfValue, fieldOp,
+                                           &shared.getEvaluationContext());
     SyntheticNode node(structDecl.getLoc());
     emitter.emitStoreToLValue({argVal, &node}, MLValue(fieldRef),
                               EC_AttributeRefBase);
@@ -885,8 +886,9 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
                                                   fieldASTDecl.getLoc())))
       return failure();
 
-    auto targetFieldOp = RefStructGEROp::create(b, selfArg, fieldOp);
-    Value srcFieldOp = RefStructGEROp::create(b, existingArg, fieldOp);
+    auto *evalCtx = &shared.getEvaluationContext();
+    auto targetFieldOp = RefStructGEROp::create(b, selfArg, fieldOp, evalCtx);
+    Value srcFieldOp = RefStructGEROp::create(b, existingArg, fieldOp, evalCtx);
 
     // Set to the resolved trait when the field requires a conditional
     // conformance (i.e. a where-clause constraint proves the field's type

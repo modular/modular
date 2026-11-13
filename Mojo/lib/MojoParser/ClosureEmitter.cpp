@@ -1860,7 +1860,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
 
     for (auto [index, fieldOp] : llvm::enumerate(fieldOps)) {
       Value arg = body->getArgument(index);
-      Value fieldRef = RefStructGEROp::create(bodyBuilder, selfValue, fieldOp)
+      Value fieldRef = RefStructGEROp::create(bodyBuilder, selfValue, fieldOp,
+                                              &shared.getEvaluationContext())
                            ->getResults()
                            .front();
       Type fieldType = selfBoundFieldTypes[index];

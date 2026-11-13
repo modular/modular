@@ -404,12 +404,9 @@ Value CallEmitter::emitUnpackedPackSegment(OperandValue &operand,
           ? dyn_cast_or_null<StructFieldASTDecl>(lookup.getIfSuccess()[0])
           : nullptr;
   assert(fieldDecl && "VariadicPack stores its !lit.ref.pack in _value");
-  auto fieldRefType = RefStructGEROp::getFieldType(
-      cast<RefType>(base.getType()), fieldDecl->getOp(),
+  Value fieldRef = RefStructGEROp::create(
+      *emitter.builder, mlirLoc, base, fieldDecl->getOp(),
       &emitter.shared.getEvaluationContext());
-  Value fieldRef =
-      RefStructGEROp::create(*emitter.builder, mlirLoc, fieldRefType,
-                             fieldDecl->getOp().getNameAttr(), base);
   Value loaded = RefLoadOp::create(*emitter.builder, mlirLoc, fieldRef);
 
   // Rebind to the common origin, as for the elements of a plain run. The list

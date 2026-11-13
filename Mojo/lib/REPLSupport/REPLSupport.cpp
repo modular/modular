@@ -582,8 +582,8 @@ static void processVariablesForPersistence(MojoREPLListener &listener,
 
     // Materialize a reference to the variable within the function.
     ImplicitLocOpBuilder builder(varOp->getLoc(), varOp);
-    Value fieldGep = LIT::RefStructGEROp::create(builder, varOp->getLoc(),
-                                                 structValue, newField);
+    Value fieldGep = LIT::RefStructGEROp::create(
+        builder, varOp->getLoc(), structValue, newField, /*ctx=*/nullptr);
     Value fieldLoad = RefLoadOp::create(builder, varOp->getLoc(), fieldGep);
 
     // TODO: Whenever we have globals, we should be able to use a global

@@ -22,6 +22,7 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "OverloadSet.h"
 #include "ParamBindings.h"
+#include "ParserEvaluationContext.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 
@@ -131,7 +132,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // can use that directly.
   if (auto baseRef = loadVal.getIfMLValue()) {
     auto fieldPtr =
-        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField());
+        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField(),
+                               &emitter.shared.getEvaluationContext());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
     // Done: no tmp, no __setitem__, in-place mutation via the ref.
     return MBValue(baseRef);
@@ -153,7 +155,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store into the field.
   auto fieldPtr =
-      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField());
+      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField(),
+                             &emitter.shared.getEvaluationContext());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transferring ownership as an MRValue.

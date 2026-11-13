@@ -1762,11 +1762,9 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
         baseBVal, baseRefType.getWithElement(newEltType), expr->getLoc());
   }
 
-  auto fieldRefType =
-      RefStructGEROp::getFieldType(cast<RefType>(baseBVal.getType()), fieldOp,
-                                   &emitter.shared.getEvaluationContext());
-  Value fieldRef = RefStructGEROp::create(
-      *emitter.builder, mlirLoc, fieldRefType, fieldOp.getNameAttr(), baseBVal);
+  Value fieldRef =
+      RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp,
+                             &emitter.shared.getEvaluationContext());
 
   // Apply type refinement to struct field accesses whose element type is a
   // parametric type with comptime assumptions (e.g., Self.T in a struct
@@ -5534,7 +5532,8 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
     }
 
     resultRef =
-        RefStructGEROp::create(*emitter.builder, mlirLoc, structRef, fieldOp);
+        RefStructGEROp::create(*emitter.builder, mlirLoc, structRef, fieldOp,
+                               &emitter.shared.getEvaluationContext());
   } else {
     // Parametric index case (or parametric struct type): emit RefStructGEROp
     // with index access. This will be canonicalized to field name access after

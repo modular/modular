@@ -1675,8 +1675,10 @@ RefStructGEROp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 void RefStructGEROp::build(OpBuilder &builder, OperationState &result,
-                           Value structBaseRef, StructFieldOp field) {
-  auto resultType = getFieldType(cast<RefType>(structBaseRef.getType()), field);
+                           Value structBaseRef, StructFieldOp field,
+                           ParameterEvaluationContext *ctx) {
+  auto resultType =
+      getFieldType(cast<RefType>(structBaseRef.getType()), field, ctx);
   result.addTypes(resultType);
   result.addAttribute("field", field.getNameAttr());
   // Don't add index attribute for field access
@@ -1795,8 +1797,11 @@ struct ResolveIndexToFieldName : public mlir::OpRewritePattern<RefStructGEROp> {
       return op.emitOpError("field index ") << index << " is out of bounds";
 
     // Replace with field name access
-    rewriter.replaceOpWithNewOp<RefStructGEROp>(op, op.getContainer(),
-                                                targetField);
+    RefType fieldRefType = RefStructGEROp::getReboundFieldType(
+        op.getContainer().getType(), targetField.getNameAttr(),
+        op.getType().getElementType());
+    rewriter.replaceOpWithNewOp<RefStructGEROp>(
+        op, fieldRefType, targetField.getNameAttr(), op.getContainer());
     return success();
   }
 };

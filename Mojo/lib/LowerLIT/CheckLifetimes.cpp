@@ -1448,7 +1448,8 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     // instantiation so that a nested origin like `a.x.w` indexes the real
     // layout rather than the declared one.
     return {valueRef.getSubfield(fieldLayout->startBit, fieldLayout->numBits),
-            fieldLayout->field.getReboundType(containerType)};
+            fieldLayout->field.getReboundType(
+                containerType, getTypeDeclInfo().getEvaluationContext())};
   }
 
   // If this is an interior origin like `a.field["name"]`, then the interior
@@ -2326,7 +2327,8 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
         typeDeclInfo.getFieldContaining(declRefType, firstInvalidOffset);
     firstInvalidOffset -= fieldBitOffset;
     nextValidOffset -= fieldBitOffset;
-    type = fieldDecl.getReboundType(declRefType);
+    type = fieldDecl.getReboundType(declRefType,
+                                    typeDeclInfo.getEvaluationContext());
     diag << "." << fieldDecl.getName();
   }
 
@@ -2335,7 +2337,8 @@ static Type digIntoTypeAtFieldOffset(Type type, unsigned firstInvalidOffset,
     auto declRefType = sugarCast<LIT::StructType>(type);
     auto [fieldDecl, startBit, numBits] =
         typeDeclInfo.getFieldContaining(declRefType, 0);
-    type = fieldDecl.getReboundType(declRefType);
+    type = fieldDecl.getReboundType(declRefType,
+                                    typeDeclInfo.getEvaluationContext());
     diag << "." << fieldDecl.getName();
   }
 
@@ -3694,18 +3697,15 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   LIT::StructDeclOp structDecl =
       valueSet.getTypeDeclInfo().getStructInfoForType(valueType).decl;
 
-  // Initialize an evaluator so that we can resolve the field types.
-  ParameterEvaluator evaluator =
-      valueSet.getTypeDeclInfo().getParameterEvaluator(
-          structDecl.getParams(), valueType.getParamValues());
-
   assert(valueRef.isIndirect && "register values aren't field sensitive");
 
   unsigned nextBit = 0;
   for (StructFieldOp field : structDecl.getFieldDecls()) {
-    auto fieldVal = RefStructGEROp::create(builder, value, field);
+    auto fieldVal = RefStructGEROp::create(
+        builder, value, field,
+        valueSet.getTypeDeclInfo().getEvaluationContext());
     unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(
-        evaluator.getReboundType(field.getType()));
+        fieldVal.getType().getElementType());
     destroyValueIfNeeded(fieldVal, valueRef.getSubfield(nextBit, numBits),
                          consumedValues, builder);
 
@@ -5353,7 +5353,8 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     // struct Pair[T: Movable](Movable):
     //    var first: T
     // ```
-    Type fieldType = field.getReboundType(valueDRType);
+    Type fieldType = field.getReboundType(
+        valueDRType, valueSet.getTypeDeclInfo().getEvaluationContext());
     unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(fieldType);
     // If this field has consumed bits, and if has trivial type, force it
     // back to being non-consumed.  This can allow the proper correctness
@@ -5496,7 +5497,9 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
 
     // Drill into the right field.
     for (StructFieldOp subfield : accessPath)
-      value = RefStructGEROp::create(dtorInserter.builder, value, subfield);
+      value = RefStructGEROp::create(
+          dtorInserter.builder, value, subfield,
+          valueSet.getTypeDeclInfo().getEvaluationContext());
   }
 
   // If this is a store to a subfield of a non-trivial value being destroyed,

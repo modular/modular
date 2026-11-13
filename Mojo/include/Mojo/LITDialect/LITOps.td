@@ -625,7 +625,7 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     /// Given a struct base value type that may have bound parameters,
     /// substitute those bound parameters into our type and return the result.
     Type getReboundType(StructType structSelfType,
-                        ParameterEvaluationContext *ctx = nullptr);
+                        ParameterEvaluationContext *ctx);
   }];
 }
 
@@ -1962,7 +1962,8 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 
   let builders = [
     // Infer the result type based on the result of lookup (field name access).
-    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>,
+    OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field,
+                   "ParameterEvaluationContext *":$ctx)>,
     // Build with index access.
     OpBuilder<(ins "Type":$resultType, "TypedAttr":$index, "Value":$container)>,
     // Build with explicit field name and result type (for compatibility).
@@ -1983,7 +1984,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     /// specified field, maintaining origin and mutability, and rebinding any
     /// generics from the base type through the field type.
     static RefType getFieldType(RefType structRefTy, StructFieldOp field,
-                               ParameterEvaluationContext *ctx = nullptr);
+                               ParameterEvaluationContext *ctx);
 
     /// Given a reference to a struct, return the reference type to the
     /// specified field, maintaining origin and mutability, assuming the type

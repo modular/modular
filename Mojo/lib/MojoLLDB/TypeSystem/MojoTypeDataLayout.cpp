@@ -93,7 +93,7 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
   auto refType = sugarCast<LIT::StructType>(typeRef.mlirType);
   return calculateForStructLike(llvm::map_to_vector(
       structOp.getFieldDecls(), [&](LIT::StructFieldOp field) {
-        return LIT::ASTType(field.getReboundType(refType));
+        return LIT::ASTType(field.getReboundType(refType, /*ctx=*/nullptr));
       }));
 }
 
