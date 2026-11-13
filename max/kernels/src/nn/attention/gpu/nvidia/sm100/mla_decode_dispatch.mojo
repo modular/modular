@@ -3389,11 +3389,9 @@ def _mla_decode_sm100_dispatch_impl[
         ] if LseOutPtrType.is_null else LseOutPtrType
         var lse_accum_split_ptr: SplitAccumType
         comptime if LseOutPtrType.is_null:
-            lse_accum_split_ptr = rebind[SplitAccumType](
-                NullPointer[AccumType]()
-            )
+            lse_accum_split_ptr = NullPointer[AccumType]()
         else:
-            lse_accum_split_ptr = rebind[SplitAccumType](lse_out)
+            lse_accum_split_ptr = lse_out
 
         def _launch_no_split_path() raises {imm}:
             mla_decode_sm100_sink_split_k[
@@ -5227,9 +5225,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
 
     var kernel_scalar_args: KernelType.ScalarArgsType
     comptime if prepared_bounds:
-        kernel_scalar_args = rebind[KernelType.ScalarArgsType](
-            StaticTuple[Int64, 0]()
-        )
+        kernel_scalar_args = StaticTuple[Int64, 0]()
     else:
         kernel_scalar_args = rebind[KernelType.ScalarArgsType](
             scalar_args_buf.value()

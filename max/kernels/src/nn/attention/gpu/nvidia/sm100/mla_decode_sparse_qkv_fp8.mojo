@@ -987,16 +987,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             batch_size = mla_decode_pack.batch_size()
             q_max_seq_len = mla_decode_pack.q_max_seq_len()
         else:
-            var dynamic_args = rebind[
-                TileTensor[
-                    DType.int64,
-                    RowMajorLayout[ComptimeInt[3]],
-                    MutAnyOrigin,
-                    Engine=Self.Engine,
-                ]
-            ](scalar_args)
-            batch_size = Int(dynamic_args[0])
-            q_max_seq_len = Int(dynamic_args[1])
+            batch_size = Int(scalar_args[0])
+            q_max_seq_len = Int(scalar_args[1])
         var selection_lag = Int(selection_lag_dev)
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
@@ -1759,16 +1751,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             batch_size = mla_decode_pack.batch_size()
             q_max_seq_len = mla_decode_pack.q_max_seq_len()
         else:
-            var dynamic_args = rebind[
-                TileTensor[
-                    DType.int64,
-                    RowMajorLayout[ComptimeInt[3]],
-                    MutAnyOrigin,
-                    Engine=Self.Engine,
-                ]
-            ](scalar_args)
-            batch_size = Int(dynamic_args[0])
-            q_max_seq_len = Int(dynamic_args[1])
+            batch_size = Int(scalar_args[0])
+            q_max_seq_len = Int(scalar_args[1])
         var selection_lag = Int(selection_lag_dev)
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask

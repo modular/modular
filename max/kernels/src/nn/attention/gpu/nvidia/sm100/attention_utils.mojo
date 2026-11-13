@@ -1176,7 +1176,6 @@ struct SM100TensorAccumulator[
         comptime if Self.num_stages == 1:
             # Original single-stage behavior
             comptime if Self.a_tmem:
-                var a_ = rebind[UInt32](a)
                 comptime if Self.use_ws:
                     bulk_mma_ws_ts[
                         Self.mma_kind,
@@ -1190,13 +1189,12 @@ struct SM100TensorAccumulator[
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
                         b_page_dense=Self.b_page_dense,
-                    ](Self.idesc, a_, b, c, c_scale, elect)
+                    ](Self.idesc, a, b, c, c_scale, elect)
                 else:
                     Self._issue_ts[Self.num_k_mmas, partial=False](
-                        a_, b, c, c_scale, elect
+                        a, b, c, c_scale, elect
                     )
             else:
-                var a_ = rebind[MMASmemDescriptorPair](a)
                 comptime if Self.use_ws:
                     bulk_mma_ws[
                         Self.mma_kind,
@@ -1215,10 +1213,10 @@ struct SM100TensorAccumulator[
                         tcgen05_mma_type=Self.tcgen05_mma_type,
                         mma_k=Self.MMA_K,
                         b_page_dense=Self.b_page_dense,
-                    ](Self.idesc, a_, b, c, c_scale, elect)
+                    ](Self.idesc, a, b, c, c_scale, elect)
                 else:
                     Self._issue_ss[Self.num_k_mmas, partial=False](
-                        a_, b, c, c_scale, elect
+                        a, b, c, c_scale, elect
                     )
         else:
             comptime start = 3 * stage_idx if Self.use_3_then_1_split else stage_idx
@@ -1245,7 +1243,7 @@ struct SM100TensorAccumulator[
                 # A (tmem) offset: P is MMA_M x BK, so the column offset is
                 # k_offset * dtype_size / 4 (in tmem units).
                 comptime a_tmem_offset = (k_offset * Self.operand_size) // 4
-                var a_ = rebind[UInt32](a) + UInt32(a_tmem_offset)
+                var a_ = a + UInt32(a_tmem_offset)
                 comptime if Self.use_ws:
                     bulk_mma_ws_ts[
                         Self.mma_kind,
@@ -1276,9 +1274,7 @@ struct SM100TensorAccumulator[
                 comptime a_byte_offset = (
                     Int(Self.a_layout(coord[0, k_offset])) * Self.operand_size
                 )
-                var a_ = rebind[MMASmemDescriptorPair](a) + UInt32(
-                    a_byte_offset
-                )
+                var a_ = a + UInt32(a_byte_offset)
                 comptime if Self.use_ws:
                     bulk_mma_ws[
                         Self.mma_kind,
@@ -1364,7 +1360,6 @@ struct SM100TensorAccumulator[
         ), "ws path requires MMA_M in (32, 64)"
 
         comptime if Self.a_tmem:
-            var a_ = rebind[UInt32](a)
             comptime if Self.use_ws:
                 bulk_mma_ws_ts_partial[
                     Self.mma_kind,
@@ -1381,7 +1376,7 @@ struct SM100TensorAccumulator[
                     b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
-                    a_,
+                    a,
                     b,
                     c,
                     c_scale,
@@ -1391,9 +1386,8 @@ struct SM100TensorAccumulator[
             else:
                 Self._issue_ts[
                     ks_end - ks_start, partial=True, k_start=ks_start
-                ](a_, b, c, c_scale, elect, valid_k_mmas)
+                ](a, b, c, c_scale, elect, valid_k_mmas)
         else:
-            var a_ = rebind[MMASmemDescriptorPair](a)
             comptime if Self.use_ws:
                 bulk_mma_ws_partial[
                     Self.mma_kind,
@@ -1415,7 +1409,7 @@ struct SM100TensorAccumulator[
                     b_page_dense=Self.b_page_dense,
                 ](
                     Self.idesc,
-                    a_,
+                    a,
                     b,
                     c,
                     c_scale,
@@ -1425,7 +1419,7 @@ struct SM100TensorAccumulator[
             else:
                 Self._issue_ss[
                     ks_end - ks_start, partial=True, k_start=ks_start
-                ](a_, b, c, c_scale, elect, valid_k_mmas)
+                ](a, b, c, c_scale, elect, valid_k_mmas)
 
 
 def _build_mma[

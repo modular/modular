@@ -1131,11 +1131,9 @@ def maybe_null_pointer[
         The `OptionalPointer` for `ptr`.
     """
     comptime if present:
-        return rebind[MaybeNullPointer[dtype, present]](
-            NonNullPointer[dtype](ptr.as_imm().as_unsafe_any_origin())
-        )
+        return NonNullPointer[dtype](ptr.as_imm().as_unsafe_any_origin())
     else:
-        return rebind[MaybeNullPointer[dtype, present]](NullPointer[dtype]())
+        return NullPointer[dtype]()
 
 
 @inline(.always)
