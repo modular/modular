@@ -1338,5 +1338,16 @@ def test_string_span_niche() raises:
     assert_false(none)
 
 
+def test_string_literal_equality_against_non_static_string_span() raises:
+    var text = String("a,b")
+    var span = StringSpan(text)
+    assert_true(span != "a")
+    assert_true("a" != span)
+    assert_false(span != "a,b")
+    assert_true(span == "a,b")
+    assert_false("a,b" != span)
+    assert_true("a,b" == span)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
