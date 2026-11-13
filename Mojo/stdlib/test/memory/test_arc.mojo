@@ -278,8 +278,9 @@ def test_weak_basic_upgrade() raises:
 
     var up = w.try_upgrade()
     assert_equal(UInt64(2), p.count())
-    assert_true(up)
-    assert_equal(7, up.value()[])
+    __guard case .Some(upgraded) = up else:
+        raise Error("expected try_upgrade to return a strong pointer")
+    assert_equal(7, upgraded[])
     _ = p^
     _ = up^
 
@@ -479,8 +480,9 @@ def test_arc_pointer_niche() raises:
 
     var p = ArcPointer(String("hello"))
     var some = Optional(p)
-    assert_true(some)
-    assert_equal(some.value()[], "hello")
+    __guard case .Some(arc) = some else:
+        raise Error("expected an engaged Optional")
+    assert_equal(arc[], "hello")
     assert_equal(p.count(), 2)
     _ = some^
     assert_equal(p.count(), 1)

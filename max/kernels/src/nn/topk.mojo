@@ -3563,17 +3563,11 @@ def gumbel_sampling_fused_gpu[
             ImmPointer[Scalar[DType.int64], ImmutAnyOrigin]
         ] = None
         comptime if subtract:
-            if not sub:
+            __guard case .Some(sub) = sub else:
                 raise Error("sub is required when subtract is set")
-            if Int(sub.unsafe_value().num_elements()) < batch_size * Int(
-                input.dim(1)
-            ):
+            if Int(sub.num_elements()) < batch_size * Int(input.dim(1)):
                 raise Error("sub must be a contiguous [batch, vocab] tensor")
-            sub_ptr = (
-                sub.unsafe_value()
-                .ptr.as_imm()
-                .unsafe_origin_cast[ImmutAnyOrigin]()
-            )
+            sub_ptr = sub.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
             if case .Some(fb) = fallback:
                 if Int(fb.num_elements()) != batch_size:
                     raise Error("fallback must carry one entry per row")

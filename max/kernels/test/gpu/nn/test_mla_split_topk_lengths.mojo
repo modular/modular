@@ -65,14 +65,15 @@ def test_a_per_row_view_reads_each_rows_last_token(
         per_row=True,
         ctx=ctx,
     )
-    assert_true(Bool(owned), "a per-row view gathers into its own buffer")
+    __guard case .Some(gathered) = owned else:
+        raise Error("a per-row view gathers into its own buffer")
     var host = ctx.enqueue_create_host_buffer[.int32](VIEW_ROWS)
-    ctx.enqueue_copy(host, owned.value())
+    ctx.enqueue_copy(host, gathered)
     ctx.synchronize()
     # Row 1 ends at token 4, row 2 at token 8.
     assert_equal(host[0], 104)
     assert_equal(host[1], 108)
-    assert_equal(Int(view_lengths.value()), Int(owned.value().unsafe_ptr()))
+    assert_equal(Int(view_lengths.value()), Int(gathered.unsafe_ptr()))
     _ = lengths^
     _ = offsets^
 

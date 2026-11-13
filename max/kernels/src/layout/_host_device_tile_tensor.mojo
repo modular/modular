@@ -88,16 +88,14 @@ struct HostDeviceTileTensor[dtype: DType, LayoutType: TensorLayout](Movable):
         Raises:
             If the tensor was created without a `DeviceContext`.
         """
-        match self._device:
-            case .Some(device):
-                return TileTensor[Self.dtype, Self.LayoutType, origin_of(self)](
-                    ptr=device.unsafe_ptr()
-                    .unsafe_mut_cast[origin_of(self).mut]()
-                    .unsafe_origin_cast[origin_of(self)](),
-                    layout=self._layout,
-                )
-            case .None:
-                raise Error("HostDeviceTileTensor has no device buffer")
+        __guard case .Some(device) = self._device else:
+            raise Error("HostDeviceTileTensor has no device buffer")
+        return TileTensor[Self.dtype, Self.LayoutType, origin_of(self)](
+            ptr=device.unsafe_ptr()
+            .unsafe_mut_cast[origin_of(self).mut]()
+            .unsafe_origin_cast[origin_of(self)](),
+            layout=self._layout,
+        )
 
     def to_device(self) raises:
         """Copies host memory to the device buffer and waits for the copy.

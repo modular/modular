@@ -617,9 +617,9 @@ struct assert_raises:
         Returns:
             True if the error was successfully caught and matched.
         """
-        if case .Some(message_contains) = self.message_contains:
-            comptime assert conforms_to(
-                E, Writable
-            ), "assert_raises(contains=...) requires a Writable error type"
-            return message_contains in String(error)
-        return True
+        __guard case .Some(message_contains) = self.message_contains else:
+            return True
+        comptime assert conforms_to(
+            E, Writable
+        ), "assert_raises(contains=...) requires a Writable error type"
+        return message_contains in String(error)

@@ -364,10 +364,7 @@ struct _FormatUtils:
                     start = i
                 continue
             elif fmt_bytes.unsafe_get(i) == `}`:
-                var start_value: Int
-                if case .Some(s) = start:
-                    start_value = s
-                else:
+                __guard case .Some(start_value) = start else:
                     # python escapes double curlies
                     if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))

@@ -259,38 +259,34 @@ def _matmul_impl[
             )
             # fmt: on
 
-        match ctx:
-            case .Some(gpu_ctx):
-                with Trace[
-                    TraceLevel.OP, target=ctx.T.target.device_kind_label()
-                ](
-                    get_static_string[
-                        "matmul",
-                        _trace_description if _trace_description else "",
-                    ](),
-                    Trace[TraceLevel.OP]._get_detail_str(description_fn),
-                    task_id=OptionalReg(Int(gpu_ctx.device().id)),
-                ):
-                    comptime if has_epilogue_fn:
-                        _matmul_gpu[
-                            use_tensor_core=True,
-                            transpose_b=transpose_b,
-                            use_tf32=use_tf32,
-                        ](c, a, b, epilogue_fn, gpu_ctx)
-                    elif has_compute_fn:
-                        _matmul_gpu[
-                            use_tensor_core=True,
-                            transpose_b=transpose_b,
-                            use_tf32=use_tf32,
-                        ](c, a, b, compute_fn, gpu_ctx)
-                    else:
-                        _matmul_gpu[
-                            use_tensor_core=True,
-                            transpose_b=transpose_b,
-                            use_tf32=use_tf32,
-                        ](c, a, b, gpu_ctx)
-            case .None:
-                abort("expected DeviceContext for GPU target")
+        __guard case .Some(gpu_ctx) = ctx else:
+            abort("expected DeviceContext for GPU target")
+        with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
+            get_static_string[
+                "matmul",
+                _trace_description if _trace_description else "",
+            ](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
+            task_id=OptionalReg(Int(gpu_ctx.device().id)),
+        ):
+            comptime if has_epilogue_fn:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, epilogue_fn, gpu_ctx)
+            elif has_compute_fn:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, compute_fn, gpu_ctx)
+            else:
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    use_tf32=use_tf32,
+                ](c, a, b, gpu_ctx)
     else:
         # CPU path: handle tracing and compute lambda wrapping, then
         # delegate to TileTensor cpu.matmul overload.

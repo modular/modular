@@ -175,11 +175,9 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if T == UInt8 or T == Int8:
             return None
-        match _c_scalar_name[T]():
-            case .Some(scalar_name):
-                return String(t"{scalar_name} *ptr")
-            case .None:
-                raise Error(t"unexpected SIMD type: {TName}")
+        __guard case .Some(scalar_name) = _c_scalar_name[T]() else:
+            raise Error(t"unexpected SIMD type: {TName}")
+        return String(t"{scalar_name} *ptr")
 
     comptime if conforms_to(T, _ArrayMarker):
         comptime ElementType = T._cabi_element_type
@@ -187,11 +185,9 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if ElementType == UInt8 or ElementType == Int8:
             return None
-        match _c_scalar_name[ElementType]():
-            case .Some(scalar_name):
-                return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
-            case .None:
-                raise Error(t"unsupported array type: {TName}")
+        __guard case .Some(scalar_name) = _c_scalar_name[ElementType]() else:
+            raise Error(t"unsupported array type: {TName}")
+        return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
 
     # Falls back to a mirrored struct, named after its C counterpart (the
     # same convention `struct_checks` uses).
@@ -310,14 +306,12 @@ def _implied_type_check[
                 t" {field})"
             )
         case _:
-            match _c_field_decl[FieldType]():
-                case .Some(decl):
-                    return String(
-                        t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
-                        t" {field}, {decl})"
-                    )
-                case .None:
-                    return String()
+            __guard case .Some(decl) = _c_field_decl[FieldType]() else:
+                return String()
+            return String(
+                t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
+                t" {field}, {decl})"
+            )
 
 
 trait AbiTypedefLike:

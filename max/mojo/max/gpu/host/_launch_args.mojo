@@ -186,11 +186,10 @@ def _fields_slot[
         var align = 1
         comptime for i in range(a_fields.length):
             comptime field = _declared_slot[a_fields[i], d_fields[i], target]()
-            comptime if case .Some(slot) = field:
-                size = align_up(size, slot.align) + slot.size
-                align = max(align, slot.align)
-            else:
+            comptime __guard case .Some(slot) = field else:
                 return None
+            size = align_up(size, slot.align) + slot.size
+            align = max(align, slot.align)
         return SlotLayout(align_up(size, align), align)
     else:
         return None

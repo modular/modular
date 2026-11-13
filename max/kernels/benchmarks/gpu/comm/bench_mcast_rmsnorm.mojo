@@ -211,10 +211,7 @@ def run_mcast[
     quant: Bool
 ](rows: Int, cols: Int, ctxs: DeviceContextArray[NG]) raises -> Float64:
     """The port: one multicast store a pack, no peer load."""
-    var mcar: Pointer[McarWindow[NG], MutUntrackedOrigin]
-    if case .Some(window) = _window(ctxs, cols):
-        mcar = window
-    else:
+    __guard case .Some(mcar) = _window(ctxs, cols) else:
         print("mcast: no symmetric window on this device set; skipping")
         return Float64(-1)
     var bufs = _Buffers(rows, cols, ctxs)

@@ -451,17 +451,14 @@ struct OwnedDLHandle(Boolable, Movable):
             ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
             " `get_function[Ret](name)`."
         )
-        var ptr = self._handle.get_symbol[NoneType](
+        __guard case .Some(ptr) = self._handle.get_symbol[NoneType](
             cstr_name=name.as_c_string_span()
+        ) else:
+            raise Error(t"symbol not found: {name}")
+        return _DLCallable[return_type, origin_of(self)](
+            ptr,
+            Pointer(to=self),
         )
-        match ptr:
-            case .Some(ptr):
-                return _DLCallable[return_type, origin_of(self)](
-                    ptr,
-                    Pointer(to=self),
-                )
-            case .None:
-                raise Error(t"symbol not found: {name}")
 
     @inline(.always)
     def _get_function[
@@ -557,14 +554,14 @@ struct OwnedDLHandle(Boolable, Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        match self._handle.get_symbol[result_type](cstr_name=cstr_name):
-            case .Some(res):
-                # `_DLHandle` is non-owning, so it can only hand back an
-                # untracked origin. Re-tie the pointer to this owning handle,
-                # which is the borrow `_DLHandle` has no way to express.
-                return res.unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
-            case .None:
-                return None
+        __guard case .Some(res) = self._handle.get_symbol[result_type](
+            cstr_name=cstr_name
+        ) else:
+            return None
+        # `_DLHandle` is non-owning, so it can only hand back an
+        # untracked origin. Re-tie the pointer to this owning handle,
+        # which is the borrow `_DLHandle` has no way to express.
+        return res.unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
 
     @inline(.always)
     def call[
@@ -797,15 +794,11 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
-
-        match opaque_function_ptr:
-            case .Some(opaque_function_ptr):
-                return Pointer(to=opaque_function_ptr).unsafe_bitcast[
-                    result_type
-                ]()[]
-            case .None:
-                abort(t"symbol not found: {cstr_name}")
+        __guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
+            cstr_name=cstr_name
+        ) else:
+            abort(t"symbol not found: {cstr_name}")
+        return Pointer(to=opaque_function_ptr).unsafe_bitcast[result_type]()[]
 
     def get_symbol[
         result_type: AnyType,

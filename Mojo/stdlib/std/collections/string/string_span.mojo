@@ -1865,16 +1865,12 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        var loc = _memmem(
+        __guard case .Some(loc) = _memmem(
             haystack.as_imm(),
             substr.as_bytes().as_imm(),
-        )
-
-        match loc:
-            case .Some(loc):
-                return Int(loc) - Int(self.unsafe_ptr())
-            case .None:
-                return -1
+        ) else:
+            return -1
+        return Int(loc) - Int(self.unsafe_ptr())
 
     def rfind(self, substr: StringSpan, start: Int = 0) -> Int:
         """Finds the offset in bytes of the last occurrence of `substr` starting at
@@ -1901,16 +1897,12 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        var loc = _memrmem(
+        __guard case .Some(loc) = _memrmem(
             haystack,
             substr.as_bytes(),
-        )
-
-        match loc:
-            case .Some(loc):
-                return Int(loc) - Int(self.unsafe_ptr())
-            case .None:
-                return -1
+        ) else:
+            return -1
+        return Int(loc) - Int(self.unsafe_ptr())
 
     @doc_hidden
     @deprecated(use=is_ascii_whitespace)

@@ -342,18 +342,18 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    if case .Some(driver) = maybe_driver[]:
-        var api = String(driver[].name()).lower()
-        # A plugin listed as a bare path, without a `name@`, is named after
-        # its file, which is no API and so no `--target-accelerator` vendor
-        # either.
-        if "/" in api or api.endswith(".so"):
-            raise Error("the accelerator plugin has no API name: ", api)
-        var device = driver[].get_device_dynamic[Optional[Int64](0)](
-            Int64(device_id)
-        )
-        return (api, device[].arch())
-    raise Error("no accelerator driver plugin is loaded")
+    __guard case .Some(driver) = maybe_driver[] else:
+        raise Error("no accelerator driver plugin is loaded")
+    var api = String(driver[].name()).lower()
+    # A plugin listed as a bare path, without a `name@`, is named after
+    # its file, which is no API and so no `--target-accelerator` vendor
+    # either.
+    if "/" in api or api.endswith(".so"):
+        raise Error("the accelerator plugin has no API name: ", api)
+    var device = driver[].get_device_dynamic[Optional[Int64](0)](
+        Int64(device_id)
+    )
+    return (api, device[].arch())
 
 
 struct _PeerState(Movable):
@@ -684,13 +684,12 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
             # `_open_cpu_plugin` only loads a plugin that satisfies "cpu", so
             # the driver needs no api check here.
             var maybe_plugin = _CPU_PLUGIN.get_or_create_ptr()
-            if case .Some(plugin) = maybe_plugin[]:
-                self._driver = plugin.driver
-                self._device = plugin.device
-            else:
+            __guard case .Some(plugin) = maybe_plugin[] else:
                 # The cached load drops its error; load again to raise it.
                 _ = _open_cpu_plugin()
                 raise Error("failed to load the CPU plugin")
+            self._driver = plugin.driver
+            self._device = plugin.device
         else:
             # Load the first plugin whose name satisfies the requested api: its
             # concrete vendor name, or the generic accelerator alias "gpu".
@@ -2458,9 +2457,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         comptime Ext = _HALDevice[Self.device_spec].Extensions
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            if not maybe_driver[]:
+            __guard case .Some(driver) = maybe_driver[] else:
                 return
-            var driver = maybe_driver[].value()
             var count = Int(driver[].device_count())
             if count <= 1:
                 return

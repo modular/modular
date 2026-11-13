@@ -520,14 +520,8 @@ struct IntervalTree[
         assert Bool(self._root), "node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_right_child = rotation_node_nn[].right()
-        var rotation_right_child_nn: Pointer[
-            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
-        ]
-        match rotation_right_child:
-            case .Some(right):
-                rotation_right_child_nn = right
-            case .None:
-                abort("right child is not set")
+        __guard case .Some(rotation_right_child_nn) = rotation_right_child else:
+            abort("right child is not set")
         rotation_node_nn[].right() = rotation_right_child_nn[].left()
 
         if case .Some(left) = rotation_right_child_nn[].left():
@@ -596,14 +590,8 @@ struct IntervalTree[
         assert Bool(self._root), "root node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_left_child = rotation_node_nn[].left()
-        var rotation_left_child_nn: Pointer[
-            _IntervalNode[Self.T, Self.U], MutUntrackedOrigin
-        ]
-        match rotation_left_child:
-            case .Some(left):
-                rotation_left_child_nn = left
-            case .None:
-                abort("left child node is not set")
+        __guard case .Some(rotation_left_child_nn) = rotation_left_child else:
+            abort("left child node is not set")
         rotation_node_nn[].left() = rotation_left_child_nn[].right()
 
         if case .Some(right) = rotation_left_child_nn[].right():

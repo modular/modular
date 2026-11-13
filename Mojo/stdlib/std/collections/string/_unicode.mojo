@@ -98,19 +98,15 @@ def _get_uppercase_mapping(
 
 
 def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var index: Optional[Int] = Span(
-        global_constant[has_lowercase_mapping]()
-    )._binary_search_index(char.to_u32())
-
-    if case .Some(index) = index:
-        var codepoint = global_constant[lowercase_mapping]()[index]
-
-        # SAFETY:
-        #   We know this is a valid `Codepoint` because the mapping data tables
-        #   contain only valid codepoints.
-        return Codepoint(unsafe_unchecked_codepoint=codepoint)
-    else:
+    var table = Span(global_constant[has_lowercase_mapping]())
+    __guard case .Some(index) = table._binary_search_index(char.to_u32()) else:
         return None
+    var codepoint = global_constant[lowercase_mapping]()[index]
+
+    # SAFETY:
+    #   We know this is a valid `Codepoint` because the mapping data tables
+    #   contain only valid codepoints.
+    return Codepoint(unsafe_unchecked_codepoint=codepoint)
 
 
 def is_uppercase(s: StringSpan[_]) -> Bool:

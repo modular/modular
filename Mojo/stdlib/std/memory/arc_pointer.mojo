@@ -608,12 +608,11 @@ struct WeakPointer[T: Movable](ImplicitlyCopyable, RegisterPassable):
             The approximate number of outstanding `WeakPointer`s.
         """
 
-        if case .Some(inner) = self._inner:
-            var w = inner[].weak_count_with_implicit()
-            if inner[].strong_count() == 0:
-                return w
-            # If there are any strong remaining, we don't want to
-            # include the implicit weak in the returned count.
-            return w - 1
-        else:
+        __guard case .Some(inner) = self._inner else:
             return 0
+        var w = inner[].weak_count_with_implicit()
+        if inner[].strong_count() == 0:
+            return w
+        # If there are any strong remaining, we don't want to
+        # include the implicit weak in the returned count.
+        return w - 1

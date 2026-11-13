@@ -100,16 +100,12 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        var handle = external_call[
+        __guard case .Some(handle) = external_call[
             "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
-        ](path.as_c_string_span())
-
-        match handle:
-            case .Some(handle):
-                self._handle = handle
-            case .None:
-                var err = get_errno()
-                raise Error(t"unable to open the directory '{path}' Err: {err}")
+        ](path.as_c_string_span()) else:
+            var err = get_errno()
+            raise Error(t"unable to open the directory '{path}' Err: {err}")
+        self._handle = handle
 
     def __deinit__(deinit self):
         """Closes the handle opened via popen."""

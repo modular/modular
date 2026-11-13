@@ -1043,23 +1043,21 @@ def _run_width[ngpus: Int](cols: Int) raises -> Bool:
     var team = Array[DeviceContext[], ngpus](
         fill_with_unrolled=lambda [i: Int]() -> DeviceContext[]: ctxs[i].copy()
     )
-    var window: Pointer[McarWindow[ngpus], MutUntrackedOrigin]
     # Created inside a capture, the way serving's warmup does it, so every call
     # below -- eager ones and recorded replays alike -- runs the arm against a
     # window a device graph created.
-    if case .Some(created) = _window_inside_a_capture[ngpus](ctxs, cols):
-        window = created
-    else:
+    var maybe_window = _window_inside_a_capture[ngpus](ctxs, cols)
+    __guard case .Some(window) = maybe_window else:
         print("mcar_rmsnorm: SKIP, the window did not allocate")
         return True
     # The capture kept it: an eager call reaches the same allocation, so the
     # capture recorded no failure against this team and geometry.
-    if case .Some(again) = mcar_window[ngpus, DType.bfloat16](team, cols):
-        if Int(again[].rank(0).state) != Int(window[].rank(0).state):
-            print("mcar_rmsnorm: a capture created a second window")
-            return False
-    else:
+    var maybe_again = mcar_window[ngpus, DType.bfloat16](team, cols)
+    __guard case .Some(again) = maybe_again else:
         print("mcar_rmsnorm: the window a capture created went missing")
+        return False
+    if Int(again[].rank(0).state) != Int(window[].rank(0).state):
+        print("mcar_rmsnorm: a capture created a second window")
         return False
     var rows_max = window[].rows()
     var capacity = rows_max * cols

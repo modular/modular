@@ -146,14 +146,14 @@ struct _LinkedListIter[
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        if case .Some(var curr) = self.curr:
-            comptime if Self.forward:
-                self.curr = curr[].next()
-            else:
-                self.curr = curr[].prev()
+        __guard case .Some(var curr) = self.curr else:
+            raise StopIteration()
+        comptime if Self.forward:
+            self.curr = curr[].next()
+        else:
+            self.curr = curr[].prev()
 
-            return curr[].value
-        raise StopIteration()
+        return curr[].value
 
 
 @fieldwise_init
@@ -440,21 +440,19 @@ struct LinkedList[ElementType: Movable](
         Raises:
             If the operation fails.
         """
-        if case .Some(var nn) = self._tail:
-            var node = nn.unsafe_take_pointee()
-            self._tail = node.prev()
-            self._size -= 1
-            if self._size == 0:
-                self._head = Self._NodePointer()
-            else:
-                self._tail.value()[].next() = Self._NodePointer()
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {length = 1}
-                )
-            )
-            return node^._into_value()
-        raise "Pop on empty list."
+        __guard case .Some(var nn) = self._tail else:
+            raise "Pop on empty list."
+        var node = nn.unsafe_take_pointee()
+        self._tail = node.prev()
+        self._size -= 1
+        if self._size == 0:
+            self._head = Self._NodePointer()
+        else:
+            self._tail.value()[].next() = Self._NodePointer()
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        return node^._into_value()
 
     @inline(.always)
     def pop[
@@ -481,26 +479,23 @@ struct LinkedList[ElementType: Movable](
         var idx = index(i)
         var current = self._get_node_ptr(idx)
 
-        if case .Some(nn) = current:
-            var node = nn.unsafe_take_pointee()
-            if case .Some(prev_node) = node.prev():
-                prev_node[].next() = node.next()
-            else:
-                self._head = node.next()
-            if case .Some(next_node) = node.next():
-                next_node[].prev() = node.prev()
-            else:
-                self._tail = node.prev()
+        __guard case .Some(nn) = current else:
+            raise Error("Invalid index for pop: ", idx)
+        var node = nn.unsafe_take_pointee()
+        if case .Some(prev_node) = node.prev():
+            prev_node[].next() = node.next()
+        else:
+            self._head = node.next()
+        if case .Some(next_node) = node.next():
+            next_node[].prev() = node.prev()
+        else:
+            self._tail = node.prev()
 
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {length = 1}
-                )
-            )
-            self._size -= 1
-            return node^._into_value()
-
-        raise Error("Invalid index for pop: ", idx)
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        self._size -= 1
+        return node^._into_value()
 
     def maybe_pop(mut self) -> Optional[Self.ElementType]:
         """Removes the tail of the list and returns it, if it exists.
@@ -511,21 +506,19 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(1).
         """
-        if case .Some(var nn) = self._tail:
-            var node = nn.unsafe_take_pointee()
-            self._tail = node.prev()
-            self._size -= 1
-            if self._size == 0:
-                self._head = Self._NodePointer()
-            else:
-                self._tail.value()[].next() = Self._NodePointer()
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {length = 1}
-                )
-            )
-            return node^._into_value()
-        return Optional[Self.ElementType]()
+        __guard case .Some(var nn) = self._tail else:
+            return Optional[Self.ElementType]()
+        var node = nn.unsafe_take_pointee()
+        self._tail = node.prev()
+        self._size -= 1
+        if self._size == 0:
+            self._head = Self._NodePointer()
+        else:
+            self._tail.value()[].next() = Self._NodePointer()
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        return node^._into_value()
 
     @inline(.always)
     def maybe_pop[
@@ -548,26 +541,23 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._get_node_ptr(index(i))
 
-        if case .Some(nn) = current:
-            var node = nn.unsafe_take_pointee()
-            if case .Some(prev_node) = node.prev():
-                prev_node[].next() = node.next()
-            else:
-                self._head = node.next()
-            if case .Some(next_node) = node.next():
-                next_node[].prev() = node.prev()
-            else:
-                self._tail = node.prev()
-
-            dealloc(
-                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
-                    {length = 1}
-                )
-            )
-            self._size -= 1
-            return Optional[Self.ElementType](node^._into_value())
-        else:
+        __guard case .Some(nn) = current else:
             return Optional[Self.ElementType]()
+        var node = nn.unsafe_take_pointee()
+        if case .Some(prev_node) = node.prev():
+            prev_node[].next() = node.next()
+        else:
+            self._head = node.next()
+        if case .Some(next_node) = node.next():
+            next_node[].prev() = node.prev()
+        else:
+            self._tail = node.prev()
+
+        dealloc(
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({length = 1})
+        )
+        self._size -= 1
+        return Optional[Self.ElementType](node^._into_value())
 
     def clear(
         mut self,

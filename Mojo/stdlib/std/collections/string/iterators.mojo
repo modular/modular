@@ -866,13 +866,11 @@ struct GraphemeIndicesIter[origin: ImmOrigin](
         Raises:
             `StopIteration` if the iterator has been exhausted.
         """
-        match self._inner.next():
-            case .Some(g):
-                var offset = self._byte_offset
-                self._byte_offset += g.byte_length()
-                return (offset, g)
-            case .None:
-                raise StopIteration()
+        __guard case .Some(g) = self._inner.next() else:
+            raise StopIteration()
+        var offset = self._byte_offset
+        self._byte_offset += g.byte_length()
+        return (offset, g)
 
 
 struct BytesIter[origin: ImmOrigin](

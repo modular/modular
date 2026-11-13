@@ -346,19 +346,17 @@ def _index_tensor_impl[
                 cpu_ctx,
             )
     else:
-        match ctx:
-            case .Some(cuda_ctx):
-                if use_simd:
-                    elementwise[target_simd_width](
-                        index_tensor_elementwise_fn,
-                        output.layout.shape_coord(),
-                        cuda_ctx,
-                    )
-                else:
-                    elementwise[1](
-                        index_tensor_elementwise_fn,
-                        output.layout.shape_coord(),
-                        cuda_ctx,
-                    )
-            case .None:
-                abort("Must provide DeviceContext if executing on GPU.")
+        __guard case .Some(cuda_ctx) = ctx else:
+            abort("Must provide DeviceContext if executing on GPU.")
+        if use_simd:
+            elementwise[target_simd_width](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )
+        else:
+            elementwise[1](
+                index_tensor_elementwise_fn,
+                output.layout.shape_coord(),
+                cuda_ctx,
+            )

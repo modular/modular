@@ -1630,17 +1630,12 @@ def topk_topp_sampling_from_prob_cluster[
         ] = None
 
         comptime if emit_dist:
-            match out_dist:
-                case .Some(dist):
-                    var dist_shape = dist.layout.shape_coord()
-                    if (
-                        Int(dist_shape[0]) != batch_size
-                        or Int(dist_shape[1]) != d
-                    ):
-                        raise Error("out_dist shape must match probs shape")
-                    dist_ptr = dist.ptr
-                case .None:
-                    raise Error("out_dist is required when emit_dist is set")
+            __guard case .Some(dist) = out_dist else:
+                raise Error("out_dist is required when emit_dist is set")
+            var dist_shape = dist.layout.shape_coord()
+            if Int(dist_shape[0]) != batch_size or Int(dist_shape[1]) != d:
+                raise Error("out_dist shape must match probs shape")
+            dist_ptr = dist.ptr
 
         # A speculative-decoding step that skips its drafter samples zero
         # draft rows, and a zero grid is rejected by `enqueue_function`.
