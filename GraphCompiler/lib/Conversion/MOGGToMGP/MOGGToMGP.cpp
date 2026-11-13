@@ -2237,7 +2237,10 @@ LogicalResult MOGraphLowering::lower(MO::CallOp callOp) {
     return callOp.emitError()
            << "Failed to find target model with name: " << targetModelName;
 
-  // Implicit args first: chain, context, weights registry, devices.
+  // Implicit args first: chain, context, weights registry, devices. The call
+  // runs after any earlier control flow; later ops keep the chain from before
+  // it, as after a grt.if.
+  Value outerChain = loweringState.getCurrentExecuteChain();
   SmallVector<Value> callOperands;
   callOperands.push_back(loweringState.joinControlFlowChains(callOp.getLoc()));
   callOperands.push_back(loweringState.getExecuteMgpContext());
@@ -2278,9 +2281,16 @@ LogicalResult MOGraphLowering::lower(MO::CallOp callOp) {
     loweringState.emplaceExecuteLoweredValue(callOp.getResult(i),
                                              mgpCallOp.getResult(i + 1));
     loweringState.guardValueWithChain(mgpCallOp.getResult(i + 1), callOutChain);
+    // An op lowered later looks its operands' guards up by their MO values.
+    if (!isa<MO::ChainType>(callOp.getResult(i).getType()))
+      loweringState.guardValueWithChain(callOp.getResult(i), callOutChain);
   }
 
-  loweringState.setCurrentExecuteChain(callOutChain);
+  // Only users of the call's results, which its chain guards, and later ops
+  // ordered against control flow wait on the call. Its out-chain already
+  // follows every earlier control flow op, so it stands in for them.
+  loweringState.setCurrentExecuteChain(outerChain);
+  loweringState.addControlFlowChain(callOutChain);
 
   return success();
 }
