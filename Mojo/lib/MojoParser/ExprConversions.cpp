@@ -2199,6 +2199,15 @@ static TriBool classifyImplicitConversionImpl(
                                shared))
     return cacheAndReturnVal(rvType, requiredType, true);
 
+  // An implicit constructor builds a value, so the required type can not be a
+  // trait or metatype.
+  if (!LIT::isFirstLevelTypeExpr(PValue(requiredType)) &&
+      !StructTypeGenerator::dynCast(requiredType)) {
+    if (sawUnknown)
+      return TriBool::unknown();
+    return cacheAndReturnVal(rvType, requiredType, false);
+  }
+
   // We can implicitly convert to the specified type if we can construct it with
   // the value as an implicit conversion.
   //
@@ -2502,8 +2511,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   // implicitly converted to StringSpan, but String has an explicit constructor
   // that accepts TString.
   if (isa<TStringExprNode>(expr->getWithoutParens())) {
-    auto stringType = shared.lookupBuiltinType("String", declScope, loc)
-                          .getWithoutParameters(shared);
+    auto stringType = shared.lookupBuiltinType("String", declScope, loc);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
       val = emitConstructorCall(
           stringType,
@@ -2514,8 +2522,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   }
 
   // Convert to StringSpan if not already.
-  auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc)
-                            .getWithoutParameters(shared);
+  auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc);
   if (val.getType().getDecl(shared) != stringSpanType.getDecl(shared)) {
     if (!canImplicitlyConvertToType({val, expr}, stringSpanType, declScope)) {
       emitError(expr->getLoc()) << "cannot implicitly convert " << val.getType()

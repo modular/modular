@@ -3004,9 +3004,6 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   if (tupleType.isTypeCheckErrorType())
     return {};
 
-  // Construct the Tuple type without parameters so we infer them.
-  tupleType = tupleType.getWithoutParameters(emitter.shared);
-
   CallOperands operands(CallSyntax::kTypeCall, &call, std::move(dest));
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
@@ -3363,7 +3360,6 @@ static AnyValue emitFStringSubscriptMLIROp(const SubscriptNode &subscript,
         emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, loc);
     if (tupleType.isTypeCheckErrorType())
       return {};
-    tupleType = tupleType.getWithoutParameters(emitter.shared);
     CallOperands callOperands(CallSyntax::kTypeCall, &subscript,
                               std::move(dest));
     for (Value r : results)
@@ -5676,13 +5672,12 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
   SmallVector<ASTType> eltTypes;
 
   ASTType expectedType = toUnpack.getType();
-  ASTType tupleType =
+  ASTDecl *tupleDecl =
       emitter.shared
           .lookupBuiltinType("Tuple", emitter.getDeclScope(), getLoc())
-          .getWithoutParameters(emitter.shared);
+          .getDecl(emitter.shared);
 
-  if (!tupleType.isEqualCanon(
-          expectedType.getWithoutParameters(emitter.shared))) {
+  if (!tupleDecl || tupleDecl != expectedType.getDecl(emitter.shared)) {
     emitter.emitError(getLoc(), "expected a tuple type to destructure, got ")
         << expectedType << getRange();
     return failure();
@@ -5796,7 +5791,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       emitter.shared.lookupBuiltinType("Tuple", emitter.declScope, getLoc());
   if (sugarIsa<TypeCheckErrorType>(tupleType))
     return {};
-  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // If the tuple has an inferred type, as in `(a, b)=foo()`, propagate the
   // element types into the subexpressions if possible to enable implicit var
@@ -5808,8 +5802,8 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // Special case the element type of Tuple.  We could be more general than
     // this when there was a reason to, e.g. looking up a __getitem__
     // implementation.
-    if (tupleType.isEqualCanon(
-            expectedType.getWithoutParameters(emitter.shared))) {
+    if (tupleType.getDecl(emitter.shared) ==
+        expectedType.getDecl(emitter.shared)) {
       assert(expectedType.getParamBindings().size() == 2 &&
              "Tuple has a param_list and TypeList parameter");
       if (auto variadicAttr =

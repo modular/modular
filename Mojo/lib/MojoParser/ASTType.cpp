@@ -608,30 +608,6 @@ bool ASTType::isUnresolvedParam(size_t idx) const {
   return paramFinder.hasReferences(param);
 }
 
-/// Return this type with any parameter bindings removed.
-ASTType ASTType::getWithoutParameters(SharedState &shared) const {
-  if (!mlirType)
-    return {};
-
-  ASTType firstLevelType = getDeclDefineType(*this);
-  if (!firstLevelType)
-    return {};
-
-  if (auto declRef = dyn_cast<StructType>(firstLevelType)) {
-    auto unboundType =
-        cast<StructASTDecl>(getDecl(shared))->getOp().legacyBindReference();
-    // Wrap it back to the original meta type.
-    if (isa<StructMetaType>(*this))
-      return StructMetaType::get(unboundType);
-    if (isa<StructMetaMetaType>(*this))
-      return StructMetaMetaType::get(StructMetaType::get(unboundType));
-    return unboundType;
-  }
-
-  // Not parameterized.
-  return *this;
-}
-
 bool ASTType::hasUnboundParameters() const {
   // Generator type should be the only case after fully migrated.
   if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this)))
@@ -1286,9 +1262,9 @@ ASTType ASTType::extractAndRelinkParamRef(SharedState &shared) const {
                                : ArgConvention::ByRefError)));
   }
 
-  // FIXME: what is this?
-  if (Type nonParam = getWithoutParameters(shared))
-    return nonParam;
+  // TODO: should we extend this? There seems to be no meaningful existing use
+  // of this other than struct type. It is almost a misuse of the API if we
+  // reach here.
   return *this;
 }
 

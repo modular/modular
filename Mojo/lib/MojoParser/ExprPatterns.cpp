@@ -507,13 +507,11 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                           const PatternPath *path,
                           SmallVectorImpl<const PatternCommand *> &out) const {
   ASTType subjectType = path->type;
-  // TODO: kill `getWithoutParameters` as well.
-  ASTType tupleType =
+  ASTDecl *tupleDecl =
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, getLoc())
-          .getWithoutParameters(builder.shared);
+          .getDecl(builder.shared);
 
-  if (!tupleType.isEqualCanon(
-          subjectType.getWithoutParameters(builder.shared))) {
+  if (!tupleDecl || tupleDecl != subjectType.getDecl(builder.shared)) {
     builder.emitError(getLoc(), "expected a tuple type to match against, got ")
         << subjectType << getRange();
     return failure();
@@ -730,10 +728,8 @@ static LogicalResult checkEnumCaseTypeBase(IREmitter &emitter, CValue subject,
       emitter.emitExprType(typeBase, TypeStrictness::kIncomplete);
   if (!baseType)
     return failure();
-  ASTType baseNominal = baseType.getWithoutParameters(emitter.shared);
-  ASTType subjectNominal =
-      subject.getRValueType().getWithoutParameters(emitter.shared);
-  if (baseNominal.isEqualCanon(subjectNominal))
+  ASTDecl *baseDecl = baseType.getDecl(emitter.shared);
+  if (baseDecl && baseDecl == subject.getRValueType().getDecl(emitter.shared))
     return success();
   emitter.emitError(expr->getLoc(), "cannot match value of type ")
       << subject.getRValueType() << " against enum case of type " << baseType
@@ -797,9 +793,8 @@ static ASTType getEnumCasePayloadType(IREmitter &emitter, ASTType subjectType,
   ASTType tupleType = emitter.shared.lookupBuiltinType(
       "Tuple", emitter.getDeclScope(), expr->getLoc());
   ArrayRef<TypedAttr> bindings = payloadType.getParamBindings();
-  if (tupleType &&
-      tupleType.getWithoutParameters(emitter.shared)
-          .isEqualCanon(payloadType.getWithoutParameters(emitter.shared)) &&
+  ASTDecl *tupleDecl = tupleType ? tupleType.getDecl(emitter.shared) : nullptr;
+  if (tupleDecl && tupleDecl == payloadType.getDecl(emitter.shared) &&
       !bindings.empty() && isa<ParamListType>(bindings.front().getType()))
     return payloadType;
   auto names = getEnumCaseNames(emitter, subjectType, expr->getLoc());
@@ -2101,10 +2096,8 @@ static StringRef caseNameSpelling(ArrayRef<TypedAttr> names, size_t index) {
 static bool isTupleType(PatternMatchBuilder &builder, ASTType type, SMLoc loc) {
   ASTType tupleType =
       builder.shared.lookupBuiltinType("Tuple", builder.declScope, loc);
-  if (!tupleType)
-    return false;
-  return tupleType.getWithoutParameters(builder.shared)
-      .isEqualCanon(type.getWithoutParameters(builder.shared));
+  ASTDecl *tupleDecl = tupleType ? tupleType.getDecl(builder.shared) : nullptr;
+  return tupleDecl && tupleDecl == type.getDecl(builder.shared);
 }
 
 /// Append EnumLike leaf dimensions under `path`. Returns false if any leaf is
@@ -2629,8 +2622,8 @@ static bool isBuiltinBool(PatternMatchBuilder &builder, ASTType type,
                           SMLoc loc) {
   ASTType boolType =
       builder.shared.lookupBuiltinType("Bool", builder.declScope, loc);
-  return boolType &&
-         boolType.isEqualCanon(type.getWithoutParameters(builder.shared));
+  ASTDecl *boolDecl = boolType ? boolType.getDecl(builder.shared) : nullptr;
+  return boolDecl && boolDecl == type.getDecl(builder.shared);
 }
 
 /// Spell case `ctor` of the enum at `path` as a pattern: `False` for a `Bool`,

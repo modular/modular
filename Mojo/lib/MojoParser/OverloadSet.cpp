@@ -95,6 +95,18 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
     return paramBindings;
   }
 
+  if (sugarIsa<LIT::StructType>(type)) {
+    auto structDecl = cast<StructASTDecl>(type.getDecl(declScope.getShared()));
+    ArrayRef<PogMetadataAttr> pogs =
+        structDecl->getOp().getSignature().getParamListAttrs().getPogs();
+    for (auto [value, pog] : llvm::zip_equal(type.getParamBindings(), pogs)) {
+      // The struct type must be fully bound.
+      assert(!isa<UnboundAttr>(value));
+      paramBindings.add(expr, value, pog.getName());
+    }
+    return paramBindings;
+  }
+
   ASTDecl *decl = type.getDecl(declScope.getShared());
   auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
   // When binding a trait function, add the self type bindings.
@@ -124,32 +136,6 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
     // declared the method). Add as _not_ prechecked.
     paramBindings.add(expr, PValue(type), traitSelfName);
   }
-
-  ArrayRef<TypedAttr> paramValues = type.getParamBindings();
-  if (!paramValues.empty()) {
-    ArrayRef<PogMetadataAttr> pogs =
-        type.getWithoutParameters(declScope.getShared())
-            .getSignature()
-            .getParamListAttrs()
-            .getPogs();
-    assert(paramValues.size() <= pogs.size());
-
-    // Since we prepend struct parameters as inferred only, specify the name
-    // here to make sure we can verify the pog list correctly.
-    for (auto [value, pog] : llvm::zip(paramValues, pogs)) {
-      if (auto idxRef = dyn_cast<ParamIndexRefAttr>(value);
-          idxRef && idxRef.getDepth() == 0 &&
-          sugarIsa<GeneratorType>(type.extractMetaType())) {
-        // This is a index ref reference to the generator input, it means it
-        // has an unknown value.
-        paramBindings.add(expr, UnboundAttr::get(idxRef.getType()),
-                          pog.getName());
-      } else {
-        paramBindings.add(expr, value, pog.getName());
-      }
-    }
-  }
-
   return paramBindings;
 }
 

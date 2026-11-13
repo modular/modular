@@ -95,9 +95,6 @@ public:
   /// param value depends on sibling parameters that are unbound.
   bool isUnresolvedParam(size_t idx) const;
 
-  /// Return this type with any parameter bindings removed.
-  ASTType getWithoutParameters(SharedState &shared) const;
-
   /// Return true if this type has any unbound parameters.
   bool hasUnboundParameters() const;
 

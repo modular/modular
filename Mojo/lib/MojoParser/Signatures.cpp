@@ -2186,8 +2186,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
           arg.loc,
           "'deinit' convention is only valid on struct method arguments");
       arg.convention = ParsedArgument::kConventionVar;
-    } else if (!type.getWithoutParameters(shared).isEqualCanon(
-                   tcSignature.selfType.getWithoutParameters(shared))) {
+    } else if (type.getDecl(shared) != tcSignature.selfType.getDecl(shared)) {
       shared.emitError(
           arg.loc, "'deinit' must only be applied to arguments of Self type");
       arg.convention = ParsedArgument::kConventionVar;
