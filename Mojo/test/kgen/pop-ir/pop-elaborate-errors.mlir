@@ -272,3 +272,37 @@ kgen.generator export @use_inline_asm_in_param() {
   kgen.param.constant: i64 = <apply(:() -> i64 @gpu_inline_asm)>
   hlcf.return
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:64:64">} {
+  kgen.generator @target(%arg0: index) -> index {
+    hlcf.return %arg0 : index
+  }
+
+  // expected-note @below {{failed to interpret function @clobber_pointer_with_function}}
+  kgen.generator @clobber_pointer_with_function(%symbol: !kgen.generator<(index) -> index>) -> !kgen.pointer<i8> {
+    %align = kgen.param.constant: scalar<index> = <8>
+    %size = kgen.param.constant: scalar<index> = <16>
+    %mem = pop.aligned_alloc %align, %size : !kgen.pointer<i8>
+    %slot = pop.pointer.bitcast %mem : !kgen.pointer<i8> to !kgen.pointer<!kgen.pointer<i8>>
+    pop.store %mem, %slot : !kgen.pointer<!kgen.pointer<i8>>
+    %four = kgen.param.constant: scalar<index> = <4>
+    %at = pop.offset %mem[%four] : !kgen.pointer<i8>
+    %function = pop.pointer.bitcast %at : !kgen.pointer<i8> to !kgen.pointer<(index) -> index>
+    // CHECK-PARAM: failed to interpret operation pop.store
+    // CHECK-PARAM: write clobbers a pointer region
+    // expected-note @below {{failed to interpret operation pop.store}}
+    // expected-note @below {{write clobbers a pointer region}}
+    pop.store %symbol, %function : !kgen.pointer<(index) -> index>
+    hlcf.return %mem : !kgen.pointer<i8>
+  }
+
+  // expected-error @below {{function instantiation failed}}
+  kgen.generator @call_it() {
+    // CHECK-PARAM: failed to compile-time evaluate function call
+    // expected-note @below {{failed to compile-time evaluate function call}}
+    kgen.param.constant: pointer<i8> = <apply(:(!kgen.generator<(index) -> index>) -> !kgen.pointer<i8> @clobber_pointer_with_function, @target)>
+    hlcf.return
+  }
+}
