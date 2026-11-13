@@ -61,10 +61,11 @@ def decode_cond(
     sharded: Callable[[], Sequence[Tensor]],
     whole: Callable[[], Sequence[Tensor]],
     weights: Sequence[Tensor],
+    max_tokens: int = DECODE_MAX_TOKENS,
 ) -> list[Tensor]:
     """Runs ``sharded`` for a decode-sized step, else ``whole``.
 
-    A decode-sized step has at most :data:`DECODE_MAX_TOKENS` tokens.
+    A decode-sized step has at most ``max_tokens`` tokens.
 
     One graph-level cond spans the mesh, so a branch may hold collectives,
     and a captured decode graph holds only its own branch. ``out_specs``
@@ -75,7 +76,7 @@ def decode_cond(
     for w in weights:
         for shard in w.local_shards:
             TensorValue(shard)
-    pred = ops.shape_to_tensor([tokens])[0] <= DECODE_MAX_TOKENS
+    pred = ops.shape_to_tensor([tokens])[0] <= max_tokens
 
     def values(fn: Callable[[], Sequence[Tensor]]) -> list[TensorValue]:
         return [TensorValue(s) for t in fn() for s in t.local_shards]
@@ -405,17 +406,20 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         x: Tensor,
         comm: EPCommBuffers | None = None,
         layer_idx: Tensor | None = None,
+        stacks: ExpertStacks | None = None,
     ) -> Tensor:
         """Runs the layer on ``x``, each device's own rows.
 
         ``layer_idx`` is the int32 ``[1]`` MoE layer index, one shard per
-        device, required when the EP config counts expert load.
+        device, required when the EP config counts expert load. ``stacks``
+        are expert stacks built outside control flow, as
+        :meth:`ExpertParallelMoE.forward` takes them.
         """
         if comm is not None:
             self.ep_batch_manager.bind_comm_buffers(comm)
         h = self.pre_expert_norm(self.pre_expert_proj(x))
         return self.post_expert_proj(
-            self._routed(h, *self.gate(x), layer_idx=layer_idx)
+            self._routed(h, *self.gate(x), stacks=stacks, layer_idx=layer_idx)
         )
 
     def branch(self, x: Tensor) -> MuseSparkMoEBranch:
@@ -502,13 +506,14 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         self,
         down: Tensor,
         expert_start: Tensor,
-        routed: Tensor,
         restore: Tensor,
         router_weight: Tensor,
         device: int,
+        out_dtype: DType = DType.float32,
     ) -> Tensor:
         # One launch: the norm reads the routed count, so no mask is built.
-        # bf16 halves the all-reduce that sums these over the devices.
+        # bf16 halves the all-reduce that sums these over the devices, so
+        # it is the dtype here whatever ``out_dtype`` asks for.
         norm = self.post_expert_norm
         return routed_rows_rms_norm_finalize(
             down,

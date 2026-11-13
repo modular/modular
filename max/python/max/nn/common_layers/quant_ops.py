@@ -1370,6 +1370,7 @@ def grouped_matmul_swiglu_nvfp4_ep(
     *,
     estimated_total_m: Tensor | None = None,
     activation: GatedActivation | None = None,
+    max_total_m: int = 0,
 ) -> tuple[Tensor, Tensor]:
     """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path).
 
@@ -1395,6 +1396,7 @@ def grouped_matmul_swiglu_nvfp4_ep(
         if estimated_total_m is not None
         else None,
         activation=activation,
+        max_total_m=max_total_m,
     )
     return Tensor.from_graph_value(c_packed), Tensor.from_graph_value(c_scales)
 
@@ -1453,6 +1455,7 @@ def grouped_matmul_silu(
     activation: GatedActivation | None = None,
     swiglu_limit: float = 0.0,
     scales: NVFP4ExpertScales | None = None,
+    max_total_m: int = 0,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
@@ -1463,7 +1466,9 @@ def grouped_matmul_silu(
     clamp, on V4.1). A non-zero ``swiglu_limit`` clamps the activation's
     inputs, ``silu(min(gate, limit)) * clamp(up, -limit, limit)``, which
     GLM-5.3-Flash needs. The fused NVFP4 path reads ``scales`` when given,
-    else derives them.
+    else derives them. ``max_total_m`` bounds a dynamic token row count, which
+    lets the graph compiler fuse the NVFP4 gate/up and down matmuls into one
+    MegaFFN launch.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
@@ -1518,6 +1523,7 @@ def grouped_matmul_silu(
             scales.down_input_inv,
             estimated_total_m=estimated_total_m,
             activation=activation,
+            max_total_m=max_total_m,
         )
         return NVFP4Activation(
             data=c_packed,

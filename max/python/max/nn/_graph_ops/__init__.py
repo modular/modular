@@ -8683,6 +8683,7 @@ def moe_finalize(
     restore_token_order: TensorValue,
     router_weight: TensorValue,
     out_type: DType,
+    valid_rows: TensorValue | None = None,
 ) -> TensorValue:
     """Fuses the MoE unpermute gather with the top-k weighted row sum.
 
@@ -8701,6 +8702,9 @@ def moe_finalize(
         router_weight: Per-(token, expert) routing weight applied before the
             sum. Shape: ``[num_tokens, num_experts_per_token]``.
         out_type: Output dtype.
+        valid_rows: Optional ``[1]`` ``uint32`` count of the leading rows of
+            ``down_projs`` that count. A row at or past it adds nothing and is
+            never read, so it may hold anything.
 
     Returns:
         The combined per-token output. Shape: ``[num_tokens, hidden]``,
@@ -8708,11 +8712,14 @@ def moe_finalize(
     """
     seq_len = router_weight.shape[0]
     hidden = down_projs.shape[1]
+    values = [down_projs, restore_token_order, router_weight]
+    if valid_rows is not None:
+        values.append(valid_rows)
 
     result = ops.custom(
-        "moe.finalize",
+        "moe.finalize" if valid_rows is None else "moe.finalize.bounded",
         device=down_projs.device,
-        values=[down_projs, restore_token_order, router_weight],
+        values=values,
         out_types=[
             TensorType(
                 dtype=out_type,

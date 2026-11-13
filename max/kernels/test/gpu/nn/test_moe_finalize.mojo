@@ -12,14 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import fma
-from std.testing import assert_equal
+from std.testing import assert_almost_equal, assert_equal
+from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout.coord import Coord
 from layout.layout import Layout
 from layout._fillers import random
-from nn.moe import moe_finalize
+from nn.moe import moe_finalize, moe_finalize_bounded
 
 
 def test_moe_finalize[
@@ -128,6 +129,79 @@ def test_moe_finalize[
     assert_equal(mismatches, 0)
 
 
+def test_moe_finalize_bounded[
+    num_experts_per_token: Int
+](num_tokens: Int, hidden: Int, valid: Int, ctx: DeviceContext) raises:
+    """Checks that `moe_finalize_bounded` ignores the rows past its bound.
+
+    The rows from `valid` on hold NaN, so reading even one of them, weighted
+    or not, poisons the output; the reference adds only the rows below it.
+    """
+    var total_m = num_tokens * num_experts_per_token
+
+    var down_host = ctx.enqueue_create_host_buffer[.bfloat16](total_m * hidden)
+    var restore_order_host = ctx.enqueue_create_host_buffer[.uint32](total_m)
+    var router_weight_host = ctx.enqueue_create_host_buffer[.float32](total_m)
+    var valid_host = ctx.enqueue_create_host_buffer[.uint32](1)
+    var output_host = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * hidden
+    )
+    ctx.synchronize()
+
+    var down_host_2d = TileTensor(down_host, row_major(total_m, hidden))
+    var router_weight_host_2d = TileTensor(
+        router_weight_host, row_major(num_tokens, num_experts_per_token)
+    )
+    random(down_host_2d, min=-1.0, max=1.0)
+    random(router_weight_host_2d, min=-1.0, max=1.0)
+    for row in range(valid, total_m):
+        for col in range(hidden):
+            down_host_2d[row, col] = nan[.bfloat16]()
+    for i in range(total_m):
+        restore_order_host[i] = UInt32(total_m - 1 - i)
+    valid_host[0] = UInt32(valid)
+
+    var down_dev = ctx.enqueue_create_buffer[.bfloat16](total_m * hidden)
+    var restore_order_dev = ctx.enqueue_create_buffer[.uint32](total_m)
+    var router_weight_dev = ctx.enqueue_create_buffer[.float32](total_m)
+    var valid_dev = ctx.enqueue_create_buffer[.uint32](1)
+    var output_dev = ctx.enqueue_create_buffer[.bfloat16](num_tokens * hidden)
+    ctx.enqueue_copy(down_dev, down_host)
+    ctx.enqueue_copy(restore_order_dev, restore_order_host)
+    ctx.enqueue_copy(router_weight_dev, router_weight_host)
+    ctx.enqueue_copy(valid_dev, valid_host)
+
+    moe_finalize_bounded(
+        TileTensor(output_dev, row_major(num_tokens, hidden)),
+        TileTensor(down_dev, row_major(total_m, hidden)),
+        TileTensor(restore_order_dev, row_major(total_m)),
+        TileTensor(
+            router_weight_dev, row_major(num_tokens, num_experts_per_token)
+        ),
+        TileTensor(valid_dev, row_major(1)),
+        ctx,
+    )
+    ctx.enqueue_copy(output_host, output_dev)
+    ctx.synchronize()
+
+    var output_2d = TileTensor(output_host, row_major(num_tokens, hidden))
+    for t in range(num_tokens):
+        for col in range(hidden):
+            var acc = Float32(0)
+            for k in range(num_experts_per_token):
+                var row = Int(restore_order_host[t * num_experts_per_token + k])
+                if row >= valid:
+                    continue
+                var w = Float32(router_weight_host_2d[t, k])
+                acc += Float32(down_host_2d[row, col]) * w
+            assert_almost_equal(
+                output_2d[t, col],
+                acc.cast[.bfloat16](),
+                atol=2e-2,
+                rtol=2e-2,
+            )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # Decode-shaped: 64 tokens, top-6, hidden 4096 (a multiple of the
@@ -165,3 +239,15 @@ def main() raises:
         # `row * hidden`, so it must decline this view and let the generic body
         # read through the real strides.
         test_moe_finalize[.bfloat16, .float32, .bfloat16, 16, 64](32, 3584, ctx)
+
+        # Bounded, through every launch: the gather kernel's narrow-vector,
+        # small-block and 256-thread launches (top-8, hidden 5120), the generic
+        # vector body (a top-k with no gather instantiation) and the generic
+        # scalar body (a ragged width). The bounds cover no valid row, a
+        # partial bound and every row valid.
+        test_moe_finalize_bounded[8](3, 5120, 0, ctx)
+        test_moe_finalize_bounded[8](32, 5120, 37, ctx)
+        test_moe_finalize_bounded[8](32, 5120, 256, ctx)
+        test_moe_finalize_bounded[8](128, 5120, 300, ctx)
+        test_moe_finalize_bounded[3](33, 3584, 50, ctx)
+        test_moe_finalize_bounded[6](7, 4093, 20, ctx)

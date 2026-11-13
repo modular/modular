@@ -45,6 +45,8 @@ from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
+    ImmTileTensor,
+    MutTileTensor,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -919,7 +921,7 @@ def _moe_finalize_imm_ptr[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
 )
 @__name(
-    t"moe_finalize_gather_{down_type}_{weight_type}_{out_type}_k{topk}_b{block_threads}"
+    t"moe_finalize_gather_{down_type}_{weight_type}_{out_type}_k{topk}_b{block_threads}{'_bounded' if bounded else ''}"
 )
 def moe_finalize_gather_kernel[
     down_type: DType,
@@ -929,9 +931,11 @@ def moe_finalize_gather_kernel[
     DownLayoutType: TensorLayout,
     RestoreOrderLayoutType: TensorLayout,
     RouterWeightLayoutType: TensorLayout,
+    ValidRowsLayoutType: TensorLayout,
     topk: Int,
     vec: Int,
     block_threads: Int,
+    bounded: Bool,
 ](
     output: TileTensor[out_type, OutputLayoutType, MutUntrackedOrigin],
     down: TileTensor[down_type, DownLayoutType, ImmUntrackedOrigin],
@@ -941,6 +945,7 @@ def moe_finalize_gather_kernel[
     router_weight: TileTensor[
         weight_type, RouterWeightLayoutType, ImmUntrackedOrigin
     ],
+    valid_rows: TileTensor[.uint32, ValidRowsLayoutType, ImmUntrackedOrigin],
 ):
     """Sums one token's top-k `down` rows per thread, top-k known at compile
     time.
@@ -949,7 +954,8 @@ def moe_finalize_gather_kernel[
     token's `topk` row ids and weights, issues all `topk` row loads, then
     accumulates them in ascending k in fp32. The arithmetic is the per-term
     `acc += f32(down) * f32(weight)` of the generic path, in the same order, so
-    a call is bit-identical to it.
+    a call is bit-identical to it. When `bounded`, a row at or past
+    `valid_rows[0]` is neither loaded nor accumulated, as in the generic path.
 
     Parameters:
         down_type: DType of the permuted expert outputs.
@@ -959,17 +965,20 @@ def moe_finalize_gather_kernel[
         DownLayoutType: Layout of `down` (row-major).
         RestoreOrderLayoutType: Layout of `restore_order`.
         RouterWeightLayoutType: Layout of `router_weight`.
+        ValidRowsLayoutType: Layout of `valid_rows`.
         topk: `num_experts_per_token`, as a compile-time constant.
         vec: Columns per thread; one vector load of `down` per row.
         block_threads: Threads per workgroup, 64 or 256. It also bounds what the
             register allocator keeps live, which is why the small-token launch
             declares its own 64-thread group.
+        bounded: Skip the rows of `down` from `valid_rows[0]` on.
 
     Args:
         output: `[num_tokens, row_chunks * vec]`, one combined row per token.
         down: `[num_tokens * topk, row_chunks * vec]`, expert-permuted rows.
         restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
         router_weight: `[num_tokens, topk]`, per-(token, expert) weight.
+        valid_rows: `[1]` row bound of `down`; read only when `bounded`.
     """
     # The row width comes from the output view rather than a kernel argument:
     # `Int` is not `DevicePassable`, so passing it would force an `Int32`
@@ -993,12 +1002,21 @@ def moe_finalize_gather_kernel[
             weights[k] = router_weight.load[width=1]((token, k)).cast[
                 .float32
             ]()
-        # Every row load issues here, ahead of the first accumulate.
-        comptime for k in range(topk):
-            vals[k] = down.load[width=vec]((Int(rows[k]), col))
         var acc = SIMD[.float32, vec](0)
-        comptime for k in range(topk):
-            acc += vals[k].cast[.float32]() * weights[k]
+        # Every row load issues here, ahead of the first accumulate.
+        comptime if bounded:
+            var bound = valid_rows[0]
+            comptime for k in range(topk):
+                if rows[k] < bound:
+                    vals[k] = down.load[width=vec]((Int(rows[k]), col))
+            comptime for k in range(topk):
+                if rows[k] < bound:
+                    acc += vals[k].cast[.float32]() * weights[k]
+        else:
+            comptime for k in range(topk):
+                vals[k] = down.load[width=vec]((Int(rows[k]), col))
+            comptime for k in range(topk):
+                acc += vals[k].cast[.float32]() * weights[k]
         output.store((token, col), acc.cast[out_type]())
 
 
@@ -1011,11 +1029,13 @@ def _moe_finalize_gather[
     topk: Int,
     vec: Int,
     small_block: Bool,
+    bounded: Bool,
 ](
     output: TileTensor[mut=True, out_type, ...],
     down: TileTensor[mut=False, down_type, ...],
     restore_order: TileTensor[mut=False, .uint32, ...],
     router_weight: TileTensor[mut=False, weight_type, ...],
+    valid_rows: TileTensor[mut=False, .uint32, ...],
     row_chunks: Int,
     context: DeviceContext,
 ) raises:
@@ -1029,12 +1049,14 @@ def _moe_finalize_gather[
         vec: Columns per thread; one vector load of `down` per row.
         small_block: Launch `_FINALIZE_SMALL_BLOCK` threads per workgroup
             instead of `_FINALIZE_LARGE_BLOCK`.
+        bounded: Skip the rows of `down` from `valid_rows[0]` on.
 
     Args:
         output: `[num_tokens, row_chunks * vec]`, the combined rows.
         down: `[num_tokens * topk, row_chunks * vec]`, the expert rows.
         restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
         router_weight: `[num_tokens, topk]`, the router weights.
+        valid_rows: `[1]` row bound of `down`; read only when `bounded`.
         row_chunks: Vector chunks in a row, `hidden // vec`.
         context: The device context.
     """
@@ -1058,6 +1080,9 @@ def _moe_finalize_gather[
         ptr=_moe_finalize_imm_ptr(router_weight),
         layout=row_major((num_tokens, Idx[topk])),
     )
+    var valid_rows_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(valid_rows), layout=row_major(Idx[1])
+    )
 
     comptime block_threads = (
         _FINALIZE_SMALL_BLOCK if small_block else _FINALIZE_LARGE_BLOCK
@@ -1070,9 +1095,11 @@ def _moe_finalize_gather[
         down_rm.LayoutType,
         restore_order_rm.LayoutType,
         router_weight_rm.LayoutType,
+        valid_rows_rm.LayoutType,
         topk,
         vec,
         block_threads,
+        bounded,
     ]
     with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.finalize.gather", task_id=Int(context.device().id)
@@ -1082,6 +1109,7 @@ def _moe_finalize_gather[
             down_rm,
             restore_order_rm,
             router_weight_rm,
+            valid_rows_rm,
             grid_dim=(ceildiv(num_tokens * row_chunks, block_threads),),
             block_dim=(block_threads,),
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -1123,6 +1151,65 @@ def moe_finalize[
             sum. Shape: [num_tokens, num_experts_per_token].
         context: The device context.
     """
+    _moe_finalize[bounded=False](
+        output, down, restore_order, router_weight, restore_order, context
+    )
+
+
+def moe_finalize_bounded[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+](
+    output: MutTileTensor[out_type, ...],
+    down: ImmTileTensor[down_type, ...],
+    restore_order: ImmTileTensor[.uint32, ...],
+    router_weight: ImmTileTensor[weight_type, ...],
+    valid_rows: ImmTileTensor[.uint32, ...],
+    context: DeviceContext,
+) raises:
+    """Runs `moe_finalize` over only the rows of `down` below `valid_rows[0]`.
+
+    A row of `down` at or past the bound adds nothing to its token's sum and
+    is never read, so it may hold anything, NaN included. Expert-parallel
+    layers sort the slots of experts held on other devices last, past the
+    local rows, and the bound drops them without masking `down` first.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+
+    Args:
+        output: As `moe_finalize`.
+        down: As `moe_finalize`; rows from `valid_rows[0]` on are ignored.
+        restore_order: As `moe_finalize`.
+        router_weight: As `moe_finalize`.
+        valid_rows: `[1]` count of the leading rows of `down` that count, on
+            the device.
+        context: The device context.
+    """
+    _moe_finalize[bounded=True](
+        output, down, restore_order, router_weight, valid_rows, context
+    )
+
+
+@inline(.always)
+def _moe_finalize[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    bounded: Bool,
+](
+    output: MutTileTensor[out_type, ...],
+    down: ImmTileTensor[down_type, ...],
+    restore_order: ImmTileTensor[.uint32, ...],
+    router_weight: ImmTileTensor[weight_type, ...],
+    valid_rows: ImmTileTensor[.uint32, ...],
+    context: DeviceContext,
+) raises:
     comptime assert (
         context.target.is_gpu()
     ), "MoE finalize is only supported on GPU"
@@ -1136,6 +1223,9 @@ def moe_finalize[
         var acc = SIMD[.float32, width](0)
         for k in range(num_experts_per_token):
             var row = Int(restore_order[token * num_experts_per_token + k])
+            comptime if bounded:
+                if row >= Int(valid_rows[0]):
+                    continue
             var weight = router_weight.load[width=1]((token, k)).cast[
                 .float32
             ]()
@@ -1155,6 +1245,7 @@ def moe_finalize[
         and down.is_row_major
         and restore_order.is_row_major
         and router_weight.is_row_major
+        and valid_rows.is_row_major
     )
     # `is_row_major` compares static strides, so a layout with runtime shape and
     # stride satisfies it vacuously. The gather reads rows as `row * hidden`,
@@ -1191,29 +1282,32 @@ def moe_finalize[
             @inline(.always)
             def launch_topk[ntopk: Int]() raises {var}:
                 if narrow_vec:
-                    _moe_finalize_gather[ntopk, narrow, True](
+                    _moe_finalize_gather[ntopk, narrow, True, bounded](
                         output,
                         down,
                         restore_order,
                         router_weight,
+                        valid_rows,
                         hidden // narrow,
                         context,
                     )
                 elif small_block:
-                    _moe_finalize_gather[ntopk, simd_width, True](
+                    _moe_finalize_gather[ntopk, simd_width, True, bounded](
                         output,
                         down,
                         restore_order,
                         router_weight,
+                        valid_rows,
                         row_chunks,
                         context,
                     )
                 else:
-                    _moe_finalize_gather[ntopk, simd_width, False](
+                    _moe_finalize_gather[ntopk, simd_width, False, bounded](
                         output,
                         down,
                         restore_order,
                         router_weight,
+                        valid_rows,
                         row_chunks,
                         context,
                     )

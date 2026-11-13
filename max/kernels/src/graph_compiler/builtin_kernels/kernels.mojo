@@ -99,6 +99,7 @@ from nn.moe import (
     moe_create_indices,
     moe_create_indices_with_slots,
     moe_finalize,
+    moe_finalize_bounded,
     router_group_limited,
     sigmoid_gemv_single_group_router,
     sink_gate_router,
@@ -2406,6 +2407,42 @@ struct Struct_moe_finalize:
             down.to_tile_tensor[mut=False](),
             restore_token_order.to_tile_tensor[.uint32, mut=False](),
             router_weight.to_tile_tensor[mut=False](),
+            context,
+        )
+
+
+@extensibility.register("moe.finalize.bounded")
+struct Struct_moe_finalize_bounded:
+    """Registers the `moe.finalize.bounded` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        down: Some[Input & Tensor],
+        restore_token_order: Some[Input & Tensor],
+        router_weight: Some[Input & Tensor],
+        valid_rows: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(down), TileTensorable)
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(router_weight), TileTensorable)
+        comptime assert conforms_to(type_of(valid_rows), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(down).rank == 2
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(router_weight).rank == 2
+        comptime assert type_of(valid_rows).rank == 1
+        moe_finalize_bounded(
+            output.to_tile_tensor(),
+            down.to_tile_tensor().as_imm(),
+            restore_token_order.to_tile_tensor[.uint32]().as_imm(),
+            router_weight.to_tile_tensor().as_imm(),
+            valid_rows.to_tile_tensor[.uint32]().as_imm(),
             context,
         )
 

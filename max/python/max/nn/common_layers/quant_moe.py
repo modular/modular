@@ -228,6 +228,7 @@ def _local_expert_matmul(
     swiglu_limit: float = 0.0,
     scales: NVFP4ExpertScales | None = None,
     activation: GatedActivation | None = None,
+    max_total_m: int = 0,
 ) -> Tensor:
     """Runs local expert matmuls on dispatched tokens."""
     down_in = quant_ops.grouped_matmul_silu(
@@ -245,6 +246,7 @@ def _local_expert_matmul(
         activation=activation,
         swiglu_limit=swiglu_limit,
         scales=scales,
+        max_total_m=max_total_m,
     )
     return quant_ops.grouped_matmul(
         down_in,
@@ -1051,34 +1053,41 @@ class ExpertParallelMoE(QuantizedMoE):
         self,
         down: Tensor,
         expert_start: Tensor,
-        routed: Tensor,
         restore: Tensor,
         router_weight: Tensor,
         device: int,
+        out_dtype: DType = DType.float32,
     ) -> Tensor:
-        """Returns each token's float32 sum of its routed rows by weight.
+        """Returns each token's sum of its routed rows by weight.
 
-        ``routed`` marks the rows of ``down`` below ``expert_start[-1]``.
+        Only the rows of ``down`` below ``expert_start[-1]`` are routed here;
+        the finalize never reads the rows past it, which may hold NaN. The
+        sum accumulates in float32 and rounds once to ``out_dtype``.
         """
         down = self._local_expert_rows(down, expert_start, device)
-        # A where, not a zero weight: the trailing rows may hold NaN.
-        down = F.where(F.unsqueeze(routed, -1), down, 0.0)
-        return moe_finalize(down, restore, router_weight, DType.float32)
+        return moe_finalize(
+            down, restore, router_weight, out_dtype, expert_start[-1:]
+        )
 
     def local_expert_partial_sums(
         self,
         x: Tensor,
         routing: Tensor,
         stacks: ExpertStacks | None = None,
+        max_rows: int = 0,
+        out_dtype: DType = DType.float32,
     ) -> Tensor:
         """Runs each device's own experts over every row of a replicated ``x``.
 
         No token exchange: given the replicated routing of all rows, every
         device multiplies only the slots of its own experts and returns their
-        weighted float32 sum. ``routing`` holds each row's expert ids, as
-        float32, then their weights (:func:`moe_single_group_router_packed`).
-        The result is a :class:`~max.tensor.sharding.Partial` sum,
-        which one all-reduce completes.
+        weighted sum, accumulated in float32 and rounded once to
+        ``out_dtype``. ``routing`` holds each row's expert ids, as float32,
+        then their weights (:func:`moe_single_group_router_packed`). The
+        result is a :class:`~max.tensor.sharding.Partial` sum, which one
+        all-reduce completes. A caller that bounds ``x``'s rows passes the
+        bound as ``max_rows``, so the NVFP4 gate/up and down matmuls can fuse
+        into one MegaFFN launch.
         """
         config = self.ep_batch_manager.config
         if config.fused_shared_expert:
@@ -1162,12 +1171,10 @@ class ExpertParallelMoE(QuantizedMoE):
                 accum_dtype=self.gate_up_accum_dtype,
                 swiglu_limit=self.swiglu_limit,
                 scales=expert_scales[i] if expert_scales else None,
+                max_total_m=max_rows * top_k,
             )
-            ids = F.reshape(routing_d[:, :top_k], [-1])
-            is_local = (ids >= first) & (ids < first + n_local)
-            routed = F.gather(is_local, order.cast(DType.int32), axis=0)
             return self._local_expert_sum(
-                out, start, routed, restore, weight, i
+                out, start, restore, weight, i, out_dtype
             )
 
         with ensure_context():
@@ -1182,6 +1189,7 @@ class ExpertParallelMoE(QuantizedMoE):
         x: Tensor,
         comm: EPCommBuffers | None = None,
         layer_idx: Tensor | None = None,
+        stacks: ExpertStacks | None = None,
     ) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
 
@@ -1189,7 +1197,9 @@ class ExpertParallelMoE(QuantizedMoE):
         ``forward(self, x)``; the EP path always supplies it. ``layer_idx`` is
         the int32 ``[1]`` MoE layer index, one shard per device; it is required
         when the EP config counts expert load, and it is an operand rather than
-        a constant because layers can share one subgraph body.
+        a constant because layers can share one subgraph body. ``stacks`` are
+        the :meth:`expert_stacks` a caller built outside control flow, so a
+        cond whose other branch also reads them stacks the experts once.
         """
         assert comm is not None, (
             "ExpertParallelMoE.forward requires comm buffers"
@@ -1312,7 +1322,7 @@ class ExpertParallelMoE(QuantizedMoE):
             dispatch_results, self.quant_config, config
         )
         down_bundle = self._local_compute(
-            payload, global_scale, estimated_total_m
+            payload, global_scale, estimated_total_m, stacks
         )
 
         # Combine expert outputs back to their source devices.

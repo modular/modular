@@ -110,17 +110,20 @@ def moe_finalize_rule(
     restore_token_order: TensorLayout,
     router_weight: TensorLayout,
     out_type: DType,
+    valid_rows: TensorLayout | None = None,
 ) -> list[AxisAssignment]:
     """Strategies for ``moe_finalize``: linear in ``down_projs``.
 
     The weighted row sum keeps ``down_projs``' hidden-axis sharding and
-    passes a partial sum through. ``restore_token_order`` and
-    ``router_weight`` are per-token routing state, always ``Replicated``.
+    passes a partial sum through. ``restore_token_order``,
+    ``router_weight`` and ``valid_rows`` are per-token routing state, always
+    ``Replicated``.
     """
+    routing = (R, R) if valid_rows is None else (R, R, R)
     return [
-        AxisAssignment((R, R, R), (R,)),
-        AxisAssignment((Sharded(1), R, R), (Sharded(1),)),
-        AxisAssignment((P, R, R), (P,)),
+        AxisAssignment((R, *routing), (R,)),
+        AxisAssignment((Sharded(1), *routing), (Sharded(1),)),
+        AxisAssignment((P, *routing), (P,)),
     ]
 
 

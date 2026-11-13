@@ -21,6 +21,7 @@ import pytest
 from max import functional as F
 from max.driver import Device
 from max.dtype import DType
+from max.graph import Graph
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.moe import (
     MoE,
@@ -150,12 +151,15 @@ def test_tensor_parallel_layer(mock_accelerator: MagicMock) -> None:
     assert out.mapping.placements == (Partial(),)
 
 
+@pytest.mark.parametrize("bounded", [False, True])
 @pytest.mark.parametrize("placement", [Replicated(), Sharded(1), Partial()])
 def test_moe_finalize_keeps_down_placement(
-    mock_accelerator: MagicMock, placement: Placement
+    mock_accelerator: MagicMock, placement: Placement, bounded: bool
 ) -> None:
     """The top-k combine is linear in the expert outputs, so it keeps their
-    hidden-axis sharding and passes a partial sum through."""
+    hidden-axis sharding and passes a partial sum through. A replicated
+    ``valid_rows`` bound selects ``moe.finalize.bounded`` and keeps the same
+    placement rule."""
     with F.lazy():
         devices = [mock_accelerator(0), mock_accelerator(1)]
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
@@ -168,7 +172,19 @@ def test_moe_finalize_keeps_down_placement(
         weights = Tensor.zeros(
             [_SEQ_LEN, _NUM_EXPERTS_PER_TOKEN], device=replicated
         )
-        out = moe_finalize(down, restore, weights, DType.bfloat16)
+        valid_rows = (
+            Tensor.zeros([1], dtype=DType.uint32, device=replicated)
+            if bounded
+            else None
+        )
+        out = moe_finalize(down, restore, weights, DType.bfloat16, valid_rows)
+        ir = str(Graph.current._mlir_op)
 
     assert out.mapping.placements == (placement,)
     assert out.dtype == DType.bfloat16
+    assert ir.count('symbol = "moe.finalize.bounded"') == (
+        len(devices) if bounded else 0
+    )
+    assert ir.count('symbol = "moe.finalize"') == (
+        0 if bounded else len(devices)
+    )
