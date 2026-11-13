@@ -40,6 +40,7 @@ from max._driver.max_license.device_context_dispatch.function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
+    _HALDeviceExternalFunction,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
@@ -61,6 +62,7 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsPeerAccessV1,
 )
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
+from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._plugin import MaxPluginForTarget
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
@@ -77,6 +79,7 @@ from max.gpu.host._launch_args import DeviceFunctionWrapper
 from max.gpu.host._overlay import HAL_DEVICE_CONTEXT
 from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
+    _check_dim_in_range,
 )
 from max.gpu.host._driver_handles import _DeviceContextPtr
 from max.gpu.host.info import default_accelerator
@@ -271,6 +274,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     comptime _Legacy = LegacyDeviceContext[Self.target]
     comptime _HAL = HALDeviceContext[Self.target]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
+
+    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -2130,6 +2135,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     ) raises:
         """Loads a function from precompiled assembly.
 
+        This loads an external GPU function from the provided assembly code
+        (PTX/SASS) rather than compiling it from Mojo source. This is useful
+        for integrating with existing CUDA/HIP code or for using specialized
+        assembly optimizations.
+
         Parameters:
             ret_type: The return type of the function.
             declared_arg_types: Types of the arguments of the function.
@@ -2147,7 +2157,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the load fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             result = type_of(result)(
                 _impl=self._impl.load_function[func](
                     function_name=function_name^,
@@ -2155,13 +2166,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     func_attribute=func_attribute,
                 )
             )
-        else:
-            result = type_of(result)(
-                _impl=self._impl.load_function[func](
-                    function_name=function_name^, asm=asm^
-                )
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
+        result = type_of(result)(self, function_name=function_name^, asm=asm^)
+
+    @inline(.always)
     def enqueue_function[
         *Ts: AnyType
     ](
@@ -2195,7 +2205,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_function(
                 f._impl,
                 *args,
@@ -2207,9 +2218,32 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 constant_memory=constant_memory^,
                 location=location,
             )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var hal_f: _HALDeviceExternalFunction = f._impl
+        comptime if Self._HALHooks.Enqueuer.overrides:
+            var launch = HalLaunchOptions(
+                grid_dim,
+                block_dim,
+                cluster_dim,
+                shared_mem_bytes,
+                attributes^,
+                constant_memory^,
+                None,
+            )
+            Self._HALHooks.Enqueuer.enqueue_external(
+                self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
+            )
         else:
-            self._impl.enqueue_function(
-                f._impl,
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+            f._call_with_pack(
+                self._hal_stream(),
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2217,7 +2251,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
                 constant_memory=constant_memory^,
-                location=location,
+                location=location.or_else(call_location()),
             )
 
     def enqueue_function[
