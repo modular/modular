@@ -14,11 +14,11 @@
 // The user's parametric kernel impl. `n` parameterises its emitted
 // `nvvm.maxntid`, so a successful redirect carries `n=128` through to the
 // emitted PTX function name and its attribute.
-kgen.generator @user_kernel_impl<n: i32>() {
-  hlcf.return
-} <fnAttrs = [
+kgen.generator @user_kernel_impl<n: i32>() <fnAttrs = [
     "nvvm.maxntid", #pop.array<n, 1, 1> : !pop.array<3, i32>
-  ]>
+  ]> {
+  hlcf.return
+}
 
 // A parametric "closure wrapper" struct that conforms to `Callable`. Its
 // witness for `__call__` is the user kernel instantiated with the wrapper's

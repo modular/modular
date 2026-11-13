@@ -424,7 +424,7 @@ lit.file_module @module {
 }
 
 // CHECK: kgen.generator @metadata
-// CHECK: } <fnAttrs = ["llvm.someattr",  3 : index]
+// CHECK-SAME: <fnAttrs = ["llvm.someattr",  3 : index]
 // CHECK-SAME{LITERAL}: fnArgAttrs = [[], ["llvm.someattr", 2 : index]]
 lit.fn @metadata(%a: i32, %b: i32) attributes {
   fnArgAttrs = [[], ["llvm.someattr", 2 : index]],

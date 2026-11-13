@@ -2,16 +2,16 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="use-parametric-interpret=true" -allow-unregistered-dialect | FileCheck --check-prefixes=CHECK %s
 
 // CHECK-LABEL: kgen.func @"metadata,x=16,y=16,z=8"
-// CHECK: } <fnAttrs = {nvvm.maxntid = #pop.array<16, 16, 8>
+// CHECK-SAME: <fnAttrs = {nvvm.maxntid = #pop.array<16, 16, 8>
 // CHECK-SAME: fnArgAttrs = [{}, {nvvm.maxntid = #pop.array<16, 16, 8>
-kgen.generator @metadata<x: i32, y: i32, z: i32>(%a: i32, %b: i32){
-  hlcf.return
-} <fnArgAttrs = [
+kgen.generator @metadata<x: i32, y: i32, z: i32>(%a: i32, %b: i32) <fnArgAttrs = [
     [],
     ["nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>]
   ], fnAttrs = [
     "nvvm.maxntid",  #pop.array<x, y, z> : !pop.array<3, i32>
-  ]>
+  ]> {
+  hlcf.return
+}
 
 kgen.generator @kernel(%a: i32, %b: i32) {
   kgen.call @metadata<:i32 16, :i32 16, :i32 8>(%a, %b) : (i32, i32) -> ()

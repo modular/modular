@@ -256,17 +256,65 @@ static void printSymVisibility(AsmPrinter &p, Operation *,
     p << visibility.getValue() << ' ';
 }
 
+/// Parses the optional `<fnAttrs = {...}, fnArgAttrs = [...]>` clause that
+/// closes a function signature. Both are properties, so without this they
+/// would print after the body, where `prop-dict` puts them.
+template <typename FnAttrsT, typename FnArgAttrsT>
+static ParseResult parseFnAttrClause(OpAsmParser &p, FnAttrsT &fnAttrs,
+                                     FnArgAttrsT &fnArgAttrs) {
+  if (p.parseOptionalLess())
+    return success();
+  do {
+    StringRef keyword;
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (p.parseKeyword(&keyword) || p.parseEqual())
+      return failure();
+    if (keyword == "fnAttrs") {
+      if (p.parseAttribute(fnAttrs))
+        return failure();
+    } else if (keyword == "fnArgAttrs") {
+      if (p.parseAttribute(fnArgAttrs))
+        return failure();
+    } else {
+      return p.emitError(loc, "expected 'fnAttrs' or 'fnArgAttrs'");
+    }
+  } while (succeeded(p.parseOptionalComma()));
+  return p.parseGreater();
+}
+
+/// Prints the clause `parseFnAttrClause` reads, and nothing when both are at
+/// their defaults.
+template <typename FnAttrsT, typename FnArgAttrsT>
+static void printFnAttrClause(OpAsmPrinter &p, FnAttrsT fnAttrs,
+                              FnArgAttrsT fnArgAttrs) {
+  bool hasFnAttrs = fnAttrs && !fnAttrs.empty();
+  bool hasArgAttrs = fnArgAttrs && !fnArgAttrs.empty();
+  if (!hasFnAttrs && !hasArgAttrs)
+    return;
+  p << " <";
+  if (hasFnAttrs) {
+    p << "fnAttrs = ";
+    p.printAttribute(fnAttrs);
+  }
+  if (hasArgAttrs) {
+    if (hasFnAttrs)
+      p << ", ";
+    p << "fnArgAttrs = ";
+    p.printAttribute(fnArgAttrs);
+  }
+  p << '>';
+}
+
 //===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
-                                    StringAttr &symName,
-                                    TypeAttr &signatureAttr,
-                                    TypeAttr &functionTypeAttr,
-                                    ParamDeclArrayAttr &inputParams,
-                                    Attribute &inlineLevel,
-                                    DecoratorsAttr &decorators, Region &body) {
+static ParseResult
+parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
+                 StringAttr &symName, TypeAttr &signatureAttr,
+                 TypeAttr &functionTypeAttr, ParamDeclArrayAttr &inputParams,
+                 Attribute &inlineLevel, DecoratorsAttr &decorators,
+                 ArrayAttr &fnAttrs, ArrayAttr &fnArgAttrs, Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(symName))
     return failure();
 
@@ -295,7 +343,8 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
     signatureAttr = TypeAttr::get(explicitSignature);
   }
 
-  if (p.parseRegion(body, args, /*enableNameShadowing=*/true))
+  if (parseFnAttrClause(p, fnAttrs, fnArgAttrs) ||
+      p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
 }
@@ -305,6 +354,7 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
                              TypeAttr signature, TypeAttr functionType,
                              ParamDeclArrayAttr inputParams,
                              Attribute inlineLevel, DecoratorsAttr decorators,
+                             ArrayAttr fnAttrs, ArrayAttr fnArgAttrs,
                              Region &body) {
   printSymbolExport(p, op, exportKind);
   p << ' ';
@@ -329,6 +379,7 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
     p << " signature ";
     p.printType(signatureType);
   }
+  printFnAttrClause(p, fnAttrs, fnArgAttrs);
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
@@ -374,7 +425,9 @@ LogicalResult GeneratorOp::verify() {
 static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
                                StringAttr &name, TypeAttr &signature,
                                Attribute &inlineLevel,
-                               DecoratorsAttr &decorators, Region &body) {
+                               DecoratorsAttr &decorators,
+                               DictionaryAttr &fnAttrs, ArrayAttr &fnArgAttrs,
+                               Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
     return failure();
 
@@ -402,6 +455,7 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
+      parseFnAttrClause(p, fnAttrs, fnArgAttrs) ||
       p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
@@ -410,7 +464,8 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 static void printFuncOp(OpAsmPrinter &p, Operation *op,
                         ExportKindAttr exportKind, StringAttr name,
                         TypeAttr signature, Attribute inlineLevel,
-                        DecoratorsAttr decorators, Region &body) {
+                        DecoratorsAttr decorators, DictionaryAttr fnAttrs,
+                        ArrayAttr fnArgAttrs, Region &body) {
   FuncType sig = cast<FuncTypeGeneratorType>(signature.getValue()).getBody();
 
   printSymbolExport(p, op, exportKind);
@@ -425,6 +480,7 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
                        /*optionalResultList=*/true);
   printOptionalInline(p, inlineLevel);
   printOptionalDecorators(p, op, decorators);
+  printFnAttrClause(p, fnAttrs, fnArgAttrs);
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);

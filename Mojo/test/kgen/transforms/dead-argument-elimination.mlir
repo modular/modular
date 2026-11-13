@@ -137,16 +137,16 @@ kgen.func @calls_external(%dead_arg: index, %live_arg: index) -> index {
 // COM: dead arguments bracket the live ones, so the survivors are entries 1
 // COM: and 3 and any off-by-one picks up a `{}`.
 // CHECK-LABEL: kgen.func @arg_metadata_follows_live_args(%arg0: index, %arg1: index) -> index
-// CHECK:         } {{.*}}fnArgAttrs = [{llvm.noalias}, {nvvm.grid_constant}]
+// CHECK-SAME: {{.*}}fnArgAttrs = [{llvm.noalias}, {nvvm.grid_constant}]
 kgen.func @arg_metadata_follows_live_args(
   %dead_first: !kgen.scalar<f32>,
   %live_first: index,
   %dead_last: !kgen.scalar<f32>,
   %live_last: index
-) -> index {
+) -> index <fnArgAttrs = [{}, {llvm.noalias = unit}, {}, {nvvm.grid_constant = unit}]> {
   %0 = index.add %live_first, %live_last
   hlcf.return %0: index
-} <fnArgAttrs = [{}, {llvm.noalias = unit}, {}, {nvvm.grid_constant = unit}]>
+}
 
 // CHECK-LABEL: kgen.func export @calls_arg_metadata_follows_live_args
 kgen.func export @calls_arg_metadata_follows_live_args(%arg: index) -> index {

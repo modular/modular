@@ -103,17 +103,17 @@ kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1>
 // wrapped in `#kgen.deferred`; the wrapper is stripped so the function's
 // `fnAttrs` dictionary holds the concrete attribute.
 // CHECK-LABEL: @deferred_fn_attr
-// CHECK: } <fnAttrs = {my.meta = [1, 2]}>
-kgen.generator @deferred_fn_attr() {
+// CHECK-SAME: <fnAttrs = {my.meta = [1, 2]}>
+kgen.generator @deferred_fn_attr() <fnAttrs = ["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]> {
   hlcf.return
-} <fnAttrs = ["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]>
+}
 
 // -----
 
 // The same wrapper reaches the elaborator through a per-argument metadata
 // array, which takes the second call site of the same helper.
 // CHECK-LABEL: @deferred_fn_arg_attr
-// CHECK: } <fnArgAttrs = [{my.meta = [1, 2]}]>
-kgen.generator @deferred_fn_arg_attr(%arg0: index) {
+// CHECK-SAME: <fnArgAttrs = [{my.meta = [1, 2]}]>
+kgen.generator @deferred_fn_arg_attr(%arg0: index) <fnArgAttrs = [["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]]> {
   hlcf.return
-} <fnArgAttrs = [["my.meta", #kgen<deferred [1, 2]> : !kgen.deferred]]>
+}

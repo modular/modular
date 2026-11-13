@@ -241,11 +241,11 @@ kgen.generator export @gen_structs() {
 
 // expected-note @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>(){
-  hlcf.return
-} <fnAttrs = [
+kgen.generator export @metadata<x>() <fnAttrs = [
   #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]>
+]> {
+  hlcf.return
+}
 
 // expected-error @below {{function instantiation failed}}
 kgen.generator @metadata_caller() {

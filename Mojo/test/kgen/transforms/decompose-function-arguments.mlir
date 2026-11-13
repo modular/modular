@@ -125,12 +125,12 @@ kgen.func @conventions(%arg0: !kgen.struct<(memref<128xf32>, i32)> owned, %arg1:
 // `fnArgAttrs` is re-indexed too: the pass-through argument's entry follows
 // it, and the default policy gives leaves empty entries.
 // CHECK-LABEL: kgen.func @arg_attrs
-// CHECK:         } {{.*}}fnArgAttrs = [{}, {}, {test.marker}]
-kgen.func @arg_attrs(%arg0: !kgen.struct<(memref<128xf32>, i32)>, %arg1: index) {
+// CHECK-SAME: {{.*}}fnArgAttrs = [{}, {}, {test.marker}]
+kgen.func @arg_attrs(%arg0: !kgen.struct<(memref<128xf32>, i32)>, %arg1: index) <fnArgAttrs = [{}, {test.marker}]> {
   %0 = kgen.struct.extract %arg0[0] : <(memref<128xf32>, i32)>
   "use"(%0, %arg1) : (memref<128xf32>, index) -> ()
   hlcf.return
-} <fnArgAttrs = [{}, {test.marker}]>
+}
 
 // -----
 

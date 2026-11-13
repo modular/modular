@@ -99,7 +99,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let assemblyFormat = [{
     `` custom<FuncOp>($exportKind, $sym_name, $funcTypeGenerator, $inlineLevel,
-                     $decorators, $bodyRegion)
+                     $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
     prop-dict attr-dict-with-keyword
   }];
 
@@ -241,7 +241,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let assemblyFormat = [{
     `` custom<GeneratorOp>($exportKind, $sym_name, $funcTypeGenerator,
                            $functionType, $inputParams, $inlineLevel,
-                           $decorators, $bodyRegion)
+                           $decorators, $fnAttrs, $fnArgAttrs, $bodyRegion)
     prop-dict attr-dict-with-keyword
   }];
 

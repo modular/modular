@@ -6,12 +6,12 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 
   // CHECK-LABEL: promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: pop.load %arg0 : !kgen.pointer<struct<(pointer<none>)>>
     %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<none>)>
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: kgen.func @fn
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
@@ -23,7 +23,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 
   // CHECK-LABEL: promote_to_imm_mem_call
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: %[[P0:.*]] = pop.load %arg0 : !kgen.pointer<struct<(pointer<none>)>>
     // CHECK-NEXT: %[[P1:.*]] = pop.stack_allocation 1 x struct<(pointer<none>)>
     // CHECK-NEXT: pop.store %[[P0]], %[[P1]] : !kgen.pointer<struct<(pointer<none>)>>
@@ -31,14 +31,14 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     %0 = kgen.call @fn(%arg0) : (!kgen.struct<(pointer<none>)>) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: dont_promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.struct<(scalar<f32>)>
-  kgen.func export @dont_promote_to_imm_mem(%arg0: !kgen.struct<(scalar<f32>)>) -> !kgen.none {
+  kgen.func export @dont_promote_to_imm_mem(%arg0: !kgen.struct<(scalar<f32>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 }
 
 // -----
@@ -47,12 +47,12 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
 
   // CHECK-LABEL: promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: pop.load %arg0 : !kgen.pointer<struct<(pointer<none>)>>
     %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<none>)>
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: kgen.func @fn
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
@@ -64,7 +64,7 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
 
   // CHECK-LABEL: promote_to_imm_mem_call
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.struct<(pointer<none>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: %[[P0:.*]] = pop.load %arg0 : !kgen.pointer<struct<(pointer<none>)>>
     // CHECK-NEXT: %[[P1:.*]] = pop.stack_allocation 1 x struct<(pointer<none>)>
     // CHECK-NEXT: pop.store %[[P0]], %[[P1]] : !kgen.pointer<struct<(pointer<none>)>>
@@ -72,14 +72,14 @@ module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch=
     %0 = kgen.call @fn(%arg0) : (!kgen.struct<(pointer<none>)>) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: dont_promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.struct<(scalar<f32>)>
-  kgen.func export @dont_promote_to_imm_mem(%arg0: !kgen.struct<(scalar<f32>)>) -> !kgen.none {
+  kgen.func export @dont_promote_to_imm_mem(%arg0: !kgen.struct<(scalar<f32>)>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 }
 
 // -----
@@ -90,7 +90,7 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
   // A pack element that this target passes in memory is not promoted.
   // CHECK-LABEL: promote_to_imm_mem
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK-NEXT: kgen.struct.create(%arg0)
     // CHECK: pop.load {{.*}} : !kgen.pointer<struct<(pointer<none>)>>
     %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>>
@@ -98,16 +98,16 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     %2 = pop.load %1 : !kgen.pointer<struct<(pointer<none>)>>
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: promote_to_imm_mem_call
   // CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>)>> imm_mem
-  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none {
+  kgen.func export @promote_to_imm_mem_call(%arg0: !kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK: kgen.call @promote_to_imm_mem(%{{.*}}) : (!kgen.pointer<struct<(pointer<none>)>> imm_mem)
     %0 = kgen.call @promote_to_imm_mem(%arg0) : (!kgen.pointer<struct<(pointer<struct<(pointer<none>)>>) isParamPack>> pack_imm_mem) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 }
 
 // -----
@@ -116,13 +116,13 @@ module attributes {M.target_info = #M.target<triple = "air64-unknown-unknown", a
 
   // CHECK-LABEL: add_extra_indirection
   // CHECK-SAME: (%arg0: !kgen.pointer<pointer<none>>
-  kgen.func export @add_extra_indirection(%arg0: !kgen.pointer<none>) -> !kgen.none {
+  kgen.func export @add_extra_indirection(%arg0: !kgen.pointer<none>) -> !kgen.none <fnAttrs = {kgen.offload.kernelid = 1 : index}> {
     // CHECK: %[[LOAD:.*]] = pop.load %arg0 : !kgen.pointer<pointer<none>>
     // CHECK-NEXT: pop.load %[[LOAD]] : !kgen.pointer<none>
     %0 = pop.load %arg0 : !kgen.pointer<none>
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
-  } <fnAttrs = {kgen.offload.kernelid = 1 : index}>
+  }
 
   // CHECK-LABEL: pack_with_pointers
   // CHECK-SAME: (%arg0: !kgen.pointer<pointer<none>> imm_mem,
