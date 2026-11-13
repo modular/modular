@@ -324,8 +324,8 @@ void CabiUtils::forEachMember(
   }
 
   if (auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
-    // The offsets below assume aligned fields. A packed struct would break
-    // them; Mojo does not emit one.
+    // The classifiers assume aligned fields, and the fields of a packed struct
+    // can be unaligned. Mojo does not emit a packed struct.
     assert(!structType.isPacked() &&
            "packed structs are not supported; their fields may be unaligned");
     for (auto [fieldType, fieldOffset] :

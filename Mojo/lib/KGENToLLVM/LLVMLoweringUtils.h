@@ -84,7 +84,8 @@ public:
   }
   /// Get the ABI alignment of the LLVM type and the element type that imposes
   /// the alignment requirement, it is typically the element type with maximum
-  /// bitwidth.
+  /// bitwidth. The type is null when no element imposes it, as in an empty or
+  /// a packed struct.
   std::pair<int64_t, Type> getTypeABIAlignAndType(Type type) const;
   /// Get the ABI alignment of the LLVM type.
   int64_t getTypeABIAlign(Type type) const {
@@ -92,7 +93,8 @@ public:
   }
   /// Get the byte offset of each field of the LLVM struct type, as
   /// llvm::StructLayout::getElementOffset does: each field is at the next
-  /// offset aligned for it, after the alloc size of the field before.
+  /// offset aligned for it, after the alloc size of the field before. In a
+  /// packed struct, each field starts where the field before it ends.
   SmallVector<int64_t>
   getStructFieldOffsets(mlir::LLVM::LLVMStructType type) const;
 

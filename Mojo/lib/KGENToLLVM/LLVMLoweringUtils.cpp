@@ -49,14 +49,16 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 //===----------------------------------------------------------------------===//
 
 /// Lay out the fields of `type` in order, each at the next offset aligned for
-/// it. Append the offset of each field to `offsets`, and return the end of the
-/// last one.
+/// it. The fields of a packed struct are not aligned: each starts where the
+/// field before it ends. Append the offset of each field to `offsets`, and
+/// return the end of the last one.
 static int64_t layOutFields(const LLVMDataLayout &dataLayout,
                             LLVM::LLVMStructType type,
                             SmallVectorImpl<int64_t> &offsets) {
   int64_t end = 0;
   for (Type field : type.getBody()) {
-    offsets.push_back(llvm::alignTo(end, dataLayout.getTypeABIAlign(field)));
+    int64_t align = type.isPacked() ? 1 : dataLayout.getTypeABIAlign(field);
+    offsets.push_back(llvm::alignTo(end, align));
     end = offsets.back() + dataLayout.getTypeAllocSize(field);
   }
   return end;
@@ -83,6 +85,8 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
     SmallVector<int64_t> offsets;
     int64_t size = layOutFields(*this, structType, offsets);
+    if (structType.isPacked())
+      return size * CHAR_BIT;
     int64_t strictest = 1;
     for (Type field : structType.getBody())
       strictest = std::max(strictest, getTypeABIAlign(field));
@@ -119,6 +123,11 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
     return getTypeABIAlignAndType(arrayType.getElementType());
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    // As in LLVM, a packed struct is byte aligned, whatever the data layout
+    // gives for aggregates.
+    if (structType.isPacked())
+      return {1, nullptr};
+
     std::pair<int64_t, Type> strictestPair(1, nullptr);
     for (Type type : structType.getBody()) {
       auto cur = getTypeABIAlignAndType(type);

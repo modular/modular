@@ -485,4 +485,12 @@ kgen.func @union_simd_bool_4_i16(%arg0: i16) -> !pop.union<!kgen.simd<4, bool>, 
   hlcf.return %0 : !pop.union<!kgen.simd<4, bool>, i16>
 }
 
+// The fields of a packed struct are not aligned, so the struct is 5 bytes and
+// byte aligned. The representative is i8, and the union is 5 bytes.
+// CHECK-LABEL: @union_packed_struct
+// CHECK-SAME:  -> !llvm.struct<(i8, array<4 x i8>)>
+kgen.func @union_packed_struct() -> !pop.union<!llvm.struct<packed (i8, i32)>, i8> {
+  hlcf.unreachable
+}
+
 }
