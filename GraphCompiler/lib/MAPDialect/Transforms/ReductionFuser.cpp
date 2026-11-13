@@ -121,6 +121,10 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
   if (!isPlainForeach(src) || src->getBlock() != dst->getBlock() ||
       !sameDevice(src, dst))
     return false;
+  // TODO(GEX-3957): a row kernel can't lower a concat select yet; the next
+  // change fuses one into a fold.
+  if (holdsConcatSelect(src))
+    return false;
   Value result = src.getResult(0);
   if (!llvm::all_of(result.getUsers(),
                     [&](Operation *user) { return user == dst; }))
@@ -214,11 +218,9 @@ bool canFuseConsumer(IterRowwiseOp dst, IterElementwiseOp consumer) {
       continue;
     if (!perRowStore(dst, result.getResultNumber()))
       return false;
-    for (Operation *user : body.getArgument(i).getUsers()) {
-      auto load = dyn_cast<LoadOp>(user);
-      if (!load || load.getIndex() != loopIdx)
-        return false;
-    }
+    if (!loadsOnlyAt(body.getArgument(i),
+                     [&](Value index) { return index == loopIdx; }))
+      return false;
   }
   return !needsSink(dst, consumer) || canSinkTo(dst, consumer);
 }

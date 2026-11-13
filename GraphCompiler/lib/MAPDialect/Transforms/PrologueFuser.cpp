@@ -41,9 +41,12 @@ struct FuseProloguePass : public MAP::impl::FusePrologueBase<FuseProloguePass> {
     InputFusionConfig config;
     // A foreach producer fusing into an opaque (the load lives in the opaque's
     // prologue; a foreach-body load would have no opaque parent here).
+    // Nor one producing through a concat select: the opaque loads at its own
+    // SIMD width, ignoring the select's width limit.
     config.shouldFuse = [](StoreOp srcStore, LoadOp dstLoad) {
       return srcStore->getParentOfType<IterElementwiseOp>() &&
-             dstLoad->getParentOfType<IterOpaqueOp>();
+             dstLoad->getParentOfType<IterOpaqueOp>() &&
+             !producesThroughConcatSelect(srcStore);
     };
     // Only a sole-use producer fuses into a prologue.
     config.canDuplicate = [](IterElementwiseOp) { return false; };

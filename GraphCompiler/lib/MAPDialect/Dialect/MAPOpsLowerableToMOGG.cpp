@@ -1428,4 +1428,6 @@ LogicalResult IterOpaqueOp::lowerToMOGG(MAPToMOGGState &state) {
   return success();
 }
 
+bool concatLowersAsView() { return true; }
+
 } // namespace M::MAP
