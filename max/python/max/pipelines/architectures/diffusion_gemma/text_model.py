@@ -453,11 +453,12 @@ class DiffusionGemmaDecoderTextModel(
         # Top-k probabilities for host-side categorical sampling. The exact
         # inverse-CDF needed ops.cumsum over [N, vocab] fp32, which has no
         # GPU kernel (KERN-1095) and cost two ~268 MB host transfers per
-        # denoise step. Sampling from the renormalized top-64 instead ships
-        # only [N, 64]; the truncated tail mass is negligible at the
+        # denoise step. Sampling from the renormalized top-k instead ships
+        # only [N, k]; the truncated tail mass is negligible at the
         # schedule's temperatures, and the entropy/argmax used for
-        # acceptance and stopping remain full-vocab and exact.
-        topk_probs, topk_idx = F.top_k(probs, k=64, axis=-1)
+        # acceptance and stopping remain full-vocab and exact. The width is
+        # the config's `top_k`, which the exported contract records too.
+        topk_probs, topk_idx = F.top_k(probs, k=self.config.top_k, axis=-1)
 
         return BlockDiffusionOutputs(
             logits=processed.cast(DType.bfloat16),

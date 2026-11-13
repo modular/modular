@@ -1165,6 +1165,17 @@ class PipelineModel(
         """
         return self.vision_metadata_for(self.pipeline_config, self.arch_config)
 
+    def block_diffusion_metadata(self) -> Any | None:
+        """Returns this model's canvas geometry and denoise schedule.
+
+        ``max export`` records them beside the ``block_diffusion`` graph,
+        so a serving engine runs the same denoise loop the Python pipeline
+        does. ``None`` for a model whose artifact serves no block-diffusion
+        denoiser; a pipeline that registers a ``BLOCK_DIFFUSION`` module
+        overrides this.
+        """
+        return None
+
     def vision_preprocess_spec(self) -> GraphSpec | None:
         """Returns the graph that preprocesses one image for the vision encoder.
 

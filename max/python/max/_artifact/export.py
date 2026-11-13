@@ -64,6 +64,7 @@ from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
 
 from .batch_processor import BatchProcessorDims
+from .block_diffusion import BlockDiffusionMetadata
 from .engine_config import (
     EngineConfig,
     EngineSamplingConfig,
@@ -254,6 +255,17 @@ def model_artifact(
                 f" with no {missing}; a serving engine needs both to serve it"
             )
         modules = PipelineModules({**modules.roles, **preprocess})
+    block_diffusion = None
+    if pipeline_model is not None and "block_diffusion" in modules.roles:
+        metadata = pipeline_model.block_diffusion_metadata()
+        if metadata is None:
+            raise ArtifactError(
+                f"{type(pipeline_model).__qualname__} exports a"
+                " block_diffusion graph but records no block-diffusion"
+                " contract; a serving engine cannot run its denoise loop"
+            )
+        block_diffusion = BlockDiffusionMetadata.from_config(**metadata)
+
     return ModelArtifact(
         model=modules,
         tokenizer=tokenizer,
@@ -265,6 +277,7 @@ def model_artifact(
         vision=vision,
         sampling_defaults=sampling_defaults,
         overlap_helpers=overlap_helpers,
+        block_diffusion=block_diffusion,
     )
 
 

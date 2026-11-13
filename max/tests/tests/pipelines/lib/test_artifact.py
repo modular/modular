@@ -33,6 +33,7 @@ from max._artifact import (
     HuggingFaceRef,
 )
 from max._artifact.batch_processor import BatchProcessorDims
+from max._artifact.block_diffusion import BlockDiffusionMetadata
 from max._artifact.codec import encode, prefix_files
 from max._artifact.engine_config import (
     EngineConfig,
@@ -219,6 +220,29 @@ def test_round_trip(tmp_path: Path) -> None:
         "main": MODEL_REF,
         "draft": [DRAFT_REF, MODEL_REF],
     }
+
+
+def test_block_diffusion_round_trip(tmp_path: Path) -> None:
+    """The canvas geometry and denoise schedule survive a serialize/load."""
+    metadata = BlockDiffusionMetadata.from_config(
+        canvas_length=256,
+        max_denoising_steps=48,
+        t_min=0.4,
+        t_max=0.8,
+        entropy_bound=0.1,
+        stability_threshold=1,
+        confidence_threshold=0.005,
+        pad_token_id=0,
+        top_k=64,
+        max_canvas_batch=16,
+    )
+    dest = serialize(ModelArtifact(block_diffusion=metadata), tmp_path / "bd")
+    loaded = deserialize(dest, ModelArtifact)
+    assert loaded.block_diffusion == metadata
+    config = json.loads((dest / "block_diffusion_config.json").read_text())
+    assert config["canvas_length"] == 256
+    assert config["max_denoising_steps"] == 48
+    assert config["top_k"] == 64
 
 
 def test_metadata(tmp_path: Path) -> None:
@@ -495,6 +519,7 @@ def test_component_types() -> None:
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
         "overlap_helpers": OverlapHelpers,
+        "block_diffusion": BlockDiffusionMetadata,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
@@ -508,6 +533,7 @@ def test_component_types() -> None:
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
         "overlap_helpers": OverlapHelpers,
+        "block_diffusion": BlockDiffusionMetadata,
         "scratch": FakeComponent,
         "extra": FakeComponent,
     }

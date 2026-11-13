@@ -23,6 +23,7 @@ from max.pipelines.lib.weight_transform import WeightNaming
 from typing_extensions import Self
 
 from .batch_processor import BatchProcessorDims
+from .block_diffusion import BlockDiffusionMetadata
 from .codec import collect_hf_refs
 from .engine_config import EngineConfig
 from .format_spec import FormatSpec
@@ -47,6 +48,7 @@ class ModelArtifact:
     batch_processor: BatchProcessorDims | None = None
     vision: VisionMetadata | None = None
     sampling_defaults: SamplingDefaults | None = None
+    block_diffusion: BlockDiffusionMetadata | None = None
     weight_loader: WeightNaming | None = None
     overlap_helpers: OverlapHelpers | None = None
 

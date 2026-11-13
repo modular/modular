@@ -57,9 +57,11 @@ diffusion_gemma_arch = SupportedArchitecture(
     # them back within a step; prefix-cache block reuse across requests is
     # not yet audited against that pattern.
     required_arguments={"enable_prefix_caching": False},
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    # The pipeline loads the checkpoint through the rules, so the export
+    # names each role's weights — the denoiser's beside the encoder's,
+    # both reading the same renamed text weights.
+    weight_rules=weight_adapters.diffusion_gemma_weight_rules,
+    use_weight_rules=True,
     # The denoise loop has no fixed-shape decode step to capture.
     supports_device_graph_capture=False,
     batching=DiffusionGemmaBatchProcessor,

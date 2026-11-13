@@ -77,7 +77,7 @@ MODELS: Mapping[str, set[str]] = {
     "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": NIGHTLY | VARIANT | _2xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | VARIANT | _2xB200,
     "deepseek-ai/DeepSeek-V4.1-Flash-1017": NIGHTLY | _4xB200,
-    "google/diffusiongemma-26B-A4B-it": DISABLE,
+    "google/diffusiongemma-26B-A4B-it": _1xB200,
     "google/gemma-3-1b-it": _1xB200,  # TODO(KERN-3014)
     "google/gemma-3-27b-it": _1xB200 | _1xMI355,
     "google/gemma-3-27b-it__modulev3": VARIANT | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
@@ -119,7 +119,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": VARIANT | _8xB200,
     "nvidia/DeepSeek-V4.1-Flash-NVFP4": _4xB200,
-    "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
+    "nvidia/diffusiongemma-26B-A4B-it-NVFP4": _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4__modulev3": VARIANT | _1xB200,
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | VARIANT | _1xB200,

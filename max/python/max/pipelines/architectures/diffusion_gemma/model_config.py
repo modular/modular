@@ -1303,6 +1303,12 @@ class DiffusionGemmaForBlockDiffusionConfig(
     canvas_length: int = 256
     """Number of tokens denoised per block-diffusion canvas."""
 
+    top_k: int = 64
+    """Width of the denoiser's top-k outputs, which the host's categorical
+    sampling draws over. The graph and the exported contract must agree:
+    the graph's ``top_k`` call reads this, and the artifact's
+    ``block_diffusion`` section records it for the serving engine."""
+
     boi_token_id: int = 255_999
     """Begin-of-image token id wrapping image prompts."""
 

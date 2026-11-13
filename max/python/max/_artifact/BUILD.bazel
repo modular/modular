@@ -44,6 +44,7 @@ modular_py_library(
     name = "model_artifact",
     srcs = [
         "batch_processor.py",
+        "block_diffusion.py",
         "engine_config.py",
         "format_spec.py",
         "kv_cache.py",

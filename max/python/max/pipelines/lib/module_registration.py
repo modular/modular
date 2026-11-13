@@ -247,6 +247,7 @@ _FRAMEWORK_ROLES = frozenset(
     }
 )
 
+
 # The roles a registration can fill.
 _SERVED_ROLES = frozenset(
     {GraphRole.DECODER, GraphRole.VISION, GraphRole.BLOCK_DIFFUSION}
@@ -1721,6 +1722,51 @@ class BlockDiffusionPipelineModel(ModuleV3DecoderPipelineModel):
         )
         return specs
 
+    def block_diffusion_metadata(self) -> Any:
+        """Returns the canvas geometry and denoise schedule of the export.
+
+        The geometry comes from the finalized config the graphs were built
+        with; the schedule from the pipeline's own generation config —
+        loaded once at construction, the same object MAX Serve's sampling
+        resolution reads — with the HF defaults the block-diffusion
+        pipeline applies. ``max export`` records them beside the
+        ``block_diffusion`` graph, so a serving engine runs the same
+        denoise loop the Python pipeline does.
+        """
+        # TODO(MXSERV-917): sync this section's fields with that ticket's
+        # denoise-schedule contract once it merges.
+        from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import (
+            _DEFAULT_GENERATION_PARAMS,
+        )
+
+        config = self.config
+        params: dict[str, Any] = dict(_DEFAULT_GENERATION_PARAMS)
+        # The pipeline's generation config keeps the checkpoint's unknown
+        # keys as attributes, so the diffusion schedule rides it without a
+        # second load.
+        gc = self.pipeline_config.model.generation_config
+        for key in params:
+            value = getattr(gc, key, None)
+            if value is not None:
+                params[key] = value
+        sampler_cfg = getattr(gc, "sampler_config", None)
+        if isinstance(sampler_cfg, dict):
+            params["entropy_bound"] = sampler_cfg.get(
+                "entropy_bound", params["entropy_bound"]
+            )
+        return {
+            "canvas_length": config.canvas_length,
+            "top_k": config.top_k,
+            # The Python pipeline caps a denoise step at
+            # `_MAX_CANVAS_BATCH` (16) canvases whatever the module
+            # declares; the contract records the same cap so the engine
+            # plans the same sub-batches.
+            "max_canvas_batch": min(
+                _max_canvas_batch(type(self).denoiser_cls) or 16, 16
+            ),
+            **params,
+        }
+
     def execute_denoise_step(
         self,
         canvas_tokens: Buffer,
@@ -1877,6 +1923,10 @@ def _registered_weight_naming(
     roles = [GraphRole.DECODER]
     if pipeline_model.vision_cls is not None:
         roles.append(GraphRole.VISION)
+    if issubclass(pipeline_model, BlockDiffusionPipelineModel):
+        # The denoiser reads the same text weights as the encoder: one
+        # checkpoint, two graphs over it.
+        roles.append(GraphRole.BLOCK_DIFFUSION)
     prefixes = getattr(config_cls, "weight_prefixes", {})
     naming: dict[str, tuple[WeightEntry, ...]] = {}
     for role in roles:
