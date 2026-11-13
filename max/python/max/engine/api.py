@@ -863,6 +863,8 @@ class InferenceSession:
                 programming model. Only applies when ``model`` is a
                 :class:`Graph`; ignored for precompiled ``.mef`` paths.
                 Defaults to ``False``.
+                Experimental: tile-based fusion is still in development, so
+                do not use it in new code.
 
         Returns:
             The loaded model, compiled and ready to execute.
@@ -927,6 +929,8 @@ class InferenceSession:
                 programming model. Only applies when ``model`` is a
                 :class:`Graph` or :class:`max.graph.Module`; ignored for
                 precompiled ``.mef`` paths. Defaults to ``False``.
+                Experimental: tile-based fusion is still in development, so
+                do not use it in new code.
 
         Returns:
             A mapping from each model's ``sym_name`` to its loaded
@@ -1048,6 +1052,8 @@ class InferenceSession:
                 of SIMD). Only applies when ``model`` is a :class:`Graph` or
                 :class:`max.graph.Module`; ignored for precompiled ``.mef``
                 paths. Defaults to ``False``.
+                Experimental: tile-based fusion is still in development, so
+                do not use it in new code.
 
         Returns:
             A :class:`CompiledModel` artifact wrapping the pending compilation.
@@ -1140,6 +1146,8 @@ class InferenceSession:
                 of SIMD). Only applies when ``model`` is a :class:`Graph` or
                 :class:`max.graph.Module`; ignored for precompiled ``.mef``
                 paths. Defaults to ``False``.
+                Experimental: tile-based fusion is still in development, so
+                do not use it in new code.
 
         Returns:
             A :class:`CompiledModel` artifact ready to be initialized.

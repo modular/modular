@@ -38,6 +38,8 @@ device.
 `_LegacyComputeOutput` is the exception: it doesn't guarantee its capability
 `_LegacyComputable`, and the graph compiler may deliver `Storable` instead. It
 is legacy machinery; read its docstring before using it.
+
+The interim tile epilogue traits live in `legacy_tile_traits`.
 """
 
 from std.reflection import reflect

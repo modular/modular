@@ -13,6 +13,7 @@
 
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
+#include "GraphCompiler/MOGGDialect/Analysis/LegacyTileTraits.h"
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
@@ -1190,6 +1191,17 @@ struct ImportPackagesPass
           failed(executeDeviceAttr) || failed(executeConfigurationAttr)) {
         // Diagnostics already emitted; keep going so every kernel is reported
         // rather than aborting on the first invalid one.
+        sawFailure = true;
+        continue;
+      }
+
+      // TODO(GEX-4340): remove with the legacy tile traits.
+      if (failed(verifyLegacyTileRegistration(
+              kernel.structDeclOp.getLoc(), kernel.registration.strref(),
+              kernel.platform,
+              {*executeAttr, *elementwiseAttr, *tileElementwiseAttr,
+               *buildGraphAttr, *executeDeviceAttr,
+               *executeConfigurationAttr}))) {
         sawFailure = true;
         continue;
       }

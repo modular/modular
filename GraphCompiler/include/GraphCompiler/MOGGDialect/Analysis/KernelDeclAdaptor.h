@@ -67,7 +67,17 @@ enum class TensorArgRole { input, output, mutableInput, none };
 
 /// Element-access form a tensor argument exposes (`none` for a plain dense
 /// argument). Also indexes the bitmasks of `TensorArgContract`.
-enum class TensorArgAccess { none, load, store, transform };
+///
+/// TODO(GEX-4340): `legacyTileStore` and `legacyTileTransform` are the
+/// interim legacy tile traits (LegacyTileTraits.h). Remove them with GEX-4467.
+enum class TensorArgAccess {
+  none,
+  load,
+  store,
+  transform,
+  legacyTileStore,
+  legacyTileTransform,
+};
 
 /// The deepest trait bound written on a shape-function tensor argument:
 /// `Tensor` (shape only) or `TileTensorable` (adds layout and host-side data
@@ -84,6 +94,10 @@ inline unsigned bit(TensorArgAccess access) {
     return 1u << 1;
   case TensorArgAccess::transform:
     return 1u << 2;
+  case TensorArgAccess::legacyTileStore:
+    return 1u << 3;
+  case TensorArgAccess::legacyTileTransform:
+    return 1u << 4;
   }
   return 0;
 }
@@ -117,8 +131,10 @@ struct TensorArgContract {
   /// Requires `accessCount() == 1`, which a fused arg guarantees.
   TensorArgAccess soleAccess() const {
     assert(accessCount() == 1 && "soleAccess requires exactly one access form");
-    for (TensorArgAccess a : {TensorArgAccess::load, TensorArgAccess::store,
-                              TensorArgAccess::transform})
+    for (TensorArgAccess a :
+         {TensorArgAccess::load, TensorArgAccess::store,
+          TensorArgAccess::transform, TensorArgAccess::legacyTileStore,
+          TensorArgAccess::legacyTileTransform})
       if (hasAccess(a))
         return a;
     return TensorArgAccess::none;

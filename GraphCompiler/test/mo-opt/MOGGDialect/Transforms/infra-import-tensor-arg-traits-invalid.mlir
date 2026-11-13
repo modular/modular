@@ -109,7 +109,7 @@
 
 // `Loadable & TileTensorable` (shape fn `trait_shape_fn_loadable`) -- a fusion
 // access capability on a shape-fn arg.
-// CHECK-DAG: error: LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, and _LegacyComputable are fusion machinery
+// CHECK-DAG: error: LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, _LegacyComputable, and the legacy tile traits are fusion machinery
 
 module {}
 

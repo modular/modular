@@ -51,6 +51,14 @@ from .tensor_arg_traits import (
     _LegacyComputeOutput,
 )
 
+# TODO(GEX-4340): Remove with the interim legacy tile traits (GEX-4467).
+from .legacy_tile_traits import (
+    _LegacyTileComputable,
+    _LegacyTileComputeOutput,
+    _LegacyTileStorable,
+    _LegacyTileStoreAccess,
+)
+
 # TODO(GEX-4386): Remove once a `TensorTuple` device kernel can type a dense
 # element without rebinding to the projection.
 from .tile_tensor_adapters import _TileProjection

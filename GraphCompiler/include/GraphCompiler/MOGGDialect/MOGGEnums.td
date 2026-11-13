@@ -100,6 +100,10 @@ def MOGG_TensorArgAccess
         I32BitEnumAttrCaseBit<"load", 0, "load">,
         I32BitEnumAttrCaseBit<"store", 1, "store">,
         I32BitEnumAttrCaseBit<"transform", 2, "transform">,
+        // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
+        I32BitEnumAttrCaseBit<"legacy_tile_store", 3, "legacy_tile_store">,
+        I32BitEnumAttrCaseBit<"legacy_tile_transform", 4,
+                              "legacy_tile_transform">,
       ]> {
   let cppNamespace = "::M::MOGG";
   let genSpecializedAttr = 0;
@@ -121,7 +125,8 @@ def MOGG_TensorArgBound
 // Which tile fusion trait a `mogg.tile.create.epilogue` body implements. The
 // kernel's declared output kind fixes it: a `_FusedComputeOutputTileTensor`
 // takes a compute lane, which yields the tile for the kernel to store, and a
-// `_FusedOutputTileTensor` takes a store lane, which owns the store.
+// `_FusedOutputTileTensor` takes a store lane, which owns the store. The
+// legacy tile compute and store traits select the same two lanes.
 def MOGG_TileFusionLane
     : I32EnumAttr<"TileFusionLane", "tile fusion lane", [
   I32EnumAttrCase<"Compute", 0, "compute">,

@@ -466,8 +466,9 @@ public:
   }
 };
 
-// The tensor-argument trait vocabulary of `extensibility::tensor_arg_traits`.
-// Keep in sync with tensor_arg_traits.mojo, except `TileTransformAccess` /
+// The tensor-argument trait vocabulary of `extensibility::tensor_arg_traits`
+// and, for the four legacy tile rows, `extensibility::legacy_tile_traits`.
+// Keep in sync with both modules, except `TileTransformAccess` /
 // `TileTransformable`, reserved for the deferred tile-transform fusion traits
 // and not yet in the module (so the `deferred` rejection is unreachable).
 // Leaf constant for the `isPresentLeaf` lookups, so call sites can't drift
@@ -488,6 +489,15 @@ constexpr VocabEntry kTensorArgVocab[] = {
      TensorArgAccess::transform},
     {"_LegacyComputable", TraitCategory::accessCapability,
      TensorArgAccess::transform},
+    // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
+    {"_LegacyTileStoreAccess", TraitCategory::accessMarker,
+     TensorArgAccess::legacyTileStore},
+    {"_LegacyTileStorable", TraitCategory::accessCapability,
+     TensorArgAccess::legacyTileStore},
+    {"_LegacyTileComputeOutput", TraitCategory::accessMarker,
+     TensorArgAccess::legacyTileTransform},
+    {"_LegacyTileComputable", TraitCategory::accessCapability,
+     TensorArgAccess::legacyTileTransform},
     {kTileTensorableLeaf, TraitCategory::dataCapability},
     {"Stable", TraitCategory::storage},
     {"TileTransformAccess", TraitCategory::deferred},
@@ -559,15 +569,22 @@ static_assert(accessFormsArePaired(),
 
 // Classify a trait symbol as a tensor-argument vocabulary trait, returning its
 // row, or nullptr if it is foreign or unrecognized. The module is pinned (root
-// contains "extensibility", a qualifier "tensor_arg_traits") and the leaf
-// matched exactly, so `Input` never matches `MutableInput`.
+// contains "extensibility", a qualifier naming a vocabulary module) and the
+// leaf matched exactly, so `Input` never matches `MutableInput`.
 static const VocabEntry *classifyVocabTrait(TraitSymbolAttr traitSymbol) {
+  // The modules that define vocabulary traits.
+  // TODO(GEX-4340): remove "legacy_tile_traits" when the legacy tile traits
+  // are deleted.
+  static constexpr StringLiteral kVocabModules[] = {"tensor_arg_traits",
+                                                    "legacy_tile_traits"};
   mlir::SymbolRefAttr sym = traitSymbol.getSymbol();
   if (!sym.getRootReference().strref().contains("extensibility"))
     return nullptr;
   bool inModule = false;
   for (mlir::FlatSymbolRefAttr ref : sym.getNestedReferences()) {
-    if (ref.getValue().contains("tensor_arg_traits")) {
+    if (llvm::any_of(kVocabModules, [&](StringLiteral module) {
+          return ref.getValue().contains(module);
+        })) {
       inModule = true;
       break;
     }
@@ -928,6 +945,54 @@ bool isTileFusedOutputIOSpec(IOSpec spec) {
 
 bool isMutableIOSpec(IOSpec spec) { return spec == IOSpec::MutableInputTensor; }
 
+// TODO(GEX-4340): the execute-signature rules of the interim legacy tile
+// traits. Delete this function and its one call with them (GEX-4467).
+static mlir::LogicalResult applyLegacyTileTraitRules(
+    const TensorArgContract &contract, bool bindsTileTensorable,
+    llvm::function_ref<void(const llvm::Twine &)> emitError) {
+  bool isStore = contract.hasAccess(TensorArgAccess::legacyTileStore);
+  bool isCompute = contract.hasAccess(TensorArgAccess::legacyTileTransform);
+  if (!isStore && !isCompute)
+    return mlir::success();
+
+  if (!contract.fused) {
+    emitError("_LegacyTileStoreAccess and _LegacyTileComputeOutput are only "
+              "valid on a Fused tensor argument");
+    return mlir::failure();
+  }
+  if (contract.role != TensorArgRole::output) {
+    emitError("a legacy tile access form requires an Output argument");
+    return mlir::failure();
+  }
+  // The graph compiler hands the kernel a value whose capability is only
+  // usable on the device, so the signature names the marker.
+  if (contract.hasCapability(TensorArgAccess::legacyTileStore)) {
+    emitError("declare _LegacyTileStoreAccess on the kernel signature and "
+              "refine to _LegacyTileStorable in the body");
+    return mlir::failure();
+  }
+  if (contract.hasCapability(TensorArgAccess::legacyTileTransform)) {
+    emitError("declare _LegacyTileComputeOutput on the kernel signature and "
+              "refine to _LegacyTileComputable in the body");
+    return mlir::failure();
+  }
+  // The store fusion owns the write, so it has no buffer to project.
+  if (isStore && bindsTileTensorable) {
+    emitError("a _LegacyTileStoreAccess argument cannot require "
+              "TileTensorable; the tile store fusion owns the write");
+    return mlir::failure();
+  }
+  // The kernel stores the computed tile itself, through the projection.
+  if (isCompute && !bindsTileTensorable) {
+    emitError("a _LegacyTileComputeOutput argument must also require "
+              "TileTensorable on the kernel signature, as in "
+              "Some[Output & Fused & _LegacyTileComputeOutput & "
+              "TileTensorable]");
+    return mlir::failure();
+  }
+  return mlir::success();
+}
+
 mlir::FailureOr<TensorArgContract> distillTensorArgContract(
     llvm::ArrayRef<M::KGEN::TraitSymbolAttr> writtenSymbols,
     llvm::function_ref<void(const llvm::Twine &)> emitError, bool isShapeFunc) {
@@ -1002,9 +1067,9 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
         anyPresent(TraitCategory::deferred)) {
       emitError(
           "LoadAccess, Loadable, StoreAccess, Storable, _LegacyComputeOutput, "
-          "and _LegacyComputable are fusion machinery. They are not allowed "
-          "on a shape-function tensor argument. Conform to Tensor or "
-          "TileTensorable instead");
+          "_LegacyComputable, and the legacy tile traits are fusion "
+          "machinery. They are not allowed on a shape-function tensor "
+          "argument. Conform to Tensor or TileTensorable instead");
       return mlir::failure();
     }
     TensorArgContract contract;
@@ -1081,8 +1146,9 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
   // A fused argument must declare exactly one access form.
   if (contract.fused && contract.accessCount() != 1) {
     emitError("a Fused tensor argument must declare exactly one access form "
-              "(one of LoadAccess/Loadable, StoreAccess/Storable, or "
-              "_LegacyComputeOutput)");
+              "(one of LoadAccess/Loadable, StoreAccess/Storable, "
+              "_LegacyComputeOutput, _LegacyTileStoreAccess, or "
+              "_LegacyTileComputeOutput)");
     return mlir::failure();
   }
 
@@ -1124,6 +1190,10 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
               "compiler may deliver a store fusion instead");
     return mlir::failure();
   }
+
+  if (failed(applyLegacyTileTraitRules(
+          contract, isPresentLeaf(kTileTensorableLeaf), emitError)))
+    return mlir::failure();
 
   return contract;
 }
@@ -1249,6 +1319,10 @@ StringRef toString(TensorArgAccess access) {
     return "store";
   case TensorArgAccess::transform:
     return "transform";
+  case TensorArgAccess::legacyTileStore:
+    return "legacy_tile_store";
+  case TensorArgAccess::legacyTileTransform:
+    return "legacy_tile_transform";
   }
   llvm_unreachable("bad TensorArgAccess");
 }
