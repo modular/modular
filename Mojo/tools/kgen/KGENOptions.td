@@ -51,13 +51,10 @@ def elaborate_eq : Joined<["--", "-"], "elaborate=">,
            "without (`no-use-parametric-interpreter`) the parametric "
            "interpreter.">;
 
-def emit : Flag<["--", "-"], "emit">,
-  Group<CommandOptionGroup>,
-  HelpText<"Emits funcs as an object file.">;
-def emit_eq : Joined<["--", "-"], "emit=">,
-  Group<CommandOptionGroup>, MetaVarName<"KIND">,
+defm emit : CommandOption<["--", "-"], "emit", CommandOptionGroup,
+  MetaVarName<"KIND">,
   HelpText<"Emits funcs as the given kind of output file. The kinds are "
-           "listed at the end of this help.">;
+           "listed at the end of this help.">>;
 
 def execute : Flag<["--", "-"], "execute">,
   Group<CommandOptionGroup>,

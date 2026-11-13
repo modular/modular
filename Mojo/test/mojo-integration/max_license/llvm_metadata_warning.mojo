@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen %s -elaborate -verify-diagnostics %s
+# RUN: kgen %s -elaborate -verify-diagnostics
 
 from std.collections.string.string_span import StaticString, _get_kgen_string
 

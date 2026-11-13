@@ -120,8 +120,6 @@ struct CLOptions : public CommonOptions {
   /// The requested `-emit` kind, or empty when no emit command was given.
   std::string emissionKind;
   SmallVector<CommandLineFunc> funcs;
-  /// The input files after the first, which `inputFilename` holds.
-  std::vector<std::string> inputFiles;
   CompilationOptions compilationOptions;
   FrontendOptions frontendOptions;
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
@@ -145,10 +143,7 @@ struct CLOptions : public CommonOptions {
     return *found;
   }
 
-  /// Add all the input files provided on the command line to the SourceMgr.
-  /// This is how MLIR parses multiple files.
-  ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
-  void addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr);
+  void addInputFileToSourceMgrOrExit(llvm::SourceMgr &mgr);
 };
 
 /// Parses the command that `arg` gives into `clOptions`.
@@ -168,8 +163,7 @@ ErrorOrSuccess parseCommand(const llvm::opt::Arg &arg, CLOptions &clOptions) {
   case options::OPT_emit_eq:
     // Any kind is recorded; it is validated against kgen's emission kinds and
     // the target's traits once the targets are initialized.
-    clOptions.emissionKind =
-        value.empty() ? stringifyEmitAs(EmitAs::OBJECT).str() : value.str();
+    clOptions.emissionKind = value.str();
     clOptions.cmd = "emit=" + clOptions.emissionKind;
     return M::success();
   case options::OPT_execute:
@@ -228,37 +222,12 @@ bool parseForwardedCLOptions(const char *programName,
 }
 } // namespace
 
-ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
-  if (inputFiles.empty()) {
-    ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buffer =
-        openInputFile(inputFilename);
-    if (buffer.isError())
-      return buffer.takeError();
-    mgr.AddNewSourceBuffer(buffer.takeValue(), llvm::SMLoc());
-  }
-
-  for (StringRef in : inputFiles) {
-    std::error_code ec;
-    std::filesystem::path fullPath = std::filesystem::absolute(in.str(), ec);
-    if (ec) {
-      return Error(
-          llvm::formatv("failed to resolve the absolute path for '{0}': {1}",
-                        in.str(), ec.message()));
-    }
-    std::string errorMsg;
-    auto result = mlir::openInputFile(fullPath.string(), &errorMsg);
-    if (!result)
-      return Error(errorMsg);
-
-    mgr.AddNewSourceBuffer(std::move(result), llvm::SMLoc());
-  }
-
-  return M::success();
-}
-
-void CLOptions::addInputFilesToSourceMgrOrExit(llvm::SourceMgr &mgr) {
-  if (auto err = addInputFilesToSourceMgr(mgr))
-    exit(reportError(err.getError()));
+void CLOptions::addInputFileToSourceMgrOrExit(llvm::SourceMgr &mgr) {
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buffer =
+      openInputFile(inputFilename);
+  if (buffer.isError())
+    exit(reportError(buffer.getError()));
+  mgr.AddNewSourceBuffer(buffer.takeValue(), llvm::SMLoc());
 }
 
 /// Emit the IR for `theModule` to a file.
@@ -784,9 +753,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 /// does. The package parses under its directory's name, and takes the name of
 /// the `.mojoc` file it is written to.
 static LogicalResult runPrecompile(CLOptions &clOptions) {
-  if (!clOptions.inputFiles.empty())
-    return failure(clOptions.reportError(
-        "precompile expects a single package directory as input"));
   StringRef input = clOptions.inputFilename;
   if (!Filesystem::isMojoSourcePackagePath(input.str()))
     return failure(clOptions.reportError(
@@ -941,10 +907,12 @@ int main(int argc, char **argv) {
   }
 
   std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);
-  if (!inputs.empty()) {
+  if (inputs.size() > 1)
+    return state.reportError("expected one input file, but got " +
+                             Twine(inputs.size()) + ": " +
+                             llvm::join(inputs, ", "));
+  if (!inputs.empty())
     clOptions.inputFilename = inputs.front();
-    clOptions.inputFiles.assign(inputs.begin() + 1, inputs.end());
-  }
   for (StringRef func : args.getAllArgValues(options::OPT_func))
     clOptions.funcs.push_back(CommandLineFunc::parse(func));
 
@@ -995,10 +963,10 @@ int main(int argc, char **argv) {
   if (clOptions.cmd == "precompile")
     return failed(runPrecompile(clOptions));
 
-  // Set up the input file(s).
+  // Set up the input file.
   llvm::SourceMgr sourceManager;
   configureSourceMgr(state, clOptions.driverOptions, sourceManager);
-  clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
+  clOptions.addInputFileToSourceMgrOrExit(sourceManager);
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
