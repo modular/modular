@@ -63,11 +63,12 @@ __all__ = [
     "kimi_k3_verify_ring_len",
 ]
 
-# `AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`, `MLA_DECODE_MAX_SEQ_LEN` and
-# `AMD_MLA_DECODE_FOLD_M_MAX` in the MLA kernel (`mla.mojo`): the widest
-# per-device query-head count whose dispatch arm folds an S > 1 batch on
-# AMD, the widest S any decode fold serves on any device, and the M bound
-# those heads x rows must pack into.
+# The MTP verify fold these constants size: `AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`,
+# `AMD_MLA_DECODE_MTP_SEQ_LEN` and the M bound those heads x rows pack into in
+# the MLA kernel (`mla.mojo`, `mha_decode_partition_heuristic.mojo`). They model
+# the MTP verify fold only (1 + draft_width <= 8 query rows); they do not model
+# the kernel's wider short prompt chunk fold, which routes 8 < S <= 128 through
+# the same decode branch but never serves a verify step.
 _MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
 _MLA_DECODE_MAX_SEQ_LEN = 8
 _MLA_DECODE_FOLD_M_MAX = 128
@@ -143,10 +144,12 @@ def kimi_k3_mla_folds_on_decode_branch(
     device_api: str,
     num_query_rows: int = 1,
 ) -> bool:
-    """Whether the decode branch's fold can serve a multi-row query.
+    """Whether the decode branch's fold can serve a multi-row verify step.
 
-    The fold's whole envelope, clause for clause as ``mla_decode_max_seq_len``
-    gates it: no more than ``MLA_DECODE_MAX_SEQ_LEN`` (8) query rows per
+    The MTP verify fold's whole envelope, clause for clause as
+    ``mla_decode_max_seq_len`` gates it for a verify step (the kernel also
+    folds 8 < S <= 128 prompt chunks on the decode branch, which no verify
+    reaches): no more than ``MLA_DECODE_MAX_SEQ_LEN`` (8) query rows per
     request everywhere, and on AMD (``device_api == "hip"``) also FP8 only,
     at most ``AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`` (16) query heads per
     device, and the product packed within ``AMD_MLA_DECODE_FOLD_M_MAX``

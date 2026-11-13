@@ -104,6 +104,7 @@ from nn.attention.gpu.mla import (
     flare_mla_decoding,
     flare_mla_decoding_rows,
     mla_decode_max_seq_len,
+    mla_mask_places_query_span,
     mla_prefill_plan,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
@@ -3610,7 +3611,10 @@ def _sparse_prefill_rows[
 
 
 def mla_graph_takes_decode_branch[
-    cache_dtype: DType, num_heads: Int, sparse_mla: Bool = False
+    cache_dtype: DType,
+    num_heads: Int,
+    sparse_mla: Bool = False,
+    mask_places_query_span: Bool = False,
 ](max_seq_len: Int) -> Bool:
     """Returns whether `mla_prefill_decode_graph_*` takes its decode branch.
 
@@ -3619,6 +3623,9 @@ def mla_graph_takes_decode_branch[
         num_heads: Number of query attention heads.
         sparse_mla: Whether top-k sparse attention is in use; on AMD it
             routes S>1 to prefill.
+        mask_places_query_span: Whether the batch's mask places the query span
+            from the comptime query width (see `mla_mask_places_query_span`),
+            which excludes the padded short-chunk fold (defaults to `False`).
 
     Args:
         max_seq_len: Maximum query length in the batch.
@@ -3628,7 +3635,9 @@ def mla_graph_takes_decode_branch[
     """
     return (
         max_seq_len
-        <= mla_decode_max_seq_len[cache_dtype, num_heads, sparse_mla]()
+        <= mla_decode_max_seq_len[
+            cache_dtype, num_heads, sparse_mla, mask_places_query_span
+        ]()
     )
 
 
@@ -4090,7 +4099,10 @@ def mla_prefill_decode_graph_fp8[
     # AMD sparse is the exception: its decode arm is S=1-only, so `sparse_mla`
     # sends S>1 to the sparse prefill arm instead.
     if mla_graph_takes_decode_branch[
-        collection_t.CacheType.dtype, num_heads, sparse_mla
+        collection_t.CacheType.dtype,
+        num_heads,
+        sparse_mla,
+        mla_mask_places_query_span[mask_str](),
     ](max_seq_len):
         decode_branch[skip_masked_tiles=False]()
         return
@@ -5984,7 +5996,10 @@ def mla_prefill_decode_graph_bf16[
     # any head count -- its decode arm gathers one slot per row of `q` and is
     # correct only at S=1. Mirrors `mla_prefill_decode_graph_fp8`.
     if mla_graph_takes_decode_branch[
-        collection_t.CacheType.dtype, num_heads, sparse_mla
+        collection_t.CacheType.dtype,
+        num_heads,
+        sparse_mla,
+        mla_mask_places_query_span[mask_str](),
     ](max_seq_len):
         decode_branch[skip_masked_tiles=False]()
         return

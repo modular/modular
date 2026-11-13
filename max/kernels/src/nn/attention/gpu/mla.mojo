@@ -38,6 +38,9 @@ from nn.attention.gpu.mha import mha_splitk_reduce
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     AMD_MLA_BF16_DECODE_BLOCK_M,
     AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS,
+    AMD_MLA_DECODE_FOLD_MAX_SEQ_LEN,
+    AMD_MLA_DECODE_MTP_SEQ_LEN,
+    amd_mla_decode_fold_m_tile_rows,
     amd_mla_decode_fold_num_m_tiles,
     mha_decoding_num_partitions,
 )
@@ -154,13 +157,19 @@ from .nvidia.sm100.mla_prefill_per_token_scale import (
 # Max query tokens per sequence (S) the decode branch handles (MTP) —
 # the coarse graph-routing ceiling (`mla_graph.mojo` decode-vs-prefill
 # split). The precise per-call gate is `AMD_MLA_DECODE_FOLD_M_MAX` below. AMD
-# folds H*S query rows into the MMA M dimension up to M=128, with S independently
-# capped at this value. At num_heads=16 the two caps coincide (16*8==128); for
-# num_heads<16 the S<=8 cap binds first (e.g. H=8 reaches M=64 at S=8), so the
-# chokepoint enforces both. Under-routing is unsafe: it sends S>1 to the MLA
-# prefill kernel, which can't read the absorbed-latent decode KV cache (NaN +
-# OOB). FP8-only; BF16 S>1 is rejected at the chokepoint.
-comptime MLA_DECODE_MAX_SEQ_LEN = 8
+# folds H*S query rows into the MMA M dimension, with S independently capped at
+# this value on the MTP ladder (one kernel per S). Under-routing is unsafe: it
+# sends S>1 to the MLA prefill kernel, which can't read the absorbed-latent
+# decode KV cache (NaN + OOB). FP8-only; BF16 S>1 is rejected at the chokepoint.
+comptime MLA_DECODE_MAX_SEQ_LEN = AMD_MLA_DECODE_MTP_SEQ_LEN
+
+
+# Max query tokens per sequence (S) a *short prompt chunk* folds on the decode
+# branch: a chunk of 8 < S <= this value over a long cached context runs the
+# absorbed decode (split-KV over the latent cache) on padded S buckets instead
+# of MLA prefill, which decompresses the whole cached context per chunk and
+# launches `num_heads` workgroups for it (see `mla_decode_max_seq_len`).
+comptime MLA_DECODE_FOLD_MAX_SEQ_LEN = AMD_MLA_DECODE_FOLD_MAX_SEQ_LEN
 
 
 # AMD MLA decode S>1 (MTP) token-fold is wired only in the num_heads<=16 dispatch
@@ -173,8 +182,30 @@ comptime MLA_DECODE_MAX_SEQ_LEN = 8
 
 
 @inline(.always)
+def mla_mask_places_query_span[mask_str: StaticString]() -> Bool:
+    """Returns whether the named mask derives its key spans from the query width.
+
+    Every mask but causal and null sets `check_mask_during_decoding`, so the
+    decode kernel asks it for each key tile's status from a query span placed at
+    the comptime query width. A short prompt chunk's fold pads that width up to
+    a bucket ceiling, which would place the span past a sequence's real length,
+    so those masks keep the decode branch's exact-width (MTP) fold only.
+
+    Parameters:
+        mask_str: Mask variant name (`MHAMaskVariant`/`MaskName` spelling).
+
+    Returns:
+        True for every mask except `"causal"` and `"null"`.
+    """
+    return mask_str != "causal" and mask_str != "null"
+
+
+@inline(.always)
 def mla_decode_max_seq_len[
-    dtype: DType, num_heads: Int, sparse_mla: Bool
+    dtype: DType,
+    num_heads: Int,
+    sparse_mla: Bool,
+    mask_places_query_span: Bool = False,
 ]() -> Int:
     """Max query tokens (S) the MLA *decode* branch can fold for this config.
 
@@ -183,6 +214,12 @@ def mla_decode_max_seq_len[
     routes S>1 to MLA prefill; NVIDIA folds up to `MLA_DECODE_MAX_SEQ_LEN` for both.
     Mirrors the host-side fold gate in `AMDMLA.decode_dispatch` so the router
     never hands the gate an S>1 batch it would reject.
+
+    A short prompt chunk (up to `MLA_DECODE_FOLD_MAX_SEQ_LEN` query tokens) also
+    runs the absorbed decode when this head count has a head-aligned M-tile for
+    it, because MLA prefill decompresses the whole cached context per chunk. A
+    mask that places the query span (see `mla_mask_places_query_span`) cannot
+    take that padded width and stays on the exact-width MTP fold.
 
     Sparse MLA on AMD is a different composition -- one gather slot per row of
     `q`, so the batch geometry is only correct at S=1 -- and it has no fold at
@@ -196,15 +233,27 @@ def mla_decode_max_seq_len[
             requires `num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`.
         sparse_mla: Whether top-k sparse attention is in use. On AMD this
             forces S>1 to prefill regardless of dtype and head count.
+        mask_places_query_span: Whether the batch's mask places the query span
+            from the comptime query width, which excludes the padded
+            short-chunk buckets (defaults to `False`).
     """
-    return 1 if (
-        default_accelerator().is_amd_gpu()
-        and (
+    if default_accelerator().is_amd_gpu():
+        comptime if (
             sparse_mla
             or not dtype.is_float8()
             or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
-        )
-    ) else MLA_DECODE_MAX_SEQ_LEN
+        ):
+            return 1
+        comptime if mask_places_query_span:
+            return MLA_DECODE_MAX_SEQ_LEN
+        if (
+            amd_mla_decode_fold_m_tile_rows(
+                num_heads, MLA_DECODE_FOLD_MAX_SEQ_LEN
+            )
+            > 0
+        ):
+            return MLA_DECODE_FOLD_MAX_SEQ_LEN
+    return MLA_DECODE_MAX_SEQ_LEN
 
 
 # Precise AMD MLA-decode token-fold cap: M = num_heads * S must be <= this for
@@ -213,13 +262,17 @@ def mla_decode_max_seq_len[
 # Q is register-resident).
 #
 # Occupancy: BM <= 64 fits 1 block/CU at ~510 VGPR with no spill. Past 64
-# folded rows a head-aligned fold therefore splits across two grid.y M-tiles
-# of BM = align_up(ceil(M/2), 16) rows (3-4 warps each); head-unaligned
-# counts keep the single warp-local tile (one 16-row MFMA M-tile per warp,
-# BM = align16(M), up to 8 warps), where BM >= 80 forces >= 2 waves/SIMD,
-# capping VGPR at 256 so the working set spills (~1KB). Correctness-neutral.
-# A register-resident-P path would relieve this.
-comptime AMD_MLA_DECODE_FOLD_M_MAX = 128
+# folded rows a head-aligned fold therefore splits across grid.y M-tiles of
+# BM = align_up(ceil(M/2), 16) rows (3-4 warps each); head-unaligned counts keep
+# the single warp-local tile (one 16-row MFMA M-tile per warp, BM = align16(M),
+# up to 8 warps), where BM >= 80 forces >= 2 waves/SIMD, capping VGPR at 256 so
+# the working set spills (~1KB). Correctness-neutral. A register-resident-P path
+# would relieve this. A short prompt chunk keeps the same spill-free tile and
+# spans as many tiles as `H*S` needs, which is what lifts the row cap to
+# H * MLA_DECODE_FOLD_MAX_SEQ_LEN.
+comptime AMD_MLA_DECODE_FOLD_M_MAX = (
+    AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS * MLA_DECODE_FOLD_MAX_SEQ_LEN
+)
 
 
 trait MLAKernels:
@@ -661,10 +714,10 @@ struct AMDMLA(MLAKernels):
             q.dtype.is_half_float() or q.dtype == .float8_e4m3fn
         ), "Only support half precision or float8_e4m3fn Q."
 
-        # AMD MLA decode folds H*S query rows into the QK^T MMA M dimension up to
-        # M = num_heads * S <= 128 (legacy (1,4) for M <= 16, else warp-local
-        # (M/16, 1)). S=1 is always supported (large-H S=1 uses the multi-tile grid.y
-        # path, not the fold).
+        # AMD MLA decode folds H*S query rows into the QK^T MMA M dimension (legacy
+        # (1,4) for M <= 16, else warp-local (M/16, 1)) and splits the rows across
+        # grid.y M-tiles past the 64-row occupancy cliff. S=1 is always supported
+        # (large-H S=1 uses the multi-tile grid.y path, not the fold).
         #
         # The host-side `raise` below is the only gate (the dispatch fn is `raises`,
         # so it fires in every build). A `debug_assert` backstop would be wrong: under
@@ -672,28 +725,49 @@ struct AMDMLA(MLAKernels):
         # `assert_raises` unsupported-fold tests.
         # Hard launch-time rejection, and the single source of truth for the
         # fold envelope. Supported: S == 1 (any), or S > 1 with FP8 Q, num_heads
-        # <= 16, S <= MLA_DECODE_MAX_SEQ_LEN, and num_heads*S <= 128. The other
+        # <= 16, S <= MLA_DECODE_FOLD_MAX_SEQ_LEN, a head-aligned M-tile for that
+        # head count, and num_heads*S <= AMD_MLA_DECODE_FOLD_M_MAX. The other
         # arms would silently downgrade S>1 to S=1 and drop tokens: the BF16 arm
         # and the num_heads>16 arms both hardcode q_seq_len=1 (only the
         # FP8/num_heads<=16 arm threads it). Routing S>1 to MLA prefill is also
         # unsafe (it can't read the absorbed-latent decode KV cache → NaN + OOB),
-        # so raise loudly. The S<=MLA_DECODE_MAX_SEQ_LEN term matters for
-        # num_heads<16, where num_heads*S<=128 alone would admit S>8 (e.g. H=8,
-        # S=10 → M=80); without it such a call falls through to the dispatch
-        # ladder's backstop raise instead of failing here.
+        # so raise loudly. The S>1 cap and the tile-alignment term matter for
+        # num_heads<16: the row cap alone would admit S past the padding buckets
+        # (e.g. H=8, S=200), and head counts like 5 or 10 have no head-aligned
+        # tile under the cliff (the tile-offset row math is validated on one).
+        comptime fold_tile_rows = amd_mla_decode_fold_m_tile_rows(
+            num_heads, MLA_DECODE_FOLD_MAX_SEQ_LEN
+        )
+        # A short prompt chunk pads its query rows up to a bucket ceiling, which
+        # a mask that places the query span would read as the sequence's real
+        # length, so those masks cap at the exact-width MTP fold. Dense Q
+        # (`ragged=False`) takes its sequence length and batch stride from the
+        # launched width, so only ragged Q, whose row offsets carry each
+        # sequence's real length, can run on a padded bucket.
+        comptime chunk_mask_ok = not mask_t.check_mask_during_decoding
         if max_prompt_len > 1 and (
             not dtype.is_float8()
             or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
-            or max_prompt_len > MLA_DECODE_MAX_SEQ_LEN
+            or max_prompt_len > MLA_DECODE_FOLD_MAX_SEQ_LEN
             or num_heads * max_prompt_len > AMD_MLA_DECODE_FOLD_M_MAX
+            or (
+                max_prompt_len > MLA_DECODE_MAX_SEQ_LEN
+                and (fold_tile_rows == 0 or not chunk_mask_ok or not ragged)
+            )
         ):
             raise Error(
                 t"AMD MLA decode (MTP) supports S=1 (any num_heads), or S>1"
-                t" with FP8 Q, num_heads <= 16, S <= {MLA_DECODE_MAX_SEQ_LEN},"
-                t" and num_heads*S <= {AMD_MLA_DECODE_FOLD_M_MAX}."
+                t" with FP8 Q, num_heads <= 16, S <="
+                t" {MLA_DECODE_FOLD_MAX_SEQ_LEN} (8 < S needs ragged Q, a"
+                t" head-aligned M-tile under 64 rows and a mask that does not"
+                t" place the query span, i.e. causal or null), and"
+                t" num_heads*S <="
+                t" {AMD_MLA_DECODE_FOLD_M_MAX}."
                 t" Requested S={max_prompt_len} with num_heads={num_heads}"
-                t" (M = num_heads*S = {num_heads * max_prompt_len}) is not"
-                t" supported."
+                t" (M = num_heads*S = {num_heads * max_prompt_len}, tile rows ="
+                t" {fold_tile_rows}, span-placing mask ="
+                t" {mask_t.check_mask_during_decoding}, ragged = {ragged}) is"
+                t" not supported."
             )
 
         # Variable per-sequence query length is supported: the comptime
@@ -967,10 +1041,25 @@ struct AMDMLA(MLAKernels):
                 # saturate CUs at D=4, so going higher just adds
                 # launch overhead. The sparse rows arm launches one
                 # z-slice per query token, so its grid is already wide
-                # and extra depth tiles only add reduce CTAs.
-                comptime D_TILES_DEFAULT = 2 if (
-                    k_t.rows_indexed and not k_t.rows_predicated
-                ) else (8 if num_heads <= 16 else 4)
+                # and extra depth tiles only add reduce CTAs. A padded
+                # short-chunk fold multiplies the row count (grid.y) by up
+                # to 16, so it halves the depth split per doubling of rows
+                # instead: D*rows stays within one wave of CTAs rather than
+                # launching tens of thousands that each read a few hundred
+                # bytes. MTP widths (rows <= 8*16) keep D=8.
+                comptime reduce_rows = num_heads * q_seq_len
+                comptime row_depth_tiles = (
+                    8 if reduce_rows
+                    <= 256 else (
+                        4 if reduce_rows
+                        <= 512 else (2 if reduce_rows <= 1024 else 1)
+                    )
+                )
+                comptime D_TILES_DEFAULT = (
+                    2 if (k_t.rows_indexed and not k_t.rows_predicated) else (
+                        4 if num_heads > 16 else row_depth_tiles
+                    )
+                )
                 comptime D_TILES = get_defined_int[
                     "MODULAR_MLA_REDUCE_DTILES", D_TILES_DEFAULT
                 ]()
@@ -1158,10 +1247,55 @@ struct AMDMLA(MLAKernels):
                                 # warp-local softmax.
                                 launch_with_BM[_bm_single, s, WM=16, WN=128]()
                         return
+                # Short prompt chunk (8 < S <= MLA_DECODE_FOLD_MAX_SEQ_LEN):
+                # the same absorbed decode, with the query rows padded up to a
+                # bucket ceiling and split across grid.y M-tiles of the
+                # spill-free geometry. `valid_length` drops each sequence's pad
+                # rows, so only the bucket granularity is wasted. Buckets are
+                # few so a chunk width maps to one kernel/geometry per bucket.
+                #
+                # Gated on `ragged` (comptime): only ragged Q learns each
+                # sequence's real length from the row offsets, so the host gate
+                # admits a padded bucket width for it alone and dense Q would
+                # build four decode + up to twelve reduce kernels that can
+                # never run.
+                comptime bm_16 = amd_mla_decode_fold_m_tile_rows(num_heads, 16)
+                comptime bm_32 = amd_mla_decode_fold_m_tile_rows(num_heads, 32)
+                comptime bm_64 = amd_mla_decode_fold_m_tile_rows(num_heads, 64)
+                comptime bm_128 = amd_mla_decode_fold_m_tile_rows(
+                    num_heads, MLA_DECODE_FOLD_MAX_SEQ_LEN
+                )
+                comptime if (
+                    ragged
+                    and bm_128 > 0
+                    and not mask_t.check_mask_during_decoding
+                ):
+                    if max_prompt_len <= 16:
+                        launch_with_BM[bm_16, 16, WM=16, WN=128]()
+                        return
+                    elif max_prompt_len <= 32:
+                        launch_with_BM[bm_32, 32, WM=16, WN=128]()
+                        return
+                    elif max_prompt_len <= 64:
+                        launch_with_BM[bm_64, 64, WM=16, WN=128]()
+                        return
+                    elif max_prompt_len <= MLA_DECODE_FOLD_MAX_SEQ_LEN:
+                        launch_with_BM[
+                            bm_128,
+                            MLA_DECODE_FOLD_MAX_SEQ_LEN,
+                            WM=16,
+                            WN=128,
+                        ]()
+                        return
+                    # Wider than the last bucket: fall through to the backstop
+                    # `raise` below rather than return without a launch, which
+                    # would leave `output` unwritten.
                 raise Error(
-                    "AMD MLA decode (MTP): num_heads*S must be <= 128 (the"
-                    " 8-tile fold cap) and S <= MLA_DECODE_MAX_SEQ_LEN; larger"
-                    " folds must not be downgraded."
+                    t"AMD MLA decode: S beyond {MLA_DECODE_MAX_SEQ_LEN} needs a"
+                    t" head-aligned M-tile under 64 rows (num_heads={num_heads}"
+                    t" has none) and a mask that does not place the query span"
+                    t" ({mask_t.check_mask_during_decoding}); larger folds must"
+                    t" not be downgraded."
                 )
             elif num_heads > 32:
                 # MI355X L2 = 256 MB; threshold ≈ 0.4 × L2 = 100 MB leaves
@@ -3079,6 +3213,16 @@ def mla_decoding_amd[
 
         comptime if not _is_cache_length_accurate:
             num_keys += seq_len
+
+        # A padded short-chunk fold spans ceil(H*S_bucket / BM) grid.y tiles
+        # while a sequence owns only H*seq_len of those rows, so a tile based
+        # past them has nothing to read or write: its Q read and output store
+        # are SRD-clamped to zero rows, the stat writer skips pad rows, and the
+        # reducer early-returns on them. Skipping it here keeps a short batch
+        # row from walking the whole context per dead tile.
+        comptime if q_seq_len > MLA_DECODE_MAX_SEQ_LEN:
+            if block_idx.y * BM >= num_heads * seq_len:
+                return
 
         comptime config = MHAConfig[q_type](
             num_heads,

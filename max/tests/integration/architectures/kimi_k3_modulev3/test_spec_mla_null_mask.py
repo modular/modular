@@ -448,10 +448,12 @@ def _blocks_buffer(
 def _routes_to_decode_fold(heads: int, cache_dtype: DType) -> bool:
     """Host mirror of the arm router: does S=7 fold or take the prefill arm?
 
-    Mirrors ``mla_decode_max_seq_len`` (``mla.mojo``): AMD folds only an
-    FP8 cache at ``num_heads <= 16``, everything else routes S>1 to the
-    prefill branch; other GPUs fold up to ``MLA_DECODE_MAX_SEQ_LEN``. Dense
-    MLA only -- the sparse router is not under test here.
+    Mirrors ``mla_decode_max_seq_len`` (``mla.mojo``) at the verify width
+    probed here: AMD folds only an FP8 cache at ``num_heads <= 16``,
+    everything else routes S>1 to the prefill branch; other GPUs fold up to
+    ``MLA_DECODE_MAX_SEQ_LEN``. AMD also folds short prompt chunks
+    (8 < S <= 128, null and causal masks), which this S=7 probe does not
+    reach. Dense MLA only -- the sparse router is not under test here.
     """
     if accelerator_api() == "hip" and (
         cache_dtype not in _FLOAT8_DTYPES or heads > 16

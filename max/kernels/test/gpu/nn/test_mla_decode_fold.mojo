@@ -33,6 +33,13 @@ empty partitions, NaN-poisoned output buffers, and signed / large-magnitude
 inputs that drive the online-softmax rescale branches. The H=8 control also
 runs at batch 4 with 32k caches, where the heuristic's wave target, not the
 page cap, sets the split-K count.
+
+Group 6 covers the short prompt chunk (8 < S <= 128) that Kimi K3 serves as
+new user turns over a long cached context: the same fold, padded to a bucket
+ceiling and spanning ceil(H*S/48) M-tiles, so a chunk reads the latent cache
+once per tile instead of running MLA prefill's whole-context decompression.
+Its host-side geometry (M-tile count, split, router ceiling) is pinned there
+too, against the mirror in `mach/crates/engine-kv/src/dispatch.rs`.
 """
 
 from std.math import align_up, ceildiv
@@ -40,7 +47,7 @@ from std.random import randn, seed
 from std.sys import get_defined_int
 from std.utils.numerics import nan
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -48,13 +55,34 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
+from nn.attention.mha_mask import (
+    CausalMask,
+    MHAMask,
+    NullMask,
+    SlidingWindowCausalMask,
+)
 from nn.attention.mha_utils import MHAConfig
-from nn.attention.gpu.mla import AMDMLA, SM100MLA, flare_mla_decoding
+from nn.attention.gpu.mla import (
+    AMDMLA,
+    SM100MLA,
+    flare_mla_decoding,
+    mla_decode_max_seq_len,
+    mla_mask_places_query_span,
+)
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    amd_mla_decode_fold_num_m_tiles,
+    hip_mha_decoding_num_partitions,
+)
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.testing import assert_almost_equal
+from std.testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Test parameters matching the K3 target-verify decode per rank
@@ -568,6 +596,347 @@ def run_fold_case[
     _ = q_dequant_host^
 
 
+def check_short_chunk_host_pins() raises:
+    """Pins the short-chunk fold's host-side geometry (H=12, fp8 cache).
+
+    The M-tile count and split are the launcher's and the device-graph capture
+    key's; `mach/crates/engine-kv/src/dispatch.rs` mirrors both (see
+    `hip_mla_short_chunk_fold_buckets_track_the_launch_ladder`), so these
+    numbers must also hold there. 12 heads tile at 48 rows (4 tokens), and the
+    launch pads the query rows to a bucket ceiling, so a raw width answers its
+    bucket's count (S=23 is the 32-token bucket, 8 tiles).
+    """
+    comptime sm_count = 256
+    for chunk, tiles in [
+        (9, 4),
+        (16, 4),
+        (23, 8),
+        (32, 8),
+        (64, 16),
+        (100, 32),
+        (128, 32),
+    ]:
+        assert_equal(
+            amd_mla_decode_fold_num_m_tiles(12, chunk),
+            tiles,
+            msg="H=12 short-chunk M-tile count",
+        )
+    for batch, chunk, tiles, want_np in [
+        (4, 23, 8, 8),
+        (4, 32, 8, 8),
+        (1, 128, 32, 8),
+        (4, 128, 32, 2),
+    ]:
+        assert_equal(
+            hip_mha_decoding_num_partitions(
+                batch,
+                32768,
+                12,
+                sm_count,
+                is_mla=True,
+                num_m_tiles=tiles,
+                q_seq_len=chunk,
+            ),
+            want_np,
+            msg="H=12 short-chunk split",
+        )
+    assert_equal(
+        hip_mha_decoding_num_partitions(
+            4, 32768, 16, sm_count, is_mla=True, num_m_tiles=4, q_seq_len=16
+        ),
+        16,
+        msg="H=16 chunk split",
+    )
+    # The router hands 8 < S <= 128 to decode only where a head-aligned tile
+    # exists: 10 heads has none (64/48/32/16 are not multiples of 10), so it
+    # keeps the prefill arm. SM100 folds up to 8 for every head count. A mask
+    # that places the query span (everything but causal and null) keeps the
+    # exact-width MTP fold, whatever the head count.
+    comptime if default_accelerator().is_amd_gpu():
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 12, False](),
+            128,
+            msg="H=12 router ceiling",
+        )
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 16, False](),
+            128,
+            msg="H=16 router ceiling",
+        )
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 10, False](),
+            8,
+            msg="H=10 keeps the MTP fold",
+        )
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 32, False](),
+            1,
+            msg="H=32 is S=1 only",
+        )
+        assert_equal(
+            mla_decode_max_seq_len[DType.bfloat16, 12, False](),
+            1,
+            msg="bf16 is S=1 only",
+        )
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 12, False, True](),
+            8,
+            msg="span-placing mask caps at the MTP fold",
+        )
+        assert_false(mla_mask_places_query_span["causal"](), msg="causal")
+        assert_false(mla_mask_places_query_span["null"](), msg="null")
+        assert_true(
+            mla_mask_places_query_span["sliding_window_causal"](),
+            msg="sliding window",
+        )
+    else:
+        assert_equal(
+            mla_decode_max_seq_len[DType.float8_e4m3fn, 12, False](),
+            8,
+            msg="SM100 fan-out ceiling",
+        )
+
+
+def run_short_chunk_group(ctx: DeviceContext[]) raises:
+    """Runs Group 6, the AMD-only padded short-chunk fold and its gates.
+
+    SM100 folds up to 8 query rows for every head count, so these widths and
+    the host gates they probe exist only on the AMD decode path.
+    """
+    # -----------------------------------------------------------
+    # Group 6: H=12 short prompt chunks over a cached context. 8 < S
+    # <= 128 pads the query rows up to a bucket ceiling (16/32/64/128)
+    # and spans ceil(H*S/48) 48-row M-tiles, so a chunk reads the
+    # latent cache once per M-tile instead of running MLA prefill's
+    # per-chunk decompression. Every case runs the production causal
+    # mask; the mixed-width batches keep each sequence's live rows
+    # (H*seq_len) separate from the padded tile rows, so a tile that is
+    # only partly alive, and a fully dead one, both appear.
+    # -----------------------------------------------------------
+    print("--- Group 6: H=12 short prompt chunks (S in 9..128) ---")
+
+    run_fold_case[12](
+        "h12_chunk_s9_b1_causal_nk32768",
+        [32768],
+        [9],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s16_b1_causal_nk32768",
+        [32768],
+        [16],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s23_b1_causal_nk32768",
+        [32768],
+        [23],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s32_b1_causal_nk32768",
+        [32768],
+        [32],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s64_b1_causal_nk32768",
+        [32768],
+        [64],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s100_b1_causal_nk32768",
+        [32768],
+        [100],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s128_b1_causal_nk32768",
+        [32768],
+        [128],
+        CausalMask(),
+        ctx,
+    )
+    # Mixed widths: the padded ceiling is the longest row, so the
+    # shorter sequence drops its pad rows at a different tile.
+    run_fold_case[12](
+        "h12_chunk_mixed_b2_s23",
+        [32768, 32768],
+        [23, 20],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_mixed_b2_s128",
+        [32768, 32768],
+        [128, 125],
+        CausalMask(),
+        ctx,
+    )
+    # 9 live tokens of 16 slots: tiles 1..3 straddle / follow the live
+    # row count (H*9 = 108 rows over 48-row tiles).
+    run_fold_case[12](
+        "h12_chunk_mixed_b2_s9",
+        [32768, 32768],
+        [9, 6],
+        CausalMask(),
+        ctx,
+    )
+    # Mid-size caches (heuristic np, the reducer's ragged remap over
+    # several M-tiles) and deep ones (np across many partitions).
+    run_fold_case[12](
+        "h12_chunk_s16_b1_causal_nk4096",
+        [4096],
+        [16],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s16_b1_causal_nk131072",
+        [131072],
+        [16],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s128_b1_causal_nk4096",
+        [4096],
+        [128],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_s128_b1_causal_nk131072",
+        [131072],
+        [128],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[12](
+        "h12_chunk_mixed_b2_deep",
+        [131072, 131072],
+        [128, 5],
+        CausalMask(),
+        ctx,
+    )
+    # num_keys <= 256 returns np=1, so these run the multi-tile fold
+    # through the direct ragged store: 4 M-tiles at H=12, every tile's
+    # base row and its pad rows inside one 16-token bucket.
+    run_fold_case[12](
+        "h12_chunk_s16_b2_np1",
+        [30, 128],
+        [16, 16],
+        CausalMask(),
+        ctx,
+    )
+    # A batch of 3 with a different cache length and width per row.
+    run_fold_case[12](
+        "h12_chunk_b3_np1_ragged",
+        [0, 40, 96],
+        [9, 16, 32],
+        CausalMask(),
+        ctx,
+    )
+    # 16 heads tile at 64 rows (4 tokens); 8 heads tile at 64 rows
+    # (8 tokens), the 64-row geometry the drafter class uses. Both
+    # ragged, so the pad rows of a short row sit inside a live tile of
+    # the longer one.
+    run_fold_case[16](
+        "h16_chunk_mixed_b2",
+        [4096, 512],
+        [16, 9],
+        CausalMask(),
+        ctx,
+    )
+    run_fold_case[8](
+        "h8_chunk_mixed_b2",
+        [8192, 256],
+        [16, 12],
+        CausalMask(),
+        ctx,
+    )
+    # Ragged cache lengths at chunk widths: the heuristic sees only the
+    # longest cache, while each request scans its own num_keys.
+    run_fold_case[12](
+        "h12_chunk_b4_ragged_cache",
+        [32768, 512, 4096, 131072],
+        [9, 16, 100, 128],
+        CausalMask(),
+        ctx,
+    )
+    # A short row inside a wide bucket: seq_len=16 of a 128-token
+    # ceiling leaves 28 of its 32 M-tiles with no live rows at all.
+    run_fold_case[12](
+        "h12_chunk_mixed_b2_deadtiles",
+        [2048, 40],
+        [128, 16],
+        CausalMask(),
+        ctx,
+    )
+    # Explicit split counts: 2 (the one-wave target at this shape) and
+    # 64 (well past it), both over 8 M-tiles of 4 tokens.
+    run_fold_case[12](
+        "h12_chunk_s32_np2",
+        [32768],
+        [32],
+        CausalMask(),
+        ctx,
+        num_partitions=Optional(2),
+    )
+    run_fold_case[12](
+        "h12_chunk_s32_np64",
+        [32768],
+        [32],
+        CausalMask(),
+        ctx,
+        num_partitions=Optional(64),
+    )
+
+    # --- Ragged-Q gates the host `raise` still rejects ---
+    # Dense Q only reaches the exact-width MTP fold, so the remaining
+    # gates of the padded-chunk fold need ragged Q: a head count with
+    # no head-aligned M-tile, a mask that places the query span, and a
+    # width past the bucket ladder. These are the probes the qkv_fp8
+    # negative block also carries; that file is B200-only, so pin them
+    # here where MI355 runs them.
+    with assert_raises():
+        # 10 heads has no head-aligned tile under the 64-row cliff
+        # (16/32/48/64 are not multiples of 10).
+        run_fold_case[10](
+            "h10_chunk_s16_must_raise",
+            [4096],
+            [16],
+            CausalMask(),
+            ctx,
+        )
+    with assert_raises():
+        # A sliding-window causal mask reads its key span off the
+        # query width, which a padded bucket would overstate.
+        run_fold_case[12](
+            "h12_chunk_s16_sw_must_raise",
+            [4096],
+            [16],
+            SlidingWindowCausalMask[256](),
+            ctx,
+        )
+    with assert_raises():
+        # S=129 is past the 128-token bucket ceiling.
+        run_fold_case[12](
+            "h12_chunk_s129_must_raise",
+            [4096],
+            [129],
+            CausalMask(),
+            ctx,
+        )
+
+
 def main() raises:
     seed(1234)
     with DeviceContext() as ctx:
@@ -576,6 +945,8 @@ def main() raises:
             print("MLA decode fold at M = H*S > 64")
             print("=" * 72)
             print()
+
+            check_short_chunk_host_pins()
 
             # -----------------------------------------------------------
             # Group 1: H=12 uniform S in {6,7,8} — the K3 target-verify
@@ -1020,6 +1391,9 @@ def main() raises:
                 ctx,
                 q_mean=-1.0,
             )
+
+            comptime if ctx.target.is_amd_gpu():
+                run_short_chunk_group(ctx)
 
             print("=" * 72)
             print("ALL TESTS PASSED")

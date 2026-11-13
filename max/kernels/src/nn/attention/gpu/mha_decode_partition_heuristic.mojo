@@ -148,40 +148,105 @@ def cuda_mha_decoding_num_partitions(
 # helper's two-tile rule only applies at or below this head count.
 comptime AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS = 16
 
+# Query tokens (S) the MTP fold carries with one kernel per S, up to the
+# `MLA_DECODE_MAX_SEQ_LEN` chokepoint in mla.mojo.
+comptime AMD_MLA_DECODE_MTP_SEQ_LEN = 8
+
+# Query tokens (S) a short prompt chunk pads up to on the absorbed decode path.
+# A chunk over a long cached context folds H*S rows across grid.y M-tiles of
+# the spill-free geometry, so its query width is a padding ceiling rather than
+# a kernel count; `mla_decode_max_seq_len` routes up to this to decode.
+comptime AMD_MLA_DECODE_FOLD_MAX_SEQ_LEN = 128
+
+
+def amd_mla_decode_fold_seq_len_bucket(q_seq_len: Int) -> Int:
+    """Returns the query width a short prompt chunk's launch pads its rows up to.
+
+    `AMDMLA.decode_dispatch` folds 8 < S <= `AMD_MLA_DECODE_FOLD_MAX_SEQ_LEN`
+    on a padding ceiling (16, 32, 64 or 128), not on the raw S, so the grid it
+    launches and the split-K count it derives come from the ceiling. Every
+    host-side producer of that count derives it from this function too.
+
+    Args:
+        q_seq_len: Folded query tokens per sequence (S); 1 is plain decode.
+
+    Returns:
+        `q_seq_len` itself on the MTP ladder (S <= 8), else the smallest
+        power-of-two ceiling >= S starting at 16. Only the fold envelope's
+        16/32/64/128 buckets launch; the host gate rejects a wider S.
+    """
+    if q_seq_len <= AMD_MLA_DECODE_MTP_SEQ_LEN:
+        return q_seq_len
+    return max(16, next_power_of_two(q_seq_len))
+
+
+def amd_mla_decode_fold_m_tile_rows(num_heads: Int, q_seq_len: Int) -> Int:
+    """Returns the rows per grid.y M-tile the AMD MLA decode token-fold launch uses.
+
+    Up to `AMD_MLA_DECODE_MTP_SEQ_LEN` query tokens this is the MTP ladder:
+    one spill-free tile of `align_up(H*S, 16)` rows while that fits the
+    64-row occupancy cliff, and past it two half-height tiles of
+    `align_up(ceil(H*S/2), 16)` rows when the half-height tile is
+    head-aligned (`BM % num_heads == 0`, the case the tile-offset row math is
+    validated on). A wider short-prompt chunk pads its query rows to a bucket
+    ceiling and spans as many M-tiles as `H*S` needs, each the tallest whole
+    number of tokens under the cliff (48 rows at 12 heads, 64 at 16).
+
+    Args:
+        num_heads: Query heads on this device.
+        q_seq_len: Folded query tokens per sequence (S); 1 is plain decode.
+
+    Returns:
+        The M-tile height, or 0 when this head count has no head-aligned tile
+        under 64 rows (5, 7, 9-11, 13-15, and anything past the fold envelope),
+        the case the host gate rejects for S beyond the MTP ladder.
+    """
+    comptime warp_local_m_max = 64
+    var fold_m = num_heads * q_seq_len
+    if q_seq_len <= AMD_MLA_DECODE_MTP_SEQ_LEN:
+        if align_up(fold_m, 16) <= warp_local_m_max:
+            return align_up(fold_m, 16)
+        var bm_tile = align_up(ceildiv(fold_m, 2), 16)
+        return bm_tile if bm_tile % num_heads == 0 else align_up(fold_m, 16)
+    if num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS:
+        return 0
+    var rows = warp_local_m_max
+    while rows >= 16:
+        if rows % num_heads == 0:
+            return rows
+        rows -= 16
+    return 0
+
 
 def amd_mla_decode_fold_num_m_tiles(num_heads: Int, q_seq_len: Int) -> Int:
     """Number of grid.y M-tiles the AMD MLA decode token-fold launch spans.
 
     The fold packs `M = num_heads * q_seq_len` query rows into the MMA M
-    dimension. `M <= 16` keeps the legacy BM=16 launch and `M <= 64` one
-    spill-free warp-local tile; past 64 rows the launch would need >= 5
-    warps per CTA, which crosses the 2-waves/SIMD occupancy cliff, so the
-    dispatch ladder (`flare_mla_decoding_dispatch`) splits the rows across
-    two grid.y tiles of `align_up(ceil(M/2), 16)` rows instead -- but only
-    when that half-height tile is head-aligned (`BM_tile % num_heads == 0`),
-    the case the tile-offset row math is validated on. This helper is that
-    ladder rule as a pure function of `(num_heads, q_seq_len)`, so the
-    partition heuristic and the device-graph capture key can count the
-    tiles a launch spans without re-deriving the ladder: each (batch,
-    partition) spawns one CTA per M-tile.
+    dimension, so the launch covers them in `M-tile rows`-high tiles (see
+    `amd_mla_decode_fold_m_tile_rows`): one CTA per (batch, partition, tile).
+    A short prompt chunk pads S up to a bucket ceiling first
+    (`amd_mla_decode_fold_seq_len_bucket`), which is the width the launch folds
+    and therefore the width these tiles cover. This helper is that ladder rule
+    as a pure function of `(num_heads, q_seq_len)`, so the partition heuristic,
+    the device-graph capture key and the launch count the same tiles instead of
+    re-deriving the ladder.
 
     Args:
         num_heads: Query heads on this device (fold envelope: <= 16).
-        q_seq_len: Folded query tokens per sequence (S); 1 is plain decode.
+        q_seq_len: Query tokens per sequence (S), raw or already bucketed; 1
+            is plain decode.
 
     Returns:
-        The M-tile count: 2 for the head-aligned two-tile fold, else 1.
+        The M-tile count: `ceildiv(H*S_bucket, tile rows)`; 1 when no
+        head-aligned tile exists (a fold the host gate rejects).
     """
-    comptime warp_local_m_max = 64
     if q_seq_len <= 1:
         return 1
-    var fold_m = num_heads * q_seq_len
-    if align_up(fold_m, 16) <= warp_local_m_max:
+    var bucket = amd_mla_decode_fold_seq_len_bucket(q_seq_len)
+    var rows = amd_mla_decode_fold_m_tile_rows(num_heads, bucket)
+    if rows == 0:
         return 1
-    var bm_tile = align_up(ceildiv(fold_m, 2), 16)
-    if bm_tile % num_heads == 0:
-        return 2
-    return 1
+    return ceildiv(num_heads * bucket, rows)
 
 
 def hip_mha_decoding_num_partitions(
@@ -302,14 +367,17 @@ def hip_mha_decoding_num_partitions(
         is_mla: Whether the caller is the MLA decode path (defaults to `False`).
         block_m: Number of query rows packed into each MLA workgroup. Read
             for MLA only; MHA callers keep the default.
-        num_m_tiles: M-tiles (grid.y blocks) each (batch, partition) spans:
-            2 for the AMD MLA decode two-tile S>1 fold
-            (`amd_mla_decode_fold_num_m_tiles`), 1 for every other caller.
-            Multiplies `ctas_per_partition`, which otherwise counts only the
-            `ceildiv(heads_per_group, block_m)` packing.
-        q_seq_len: Query rows (S) folded into the MMA M dimension; 1 for
-            plain decode and for every MHA caller. Selects the one-wave
-            target for the single-tile MLA fold above 16 folded rows.
+        num_m_tiles: M-tiles (grid.y blocks) each (batch, partition) spans,
+            from `amd_mla_decode_fold_num_m_tiles` (2 for the AMD MLA decode
+            two-tile S>1 fold, more for a padded short-chunk fold); 1 for
+            every other caller. Multiplies `ctas_per_partition`, which
+            otherwise counts only the `ceildiv(heads_per_group, block_m)`
+            packing.
+        q_seq_len: Query rows (S) folded into the MMA M dimension, i.e. the
+            width the launch folds (a short prompt chunk's bucket ceiling, see
+            `amd_mla_decode_fold_seq_len_bucket`), not its raw S; 1 for plain
+            decode and for every MHA caller. Selects the one-wave target for
+            the single-tile MLA fold above 16 folded rows.
     """
     comptime SPLIT_PAGE_SIZE = 256
     comptime MAX_PAGES_PER_SPLIT = 5
@@ -800,13 +868,16 @@ def amd_mla_decode_dispatch_scalars(
     Returns `(batch_size, q_max_seq_len, num_partitions)`. The AMD MLA decode
     kernel bakes its split-K grid from `mha_decoding_num_partitions(...,
     is_mla=True)` at dispatch time and never reads `num_partitions` from the
-    scalar buffer, so the value serves only as the device-graph capture key.
-    To keep that key equal to the baked grid, dense MLA passes the raw
-    `max_cache_valid_length` and `num_heads` (`kv_heads == 1` for MLA), with
+    scalar buffer, so the value serves only as the device-graph capture key (the
+    decode graph op forwards it as the launch's
+    `num_partitions` override, which the kernel's own ladder would answer
+    identically). To keep that key equal to the baked grid, dense MLA passes the
+    raw `max_cache_valid_length` and `num_heads` (`kv_heads == 1` for MLA), with
     no `q_max_seq_len` length adjustment: the query width enters only through
     the fold's M-tile count (`amd_mla_decode_fold_num_m_tiles`) and the
-    single-tile S>1 one-wave target, which the kernel's launch ladder derives
-    from the same `(num_heads, q_max_seq_len)`.
+    single-tile S>1 one-wave target, both keyed on the width the launch folds --
+    a short prompt chunk's bucket ceiling
+    (`amd_mla_decode_fold_seq_len_bucket`), not its raw S.
 
     No AMD sparse op (`sparse_indices_stride > 0`) reads the value either.
     The FP8-weight sparse ops size their split with
@@ -855,11 +926,14 @@ def amd_mla_decode_dispatch_scalars(
             )
         return (batch_size, q_max_seq_len, np)
     # Only inside the decode fold envelope: wider heads route S>1 steps to
-    # prefill, so their decode key keeps the single-tile count.
+    # prefill, so their decode key keeps the single-tile count. The launch pads
+    # a short prompt chunk's query rows to a bucket ceiling, so both the tile
+    # count and the one-wave target key on that ceiling rather than raw S.
+    var fold_q_seq_len = amd_mla_decode_fold_seq_len_bucket(q_max_seq_len)
     var fold_num_m_tiles = 1
     if num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS:
         fold_num_m_tiles = amd_mla_decode_fold_num_m_tiles(
-            num_heads, q_max_seq_len
+            num_heads, fold_q_seq_len
         )
     np = mha_decoding_num_partitions(
         batch_size,
@@ -868,6 +942,6 @@ def amd_mla_decode_dispatch_scalars(
         ctx,
         is_mla=True,
         num_m_tiles=fold_num_m_tiles,
-        q_seq_len=q_max_seq_len,
+        q_seq_len=fold_q_seq_len,
     )
     return (batch_size, q_max_seq_len, np)
