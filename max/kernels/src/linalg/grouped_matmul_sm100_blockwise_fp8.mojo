@@ -963,9 +963,6 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     comptime assert (
         BK % VEC == 0 and TOTAL_CHUNKS % WARP_SIZE == 0
     ), "partial-tile copy expects BK*BM aligned to 16-byte chunks per warp"
-    comptime assert (
-        BM % WARP_SIZE == 0
-    ), "partial-tile scales copy assumes BM is a multiple of WARP_SIZE"
     comptime CHUNKS_PER_LANE = TOTAL_CHUNKS // WARP_SIZE
     var lane = lane_id()
     var zero_vec = SIMD[a_type, VEC](0)
@@ -986,13 +983,14 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         )
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.
-    comptime for i in range(BM // WARP_SIZE):
+    comptime for i in range(ceildiv(BM, WARP_SIZE)):
         var row = i * WARP_SIZE + lane
-        var g_row = m_tile_global_start + row
-        var sv = Scalar[a_scales_type](0)
-        if g_row < expert_end_row:
-            sv = a_scales_gmem[iter_idx, g_row]
-        a_scales_smem_tile[0, row] = sv
+        if row < BM:
+            var g_row = m_tile_global_start + row
+            var sv = Scalar[a_scales_type](0)
+            if g_row < expert_end_row:
+                sv = a_scales_gmem[iter_idx, g_row]
+            a_scales_smem_tile[0, row] = sv
 
 
 @inline(.always)
@@ -1110,9 +1108,9 @@ def load_AB[
     comptime b_expected_bytes = b_smem_layout_t.static_product * size_of[
         b_type
     ]()
-    comptime a_scales_expected_bytes = (
-        a_scales_smem_layout_t.static_product * size_of[a_scales_type]()
-    )
+    comptime a_scales_expected_bytes = _idx_product[
+        a_scales_desc_shape
+    ]() * size_of[a_scales_type]()
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (
         a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
@@ -1651,6 +1649,131 @@ def multi_stage_reg_epilogue[
 
 
 @inline(.always)
+def _promote_and_store_swapped[
+    pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    c_type: DType,
+    c_layout: TensorLayout,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    b_scales_layout: TensorLayout,
+    expert_ids_layout: TensorLayout,
+    /,
+    *,
+    block_tile_shape: Coord[Int, Int, Int],
+    CLUSTER_SIZE: Int32,
+    stage_stride_cols: Int,
+    a_scales_stage_stride: Int,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales_n: Int,
+    a_scales_smem_base: MutPointer[
+        Scalar[a_scales_type], _, address_space=.SHARED
+    ],
+    mut mma_output_pipeline: ProducerConsumerPipeline[
+        num_accum_pipeline_stages
+    ],
+    tmem_addr: UInt32,
+    mut load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
+    work_tile_coord: Tuple[Int, Int],
+    num_k_iters: Int,
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    scheduler: TileScheduler,
+):
+    """Accumulates one swapped-AB tile over K and stores its rows of C.
+
+    With AB swapped the accumulator holds the tile's `BN` weight rows on TMEM
+    lanes and its `BM` token rows on columns, so each epilogue thread owns
+    one column of C. Per K block it scales its `BM` partial sums by each
+    token's A scale times the block's one B scale, in the order the unswapped
+    promotion uses, and finally stores the rows below the expert's end.
+
+    Parameters:
+        pipeline_stages: Number of load-MMA pipeline stages (inferred).
+        num_accum_pipeline_stages: Number of MMA-output pipeline stages
+            (inferred).
+        c_type: Element dtype of C (inferred).
+        c_layout: Layout of C (inferred).
+        a_scales_type: Element dtype of the A scales (inferred).
+        b_scales_type: Element dtype of the B scales (inferred).
+        b_scales_layout: Layout of the B scales (inferred).
+        expert_ids_layout: Layout of the expert IDs (inferred).
+        block_tile_shape: Tile shape as (token rows `BM`, weight rows `BN`,
+            `BK`).
+        CLUSTER_SIZE: Number of CTAs in the cluster.
+        stage_stride_cols: TMEM column stride between accumulator stages.
+        a_scales_stage_stride: Elements between the A scales strips of
+            consecutive load stages in SMEM.
+
+    Args:
+        c: Output tensor `[total_tokens, N]`.
+        b_scales: B scales `[num_experts * N // BN, K // BK]`.
+        b_scales_n: Rows of `b_scales` per expert.
+        a_scales_smem_base: Base of the A scales strips in SMEM.
+        mma_output_pipeline: Pipeline carrying accumulators from the MMA warp.
+        tmem_addr: Base TMEM address of the accumulator allocation.
+        load_mma_pipeline: Pipeline whose stages hold the A scales strips.
+        work_tile_coord: Tile origin as (token row, weight row).
+        num_k_iters: K blocks of the tile.
+        expert_ids: Mapping from group index to expert.
+        scheduler: Tile scheduler positioned at the tile's group.
+    """
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime accum_type = DType.float32
+    comptime assert BN == 4 * WARP_SIZE, "one weight row per epilogue thread"
+
+    var warp_id = get_warp_id()
+    var expert_id = expert_ids[Int(scheduler.current_group_idx)]
+    var b_scale_row = Int(expert_id) * b_scales_n + work_tile_coord[1] // BN
+    # A warp reads only its own 32-lane quarter of TMEM.
+    var warp_tmem = tmem_addr + (UInt32(warp_id * WARP_SIZE) << 16)
+
+    var acc = SIMD[accum_type, BM](0)
+    for k_iter in range(num_k_iters):
+        var b_scale = b_scales[b_scale_row, k_iter].cast[accum_type]()
+        var load_stage = load_mma_pipeline.consumer_stage()
+        var out_stage = mma_output_pipeline.consumer_stage()
+        mma_output_pipeline.wait_producer()
+        var a_scales = (
+            a_scales_smem_base.unsafe_offset(
+                Int(load_stage) * a_scales_stage_stride
+            )
+            .unsafe_load[width=BM, alignment=16]()
+            .cast[accum_type]()
+        )
+        syncwarp()
+        if lane_id() < Int(CLUSTER_SIZE):
+            _ = load_mma_pipeline.consumer_mbar(load_stage)[0].arrive()
+        syncwarp()
+        var frag = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=BM,
+            dtype=accum_type,
+            pack=False,
+        ](warp_tmem + out_stage * UInt32(stage_stride_cols))
+        tcgen05_load_wait()
+        _ = mbarrier_arrive(mma_output_pipeline.consumer_mbar(out_stage))
+        comptime for t in range(BM):
+            acc[t] = acc[t] + frag[t] * (a_scales[t] * b_scale)
+        load_mma_pipeline.consumer_step()
+        mma_output_pipeline.consumer_step()
+
+    var group_end = Int(
+        rebind[UInt32](
+            scheduler.group_offsets[Int(scheduler.current_group_idx + 1)]
+        )
+    )
+    var col = work_tile_coord[1] + warp_id * WARP_SIZE + lane_id()
+    comptime for t in range(BM):
+        var row = work_tile_coord[0] + t
+        if row < group_end:
+            c[row, col] = acc[t].cast[c_type]()
+
+
+@inline(.always)
 def promote_accumulators[
     pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
@@ -2045,6 +2168,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     expert_n: Int,
     expert_ids_layout: TensorLayout,
     b_scales_n: Int,
+    swap_ab: Bool = False,
 ](
     num_active_experts: Int32,
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -2136,7 +2260,10 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         b_type, BN, BK, swizzle_mode=config.b_swizzle
     ]
 
-    comptime a_scales_smem_layout = row_major[1, BM]()
+    # TMA writes each stage's scales strip to a 128-byte-aligned address.
+    comptime a_scales_smem_layout = row_major[
+        1, max(BM, 128 // size_of[a_scales_type]())
+    ]()
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
@@ -2288,6 +2415,20 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         cluster_shape=config.cluster_shape,
         a_swizzle=config.a_swizzle,
         b_swizzle=config.b_swizzle,
+        transpose_b=transpose_b,
+    ]()
+    # Swapped AB puts the tile's weight rows on the MMA's M side and its
+    # token rows on N.
+    var swap_mma_op = MmaOpSM100_SS[
+        c_type,
+        b_type,
+        a_type,
+        (BN, BM, BK),
+        (BN, BM, MMA_K),
+        accum_type=accum_type,
+        cta_group=1,
+        a_swizzle=config.b_swizzle,
+        b_swizzle=config.a_swizzle,
         transpose_b=transpose_b,
     ]()
 
@@ -2468,21 +2609,35 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                         mma_output_mma_stage * UInt32(stage_stride_cols)
                     )
 
-                    consumer_main_loop[
-                        block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
-                        cta_group=config.cta_group,
-                        cluster_shape=config.cluster_shape,
-                    ](
-                        tmem_offset,
-                        a_smem_tt,
-                        b_smem_tt,
-                        load_mma_pipeline,
-                        mma_op,
-                        elect_one_warp,
-                        0,
-                        0,
-                    )
+                    comptime if swap_ab:
+                        var mma_stage = load_mma_pipeline.consumer_stage()
+                        load_mma_pipeline.wait_producer()
+                        if elect_one_sync():
+                            swap_mma_op.mma(
+                                b_smem_tt[mma_stage],
+                                a_smem_tt[mma_stage],
+                                tmem_offset,
+                                init_c=True,
+                            )
+                            swap_mma_op.commit(
+                                load_mma_pipeline.consumer_mbar(mma_stage)
+                            )
+                    else:
+                        consumer_main_loop[
+                            block_tile_shape=config.block_tile_shape,
+                            mma_shape=config.mma_shape,
+                            cta_group=config.cta_group,
+                            cluster_shape=config.cluster_shape,
+                        ](
+                            tmem_offset,
+                            a_smem_tt,
+                            b_smem_tt,
+                            load_mma_pipeline,
+                            mma_op,
+                            elect_one_warp,
+                            0,
+                            0,
+                        )
                     load_mma_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
@@ -2517,6 +2672,28 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
         while not work_info.is_done():
             if not work_info.is_valid():
+                work_info = scheduler.fetch_next_work()
+                continue
+
+            comptime if swap_ab:
+                _promote_and_store_swapped[
+                    block_tile_shape=config.block_tile_shape,
+                    CLUSTER_SIZE=Int32(CLUSTER_SIZE),
+                    stage_stride_cols=stage_stride_cols,
+                    a_scales_stage_stride=a_scales_smem_layout.static_product,
+                ](
+                    c,
+                    b_scales,
+                    b_scales_n,
+                    a_scales_smem_base,
+                    mma_output_pipeline,
+                    tmem_addr,
+                    load_mma_pipeline,
+                    work_tile_coord=(Int(work_info.m), Int(work_info.n)),
+                    num_k_iters=_num_iters,
+                    expert_ids=expert_ids,
+                    scheduler=scheduler,
+                )
                 work_info = scheduler.fetch_next_work()
                 continue
 
@@ -2628,6 +2805,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     //,
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    swap_ab: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2669,6 +2847,12 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config: Matmul configuration specifying block tile shape, MMA
             shape, and TMA swizzle modes. Must have `cta_group == 1` and
             `cluster_shape == (1, 1, 1)`.
+        swap_ab: Whether the MMA runs transposed: the tile's 128 weight
+            rows on its M side and its token rows on N, so a tile of a few
+            routed rows does not fill a 64-row MMA and its promotion.
+            `config.mma_shape` then gives (token rows, weight rows, MMA_K)
+            of a tile; the token rows must be a power of two from 16, and
+            N a multiple of the 128 weight rows.
 
     Args:
         c: Output tensor of shape `[total_tokens, N]` holding the
@@ -2727,6 +2911,16 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime num_experts = b.static_shape[0]
     comptime N = c.static_shape[1]
     comptime K = a.static_shape[1]
+
+    # The swapped epilogue bounds its stores by token row only, so every
+    # tile's weight rows must lie inside N.
+    comptime assert not swap_ab or (
+        BN == 128
+        and N % BN == 0
+        and BM >= 16
+        and BM.is_power_of_two()
+        and BM <= 512 // config.num_accum_pipeline_stages
+    ), "swap_ab needs 128 weight rows dividing N and a power-of-two token tile"
 
     # `_copy_partial_a_tile_blockwise_from_gmem` walks K in BK strides without
     # masking the K-tail, so any caller must size K to a BK multiple.
@@ -2802,7 +2996,9 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
     comptime b_smem_bytes_per_stage = BN * BK * size_of[b_type]()
-    comptime a_scales_smem_bytes_per_stage = BM * size_of[a_scales_type]()
+    comptime a_scales_smem_bytes_per_stage = max(
+        BM * size_of[a_scales_type](), 128
+    )
     comptime AB_smem_per_stage = a_smem_bytes_per_stage + b_smem_bytes_per_stage
 
     comptime c_smem_bytes = config.output_tile_shape[
@@ -2901,6 +3097,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         expert_n=expert_n,
         expert_ids_layout=type_of(expert_ids.layout),
         b_scales_n=b_scales_n,
+        swap_ab=swap_ab,
     ]
 
     # TODO
@@ -3073,7 +3270,9 @@ def grouped_matmul_dynamic_scaled_fp8[
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
             @inline(.always)
-            def launch[mma_m: Int]() raises {imm}:
+            def launch[
+                mma_m: Int, swap_ab: Bool = False, accum_stages: Int = 2
+            ]() raises {imm}:
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
@@ -3082,10 +3281,11 @@ def grouped_matmul_dynamic_scaled_fp8[
                     cta_group=1,
                     AB_swapped=False,
                     k_group_size=1,
+                    num_accum_pipeline_stages=accum_stages,
                 )
                 # Pass TileTensors directly — conversion happens inside.
                 grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-                    config=config,
+                    config=config, swap_ab=swap_ab
                 ](
                     c,
                     a,
@@ -3104,8 +3304,26 @@ def grouped_matmul_dynamic_scaled_fp8[
             # tiles. `max_num_tokens_per_expert` cannot make this choice: the
             # expert-parallel path passes its static dispatch capacity there.
             comptime prefill_m = 128
+            # While the groups average a few rows (decode), a swapped tile of
+            # 32 token rows carries them without padding a 64-row MMA, and
+            # its promotion scales one weight row a thread. Scoped to the
+            # expert GEMMs of hidden 4096 and expert width 2048.
+            # TODO(KERN-3992): widen to other expert shapes once they are
+            # measured in their models.
+            comptime decode_m = 32
+            comptime decode_rows_per_group = 8
+            comptime swapped_decode_shape = c.static_shape[1] == 4096 and (
+                a.static_shape[1] == 4096 or a.static_shape[1] == 2048
+            )
             if estimated_total_m > prefill_m * num_active_experts:
                 launch[prefill_m]()
+            elif (
+                swapped_decode_shape
+                and estimated_total_m > 0
+                and estimated_total_m
+                <= decode_rows_per_group * num_active_experts
+            ):
+                launch[decode_m, swap_ab=True, accum_stages=8]()
             else:
                 launch[64]()
             return

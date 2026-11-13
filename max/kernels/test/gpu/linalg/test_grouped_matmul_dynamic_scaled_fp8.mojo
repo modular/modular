@@ -477,4 +477,10 @@ def main() raises:
             tokens_per_expert=160, pass_row_estimate=True
         ](ctx=ctx)
 
+        # A row estimate of a few rows a group selects the SM100 swapped-AB
+        # decode tile at the expert GEMM shapes it serves.
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4, N=4096, K=2048, pass_row_estimate=True
+        ](ctx=ctx)
+
     print("\n✓ All edge case tests passed!")

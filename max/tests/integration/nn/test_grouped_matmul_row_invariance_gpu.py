@@ -76,6 +76,17 @@ _FP8_PREFILL_ROW_CASES: dict[str, list[int]] = {
     "130_257_200": [130, 257, 200],
 }
 
+# Decode-sized FP8 groups at an expert GEMM shape the SM100 swapped-AB tile
+# serves (N 4096, K 2048): a row estimate of at most 8 rows a group selects
+# it. The estimate only selects the tile, so the 41-row group still gets
+# two 32-row token tiles.
+_FP8_DECODE_N = 4096
+_FP8_DECODE_K = 2048
+_FP8_DECODE_ROW_CASES: dict[str, tuple[list[int], int]] = {
+    "5_1_9": ([5, 1, 9], 15),
+    "1_41_2": ([1, 41, 2], 24),
+}
+
 # Dispatch pads every expert's row range up to these counts: 4 rows for
 # blockwise FP8, 16 for NVFP4 (`ep_comm.mojo:1307,1406-1429`).
 _FP8_ROW_PAD = 4
@@ -192,16 +203,18 @@ def _build_fp8(
     device: Accelerator,
     total_m: int,
     estimated_total_m: int | None = None,
+    n: int = _N,
+    k: int = _K,
 ) -> Model:
     gpu = DeviceRef(device.label, device.id)
     cpu = DeviceRef.CPU()
     with Graph(
         "fp8_grouped_matmul_row_invariance",
         input_types=[
-            TensorType(DType.float8_e4m3fn, (total_m, _K), gpu),
-            TensorType(DType.float8_e4m3fn, (_E, _N, _K), gpu),
-            TensorType(DType.float32, (_K // 128, total_m), gpu),
-            TensorType(DType.float32, (_E, _N // 128, _K // 128), gpu),
+            TensorType(DType.float8_e4m3fn, (total_m, k), gpu),
+            TensorType(DType.float8_e4m3fn, (_E, n, k), gpu),
+            TensorType(DType.float32, (k // 128, total_m), gpu),
+            TensorType(DType.float32, (_E, n // 128, k // 128), gpu),
             TensorType(DType.uint32, (_E + 1,), gpu),
             TensorType(DType.int32, (_E,), gpu),
             TensorType(DType.uint32, (2,), cpu),
@@ -337,26 +350,40 @@ def _build_nvfp4(
 
 
 @pytest.mark.parametrize(
-    "case", list(_ROW_CASES) + list(_FP8_PREFILL_ROW_CASES)
+    "case",
+    list(_ROW_CASES)
+    + list(_FP8_PREFILL_ROW_CASES)
+    + [f"decode_{name}" for name in _FP8_DECODE_ROW_CASES],
 )
 def test_fp8_blockwise_grouped_matmul_rows_are_position_invariant(
     case: str,
 ) -> None:
     rng = np.random.default_rng(_SEED)
-    prefill = case in _FP8_PREFILL_ROW_CASES
-    real = (_FP8_PREFILL_ROW_CASES if prefill else _ROW_CASES)[case]
+    n, k = _N, _K
+    estimated_total_m: int | None = None
+    if case.startswith("decode_"):
+        real, estimated_total_m = _FP8_DECODE_ROW_CASES[
+            case.removeprefix("decode_")
+        ]
+        n, k = _FP8_DECODE_N, _FP8_DECODE_K
+    elif case in _FP8_PREFILL_ROW_CASES:
+        real = _FP8_PREFILL_ROW_CASES[case]
+    else:
+        real = _ROW_CASES[case]
     counts = _pad_to(real, _FP8_ROW_PAD)
     starts = _starts(counts)
     total_m = int(starts[-1])
+    if case in _FP8_PREFILL_ROW_CASES:
+        estimated_total_m = total_m
 
-    hidden = _fp8_bytes(rng, (total_m, _K), 1.0)
-    weight = _fp8_bytes(rng, (_E, _N, _K), 0.5)
+    hidden = _fp8_bytes(rng, (total_m, k), 1.0)
+    weight = _fp8_bytes(rng, (_E, n, k), 0.5)
     # One A scale per (128-element K block, row), so a row's scale has to move
     # with it.
-    a_scales = rng.uniform(0.005, 0.02, size=(_K // 128, total_m)).astype(
+    a_scales = rng.uniform(0.005, 0.02, size=(k // 128, total_m)).astype(
         np.float32
     )
-    b_scales = rng.uniform(0.005, 0.02, size=(_E, _N // 128, _K // 128)).astype(
+    b_scales = rng.uniform(0.005, 0.02, size=(_E, n // 128, k // 128)).astype(
         np.float32
     )
     ids = np.array([2, 0, 1], dtype=np.int32)
@@ -365,7 +392,7 @@ def test_fp8_blockwise_grouped_matmul_rows_are_position_invariant(
     device = Accelerator()
     session = InferenceSession(devices=[device])
     model = _build_fp8(
-        session, device, total_m, estimated_total_m=total_m if prefill else None
+        session, device, total_m, estimated_total_m=estimated_total_m, n=n, k=k
     )
 
     def inputs(rows: np.ndarray, scales: np.ndarray) -> list[Buffer]:

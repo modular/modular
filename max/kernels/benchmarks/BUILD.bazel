@@ -401,6 +401,9 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
+            # grouped matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
             # Dedicated `mojo_binary` below: the multicast arm the boundary's
             # window serves is compiled in only under
             # `MODULAR_MULTICAST_ALLREDUCE_RMS_NORM`, which the generic glob
@@ -454,6 +457,9 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
+            # grouped matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
             # Dedicated `mojo_binary` below, with the arm's define.
             "gpu/comm/bench_mcast_rmsnorm.mojo",
         ],
@@ -567,6 +573,38 @@ build_test(
     name = "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo.run"],
+)
+
+# SM100 blockwise-FP8 grouped matmul at GLM-5.3-Flash's EP4 MoE shapes, one
+# arm per tile configuration (`--test_arg=--tokens=...`); timed on remote
+# B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_fp8_ep_decode.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_grouped_fp8_ep_decode.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_fp8_ep_decode.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_fp8_ep_decode.mojo.run"],
 )
 
 # `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
