@@ -29,6 +29,7 @@ from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
+    Dim,
     Graph,
     TensorType,
     TensorValue,
@@ -234,7 +235,9 @@ def _build_realize_spec_next_tokens(device_ref: DeviceRef) -> Graph:
     return graph
 
 
-def spec_realize_inplace_graph_name(tp: int, kv_groups: int) -> str:
+def spec_realize_inplace_graph_name(
+    tp: int, kv_groups: int, positions: bool = False
+) -> str:
     """Name of the fused spec feed graph for a ``(tp, kv_groups)`` geometry.
 
     The engine rebuilds this name from the geometry it is actually serving and
@@ -243,9 +246,11 @@ def spec_realize_inplace_graph_name(tp: int, kv_groups: int) -> str:
 
     The ``_narrow`` suffix marks the ABI whose previous drafts take their own
     width (see :func:`_feed_drafts`); the engine accepts the unsuffixed
-    build only when no step verifies fewer drafts than it proposes.
+    build only when no step verifies fewer drafts than it proposes. The
+    ``_positions`` build also advances the verify step's 3-axis positions.
     """
-    return f"spec_realize_inplace_tp{tp}_kv{kv_groups}_narrow"
+    suffix = "_positions" if positions else ""
+    return f"spec_realize_inplace_tp{tp}_kv{kv_groups}{suffix}_narrow"
 
 
 def spec_realize_mixed_inplace_graph_name(dp: int, kv_groups: int) -> str:
@@ -304,7 +309,7 @@ def _feed_drafts(
 
 
 def _build_spec_realize_inplace(
-    device_refs: list[DeviceRef], kv_groups: int
+    device_refs: list[DeviceRef], kv_groups: int, positions: bool = False
 ) -> Graph:
     """Graph: the whole spec-overlap device feed, in place, in one dispatch.
 
@@ -333,10 +338,17 @@ def _build_spec_realize_inplace(
     device-major rather than dev0-only, which is what blocked spec overlap under
     tensor parallelism.
 
+    With ``positions`` the verify step also takes ``[3, curr_batch * (k + 1)]``
+    position ids (M-RoPE), which the host computes from the same lengths a
+    step behind as the cache lengths. Each row's window advances by the same
+    increment::
+
+        dest_positions[:, curr, :] += prev_num_accepted[prev] + 1
+
     Input order is positional and the engine wires it by index:
     ``dest_tokens``, ``dest_draft``, ``dest_cache`` (group-major, device-minor),
-    then ``prev_num_accepted``, ``prev_next_tokens``, ``prev_next_draft``,
-    ``prev_to_curr_map``.
+    ``dest_positions`` when built with them, then ``prev_num_accepted``,
+    ``prev_next_tokens``, ``prev_next_draft``, ``prev_to_curr_map``.
 
     The graph is named for its geometry (see
     :func:`spec_realize_inplace_graph_name`) because TP and the KV-group count
@@ -353,6 +365,8 @@ def _build_spec_realize_inplace(
     for _group in range(kv_groups):
         for dev in device_refs:
             dest_types.append(BufferType(DType.uint32, ["curr_batch"], dev))
+    if positions:
+        dest_types.append(BufferType(_TOK, [3, "merged_seq_len"], dev0))
     prev_types = [
         TensorType(_TOK, ["prev_batch"], dev0),  # num_accepted
         TensorType(_TOK, ["prev_batch"], dev0),  # next_tokens
@@ -360,13 +374,14 @@ def _build_spec_realize_inplace(
         TensorType(_TOK, ["prev_batch"], dev0),  # prev_to_curr_map
     ]
     with Graph(
-        spec_realize_inplace_graph_name(len(device_refs), kv_groups),
+        spec_realize_inplace_graph_name(len(device_refs), kv_groups, positions),
         input_types=[*dest_types, *prev_types],
     ) as graph:
         n_dest = len(dest_types)
+        n_cache = kv_groups * len(device_refs)
         dest_tokens = graph.inputs[0].buffer
         dest_draft = graph.inputs[1].buffer
-        dest_cache = [graph.inputs[2 + i].buffer for i in range(n_dest - 2)]
+        dest_cache = [graph.inputs[2 + i].buffer for i in range(n_cache)]
         prev_num_accepted = graph.inputs[n_dest].tensor
         prev_next_tokens = graph.inputs[n_dest + 1].tensor
         prev_next_draft = graph.inputs[n_dest + 2].tensor
@@ -411,6 +426,22 @@ def _build_spec_realize_inplace(
                     + per_device_increments[device_index]
                 ).cast(DType.uint32)
                 ops.buffer_store(dest, bumped)
+        if positions:
+            dest_positions = graph.inputs[2 + n_cache].buffer
+            current = ops.buffer_load(dest_positions)
+            # A verify step's rows each hold a window of k + 1 positions.
+            rows = current.shape[1]
+            window = rows // Dim("curr_batch")
+            windows = current.rebind([3, window * Dim("curr_batch")]).reshape(
+                [3, "curr_batch", window]
+            )
+            shifted = windows + ops.reshape(batch_increments, [1, -1, 1])
+            ops.buffer_store(
+                dest_positions,
+                shifted.reshape([3, window * Dim("curr_batch")]).rebind(
+                    [3, rows]
+                ),
+            )
 
         # No tensor outputs; `output()` packs the device chain, which is what
         # orders the stores against the replay that reads the buffers.
@@ -739,6 +770,8 @@ class SpecFeed:
     dp: int = 0
     m3_dp: int = 0
     next_draft_dtype: DType = DType.int64
+    positions: bool = False
+    """Whether the tensor-parallel build also advances 3-axis positions."""
 
     def build(self) -> Callable[[list[DeviceRef]], Graph]:
         """Returns the builder of the feed's graph across ``tp`` devices."""
@@ -754,7 +787,11 @@ class SpecFeed:
                 kv_groups=self.kv_groups,
                 next_draft_dtype=self.next_draft_dtype,
             )
-        return partial(_build_spec_realize_inplace, kv_groups=self.kv_groups)
+        return partial(
+            _build_spec_realize_inplace,
+            kv_groups=self.kv_groups,
+            positions=self.positions,
+        )
 
     def mixed_build(self) -> Callable[[list[DeviceRef]], Graph] | None:
         """Returns the mixed-step feed's builder.
@@ -795,6 +832,7 @@ def export_spec_feeds(
     next_draft_dtype: DType,
     may_share_cache_lengths: bool,
     kv_groups: int | None = None,
+    positions: bool = False,
 ) -> tuple[SpecFeed, SpecFeed | None]:
     """Sizes the in-place spec feeds a speculative export's engine may load.
 
@@ -817,6 +855,8 @@ def export_spec_feeds(
         kv_groups: The KV groups its engine feeds, for an export that
             records a count of its own. Defaults to the attention caches in
             ``kv_params``.
+        positions: Whether the fused graph takes 3-axis (M-RoPE) positions,
+            which the tensor-parallel feed then advances too.
 
     Returns:
         The feed sized by the export's geometry, and the shared-cache feed
@@ -829,6 +869,7 @@ def export_spec_feeds(
         ),
         dp=data_parallel_degree if data_parallel_degree > 1 else 0,
         next_draft_dtype=next_draft_dtype,
+        positions=positions,
     )
     shared = (
         SpecFeed(tp=n_devices, kv_groups=1, m3_dp=max(data_parallel_degree, 1))

@@ -90,7 +90,12 @@ from .pipeline_modules import PipelineModules
 from .sampling_defaults import SamplingDefaults
 from .serialization import serialize
 from .tokenizer import Tokenizer
-from .value_types import ARTIFACT_SUFFIX, ArtifactError, HuggingFaceRef
+from .value_types import (
+    ARTIFACT_SUFFIX,
+    ArtifactError,
+    HuggingFaceRef,
+    treedef_to_json,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -296,6 +301,23 @@ def ships_overlap_helpers(devices: Sequence[Device]) -> bool:
     return not all(device.is_host for device in devices)
 
 
+def _takes_mrope_positions(graph: CompiledCallable[..., Any]) -> bool:
+    """Returns whether ``graph`` takes 3-axis (M-RoPE) positions.
+
+    Its input tree names them with an ``mrope_positions`` node, the group
+    the serving engine stages them by.
+    """
+
+    def holds(node: object) -> bool:
+        if isinstance(node, Mapping):
+            if node.get("type") == "mrope_positions":
+                return True
+            return any(holds(child) for child in node.get("children", ()))
+        return False
+
+    return holds(treedef_to_json(graph.graph_signature()[1]))
+
+
 def pipeline_overlap_helpers(
     pipeline_config: PipelineConfig,
     pipeline_model: PipelineModel[Any, Any, Any],
@@ -336,6 +358,7 @@ def pipeline_overlap_helpers(
             may_share_cache_lengths=speculative is not None
             and speculative.speculative_method == "mtp"
             and pipeline_config.draft_model is None,
+            positions=_takes_mrope_positions(spec_decoder),
         )
     return OverlapHelpers.compile(
         pipeline_model.devices, helper_builds(spec_feed, shared_feed)

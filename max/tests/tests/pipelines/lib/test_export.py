@@ -26,6 +26,7 @@ from unittest.mock import Mock
 
 import huggingface_hub
 import pytest
+from max import tree
 from max._artifact import ArtifactError, HuggingFaceRef
 from max._artifact import export as export_module
 from max._artifact.batch_processor import BatchProcessorDims
@@ -37,6 +38,7 @@ from max._artifact.engine_config import (
 )
 from max._artifact.export import (
     SupportsCompiledModules,
+    _takes_mrope_positions,
     _verify_facts,
     batch_processor_dims,
     checkpoint_format_spec,
@@ -85,7 +87,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
 )
 from max.nn.legacy import Module
-from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.graph_groups import Logits, MRoPEPositions, RaggedBatch
 from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.outputs import ReturnLogits
 from max.pipelines import lib as pipelines_lib
@@ -238,6 +240,32 @@ def test_only_an_accelerator_export_ships_the_overlap_helpers() -> None:
     assert not ships_overlap_helpers([CPU()])
     assert ships_overlap_helpers([accelerator])
     assert ships_overlap_helpers([CPU(), accelerator])
+
+
+def test_only_a_graph_with_mrope_positions_takes_the_positions_feed() -> None:
+    # The serving engine stages M-RoPE positions by this group's kind, so the
+    # export ships the positions feed exactly when the signature holds it.
+    tokens = TensorType(DType.int64, ["total_seq_len"], device=DeviceRef.CPU())
+    positions = TensorType(
+        DType.int64, [3, "total_seq_len"], device=DeviceRef.CPU()
+    )
+
+    def graph(inputs: object) -> CompiledCallable[..., Any]:
+        signature: tuple[list[Any], tree.TreeDef] = (
+            [],
+            tree.flatten(inputs)[1],
+        )
+        return cast(
+            CompiledCallable[..., Any], _fake(graph_signature=lambda: signature)
+        )
+
+    plain = OrderedDict(batch=RaggedBatch(tokens=tokens))
+    assert not _takes_mrope_positions(graph(plain))
+    nested = OrderedDict(
+        batch=RaggedBatch(tokens=tokens),
+        rope=OrderedDict(positions=MRoPEPositions(position_ids=positions)),
+    )
+    assert _takes_mrope_positions(graph(nested))
 
 
 def test_a_model_that_loads_its_own_graphs_is_refused() -> None:
