@@ -290,7 +290,13 @@ mojo_test(
     ],
 )
 
-# The typed `Queue.execute`, which packs the kernel's arguments itself.
+# The typed `Queue.execute`, which packs the kernel's arguments itself. Plugins
+# run the same source against their own devices.
+exports_files(
+    ["test_e2e_driver_ukl.mojo"],
+    visibility = ["//plugins:__subpackages__"],
+)
+
 mojo_test(
     name = "test_e2e_driver_ukl.mojo.test",
     srcs = ["test_e2e_driver_ukl.mojo"],
@@ -320,6 +326,7 @@ mojo_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//max:layout",
         "//max:max_mojo",
         "@mojo//:std",
     ],
@@ -331,7 +338,9 @@ lit_tests(
     name = "lit",
     size = "small",
     srcs = [
+        "test_execute_arg_count_fail.mojo",
         "test_execute_int_arg_fail.mojo",
+        "test_execute_non_passable_arg_fail.mojo",
         "test_execute_vendor_config_fail.mojo",
     ],
     mojo_deps = [
