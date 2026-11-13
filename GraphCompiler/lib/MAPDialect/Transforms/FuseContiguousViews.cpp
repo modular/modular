@@ -65,6 +65,17 @@ SliceSpecAttr getSliceSpec(MOGG::SliceOp slice) {
       DenseI64ArrayAttr::get(ctx, steps));
 }
 
+// Return `spec`, forcing the sliced dimension to be read at runtime.
+SliceSpecAttr withDynamicStart(SliceSpecAttr spec) {
+  SmallVector<int64_t> starts(spec.getStarts().asArrayRef());
+  int64_t k = findContiguousSliceDim(spec.getSignature().getIn().getIntDims());
+  starts[k] = ShapedType::kDynamic;
+  MLIRContext *ctx = spec.getContext();
+  return SliceSpecAttr::get(ctx, spec.getSignature(),
+                            DenseI64ArrayAttr::get(ctx, starts),
+                            spec.getStops(), spec.getSteps());
+}
+
 // Rewrites each input of `kernel` that a reshape or contiguous slice produces
 // to read the view's input through a stride view at the top of the body. The
 // view keeps the view op's result type, so the call operands and closure
@@ -116,8 +127,9 @@ unsigned fuseViewsInto(IterOpaqueOp kernel) {
         kernel.insertInputsAt(first, operands);
         Block::BlockArgListType args =
             kernel.getInputBlockArgs().slice(first, operands.size());
-        view = SliceStrideOp::create(builder, slice.getLoc(), viewTy, spec,
-                                     args[0], args[1], args[2], args[3]);
+        view = SliceStrideOp::create(builder, slice.getLoc(), viewTy,
+                                     withDynamicStart(spec), args[0], args[1],
+                                     args[2], args[3]);
       }
     }
     kernel.getInputBlockArgs()[idx].replaceAllUsesWith(view);
