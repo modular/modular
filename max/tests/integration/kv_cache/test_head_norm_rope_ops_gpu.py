@@ -15,13 +15,15 @@ bit: the prologue's Q output and KV cache, and the epilogue's gated norm."""
 
 from __future__ import annotations
 
+import dataclasses
+
 import ml_dtypes
 import numpy as np
 import pytest
 from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn._graph_ops import rope_split_store_ragged
 from max.nn.kv_cache import MHAKVCacheParams
@@ -38,7 +40,7 @@ EPS = 1e-5
 Q_SCALE = 0.125
 QKV_WIDTH = (N_Q + 2 * N_KV) * HEAD_DIM
 
-pytestmark = pytest.mark.skipif(
+sm100_only = pytest.mark.skipif(
     not is_b100_b200(),
     reason="the per-head attention norm ops run on B200 only",
 )
@@ -141,6 +143,7 @@ def _prologue_graph(fused: bool) -> Graph:
 
 
 # Below and above B200's SM count: the op runs a different kernel in each.
+@sm100_only
 @pytest.mark.parametrize("prompt_lens", [[3, 5], [200, 120]])
 def test_prologue_matches_unfused(prompt_lens: list[int]) -> None:
     device = Accelerator()
@@ -197,6 +200,7 @@ def _epilogue_graph(fused: bool) -> Graph:
     return graph
 
 
+@sm100_only
 @pytest.mark.parametrize("tokens", [8, 300])
 def test_epilogue_matches_unfused(tokens: int) -> None:
     device = Accelerator()
@@ -212,3 +216,175 @@ def test_epilogue_matches_unfused(tokens: int) -> None:
         assert isinstance(out, Buffer)
         outs.append(_bits(out))
     np.testing.assert_array_equal(outs[0], outs[1])
+
+
+G_HEAD_DIM = 128
+G_Q_DIM = N_Q * G_HEAD_DIM
+G_KV_DIM = N_KV * G_HEAD_DIM
+# A trailing gate block, as in a fused [q | k | v | gate] projection.
+G_QKV_WIDTH = 2 * G_Q_DIM + 2 * G_KV_DIM
+
+
+def _raw_bits(buf: Buffer) -> np.ndarray:
+    uint = DType.uint8 if buf.dtype.size_in_bytes == 1 else DType.uint16
+    return buf.copy(device=CPU()).view(uint).to_numpy()
+
+
+def _gamma_kv_params(dtype: DType) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=dtype,
+        n_kv_heads=N_KV,
+        head_dim=G_HEAD_DIM,
+        num_layers=1,
+        page_size=PAGE_SIZE,
+        devices=[DeviceRef.GPU()],
+    )
+
+
+def _gamma_prologue_graph(fused: bool, kv_dtype: DType) -> Graph:
+    gpu, cpu = DeviceRef.GPU(), DeviceRef.CPU()
+    kv_params = _gamma_kv_params(kv_dtype)
+    with Graph(
+        "gamma_prologue",
+        input_types=[
+            TensorType(DType.bfloat16, ["tokens", G_QKV_WIDTH], device=gpu),
+            TensorType(DType.uint32, ["offsets"], device=gpu),
+            TensorType(DType.float32, [MAX_POS, G_HEAD_DIM], device=gpu),
+            TensorType(DType.bfloat16, [G_HEAD_DIM], device=gpu),
+            TensorType(DType.bfloat16, [G_HEAD_DIM], device=gpu),
+            *kv_params.flattened_kv_inputs(),
+        ],
+    ) as graph:
+        qkv, offsets, freqs, q_gamma, k_gamma = (
+            v.tensor for v in graph.inputs[:5]
+        )
+        kv = kv_params.unflatten_kv_inputs(iter(graph.inputs[5:]))[0]
+        layer = ops.constant(0, DType.uint32, device=cpu)
+        if fused:
+            q = ops.inplace_custom(
+                "kv_cache.qk_gamma_rms_norm_rope_split_store.ragged.paged",
+                device=gpu,
+                values=[
+                    qkv,
+                    offsets,
+                    freqs,
+                    q_gamma,
+                    k_gamma,
+                    *kv.flatten_without_attention_dispatch_metadata(),
+                    layer,
+                    ops.constant(EPS, DType.float32, device=cpu),
+                ],
+                out_types=[TensorType(kv_dtype, [qkv.shape[0], G_Q_DIM], gpu)],
+                parameters={"n_q_heads": N_Q},
+            )[0].tensor
+        else:
+
+            def norm(x: TensorValue, n: int, gamma: TensorValue) -> TensorValue:
+                return ops.rms_norm(
+                    x.reshape([-1, n, G_HEAD_DIM]),
+                    gamma,
+                    EPS,
+                    multiply_before_cast=True,
+                ).reshape([-1, n * G_HEAD_DIM])
+
+            x_q = norm(qkv[:, :G_Q_DIM], N_Q, q_gamma)
+            x_k = norm(qkv[:, G_Q_DIM : G_Q_DIM + G_KV_DIM], N_KV, k_gamma)
+            x_v = qkv[:, G_Q_DIM + G_KV_DIM : G_Q_DIM + 2 * G_KV_DIM]
+            q = rope_split_store_ragged(
+                kv_params=kv_params,
+                qkv=ops.concat([x_q, x_k, x_v], axis=-1),
+                input_row_offsets=offsets,
+                freqs_cis=freqs,
+                kv_collection=kv,
+                layer_idx=layer,
+                n_heads=N_Q,
+                interleaved=False,
+                q_out_dtype=kv_dtype,
+            )
+        graph.output(q)
+    return graph
+
+
+@dataclasses.dataclass
+class _GammaModels:
+    device: Accelerator
+    kv_dtype: DType
+    fused: Model
+    unfused: Model
+
+
+# The graphs take every shape as an input, so each cache dtype compiles once.
+@pytest.fixture(
+    scope="module",
+    params=[
+        DType.bfloat16,
+        pytest.param(
+            DType.float8_e4m3fn,
+            marks=pytest.mark.skipif(
+                not is_b100_b200(), reason="Beam's FP8 KV cache runs on B200"
+            ),
+        ),
+    ],
+)
+def gamma_models(request: pytest.FixtureRequest) -> _GammaModels:
+    kv_dtype = request.param
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    return _GammaModels(
+        device,
+        kv_dtype,
+        session.load(_gamma_prologue_graph(True, kv_dtype)),
+        session.load(_gamma_prologue_graph(False, kv_dtype)),
+    )
+
+
+# A decode batch on cached positions, a chunked prefill across a page
+# boundary, and prefills below and above B200's SM count.
+@pytest.mark.parametrize(
+    "prompt_lens, cache_lengths",
+    [
+        ([1], [300]),
+        ([1, 1, 1], [5, 130, 400]),
+        ([3, 5], [126, 257]),
+        ([3, 5], None),
+        ([200, 120], None),
+    ],
+)
+def test_gamma_prologue_matches_unfused(
+    gamma_models: _GammaModels,
+    prompt_lens: list[int],
+    cache_lengths: list[int] | None,
+) -> None:
+    device = gamma_models.device
+    tokens = sum(prompt_lens)
+    qkv = RNG.standard_normal((tokens, G_QKV_WIDTH)) * 2.0
+    offsets = np.concatenate([[0], np.cumsum(prompt_lens)]).astype(np.uint32)
+    inv_freq = 1.0 / (THETA ** (np.arange(0, G_HEAD_DIM, 2) / G_HEAD_DIM))
+    ang = np.outer(np.arange(MAX_POS), inv_freq)
+    freqs = np.stack([np.cos(ang), np.sin(ang)], axis=-1).reshape(
+        MAX_POS, G_HEAD_DIM
+    )
+    q_gamma = RNG.uniform(0.5, 1.5, G_HEAD_DIM)
+    k_gamma = RNG.uniform(0.5, 1.5, G_HEAD_DIM)
+
+    results = []
+    for model in (gamma_models.fused, gamma_models.unfused):
+        kv = paged_kv_cache_inputs(
+            _gamma_kv_params(gamma_models.kv_dtype),
+            prompt_lens,
+            cache_lengths=cache_lengths,
+            total_num_pages=8,
+        )
+        (q,) = model.execute(
+            _bf16(qkv, device),
+            Buffer.from_numpy(offsets).to(device),
+            Buffer.from_numpy(freqs.astype(np.float32)).to(device),
+            _bf16(q_gamma, device),
+            _bf16(k_gamma, device),
+            *tree.leaves(kv),
+        )
+        assert isinstance(q, Buffer)
+        results.append((_raw_bits(q), _raw_bits(kv.kv_blocks)))
+    (q_fused, kv_fused), (q_ref, kv_ref) = results
+    np.testing.assert_array_equal(q_fused, q_ref)
+    np.testing.assert_array_equal(kv_fused, kv_ref)

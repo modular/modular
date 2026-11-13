@@ -48,7 +48,7 @@ from max.gpu.host.info import is_gpu
 from algorithm import rowwise
 from algorithm.rowwise_types import at_axis
 from kv_cache.types import KVCacheT
-from nn._ragged_utils import get_batch_from_row_offsets
+from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.head_rms_norm_rope import (
     HEAD_DIM,
@@ -187,10 +187,25 @@ struct QKRMSNormRopeSplitStore:
         var qkv_tt = qkv.to_tile_tensor[dtype]()
         var tokens = Int(qkv_tt.dim[0]())
         if tokens < ctx.default_device_info.sm_count:
+            comptime accum = get_accum_type[dtype]()
+            var scale = q_scale.cast[dtype]().cast[accum]()
+
+            @inline(.always)
+            def scale_q[
+                width: Int
+            ](x: SIMD[accum, width], is_q: Bool, d: Int) {var scale} -> SIMD[
+                dtype, width
+            ]:
+                var n = x.cast[dtype]()
+                if is_q:
+                    n = (n.cast[accum]() * scale).cast[dtype]()
+                return n
+
             _rowwise_prologue[
                 n_q_heads,
                 type_of(output).alignment,
                 type_of(qkv).alignment,
+                "qk_rms_norm_rope_split_store",
             ](
                 output.to_tile_tensor[dtype](),
                 qkv_tt,
@@ -199,7 +214,7 @@ struct QKRMSNormRopeSplitStore:
                 k_cache,
                 v_cache,
                 epsilon,
-                q_scale,
+                scale_q,
                 ctx,
             )
             return
@@ -287,25 +302,39 @@ struct HeadRMSNormSigmoidGate:
 
 def _rowwise_prologue[
     dtype: DType,
+    out_dtype: DType,
     freq_dtype: DType,
     cache_t: KVCacheT,
+    WeightFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int
+        ](SIMD[get_accum_type[dtype](), width], Bool, Int) -> SIMD[dtype, width]
+    ),
     //,
     n_q_heads: Int,
     output_alignment: Int,
     qkv_alignment: Int,
+    name: StaticString,
 ](
-    output: TileTensor[mut=True, dtype, ...],
+    output: TileTensor[mut=True, out_dtype, ...],
     qkv: TileTensor[mut=False, dtype, ...],
     offsets: TileTensor[mut=False, DType.uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: cache_t,
     epsilon: Float32,
-    q_scale: Float32,
+    weight_fn: WeightFn,
     ctx: DeviceContext,
 ) raises:
     """The prologue as one `rowwise` kernel, a warp per (token, head) row:
-    below SM-count tokens it beats `nn.head_rms_norm_rope`'s lane kernel."""
+    below SM-count tokens it beats `nn.head_rms_norm_rope`'s lane kernel.
+
+    `weight_fn(x, is_q, d)` applies the op's norm weight (a Q pre-scale or
+    a learned per-channel gamma) to a Q or K tile of normed channels `x`,
+    starting at channel `d`, and rounds it to `dtype`.
+    """
     comptime cache_dtype = cache_t.dtype
     comptime head_dim = cache_t.kv_params.head_size
     comptime n_kv_heads = cache_t.kv_params.num_heads
@@ -323,7 +352,6 @@ def _rowwise_prologue[
     comptime assert qkv.rank == 2
     comptime assert offsets.rank == 1
     comptime assert freqs_cis.rank == 2
-    var scale = q_scale.cast[dtype]().cast[accum]()
 
     @inline(.always)
     def body[
@@ -337,15 +365,14 @@ def _rowwise_prologue[
         var offsets,
         var axis_size_accum,
         var epsilon,
-        var scale,
+        var weight_fn,
     }:
         comptime row_rank = row_coords.rank
-        var token = Int(row_coords[0])
         var head = Int(row_coords[1])
-        var bi = get_batch_from_row_offsets(offsets, token)
-        var pos = k_cache.cache_length(bi) + Int(
-            UInt32(token) - rebind[UInt32](offsets.load[width=1](Coord(bi)))
+        var bi, tok_in_seq = get_batch_and_token_idx_from_row_offsets(
+            offsets, Int(row_coords[0])
         )
+        var pos = k_cache.cache_length(bi) + tok_in_seq
 
         @inline(.always)
         def load[
@@ -387,14 +414,15 @@ def _rowwise_prologue[
         def normed_tile[
             width: Int
         ](tile: SIMD[dtype, width], idx: DynamicCoord[DType.int, row_rank]) {
-            var inv_rms, var scale, var head
+            var inv_rms, var weight_fn, var head
         } -> SIMD[dtype, width]:
             if head >= n_q_heads + n_kv_heads:
                 return tile
-            var n = (tile.cast[accum]() * inv_rms.slice[width]()).cast[dtype]()
-            if head < n_q_heads:
-                n = (n.cast[accum]() * scale).cast[dtype]()
-            return n
+            return weight_fn[width](
+                tile.cast[accum]() * inv_rms.slice[width](),
+                head < n_q_heads,
+                Int(idx[2]),
+            )
 
         var normed = row.cache[dtype, shared=True](normed_tile)
 
@@ -441,13 +469,16 @@ def _rowwise_prologue[
             var r_re, r_im = r.deinterleave()
             var roped = rebind[SIMD[dtype, width]](r_re if lo else r_im)
             if head < n_q_heads:
-                comptime alignment = ctx_p.element_alignment[dtype, width]()
+                comptime alignment = ctx_p.element_alignment[out_dtype, width]()
                 output.store[
                     width=width,
                     alignment=min(
-                        output_alignment, alignment * size_of[dtype]()
+                        output_alignment, alignment * size_of[out_dtype]()
                     ),
-                ](Coord(Int(idx[0]), head * head_dim + d), roped)
+                ](
+                    Coord(Int(idx[0]), head * head_dim + d),
+                    cast_saturating[out_dtype](roped),
+                )
             else:
                 k_cache.store(
                     bi,
@@ -464,7 +495,7 @@ def _rowwise_prologue[
         simd_width=simd_width,
         num_phases=2,
         computationally_expensive=True,
-        name="qk_rms_norm_rope_split_store",
+        name=name,
     ](
         body,
         Coord(
@@ -474,3 +505,153 @@ def _rowwise_prologue[
         ),
         ctx,
     )
+
+
+@extensibility.register(
+    "kv_cache.qk_gamma_rms_norm_rope_split_store.ragged.paged"
+)
+struct QKGammaRMSNormRopeSplitStore:
+    """Registers the `kv_cache.qk_gamma_rms_norm_rope_split_store.ragged.paged`
+    graph op."""
+
+    @staticmethod
+    def execute[
+        n_q_heads: Int,
+    ](
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        q_gamma: Some[Input & Tensor],
+        k_gamma: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        layer_idx: UInt32,
+        epsilon: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Writes the roped Q and stores the roped K and the V to the cache,
+        with a learned per-channel weight on each of the Q and K norms.
+
+        Matches `rms_norm(q, q_gamma)`, `rms_norm(k, k_gamma)` (float32
+        products, one rounding) and `rope_split_store` with a rotate-half
+        head layout, bit for bit up to the reduction order.
+
+        Parameters:
+            n_q_heads: Query heads in `qkv` (this device's).
+
+        Args:
+            output: The roped Q `[tokens, n_q_heads * head_dim]`, in the
+                `qkv` dtype or a float8 type (rounded through the `qkv`
+                dtype).
+            qkv: The projection `[tokens, q_dim + 2 * kv_dim + ...]`.
+            input_row_offsets: Ragged offsets `[batch + 1]`.
+            freqs_cis: Interleaved (cos, sin) pairs `[positions, head_dim]`.
+            q_gamma: The Q norm weight `[head_dim]`.
+            k_gamma: The K norm weight `[head_dim]`.
+            kv_blocks: The paged KV cache blocks.
+            page_stride: The paged cache's page stride.
+            cache_lengths: Each sequence's cached length.
+            kv_lookup_table: The paged cache's page table.
+            max_prompt_length: The batch's longest prompt.
+            max_cache_length: The batch's longest cache.
+            layer_idx: The cache layer to store into.
+            epsilon: The norms' epsilon.
+            ctx: Device context.
+
+        Raises:
+            Error: If the launch fails.
+        """
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "mo.qk_gamma_rms_norm_rope_split_store is GPU only"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(q_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(k_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(q_gamma).rank == 1
+        comptime assert type_of(k_gamma).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime dtype = type_of(qkv).dtype
+        comptime out_dtype = type_of(output).dtype
+        comptime freq_dtype = type_of(freqs_cis).dtype
+        comptime assert type_of(q_gamma).dtype == dtype
+        comptime assert type_of(k_gamma).dtype == dtype
+        comptime assert (
+            out_dtype == dtype or out_dtype.is_float8()
+        ), "Q is the qkv dtype or float8"
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+        )
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+        var v_cache = kv_collection.get_value_cache(Int(layer_idx))
+        comptime n_kv = type_of(k_cache).kv_params.num_heads
+        comptime head_dim = type_of(k_cache).kv_params.head_size
+        comptime assert (
+            type_of(qkv)._shape_types[1].is_static_value
+        ), "the qkv width must be static"
+        comptime width = type_of(qkv)._shape_types[1].static_value
+        comptime assert (
+            width >= (n_q_heads + 2 * n_kv) * head_dim
+        ), "qkv is not [q | k | v | ...]"
+        comptime accum = get_accum_type[dtype]()
+        var q_gamma_tt = q_gamma.to_tile_tensor[dtype]()
+        var k_gamma_tt = k_gamma.to_tile_tensor[dtype]()
+
+        @inline(.always)
+        def apply_gamma[
+            width: Int
+        ](x: SIMD[accum, width], is_q: Bool, d: Int) {
+            var q_gamma_tt, var k_gamma_tt
+        } -> SIMD[dtype, width]:
+            var g = q_gamma_tt.load[width=width, alignment=size_of[dtype]()](
+                Coord(d)
+            ) if is_q else k_gamma_tt.load[
+                width=width, alignment=size_of[dtype]()
+            ](
+                Coord(d)
+            )
+            return (x * g.cast[accum]()).cast[dtype]()
+
+        _rowwise_prologue[
+            n_q_heads,
+            type_of(output).alignment,
+            type_of(qkv).alignment,
+            "qk_gamma_rms_norm_rope_split_store",
+        ](
+            output.to_tile_tensor[out_dtype](),
+            qkv.to_tile_tensor[dtype](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor[freq_dtype](),
+            k_cache,
+            v_cache,
+            epsilon,
+            apply_gamma,
+            ctx,
+        )

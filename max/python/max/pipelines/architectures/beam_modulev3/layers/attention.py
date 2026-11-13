@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
+from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn import Module
 from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -23,16 +24,56 @@ from max.nn.common_layers.linear import ColumnParallelLinear, RowParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.kernels import (
     flash_attention_ragged,
-    rope_split_store_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
+
+
+def _qk_gamma_rms_norm_rope_split_store(
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    q_gamma: TensorValue,
+    k_gamma: TensorValue,
+    kv_collection: GraphPagedCacheValues,
+    layer_idx: TensorValue,
+    n_q_heads: int,
+    eps: float,
+    q_out_dtype: DType,
+) -> TensorValue:
+    head_dim = int(kv_collection.kv_blocks.shape[-1])
+    return ops.inplace_custom(
+        "kv_cache.qk_gamma_rms_norm_rope_split_store.ragged.paged",
+        device=qkv.device,
+        values=[
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            q_gamma,
+            k_gamma,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(eps, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                q_out_dtype, [qkv.shape[0], n_q_heads * head_dim], qkv.device
+            )
+        ],
+        parameters={"n_q_heads": n_q_heads},
+    )[0].tensor
+
+
+qk_gamma_rms_norm_rope_split_store = F.functional(
+    _qk_gamma_rms_norm_rope_split_store
+)
 
 
 class BeamAttention(Module[..., Tensor]):
@@ -112,37 +153,32 @@ class BeamAttention(Module[..., Tensor]):
             The attention output, ``[total_seq_len, hidden_size]``.
         """
         head_dim = self.head_dim
-        q_proj, k_proj, v_proj, gate_proj = self._project(x)
-        q = self.q_norm(q_proj)
-        k = self.k_norm(k_proj)
-        v = v_proj.reshape((x.shape[0], self.n_kv_heads * head_dim))
+        fused = self._project(x)
+        q_proj, k_proj, v_proj, gate_proj = self._split(fused, x.shape[0])
 
         if self.is_sliding:
-            qkv = F.concat(
-                [
-                    q.reshape((-1, self.n_heads * head_dim)),
-                    k.reshape((-1, self.n_kv_heads * head_dim)),
-                    v,
-                ],
-                axis=-1,
-            )
-            # A float32 table makes the kernel rotate in float32 and round
+            # One launch norms Q and K, ropes them, stores K and V and
+            # returns Q. A float32 table makes it rotate in float32 and round
             # once, as the reference does.
-            xq = rope_split_store_ragged(
-                kv_params=self.kv_params,
-                qkv=qkv,
-                input_row_offsets=input_row_offsets,
-                freqs_cis=position_input,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads // kv_collection.n_devices,
-                interleaved=False,
-                q_out_dtype=self.kv_params.dtype,
-            ).rebind_mapping(qkv.mapping)
+            xq = qk_gamma_rms_norm_rope_split_store(
+                fused,
+                input_row_offsets,
+                position_input,
+                self.q_norm.weight.cast(fused.dtype),
+                self.k_norm.weight.cast(fused.dtype),
+                kv_collection,
+                layer_idx,
+                self.n_heads // kv_collection.n_devices,
+                self.q_norm.eps,
+                self.kv_params.dtype,
+            ).rebind_mapping(fused.mapping)
             xq = xq.reshape((-1, self.n_heads, head_dim))
             mask_variant = MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
             local_window_size = self.sliding_window
         else:
+            q = self.q_norm(q_proj)
+            k = self.k_norm(k_proj)
+            v = v_proj.reshape((x.shape[0], self.n_kv_heads * head_dim))
             store_k_cache_ragged(kv_collection, k, input_row_offsets, layer_idx)
             store_v_cache_ragged(
                 kv_collection,
@@ -178,7 +214,7 @@ class BeamAttention(Module[..., Tensor]):
         gated = attn.reshape((-1, self.n_heads, head_dim)) * F.sigmoid(gate)
         return self.o_proj(gated.reshape((-1, self.n_heads * head_dim)))
 
-    def _project(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    def _project(self, x: Tensor) -> Tensor:
         """Runs the q, k, v and gate projections as one matmul per device.
 
         Each projection is a latency-bound GEMM at decode, so one launch over
@@ -191,7 +227,8 @@ class BeamAttention(Module[..., Tensor]):
             x: Normalized hidden states, ``[total_seq_len, hidden_size]``.
 
         Returns:
-            q, k, v and gate as ``[total_seq_len, heads, head_dim]``.
+            ``[total_seq_len, devices * width]``, each device's ``width``
+            columns its own ``[q | k | v | gate]``.
         """
         projs = (self.q_proj, self.k_proj, self.v_proj, self.gate_proj)
         # Heads shard over every device, as in `forward`'s per-device count.
@@ -200,12 +237,23 @@ class BeamAttention(Module[..., Tensor]):
         weight = F.concat(
             [p.weight.reshape((n, -1, hidden)) for p in projs], axis=1
         ).reshape((-1, hidden))
+        return x @ weight.T
+
+    def _split(
+        self, fused: Tensor, tokens: Dim
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Splits :meth:`_project`'s output into q, k, v and gate.
+
+        Each is ``[total_seq_len, heads, head_dim]``.
+        """
+        projs = (self.q_proj, self.k_proj, self.v_proj, self.gate_proj)
+        n = self.q_proj.weight.mesh.num_devices
         widths = [int(p.weight.shape[0]) // n for p in projs]
         # Explicit leading dims, no -1: a sharded axis then maps by the
         # elements before it, so each device's columns stay its own block.
-        tokens = x.shape[0]
-        fused = (x @ weight.T).reshape((tokens, n, sum(widths)))
-        q, k, v, gate = F.split(fused, widths, axis=2)
+        q, k, v, gate = F.split(
+            fused.reshape((tokens, n, sum(widths))), widths, axis=2
+        )
         head_dim = self.head_dim
         return (
             q.reshape((tokens, self.n_heads, head_dim)),
