@@ -386,25 +386,6 @@ def MOGG_ToMGPFromOpaqueOp : MOGG_Op<"to_mgp_from_opaque", [
   let hasFolder = 1;
 }
 
-def MOGG_ScratchPlaceholdersOp : MOGG_Op<"scratch_placeholders"> {
-  let results = (outs Variadic<MO_Tensor>:$results);
-
-  let summary = "Represents scratch buffer tensors that are not returned from the kernel";
-  let description = [{
-    Like `mogg.output_placeholders`, but the tensors are not returned from the
-    kernel.
-
-    Example:
-    ```mlir
-      %scratch = mogg.scratch_placeholders : !mo.tensor<[2, 3], f32>
-    ```
-  }];
-
-  let assemblyFormat = [{
-   attr-dict `:` type($results)
-  }];
-}
-
 def MOGG_CompiledLoadOp : MOGG_LowerableOp<"compiled.load"> {
   let summary = "Loads pairs of (symbol, compiled object) into the runtime "
                 "for a given device.";
