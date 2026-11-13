@@ -29,7 +29,7 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
     HALDeviceStreamBase,
 )
-from max._driver.max_license.hal import Event
+from max._driver.max_license.hal import Event, Stream, get_device_spec
 from max._driver.max_license.hal.extensions.completion_flag import FlagCondition
 from max._driver.max_license.hal.extensions.traits import (
     SupportsCompletionFlagResetV1,
@@ -160,7 +160,6 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     comptime _LegacyEnqueuer = LegacyDeviceStream
-    comptime _HALEnqueuer = HALDeviceStreamBase[Self.target]
 
     def _legacy_enqueuer(self) -> Self._LegacyEnqueuer:
         comptime assert (
@@ -168,11 +167,11 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         ), "this stream is not on the legacy backend"
         return self._impl
 
-    def _hal_enqueuer(self) -> Self._HALEnqueuer:
+    def _hal_stream(self) -> ArcPointer[Stream[get_device_spec[0]()]]:
         comptime assert (
             not use_legacy_backend()
         ), "this stream is not on the HAL backend"
-        return self._impl
+        return self._impl._hal_stream()
 
     # ===-------------------------------------------------------------------===#
     # Methods

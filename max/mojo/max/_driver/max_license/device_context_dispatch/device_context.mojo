@@ -54,6 +54,7 @@ from max._driver.max_license.hal import (
     Device as _HALDevice,
     Event,
     MEMORY_UNKNOWN,
+    Stream,
     get_device_spec,
 )
 from max._driver.max_license.hal.extensions.traits import (
@@ -609,7 +610,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     comptime _LegacyEnqueuer = Self._Legacy
-    comptime _HALEnqueuer = Self._HAL
 
     def _legacy_enqueuer(self) -> Self._LegacyEnqueuer:
         comptime assert (
@@ -617,11 +617,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         ), "this context is not on the legacy backend"
         return self._impl
 
-    def _hal_enqueuer(self) -> Self._HALEnqueuer:
+    def _hal_stream(self) -> ArcPointer[Stream[get_device_spec[0]()]]:
         comptime assert (
             not use_legacy_backend()
         ), "this context is not on the HAL backend"
-        return self._impl
+        return self._impl._hal_stream()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

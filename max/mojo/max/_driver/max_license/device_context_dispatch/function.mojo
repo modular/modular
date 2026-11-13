@@ -26,14 +26,15 @@ enqueuer implements.
 from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
 from std.compile.compile import CompiledFunctionInfo
+from std.memory import ArcPointer
 from std.reflection import SourceLocation
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceExternalFunction,
     HALDeviceFunction,
-    _HALFunctionEnqueuer,
 )
+from max._driver.max_license.hal import Stream, get_device_spec
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
@@ -60,12 +61,11 @@ trait _DispatchEnqueuer:
     """
 
     comptime _LegacyEnqueuer: _FunctionEnqueuer & Deinitable
-    comptime _HALEnqueuer: _HALFunctionEnqueuer & Deinitable
 
     def _legacy_enqueuer(self) -> Self._LegacyEnqueuer:
         ...
 
-    def _hal_enqueuer(self) -> Self._HALEnqueuer:
+    def _hal_stream(self) -> ArcPointer[Stream[get_device_spec[0]()]]:
         ...
 
 
@@ -109,7 +109,9 @@ struct DeviceFunction[
         link_options=Self.link_options,
         _ptxas_info_verbose=Self._ptxas_info_verbose,
     ]
-    comptime _HAL = HALDeviceFunction[Self.func, Self.Wrapper]
+    comptime _HAL = HALDeviceFunction[
+        Self.func, Self.Wrapper, target=Self.target
+    ]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     # ===-------------------------------------------------------------------===#
@@ -207,7 +209,7 @@ struct DeviceFunction[
             )
         else:
             self._impl._call_with_pack_checked(
-                ctx._hal_enqueuer(),
+                ctx._hal_stream(),
                 *args,
                 host_args=host_args,
                 grid_dim=grid_dim,
