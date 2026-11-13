@@ -88,8 +88,41 @@ def total_with_ends[*Ts: Intable](*args: *Ts) -> Int:
     return total(100, *args, 1000)
 
 
+trait Bumpable:
+    def bump(mut self):
+        ...
+
+
+@fieldwise_init
+struct Counter(Bumpable, Writable):
+    var n: Int
+
+    def bump(mut self):
+        self.n += 1
+
+
+def bump_all[*Ts: Bumpable](mut *args: *Ts):
+    comptime for i in range(args.__len__()):
+        args[i].bump()
+
+
+# Writes through a concatenated `mut` pack reach each element.
+def fwd_mut[*Ts: Bumpable](mut *args: *Ts):
+    var x = Counter(10)
+    var y = Counter(20)
+    bump_all(x, *args, y)
+    # CHECK: mut ends: Counter(n=11) Counter(n=21)
+    print("mut ends:", x, y)
+
+
 def main():
     fwd(1, "a", 2.5)
+
+    var a = Counter(1)
+    var b = Counter(2)
+    fwd_mut(a, b)
+    # CHECK: mut pack: Counter(n=2) Counter(n=3)
+    print("mut pack:", a, b)
 
     # The comptime interpreter also does the concatenation.
     comptime at_comptime = total_with_ends(1, 2)

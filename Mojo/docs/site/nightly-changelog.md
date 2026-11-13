@@ -510,3 +510,7 @@ This version is still a work in progress.
 - `Process.run()` now passes the child process the arguments it was given.
   Arguments built at run time, such as `String("a") + String(i)`, reached the
   child as repeated copies of the last argument or as freed memory.
+
+- Fixed a bug where a function that modified the elements of a `mut` variadic
+  pack (`mut *args: *Ts`), or of a `VariadicPack` with mutable elements, could
+  leave the values passed to it unchanged.

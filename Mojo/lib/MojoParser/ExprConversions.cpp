@@ -66,6 +66,9 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   // passing convention, since those are trivially convertible.
   switch (expectedConv) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::ByRefError:
     // We checked that the function effects line up, so if we see
@@ -338,10 +341,23 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   FunctionEmitter structEmitter(shared);
   auto paramListAttrs = PogListAttr::get(
       ctx, thunkSignature.getInputParamTypes().size() + 1, remappedConstraints);
+  // The thunk has the expected function type's ABI, which includes which
+  // argument is a pack vararg and how its elements are passed.
+  PogListAttr thunkArgList =
+      PogListAttr::get(ctx, thunkSignature.getNumArguments());
+  for (size_t i = 0, e = thunkSignature.getNumArguments(); i != e; ++i) {
+    if (!thunkSignature.isPack(i))
+      continue;
+    SmallVector<PogMetadataAttr> pogs(thunkArgList.getPogs());
+    pogs[i] = PogMetadataAttr::get(pogs[i].getName(), pogs[i].getPassingKind(),
+                                   VariadicKind::PackVarArg);
+    thunkArgList = PogListAttr::get(ctx, pogs, /*bodyConstraints=*/{},
+                                    thunkSignature.getVariadicConvention(i));
+    break;
+  }
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls, paramListAttrs, functionType.getInputs(),
-      thunkSignature.getArgConventions(),
-      PogListAttr::get(ctx, thunkSignature.getNumArguments()),
+      thunkSignature.getArgConventions(), thunkArgList,
       functionType.getResults().front(), SpecialFunctionKind::kNormal,
       moduleDecl.getLoc(), b, thunkSignature.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic);
@@ -438,6 +454,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     AnyValue value;
     switch (convForActual) {
     case ArgConvention::OwnedReg:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
+    case ArgConvention::PackOwnedMem:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:

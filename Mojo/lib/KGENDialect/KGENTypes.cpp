@@ -46,13 +46,16 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::ImmReg:
   case ArgConvention::ImmMem:
+  case ArgConvention::PackImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
+  case ArgConvention::PackOwnedMem:
     return "var";
   case ArgConvention::DeinitMem:
     return "deinit";
   case ArgConvention::Mut:
+  case ArgConvention::PackMut:
     return "mut";
   case ArgConvention::Ref:
     return "ref";
@@ -820,6 +823,34 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return result;
 }
 
+/// Each element of a variadic pack argument is the address of an argument of
+/// the caller (see `ArgConvention::PackImmMem`), so it must be a pointer.
+static LogicalResult
+verifyPackArgument(function_ref<InFlightDiagnostic()> emitError, size_t argIdx,
+                   Type argType) {
+  auto ptr = dyn_cast<PointerType>(argType);
+  if (!ptr)
+    return success();
+  // Before elaboration, the pack can be a `VariadicPack` that is not resolved.
+  auto pack = dyn_cast<StructType>(ptr.getElementType());
+  if (!pack || !pack.getIsParamPack())
+    return success();
+  auto elts = dyn_cast_or_null<ParamListAttr>(pack.getElementTypesVariadic());
+  if (!elts)
+    return success();
+  for (auto [eltIdx, elt] : llvm::enumerate(elts.getValues())) {
+    auto typeValue = dyn_cast<TypeParamAttr>(elt);
+    if (!typeValue)
+      continue;
+    if (Type eltType = typeValue.getMlirType(); !isa<PointerType>(eltType)) {
+      return emitError() << "element #" << eltIdx << " of pack argument #"
+                         << argIdx
+                         << " should be a `!kgen.pointer` but got: " << eltType;
+    }
+  }
+  return success();
+}
+
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                                FunctionType values, FnMetadataAttr metadataAttr,
                                PogListAttr argListAttrs) {
@@ -868,6 +899,9 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                << "func type with 'byref_error' argument must be 'throws'";
       byRefErrorIdx = i;
     }
+    if (getPackEltConvention(conv) &&
+        failed(verifyPackArgument(emitError, i, argType)))
+      return failure();
 
     Type type = argType;
     // Verify variadics.

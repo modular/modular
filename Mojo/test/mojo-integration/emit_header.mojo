@@ -14,6 +14,8 @@
 
 # RUN: kgen %s -emit=header | FileCheck %s
 
+from std.utils.coord import Coord
+
 
 # CHECK: extern float bar();
 @export("bar")
@@ -55,6 +57,13 @@ struct MemIntPair:
 @export
 def first_mem(pair: MemIntPair) abi("C") -> Int:
     return pair.first
+
+
+# A value pack is passed like any struct of the same layout.
+# CHECK: extern ssize_t first_coord(ssize_t, ssize_t);
+@export
+def first_coord(c: Coord[Int, Int]) abi("C") -> Int:
+    return c[0].value()
 
 
 # CHECK: extern int32_t main(int32_t, void *);

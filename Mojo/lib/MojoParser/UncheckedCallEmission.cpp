@@ -310,6 +310,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
   switch (convention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
@@ -1113,6 +1116,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   switch (convention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:

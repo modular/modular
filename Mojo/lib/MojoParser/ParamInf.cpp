@@ -1479,6 +1479,9 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::OwnedReg:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut: {
     // The actual value must be an lvalue if callee takes things by-ref.

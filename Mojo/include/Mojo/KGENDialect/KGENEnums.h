@@ -53,6 +53,10 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     return true;
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("pack conventions do not occur before LowerLIT");
   }
   llvm_unreachable("invalid argument convention");
 }
@@ -61,6 +65,37 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
 static inline bool isResultSlot(ArgConvention conv) {
   return conv == ArgConvention::ByRefResult ||
          conv == ArgConvention::ByRefError;
+}
+
+/// Return the convention of a variadic pack argument whose elements are passed
+/// as `eltConvention`.
+static inline ArgConvention getPackConvention(ArgConvention eltConvention) {
+  switch (eltConvention) {
+  case ArgConvention::ImmMem:
+    return ArgConvention::PackImmMem;
+  case ArgConvention::Mut:
+    return ArgConvention::PackMut;
+  case ArgConvention::OwnedMem:
+    return ArgConvention::PackOwnedMem;
+  default:
+    llvm_unreachable("unsupported variadic pack element convention");
+  }
+}
+
+/// If `conv` is the convention of a variadic pack argument, return the
+/// convention its elements are passed with.
+static inline std::optional<ArgConvention>
+getPackEltConvention(ArgConvention conv) {
+  switch (conv) {
+  case ArgConvention::PackImmMem:
+    return ArgConvention::ImmMem;
+  case ArgConvention::PackMut:
+    return ArgConvention::Mut;
+  case ArgConvention::PackOwnedMem:
+    return ArgConvention::OwnedMem;
+  default:
+    return std::nullopt;
+  }
 }
 
 //===----------------------------------------------------------------------===//

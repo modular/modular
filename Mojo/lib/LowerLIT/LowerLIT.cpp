@@ -785,6 +785,25 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   return std::make_pair(result, WalkResult::skip());
 }
 
+/// Return the argument conventions of `sig` after LowerLIT. The argument list
+/// is dropped, so the convention of a variadic pack argument records that it
+/// is a pack and how its elements are passed.
+static SmallVector<ArgConvention> getLoweredArgConventions(FuncType sig) {
+  SmallVector<ArgConvention> conventions(sig.getArgConventions());
+  PogListAttr argList = sig.getArgListAttrs();
+  if (!argList || !argList.hasPackVarArg())
+    return conventions;
+  assert(argList.size() == conventions.size() &&
+         "a pack signature has one argument per source argument");
+  for (auto [idx, pog] : llvm::enumerate(argList.getPogs())) {
+    if (pog.isPack()) {
+      conventions[idx] = getPackConvention(argList.getOrigVariadicConvention());
+      return conventions;
+    }
+  }
+  llvm_unreachable("hasPackVarArg found no pack");
+}
+
 static LogicalResult lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
@@ -825,7 +844,7 @@ static LogicalResult lowerAttributesAndTypes(
   replacer.addReplacement([&](FuncType sig) {
     return std::make_pair(
         FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
-                      sig.getArgConventions(), sig.getFnEffects()),
+                      getLoweredArgConventions(sig), sig.getFnEffects()),
         WalkResult::skip());
   });
 

@@ -105,13 +105,6 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
   }
 
   if (target) {
-    // Parameter packs represent a list of arguments. Unconditionally promote
-    // them. Promotion will be considered for each individual member of the
-    // pack.
-    if (auto structType = dyn_cast<StructType>(elType);
-        structType && structType.getIsParamPack())
-      return elType;
-
     std::optional<int64_t> size =
         DataLayoutInterface::getTypeStoreSize(target, elType);
     // If layout can't provide a stable size, prefer keeping the promotion path
@@ -233,10 +226,12 @@ private:
 };
 } // namespace
 
+/// Replace the convention of a split pack vararg with one convention per
+/// element. The FuncType verifier makes sure that each element is a pointer.
 static void
 insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
                            unsigned argConventionIndex, ArrayRef<Type> types,
-                           int depth) {
+                           ArgConvention eltConvention) {
   if (types.size() == 0) {
     conventions[argConventionIndex] = ArgConvention::ImmReg;
     return;
@@ -247,23 +242,21 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
        i--)
     conventions[i] = conventions[i - (packSize - 1)];
   for (unsigned i = 0; i < packSize; ++i) {
-    ArgConvention newConvention = ArgConvention::ImmReg;
-    if (auto ptr = dyn_cast<PointerType>(types[i])) {
-      // if the depth is 0 then this is a top level kgen.pack and we do not know
-      // if it holds an address that is potentially written to.
-      if (depth == 0)
-        newConvention = ArgConvention::Mut;
-      else if (!isa<KGEN::NoneType>(ptr.getElementType()))
-        newConvention = ArgConvention::ImmMem;
-    }
-    conventions[argConventionIndex + i] = newConvention;
+    auto ptr = cast<PointerType>(types[i]);
+    conventions[argConventionIndex + i] =
+        isa<KGEN::NoneType>(ptr.getElementType()) ? ArgConvention::ImmReg
+                                                  : eltConvention;
   }
 }
 
-static void transformNonResultValue(Transform *transform, unsigned operandIndex,
-                                    SmallVector<ArgConvention> &conventions,
-                                    unsigned argConventionIndex, bool isCABI,
-                                    int depth = 0) {
+/// Lower one argument. `packEltConvention` is set only for the pack vararg
+/// itself: that argument is promoted and split into its elements, exactly one
+/// level. Any other pack is an ordinary value.
+static void
+transformNonResultValue(Transform *transform, unsigned operandIndex,
+                        SmallVector<ArgConvention> &conventions,
+                        unsigned argConventionIndex, bool isCABI,
+                        std::optional<ArgConvention> packEltConvention = {}) {
 
   Type type = transform->typeOfValueAt(operandIndex);
   ArgConvention convention = conventions[argConventionIndex];
@@ -289,23 +282,33 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                                   convention == ArgConvention::DeinitMem))
     return;
 
-  if (auto elType = lowerPointerType(type, transform->target,
-                                     transform->maxInlineSize, isCABI)) {
+  // The pack vararg is always promoted, whatever its size, so that it can be
+  // split below.
+  Type elType;
+  if (auto ptr = dyn_cast<PointerType>(type); ptr && packEltConvention) {
+    elType = ptr.getElementType();
+  } else {
+    elType = lowerPointerType(type, transform->target, transform->maxInlineSize,
+                              isCABI);
+  }
+  if (elType) {
     transform->applyPointerTransform(operandIndex, elType);
     conventions[argConventionIndex] =
         (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
          conventions[argConventionIndex] == ArgConvention::DeinitMem)
             ? ArgConvention::OwnedReg
             : ArgConvention::ImmReg;
-    transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, isCABI, ++depth);
+    return transformNonResultValue(transform, operandIndex, conventions,
+                                   argConventionIndex, isCABI,
+                                   packEltConvention);
   }
 
-  /// LOWER PACK. Look for a kgen.struct with the "isParamPack" attribute.
-  if (auto packStruct = getIfParamPack(type)) {
-    if (convention != ArgConvention::OwnedReg &&
-        convention != ArgConvention::ImmReg)
-      return;
+  /// LOWER PACK. Split the pack vararg into its elements.
+  if (packEltConvention) {
+    auto packStruct = getIfParamPack(type);
+    assert(packStruct && "packEltConvention without a param pack");
+    assert(convention == ArgConvention::ImmReg &&
+           "Unexpected convention for a pack");
 
     auto variadic =
         cast_or_null<ParamListAttr>(packStruct.getElementTypesVariadic());
@@ -318,9 +321,11 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
       types.push_back(memberType);
     }
     transform->applyPackTransform(operandIndex, types, packStruct);
-    insertAndUpdateConventions(conventions, argConventionIndex, types, depth);
-    transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, isCABI, ++depth);
+    insertAndUpdateConventions(conventions, argConventionIndex, types,
+                               *packEltConvention);
+    // The elements are ordinary arguments; a pack among them is not split.
+    return transformNonResultValue(transform, operandIndex, conventions,
+                                   argConventionIndex, isCABI);
   }
 
   /// LIFT REG. Lower an argument this target cannot pass in registers back to
@@ -561,8 +566,14 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
   for (size_t idx = 0; idx < argConventions.size(); ++idx) {
     auto convention = argConventions[idx];
     if (!isResultSlot(convention)) {
+      // The pointer to a pack is only read. Its elements get their own
+      // conventions when it is split.
+      std::optional<ArgConvention> packEltConvention =
+          getPackEltConvention(convention);
+      if (packEltConvention)
+        argConventions[idx] = ArgConvention::ImmMem;
       transformNonResultValue(transform, idx + operandOffset, argConventions,
-                              idx, oldSig.isCABI());
+                              idx, oldSig.isCABI(), packEltConvention);
       continue;
     }
     if (oldSig.isAsync()) // Async is broken.

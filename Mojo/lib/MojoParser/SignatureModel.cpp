@@ -546,6 +546,10 @@ static StringRef getConventionString(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::ByRefError:
     llvm_unreachable("error arguments are not rendered");
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("pack conventions do not occur before LowerLIT");
   case ArgConvention::ByRefResult:
     return "out";
   case ArgConvention::ImmReg:

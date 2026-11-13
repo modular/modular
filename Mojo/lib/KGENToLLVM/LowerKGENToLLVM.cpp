@@ -566,6 +566,10 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       // also applies to all the pointers passed for in-memory arguments.
       list.set(ids.noundef, b.getUnitAttr());
       break;
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
+    case ArgConvention::PackOwnedMem:
+      llvm_unreachable("LowerArgConventions splits pack arguments");
     }
 
     argAttrs.push_back(list.getDictionary(b.getContext()));

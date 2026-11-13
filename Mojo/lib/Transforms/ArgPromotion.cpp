@@ -236,6 +236,11 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     return {false, true};
+
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("LowerArgConventions splits pack arguments");
   }
 }
 

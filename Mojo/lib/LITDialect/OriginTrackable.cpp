@@ -214,6 +214,10 @@ OriginTrackable::OriginTrackable(Value v) {
     startsUninit = true;
     endInitState = InitOnError;
     break;
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("pack conventions do not occur before LowerLIT");
   }
 
   name = signature.getArgName(argIdx);
@@ -324,6 +328,10 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:
       return OperandEffect::memStoreOwned;
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
+    case ArgConvention::PackOwnedMem:
+      llvm_unreachable("pack conventions do not occur before LowerLIT");
     }
     llvm_unreachable("invalid input convention");
   };

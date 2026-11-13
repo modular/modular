@@ -105,6 +105,16 @@ struct CountBox(Bumpable, ImplicitlyCopyable):
         self.n += 7
 
 
+@fieldwise_init
+struct BigBox(Bumpable, ImplicitlyCopyable):
+    """Too large to be passed by value, so it stays behind a pointer."""
+
+    var v: SIMD[DType.int64, 64]
+
+    def bump(mut self):
+        self.v[0] += 7
+
+
 # ===----------------------------------------------------------------------=== #
 # Parameter varargs
 # ===----------------------------------------------------------------------=== #
@@ -407,6 +417,71 @@ def test_forward_mut_pack():
     print(c1.n)  # CHECK-NEXT: 9
 
 
+# The callees below are not inlined, so their mutations reach the caller only
+# if the elements of a `mut` pack are passed by reference.
+
+
+@no_inline
+def bump_each_box_outlined[*Ts: Bumpable](mut *pack: *Ts):
+    comptime for i in range(pack.__len__()):
+        pack[i].bump()
+
+
+@no_inline
+def forward_bump_each_box_outlined[*Ts: Bumpable](mut *pack: *Ts):
+    bump_each_box_outlined(*pack)
+
+
+@no_inline
+def bump_through_pack[
+    origin: MutOrigin, //, *Ts: Bumpable
+](pack: VariadicPack[origin=origin, element_trait=Bumpable, False, *Ts]):
+    comptime for i in range(pack.__len__()):
+        pack[i].bump()
+
+
+def bump_via_pack_argument[*Ts: Bumpable](mut *pack: *Ts):
+    bump_through_pack(pack)
+
+
+@no_inline
+def bump_nested[
+    o: MutOrigin, //, Us: TypeList[Trait=AnyType, ...]
+](*outer: *Us):
+    ref inner = rebind[
+        VariadicPack[
+            origin=o, element_trait=Bumpable, False, CountBox, CountBox
+        ]
+    ](outer[0])
+    inner[0].bump()
+    inner[1].bump()
+
+
+def bump_via_nested_pack[*Ts: Bumpable](mut *pack: *Ts):
+    bump_nested[o=pack.origin](pack, 7)
+
+
+def test_outlined_mut_pack():
+    # CHECK-LABEL: test_outlined_mut_pack
+    print("test_outlined_mut_pack")
+    var c0 = CountBox(1)
+    var c1 = CountBox(2)
+    bump_each_box_outlined(c0, c1)
+    print(c0.n, c1.n)  # CHECK-NEXT: 8 9
+    forward_bump_each_box_outlined(c0, c1)
+    print(c0.n, c1.n)  # CHECK-NEXT: 15 16
+    bump_via_pack_argument(c0, c1)
+    print(c0.n, c1.n)  # CHECK-NEXT: 22 23
+    bump_via_nested_pack(c0, c1)
+    print(c0.n, c1.n)  # CHECK-NEXT: 29 30
+
+    # An element too large to be passed by value stays behind a pointer that
+    # the callee writes through.
+    var big = BigBox(SIMD[DType.int64, 64](1))
+    bump_each_box_outlined(big, c0)
+    print(big.v[0], big.v[1], c0.n)  # CHECK-NEXT: 8 1 36
+
+
 def borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
     print("-- testing read-only variadic pack with", len(pack), "elements")
 
@@ -633,6 +708,7 @@ def main():
     test_owned_variadic_pack()
     test_inout_variadic_pack()
     test_forward_mut_pack()
+    test_outlined_mut_pack()
     test_borrowed_variadic_pack()
     test_comptime_pack()
     test_forward_comptime_pack()
