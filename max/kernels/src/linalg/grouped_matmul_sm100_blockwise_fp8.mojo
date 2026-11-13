@@ -2978,8 +2978,12 @@ def grouped_matmul_dynamic_scaled_fp8[
     num_active_experts: Int,
     ctx: DeviceContext,
     decode_grid_m_cap: Int = 0,
+    estimated_total_m: Int = 0,
 ) raises:
     """TileTensor primary implementation of `grouped_matmul_dynamic_scaled_fp8`.
+
+    `estimated_total_m` is the caller's estimate of the routed rows in the
+    call (0 when unknown); on SM100 it picks the tile size.
     """
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -3068,36 +3072,42 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
-                64, 128, 32
-            )
+            @inline(.always)
+            def launch[mma_m: Int]() raises {imm}:
+                comptime config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    cluster_shape=(1, 1, 1),
+                    mma_shape=(mma_m, 128, 32),
+                    cta_group=1,
+                    AB_swapped=False,
+                    k_group_size=1,
+                )
+                # Pass TileTensors directly — conversion happens inside.
+                grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+                    config=config,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )
 
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                cluster_shape=(1, 1, 1),
-                mma_shape=(
-                    umma_shape[0],
-                    umma_shape[1],
-                    umma_shape[2],
-                ),
-                cta_group=1,
-                AB_swapped=False,
-                k_group_size=1,
-            )
-            # Pass TileTensors directly — conversion happens inside.
-            grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-                config=config,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
-            )
+            # Once the rows average more than 128 a group (prefill), one
+            # 128-row tile reads a group's weights half as often as two 64-row
+            # tiles. `max_num_tokens_per_expert` cannot make this choice: the
+            # expert-parallel path passes its static dispatch capacity there.
+            comptime prefill_m = 128
+            if estimated_total_m > prefill_m * num_active_experts:
+                launch[prefill_m]()
+            else:
+                launch[64]()
             return
 
         else:

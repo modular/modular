@@ -1622,6 +1622,9 @@ def _grouped_fp8_matmul(
         input_spec,
         weight_spec,
         out_type=out_type,
+        estimated_total_m=TensorValue(estimated_total_m)
+        if estimated_total_m is not None
+        else None,
         **grid_kwargs,
     )
 

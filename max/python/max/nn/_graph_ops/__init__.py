@@ -11849,6 +11849,7 @@ def grouped_dynamic_scaled_fp8_matmul(
     out_type: DType = DType.bfloat16,
     static_grid_z: bool = False,
     decode_grid_m_cap: int = 0,
+    estimated_total_m: TensorValue | None = None,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
 
@@ -11871,6 +11872,9 @@ def grouped_dynamic_scaled_fp8_matmul(
             runtime `num_active_experts` tensor read; capture-safe on AMD.
         decode_grid_m_cap: Decode-band gate on the AMD path; 0 disables. Bounds
             grid.y to a capture-safe upper bound derived from the call shape.
+        estimated_total_m: Host scalar estimate of the routed rows in the
+            call; on SM100 a prefill-sized estimate selects the larger tile.
+            ``None`` passes 0 (unknown), which keeps the decode tile.
 
     Returns:
         The result of the matmul operation.
@@ -11977,6 +11981,12 @@ def grouped_dynamic_scaled_fp8_matmul(
     decode_grid_m_cap_arg = ops.constant(
         decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
     )
+    if estimated_total_m is None:
+        estimated_total_m_arg = ops.constant(
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
+        )
+    else:
+        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
 
     output = ops.custom(
         "matmul.grouped.dynamic.scaled.fp8",
@@ -11991,6 +12001,7 @@ def grouped_dynamic_scaled_fp8_matmul(
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
             decode_grid_m_cap_arg,
+            estimated_total_m_arg,
         ],
         out_types=[
             TensorType(

@@ -1312,6 +1312,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         decode_grid_m_cap: UInt32,
+        estimated_total_m: UInt32,
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(c), TileTensorable)
@@ -1354,6 +1355,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             Int(num_active_experts),
             context,
             Int(decode_grid_m_cap),
+            Int(estimated_total_m),
         )
 
 

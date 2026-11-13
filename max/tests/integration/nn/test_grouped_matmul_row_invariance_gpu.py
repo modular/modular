@@ -69,6 +69,13 @@ _ROW_CASES: dict[str, list[int]] = {
     "1_17_129": [1, 17, 129],
 }
 
+# Prefill-sized FP8 groups: with the step's row estimate passed, rows that
+# average more than 128 a group take the SM100 128-row tile, and 257 rows also
+# leave a partial last tile.
+_FP8_PREFILL_ROW_CASES: dict[str, list[int]] = {
+    "130_257_200": [130, 257, 200],
+}
+
 # Dispatch pads every expert's row range up to these counts: 4 rows for
 # blockwise FP8, 16 for NVFP4 (`ep_comm.mojo:1307,1406-1429`).
 _FP8_ROW_PAD = 4
@@ -181,7 +188,10 @@ def _assert_rows_permute(
 
 
 def _build_fp8(
-    session: InferenceSession, device: Accelerator, total_m: int
+    session: InferenceSession,
+    device: Accelerator,
+    total_m: int,
+    estimated_total_m: int | None = None,
 ) -> Model:
     gpu = DeviceRef(device.label, device.id)
     cpu = DeviceRef.CPU()
@@ -211,6 +221,9 @@ def _build_fp8(
                 stats,
                 _FP8_INPUT_SCALE,
                 _FP8_WEIGHT_SCALE,
+                estimated_total_m=None
+                if estimated_total_m is None
+                else ops.constant(estimated_total_m, DType.uint32, device=cpu),
             )
         )
     return session.load(graph)
@@ -323,12 +336,15 @@ def _build_nvfp4(
     return session.load(graph)
 
 
-@pytest.mark.parametrize("case", list(_ROW_CASES))
+@pytest.mark.parametrize(
+    "case", list(_ROW_CASES) + list(_FP8_PREFILL_ROW_CASES)
+)
 def test_fp8_blockwise_grouped_matmul_rows_are_position_invariant(
     case: str,
 ) -> None:
     rng = np.random.default_rng(_SEED)
-    real = _ROW_CASES[case]
+    prefill = case in _FP8_PREFILL_ROW_CASES
+    real = (_FP8_PREFILL_ROW_CASES if prefill else _ROW_CASES)[case]
     counts = _pad_to(real, _FP8_ROW_PAD)
     starts = _starts(counts)
     total_m = int(starts[-1])
@@ -348,7 +364,9 @@ def test_fp8_blockwise_grouped_matmul_rows_are_position_invariant(
 
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    model = _build_fp8(session, device, total_m)
+    model = _build_fp8(
+        session, device, total_m, estimated_total_m=total_m if prefill else None
+    )
 
     def inputs(rows: np.ndarray, scales: np.ndarray) -> list[Buffer]:
         return [
