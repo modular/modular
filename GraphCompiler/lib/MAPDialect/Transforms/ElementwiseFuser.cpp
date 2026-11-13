@@ -11,9 +11,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Input-fusion wrapper for a pure-elementwise producer fusing into a
-// pure-elementwise consumer foreach -- the case that always shares one index
-// space. A view on either side is `ViewFuser`'s job.
+// Input-fusion wrapper for a pure-elementwise producer fusing into a consumer
+// foreach whose loads each read a producer element at most once. A view
+// producer is `ViewFuser`'s job. A pure view consumer stays a view, so later
+// passes can still make it zero-copy.
 //
 //===----------------------------------------------------------------------===//
 
@@ -21,8 +22,10 @@
 #include "GraphCompiler/MAPDialect/Support/InputFusion.h"
 #include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h"
 #include "GraphCompiler/MODialect/MODevices.h"
+#include "GraphCompiler/Support/DataflowUtils.h"
 
 #include "mlir/Support/LLVM.h"
+#include "llvm/ADT/STLExtras.h"
 
 using namespace M;
 
@@ -56,6 +59,34 @@ bool isCheapToDuplicate(IterElementwiseOp op,
   return true;
 }
 
+// Whether each load `dst` makes of `src`'s result is at the loop's own index
+// or through slices and transposes only. Such a load reads each element at
+// most once, so splicing `src` into it adds no work per element.
+// TODO(AGENT-823): two loads can still read one element, so `src` is computed
+// once per distinct load index, with no cap on the number of loads.
+bool eachLoadReadsElementAtMostOnce(IterElementwiseOp dst,
+                                    IterElementwiseOp src) {
+  for (auto [input, arg] :
+       llvm::zip(dst.getInputs(), dst.getInputBlockArgs())) {
+    if (input != src.getResult(0))
+      continue;
+    for (Operation *user : arg.getUsers()) {
+      auto load = dyn_cast<LoadOp>(user);
+      if (!load)
+        return false;
+      // Allow-list: a transform not listed here can repeat elements, as a
+      // broadcast does.
+      if (dataflowGraphContains<WalkDirection::Producers>(
+              load.getIndex().getDefiningOp(), [](Operation *o) {
+                return isa<IndexTransformOpInterface>(o) &&
+                       !isa<SliceIndexOp, TransposeIndexOp>(o);
+              }))
+        return false;
+    }
+  }
+  return true;
+}
+
 struct FuseElementwisePass
     : public MAP::impl::FuseElementwiseBase<FuseElementwisePass> {
   using Base::Base;
@@ -63,11 +94,11 @@ struct FuseElementwisePass
 
   void runOnOperation() override {
     InputFusionConfig config;
-    // Both kernels pure elementwise (no index transform).
     config.shouldFuse = [](StoreOp srcStore, LoadOp dstLoad) {
       auto src = srcStore->getParentOfType<IterElementwiseOp>();
       auto dst = dstLoad->getParentOfType<IterElementwiseOp>();
-      return src && dst && !isViewForeach(src) && !isViewForeach(dst);
+      return src && dst && !isViewForeach(src) && !isPureViewForeach(dst) &&
+             eachLoadReadsElementAtMostOnce(dst, src);
     };
     // Never duplicate a host kernel.
     int64_t threshold = largeTensorElementThreshold;

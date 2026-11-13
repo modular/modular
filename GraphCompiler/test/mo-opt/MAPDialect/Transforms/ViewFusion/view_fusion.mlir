@@ -1,9 +1,9 @@
 // RUN: mo-opt --mlir-print-local-scope %s --mogg-import-packages --mo-to-map --map-fuse-views | FileCheck %s
 
 // ViewFuser is generic over IndexTransformOpInterface: it does not special-case
-// slice/broadcast/transpose, and it does not require its producer and consumer
-// to share a shape/index space the way ElementwiseFuser does -- that's what
-// lets a view fuse into a consumer of a different shape.
+// slice/broadcast/transpose, and it does not restrict how its consumer reads
+// the producer the way ElementwiseFuser does -- that's what lets a view fuse
+// into a consumer of a different shape.
 
 // A slice feeding a transpose of a different shape: the transpose's own
 // index-transform result (not the raw shared index) becomes the slice's loop

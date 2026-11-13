@@ -14,6 +14,7 @@
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MODialect/MOUtils.h"
+#include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/AsmSyntax.h"
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
@@ -96,6 +97,17 @@ TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
   for (auto [i, p] : llvm::enumerate(perm))
     result[p] = dims[i];
   return result;
+}
+
+//===----------------------------------------------------------------------===//
+// map.call.elementwise
+//===----------------------------------------------------------------------===//
+
+bool CallElementwiseOp::readsIndex() {
+  auto decl = SymbolTable::lookupNearestSymbolFrom<MOGG::KernelDeclOp>(
+      *this, getCalleeAttr());
+  return !decl ||
+         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndexList();
 }
 
 //===----------------------------------------------------------------------===//

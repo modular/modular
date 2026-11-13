@@ -125,12 +125,10 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
   if (!llvm::all_of(result.getUsers(),
                     [&](Operation *user) { return user == dst; }))
     return false;
-  // Reshape barrier, as in input fusion: a view cannot fuse into a load
-  // already past a reshape.
   for (auto [input, arg] : llvm::zip(dst.getInputs(), dst.getInputBlockArgs()))
     if (input == result &&
         (!llvm::all_of(arg.getUsers(), llvm::IsaPred<LoadOp>) ||
-         anyLoadCrossesReshape(arg)))
+         crossesFusionBarrier(src, arg)))
       return false;
   return true;
 }

@@ -24,12 +24,9 @@
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h"
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
 #include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h"
-#include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
-#include "GraphCompiler/MOGGDialect/MOGGOps.h"
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/STLExtras.h"
 
@@ -46,14 +43,6 @@ namespace {
 // Whether `value` is computed outside `phase`, once per row.
 bool isRowValue(IterMapOp phase, Value value) {
   return !phase.getBody().isAncestor(value.getParentRegion());
-}
-
-// Whether `call`'s kernel reads the element's position.
-bool readsIndex(CallElementwiseOp call) {
-  auto decl = SymbolTable::lookupNearestSymbolFrom<MOGG::KernelDeclOp>(
-      call, call.getCalleeAttr());
-  return !decl ||
-         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndexList();
 }
 
 // Re-indexes `load` by the row, before `phase`, when its index ignores the
@@ -78,7 +67,7 @@ void hoistLoad(IterRowwiseOp dst, IterMapOp phase, LoadOp load,
 
 // Moves `call` before `phase` when every operand is a row value.
 void hoistCall(IterRowwiseOp dst, IterMapOp phase, CallElementwiseOp call) {
-  if (readsIndex(call) || !llvm::all_of(call.getArgs(), [&](Value arg) {
+  if (call.readsIndex() || !llvm::all_of(call.getArgs(), [&](Value arg) {
         return isRowValue(phase, arg);
       }))
     return;

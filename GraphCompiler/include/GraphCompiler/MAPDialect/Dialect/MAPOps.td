@@ -861,6 +861,13 @@ def MAP_CallElementwiseOp : MAP_Op<"call.elementwise", [
     `` `(` $index `,` $args `)` attr-dict
     `:` type($index) `,` type($args) `->` type($result)
   }];
+
+  let extraClassDeclaration = [{
+    /// Whether the kernel is an index reader: it reads its element index, so
+    /// the index operand changes the result. A callee that does not resolve
+    /// counts as one.
+    bool readsIndex();
+  }];
 }
 
 //===----------------------------------------------------------------------===//
