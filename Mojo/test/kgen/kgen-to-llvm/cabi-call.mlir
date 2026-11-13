@@ -290,7 +290,7 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 
 // CHECK-LABEL: llvm.func internal @callee_ret_6byte
 // CHECK-SAME:    (%{{.*}}: !llvm.ptr {llvm.noundef}) -> f64
-// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 {alignment = 8 : i64}
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 : (i32) -> !llvm.ptr
 // CHECK:         llvm.store %{{.*}}, [[SLOT]] : !llvm.struct<(f16, f16, f16)>, !llvm.ptr
 // CHECK:         [[VAL:%.*]] = llvm.load [[SLOT]] : !llvm.ptr -> f64
 // CHECK:         llvm.return [[VAL]] : f64
@@ -301,7 +301,7 @@ kgen.func @callee_ret_6byte(%p: !llvm.ptr) cabi -> !llvm.struct<(f16, f16, f16)>
 
 // CHECK-LABEL: llvm.func internal @callee_larger_coerced_ty_6byte
 // CHECK-SAME:    ([[ARG:%.*]]: f64) -> f16
-// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 {alignment = 8 : i64}
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x f64 : (i32) -> !llvm.ptr
 // CHECK:         llvm.store [[ARG]], [[SLOT]] : f64, !llvm.ptr
 // CHECK:         llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f16, f16, f16)>
 kgen.func @callee_larger_coerced_ty_6byte(%s: !llvm.struct<(f16, f16, f16)>) cabi -> f16 {
@@ -325,7 +325,7 @@ kgen.func @caller_larger_coerced_ty_6byte(%s: !llvm.struct<(f16, f16, f16)>) -> 
 
 // CHECK-LABEL: llvm.func internal @callee_larger_coerced_ty_10byte
 // CHECK-SAME:    ([[ARG0:%.*]]: f64, [[ARG1:%.*]]: f32) -> f32
-// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x !llvm.struct<(f64, f32)> {alignment = 8 : i64}
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x !llvm.struct<(f64, f32)> : (i32) -> !llvm.ptr
 // CHECK:         [[T0:%.*]] = llvm.mlir.undef : !llvm.struct<(f64, f32)>
 // CHECK:         [[T1:%.*]] = llvm.insertvalue [[ARG0]], [[T0]][0] : !llvm.struct<(f64, f32)>
 // CHECK:         [[T2:%.*]] = llvm.insertvalue [[ARG1]], [[T1]][1] : !llvm.struct<(f64, f32)>
@@ -340,13 +340,38 @@ kgen.func @callee_larger_coerced_ty_10byte(%s: !llvm.struct<(f32, f32, f16)>) ca
 // CHECK-SAME:    ([[ARG:%.*]]: !llvm.struct<(f32, f32, f16)> {llvm.noundef}) -> f32
 // CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x !llvm.struct<(f64, f32)>
 // CHECK:         llvm.store [[ARG]], [[SLOT]]
-// CHECK:         [[VAL0:%.*]] = llvm.load [[SLOT]]
-// CHECK:         [[GEP1:%.*]] = llvm.getelementptr inbounds [[SLOT]][8]
-// CHECK:         [[VAL1:%.*]] = llvm.load [[GEP1]]
+// CHECK:         [[PAIR:%.*]] = llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f64, f32)>
+// CHECK:         [[VAL0:%.*]] = llvm.extractvalue [[PAIR]][0]
+// CHECK:         [[VAL1:%.*]] = llvm.extractvalue [[PAIR]][1]
 // CHECK:         llvm.call tail @callee_larger_coerced_ty_10byte([[VAL0]], [[VAL1]]) : (f64, f32) -> f32
 kgen.func @caller_larger_coerced_ty_10byte(%s: !llvm.struct<(f32, f32, f16)>) -> f32 {
   %r = kgen.call tail @callee_larger_coerced_ty_10byte(%s) : (!llvm.struct<(f32, f32, f16)>) -> f32
   hlcf.return %r : f32
+}
+
+// The struct and its coerced type have the same size, so the slot has the
+// coerced type. LLVM aligns a 128-bit vector to 16 bytes, but the data layout
+// gives the struct only the alignment of its f32 elements.
+
+// CHECK-LABEL: llvm.func internal @callee_ret_vec
+// CHECK-SAME:    -> vector<2xf64>
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x vector<2xf64> : (i32) -> !llvm.ptr
+// CHECK:         llvm.store %{{.*}}, [[SLOT]] : !llvm.struct<(vector<4xf32>)>, !llvm.ptr
+// CHECK:         [[VAL:%.*]] = llvm.load [[SLOT]] : !llvm.ptr -> vector<2xf64>
+// CHECK:         llvm.return [[VAL]] : vector<2xf64>
+kgen.func @callee_ret_vec(%v: !kgen.simd<4, f32>) cabi -> !kgen.struct<(simd<4, f32>) align(16)> {
+  %s = kgen.struct.create(%v) : !kgen.struct<(simd<4, f32>) align(16)>
+  hlcf.return %s : !kgen.struct<(simd<4, f32>) align(16)>
+}
+
+// CHECK-LABEL: llvm.func internal @callee_take_vec
+// CHECK-SAME:    ([[ARG:%.*]]: vector<2xf64>)
+// CHECK:         [[SLOT:%.*]] = llvm.alloca %{{.*}} x vector<2xf64> : (i32) -> !llvm.ptr
+// CHECK:         llvm.store [[ARG]], [[SLOT]] : vector<2xf64>, !llvm.ptr
+// CHECK:         llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(vector<4xf32>)>
+kgen.func @callee_take_vec(%s: !kgen.struct<(simd<4, f32>) align(16)>) cabi -> !kgen.simd<4, f32> {
+  %v = kgen.struct.extract %s[0] : !kgen.struct<(simd<4, f32>) align(16)>
+  hlcf.return %v : !kgen.simd<4, f32>
 }
 
 } // module

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LowerKGENToLLVMRewriteCABIFns.h"
+#include "CABICallHelpers.h"
 #include "CABILowering.h"
 #include "LLVMLoweringUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -23,35 +24,19 @@ using namespace mlir::LLVM;
 
 namespace {
 
-/// Emit a stack alloca for `allocType` at b's current insertion point.
-/// The alignment is the max of `allocType` and `storeType` ABI alignments,
-/// ensuring the subsequent store of `storeType` into the alloca is not
-/// under-aligned.
-static Value createEntryAlloca(ImplicitLocOpBuilder &b, LLVMPointerType ptrType,
-                               Type allocType, Type storeType,
-                               const M::KGEN::LLVMDataLayout &dl) {
-  // Allocate the larger of the two types. A coercion may round the size up.
-  if (dl.getTypeAllocSize(storeType) > dl.getTypeAllocSize(allocType))
-    allocType = storeType;
-  uint64_t align =
-      std::max(dl.getTypeABIAlign(allocType), dl.getTypeABIAlign(storeType));
-  Value count = ConstantOp::create(b, b.getI32IntegerAttr(1));
-  return AllocaOp::create(b, ptrType, allocType, count, align);
-}
-
 /// For each original entry-block argument, add C ABI block arg(s) per
 /// `sigClass` and emit reconstruction code that converts the C ABI value(s)
 /// back to the original Mojo type. Returns one reconstructed Value per
 /// original arg; the caller is responsible for replacing uses and erasing the
 /// originals.
 static SmallVector<Value>
-reconstructCABIArguments(LLVMFunctionType newFnTy, Block *entry,
+reconstructCABIArguments(LLVMFunctionType newFnTy, LLVMFuncOp func,
                          const M::KGEN::SignatureClassification &sigClass,
                          ArrayRef<BlockArgument> origArgs,
                          ImplicitLocOpBuilder &b, MLIRContext *ctx,
                          const M::KGEN::LLVMDataLayout &dl) {
   SmallVector<Value> reconstructed;
-  auto ptrType = LLVMPointerType::get(ctx);
+  Block *entry = &func.getBody().front();
   for (auto [argIdx, coercion, origArg] :
        llvm::enumerate(sigClass.args, origArgs)) {
     Location loc = origArg.getLoc();
@@ -67,30 +52,23 @@ reconstructCABIArguments(LLVMFunctionType newFnTy, Block *entry,
       // Indirect: add a pointer block arg and load the original type from it.
       Value ptrArg = entry->addArgument(paramTy, loc);
       reconstructed.push_back(LoadOp::create(b, origType, ptrArg));
-    } else if (coercion.isTwoRegister()) {
-      // Two-register: add two args, pack them into a struct, store to an
-      // alloca sized for origType, then reload as origType (bitcast via mem).
-      Value arg1 = entry->addArgument(paramTy, loc);
-      Value arg2 = entry->addArgument(newFnTy.getParamType(paramIdx + 1), loc);
-      assert(arg1.getType() == coercion.coercedType && "C ABI mismatch");
-      assert(arg2.getType() == coercion.coercedSecondType && "C ABI mismatch");
-      Type pairTy =
-          LLVMStructType::getLiteral(ctx, {arg1.getType(), arg2.getType()});
-      Value alloca = createEntryAlloca(b, ptrType, origType, pairTy, dl);
-      Value pair = UndefOp::create(b, pairTy);
-      pair = InsertValueOp::create(b, pair, arg1, size_t{0});
-      pair = InsertValueOp::create(b, pair, arg2, size_t{1});
-      StoreOp::create(b, pair, alloca);
-      reconstructed.push_back(LoadOp::create(b, origType, alloca));
     } else {
-      // Single-register coercion (SSE or Integer): bitcast via store + load.
-      assert(coercion.coercedType);
-      Value coercedArg = entry->addArgument(paramTy, loc);
-      assert(coercedArg.getType() == coercion.coercedType && "C ABI mismatch");
-      Value alloca =
-          createEntryAlloca(b, ptrType, origType, coercedArg.getType(), dl);
-      StoreOp::create(b, coercedArg, alloca);
-      reconstructed.push_back(LoadOp::create(b, origType, alloca));
+      // One or two registers: make the C ABI value, then coerce it to the
+      // original type through memory.
+      Value coerced = entry->addArgument(paramTy, loc);
+      assert(coerced.getType() == coercion.coercedType && "C ABI mismatch");
+      if (coercion.isTwoRegister()) {
+        Value second =
+            entry->addArgument(newFnTy.getParamType(paramIdx + 1), loc);
+        assert(second.getType() == coercion.coercedSecondType &&
+               "C ABI mismatch");
+        Value pair =
+            UndefOp::create(b, M::KGEN::getCoercedValueType(coercion, ctx));
+        pair = InsertValueOp::create(b, pair, coerced, size_t{0});
+        coerced = InsertValueOp::create(b, pair, second, size_t{1});
+      }
+      reconstructed.push_back(
+          M::KGEN::coerceFromC(b, loc, func, coerced, origType, dl));
     }
   }
   return reconstructed;
@@ -100,23 +78,21 @@ reconstructCABIArguments(LLVMFunctionType newFnTy, Block *entry,
 /// pointer as block arg 0 (x8 on ARM64); otherwise, memory at the top of the
 /// entry block through which the result is coerced.
 static M::KGEN::CABIDefinition
-createCABIResultSlot(Block *entry, const M::KGEN::CoercionInfo &retInfo,
+createCABIResultSlot(LLVMFuncOp func, const M::KGEN::CoercionInfo &retInfo,
                      Type origRetType, ImplicitLocOpBuilder &b,
                      LLVMPointerType ptrType, MLIRContext *ctx, Location loc,
                      const M::KGEN::LLVMDataLayout &dl) {
-  if (retInfo.useSRet)
+  if (retInfo.useSRet) {
+    Block *entry = &func.getBody().front();
     return {retInfo, entry->insertArgument(0u, ptrType, loc), Type()};
+  }
 
-  // Single- or two-register: bitcast the original return value via memory.
-  Type coercedType =
-      retInfo.isTwoRegister()
-          ? LLVMStructType::getLiteral(
-                ctx, {retInfo.coercedType, retInfo.coercedSecondType})
-          : retInfo.coercedType;
+  // One or two registers: coerce the result through memory.
+  Type coercedType = M::KGEN::getCoercedValueType(retInfo, ctx);
   assert(coercedType);
-  b.setInsertionPointToStart(entry);
-  Value retAlloca = createEntryAlloca(b, ptrType, origRetType, coercedType, dl);
-  return {retInfo, retAlloca, coercedType};
+  Value slot =
+      M::KGEN::createCoercionSlot(b, loc, func, origRetType, coercedType, dl);
+  return {retInfo, slot, coercedType};
 }
 
 } // namespace
@@ -127,14 +103,14 @@ void rewriteCABIReturn(ReturnOp ret, const CABIDefinition &def) {
   if (!def.retSlot || ret.getOperands().empty())
     return;
   ImplicitLocOpBuilder rb(ret.getLoc(), ret);
-  StoreOp::create(rb, ret.getArg(), def.retSlot);
   // sret: store the result through the hidden pointer and return void.
   if (def.ret.useSRet) {
+    StoreOp::create(rb, ret.getArg(), def.retSlot);
     ret->setOperands(ValueRange());
     return;
   }
-  ret->setOperands(
-      ValueRange({LoadOp::create(rb, def.coercedRetType, def.retSlot)}));
+  ret->setOperands(ValueRange({coerceThroughSlot(
+      rb, ret.getLoc(), ret.getArg(), def.coercedRetType, def.retSlot)}));
 }
 
 CABIDefinition rewriteCABIFunctionEntry(LLVMFuncOp func, CABIInfo &abiInfo,
@@ -184,14 +160,14 @@ CABIDefinition rewriteCABIFunctionEntry(LLVMFuncOp func, CABIInfo &abiInfo,
     // Step 1: Coerce arguments — replace original block args with C ABI args
     // and emit reconstruction code at the entry block top.
     SmallVector<BlockArgument> origArgs = llvm::to_vector(func.getArguments());
-    auto reconstructed = reconstructCABIArguments(newFnTy, entry, sigClass,
-                                                  origArgs, b, ctx, dl);
+    auto reconstructed =
+        reconstructCABIArguments(newFnTy, func, sigClass, origArgs, b, ctx, dl);
     for (auto [origArg, reconVal] : llvm::zip(origArgs, reconstructed))
       origArg.replaceAllUsesWith(reconVal);
     entry->eraseArguments(0, origArgTypes.size());
 
     if (!retInfo.isIdentity()) {
-      def = createCABIResultSlot(entry, retInfo, origRetType, b, ptrType, ctx,
+      def = createCABIResultSlot(func, retInfo, origRetType, b, ptrType, ctx,
                                  loc, dl);
     }
   }

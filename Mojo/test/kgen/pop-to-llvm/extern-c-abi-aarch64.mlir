@@ -357,9 +357,8 @@ module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu",
 // CHECK-LABEL: @ret_int_pair
 llvm.func @ret_int_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.struct<(i64, i32)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
-  // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
+  // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(i64, i32)>, !llvm.ptr
+  // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
   %r = pop.external_call @c_d2() : () -> !llvm.struct<(i32, i32, i32)>
   llvm.return
 }

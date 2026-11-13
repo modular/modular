@@ -31,6 +31,64 @@ bool M::KGEN::isSignedIntegerScalar(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// Coercion through memory
+//===----------------------------------------------------------------------===//
+
+Type M::KGEN::getCoercedValueType(const CoercionInfo &coercion,
+                                  MLIRContext *ctx) {
+  if (coercion.isTwoRegister()) {
+    return LLVMStructType::getLiteral(
+        ctx, {coercion.coercedType, coercion.coercedSecondType});
+  }
+  return coercion.coercedType;
+}
+
+Value M::KGEN::createCoercionSlot(OpBuilder &b, Location loc, LLVMFuncOp func,
+                                  Type mojoType, Type coercedType,
+                                  const LLVMDataLayout &dataLayout) {
+  // The data layout gives a vector the alignment of its element, which can be
+  // less than the LLVM alignment. Thus the slot has the coerced type, which
+  // LLVM aligns, unless the Mojo type is larger.
+  Type slotType = dataLayout.getTypeAllocSize(mojoType) >
+                          dataLayout.getTypeAllocSize(coercedType)
+                      ? mojoType
+                      : coercedType;
+  uint64_t align = std::max(dataLayout.getTypeABIAlign(mojoType),
+                            dataLayout.getTypeABIAlign(coercedType));
+  // Keep the alignment of the slot type when it is sufficient.
+  if (align <= static_cast<uint64_t>(dataLayout.getTypeABIAlign(slotType)))
+    align = 0;
+
+  OpBuilder::InsertionGuard guard(b);
+  b.setInsertionPointToStart(&func.getBody().front());
+  Value count = ConstantOp::create(b, loc, b.getI32IntegerAttr(1));
+  return AllocaOp::create(b, loc, LLVMPointerType::get(b.getContext()),
+                          slotType, count, align);
+}
+
+Value M::KGEN::coerceThroughSlot(OpBuilder &b, Location loc, Value value,
+                                 Type destType, Value slot) {
+  StoreOp::create(b, loc, value, slot);
+  return LoadOp::create(b, loc, destType, slot);
+}
+
+Value M::KGEN::coerceToC(OpBuilder &b, Location loc, LLVMFuncOp func,
+                         Value value, Type coercedType,
+                         const LLVMDataLayout &dataLayout) {
+  Value slot = createCoercionSlot(b, loc, func, value.getType(), coercedType,
+                                  dataLayout);
+  return coerceThroughSlot(b, loc, value, coercedType, slot);
+}
+
+Value M::KGEN::coerceFromC(OpBuilder &b, Location loc, LLVMFuncOp func,
+                           Value value, Type mojoType,
+                           const LLVMDataLayout &dataLayout) {
+  Value slot =
+      createCoercionSlot(b, loc, func, mojoType, value.getType(), dataLayout);
+  return coerceThroughSlot(b, loc, value, mojoType, slot);
+}
+
+//===----------------------------------------------------------------------===//
 // CABICallHelper implementation
 //===----------------------------------------------------------------------===//
 
@@ -46,14 +104,10 @@ Value CABICallHelper::createEntryBlockAlloca(DirectRewriter &rewriter,
                                              Type elemType) const {
   auto ptrType = LLVMPointerType::get(ctx);
 
-  // Find the enclosing LLVM function.
-  auto func = parentOp->getParentOfType<LLVMFuncOp>();
-  assert(func && "external_call must be inside an LLVM function");
-
   // Save current insertion point and emit alloca at the start of the
   // entry block.
   OpBuilder::InsertionGuard guard(rewriter);
-  Block &entryBlock = func.getBody().front();
+  Block &entryBlock = getParentFunc().getBody().front();
   rewriter.setInsertionPointToStart(&entryBlock);
 
   Value count =
@@ -62,70 +116,10 @@ Value CABICallHelper::createEntryBlockAlloca(DirectRewriter &rewriter,
                           /*alignment=*/0);
 }
 
-Value CABICallHelper::bitcastViaMemory(Value sourceValue, Type destType,
-                                       Type allocType, Location loc,
-                                       DirectRewriter &rewriter) const {
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-  StoreOp::create(rewriter, loc, sourceValue, alloca);
-  return LoadOp::create(rewriter, loc, destType, alloca);
-}
-
-Value CABICallHelper::createOffsetGEP(Value basePtr, int64_t byteOffset,
-                                      Location loc,
-                                      DirectRewriter &rewriter) const {
-  auto ptrType = LLVMPointerType::get(ctx);
-  return GEPOp::create(rewriter, loc, ptrType, rewriter.getI8Type(), basePtr,
-                       GEPArg(byteOffset), GEPNoWrapFlags::inbounds);
-}
-
-SmallVector<Value>
-CABICallHelper::prepareTwoRegisterArgument(Value originalArg, Type firstType,
-                                           Type secondType, Location loc,
-                                           DirectRewriter &rewriter) const {
-  // Allocate struct containing both register types
-  Type allocType = LLVMStructType::getLiteral(ctx, {firstType, secondType});
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-
-  // Store original struct
-  StoreOp::create(rewriter, loc, originalArg, alloca);
-
-  // Load first register at offset 0
-  Value first = LoadOp::create(rewriter, loc, firstType, alloca);
-
-  // Load second register at the byte offset of the second struct field.
-  // This equals getTypeStoreSize(firstType) because all implemented ABIs
-  // guarantee firstType is exactly 8 bytes (i64 or f64 for System V AMD64;
-  // i64 for ARM64 AAPCS non-HFA), so the LLVM struct {firstType, secondType}
-  // never has alignment padding between the two slots.
-  int64_t offset = tc->getTypeStoreSize(firstType);
-  Value gep = createOffsetGEP(alloca, offset, loc, rewriter);
-  Value second = LoadOp::create(rewriter, loc, secondType, gep);
-
-  return {first, second};
-}
-
-Value CABICallHelper::handleTwoRegisterReturn(Value callResult, Type firstType,
-                                              Type secondType,
-                                              Type originalReturnType,
-                                              Location loc,
-                                              DirectRewriter &rewriter) const {
-  // Allocate struct containing both register types
-  Type allocType = LLVMStructType::getLiteral(ctx, {firstType, secondType});
-  Value alloca = createEntryBlockAlloca(rewriter, loc, allocType);
-
-  // Extract and store first register
-  Value first = ExtractValueOp::create(rewriter, loc, callResult, 0);
-  StoreOp::create(rewriter, loc, first, alloca);
-
-  // Extract and store second register at the byte offset of the second field.
-  // See prepareTwoRegisterArgument for why this offset is always correct.
-  int64_t offset = tc->getTypeStoreSize(firstType);
-  Value gep = createOffsetGEP(alloca, offset, loc, rewriter);
-  Value second = ExtractValueOp::create(rewriter, loc, callResult, 1);
-  StoreOp::create(rewriter, loc, second, gep);
-
-  // Load as original struct type
-  return LoadOp::create(rewriter, loc, originalReturnType, alloca);
+LLVMFuncOp CABICallHelper::getParentFunc() const {
+  auto func = parentOp->getParentOfType<LLVMFuncOp>();
+  assert(func && "external_call must be inside an LLVM function");
+  return func;
 }
 
 SmallVector<Value> CABICallHelper::prepareArg(const CoercionInfo &coercion,
@@ -147,29 +141,16 @@ SmallVector<Value> CABICallHelper::prepareArg(const CoercionInfo &coercion,
     return result;
   }
 
-  // Bitcast struct to integer/float type via store-to-stack + load pattern.
-  //
-  // Following Clang's approach: allocate using the coerced type(s) to
-  // ensure the allocation is large enough for the loads. This prevents UB
-  // when coercion rounds up (e.g., 3-byte struct -> i32 = 4 bytes).
   assert(coercion.coercedType && "non-identity, non-indirect coercion must "
                                  "have a coercedType — classifier bug");
-
-  if (coercion.isTwoRegister()) {
-    assert(coercion.coercedSecondType &&
-           "two-register classification must have coercedSecondType");
-    // Two registers: prepare both register values
-    auto values =
-        prepareTwoRegisterArgument(originalArg, coercion.coercedType,
-                                   coercion.coercedSecondType, loc, rewriter);
-    result.append(values.begin(), values.end());
-  } else {
-    // Single register: use bitcast helper
-    Value coercedVal = bitcastViaMemory(originalArg, coercion.coercedType,
-                                        coercion.coercedType, loc, rewriter);
-    result.push_back(coercedVal);
+  Value coerced = coerceToC(rewriter, loc, getParentFunc(), originalArg,
+                            getCoercedValueType(coercion, ctx), *tc);
+  if (!coercion.isTwoRegister()) {
+    result.push_back(coerced);
+    return result;
   }
-
+  result.push_back(ExtractValueOp::create(rewriter, loc, coerced, 0));
+  result.push_back(ExtractValueOp::create(rewriter, loc, coerced, 1));
   return result;
 }
 
@@ -211,21 +192,10 @@ Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
     return callResult;
   }
 
-  if (retClass.isTwoRegister()) {
-    assert(retClass.coercedType && retClass.coercedSecondType &&
-           "two-register classification must have both coerced types");
-    // Two-register return: extract both values and reconstruct struct
-    return handleTwoRegisterReturn(callResult, retClass.coercedType,
-                                   retClass.coercedSecondType, origRetTy, loc,
-                                   rewriter);
-  }
-
-  // Single-register: bitcast from coerced type back to struct
-  assert(retClass.coercedType &&
-         "non-identity, non-sret, non-two-register return must have a "
-         "coercedType — classifier bug");
-  return bitcastViaMemory(callResult, origRetTy, retClass.coercedType, loc,
-                          rewriter);
+  assert(callResult.getType() == getCoercedValueType(retClass, ctx) &&
+         "a register result must have the coerced type");
+  return coerceFromC(rewriter, loc, getParentFunc(), callResult, origRetTy,
+                     *tc);
 }
 
 CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,

@@ -361,8 +361,8 @@ llvm.func @arg_large_indirect(%arg0: !llvm.struct<(i64, i64, i64)>) {
 //
 // Same classification rules as arguments, but applied to the return value.
 // The LLVM call returns the coerced type; the transform reconstructs the
-// original struct via a store/load bitcast pair (single-register) or via
-// extractvalue + store + load (two-register). For >16 bytes, sret convention
+// original struct with a store and a load through a stack slot. For two
+// registers, the stored value is the struct of both. For >16 bytes, sret convention
 // is used: a hidden first pointer parameter is allocated by the caller;
 // the callee writes the result there; the caller loads it afterward.
 //===----------------------------------------------------------------------===//
@@ -385,15 +385,14 @@ llvm.func @ret_small_int_struct() {
 // -----
 
 // D2: return {i32, i32, i32} (12 bytes) → IntegerPair → call returns
-// !llvm.struct<(i64, i32)>. Two-register reconstruction: extract both values,
-// store at the correct offsets into a typed alloca, load as original struct.
+// !llvm.struct<(i64, i32)>. Two-register reconstruction: store the pair to a
+// stack slot, load as the original struct.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_int_pair
 llvm.func @ret_int_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.struct<(i64, i32)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
-  // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
+  // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(i64, i32)>, !llvm.ptr
+  // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
   %r = pop.external_call @c_d2() : () -> !llvm.struct<(i32, i32, i32)>
   llvm.return
 }
@@ -403,14 +402,13 @@ llvm.func @ret_int_pair() {
 // -----
 
 // D3: return {f64, f64} (16 bytes) → SSEPair → call returns
-// !llvm.struct<(f64, f64)>. extractvalue + reconstruct.
+// !llvm.struct<(f64, f64)>. Store the pair and reload it as the struct.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sse_pair
 llvm.func @ret_sse_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d3() : () -> !llvm.struct<(f64, f64)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
-  // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(f64, f64)>
+  // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(f64, f64)>, !llvm.ptr
+  // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f64, f64)>
   %r = pop.external_call @c_d3() : () -> !llvm.struct<(f64, f64)>
   llvm.return
 }
