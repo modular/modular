@@ -60,11 +60,11 @@ def example[list: List[Int]]():
 
 # `Tuple[*Ts]` has no fixed arity, so it cannot be destructured.
 def unpack_parametric_tuple[*Ts: Movable, t: Tuple[*Ts]]():
-    # expected-error @below {{cannot unpack value of parametric tuple type 'Tuple[*Ts]' into a fixed arity}}
+    # expected-error @below {{cannot unpack value of parametric tuple type 'Tuple[*Ts]' into 2 values}}
     comptime (a, b) = t
 
 
 def unpack_parametric_tuple_in_for[*Ts: Movable, t: Tuple[*Ts]]():
-    # expected-error @below {{cannot unpack value of parametric tuple type}}
+    # expected-error-re @below {{cannot unpack value of parametric tuple type '{{.*}}Tuple[*Ts]{{.*}}' into 2 values}}
     comptime for (a, b) in [t]:
         pass

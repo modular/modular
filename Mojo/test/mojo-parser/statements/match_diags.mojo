@@ -855,7 +855,7 @@ def print_token(tok: Token):
 # catch-all still works.
 def match_parametric_tuple_pattern[*Ts: Movable](t: Tuple[*Ts]):
     match t:
-    # expected-error @+1 {{cannot match value of parametric tuple type 'Tuple[*Ts]' against a pattern with a fixed number of elements}}
+    # expected-error @+1 {{cannot match value of parametric tuple type 'Tuple[*Ts]' against a pattern with 2 elements}}
     case (a, b):
         pass
 

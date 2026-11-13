@@ -521,12 +521,15 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
 
   assert(subjectType.getParamBindings().size() == 2 &&
          "Tuple has two parameters");
-  // `Tuple[*Ts]` in generic code has an unresolved pack of unknown arity.
-  auto vaAttr = sugarDynCast<ParamListAttr>(subjectType.getParamBindings()[0]);
+  // Look through an upcast of the element pack. `Tuple[*Ts]` has no element
+  // list here: `*Ts` is a parameter pack whose size is known only when the
+  // code is instantiated.
+  auto vaAttr = sugarDynCast<ParamListAttr>(
+      UpcastAttr::strip(subjectType.getParamBindings()[0]));
   if (!vaAttr) {
     builder.emitError(getLoc(), "cannot match value of parametric tuple type ")
-        << subjectType << " against a pattern with a fixed number of elements"
-        << getRange();
+        << subjectType << " against a pattern with " << exprs.size()
+        << " element" << plural(exprs.size()) << getRange();
     return failure();
   }
   if (vaAttr.getValues().size() != exprs.size()) {
@@ -2145,7 +2148,8 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
   if (isTupleType(builder, type, loc)) {
     assert(type.getParamBindings().size() == 2 && "Tuple has two parameters");
     // An unresolved parameter pack has no known arity: treat it as opaque.
-    auto vaAttr = sugarDynCast<ParamListAttr>(type.getParamBindings()[0]);
+    auto vaAttr = sugarDynCast<ParamListAttr>(
+        UpcastAttr::strip(type.getParamBindings()[0]));
     if (!vaAttr)
       return false;
     for (unsigned i = 0, e = vaAttr.getValues().size(); i != e; ++i) {

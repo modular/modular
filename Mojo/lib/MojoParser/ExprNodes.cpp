@@ -5690,11 +5690,15 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
 
   assert(expectedType.getParamBindings().size() == 2 &&
          "Tuple has two parameter");
-  // `Tuple[*Ts]` in generic code has an unresolved pack of unknown arity.
-  auto vaAttr = sugarDynCast<ParamListAttr>(expectedType.getParamBindings()[0]);
+  // Look through an upcast of the element pack. `Tuple[*Ts]` has no element
+  // list here: `*Ts` is a parameter pack whose size is known only when the
+  // code is instantiated.
+  auto vaAttr = sugarDynCast<ParamListAttr>(
+      UpcastAttr::strip(expectedType.getParamBindings()[0]));
   if (!vaAttr) {
     emitter.emitError(getLoc(), "cannot unpack value of parametric tuple type ")
-        << expectedType << " into a fixed arity" << getRange();
+        << expectedType << " into " << exprs.size() << " value"
+        << plural(exprs.size()) << getRange();
     return failure();
   }
   if (vaAttr.getValues().size() == exprs.size()) {
