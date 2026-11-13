@@ -57,6 +57,8 @@ _SEPARATE_TARGET_TESTS = [
     "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
+    "test_megaffn_mimo_graph.py",
+    "test_megaffn_mimo_gpu.py",
     "test_rms_norm_residual_add.py",
     "test_rowwise_reductions.py",
     "test_rowwise_reductions_fuzz.py",
@@ -133,6 +135,7 @@ modular_py_test(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
             "_mega_ffn_graphs.py",
+            "_megaffn_mimo_graphs.py",
             "_rowwise_reduction_specs.py",
             "buffer_create_init_shared.py",
             "fusion_utils.py",
@@ -182,6 +185,78 @@ modular_py_test(
         "gpu",
     ],
     deps = _GRAPH_COMMON_DEPS,
+)
+
+# The graphs of the fused W4A8 MoE FFN op and of the two-launch chain it
+# replaces, shared by the surface test and the GPU A/B below.
+modular_py_library(
+    name = "megaffn_mimo_graphs",
+    testonly = True,
+    srcs = ["_megaffn_mimo_graphs.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+    ],
+)
+
+# The op through a graph against the two-launch chain, byte for byte, at MiMo's
+# c1 and c8 routings -- the op's chain arm and its one-launch arm -- and at a
+# prefill-shaped batch past its ceiling, with a second execution and a
+# captured-graph replay on the one counter workspace.
+modular_py_test(
+    name = "test_megaffn_mimo_gpu",
+    size = "large",
+    srcs = [
+        "test_megaffn_mimo_gpu.py",
+    ],
+    exec_properties = {
+        # ~200 MiB of expert weights on the device, plus the intermediates.
+        "test.resources:gpu-memory": "8",
+    },
+    # B200-only: the op's kernel is SM100a.
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    # Manual: a numeric byte comparison across graphs, so `//...` skips it. The
+    # op's numerics have their own gate in the Mojo test
+    # //Kernels/test/gpu/Moka:test_megaffn_mimo_port.mojo.test.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    # Registering the op needs the closed-source kernels' graph_compiler package.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":megaffn_mimo_graphs",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The op's graph contract: registered name, operand order, tuning parameters and
+# output shapes, all read off the graph. Nothing compiles, so this is a surface
+# check and runs on any worker.
+modular_py_test(
+    name = "test_megaffn_mimo_graph",
+    size = "small",
+    srcs = ["test_megaffn_mimo_graph.py"],
+    mojo_deps = ["//max:builtin_kernels"],
+    # Registering the op needs the closed-source kernels' graph_compiler package.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        ":megaffn_mimo_graphs",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+    ],
 )
 
 # The MoE FFN graphs both MegaFFN fusion targets below build.

@@ -78,6 +78,9 @@ from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn._graph_ops import (
+    rms_norm_quantize_dynamic_scaled_float8 as _rms_norm_quantize_dynamic_scaled_float8,
+)
+from max.nn._graph_ops import (
     rms_norm_quantize_dynamic_scaled_float8_dual as _rms_norm_quantize_dynamic_scaled_float8_dual,
 )
 from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
@@ -135,6 +138,28 @@ def _quantize_rule(x: TensorLayout, *extras: Any) -> list[AxisAssignment]:
     is its transpose.
     """
     return _follow_input_rows(x, _transpose2d_placement)
+
+
+def _rms_norm_quantize_rule(
+    x: TensorLayout,
+    gamma: TensorLayout,
+    *extras: Any,
+    **kwargs: Any,
+) -> list[AxisAssignment]:
+    """Sharding rule for the fused RMSNorm + block-scaled FP8 quantize.
+
+    The norm reduces the sum of squares over the whole row, so the rows are
+    the ones :func:`~max.tensor.sharding.rules.rms_norm_rule` allows: a
+    replicated input, or one sharded on a leading (pre-norm) axis. A
+    contraction-sharded input would normalize by a partial sum of squares on
+    each device, so it is left out and the cost model reshards instead. The
+    norm weight is replicated for every placement the activation can take.
+    """
+    leading = range(x.rank - gamma.rank)
+    return [
+        AxisAssignment((axis, R), (axis, _transpose2d_placement(axis)))
+        for axis in (R, *(Sharded(d) for d in leading))
+    ]
 
 
 def _scaled_matmul_rule(
@@ -357,7 +382,7 @@ def _layer_norm_quantize_rule(
     ]
 
 
-def _rms_norm_quantize_rule(
+def _rms_norm_quantize_dual_rule(
     x: TensorLayout,
     gamma: TensorLayout,
     epsilon: float,
@@ -366,11 +391,12 @@ def _rms_norm_quantize_rule(
     *extras: Any,
     **kwargs: Any,
 ) -> list[AxisAssignment]:
-    """Sharding rule for the fused RMSNorm + dynamic FP8 quantize.
+    """Sharding rule for the fused RMSNorm + dynamic FP8 quantize, dual form.
 
-    The normalized row and the FP8 data both follow the activation, the block
-    scales are transposed relative to it, and the normalization weight is
-    replicated -- every rank normalizes with the whole K-wide weight.
+    The dual op hands back the normalized row as well as the FP8 data, so the
+    row and the data both follow the activation and the block scales are
+    transposed relative to them. The normalization weight is replicated:
+    every rank normalizes with the whole K-wide weight.
 
     Only leading axes are offered, for the reason given in
     :func:`_layer_norm_quantize_rule`.
@@ -384,13 +410,16 @@ def _rms_norm_quantize_rule(
 quantize_dynamic_scaled_float8 = F.functional(
     _quantize_dynamic_scaled_float8, rule=_quantize_rule
 )
+rms_norm_quantize_dynamic_scaled_float8 = F.functional(
+    _rms_norm_quantize_dynamic_scaled_float8, rule=_rms_norm_quantize_rule
+)
 layer_norm_quantize_dynamic_scaled_float8 = F.functional(
     _layer_norm_quantize_dynamic_scaled_float8,
     rule=_layer_norm_quantize_rule,
 )
 rms_norm_quantize_dynamic_scaled_float8_dual = F.functional(
     _rms_norm_quantize_dynamic_scaled_float8_dual,
-    rule=_rms_norm_quantize_rule,
+    rule=_rms_norm_quantize_dual_rule,
 )
 quantize_dynamic_block_scaled = F.functional(
     _quantize_dynamic_block_scaled, rule=_block_scaled_quantize_rule
@@ -585,6 +614,7 @@ __all__ = [
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",
     "quantize_dynamic_scaled_float8",
+    "rms_norm_quantize_dynamic_scaled_float8",
     "silu_quantize_fp8",
     "stack_blockwise_mega_ffn_b",
 ]

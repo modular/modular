@@ -62,7 +62,9 @@ class DFlashContextWriter(Module[[], None]):
 
     The K/V the layers write from the projected context are the same ones a
     block query attends to, so both paths go through each layer's attention
-    module's ``store_kv``. No ``forward``: the drafter runs its named
+    module: ``write_context_kv`` for the taps, ``store_kv`` for the block,
+    which ropes its queries in the same launch. No ``forward``: the drafter
+    runs its named
     entries (:meth:`~.dflash_mimo_v2.DFlashMiMoV2.write_context`,
     ``forward_block``), never ``__call__``.
     """
@@ -95,9 +97,10 @@ class DFlashContextWriter(Module[[], None]):
         """The RoPE table, replicated, in its stored float32.
 
         The drafter rotates K in the table's own dtype, as the graph-API
-        drafter does: `fused_qk_ragged_rope` rounds once per rotation, and
-        casting the table to the residual stream's bf16 would pre-round
-        cos/sin and shift every cached key the later block queries read.
+        drafter does with `fused_qk_ragged_rope`: the fused rotation and store
+        rounds once per rotation too, and casting the table to the residual
+        stream's bf16 would pre-round cos/sin and shift every cached key the
+        later block queries read.
         """
         return self.rope.freqs_cis.to(h.mesh)
 

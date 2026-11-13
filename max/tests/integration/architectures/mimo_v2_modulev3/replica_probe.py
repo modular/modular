@@ -371,10 +371,11 @@ class MiMoReplicaTrace(Module[..., list[Tensor]]):
         first_allreduce: int,
     ) -> tuple[Tensor, list[Tensor]]:
         attn_out = layer.self_attn(
-            layer.input_layernorm(h),
+            h,
             kv_collection,
             freqs_cis,
             input_row_offsets,
+            norm=layer.input_layernorm,
         )
         h = h + cls._planted(attn_out, plant, first_allreduce).to(h.mapping)
         router_input = layer.post_attention_layernorm(h)

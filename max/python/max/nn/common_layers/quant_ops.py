@@ -787,6 +787,20 @@ def _fp8_block_specs(
     )
 
 
+def fp8_block_activation_specs(
+    weight: FP8BlockTensor,
+) -> tuple[InputScaleSpec, WeightScaleSpec]:
+    """Returns the block-scale specs an ``FP8BlockTensor`` matmul runs with.
+
+    Activations quantize in ``(1, block_k)`` blocks against the weight's own
+    ``(block_m, block_k)`` block size, so a caller that produces the FP8
+    activation itself -- the fused norm + quantize, say -- describes the same
+    operands the plain matmul would.
+    """
+    block_m, block_k = weight.block_size
+    return _fp8_block_specs((block_m, block_k), input_block=(1, block_k))
+
+
 def layer_norm_quantize_fp8_block(
     x: Tensor,
     weight: FP8BlockTensor,
@@ -1013,10 +1027,8 @@ def _matmul_fp8_block(
     The activation block is ``(1, block_k)`` and the weight block is
     ``(block_m, block_k) = weight.block_size``. The kernel returns bf16.
     """
-    block_m, block_k = weight.block_size
-    input_spec, weight_spec = _fp8_block_specs(
-        (block_m, block_k), input_block=(1, block_k)
-    )
+    block_k = weight.block_size[1]
+    input_spec, weight_spec = fp8_block_activation_specs(weight)
 
     if isinstance(x, FP8BlockActivation):
         x_fp8, x_scales = x.data, x.scales

@@ -43,6 +43,7 @@ from typing import Any, cast
 
 import pytest
 from max import functional as F
+from max import mlir
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -91,6 +92,11 @@ from test_common.mixed_step_split_ops import record_sources
 GRAPH_NAME = "unified_dflash_mimo_v2"
 """The graph-API pairing's graph name, which Mach's block-spec executor binds
 by constant."""
+
+GATE_UP_OP = "mo.composite.grouped_matmul_swiglu_nvfp4"
+DOWN_OP = "mo.composite.grouped_matmul_block_scaled"
+"""The experts' two launches: the gate/up matmul with the SwiGLU and MXFP8
+requantize fused into its epilogue, and the down projection that reads it."""
 
 N_INPUTS_1DEV = 38
 """Inputs at 1 device without the bitmask triple (41 with it): the fused
@@ -370,24 +376,43 @@ def test_the_trace_carries_the_shared_moe_subgraph(
     assert text.count("mo.graph @") == 2
 
 
+def _nested_ops(
+    op: mlir.Operation | mlir.OpView,
+) -> list[mlir.Operation | mlir.OpView]:
+    """Returns ``op`` and every op nested under it, in program order."""
+    return [op] + [
+        inner
+        for region in op.regions
+        for block in region.blocks
+        for child in block.operations
+        for inner in _nested_ops(child)
+    ]
+
+
 def test_the_trace_carries_the_w4a8_chain(
     staged: tuple[StagedGraph[Any, Any], str],
 ) -> None:
-    """The experts run the MXFP4 chain: quantize, two grouped matmuls and
-    the fused SiLU, all inside the shared body; the dense MLPs run the
-    W8A8 FP8 chain inline."""
-    _, text = staged
+    """The experts run the MXFP4 chain: the input quantize and two grouped
+    matmuls, all inside the shared body; the dense MLPs run the W8A8 FP8
+    chain inline.
+
+    The gate/up matmul's epilogue applies the gated activation and the down
+    projection's MXFP8 re-quantize in place, so neither a standalone SiLU
+    nor a second grouped quantize appears, and the grouped matmul count is
+    two.
+    """
+    graph, text = staged
     for op, expected in (
         ("moe.create.indices.with.scales.offset", 1),
         (
             "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices",
             1,
         ),
-        # The plain name is a substring of the row-indexed one, so both
-        # grouped quantizes count here.
-        ("quantization.grouped.quantize.dynamic.block.scaled", 2),
-        ("mo.composite.grouped_matmul_block_scaled", 2),
-        ("ep.fused_silu", 1),
+        # The plain name is a substring of the row-indexed one, so the
+        # experts' input quantize counts here too.
+        ("quantization.grouped.quantize.dynamic.block.scaled", 1),
+        (GATE_UP_OP, 1),
+        (DOWN_OP, 1),
         ("moe.finalize", 1),
         ("mo.composite.quantize_dynamic_scaled_fp8", 7),
         ("matmul.dynamic_scaled_fp8", 7),
@@ -398,19 +423,39 @@ def test_the_trace_carries_the_w4a8_chain(
         assert n > 0, f"missing {op}"
         if expected is not None:
             assert n == expected, f"{op}: expected {expected}, got {n}"
+    assert "ep.fused_silu" not in text, "the chained SiLU is gone"
+    # The fused epilogue rounds its SwiGLU output through the bfloat16 the
+    # chained activation stored before it quantizes, which keeps the layer's
+    # output bit-identical to the chained path's.
+    ops = _nested_ops(graph.graph._mlir_op.block.owner)
+    (gate_up,) = [op for op in ops if op.name == GATE_UP_OP]
+    activation = mlir.StringAttr(gate_up.attributes["activation"]).value
+    assert activation == "silu_bf16", (
+        f"the gate/up matmul fuses {activation}, not a bf16-rounded SwiGLU"
+    )
+    # The down matmul consumes the epilogue's packed output directly: a
+    # restored re-quantize would put another op's result in this slot.
+    (down,) = [op for op in ops if op.name == DOWN_OP]
+    assert down.operands[0] == gate_up.results[0], (
+        "the down matmul does not read the gate/up epilogue's packed result"
+    )
 
 
 def test_the_trace_carries_the_drafter_kernels(
     staged: tuple[StagedGraph[Any, Any], str],
 ) -> None:
-    """The drafter's 2 layers write context and block K/V through the
-    paged stores, rope through the fused QK kernel, and attend through the
-    sinked windowed kernel; the target's 4 layers write their own 8
-    stores."""
+    """The drafter's 2 layers write context and block K/V through one
+    rotation-and-store launch each -- the context rows through the
+    query-less one, the block rows through the one that ropes their queries
+    too -- not the paged stores plus a separate fused QK kernel, and attend
+    through the sinked windowed kernel; the target's 4 layers keep their own
+    8 stores."""
     _, text = staged
     for op, expected in (
-        ("kv_cache.store.paged.ragged", 16),
-        ("kv_cache.fused_qk_rope.ragged.paged", 8),
+        ("kv_cache.store.paged.ragged", 8),
+        ("kv_cache.fused_qk_rope.ragged.paged", 4),
+        ("kv_cache.rope_qkv_store.ragged.paged", 2),
+        ("kv_cache.k_rope_v_store.ragged.paged", 2),
         ("attention.mha.ragged.paged.sink_weights", 5),
         ("attention.mha.ragged.paged", 6),
     ):

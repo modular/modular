@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from max import functional as F
 from max.driver import CPU
@@ -34,19 +35,25 @@ from max.nn.common_layers.linear import RowParallelLinear
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
 from max.nn.kernels import (
+    dynamic_scaled_matmul,
     flash_attention_ragged,
     fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
+    rms_norm_quantize_dynamic_scaled_float8,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.norm import rms_norm
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
-from max.tensor.sharding import NamedMapping
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from ...mimo_v2.layers.attention import QkvChunkLayout
 from ..quant import FP8_BLOCK
+
+if TYPE_CHECKING:
+    from ..mimo_v2 import MiMoV2RMSNorm
 
 
 class ChunkedQkvProj(Module[[], None]):
@@ -89,13 +96,15 @@ class ChunkedQkvProj(Module[[], None]):
             device=CPU(),
         )
 
-    def matmul(self, x: Tensor, *, shard_over_mesh: bool = True) -> Tensor:
-        """Returns ``[tokens, chunks * padded_rows]``.
+    def quant_weight(
+        self, mesh: DeviceMesh, *, shard_over_mesh: bool = True
+    ) -> FP8BlockTensor:
+        """Returns the block-scaled projection weight on ``mesh``.
 
-        The pad columns' outputs are zero. With ``shard_over_mesh`` each
-        device holds whole chunks, so its share of the output is its heads'
-        rows; without it the weight stays replicated and every device
-        projects its own rows with the full chunk set (DP attention).
+        Each device holds whole chunks with ``shard_over_mesh``, so its share
+        of the output is its heads' rows; without it the weight stays
+        replicated and every device projects its own rows with the full chunk
+        set (DP attention).
         """
         layout = self.layout
         weight = self.weight
@@ -114,11 +123,70 @@ class ChunkedQkvProj(Module[[], None]):
             weight_scale_inv=self.weight_scale,
             block_size=(FP8_BLOCK, FP8_BLOCK),
         )
-        if shard_over_mesh:
-            quant = quant.shard(0, x.mesh)
-        else:
-            quant = quant.to(x.mesh)
-        return quant_ops.matmul(x, quant)
+        return quant.shard(0, mesh) if shard_over_mesh else quant.to(mesh)
+
+    def matmul(self, x: Tensor, *, shard_over_mesh: bool = True) -> Tensor:
+        """Returns ``[tokens, chunks * padded_rows]``.
+
+        The pad columns' outputs are zero. With ``shard_over_mesh`` each
+        device holds whole chunks, so its share of the output is its heads'
+        rows; without it the weight stays replicated and every device
+        projects its own rows with the full chunk set (DP attention).
+        """
+        return quant_ops.matmul(
+            x, self.quant_weight(x.mesh, shard_over_mesh=shard_over_mesh)
+        )
+
+    def matmul_normed(
+        self,
+        x: Tensor,
+        gamma: Tensor,
+        epsilon: float,
+        *,
+        shard_over_mesh: bool = True,
+        multiply_before_cast: bool = False,
+    ) -> Tensor:
+        """Returns what ``matmul(rms_norm(x, gamma, epsilon))`` would.
+
+        The RMSNorm fuses into the FP8 quantize the projection needs, so the
+        normalized activation never round-trips through HBM: one kernel
+        produces the FP8 operands instead of a norm launch feeding a quantize
+        launch. The fused kernel converts the normalized value to BF16 exactly
+        where ``rms_norm`` does, so the only difference from the unfused pair
+        is the norm's sum-of-squares reduction order.
+        """
+        if not all(device.api == "cuda" for device in x.mesh.devices):
+            # The fused kernel has no host build, so a host mesh keeps the
+            # unfused pair, exactly what this layer did before the fusion.
+            normed = rms_norm(
+                x,
+                gamma,
+                epsilon,
+                multiply_before_cast=multiply_before_cast,
+            )
+            return self.matmul(normed, shard_over_mesh=shard_over_mesh)
+        quant = self.quant_weight(x.mesh, shard_over_mesh=shard_over_mesh)
+        input_spec, weight_spec = quant_ops.fp8_block_activation_specs(quant)
+        x_fp8, x_scales = rms_norm_quantize_dynamic_scaled_float8(
+            x,
+            gamma,
+            epsilon,
+            input_spec,
+            weight_spec,
+            multiply_before_cast=multiply_before_cast,
+            group_size_or_per_token=quant.block_size[1],
+            scales_type=DType.float32,
+            out_type=DType.float8_e4m3fn,
+        )
+        return dynamic_scaled_matmul(
+            x_fp8,
+            quant.weight,
+            x_scales,
+            quant.weight_scale_inv,
+            input_spec,
+            weight_spec,
+            out_type=DType.bfloat16,
+        )
 
 
 def _split_heads(x: Tensor, head_dim: int) -> Tensor:
@@ -328,16 +396,20 @@ class MiMoV2Attention(Module[..., Tensor]):
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Tensor,
         input_row_offsets: Tensor,
+        norm: MiMoV2RMSNorm,
     ) -> Tensor:
         """Runs the layer's attention on each device's heads.
 
         Args:
-            x: The replicated ``[tokens, hidden]`` input, or the batch
-                sharded over data-parallel replicas.
+            x: The ``[tokens, hidden]`` residual stream, or the batch
+                sharded over data-parallel replicas. Un-normalized.
             kv_collections: The layer's KV group, one per device.
             freqs_cis: The group's RoPE table, replicated, in ``x.dtype``.
             input_row_offsets: Each sequence's first row in ``x``,
                 replicated or sharded like ``x``.
+            norm: The layer's input RMSNorm. Its output feeds only
+                ``qkv_proj``, so taking it here lets the norm fuse into the
+                projection's FP8 quantize.
 
         Returns:
             This layer's partial ``o_proj`` output, one shard per device;
@@ -352,7 +424,13 @@ class MiMoV2Attention(Module[..., Tensor]):
             chunks=self.layout.chunks // (1 if self.data_parallel else n),
         )
         local_heads = self.n_heads // (1 if self.data_parallel else n)
-        qkv = self.qkv_proj.matmul(x, shard_over_mesh=not self.data_parallel)
+        qkv = self.qkv_proj.matmul_normed(
+            x,
+            norm.weight,
+            norm.eps,
+            shard_over_mesh=not self.data_parallel,
+            multiply_before_cast=norm.multiply_before_cast,
+        )
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
         attns = []
         for d in range(n):

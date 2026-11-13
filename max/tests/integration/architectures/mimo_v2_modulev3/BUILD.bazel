@@ -9,9 +9,12 @@ package(default_visibility = [
 # The CPU half of the numerics harness: the config build, the weight-adapter
 # name contract and the staged trace, all on the tiny fixture and a CPU mesh,
 # plus the base graph's input tree and its fused-QKV op sites staged on
-# virtual GPUs (the tree Mach's modulev3 registry entry wires), and the
-# routed experts' per-device weight stacks. The GPU targets below are the
-# real gates; this one runs wherever bazel does.
+# virtual GPUs (the tree Mach's modulev3 registry entry wires), the fused
+# norm + quantize and router-gate op sites, the routed experts' per-device
+# weight stacks and their two-launch chain, and the one-launch MegaFFN's band,
+# its bounds' fit in the pool counters and its TP4 shape gate. The GPU targets
+# below are the real gates;
+# this one runs wherever bazel does.
 modular_py_test(
     name = "mimo_v2_modulev3",
     size = "medium",
@@ -20,6 +23,10 @@ modular_py_test(
         "test_expert_stacks_cpu.py",
         "test_fused_qkv_graph.py",
         "test_harness_cpu.py",
+        "test_mega_ffn_moe_cpu.py",
+        "test_mega_ffn_moe_gate_up_cpu.py",
+        "test_moe_expert_chain_cpu.py",
+        "test_router_gate_graph.py",
     ],
     ignore_extra_deps = [
         # The staged trace realizes eager tensors, which import the MO
@@ -27,8 +34,13 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
     ],
     imports = ["."],
-    # DISTINF-819: slow enough in CI that `//...` should skip it.
-    per_test_tags = {"test_expert_stacks_cpu.py": ["manual"]},
+    # The expensive half of this target, so `//...` skips it: DISTINF-819 for
+    # the expert stacks, and the same order of cost for the MegaFFN band sweep
+    # and the config-build gate on virtual devices.
+    per_test_tags = {
+        "test_expert_stacks_cpu.py": ["manual"],
+        "test_mega_ffn_moe_cpu.py": ["manual"],
+    },
     # Importing max.pipelines times out pytest collection on contended macOS
     # workers, and macOS adds no coverage to these CPU-only tests.
     target_compatible_with = select({
@@ -43,6 +55,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",

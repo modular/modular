@@ -13,11 +13,11 @@
 """The routed experts' tensor-parallel stacks on a CPU mesh, byte for byte,
 and the staged TP4 graph's device-resident expert weights.
 
-The grouped matmuls read each expert's gate rows followed by its up rows,
-and the scale interleave reads the scales in the same order, so every
-device's stacks are checked against that layout built in numpy from the
-checkpoint's per-expert tensors. The expert-parallel counterparts live in
-``test_ep_construction_cpu.py``.
+The fused gate/up grouped matmul reads each expert's gate rows alternating
+with its up rows, and the scale interleave reads the scales in the same
+order, so every device's stacks are checked against that layout built in
+numpy from the checkpoint's per-expert tensors. The expert-parallel
+counterparts live in ``test_ep_construction_cpu.py``.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from expert_stacks import (
     PROJECTIONS,
     Array,
     check_staged_expert_stacks,
-    gate_up,
+    interleaved_gate_up,
     load_random_experts,
     realize,
 )
@@ -86,7 +86,8 @@ def test_tp_stacks_split_every_experts_channels(
     monkeypatch: pytest.MonkeyPatch, n_devices: int
 ) -> None:
     """Device ``d`` holds rows ``d`` of ``n`` of every expert's gate and up
-    projections and the same columns of its down projection."""
+    projections, gate row ``i`` paired with up row ``i``, and the same
+    columns of its down projection."""
     layer = _tp_moe()
     ref = load_random_experts(layer, monkeypatch)
     mesh = DeviceMesh((CPU(),) * n_devices, (n_devices,), ("tp",))
@@ -104,9 +105,11 @@ def test_tp_stacks_split_every_experts_channels(
         (gate, gate_s), (up, up_s), (down_ref, down_s) = (
             ref[name] for name in PROJECTIONS
         )
-        np.testing.assert_array_equal(gate_up_w, gate_up(gate[rows], up[rows]))
         np.testing.assert_array_equal(
-            gate_up_scales, gate_up(gate_s[rows], up_s[rows])
+            gate_up_w, interleaved_gate_up(gate[rows], up[rows])
+        )
+        np.testing.assert_array_equal(
+            gate_up_scales, interleaved_gate_up(gate_s[rows], up_s[rows])
         )
         np.testing.assert_array_equal(down, cols(down_ref))
         np.testing.assert_array_equal(down_scales, cols(down_s))

@@ -22,6 +22,7 @@ postsubmit; the fixture-width forward and verify graphs stay in presubmit.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -110,28 +111,33 @@ def _load_post_fusion_ir(
     )
 
 
-def _fused_allreduces(config: MiMoV2Config) -> list[int]:
-    """Returns the op index of every layer reduction that folds.
+def _attention_allreduces(config: MiMoV2Config) -> list[int]:
+    """Returns the op indices of every layer's attention reduction.
 
-    The add and RMSNorm behind each layer's attention output and MLP or MoE
-    output are all the composite needs, so every reduction folds but the last.
-    That one's add feeds the trace's taps, or in production the trailing-rows
-    gather before the final norm, so no add-to-norm edge forms and it stays a
-    plain allreduce.
+    A layer's `2 * layer`-th allreduce is its attention output's; the
+    `2 * layer + 1`-th is its MLP or MoE output's.
     """
-    return list(range(ALLREDUCES_PER_LAYER * len(config.layer_types) - 1))
+    return [
+        ALLREDUCES_PER_LAYER * layer for layer in range(len(config.layer_types))
+    ]
 
 
-def test_full_width_production_fuses_every_reduction_but_the_last(
+def test_full_width_production_fuses_every_attention_allreduce(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pins which of production's full-width allreduces fuse, per op index.
 
-    The FP8 quantize joins the fold on the MLP and MoE outputs and on the dense
-    layer's attention output, each of which feeds a norm whose only consumer is
-    that quantize. A MoE layer's attention output feeds the experts' own
-    quantize inside the MoE subgraph instead, so only its norm folds. The
-    replica trace test compares against the same indices.
+    A layer's attention boundary is allreduce + residual add + the norm in
+    front of its MLP or MoE, which is exactly the composite, and that norm's
+    FP8 quantize folds into the same composite whether it scales in 1x128
+    groups (the dense layer) or in block groups (the MoE layers). The MLP
+    output reductions do not fuse, because the next layer's norm is inside the
+    norm-plus-quantize op its projection already runs. The replica trace test
+    compares against the same indices.
+
+    The same compile also pins where the router gate's weight cast runs (see
+    `_assert_gate_cast_runs_at_init`), since only a full-width gate takes the
+    fused GEMV.
     """
     model, config = _full_width_model(monkeypatch)
     # The values are never read, so every weight of one shape and dtype
@@ -154,7 +160,42 @@ def test_full_width_production_fuses_every_reduction_but_the_last(
         weights=weights,
     )
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
-    assert fused_allreduces(ir) == _fused_allreduces(config)
+    assert fused_allreduces(ir) == _attention_allreduces(config)
+    _assert_gate_cast_runs_at_init(tmp_path)
+
+
+def _assert_gate_cast_runs_at_init(ir_dir: Path) -> None:
+    """Checks that the router gate's fp32 weight is cast once, at init.
+
+    The fused router GEMV prefetches its first weight tile before it waits on
+    the grid in front of it, so its weight must not be written by a kernel in
+    the same execution. MiMo-V2 feeds it ``weight.cast(float32)``, which is
+    safe only because the compiler's exec-invariant code motion hoists that
+    cast into the model's init callable. That pass is heuristic; if it stops
+    hoisting the cast, the GEMV races the cast kernel and picks experts from
+    a stale weight. So this pins the hoist on the post-EICM dump: each MoE
+    layer's gate cast is a standalone ``mo.cast`` kernel per device in
+    ``$init``, and ``$exec`` runs no such kernel and fuses no cast into the
+    GEMV.
+    """
+    (path,) = ir_dir.glob("*.mgp.mlir")
+    chunks: dict[str, list[str]] = {"$init": [], "$exec": []}
+    for chunk in re.split(r"(?m)^(?=\s*mef\.callable @)", path.read_text()):
+        header = re.match(r"\s*mef\.callable @[^(]*?(\$init|\$exec)\(", chunk)
+        if header:
+            chunks[header.group(1)].append(chunk)
+    assert chunks["$init"] and chunks["$exec"], "no init or exec callable"
+    init, exec_ = "".join(chunks["$init"]), "".join(chunks["$exec"])
+    cast_kernel = 'dSummary = "mo.cast"'
+    moe_layers = sum(first_four_layer_config().moe_layer_freq)
+    assert init.count(cast_kernel) == moe_layers * NUM_DEVICES, (
+        "the router gates' weight casts are no longer hoisted into init"
+    )
+    assert cast_kernel not in exec_, "a weight cast runs in every execution"
+    gemv_steps = re.findall(r'dSummary = "([^"]*mixed\.gemv[^"]*)"', exec_)
+    assert gemv_steps, "the router gate no longer takes the fused GEMV"
+    for steps in gemv_steps:
+        assert "mo.cast, custom__moe.router.gate.mixed.gemv" not in steps, steps
 
 
 def test_full_width_replica_trace_fuses_as_production(
@@ -173,7 +214,7 @@ def test_full_width_replica_trace_fuses_as_production(
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
-    assert fused_allreduces(ir) == _fused_allreduces(config)
+    assert fused_allreduces(ir) == _attention_allreduces(config)
 
 
 @pytest.fixture(scope="module")
@@ -229,7 +270,7 @@ def test_replica_trace_loads_and_preserves_production_fusion(
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
     assert_allreduce_form(ir)
-    assert fused_allreduces(ir) == _fused_allreduces(config)
+    assert fused_allreduces(ir) == _attention_allreduces(config)
 
 
 def test_replica_weights_stage_the_real_first_four_layers(

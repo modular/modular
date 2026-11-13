@@ -156,10 +156,27 @@ class DFlashMiMoV2Config:
             )
 
         partial_rotary_factor = _float(config, "partial_rotary_factor")
-        if (head_dim * partial_rotary_factor) % 2:
+        # The fused RoPE store writes 8-element vectors, so the head and the
+        # rotated prefix must both be multiples of 8.
+        if head_dim % 8:
             raise ValueError(
-                f"DFlash MiMo-V2: partial_rotary_factor {partial_rotary_factor}"
-                f" does not rotate an even number of head_dim {head_dim}."
+                f"DFlash MiMo-V2: head_dim {head_dim} is not a multiple of 8:"
+                " the fused RoPE store writes 8-element vectors, one per head."
+            )
+        rotated = head_dim * partial_rotary_factor
+        if not rotated.is_integer():
+            raise ValueError(
+                f"DFlash MiMo-V2: partial_rotary_factor"
+                f" {partial_rotary_factor} rotates {rotated} of head_dim"
+                f" {head_dim}, which is not a whole number of elements."
+            )
+        rotary_dim = int(rotated)
+        if rotary_dim % 8:
+            raise ValueError(
+                f"DFlash MiMo-V2: partial_rotary_factor"
+                f" {partial_rotary_factor} rotates {rotary_dim} of head_dim"
+                f" {head_dim}, which is not a multiple of 8: the fused RoPE"
+                " store needs a rotary width aligned to 8 elements."
             )
 
         return cls(

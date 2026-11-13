@@ -15,7 +15,9 @@ modular_py_test(
         exclude = [
             "*_gpu.py",
             "msa_mixed_split_cases.py",
+            "rope_qkv_store_testlib.py",
             "test_jenga_arch_geometry.py",
+            "test_rope_qkv_store_ops_cpu.py",
             "test_rotary_embedding.py",
         ],
     ),
@@ -84,9 +86,12 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "benchmark_chunked_qkv_rope_store_gpu.py",
+            "test_benchmark_rope_qkv_store_gpu.py",
             "test_lora_*.py",
             "test_msa_fp8_kv_store_gpu.py",
             "test_chunked_qkv_rope_store_gpu.py",
+            "test_rope_qkv_store_gpu.py",
+            "test_rope_qkv_store_sweep_gpu.py",
             "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
             "test_msa_nvfp4_kv_gpu.py",
@@ -192,6 +197,123 @@ modular_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Shared by the fused rotation-and-store parity tests and their benchmark.
+# Excluded from their `srcs` -- a `modular_py_test` names per-target rules
+# after the files it carries -- and depended on instead, the pattern
+# `//max/tests/integration/graph:fusion_utils` uses.
+modular_py_library(
+    name = "rope_qkv_store_testlib",
+    testonly = True,
+    srcs = ["rope_qkv_store_testlib.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("pytest"),
+        requirement("torch"),
+    ],
+)
+
+# Bitwise parity of the fused rotation-and-store ops against the unfused chain
+# they replace, at the drafter's shipping geometry. Manual: it grades numerical
+# accuracy against a reference, which is what rule 3 keeps off presubmit, and
+# the two ops' surface -- one op each, and the store's place in the cache's
+# mutation chain -- is pinned without a GPU by test_rope_qkv_store_ops_cpu.
+modular_py_test(
+    name = "test_rope_qkv_store_gpu",
+    srcs = ["test_rope_qkv_store_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":rope_qkv_store_testlib",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_rope_qkv_store_sweep_gpu",
+    srcs = ["test_rope_qkv_store_sweep_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    precompile_mefs = True,
+    # Manual: a numeric sweep over the geometry matrix, so `//...` skips it.
+    # The fused store's parity gates are the Mojo kernel test,
+    # max/kernels/test/gpu/kv_cache/test_rope_qkv_store_paged.mojo, and the
+    # CPU op-surface and mutation-chain check in test_rope_qkv_store_ops_cpu.
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [":rope_qkv_store_testlib"],
+)
+
+modular_py_test(
+    name = "test_rope_qkv_store_ops_cpu",
+    srcs = ["test_rope_qkv_store_ops_cpu.py"],
+    args = ["--rootdir=max/tests/integration/kv_cache"],
+    imports = ["."],
+    deps = [
+        ":rope_qkv_store_testlib",
+        "//max/python/max/graph",
+        # The mutation-chain check reads the graph's ops back through the MLIR
+        # bindings.
+        "//max/python/max/mlir",
+    ],
+)
+
+modular_py_test(
+    name = "benchmark_rope_qkv_store_gpu",
+    srcs = ["test_benchmark_rope_qkv_store_gpu.py"],
+    # Producer runfiles and sandboxed replay otherwise infer different project
+    # roots, changing node IDs and preventing the recorded MEFs from matching.
+    args = [
+        "--rootdir=max/tests/integration/kv_cache",
+        # The macro passes the package as the collected path, so name this one
+        # module; without it the target would collect every test in the
+        # directory as well.
+        "-o",
+        "python_files=test_benchmark_rope_qkv_store_gpu.py",
+    ],
+    exec_properties = {"test.resources:gpu-memory": "2"},
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        ":rope_qkv_store_testlib",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/nn/kv_cache",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
         requirement("torch"),

@@ -102,13 +102,29 @@ class MiMoV2RMSNorm(RMSNorm):
     """RMSNorm that scales in float32 before the cast, as the reference does.
 
     The reference casts to BF16 before it scales; scaling in float32 and
-    casting once is the order of the kernel that fuses a norm with the
-    allreduce and residual add in front of it.
+    casting once is the order the fused norm-and-quantize kernel takes, so the
+    unfused norm and that kernel multiply and cast at the same point. They
+    still reduce the sum of squares in their own order, so the two agree to
+    that reduction rather than bit for bit.
+    """
+
+    multiply_before_cast: bool = True
+    """Whether the scale multiplies in float32 before the cast to the input
+    dtype.
+
+    MiMo scales before the cast, and the attention's fused norm-and-quantize
+    path passes the same order to its own kernel, so ``forward`` and that
+    kernel agree.
     """
 
     def forward(self, x: Tensor) -> Tensor:
         """Normalizes ``x`` by its RMS, scaling by the weight."""
-        return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)
+        return rms_norm(
+            x,
+            self.weight,
+            self.eps,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
 
 class MiMoV2DecoderLayer(Module[..., Tensor]):
@@ -154,10 +170,11 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
             The layer's output, replicated.
         """
         h = h + self.self_attn(
-            self.input_layernorm(h),
+            h,
             kv_collections,
             freqs_cis,
             input_row_offsets,
+            norm=self.input_layernorm,
         ).to(h.mapping)
         mlp_out: Tensor
         if isinstance(self.mlp, MiMoV2ExpertParallelMoE):

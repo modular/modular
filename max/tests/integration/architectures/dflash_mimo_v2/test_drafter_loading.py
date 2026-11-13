@@ -78,6 +78,44 @@ def _config() -> DFlashMiMoV2Config:
     )
 
 
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        # 100 head dims with 40 rotated: the head check alone can refuse this,
+        # as the rotated width is aligned and the product is whole.
+        (
+            {"head_dim": 100, "v_head_dim": 100, "partial_rotary_factor": 0.4},
+            "head_dim 100 is not a multiple of 8",
+        ),
+        # 36 of 128 head dims: even, but not an 8-element vector.
+        ({"partial_rotary_factor": 36 / 128}, "not a multiple of 8"),
+        # 32.064 of 128, which int() would silently truncate to 32 and accept.
+        ({"partial_rotary_factor": 0.2505}, "not a whole number"),
+    ],
+    ids=["unaligned-head", "unaligned-rotary", "fractional-rotary"],
+)
+def test_a_width_off_the_eight_element_grid_is_refused(
+    overrides: dict[str, Any], match: str
+) -> None:
+    """A width the fused RoPE store cannot write fails at the config.
+
+    The store writes 8-element vectors over a head whose width it takes from
+    the cache row, so a 100-wide head fails there exactly as a 36-of-128
+    rotated prefix does, and a partial factor that leaves a fraction of an
+    element fails before either. None has a path back to the unfused store.
+    Shipped checkpoints are 128-wide and rotate 64, and are unaffected.
+    """
+    dflash = {**DFLASH, **overrides}
+    devices = [DeviceRef.CPU()]
+    with pytest.raises(ValueError, match=match):
+        DFlashMiMoV2Config.from_dflash_config(
+            dflash,
+            devices=devices,
+            kv_params=drafter_kv_params(dflash, devices, speculative=False),
+            max_seq_len=4096,
+        )
+
+
 def _write_drafter(directory: Path, dflash: dict[str, Any]) -> dict[str, Any]:
     """Writes a random drafter's three files; returns its tensors' bits."""
     directory.mkdir(parents=True)

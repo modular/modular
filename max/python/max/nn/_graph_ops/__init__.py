@@ -507,6 +507,260 @@ def fused_chunked_qkv_rope_store_ragged(
 
 
 @_rejects_split_head_dims
+def fused_rope_qkv_store_ragged(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    value_scale: float,
+) -> TensorValue:
+    """Rotates head-major Q/K and appends scaled K/V to a paged cache.
+
+    The head-major counterpart to
+    :func:`fused_chunked_qkv_rope_store_ragged`, for a layer whose Q, K and V
+    come from three separate projections: partial NeoX RoPE reaches Q and K,
+    V is scaled in FP32 before BF16 rounding, and K/V land in the layer's
+    pages, all in one launch. Query rows at or past
+    ``input_row_offsets[-1]`` are left unwritten.
+
+    Args:
+        q: BF16 queries, ``[tokens, query_heads, head_size]``.
+        k: BF16 unrotated keys, ``[tokens, kv_heads, head_size]``. The
+            rotated keys reach the cache, so an unrotated store first is
+            unnecessary.
+        v: BF16 unscaled values, ``[tokens, kv_heads, head_size]``.
+        input_row_offsets: Ragged uint32 offsets, ``[batch_size + 1]``.
+        freqs_cis: RoPE coefficients, ``[positions, rotary_width]``, in
+            either dtype; the rotation runs in the coefficients' own dtype,
+            as ``rope_k_cache`` does.
+        kv_collection: Unquantized, non-MLA BF16 paged cache on the same GPU.
+        layer_idx: CPU uint32 scalar selecting the cache layer.
+        value_scale: Finite FP32 scale applied to V before rounding.
+
+    Returns:
+        Rotated queries, ``[tokens, query_heads, head_size]``.
+
+    Raises:
+        ValueError: If shapes, dtypes, devices, or cache layout are
+            unsupported.
+    """
+    _check_rank(3, q=q, k=k, v=v)
+    _check_rank(2, freqs_cis=freqs_cis)
+    _check_rank(1, input_row_offsets=input_row_offsets)
+    _check_rank(0, layer_idx=layer_idx)
+    _check_dtype(DType.bfloat16, q=q, k=k, v=v)
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    _check_head_major_qkv_store_common(
+        k,
+        v,
+        input_row_offsets,
+        freqs_cis,
+        kv_collection,
+        layer_idx,
+        value_scale,
+    )
+    num_q_heads, q_width = (int(dim) for dim in q.shape[1:])
+    if q.device != k.device:
+        raise ValueError("q must be on the k device")
+    if q.shape[0] != k.shape[0]:
+        raise ValueError("Q, K and V must have the same token extent")
+    head_size = int(kv_collection.kv_blocks.shape[-1])
+    if q_width != head_size:
+        raise ValueError(
+            f"Q must be {head_size}-wide to fill the cache row, got {q_width}"
+        )
+    if num_q_heads <= 0:
+        raise ValueError("head counts must be positive")
+    return ops.inplace_custom(
+        "kv_cache.rope_qkv_store.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            k,
+            v,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(
+                value_scale, dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[q.shape[0], num_q_heads, head_size],
+                device=q.device,
+            )
+        ],
+    )[0].tensor
+
+
+def _check_head_major_qkv_store_common(
+    k: TensorValue,
+    v: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    value_scale: float,
+) -> None:
+    """Validates what both head-major rotation-and-store ops require.
+
+    That is everything but the queries: a BF16 rank-6 unquantized cache whose
+    rows each hold one head, matching K/V projections, a RoPE table wide
+    enough for the rotated prefix, and a finite FP32 value scale.
+
+    Raises:
+        ValueError: If any of it is unsupported.
+    """
+    # The wrappers refuse this first; kept for direct callers and the test.
+    if kv_collection.split_head_dims is not None:
+        raise ValueError(
+            "the head-major rotation and store does not read a KV cache whose"
+            " key and value head dims differ."
+        )
+    blocks = kv_collection.kv_blocks
+    if blocks.rank != 6 or blocks.dtype != DType.bfloat16:
+        raise ValueError(
+            f"kv_blocks must be a rank-6 BF16 cache, got rank {blocks.rank}, dtype {blocks.dtype}"
+        )
+    if kv_collection.kv_scales is not None:
+        raise ValueError("quantized KV caches are unsupported")
+    if not all(
+        isinstance(dim, StaticDim)
+        for dim in (
+            *k.shape[1:],
+            *v.shape[1:],
+            freqs_cis.shape[1],
+            *blocks.shape[1:],
+        )
+    ):
+        raise ValueError("head, frequency, and cache extents must be static")
+    kv_heads, k_width = (int(dim) for dim in k.shape[1:])
+    v_heads, v_width = (int(dim) for dim in v.shape[1:])
+    cache_heads, head_size = (int(dim) for dim in blocks.shape[-2:])
+    rotary_dim = int(freqs_cis.shape[1])
+    if int(blocks.shape[1]) != 2:
+        raise ValueError(
+            "cache must have separate K/V planes; MLA is unsupported"
+        )
+    if (k_width, v_width) != (head_size, head_size):
+        raise ValueError(
+            f"K and V must be {head_size}-wide to fill the cache row, got"
+            f" {k_width} and {v_width}"
+        )
+    if (kv_heads, v_heads) != (cache_heads, cache_heads):
+        raise ValueError(
+            f"K and V head counts must be the cache's {cache_heads}, got"
+            f" {kv_heads} and {v_heads}"
+        )
+    if k.shape[0] != v.shape[0]:
+        raise ValueError("K and V must have the same token extent")
+    if kv_heads <= 0:
+        raise ValueError("head counts must be positive")
+    if not 0 < rotary_dim <= head_size:
+        raise ValueError(
+            f"rotary width must be positive and fit the Q/K head, got"
+            f" {rotary_dim}, head {head_size}"
+        )
+    if any(dim % 8 for dim in (head_size, rotary_dim)):
+        raise ValueError("head and rotary widths must be aligned to 8 elements")
+    for name, value in (
+        ("v", v),
+        ("freqs_cis", freqs_cis),
+        ("input_row_offsets", input_row_offsets),
+        ("kv_blocks", blocks),
+        ("cache_lengths", kv_collection.cache_lengths),
+        ("lookup_table", kv_collection.lookup_table),
+    ):
+        if value.device != k.device:
+            raise ValueError(f"{name} must be on the k device")
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError("layer_idx must be a CPU scalar")
+    if (
+        not math.isfinite(value_scale)
+        or abs(value_scale) > np.finfo(np.float32).max
+    ):
+        raise ValueError(
+            "value_scale must be finite and representable as float32"
+        )
+
+
+@_rejects_split_head_dims
+def fused_k_rope_v_store_ragged(
+    k: TensorValue,
+    v: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    value_scale: float,
+) -> None:
+    """Rotates head-major K and appends scaled K/V to a paged cache.
+
+    :func:`fused_rope_qkv_store_ragged` without the queries, for a call that
+    only fills a cache: each token covers its key and value heads alone, and
+    the op returns no tensor, so a context write neither rotates its keys a
+    second time into a discarded buffer nor allocates one.
+
+    Args:
+        k: BF16 unrotated keys, ``[tokens, kv_heads, head_size]``. The
+            rotated keys reach the cache, so an unrotated store first is
+            unnecessary.
+        v: BF16 unscaled values, ``[tokens, kv_heads, head_size]``.
+        input_row_offsets: Ragged uint32 offsets, ``[batch_size + 1]``.
+        freqs_cis: RoPE coefficients, ``[positions, rotary_width]``, in
+            either dtype; the rotation runs in the coefficients' own dtype,
+            as ``rope_k_cache`` does.
+        kv_collection: Unquantized, non-MLA BF16 paged cache on the same GPU.
+        layer_idx: CPU uint32 scalar selecting the cache layer.
+        value_scale: Finite FP32 scale applied to V before rounding.
+
+    Raises:
+        ValueError: If shapes, dtypes, devices, or cache layout are
+            unsupported.
+    """
+    _check_rank(3, k=k, v=v)
+    _check_rank(2, freqs_cis=freqs_cis)
+    _check_rank(1, input_row_offsets=input_row_offsets)
+    _check_rank(0, layer_idx=layer_idx)
+    _check_dtype(DType.bfloat16, k=k, v=v)
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    _check_head_major_qkv_store_common(
+        k,
+        v,
+        input_row_offsets,
+        freqs_cis,
+        kv_collection,
+        layer_idx,
+        value_scale,
+    )
+    ops.inplace_custom(
+        "kv_cache.k_rope_v_store.ragged.paged",
+        device=k.device,
+        values=[
+            k,
+            v,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            ops.constant(
+                value_scale, dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+    )
+
+
+@_rejects_split_head_dims
 def rope_split_store_ragged(
     kv_params: KVCacheParams,
     qkv: TensorValue,
@@ -11998,6 +12252,489 @@ def grouped_matmul_blocked_swiglu(
     )
 
     return results[0].tensor, results[1].tensor
+
+
+MEGAFFN_MIMO_N1 = 1024
+"""MiMo-V2.6-Flash's gate-up rows per rank: an expert's gate row `i` and its up
+row `i` in adjacent N rows, the sigma permutation's output."""
+MEGAFFN_MIMO_K1 = 4096
+MEGAFFN_MIMO_N2 = 4096
+MEGAFFN_MIMO_K2 = MEGAFFN_MIMO_N1 // 2
+"""The down leg's K: the gate-up tile's SwiGLU width."""
+MEGAFFN_MIMO_SLOT_WORDS = 32
+"""`uint32` words per pool slot in the `arrival_count` workspace."""
+MEGAFFN_MIMO_GEN_WORD = 8
+"""Word of pool 0's line that holds the launch generation: one more after every
+launch, and the parity the live half of every pool word is chosen by. A launch
+outside the band runs the chain and leaves it alone."""
+MEGAFFN_MIMO_HWM_WORD = 24
+"""Word of pool 0's line that holds one past the highest pool any launch has
+counted, which the next launch's clear walks."""
+MEGAFFN_MIMO_SLOTS = 4096
+"""Pool slots the counters hold, so the most `(expert, m-block)` pools one
+launch may have."""
+MEGAFFN_MIMO_COUNTER_WORDS = MEGAFFN_MIMO_SLOTS * MEGAFFN_MIMO_SLOT_WORDS
+"""The `arrival_count` buffer's word count."""
+MEGAFFN_MIMO_STAGES = 6
+"""The tuned K-group pipeline depth: 12 K tiles in flight."""
+MEGAFFN_MIMO_TASKS = 16
+"""The tuned task ring depth."""
+MEGAFFN_MIMO_MAX_EXPERTS = 256
+"""The walk's expert-scan width: the most experts one launch can route over."""
+MEGAFFN_MIMO_MAX_STAGES = 6
+"""The deepest K-group ring whose shared-memory layout fits one CTA."""
+MEGAFFN_MIMO_MAX_TASKS = 21
+"""The deepest task ring whose slots fit the bytes the kernel reserves."""
+MEGAFFN_MIMO_MAX_CTAS = 148
+"""The most CTAs the walk may launch: one a multiprocessor on the tuned
+pipeline's 224 KiB of shared memory, so every CTA is resident. A shallower ring
+would allow more."""
+
+
+def _megaffn_mimo_static(dim: Dim, name: str) -> int:
+    """Returns `dim` as an int, refusing a shape the kernel cannot bind.
+
+    Args:
+        dim: The dimension to resolve.
+        name: What the dimension belongs to, for the error.
+
+    Returns:
+        The dimension's size.
+
+    Raises:
+        ValueError: If the dimension is not static.
+    """
+    if not isinstance(dim, StaticDim):
+        raise ValueError(f"megaffn mimo needs a static {name}, got {dim}")
+    return int(dim)
+
+
+def _megaffn_mimo_tail(shape: Sequence[Dim]) -> tuple[int, ...]:
+    """Returns a scale tile's shape past its leading dimension, as ints.
+
+    Args:
+        shape: The tensor's shape.
+
+    Returns:
+        The sizes of every dimension but the first.
+
+    Raises:
+        ValueError: If one of them is not static.
+    """
+    return tuple(
+        _megaffn_mimo_static(dim, "scale tile dimension") for dim in shape[1:]
+    )
+
+
+def megaffn_mimo_w4a8(
+    hidden_states: TensorValueLike,
+    w13: TensorValueLike,
+    w2: TensorValueLike,
+    a_scales: TensorValueLike,
+    w13_scales: TensorValueLike,
+    w2_scales: TensorValueLike,
+    expert_start_indices: TensorValueLike,
+    a_scale_offsets: TensorValueLike,
+    expert_ids: TensorValueLike,
+    expert_scales_l1: TensorValueLike | None,
+    expert_scales_l2: TensorValueLike | None,
+    arrival_count: BufferValue,
+    *,
+    band_rows: int,
+    floor_rows: int,
+    activation: GatedActivation,
+    ctas: int = MEGAFFN_MIMO_MAX_CTAS,
+    stages: int = MEGAFFN_MIMO_STAGES,
+    tasks: int = MEGAFFN_MIMO_TASKS,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Runs a MoE layer's routed expert FFN: one launch inside its band.
+
+    The op is the TileTensor port ``mega_ffn.mega_ffn_mimo`` (registered by
+    ``Kernels/lib/graph_compiler/mega_ffn_mimo.mojo``) of the Moka component
+    ``Kernels/test/gpu/Moka/kernels/ffn/megaffn_plan.mojo``'s W4A8 build, which
+    stays the kernel's specification and its reference. It replaces the chain a
+    MiMo MoE layer runs today once its routed rows are quantized -- the fused
+    gate-up grouped matmul, the intermediate's requantize, then the down grouped
+    matmul -- with one launch that hands the gate-up leg's result to the down
+    leg inside the kernel, so no second launch and no per-task host work stand
+    between the legs. The quantize that produces its operands stays upstream.
+
+    The regime is the op's own choice, from ``hidden_states``' row count: a step
+    whose rows fall in ``floor_rows < M <= band_rows`` takes the one launch, and
+    every other step is run by the chain's own kernels from inside this op --
+    byte for byte what the graph's ``grouped_matmul_blocked_swiglu`` and
+    ``grouped_matmul_block_scaled`` put in the graph, so nothing outside the op
+    carries a branch. ``band_rows = 0`` leaves every step on that chain, which
+    is how a caller disables the one launch without removing the op. The count
+    is a host-side shape value, so a captured device graph records the one arm
+    its batch takes.
+
+    The expert tile is 128 weight rows of one expert times a pool of 8 of its
+    token rows, and every CTA walks its own share of the launch's tiles (all
+    gate-up tiles first, then all down tiles) decoding each tile from the
+    routing on the device. A down tile reads its pool's intermediate, which the
+    gate-up leg wrote to HBM, once the pool's counter shows all of that pool's
+    gate-up tiles done.
+
+    Every operand arrives pre-quantized, as the routed batch's routing pass
+    leaves it: :func:`moe_create_indices` produces ``expert_start_indices``,
+    ``a_scale_offsets`` and ``expert_ids`` (identity ids, one group a slot
+    including the empty ones, so a group with no tokens is a zero-width range;
+    a ``-1`` id is also accepted and marks a slot the walk skips), and the
+    row-indices grouped quantize
+    (:func:`grouped_quantize_dynamic_block_scaled_with_row_indices`) produces
+    the E4M3 rows and their 5-D scale tiles. At least one expert has rows when
+    there are tokens, as ``moe_create_indices`` guarantees. The token row count
+    is the model's, so it may be a dynamic dimension.
+
+    The shapes are locked to MiMo-V2.6-Flash's per-rank expert slice at tensor
+    parallel 4: ``N1 = 1024`` gate-up rows over ``K1 = 4096``, then ``N2 = 4096``
+    down rows over ``K2 = N1 // 2 = 512``, the gate-up tile's SwiGLU width.
+    Only the expert count may differ, up to the walk's scan width of 256.
+
+    ``arrival_count`` is a persistent workspace, not per-launch state: create it
+    once with ``ops.buffer_create(BufferType(DType.uint32,
+    [MEGAFFN_MIMO_COUNTER_WORDS], device), init_value=0)`` and pass the same
+    buffer to every call. Each launch counts into one half of every pool word,
+    chosen by a generation parity the kernel keeps inside the buffer, and
+    clears the half its predecessor used. Zeroing it per launch pins the
+    generation and disarms that rotation, and one buffer belongs to one
+    serialized launch stream: two overlapping launches would interleave the
+    halves.
+
+    Args:
+        hidden_states: The routed token rows, expert-major, E4M3. Shape
+            ``[M, K1]``; expert ``e`` holds rows ``expert_start_indices[e]`` up
+            to ``expert_start_indices[e + 1]``.
+        w13: The gate-up weights as packed E2M1, two values a byte, pre-permuted
+            on the N axis with ``sigma(2i) = i, sigma(2i+1) = N1 // 2 + i`` so
+            that output column ``2i`` carries gate row ``i`` and column
+            ``2i + 1`` its up row, which is the pairing the SwiGLU epilogue
+            reads (``max.nn.common_layers.quant_ops.sigma_permute_gate_up`` is
+            an in-tree producer of the same permutation). Shape
+            ``[E, N1, K1 // 2]``.
+        w2: The down weights as packed E2M1. Shape ``[E, N2, K2 // 2]``.
+        a_scales: The token scale tiles in the tcgen05 5-D layout, one UE8M0
+            scale per 32 elements. Shape ``[scale_rows, K1 // 128, 32, 4, 4]``.
+        w13_scales: W13's scale tiles, permuted by the same sigma as its rows.
+            Shape ``[E, N1 // 128, K1 // 128, 32, 4, 4]``.
+        w2_scales: W2's scale tiles. Shape
+            ``[E, N2 // 128, K2 // 128, 32, 4, 4]``.
+        expert_start_indices: ``moe_create_indices``' per-group first row in
+            ``hidden_states``, ``uint32 [E + 1]``, non-decreasing.
+        a_scale_offsets: Each group's first 128-row scale group minus its first
+            token row's, ``uint32 [E]``.
+        expert_ids: ``moe_create_indices``' weight index per group, ``int32
+            [E]``. Identity at MoE, where a group with no tokens is a
+            zero-width range the walk skips; ``-1`` marks a slot with no
+            weights, which the walk also skips.
+        expert_scales_l1: The gate-up leg's output scale per expert id,
+            ``float32 [E]``, or ``None`` for a scale of 1.0 on every expert,
+            which is what the chain's grouped matmul substitutes for MXFP4 and
+            MXFP8 weights. The kernel multiplies the scale into its epilogue,
+            so the one launch matches the chain's bytes only if both legs see
+            the same scale.
+        expert_scales_l2: The down leg's output scale per expert id, on the
+            same terms as ``expert_scales_l1``.
+        arrival_count: The persistent pool counters, ``uint32
+            [MEGAFFN_MIMO_COUNTER_WORDS]``, zeroed once at setup.
+        band_rows: The most routed rows that still take the one launch.
+            Required, not defaulted, because the band is the whole of the
+            policy and an omitted bound would silently keep every step on the
+            chain. 0 keeps every step on the chain while the op stays staged,
+            counters and all, which is still the op's bookkeeping in the graph;
+            a model that wants no op in its graph simply does not call this.
+        floor_rows: The fewest routed rows that take the one launch,
+            exclusive: a step takes it when ``floor_rows < M <= band_rows``.
+            Required on the same terms as ``band_rows``.
+        activation: The gated activation, applied by the one launch and by the
+            chain alike. Required on the same terms as the bounds: left out,
+            the call would run plain ``silu`` where the model's chain -- and
+            the op's own default -- rounds through bfloat16. It must not set
+            ``gated_activation_fn``, which no kernel fuses.
+        ctas: The grid, one CTA per SM by default. The walk's stride, so it
+            changes which CTA runs which tile, and the grid must fit the device
+            at once: every CTA is co-resident, or a down tile's wait would
+            starve behind a queued CTA. At the tuned 224 KiB of shared memory
+            that is one CTA per SM. A device that holds fewer CTAs at once runs
+            the chain instead.
+        stages: The K-group pipeline's depth.
+        tasks: The task ring's depth.
+
+    Returns:
+        A tuple of the bf16 output ``[M, N2]``, the E4M3 intermediate
+        ``[M, K2]`` and the intermediate's 5-D UE8M0 scales
+        ``[scale_rows, K2 // 128, 32, 4, 4]``.
+
+    Raises:
+        TypeError: If the counters are not a buffer value.
+        ValueError: If a dtype, rank or device does not match, the MiMo shapes
+            do not hold, the expert count exceeds the walk's scan width, the
+            pipeline or task ring depth cannot fit shared memory, the grid is
+            past one CTA per SM, the band bounds are negative, or the band's
+            ceiling may take more pools than ``arrival_count`` holds.
+    """
+    hidden_states = TensorValue(hidden_states)
+    w13 = TensorValue(w13)
+    w2 = TensorValue(w2)
+    a_scales = TensorValue(a_scales)
+    w13_scales = TensorValue(w13_scales)
+    w2_scales = TensorValue(w2_scales)
+    expert_start_indices = TensorValue(expert_start_indices)
+    a_scale_offsets = TensorValue(a_scale_offsets)
+    expert_ids = TensorValue(expert_ids)
+    if expert_scales_l1 is None or expert_scales_l2 is None:
+        unit_scales = ops.broadcast_to(
+            ops.constant(1.0, DType.float32, device=hidden_states.device),
+            expert_ids.shape,
+        )
+        if expert_scales_l1 is None:
+            expert_scales_l1 = unit_scales
+        if expert_scales_l2 is None:
+            expert_scales_l2 = unit_scales
+    expert_scales_l1 = TensorValue(expert_scales_l1)
+    expert_scales_l2 = TensorValue(expert_scales_l2)
+
+    _check_rank(2, hidden_states=hidden_states)
+    _check_rank(3, w13=w13, w2=w2)
+    _check_rank(5, a_scales=a_scales)
+    _check_rank(6, w13_scales=w13_scales, w2_scales=w2_scales)
+    _check_rank(1, expert_start_indices=expert_start_indices)
+    _check_rank(
+        1,
+        a_scale_offsets=a_scale_offsets,
+        expert_ids=expert_ids,
+        expert_scales_l1=expert_scales_l1,
+        expert_scales_l2=expert_scales_l2,
+    )
+    _check_dtype(DType.float8_e4m3fn, hidden_states=hidden_states)
+    _check_dtype(DType.uint8, w13=w13, w2=w2)
+    _check_dtype(DType.float8_e8m0fnu, a_scales=a_scales)
+    _check_same_dtype(
+        a_scales=a_scales, w13_scales=w13_scales, w2_scales=w2_scales
+    )
+    _check_dtype(DType.uint32, expert_start_indices=expert_start_indices)
+    _check_dtype(DType.uint32, a_scale_offsets=a_scale_offsets)
+    _check_dtype(DType.int32, expert_ids=expert_ids)
+    _check_dtype(
+        DType.float32,
+        expert_scales_l1=expert_scales_l1,
+        expert_scales_l2=expert_scales_l2,
+    )
+    _check_same_device(
+        hidden_states=hidden_states,
+        w13=w13,
+        w2=w2,
+        a_scales=a_scales,
+        w13_scales=w13_scales,
+        w2_scales=w2_scales,
+        expert_start_indices=expert_start_indices,
+        a_scale_offsets=a_scale_offsets,
+        expert_ids=expert_ids,
+        expert_scales_l1=expert_scales_l1,
+        expert_scales_l2=expert_scales_l2,
+    )
+    if not hidden_states.device.is_gpu():
+        raise ValueError(
+            f"megaffn mimo runs on GPU only, got {hidden_states.device}"
+        )
+    if not isinstance(arrival_count, BufferValue):
+        raise TypeError(
+            "megaffn mimo takes its counters as a buffer; create it with"
+            " ops.buffer_create and pass that value"
+        )
+    if arrival_count.device != hidden_states.device:
+        raise ValueError(
+            "megaffn mimo needs the counters on the tokens' device, got"
+            f" {arrival_count.device} and {hidden_states.device}"
+        )
+
+    experts_dim = w13.shape[0]
+    if not isinstance(experts_dim, StaticDim):
+        raise ValueError(
+            f"expected a static expert count in w13, got {w13.shape}"
+        )
+    num_experts = int(experts_dim)
+    if num_experts > MEGAFFN_MIMO_MAX_EXPERTS:
+        raise ValueError(
+            "megaffn mimo's walk scans up to"
+            f" {MEGAFFN_MIMO_MAX_EXPERTS} experts, got {num_experts}"
+        )
+    k1 = _megaffn_mimo_static(hidden_states.shape[1], "hidden_states width")
+    n1 = _megaffn_mimo_static(w13.shape[1], "w13 rows")
+    n2 = _megaffn_mimo_static(w2.shape[1], "w2 rows")
+    if (k1, n1, n2) != (
+        MEGAFFN_MIMO_K1,
+        MEGAFFN_MIMO_N1,
+        MEGAFFN_MIMO_N2,
+    ):
+        raise ValueError(
+            "megaffn mimo runs MiMo-V2.6-Flash's expert slice: K1"
+            f" {MEGAFFN_MIMO_K1}, N1 {MEGAFFN_MIMO_N1}, N2 {MEGAFFN_MIMO_N2},"
+            f" got K1 {k1}, N1 {n1}, N2 {n2}"
+        )
+    k2 = _megaffn_mimo_static(w2.shape[2], "w2 width") * 2
+    if k2 != MEGAFFN_MIMO_K2:
+        raise ValueError(
+            f"w2 packs K2 = {MEGAFFN_MIMO_K2} two a byte, got {w2.shape}"
+        )
+    if _megaffn_mimo_static(w13.shape[2], "w13 width") * 2 != k1:
+        raise ValueError(f"w13 packs K1 two a byte, got {w13.shape}")
+    if _megaffn_mimo_static(w2.shape[0], "w2 experts") != num_experts:
+        raise ValueError(
+            f"w2 and w13 must hold the same experts, got {w2.shape}"
+        )
+    if (
+        _megaffn_mimo_static(w13_scales.shape[0], "w13_scales experts")
+        != num_experts
+        or _megaffn_mimo_static(w2_scales.shape[0], "w2_scales experts")
+        != num_experts
+    ):
+        raise ValueError(
+            "the weight scale tiles are one expert each, got"
+            f" {w13_scales.shape} and {w2_scales.shape} for {num_experts}"
+            " experts"
+        )
+    if _megaffn_mimo_tail(a_scales.shape) != (
+        MEGAFFN_MIMO_K1 // 128,
+        32,
+        4,
+        4,
+    ):
+        raise ValueError(
+            f"a_scales must be [rows, K1 // 128, 32, 4, 4], got {a_scales.shape}"
+        )
+    if _megaffn_mimo_tail(w13_scales.shape) != (
+        MEGAFFN_MIMO_N1 // 128,
+        MEGAFFN_MIMO_K1 // 128,
+        32,
+        4,
+        4,
+    ):
+        raise ValueError(
+            "w13_scales must be [E, N1 // 128, K1 // 128, 32, 4, 4], got"
+            f" {w13_scales.shape}"
+        )
+    if _megaffn_mimo_tail(w2_scales.shape) != (
+        MEGAFFN_MIMO_N2 // 128,
+        MEGAFFN_MIMO_K2 // 128,
+        32,
+        4,
+        4,
+    ):
+        raise ValueError(
+            "w2_scales must be [E, N2 // 128, K2 // 128, 32, 4, 4], got"
+            f" {w2_scales.shape}"
+        )
+    if (
+        _megaffn_mimo_static(
+            expert_start_indices.shape[0], "expert_start_indices entries"
+        )
+        != num_experts + 1
+    ):
+        raise ValueError(
+            "expert_start_indices holds one row offset an expert and the end,"
+            f" got {expert_start_indices.shape} for {num_experts} experts"
+        )
+    for name, value in (
+        ("a_scale_offsets", a_scale_offsets),
+        ("expert_ids", expert_ids),
+        ("expert_scales_l1", expert_scales_l1),
+        ("expert_scales_l2", expert_scales_l2),
+    ):
+        if _megaffn_mimo_static(value.shape[0], name) != num_experts:
+            raise ValueError(
+                f"{name} holds one entry an expert, got {value.shape} for"
+                f" {num_experts} experts"
+            )
+    _check_rank(1, arrival_count=arrival_count)
+    _check_dtype(DType.uint32, arrival_count=arrival_count)
+    if int(arrival_count.shape[0]) < MEGAFFN_MIMO_COUNTER_WORDS:
+        raise ValueError(
+            "megaffn mimo's counters hold"
+            f" {MEGAFFN_MIMO_COUNTER_WORDS} words, got {arrival_count.shape}"
+        )
+    if not 2 <= stages <= MEGAFFN_MIMO_MAX_STAGES:
+        raise ValueError(
+            "the K-group ring holds 2 to"
+            f" {MEGAFFN_MIMO_MAX_STAGES} stages, got {stages}"
+        )
+    if not 2 <= tasks <= MEGAFFN_MIMO_MAX_TASKS:
+        raise ValueError(
+            "the task ring holds 2 to"
+            f" {MEGAFFN_MIMO_MAX_TASKS} tasks, got {tasks}"
+        )
+    if not 1 <= ctas <= MEGAFFN_MIMO_MAX_CTAS:
+        raise ValueError(
+            "megaffn mimo's grid is one CTA per SM, up to"
+            f" {MEGAFFN_MIMO_MAX_CTAS} CTAs, got {ctas}: every CTA must be"
+            " co-resident, and at the tuned pipeline's shared memory that is"
+            " one CTA a multiprocessor"
+        )
+    rows = hidden_states.shape[0]
+    if band_rows < 0 or floor_rows < 0:
+        raise ValueError(
+            "the band's bounds are routed-row counts, so neither may be"
+            f" negative, got floor {floor_rows} and ceiling {band_rows}"
+        )
+    # The model's row count is symbolic, so bound the widest step the band
+    # admits rather than this graph's rows: a ceiling past the pools would
+    # otherwise fail a launch while serving.
+    if (
+        floor_rows < band_rows
+        and band_rows // 8 + num_experts > MEGAFFN_MIMO_SLOTS
+    ):
+        raise ValueError(
+            "megaffn mimo walks one pool for 8 token rows of an expert, so a"
+            f" band ceiling of {band_rows} rows over {num_experts} experts"
+            f" exceeds the {MEGAFFN_MIMO_SLOTS} pools the counters hold"
+        )
+
+    results = ops.inplace_custom(
+        "megaffn.mimo.w4a8",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            w13,
+            w2,
+            a_scales,
+            w13_scales,
+            w2_scales,
+            expert_start_indices,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales_l1,
+            expert_scales_l2,
+            arrival_count,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[rows, n2],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[rows, k2],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[a_scales.shape[0], k2 // 128, 32, 4, 4],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            "num_experts": num_experts,
+            "ctas": ctas,
+            "stages": stages,
+            "tasks": tasks,
+            "band_rows": band_rows,
+            "floor_rows": floor_rows,
+            **activation.kernel_parameters(),
+        },
+    )
+    return (results[0].tensor, results[1].tensor, results[2].tensor)
 
 
 def moe_fp8_host_usage_stats(

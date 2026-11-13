@@ -124,6 +124,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max:tensor",
         "//max/python/max/graph",
+        "//max/python/max/mlir",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
@@ -139,6 +140,59 @@ modular_py_test(
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
         "//max/tests/integration/test_common:mixed_step_split_ops",
+    ],
+)
+
+# The drafter's arithmetic against the checkpoint's own reference: one block
+# run over a context past the per-query window, every row compared to a numpy
+# transcription of `dflash/dflash.py`. Compiles and executes, because the
+# conventions it pins (the sink, the value scale, the window's edge, the
+# anchor row's K/V path, the rope and GQA layouts) live in the attention
+# kernel and no staged trace can see them.
+#
+# Two fixtures: the shipped geometry as the parity gate, and a narrow window
+# whose boundary key carries real softmax mass, where a wrong version of each
+# of the reference's eighteen conventions must move a block row. Both graphs
+# of each are staged before either executes, which is what lets the record run
+# see both compiles.
+modular_py_test(
+    name = "test_drafter_reference_gpu",
+    size = "large",
+    srcs = ["test_drafter_reference_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] +
+                      select({
+                          "//:apple_gpu": ["@platforms//:incompatible"],
+                          "//conditions:default": [],
+                      }),
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    precompile_mefs = True,
+    # Manual: a numeric comparison against the checkpoint's reference, so
+    # `//...` skips it; the compile itself is recorded on the CPU build host
+    # (`precompile_mefs`).
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        # `from max.nn import Module` imports the package itself, which the
+        # `nn` target owns; `:core` holds only the graph-free configs.
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("ml-dtypes"),
     ],
 )
 

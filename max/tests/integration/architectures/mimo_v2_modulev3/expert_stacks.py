@@ -90,6 +90,12 @@ def gate_up(gate: Array, up: Array) -> Array:
     return np.concatenate([gate, up], axis=1)
 
 
+def interleaved_gate_up(gate: Array, up: Array) -> Array:
+    """Each expert's gate rows alternating with its up rows."""
+    experts, dim, cols = gate.shape
+    return np.stack([gate, up], axis=2).reshape([experts, 2 * dim, cols])
+
+
 def check_staged_expert_stacks(
     text: str, n_devices: int, expert_parallel: bool
 ) -> None:

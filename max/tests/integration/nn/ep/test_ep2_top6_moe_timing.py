@@ -18,9 +18,10 @@ Two measurements, both on the two devices remote execution gives an EP2 job:
     The production chain (``ep.dispatch_async`` -> MegaFFN ->
     ``ep.combine``) at 96 local experts per rank (192 routed over two ranks),
     top-6, hidden 5120, MoE width 2304, NVFP4, at T 48 and T 102 tokens per
-    rank. The same experts at 192 local per rank exceed MegaFFN's scheduler
-    (`MAX_EXPERTS` = 128) and the fused path (`fused_ep_wide_config`); that
-    refusal is recorded, not worked around.
+    rank. The same experts at 192 local per rank fit MegaFFN's scheduler
+    (`MAX_EXPERTS` = 256) but not the fused path's envelope
+    (`fused_ep_wide_config`, 128 local); that refusal is recorded, not worked
+    around.
 
 ``fused``
     Both arms at a top-8 cell (hidden 6144, MoE 2048, 256 routed experts =
