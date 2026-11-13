@@ -29,15 +29,15 @@
 //
 // KEY DIFFERENCES FROM x86-64:
 //   1. HFA (Homogeneous Float Aggregate): all-float structs with ≤4 fields
-//      pass via SIMD registers (V0–V3) as identity — no coercion.
-//   2. Two-register structs always use IntegerPair (i64, iN) regardless of
+//      pass via SIMD registers (V0–V3) as an array: {f32, f32} → [2 x f32].
+//   2. Two-register struct args always use [2 x i64] regardless of
 //      field types. There is no SSEPair or Mixed class on ARM64.
 //   3. Large struct args (>16 bytes) are passed indirectly WITHOUT byval.
 //      x86-64 sets byval; ARM64 does not.
 //   4. Variadic HFA args — Darwin vs Linux split:
-//      Darwin (macOS/iOS): HFA identity bypassed; struct coerced to integer
+//      Darwin (macOS/iOS): HFA coercion bypassed; struct coerced to integer
 //        so va_arg reads from the GP save area (flat va_list).
-//      Linux AAPCS64: HFA identity preserved; struct stays as-is so LLVM
+//      Linux AAPCS64: HFA coercion preserved; struct stays an HFA so LLVM
 //        places it in SIMD registers and va_arg reads from the VR save area.
 //   5. Variadic float args < 64 bits — Darwin vs Linux split:
 //      Darwin: bitcast to integer to prevent LLVM float→double promotion
@@ -46,35 +46,44 @@
 //        reads from the VR save area correctly.
 //
 // TEST TABLE:
-// Group A — Small struct args (1–8 bytes): Integer coercion (same as x86-64)
-//   A1  arg_1byte_int_struct      {i8}       → i8
-//   A2  arg_2byte_int_struct      {i8,i8}    → i16
-//   A3  arg_3byte_int_struct      {i8,i8,i8} → i32
+// Group A — Small struct args (1–8 bytes): Integer coercion to i64
+//   A1  arg_1byte_int_struct      {i8}       → i64
+//   A2  arg_2byte_int_struct      {i8,i8}    → i64
+//   A3  arg_3byte_int_struct      {i8,i8,i8} → i64
 //   A4  arg_8byte_int_struct      {i32,i32}  → i64
 //
-// Group F — HFA (Homogeneous Float Aggregate): identity for fixed args
-//   F1  arg_hfa_2xf32             {f32,f32}             → identity (SIMD)
-//   F2  arg_hfa_4xf32             {f32,f32,f32,f32}     → identity (max HFA)
-//   F3  arg_hfa_2xf64             {f64,f64}             → identity (SIMD)
+// Group F — HFA (Homogeneous Float Aggregate): passed as an array of fields
+//   F1  arg_hfa_2xf32             {f32,f32}             → [2 x f32]
+//   F2  arg_hfa_4xf32             {f32,f32,f32,f32}     → [4 x f32] (max HFA)
+//   F3  arg_hfa_2xf64             {f64,f64}             → [2 x f64]
 //   F4  arg_not_hfa_5xf32         {f32,f32,f32,f32,f32} → indirect (>16 AND >4 fields)
 //   F5  arg_not_hfa_mixed         {f32,i32}             → integer coercion (not all-float)
 //   F6  ret_hfa                   return {f32,f32}       → identity (HFA return)
+//   F7  arg_not_hfa_nested_6xf32  {{f32×3},{f32×3}}     → indirect (6 members)
+//   F8  arg_hfa_array_member      {[3 x f32]}           → [3 x f32] (3 members)
+//   F9  arg_not_hfa_zero_array    {f32,{[0 x f32]},f32} → i64 (zero-length array)
+//   F10 arg_hfa_empty_members     {f32,{},{{[0 x f32]}},f32} → [2 x f32] (2 members)
+//   F11 arg_hva_2xv4i32           {vector<4xi32>,vector<4xi32>} → [2 x vector<4xi32>]
+//   F12 arg_not_hva_vec_and_f64   {vector<2xf32>,f64}   → [2 x i64] (float and vector mix)
+//   F13 arg_hfa_darwin            Darwin: {f32,f32}     → [2 x f32] (fixed arg, as on Linux)
+//   F14 arg_hva_overaligned       {vector<2xi16>,vector<2xi16>}, i16:64 → [2 x vector<2xi16>]
 //
-// Group B — 9–16 byte struct args: IntegerPair (always i64+iN on ARM64)
-//   B1  arg_int_pair_12           {i32,i32,i32}          → (i64, i32)
-//   B2  arg_int_pair_16           {i64,i64}              → (i64, i64)
-//   B3  arg_mixed_12_arm64        {f32,f32,i32}          → (i64, i32)  [no SSEPair/Mixed]
+// Group B — 9–16 byte struct args: [2 x i64] (always integer on ARM64)
+//   B1  arg_int_pair_12           {i32,i32,i32}          → [2 x i64]
+//   B2  arg_int_pair_16           {i64,i64}              → [2 x i64]
+//   B3  arg_mixed_12_arm64        {f32,f32,i32}          → [2 x i64]  [no SSEPair/Mixed]
+//   B4  arg_aligned_16            {i128}                 → i128 (16-byte aligned)
 //
 // Group C — Large struct args (>16 bytes): indirect, NO byval
 //   C1  arg_large_indirect_no_byval {i64,i64,i64} → ptr, no byval attribute
 //
 // Group D — Return value coercion
 //   D1  ret_small_int_struct      returns {i32}          → call returns i32
-//   D2  ret_int_pair              returns {i32,i32,i32}  → call returns {i64,i32}
+//   D2  ret_int_pair              returns {i32,i32,i32}  → call returns [2 x i64]
 //   D3  ret_sret                  returns {i64,i64,i64}  → sret hidden ptr
 //
 // Group G — Variadic functions: ARM64 Darwin vs Linux split
-//   G1  variadic_hfa_linux        Linux:  variadic HFA arg  → identity (VR save area)
+//   G1  variadic_hfa_linux        Linux:  variadic HFA arg  → [2 x f32] (VR save area)
 //   G2  variadic_float_linux      Linux:  variadic f32 arg  → no bitcast (SIMD reg)
 //   G3  variadic_hfa_darwin       Darwin: variadic HFA arg  → integer coercion (GP)
 //   G4  variadic_float_darwin     Darwin: variadic f32 arg  → bitcast to i32 (GP)
@@ -84,7 +93,7 @@
 //   I2  arg_narrow_ints_linux     Linux:  ui8, si16 args       -> no extension
 //   I3  arg_single_field_structs_darwin
 //                                 Darwin: {si8}, {ui16}, {bool} args, {si8} result
-//                                         -> i8, i16, i8, i8, all unmarked
+//                                         -> i64, i64, i64 args, i8 result, all unmarked
 //
 // MODULE HEADER NOTE: Each test uses the standard ARM64 Linux data layout. The data_layout string
 // drives struct size and alignment computation. The triple selects
@@ -93,45 +102,45 @@
 //===----------------------------------------------------------------------===//
 // Group A: Small integer struct arguments (1–8 bytes)
 //
-// ARM64 AAPCS and x86-64 System V share the same integer coercion rules for
-// small non-HFA structs. These tests confirm ARM64 applies them correctly.
+// ARM64 AAPCS passes a small non-HFA struct in one integer register. As in
+// clang 23, the arg is always i64, whatever the size of the struct.
 //===----------------------------------------------------------------------===//
 
-// A1: 1-byte struct {i8} → i8.
+// A1: 1-byte struct {i8} → i64.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_1byte_int_struct
 llvm.func @arg_1byte_int_struct(%arg0: !llvm.struct<(i8)>) {
-  // CHECK: llvm.call @c_a1(%{{.*}}) : (i8) -> ()
+  // CHECK: llvm.call @c_a1(%{{.*}}) : (i64) -> ()
   pop.external_call @c_a1(%arg0) : (!llvm.struct<(i8)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_a1(i8)
+// CHECK: llvm.func @c_a1(i64)
 }
 
 // -----
 
-// A2: 2-byte struct {i8, i8} → i16.
+// A2: 2-byte struct {i8, i8} → i64.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_2byte_int_struct
 llvm.func @arg_2byte_int_struct(%arg0: !llvm.struct<(i8, i8)>) {
-  // CHECK: llvm.call @c_a2(%{{.*}}) : (i16) -> ()
+  // CHECK: llvm.call @c_a2(%{{.*}}) : (i64) -> ()
   pop.external_call @c_a2(%arg0) : (!llvm.struct<(i8, i8)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_a2(i16)
+// CHECK: llvm.func @c_a2(i64)
 }
 
 // -----
 
-// A3: 3-byte struct {i8, i8, i8} → i32 (rounds up).
+// A3: 3-byte struct {i8, i8, i8} → i64 (rounds up).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_3byte_int_struct
 llvm.func @arg_3byte_int_struct(%arg0: !llvm.struct<(i8, i8, i8)>) {
-  // CHECK: llvm.call @c_a3(%{{.*}}) : (i32) -> ()
+  // CHECK: llvm.call @c_a3(%{{.*}}) : (i64) -> ()
   pop.external_call @c_a3(%arg0) : (!llvm.struct<(i8, i8, i8)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_a3(i32)
+// CHECK: llvm.func @c_a3(i64)
 }
 
 // -----
@@ -152,64 +161,67 @@ llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
 //
 // AAPCS rule: an all-float struct with ≤4 fields of the same float type is an
 // HFA and uses SIMD registers (V0–V3). The lowering treats HFA args as
-// identity (no coercion), deferring register assignment to LLVM's backend.
+// an array of their fields, deferring register assignment to LLVM's backend.
 //
-// The identity classification means the LLVM call passes the struct type
-// directly, identical to the DefaultCABIInfo (no-triple) behavior.
+// The array classification means the LLVM call passes [3 x f32] for
+// {f32, f32, f32}. HFA returns stay identity: the struct type is kept.
 //
-// HFA detection (isAllFloatStruct):
+// HFA detection (getHomogeneousAggregate):
 //   - All fields must be the same float type (f16, f32, or f64)
 //   - At most 4 fields (5+ is not HFA)
 //   - Mixed int+float or heterogeneous float types → not HFA
+//   - Fields are counted after opening nested structs and arrays
+//   - A zero-length array field → not HFA
+//   - An empty struct field is ignored
+//   - Vectors of one size, 64 or 128 bits, form an HVA, passed like an HFA
 //
 // Variadic HFA args are explicitly NOT treated as HFA (see Group G).
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// F1: {f32, f32} (8 bytes, all-float, 2 fields) → HFA → identity.
-// The LLVM struct type is passed as-is. No store/load bitcast.
+// F1: {f32, f32} (8 bytes, all-float, 2 fields) → HFA → [2 x f32].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf32
 llvm.func @arg_hfa_2xf32(%arg0: !llvm.struct<(f32, f32)>) {
-  // CHECK: llvm.call @c_f1(%{{.*}}) : (!llvm.struct<(f32, f32)>) -> ()
+  // CHECK: llvm.call @c_f1(%{{.*}}) : (!llvm.array<2 x f32>) -> ()
   pop.external_call @c_f1(%arg0) : (!llvm.struct<(f32, f32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f1(!llvm.struct<(f32, f32)>)
+// CHECK: llvm.func @c_f1(!llvm.array<2 x f32>)
 }
 
 // -----
 
-// F2: {f32, f32, f32, f32} (16 bytes, all-float, 4 fields) → HFA → identity.
+// F2: {f32, f32, f32, f32} (16 bytes, all-float, 4 fields) → HFA → [4 x f32].
 // 4 is the maximum field count for HFA.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_4xf32
 llvm.func @arg_hfa_4xf32(%arg0: !llvm.struct<(f32, f32, f32, f32)>) {
-  // CHECK: llvm.call @c_f2(%{{.*}}) : (!llvm.struct<(f32, f32, f32, f32)>) -> ()
+  // CHECK: llvm.call @c_f2(%{{.*}}) : (!llvm.array<4 x f32>) -> ()
   pop.external_call @c_f2(%arg0) : (!llvm.struct<(f32, f32, f32, f32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f2(!llvm.struct<(f32, f32, f32, f32)>)
+// CHECK: llvm.func @c_f2(!llvm.array<4 x f32>)
 }
 
 // -----
 
-// F3: {f64, f64} (16 bytes, all-float doubles, 2 fields) → HFA → identity.
+// F3: {f64, f64} (16 bytes, all-float doubles, 2 fields) → HFA → [2 x f64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf64
 llvm.func @arg_hfa_2xf64(%arg0: !llvm.struct<(f64, f64)>) {
-  // CHECK: llvm.call @c_f3(%{{.*}}) : (!llvm.struct<(f64, f64)>) -> ()
+  // CHECK: llvm.call @c_f3(%{{.*}}) : (!llvm.array<2 x f64>) -> ()
   pop.external_call @c_f3(%arg0) : (!llvm.struct<(f64, f64)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f3(!llvm.struct<(f64, f64)>)
+// CHECK: llvm.func @c_f3(!llvm.array<2 x f64>)
 }
 
 // -----
 
 // F4: {f32 × 5} (20 bytes) → NOT HFA (5 fields exceeds the 4-field limit) AND
-// size >16 bytes → indirect. The isAllFloatStruct check rejects 5-field
+// size >16 bytes → indirect. The HFA check rejects 5-field
 // structs, so the struct falls through to size classification (>16 → indirect).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_5xf32
@@ -223,7 +235,7 @@ llvm.func @arg_not_hfa_5xf32(%arg0: !llvm.struct<(f32, f32, f32, f32, f32)>) {
 // -----
 
 // F5: {f32, i32} (8 bytes) → NOT HFA (mixed int+float) → integer coercion → i64.
-// isAllFloatStruct returns false for mixed types, so the struct is classified
+// The HFA check rejects mixed types, so the struct is classified
 // as a non-HFA integer struct.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_mixed
@@ -251,57 +263,174 @@ llvm.func @ret_hfa() {
 // CHECK: llvm.func @c_f6() -> !llvm.struct<(f32, f32)>
 }
 
+// -----
+
+// F7: {{f32,f32,f32}, {f32,f32,f32}} (24 bytes, 6 floats) → NOT HFA →
+// indirect, sret for the return.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_not_hfa_nested_6xf32
+llvm.func @arg_not_hfa_nested_6xf32(%arg0: !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>) {
+  // CHECK: llvm.call @c_f7(%{{.*}}) : (!llvm.ptr) -> ()
+  pop.external_call @c_f7(%arg0) : (!llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>) -> ()
+  // CHECK: llvm.call @c_f7_ret(%{{.*}}) : (!llvm.ptr {llvm.sret = {{.*}}}) -> ()
+  %r = pop.external_call @c_f7_ret() : () -> !llvm.struct<(struct<(f32, f32, f32)>, struct<(f32, f32, f32)>)>
+  llvm.return
+}
+}
+
+// -----
+
+// F8: {[3 x f32]} (12 bytes, 3 floats) → HFA → [3 x f32].
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hfa_array_member
+llvm.func @arg_hfa_array_member(%arg0: !llvm.struct<(array<3 x f32>)>) {
+  // CHECK: llvm.call @c_f8(%{{.*}}) : (!llvm.array<3 x f32>) -> ()
+  pop.external_call @c_f8(%arg0) : (!llvm.struct<(array<3 x f32>)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F9: {f32, {[0 x f32]}, f32} (8 bytes) → NOT HFA → i64. The middle field
+// is a zero-length array, `float pad[0]` in C.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_not_hfa_zero_array
+llvm.func @arg_not_hfa_zero_array(%arg0: !llvm.struct<(f32, struct<(array<0 x f32>)>, f32)>) {
+  // CHECK: llvm.call @c_f9(%{{.*}}) : (i64) -> ()
+  pop.external_call @c_f9(%arg0) : (!llvm.struct<(f32, struct<(array<0 x f32>)>, f32)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F10: {f32, {}, {{[0 x f32]}}, f32} (8 bytes) → HFA → [2 x f32]. The two
+// middle fields are empty structs, `struct {}` and `struct { float pad[0]; }`
+// in C, and are ignored.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hfa_empty_members
+llvm.func @arg_hfa_empty_members(%arg0: !llvm.struct<(f32, struct<()>, struct<(struct<(array<0 x f32>)>)>, f32)>) {
+  // CHECK: llvm.call @c_f10(%{{.*}}) : (!llvm.array<2 x f32>) -> ()
+  pop.external_call @c_f10(%arg0) : (!llvm.struct<(f32, struct<()>, struct<(struct<(array<0 x f32>)>)>, f32)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F11: {vector<4 x i32>, vector<4 x i32>} (32 bytes) → HVA →
+// [2 x vector<4xi32>]. Integer vectors count too.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hva_2xv4i32
+llvm.func @arg_hva_2xv4i32(%arg0: !llvm.struct<(vector<4 x i32>, vector<4 x i32>)>) {
+  // CHECK: llvm.call @c_f11(%{{.*}}) : (!llvm.array<2 x vector<4xi32>>) -> ()
+  pop.external_call @c_f11(%arg0) : (!llvm.struct<(vector<4 x i32>, vector<4 x i32>)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F12: {vector<2 x f32>, f64} (16 bytes, a vector and a float) → NOT HFA or
+// HVA → [2 x i64].
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_not_hva_vec_and_f64
+llvm.func @arg_not_hva_vec_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
+  // CHECK: llvm.call @c_f12(%{{.*}}) : (!llvm.array<2 x i64>) -> ()
+  pop.external_call @c_f12(%arg0) : (!llvm.struct<(vector<2 x f32>, f64)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F13: {f32, f32} on Darwin, fixed arg → [2 x f32], the same as on Linux.
+module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hfa_darwin
+llvm.func @arg_hfa_darwin(%arg0: !llvm.struct<(f32, f32)>) {
+  // CHECK: llvm.call @c_f13(%{{.*}}) : (!llvm.array<2 x f32>) -> ()
+  pop.external_call @c_f13(%arg0) : (!llvm.struct<(f32, f32)>) -> ()
+  llvm.return
+}
+}
+
+// -----
+
+// F14: a member is measured by its alloc size. With `i16:64` in the data
+// layout vector<2 x i16> stores 4 bytes but occupies 8, so the struct is an
+// HVA of two 64-bit vectors → [2 x vector<2xi16>].
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:64-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hva_overaligned
+llvm.func @arg_hva_overaligned(%arg0: !llvm.struct<(vector<2 x i16>, vector<2 x i16>)>) {
+  // CHECK: llvm.call @c_f14(%{{.*}}) : (!llvm.array<2 x vector<2xi16>>) -> ()
+  pop.external_call @c_f14(%arg0) : (!llvm.struct<(vector<2 x i16>, vector<2 x i16>)>) -> ()
+  llvm.return
+}
+}
+
 //===----------------------------------------------------------------------===//
 // Group B: Two-register struct arguments (9–16 bytes)
 //
-// ARM64 AAPCS always uses IntegerPair for non-HFA structs in this range.
+// ARM64 AAPCS always uses [2 x i64] for non-HFA structs in this range.
 // There is no SSEPair or Mixed class — both registers are always integer
-// (i64 for the first 8 bytes, iN for the remaining bytes). This contrasts
+// (i128 if the struct is 16-byte aligned). This contrasts
 // with x86-64 which classifies each eightbyte independently.
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// B1: {i32, i32, i32} (12 bytes) → IntegerPair → (i64, i32).
-// ARM64: first 8 bytes → i64, remaining 4 bytes → i32.
+// B1: {i32, i32, i32} (12 bytes) → [2 x i64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_12
 llvm.func @arg_int_pair_12(%arg0: !llvm.struct<(i32, i32, i32)>) {
-  // CHECK: llvm.call @c_b1(%{{.*}}, %{{.*}}) : (i64, i32) -> ()
+  // CHECK: llvm.call @c_b1(%{{.*}}) : (!llvm.array<2 x i64>) -> ()
   pop.external_call @c_b1(%arg0) : (!llvm.struct<(i32, i32, i32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_b1(i64, i32)
+// CHECK: llvm.func @c_b1(!llvm.array<2 x i64>)
 }
 
 // -----
 
-// B2: {i64, i64} (16 bytes) → IntegerPair → (i64, i64).
+// B2: {i64, i64} (16 bytes) → [2 x i64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_16
 llvm.func @arg_int_pair_16(%arg0: !llvm.struct<(i64, i64)>) {
-  // CHECK: llvm.call @c_b2(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
+  // CHECK: llvm.call @c_b2(%{{.*}}) : (!llvm.array<2 x i64>) -> ()
   pop.external_call @c_b2(%arg0) : (!llvm.struct<(i64, i64)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_b2(i64, i64)
+// CHECK: llvm.func @c_b2(!llvm.array<2 x i64>)
 }
 
 // -----
 
-// B3: {f32, f32, i32} (12 bytes) → IntegerPair → (i64, i32).
+// B3: {f32, f32, i32} (12 bytes) → [2 x i64].
 // This struct has float fields but it is NOT HFA (mixed types). ARM64 always
-// uses IntegerPair for non-HFA 9–16 byte structs, regardless of field types.
+// uses [2 x i64] for non-HFA 9–16 byte structs, regardless of field types.
 // Compare with x86-64 which classifies each eightbyte and could produce Mixed.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_mixed_12_arm64
 llvm.func @arg_mixed_12_arm64(%arg0: !llvm.struct<(f32, f32, i32)>) {
-  // CHECK: llvm.call @c_b3(%{{.*}}, %{{.*}}) : (i64, i32) -> ()
+  // CHECK: llvm.call @c_b3(%{{.*}}) : (!llvm.array<2 x i64>) -> ()
   // CHECK-NOT: llvm.call @c_b3(%{{.*}}) : (f64
   pop.external_call @c_b3(%arg0) : (!llvm.struct<(f32, f32, i32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_b3(i64, i32)
+// CHECK: llvm.func @c_b3(!llvm.array<2 x i64>)
+}
+
+// -----
+
+// B4: {i128} (16 bytes, 16-byte aligned) → i128, not [2 x i64].
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_aligned_16
+llvm.func @arg_aligned_16(%arg0: !llvm.struct<(i128)>) {
+  // CHECK: llvm.call @c_b4(%{{.*}}) : (i128) -> ()
+  pop.external_call @c_b4(%arg0) : (!llvm.struct<(i128)>) -> ()
+  llvm.return
+}
 }
 
 //===----------------------------------------------------------------------===//
@@ -351,19 +480,18 @@ llvm.func @ret_small_int_struct() {
 
 // -----
 
-// D2: return {i32, i32, i32} (12 bytes) → IntegerPair → call returns
-// !llvm.struct<(i64, i32)>. Two-register reconstruction.
+// D2: return {i32, i32, i32} (12 bytes) → call returns [2 x i64] in x0 and
+// x1, the same coercion as for an argument.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_int_pair
 llvm.func @ret_int_pair() {
-  // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.struct<(i64, i32)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
+  // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.array<2 x i64>
+  // CHECK: llvm.store [[R]], %{{.*}} : !llvm.array<2 x i64>, !llvm.ptr
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
   %r = pop.external_call @c_d2() : () -> !llvm.struct<(i32, i32, i32)>
   llvm.return
 }
-// CHECK: llvm.func @c_d2() -> !llvm.struct<(i64, i32)>
+// CHECK: llvm.func @c_d2() -> !llvm.array<2 x i64>
 }
 
 // -----
@@ -395,7 +523,7 @@ llvm.func @ret_sret() {
 // Linux AAPCS64: va_list has separate GP (__gr_top) and VR (__vr_top) save
 //   areas. HFA variadic args and float args land in SIMD/VR registers, and
 //   va_arg for HFA structs reads from the VR save area. The lowering preserves
-//   HFA identity and does NOT bitcast floats — LLVM places them in SIMD regs.
+//   the HFA and does NOT bitcast floats — LLVM places them in SIMD regs.
 //
 // References:
 //   AAPCS64 spec IHI0055 §B.4 — va_list structure definition
@@ -404,15 +532,15 @@ llvm.func @ret_sret() {
 
 // -----
 
-// G1: Linux ARM64 — variadic HFA arg stays identity.
-// {f32, f32} is HFA. On Linux, even variadic HFA args use identity: the struct
+// G1: Linux ARM64 — variadic HFA arg stays an HFA.
+// {f32, f32} is HFA. On Linux, even variadic HFA args become an array: it
 // is passed as-is so LLVM places it in SIMD registers where Linux va_arg for
 // HFA structs reads from the VR save area.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_hfa_linux
 llvm.func @variadic_hfa_linux(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
-  // HFA struct remains identity on Linux — passed as struct, not coerced to i64.
-  // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.struct<(f32, f32)>) -> ()
+  // HFA struct remains an HFA on Linux — passed as array, not coerced to i64.
+  // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.array<2 x f32>) -> ()
   // CHECK-NOT: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i64)
   pop.external_call @c_g1(%fixed, %s)
     : (i32, !llvm.struct<(f32, f32)>) -> () <numFixedArgs = 1 : index>
@@ -525,7 +653,7 @@ llvm.func @arg_narrow_ints_linux(%a: i8, %b: i16) {
 // -----
 
 // I3: Darwin - {si8}, {ui16} and {bool} arguments, {si8} result. clang
-// coerces a struct of one narrow integer to an integer of its size and does
+// coerces a struct of one narrow integer to i64 (i8 when returned) and does
 // not extend it, so the coerced integers get no mark, whatever the sign of the
 // field.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
@@ -534,9 +662,9 @@ llvm.func @arg_single_field_structs_darwin(%a: !llvm.struct<(i8)>, %b: !llvm.str
   %s8 = builtin.unrealized_conversion_cast %a : !llvm.struct<(i8)> to !kgen.struct<(scalar<si8>)>
   %u16 = builtin.unrealized_conversion_cast %b : !llvm.struct<(i16)> to !kgen.struct<(scalar<ui16>)>
   %bool = builtin.unrealized_conversion_cast %c : !llvm.struct<(i1)> to !kgen.struct<(scalar<bool>)>
-  // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
+  // CHECK: llvm.call @c_i3(%{{.*}}, %{{.*}}, %{{.*}}) : (i64, i64, i64) -> i8
   %r = pop.external_call @c_i3(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
   llvm.return
 }
-// CHECK: llvm.func @c_i3(i8, i16, i8) -> i8
+// CHECK: llvm.func @c_i3(i64, i64, i64) -> i8
 }

@@ -93,6 +93,7 @@
 //   N6  arg_array_member          {[3 x f32]}              correct: SSEPair(f64,f32)
 //   N7  arg_empty_member          {f32,{},f32}             correct: f64  (SSE)
 //   N8  arg_zero_array_member     {f32,{[0 x f32]},f32}    correct: f64  (SSE)
+//   N9  arg_overaligned_member    {<2 x i16>}, i16:64      correct: f64  (SSE)
 //
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
@@ -818,6 +819,21 @@ llvm.func @arg_zero_array_member(%arg0: !llvm.struct<(f32, struct<(array<0 x f32
   llvm.return
 }
 // CHECK: llvm.func @c_n8(f64)
+}
+
+// -----
+
+// N9: a member is classified by its alloc size. With `i16:64` in the data
+// layout <2 x i16> stores 4 bytes but occupies 8, so it is a 64-bit vector →
+// SSE → f64.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i16:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_overaligned_member
+llvm.func @arg_overaligned_member(%arg0: !llvm.struct<(vector<2 x i16>)>) {
+  // CHECK: llvm.call @c_n9(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n9(%arg0) : (!llvm.struct<(vector<2 x i16>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n9(f64)
 }
 
 //===----------------------------------------------------------------------===//

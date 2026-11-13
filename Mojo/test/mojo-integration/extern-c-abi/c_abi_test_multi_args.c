@@ -63,11 +63,15 @@ struct MultiHfa2D {
   double a, b;
 };
 
-// TODO(MOCO-4611): Add the seven-leading-double case, where one SIMD register
-// is left — one fewer than the HFA needs — so AAPCS must burn it and pass the
-// aggregate whole on the stack. Mojo splits the aggregate there instead, and
-// the case cannot ship yet because it is red on aarch64 and green on x86-64,
-// with no target-arch lit feature to hang a conditional XFAIL on.
+// Seven leading doubles leave one SIMD register free, but the HFA needs two.
+// AAPCS then leaves that register unused and passes the whole HFA on the
+// stack.
+double c_func_seven_doubles_then_hfa2d(double a, double b, double c, double d,
+                                       double e, double f, double g,
+                                       struct MultiHfa2D s) {
+  return a + b * 2.0 + c * 3.0 + d * 4.0 + e * 5.0 + f * 6.0 + g * 7.0 +
+         s.a * 100.0 + s.b * 1000.0;
+}
 
 // Eight leading doubles leave no SIMD register at all, so the aggregate
 // reaches plain stack passing.
@@ -118,4 +122,48 @@ struct MultiHfa3D c_func_hfa3d_make(double base, double step) {
   s.b = base + step * 2.0;
   s.c = base + step * 3.0;
   return s;
+}
+
+// ============================================================================
+// Aggregates arriving with the integer registers partly or fully consumed
+// ============================================================================
+
+struct MultiPair {
+  int64_t a, b;
+};
+
+// Seven leading integers leave one GPR free (x7), but the 16-byte struct
+// needs two. AAPCS then passes the whole struct on the stack; it must not be
+// split between x7 and the stack.
+int64_t c_func_seven_ints_then_pair(int64_t a, int64_t b, int64_t c, int64_t d,
+                                    int64_t e, int64_t f, int64_t g,
+                                    struct MultiPair p) {
+  return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + p.a * 100 +
+         p.b * 1000;
+}
+
+struct MultiTwoBytes {
+  int8_t a, b;
+};
+
+// Eight leading integers use all the GPRs, so the 2-byte struct and n go on
+// the stack. C gives the struct a whole 8-byte slot and reads n after it, at
+// sp+8. If Mojo gave the struct only 2 bytes, n would be read from the wrong
+// place.
+int64_t c_func_eight_ints_then_small(int64_t a, int64_t b, int64_t c, int64_t d,
+                                     int64_t e, int64_t f, int64_t g, int64_t h,
+                                     struct MultiTwoBytes s, int32_t n) {
+  return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8 + s.a * 100 +
+         s.b * 1000 + (int64_t)n * 10000;
+}
+
+struct MultiInt128 {
+  __int128 v;
+};
+
+// A struct holding an __int128 is 16-byte aligned. On Linux it must start in
+// an even register: x1 is skipped and the struct goes in x2 and x3. Darwin
+// does not skip a register.
+int64_t c_func_int_then_int128(int64_t a, struct MultiInt128 s) {
+  return a + (int64_t)s.v * 100 + (int64_t)(s.v >> 64) * 1000;
 }

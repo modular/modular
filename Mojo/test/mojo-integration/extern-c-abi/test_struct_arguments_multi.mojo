@@ -78,9 +78,26 @@ struct MultiHfa2D(TrivialRegisterPassable):
     var b: Float64
 
 
-# TODO(MOCO-4611): Add the seven-leading-double case, which leaves one SIMD
-# register — one fewer than the HFA needs — so AAPCS must burn it and pass the
-# aggregate whole on the stack. Mojo splits it there instead.
+def test_seven_doubles_then_hfa2d():
+    """One SIMD register is free, but the HFA needs two. AAPCS then leaves
+    that register unused and passes the whole HFA on the stack."""
+    var s = MultiHfa2D(1.5, 2.25)
+    var result = external_call["c_func_seven_doubles_then_hfa2d", Float64](
+        Float64(1.0),
+        Float64(2.0),
+        Float64(3.0),
+        Float64(4.0),
+        Float64(5.0),
+        Float64(6.0),
+        Float64(7.0),
+        s,
+    )
+    print("seven_doubles_then_hfa2d:", result)
+
+
+# CHECK: seven_doubles_then_hfa2d: 2540.0
+
+
 def test_eight_doubles_then_hfa2d():
     """No SIMD register is left at all, which reaches plain stack passing."""
     var s = MultiHfa2D(1.5, 2.25)
@@ -156,12 +173,91 @@ def test_hfa3d_two_scalars_return():
 
 
 # ============================================================================
+# Aggregates arriving with the integer registers partly or fully consumed
+# ============================================================================
+@fieldwise_init
+struct MultiPair(TrivialRegisterPassable):
+    var a: Int64
+    var b: Int64
+
+
+def test_seven_ints_then_pair():
+    """One GPR is free, but the 16-byte struct needs two. AAPCS then passes
+    the whole struct on the stack; it must not be split."""
+    var p = MultiPair(1, 2)
+    var result = external_call["c_func_seven_ints_then_pair", Int64](
+        Int64(1),
+        Int64(2),
+        Int64(3),
+        Int64(4),
+        Int64(5),
+        Int64(6),
+        Int64(7),
+        p,
+    )
+    print("seven_ints_then_pair:", result)
+
+
+# CHECK: seven_ints_then_pair: 2240
+
+
+@fieldwise_init
+struct MultiTwoBytes(TrivialRegisterPassable):
+    var a: Int8
+    var b: Int8
+
+
+def test_eight_ints_then_small():
+    """All GPRs are used, so the 2-byte struct goes on the stack. It must take
+    a whole 8-byte slot, or C reads the next argument from the wrong place."""
+    var s = MultiTwoBytes(1, 2)
+    var result = external_call["c_func_eight_ints_then_small", Int64](
+        Int64(1),
+        Int64(2),
+        Int64(3),
+        Int64(4),
+        Int64(5),
+        Int64(6),
+        Int64(7),
+        Int64(8),
+        s,
+        Int32(3),
+    )
+    print("eight_ints_then_small:", result)
+
+
+# CHECK: eight_ints_then_small: 32304
+
+
+# Not `TrivialRegisterPassable`: Mojo would then pass the only field and not
+# the struct.
+@fieldwise_init
+struct MultiInt128:
+    var v: Int128
+
+
+def test_int_then_int128():
+    """The struct is 16-byte aligned. On Linux it must start in an even
+    register: x1 is skipped and the struct goes in x2 and x3."""
+    var s = MultiInt128((Int128(2) << 64) | Int128(1))
+    var result = external_call["c_func_int_then_int128", Int64](Int64(1), s)
+    print("int_then_int128:", result)
+
+
+# CHECK: int_then_int128: 2101
+
+
+# ============================================================================
 # Main - run all tests
 # ============================================================================
 def main():
     test_scalar_then_memory_struct()
     test_scalar_then_padded_small()
+    test_seven_doubles_then_hfa2d()
     test_eight_doubles_then_hfa2d()
     test_hfa4f_then_scalar()
     test_hfa3d_argument()
     test_hfa3d_two_scalars_return()
+    test_seven_ints_then_pair()
+    test_eight_ints_then_small()
+    test_int_then_int128()

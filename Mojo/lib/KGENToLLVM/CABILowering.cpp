@@ -258,52 +258,6 @@ int64_t CabiUtils::getStructSize(mlir::LLVM::LLVMStructType type,
   return dataLayout.getTypeStoreSize(type);
 }
 
-/// Recursively determine the canonical leaf float bit width for a struct.
-///
-/// Traverses all fields (recursing into nested LLVMStructType fields) and
-/// returns the bit width if every leaf field is the same float type.
-/// Returns 0 if any non-float field is found, the struct is empty, or
-/// float types are mixed (e.g., f32 and f64 together).
-static unsigned getLeafFloatBitWidth(mlir::LLVM::LLVMStructType type) {
-  std::optional<unsigned> canonicalBitWidth;
-  for (mlir::Type fieldType : type.getBody()) {
-    unsigned fieldBitWidth = 0;
-    if (auto floatType = dyn_cast<mlir::FloatType>(fieldType)) {
-      fieldBitWidth = floatType.getWidth();
-    } else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
-      if (auto floatElem = dyn_cast<mlir::FloatType>(vecType.getElementType()))
-        fieldBitWidth = floatElem.getWidth();
-      else
-        return 0; // Non-float vector element
-    } else if (auto nestedStruct =
-                   dyn_cast<mlir::LLVM::LLVMStructType>(fieldType)) {
-      fieldBitWidth = getLeafFloatBitWidth(nestedStruct);
-      if (fieldBitWidth == 0)
-        return 0; // Nested struct contains non-float or mixed floats
-    } else {
-      return 0; // Non-float field (integer, pointer, etc.)
-    }
-    if (!canonicalBitWidth)
-      canonicalBitWidth = fieldBitWidth;
-    else if (*canonicalBitWidth != fieldBitWidth)
-      return 0; // Heterogeneous: mixed float types (e.g., f32 + f64)
-  }
-  return canonicalBitWidth.value_or(0);
-}
-
-bool CabiUtils::isAllFloatStruct(mlir::LLVM::LLVMStructType type) {
-  auto fields = type.getBody();
-  if (fields.empty())
-    return false;
-
-  // ARM64 AAPCS HFA (Homogeneous Floating-point Aggregate) limit: at most 4
-  // top-level fields. Note: this checks top-level fields, not leaf float count.
-  if (fields.size() > 4)
-    return false;
-
-  return getLeafFloatBitWidth(type) != 0;
-}
-
 void CabiUtils::forEachMember(
     mlir::Type type, int64_t offset, const LLVMDataLayout &dataLayout,
     llvm::function_ref<void(mlir::Type, int64_t)> callback) {

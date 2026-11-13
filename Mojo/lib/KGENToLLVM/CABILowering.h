@@ -315,10 +315,6 @@ namespace CabiUtils {
 int64_t getStructSize(mlir::LLVM::LLVMStructType type,
                       const LLVMDataLayout &dataLayout);
 
-/// Check if an LLVM struct contains only float/double types.
-/// Used for ARM64 HFA (Homogeneous Float Aggregate) detection.
-bool isAllFloatStruct(mlir::LLVM::LLVMStructType type);
-
 /// Walk `type` as a tree and call `callback` for each leaf with its type and
 /// byte offset, in the order a C compiler sees the members. Leaves are
 /// scalars, vectors and types without size. `offset` is the byte offset of

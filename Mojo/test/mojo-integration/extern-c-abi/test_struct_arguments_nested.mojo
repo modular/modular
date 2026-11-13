@@ -13,11 +13,10 @@
 # C reference: c_abi_test_nested_structs.c
 # RUN: mkdir -p %t.dir
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_nested
-# RUN: %t.dir/test_nested | FileCheck %s %if x86_64-linux %{--check-prefixes=CHECK,X86%}
+# RUN: %t.dir/test_nested | FileCheck %s
 
 from std.collections import Array
 from std.ffi import external_call
-from std.sys import CompilationTarget
 
 
 # ============================================================================
@@ -66,7 +65,44 @@ def test_vec_inner_16byte():
 
 
 # ============================================================================
+# Nested float struct: Box { Vec3, Vec3 } (24 bytes, 6 floats)
+# ABI (arm64): not an HFA, since it has 6 float members after flattening,
+#              more than 4 → passed by pointer, returned via sret.
+# ABI (x86-64): >16 bytes → MEMORY.
+# ============================================================================
+@fieldwise_init
+struct Vec3(TrivialRegisterPassable):
+    var x: Float32
+    var y: Float32
+    var z: Float32
+
+
+@fieldwise_init
+struct Box(TrivialRegisterPassable):
+    var min: Vec3
+    var max: Vec3
+
+
+def test_nested_float_24byte():
+    var b = Box(Vec3(1.0, 2.0, 3.0), Vec3(4.0, 5.0, 6.0))
+    var r = external_call["c_func_nested_float_24byte", Box](b)
+    print(
+        "nested_float_24byte:",
+        r.min.x,
+        r.min.y,
+        r.min.z,
+        r.max.x,
+        r.max.y,
+        r.max.z,
+    )
+
+
+# CHECK: nested_float_24byte: 2.0 3.0 4.0 5.0 6.0 7.0
+
+
+# ============================================================================
 # Array member: FloatArray3 { Array[Float32, 3] } (12 bytes)
+# ABI (arm64): HFA of 3 floats → s0-s2.
 # ABI (x86-64): SSEPair(f64, f32) — the array is classified per element.
 # ============================================================================
 @fieldwise_init
@@ -85,12 +121,38 @@ def test_float_array_12byte():
     print("float_array_12byte:", r.v[0], r.v[1], r.v[2])
 
 
-# X86: float_array_12byte: 2.0 3.0 4.0
+# CHECK: float_array_12byte: 2.0 3.0 4.0
+
+
+# ============================================================================
+# Empty member: TaggedPair { f32, EmptyTag, f32 } (8 bytes)
+# ABI (arm64): the empty struct is skipped → HFA of 2 floats → s0-s1.
+# ABI (x86-64): the empty struct adds no class → one SSE eightbyte → f64.
+# ============================================================================
+@fieldwise_init
+struct EmptyTag(TrivialRegisterPassable):
+    pass
+
+
+@fieldwise_init
+struct TaggedPair(TrivialRegisterPassable):
+    var x: Float32
+    var tag: EmptyTag
+    var y: Float32
+
+
+def test_empty_member_8byte():
+    var p = TaggedPair(1.0, EmptyTag(), 2.0)
+    var r = external_call["c_func_empty_member_8byte", TaggedPair](p)
+    print("empty_member_8byte:", r.x, r.y)
+
+
+# CHECK: empty_member_8byte: 2.0 3.0
 
 
 def main():
     test_nested_float_12byte()
     test_vec_inner_16byte()
-    # Not supported on arm64 yet.
-    comptime if CompilationTarget.is_x86():
-        test_float_array_12byte()
+    test_nested_float_24byte()
+    test_float_array_12byte()
+    test_empty_member_8byte()

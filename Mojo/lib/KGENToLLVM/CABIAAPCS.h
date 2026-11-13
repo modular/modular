@@ -15,6 +15,7 @@
 #define KGEN_LIB_KGENTOLLVM_CABIAAPCS_H
 
 #include "CABILowering.h"
+#include <optional>
 
 namespace M::KGEN {
 
@@ -24,15 +25,15 @@ namespace M::KGEN {
 /// to the AAPCS rules, which are the standard on ARM64 (Linux, macOS, iOS).
 ///
 /// Key rules:
-/// - Structs ≤8 bytes (all-integer): coerce to i8/i16/i32/i64
-/// - Structs 9-16 bytes: split into two registers (X0-X1)
+/// - Structs ≤8 bytes (all-integer): coerce to i64 (iN when returned)
+/// - Structs 9-16 bytes: two registers (X0-X1), as [2 x i64] or i128
 /// - Structs >16 bytes: pass by pointer (indirect)
 /// - HFA (Homogeneous Float Aggregate): up to 4 float/vector fields in V0-V3
 /// - **Darwin vs Linux difference for variadic HFA:**
 ///   Darwin (macOS/iOS): va_list is flat (GP/stack only); HFA variadic args
 ///   must be coerced to integer so va_arg reads from GP save area.
 ///   Linux AAPCS64: va_list has separate GP and VR save areas; HFA variadic
-///   args remain identity so va_arg reads correctly from VR save area.
+///   args stay HFAs so va_arg reads correctly from VR save area.
 // TODO: A proposed LLVM-native ABI lowering library (LLVMABI) would replace
 // this class. See:
 // https://discourse.llvm.org/t/rfc-an-abi-lowering-library-for-llvm/84495
@@ -55,29 +56,46 @@ private:
 
   /// Classify a 9-16 byte struct into two registers (Phase 2 implementation).
   ///
-  /// ARM64 AAPCS is simpler than x86-64: just split the struct into two
-  /// 8-byte chunks, each passed as an integer register (X0-X7).
+  /// ARM64 AAPCS is simpler than x86-64: the struct takes two integer
+  /// registers (X0-X7), whatever its fields. It is passed as one value, to
+  /// prevent a split between a register and the stack.
   ///
-  /// \param size Total size in bytes (must be 9-16)
-  /// \param loc Source location for diagnostics
-  /// \return Coercion with coercedType and coercedSecondType
-  CoercionInfo classifyTwoRegisterStruct(int64_t size,
-                                         mlir::Location loc) const;
+  /// \param type The struct (9-16 bytes, not an HFA or HVA)
+  /// \return Coercion with coercedType
+  CoercionInfo classifyTwoRegisterStruct(mlir::LLVM::LLVMStructType type) const;
 
   bool isDarwin; // true = Darwin (macOS/iOS), false = Linux/other
 
   //===--------------------------------------------------------------------===//
-  // Phase 3: HFA classification (TODO - future work)
+  // HFA and HVA detection
   //===--------------------------------------------------------------------===//
 
-  // HFA (Homogeneous Float Aggregate) detection
-  // - All fields are float32, float64, or float16
-  // - Up to 4 fields total
-  // - Passed in V0-V3 (SIMD registers)
-  //
-  // Phase 3 methods (not yet implemented):
-  // - bool isHFA(StructType type, mlir::Type &baseType, int &count) const;
-  // - CoercionInfo classifyHFA(...);
+  /// A homogeneous aggregate: a struct whose members are all alike, so it is
+  /// passed in SIMD registers, one member per register. It is an HFA if the
+  /// members are floats and an HVA if they are vectors.
+  struct HomogeneousAggregate {
+    /// The type of the first member. The others have its size.
+    mlir::Type base;
+    /// The number of members, 1 to 4.
+    int64_t numMembers;
+  };
+
+  /// Classify an HFA or HVA argument: an array of its members.
+  static CoercionInfo
+  classifyHomogeneousAggregate(const HomogeneousAggregate &aggregate);
+
+  /// Helper that detects `Array[T, 0]`, `Array[Array[T, 0], N]` and so on.
+  /// A struct with such a member is not an HFA or HVA.
+  static bool isZeroLengthArray(mlir::Type type);
+
+  /// Check whether a struct is an HFA or HVA: 1 to 4 members that are all
+  /// floats of one size, or all vectors of 64 or 128 bits. Members are
+  /// counted through nested structs and arrays.
+  ///
+  /// \return The first member's type and the number of members, or
+  ///         std::nullopt if the struct is not an HFA or HVA
+  std::optional<HomogeneousAggregate>
+  getHomogeneousAggregate(mlir::LLVM::LLVMStructType type) const;
 };
 
 } // namespace M::KGEN
