@@ -959,7 +959,9 @@ getMojoCacheBackend(const std::string baseExtra) {
   if (!baseExtra.empty())
     path = path / baseExtra;
   path = path / "transform";
-  return Cache::getLocalDefaultBackendChain(path, getVersionString());
+  return Cache::getLocalDefaultBackendChain(
+      path, getVersionString(),
+      Cache::CacheOwner{getVersionBinaryPath(), getVersionBuildID()});
 }
 
 //===----------------------------------------------------------------------===//

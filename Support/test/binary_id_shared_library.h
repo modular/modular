@@ -14,3 +14,4 @@
 #include <string>
 
 std::string getSharedLibraryBinaryID();
+std::string getSharedLibraryBinaryPath();

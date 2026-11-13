@@ -104,8 +104,9 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
       << "ObjectCompiler::create: cachePath=" << cachePath.string()
       << " cacheBaseExtra=" << options.cacheBaseExtra << "\n";
 
-  auto transformCache =
-      Cache::getLocalDefaultBackendChain(cachePath, getVersionString());
+  auto transformCache = Cache::getLocalDefaultBackendChain(
+      cachePath, getVersionString(),
+      Cache::CacheOwner{getVersionBinaryPath(), getVersionBuildID()});
   if (failed(transformCache)) {
     MODULAR_CACHE_LOG("mojo")
         << "ObjectCompiler::create: backend creation failed\n";

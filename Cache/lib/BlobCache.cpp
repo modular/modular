@@ -31,12 +31,16 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/bit.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LockFileManager.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/xxhash.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
@@ -47,6 +51,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 using namespace M;
 using namespace Cache;
@@ -554,16 +559,113 @@ M::Cache::getFilesystemBackend(const std::filesystem::path &basePath,
   return RCRef<FilesystemBackend>::create(basePath, readOnly);
 }
 
+/// The file that lists a version directory's owners, as CacheOwner describes.
+/// Blob files are named in base64, which has no '.', so none can collide with
+/// it.
+static constexpr llvm::StringLiteral kOwnersFileName = ".owners";
+
+/// How long to wait for another process that is pruning the same cache.
+static constexpr std::chrono::seconds kPruneLockWait{5};
+
+/// The name prefix of a sibling directory that a pruner moved aside to remove.
+static constexpr llvm::StringLiteral kPruningPrefix = ".pruning-";
+
+/// Returns the binaries recorded as using `dir`. A directory written before
+/// owners were recorded has none.
+static std::vector<CacheOwner> readOwners(const std::filesystem::path &dir) {
+  std::vector<CacheOwner> owners;
+  auto bufferOr =
+      llvm::MemoryBuffer::getFile((dir / kOwnersFileName.str()).string());
+  if (!bufferOr)
+    return owners;
+  SmallVector<StringRef> lines;
+  (*bufferOr)->getBuffer().split(lines, '\n', /*MaxSplit=*/-1,
+                                 /*KeepEmpty=*/false);
+  for (StringRef line : lines) {
+    auto [buildID, path] = line.split('\t');
+    if (!buildID.empty() && !path.empty())
+      owners.push_back({path.str(), buildID.str()});
+  }
+  return owners;
+}
+
+/// Records `owner` as using `dir`, unless it already is.
+static void recordOwner(const std::filesystem::path &dir,
+                        const CacheOwner &owner) {
+  for (const CacheOwner &recorded : readOwners(dir))
+    if (recorded.path == owner.path && recorded.buildID == owner.buildID)
+      return;
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  if (ec)
+    return;
+  llvm::raw_fd_ostream os((dir / kOwnersFileName.str()).string(), ec,
+                          llvm::sys::fs::OF_Append);
+  if (ec)
+    return;
+  // A single appended write, so concurrent writers cannot interleave lines.
+  os << owner.buildID + "\t" + owner.path + "\n";
+  MODULAR_CACHE_LOG("fs") << "recorded owner " << owner.path << " ("
+                          << owner.buildID << ") in " << dir.string() << "\n";
+}
+
+/// Returns whether a binary recorded in `dir` may still use it. A recorded
+/// binary stops using it once its path is gone or holds `self` under a
+/// different build ID.
+static bool isInUse(const std::filesystem::path &dir, const CacheOwner &self) {
+  for (const CacheOwner &owner : readOwners(dir)) {
+    if (owner.path == self.path) {
+      if (owner.buildID == self.buildID)
+        return true;
+      continue;
+    }
+    std::error_code ec;
+    // A path that cannot be checked may still hold a binary.
+    if (std::filesystem::exists(owner.path, ec) || ec)
+      return true;
+  }
+  return false;
+}
+
+/// Takes the lock on `path` into `lock`, waiting for a process that holds it.
+/// Returns whether the lock was taken.
+static bool takeLock(const std::filesystem::path &path,
+                     std::optional<llvm::LockFileManager> &lock) {
+  // A LockFileManager can try only once, so retry with a fresh one.
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    lock.emplace(path.string());
+    llvm::Expected<bool> owned = lock->tryLock();
+    if (!owned) {
+      llvm::consumeError(owned.takeError());
+      return false;
+    }
+    if (*owned)
+      return true;
+    // A pruner holds the lock only to rename directories. A lock held past
+    // kPruneLockWait belongs to a process that died where LockFileManager
+    // cannot check it, such as on another host.
+    if (attempt == 0 && lock->waitForUnlockFor(kPruneLockWait) ==
+                            llvm::WaitForUnlockResult::Timeout)
+      lock->unsafeUnlock();
+  }
+  return false;
+}
+
 /// Returns a filesystem-based implementation of the BlobCacheBackend. The
 /// `cacheDir` is used to derive a path for use by the filesystem backend. The
 /// `version` specifies the version string of the cache, defaults to
-/// MODULAR_VERSION_STRING if the provided version is empty.
+/// MODULAR_VERSION_STRING if the provided version is empty. See
+/// getFilesystemBackend for `owner`.
 static ErrorOr<RCRef<FilesystemBackend>>
 getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
-                              std::string_view version) {
+                              std::string_view version,
+                              std::optional<CacheOwner> owner) {
   // If no version is specified, use the default version.
   if (version.empty())
     version = getModularVersionString();
+  // An owner needs a path to tell whether it still exists.
+  if (owner && owner->path.empty())
+    owner.reset();
 
   MODULAR_CACHE_LOG("fs") << "version=" << std::string_view(version) << "\n";
 
@@ -605,15 +707,22 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
   // keep cached parallel debug and release versions.
   if (!readOnly) {
     // File lock the directory to avoid multiple processes remove the
-    // content in the directory at the same time.
-    llvm::LockFileManager locker(base.string());
-    if (locker.tryLock()) {
+    // content in the directory at the same time. Recording the owner under the
+    // same lock means a concurrent pruner either sees it or has already
+    // finished.
+    std::optional<llvm::LockFileManager> locker;
+    bool locked = takeLock(base, locker);
+    if (owner)
+      recordOwner(base / version, *owner);
+    std::vector<std::filesystem::path> doomed;
+    if (locked) {
       // Extract version suffix (everything after the first '-')
       std::string_view suffix;
       size_t idx = version.find('-');
       if (idx != std::string_view::npos)
         suffix = version.substr(idx + 1, std::string_view::npos);
 
+      std::vector<std::filesystem::path> outdated;
       for (const auto &dirEntry : std::filesystem::directory_iterator{base}) {
         // The directory entry must exist, be a directory, the parent must be
         // `base` and the directory 'filename' suffix must match the current
@@ -625,17 +734,42 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
              std::filesystem::canonical(base, ec1))) {
           // Extract suffix from directory name
           std::string dirName = dirEntry.path().filename().string();
+          // A pruner that died before removing this directory left it.
+          if (StringRef(dirName).starts_with(kPruningPrefix)) {
+            doomed.push_back(dirEntry.path());
+            continue;
+          }
           // Remove if dirName is not the same as current version (outdated
           // cache) and has the same build type as the current one.
           if (dirName != version && dirName.ends_with(suffix)) {
-            MODULAR_CACHE_LOG("fs")
-                << "pruning old cache dir: " << dirEntry.path().string()
-                << "\n";
-            std::filesystem::remove_all(dirEntry, ec);
+            if (owner && isInUse(dirEntry.path(), *owner)) {
+              MODULAR_CACHE_LOG("fs")
+                  << "keeping cache dir in use: " << dirEntry.path().string()
+                  << "\n";
+              continue;
+            }
+            outdated.push_back(dirEntry.path());
           }
         }
       }
+
+      // A rename is quick, so the lock covers only the renames.
+      for (const std::filesystem::path &dir : outdated) {
+        MODULAR_CACHE_LOG("fs")
+            << "pruning old cache dir: " << dir.string() << "\n";
+        std::filesystem::path claimed =
+            base / (kPruningPrefix.str() + dir.filename().string());
+        std::filesystem::rename(dir, claimed, ec);
+        if (!ec)
+          doomed.push_back(std::move(claimed));
+      }
     }
+
+    // Removing a directory can take seconds, so it runs after the lock is
+    // released.
+    locker.reset();
+    for (const std::filesystem::path &dir : doomed)
+      std::filesystem::remove_all(dir, ec);
   }
 
   base = base / version;
@@ -645,14 +779,16 @@ getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
 
 ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getFilesystemBackend(const std::filesystem::path &cacheDir,
-                               std::string_view version) {
-  return getVersionedFilesystemBackend(cacheDir, version);
+                               std::string_view version,
+                               const std::optional<CacheOwner> &owner) {
+  return getVersionedFilesystemBackend(cacheDir, version, owner);
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
-                                      std::string_view version) {
-  auto filesystemOr = getFilesystemBackend(cacheDir, version);
+                                      std::string_view version,
+                                      const std::optional<CacheOwner> &owner) {
+  auto filesystemOr = getFilesystemBackend(cacheDir, version, owner);
   if (filesystemOr.isError())
     return filesystemOr.takeError();
   auto memory = getInMemoryBackend();

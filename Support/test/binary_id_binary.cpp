@@ -18,5 +18,8 @@
 
 int main() {
   std::cout << "binary id: " << M::getBinaryID() << "\n";
+  std::cout << "binary build id: " << M::getBinaryBuildID() << "\n";
+  std::cout << "binary path: " << M::getBinaryPath() << "\n";
   std::cout << "shared library id: " << getSharedLibraryBinaryID() << "\n";
+  std::cout << "shared library path: " << getSharedLibraryBinaryPath() << "\n";
 }

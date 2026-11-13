@@ -22,3 +22,9 @@ std::string M::KGEN::getVersionString() {
   return M::getMojoVersionString() + M::getBinaryID() + "-" +
          M::getMojoVersion().buildType;
 }
+
+// Each shared library links its own copy of BinaryID. Defining these here
+// makes them describe the same binary as getVersionString().
+std::string M::KGEN::getVersionBinaryPath() { return M::getBinaryPath(); }
+
+std::string M::KGEN::getVersionBuildID() { return M::getBinaryBuildID(); }
