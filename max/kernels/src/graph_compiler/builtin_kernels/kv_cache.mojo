@@ -929,37 +929,84 @@ struct Struct_indexer_k_quantize_store_fp8_paged:
         rope_dim: Int,
         key_col_offset: Int,
     ](
-        k: InputTensor[dtype=.bfloat16, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales_blocks: MutableInputTensor[dtype=.float32, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        k: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        k_scales_blocks: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
-        gamma: InputTensor[rank=1, ...],
-        beta: InputTensor[rank=1, ...],
+        gamma: Some[Input & Tensor],
+        beta: Some[Input & Tensor],
         epsilon: Float32,
-        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
-        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
+        freqs_cis: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert context.target.is_gpu(), "only valid on GPUs"
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert conforms_to(type_of(beta), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(k_scales_blocks).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(gamma).rank == 1
+        comptime assert type_of(beta).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(k).dtype == DType.bfloat16
+        comptime assert type_of(kv_blocks).dtype == DType.float8_e4m3fn
+        comptime assert type_of(page_stride).dtype == DType.int64
+        comptime assert type_of(cache_lengths).dtype == DType.uint32
+        comptime assert type_of(kv_lookup_table).dtype == DType.uint32
+        comptime assert type_of(input_row_offsets).dtype == DType.uint32
+        comptime assert type_of(max_prompt_length).dtype == DType.uint32
+        comptime assert type_of(max_cache_length).dtype == DType.uint32
+        comptime assert type_of(k_scales_blocks).dtype == DType.float32
+        comptime assert type_of(scales_page_stride).dtype == DType.int64
+        comptime assert type_of(k_scales_lookup_table).dtype == DType.uint32
+        comptime assert type_of(freqs_cis).dtype == DType.bfloat16
+        comptime assert type_of(start_pos).dtype == DType.uint32
         # The kernel quantizes a whole 128-channel key with one scale and
         # stores it at block 0, so a finer granularity would drop scales.
         comptime assert (
             quantization_granularity == INDEX_HEAD_DIM
         ), "an indexer key takes one scale per 128 channels"
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime head_dim = type_of(kv_blocks)._shape_types[5].static_value
+        comptime num_heads = type_of(kv_blocks)._shape_types[4].static_value
+        comptime is_mla = type_of(kv_blocks)._shape_types[1].static_value == 1
         comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
 
+        # The builder takes pointer-backed tiles; a non-pointer storage policy
+        # aborts here at run time.
         var k_collection = generic_get_paged_cache_with_scales[
             DType.float8_e4m3fn,
             DType.float32,
@@ -967,15 +1014,15 @@ struct Struct_indexer_k_quantize_store_fp8_paged:
             page_size,
             quantization_granularity,
         ](
-            kv_blocks.to_tile_tensor(),
-            page_stride.to_tile_tensor(),
-            cache_lengths.to_tile_tensor(),
-            kv_lookup_table.to_tile_tensor(),
-            max_prompt_length.to_tile_tensor(),
-            max_cache_length.to_tile_tensor(),
-            k_scales_blocks.to_tile_tensor(),
-            scales_page_stride.to_tile_tensor(),
-            k_scales_lookup_table.to_tile_tensor(),
+            _mut_pointer_tile(kv_blocks.to_tile_tensor[.float8_e4m3fn]()),
+            _imm_pointer_tile(page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(cache_lengths.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(kv_lookup_table.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_prompt_length.to_tile_tensor[.uint32]()),
+            _imm_pointer_tile(max_cache_length.to_tile_tensor[.uint32]()),
+            _mut_pointer_tile(k_scales_blocks.to_tile_tensor[.float32]()),
+            _imm_pointer_tile(scales_page_stride.to_tile_tensor[.int64]()),
+            _imm_pointer_tile(k_scales_lookup_table.to_tile_tensor[.uint32]()),
         )
         indexer_k_quantize_store[
             rope_dim=rope_dim,
@@ -984,13 +1031,13 @@ struct Struct_indexer_k_quantize_store_fp8_paged:
             beta_dtype=type_of(beta).dtype,
         ](
             k_collection.get_key_cache(Int(layer_idx)),
-            k.to_tile_tensor(),
+            k.to_tile_tensor[.bfloat16](),
             gamma.to_tile_tensor(),
             beta.to_tile_tensor(),
             epsilon,
-            freqs_cis.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
-            start_pos.to_tile_tensor(),
+            freqs_cis.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            start_pos.to_tile_tensor[.uint32](),
             context,
         )
 
@@ -1009,28 +1056,55 @@ struct Struct_indexer_q_ssmax_rope_quantize_fp8:
     def execute[
         rope_dim: Int,
     ](
-        q_out: OutputTensor[dtype=.float8_e4m3fn, rank=3, ...],
-        scale_out: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        q: InputTensor[dtype=.bfloat16, rank=3, ...],
-        positions: InputTensor[dtype=.uint32, rank=1, ...],
-        ssmax_s: InputTensor[dtype=.bfloat16, rank=1, ...],
-        ssmax_b: InputTensor[dtype=.bfloat16, rank=1, ...],
-        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
+        q_out: Some[Output & Tensor],
+        scale_out: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        positions: Some[Input & Tensor],
+        ssmax_s: Some[Input & Tensor],
+        ssmax_b: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        start_pos: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert context.target.is_gpu(), "only valid on GPUs"
+        comptime assert conforms_to(type_of(q_out), TileTensorable)
+        comptime assert conforms_to(type_of(scale_out), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(positions), TileTensorable)
+        comptime assert conforms_to(type_of(ssmax_s), TileTensorable)
+        comptime assert conforms_to(type_of(ssmax_b), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(start_pos), TileTensorable)
+        comptime assert type_of(q_out).rank == 3
+        comptime assert type_of(scale_out).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(positions).rank == 1
+        comptime assert type_of(ssmax_s).rank == 1
+        comptime assert type_of(ssmax_b).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(start_pos).rank == 1
+        comptime assert type_of(q_out).dtype == DType.float8_e4m3fn
+        comptime assert type_of(scale_out).dtype == DType.float8_e8m0fnu
+        comptime assert type_of(q).dtype == DType.bfloat16
+        comptime assert type_of(positions).dtype == DType.uint32
+        comptime assert type_of(ssmax_s).dtype == DType.bfloat16
+        comptime assert type_of(ssmax_b).dtype == DType.bfloat16
+        comptime assert type_of(freqs_cis).dtype == DType.bfloat16
+        comptime assert type_of(input_row_offsets).dtype == DType.uint32
+        comptime assert type_of(start_pos).dtype == DType.uint32
         indexer_q_ssmax_rope_quantize[rope_dim](
-            q_out.to_tile_tensor(),
-            scale_out.to_tile_tensor(),
-            q.to_tile_tensor(),
-            positions.to_tile_tensor(),
-            ssmax_s.to_tile_tensor(),
-            ssmax_b.to_tile_tensor(),
-            freqs_cis.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
-            start_pos.to_tile_tensor(),
+            q_out.to_tile_tensor[.float8_e4m3fn](),
+            scale_out.to_tile_tensor[.float8_e8m0fnu](),
+            q.to_tile_tensor[.bfloat16](),
+            positions.to_tile_tensor[.uint32](),
+            ssmax_s.to_tile_tensor[.bfloat16](),
+            ssmax_b.to_tile_tensor[.bfloat16](),
+            freqs_cis.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            start_pos.to_tile_tensor[.uint32](),
             context,
         )
 
