@@ -26,15 +26,16 @@ from std.os import abort
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDevice,
     HALDeviceBuffer,
     HALDeviceContext,
-    HALDeviceMulticastBuffer,
     HALDeviceStreamBase,
     HALHostBuffer,
     _CompletionFlagBox,
 )
 from max._driver.max_license.hal import Event
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsPeerAccessV1,
+)
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from .device_context import use_legacy_backend
 from max.gpu.host._legacy.device_context import (
@@ -198,10 +199,11 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the wait operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_wait_for(event._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # An event that was never recorded has nothing to wait on.
         if case .Some(recorded) = event._impl._event[]:
@@ -240,10 +242,11 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         new_stream.enqueue_wait_for(event)
         ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.record_event(event._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # Create and record the backing event for this `DeviceEvent`. If it was
         # previously recorded and no other `DeviceEvent`s have been constructed
@@ -287,10 +290,11 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the device has no completion flags, the flag belongs to
             another backend, or enqueueing the wait fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.wait_for_flag(flag._impl, value)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         flag._impl._inner[].wait(self._impl, value)
 
@@ -423,10 +427,11 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(ctx._impl)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         var hal_event = ctx._impl._stream[].record_event[
             EVENT_FLAG_CPU_VISIBLE
@@ -474,10 +479,11 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If synchronization fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.synchronize()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # An event that was never recorded has nothing to wait on.
         if case .Some(recorded) = self._impl._event[]:
@@ -556,10 +562,11 @@ struct CompletionFlag(ImplicitlyCopyable):
             unsafe_from_address: Raw address of an `M::Driver::CompletionFlag`
                 (as packed into a graph payload buffer by the producer side).
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The runtime library built this box, and a graph kernel reads its
         # layout here, so both must come from the same source build.
@@ -605,10 +612,11 @@ struct CompletionFlag(ImplicitlyCopyable):
         Args:
             value: The value to store.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.signal(value)
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The legacy signature can't fail, so a plugin error aborts rather than
         # leaving a wait that never passes. `load` and `reset` do the same.
@@ -625,9 +633,10 @@ struct CompletionFlag(ImplicitlyCopyable):
         Returns:
             The value the flag holds.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.load()
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         try:
             return self._impl._inner[].load()
@@ -640,10 +649,11 @@ struct CompletionFlag(ImplicitlyCopyable):
         Don't reset while a wait on the flag is pending; doing so is undefined
         behavior. Aborts if the plugin fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.reset()
             return
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         try:
             self._impl._inner[].reset()
@@ -651,16 +661,31 @@ struct CompletionFlag(ImplicitlyCopyable):
             abort(t"CompletionFlag.reset: {e}")
 
 
+@fieldwise_init
+struct _HALDevice[target: CompilationTarget, origin: ImmOrigin](
+    TrivialRegisterPassable
+):
+    """The state of a `Device` on the HAL backend."""
+
+    var _ctx: Pointer[HALDeviceContext[Self.target], Self.origin]
+
+    var id: Int64
+    """The ID of this device among the devices of its driver."""
+
+
 struct Device[target: CompilationTarget, origin: ImmOrigin]:
-    """A borrowed view of one accelerator.
+    """A view of the accelerator device behind a `DeviceContext`.
+
+    Mirrors the legacy backend's `Device`. The view is valid for as long as the
+    context it came from is.
 
     Parameters:
-        target: The accelerator targeted by this view.
-        origin: The origin of the borrow.
+        target: The compilation target of the owning context.
+        origin: The origin of the owning context.
     """
 
     comptime _Legacy = LegacyDevice[Self.target, Self.origin]
-    comptime _HAL = HALDevice[Self.target, Self.origin]
+    comptime _HAL = _HALDevice[Self.target, Self.origin]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     var _impl: Self._Impl
@@ -703,184 +728,256 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         return self._impl
 
     def get_name(self) raises -> String:
-        """Returns the device's name.
+        """Returns the device name, as reported by the native device API.
 
         Returns:
-            The device name.
+            A string identifying the device.
 
         Raises:
-            If the query fails.
+            If the device name cannot be queried.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.get_name()
-        else:
-            return self._impl.get_name()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self._impl._ctx[]._device[].name()
 
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
-        """Returns the value of a device attribute.
+        """Returns the specified attribute for this device.
 
         Args:
-            attr: The attribute to query.
+            attr: The device attribute to query.
 
         Returns:
-            The attribute's value.
+            The value of `attr` on this device.
 
         Raises:
-            If the query fails.
+            If the attribute cannot be queried.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.get_attribute(attr)
-        else:
-            return self._impl.get_attribute(attr)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return Int(self._impl._ctx[]._device[].get_attribute(attr._value))
 
     def multiprocessor_count(self) raises -> Int:
-        """Returns the device's multiprocessor count.
+        """Returns the number of multiprocessors on this device.
+
+        On a GPU, this is the number of streaming multiprocessors (NVIDIA) or
+        compute units (AMD) that run thread blocks concurrently. A device that
+        isn't a GPU reports whatever its driver provides.
 
         Returns:
             The number of multiprocessors.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.multiprocessor_count()
-        else:
-            return self._impl.multiprocessor_count()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
     def max_threads_per_block(self) raises -> Int:
-        """Returns the maximum number of threads in a block.
+        """Returns the maximum number of threads in one thread block.
+
+        On a GPU, a kernel launch whose block has more threads than this
+        fails. A device that isn't a GPU reports whatever its driver
+        provides.
 
         Returns:
-            The maximum thread count.
+            The maximum number of threads per block.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_threads_per_block()
-        else:
-            return self._impl.max_threads_per_block()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
 
     def max_shared_memory_per_block(self) raises -> Int:
-        """Returns the maximum shared memory per block.
+        """Returns the shared memory one thread block can use by default.
+
+        On a GPU, this is the per-block limit without opting in to a larger
+        dynamic allocation. A device that isn't a GPU reports whatever its
+        driver provides.
 
         Returns:
-            The maximum shared memory in bytes.
+            The maximum shared memory per block in bytes.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_shared_memory_per_block()
-        else:
-            return self._impl.max_shared_memory_per_block()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
     def max_grid_dim_x(self) raises -> Int:
-        """Returns the maximum grid dimension along x.
+        """Returns the maximum number of blocks along x in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along x fails.
+        A device that isn't a GPU reports whatever its driver provides.
 
         Returns:
-            The maximum x dimension.
+            The maximum grid size along x.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_grid_dim_x()
-        else:
-            return self._impl.max_grid_dim_x()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
 
     def max_grid_dim_y(self) raises -> Int:
-        """Returns the maximum grid dimension along y.
+        """Returns the maximum number of blocks along y in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along y fails.
+        A device that isn't a GPU reports whatever its driver provides.
 
         Returns:
-            The maximum y dimension.
+            The maximum grid size along y.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_grid_dim_y()
-        else:
-            return self._impl.max_grid_dim_y()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
 
     def max_grid_dim_z(self) raises -> Int:
-        """Returns the maximum grid dimension along z.
+        """Returns the maximum number of blocks along z in a launch grid.
+
+        On a GPU, a launch whose grid is larger than this along z fails.
+        A device that isn't a GPU reports whatever its driver provides.
 
         Returns:
-            The maximum z dimension.
+            The maximum grid size along z.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_grid_dim_z()
-        else:
-            return self._impl.max_grid_dim_z()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
 
     def max_grid_dim(self) raises -> Dim:
-        """Returns the maximum grid dimensions.
+        """Returns the maximum grid dimensions for a kernel launch.
+
+        On a GPU, a launch whose grid exceeds this in any dimension fails.
+        Makes one driver query per dimension; to read a single limit, use
+        `max_grid_dim_x()`, `max_grid_dim_y()`, or `max_grid_dim_z()`. A
+        device that isn't a GPU reports whatever its driver provides.
 
         Returns:
-            The maximum grid dimensions.
+            The maximum number of blocks along x, y, and z.
 
         Raises:
-            If the query fails.
+            If the driver cannot answer the query.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.max_grid_dim()
-        else:
-            return self._impl.max_grid_dim()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return Dim(
+            self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
+        )
 
     def is_host_unified(self) raises -> Bool:
-        """Returns whether this device shares memory with the host.
+        """Returns True if this device and the host share one physical memory
+        pool.
 
         Returns:
-            True when host and device memory are unified.
+            True if device and host memory are one physical pool.
 
         Raises:
-            If the query fails.
+            If the device cannot be queried.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.is_host_unified()
-        else:
-            return self._impl.is_host_unified()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self._impl._ctx[]._device[].is_host_unified()
 
     def get_arch(self) raises -> String:
-        """Returns the device architecture name.
+        """Returns the compilation target architecture of this device.
 
         Returns:
-            The architecture name.
+            The architecture name, such as `sm_100a` or `gfx942`.
 
         Raises:
-            If the query fails.
+            If the plugin does not report an architecture.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.get_arch()
-        else:
-            return self._impl.get_arch()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self._impl._ctx[]._device[].arch()
 
     def can_access_peer[
         peer_target: CompilationTarget, peer_origin: ImmOrigin, //
     ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
-        """Returns whether this device can access `peer`'s memory.
+        """Returns True if this device can directly access memory on `peer`.
 
         Parameters:
-            peer_target: The peer's target.
-            peer_origin: The peer's origin.
+            peer_target: The compilation target of the peer's context.
+            peer_origin: The origin of the peer's context.
 
         Args:
-            peer: The peer device.
+            peer: The device to check access to.
 
         Returns:
-            True if peer access is available.
+            False for this device itself, a peer on another driver, or a build
+            without peer access; otherwise the plugin's answer.
 
         Raises:
-            If the query fails.
+            If the plugin query fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.can_access_peer(peer._impl)
-        else:
-            return self._impl.can_access_peer(peer._impl)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        ref ctx = self._impl._ctx[]
+        ref peer_ctx = peer._impl._ctx[]
+        # A foreign handle would be misread; CPU and GPU 0 also share id 0.
+        if not (ctx._driver is peer_ctx._driver):
+            return False
+        if self.id == peer.id:
+            return False
+        comptime Ext = type_of(ctx._device[].extensions())
+        comptime if conforms_to(Ext, SupportsPeerAccessV1):
+            return (
+                ctx._device[]
+                .extensions()
+                .can_access_peer(
+                    ctx._device[].raw_driver()[],
+                    ctx._device[].handle(),
+                    peer_ctx._device[].handle(),
+                )
+            )
+        return False
 
 
 struct DeviceContextArray[
@@ -1041,12 +1138,15 @@ struct DeviceContextArray[
 struct DeviceMulticastBuffer[dtype: DType](Movable):
     """A buffer whose memory is visible to several devices at once.
 
+    The HAL `DeviceContext` does not support multicast: on that backend every
+    operation raises, so multicast-aware callers still compile.
+
     Parameters:
         dtype: The element dtype.
     """
 
     comptime _Legacy = LegacyDeviceMulticastBuffer[Self.dtype]
-    comptime _HAL = HALDeviceMulticastBuffer[Self.dtype]
+    comptime _HAL = NoneType
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     var _impl: Self._Impl
@@ -1063,16 +1163,16 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If the allocation fails or multicast is unsupported.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             var legacy = List[LegacyDeviceContext[]]()
             for ctx in contexts:
                 legacy.append(ctx._impl)
             self._impl = Self._Legacy(legacy^, size=size)
-        else:
-            var hal = List[HALDeviceContext[]]()
-            for ctx in contexts:
-                hal.append(ctx._impl)
-            self._impl = Self._HAL(hal^, size=size)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        raise Error("Multicast not supported by the HAL DeviceContext")
 
     def unwrap_legacy(deinit self) -> Self._Legacy:
         """Returns the underlying legacy buffer.
@@ -1083,17 +1183,6 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         comptime assert (
             use_legacy_backend()
         ), "unwrap_legacy is only available in a legacy DeviceContext build"
-        return self._impl^
-
-    def unwrap_hal(deinit self) -> Self._HAL:
-        """Returns the underlying HAL buffer.
-
-        Returns:
-            The HAL buffer this wrapper holds.
-        """
-        comptime assert (
-            not use_legacy_backend()
-        ), "unwrap_hal is only available in a HAL DeviceContext build"
         return self._impl^
 
     def unicast_buffer_for(
@@ -1110,14 +1199,14 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
-        else:
-            return DeviceBuffer[Self.dtype](
-                _impl=self._impl.unicast_buffer_for(ctx._impl)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        raise Error("Multicast not supported by the HAL DeviceContext")
 
     def multicast_buffer_for(
         self, ctx: DeviceContext[]
@@ -1133,11 +1222,11 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.multicast_buffer_for(ctx._impl)
             )
-        else:
-            return DeviceBuffer[Self.dtype](
-                _impl=self._impl.multicast_buffer_for(ctx._impl)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        raise Error("Multicast not supported by the HAL DeviceContext")

@@ -578,10 +578,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the compute capability fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.compute_capability()
-        else:
-            return self._impl.compute_capability()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var major = self.device().get_attribute(
+            DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
+        )
+        # TODO: Apple GPUs report the chip generation (M1-M5) directly as the
+        # compute capability, matching the native MetalDeviceContext
+        # (`MetalDevice::computeCapability` returns the MAJOR only). The
+        # major/minor split in device attributes is not portable and should be
+        # changed.
+        if self.api() == "metal":
+            return major
+        var minor = self.device().get_attribute(
+            DeviceAttribute.COMPUTE_CAPABILITY_MINOR
+        )
+        return major * 10 + minor
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be
@@ -794,9 +809,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         default_stream.synchronize()
         ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceEvent(_impl=self._impl.create_event())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         # The HAL uses logical events where creation and recording happen in
         # one step. To work around this, create a `DeviceEvent` without a
@@ -818,9 +834,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails, or if the device's plugin has no
             completion flags.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return CompletionFlag(_impl=self._impl.allocate_completion_flag())
-        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         return CompletionFlag(
             _impl=CompletionFlag._HAL(
@@ -959,18 +976,23 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             A `Device` that borrows this context.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
                 ](self._impl.device())
             )
-        else:
-            return Device[Self.target, ImmOrigin(origin_of(self))](
-                _impl=rebind_var[
-                    Device[Self.target, ImmOrigin(origin_of(self))]._Impl
-                ](self._impl.device())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return Device[Self.target, ImmOrigin(origin_of(self))](
+            _impl=Device[Self.target, ImmOrigin(origin_of(self))]._HAL(
+                Pointer(to=self._impl)
+                .as_imm()
+                .unsafe_origin_cast[ImmOrigin(origin_of(self))](),
+                self._impl._device[].id,
             )
+        )
 
     # ===-------------------------------------------------------------------===#
     # Buffer allocation

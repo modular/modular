@@ -161,17 +161,26 @@ struct DeviceBuffer[dtype: DType](
     # Trait: DevicePassable
     # ===-------------------------------------------------------------------===#
 
-    comptime device_type: AnyType = Self._Impl.device_type
+    comptime device_type: AnyType = Pointer[
+        mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
+    ]
     """DeviceBuffer dtypes are remapped to a device `Pointer` when passed to accelerator devices."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl._to_device_type(encoder, target)
-        else:
-            self._impl._to_device_type(encoder, target)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # An empty buffer has no device pointer, so nothing is encoded.
+        try:
+            encoder.encode_device_ptr(self.device_ptr(), target)
+        except:
+            pass
 
     @staticmethod
     def get_type_name() -> String:
@@ -212,6 +221,22 @@ struct DeviceBuffer[dtype: DType](
             not use_legacy_backend()
         ), "unwrap_hal is only available in a HAL DeviceContext build"
         return self._impl
+
+    def _legacy_buffer(ref self) -> ref[self] Self._Legacy:
+        comptime assert (
+            use_legacy_backend()
+        ), "_legacy_buffer is only available in a legacy DeviceContext build"
+        return rebind[Pointer[Self._Legacy, origin_of(self)]](
+            Pointer(to=self._impl)
+        )[]
+
+    def _hal_buffer(ref self) -> ref[self] Self._HAL:
+        comptime assert (
+            not use_legacy_backend()
+        ), "_hal_buffer is only available in a HAL DeviceContext build"
+        return rebind[Pointer[Self._HAL, origin_of(self)]](
+            Pointer(to=self._impl)
+        )[]
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -508,22 +533,29 @@ struct DeviceBuffer[dtype: DType](
     def device_ptr(
         ref self,
     ) raises -> DevicePointer[Self.dtype, origin_of(self)]:
-        """Returns a pointer to this buffer's device memory.
+        """Returns a `DevicePointer` referencing the start of this buffer.
+
+        The returned `DevicePointer` is a non-owning borrow of this
+        `DeviceBuffer` and must not outlive it. A function that returns a
+        `DevicePointer` must also return (or otherwise keep alive) the backing
+        `DeviceBuffer`; returning a pointer into a buffer created locally within
+        the function is a borrow-check error.
 
         Returns:
-            A device pointer that borrows from this buffer.
+            A `DevicePointer` referencing offset 0 of this buffer.
 
         Raises:
-            If the pointer cannot be created.
+            If this buffer has size 0.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
                 self._impl.device_ptr()
             )
-        else:
-            return rebind_var[DevicePointer[Self.dtype, origin_of(self)]](
-                self._impl.device_ptr()
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        return DevicePointer[Self.dtype, origin_of(self)](self)
 
     def take_handle(deinit self) -> Self._Handle:
         """Transfers the owning native handle out without releasing it.
