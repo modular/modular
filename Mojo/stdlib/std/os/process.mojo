@@ -36,6 +36,7 @@ from std.sys._libc import (
     WaitFlags,
 )
 from std.ffi import (
+    c_char,
     c_int,
     c_pid_t,
     get_errno,
@@ -396,38 +397,36 @@ struct Process:
             CompilationTarget.is_linux() or CompilationTarget.is_macos()
         ), "Unknown platform process execution not implemented"
         var parts = path.split(sep)
-        var file_name = String(parts[len(parts) - 1])
 
-        var arg_count = len(argv)
-        var argv_array_ptr_cstr_ptr = List[
-            Optional[CStringSpan[ImmutAnyOrigin]]
-        ](
-            length=arg_count + 2,
-            fill={},
-        )
-        var offset = 0
-        # Arg 0 in `argv` ptr array should be the file name
-        argv_array_ptr_cstr_ptr[offset] = rebind[CStringSpan[ImmutAnyOrigin]](
-            file_name.as_c_string_span()
-        )
-        offset += 1
+        # The child's arguments are NUL-terminated copies owned here. The argv
+        # array carries the list's origin, which keeps them alive until
+        # `posix_spawnp` returns.
+        var args = List[String](capacity=len(argv) + 1)
+        # Arg 0 is the file name.
+        args.append(String(parts[len(parts) - 1], "\0"))
+        for arg in argv:
+            args.append(String(arg, "\0"))
 
-        for var arg in argv:
-            argv_array_ptr_cstr_ptr[offset] = rebind[
-                CStringSpan[ImmutAnyOrigin]
-            ](arg.as_c_string_span())
-            offset += 1
-
+        var argv_array = List[
+            Optional[CStringSpan[ImmOrigin(origin_of(args))]]
+        ](capacity=len(args) + 1)
+        for ref arg in args:
+            # Safety: each copy ends in the NUL appended above.
+            argv_array.append(
+                CStringSpan(
+                    unsafe_from_ptr=arg.unsafe_ptr().unsafe_bitcast[c_char]()
+                )
+            )
         # `argv` ptr array terminates with NULL PTR
-        argv_array_ptr_cstr_ptr[offset] = {}
+        argv_array.append(None)
 
         var pid: c_pid_t = 0
 
         var has_error_code = posix_spawnp(
             Pointer(to=pid),
             path.as_c_string_span(),
-            # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
-            argv_array_ptr_cstr_ptr.unsafe_ptr(),
+            # Safety: `argv_array` has at least 2 elements so is non-null
+            argv_array.unsafe_ptr(),
             _get_environ(),  # inherit parent's environment
         )
 

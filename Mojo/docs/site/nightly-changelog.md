@@ -497,3 +497,6 @@ This version is still a work in progress.
 - `atol()` now rejects a number that ends in an underscore when whitespace
   follows it, as it already did without the whitespace. Previously
   `atol("9_ ")` returned `90`.
+- `Process.run()` now passes the child process the arguments it was given.
+  Arguments built at run time, such as `String("a") + String(i)`, reached the
+  child as repeated copies of the last argument or as freed memory.
