@@ -262,7 +262,6 @@ def test_only_a_draft_free_verify_takes_kda_chunk(
     monkeypatch: pytest.MonkeyPatch, servable: bool
 ) -> None:
     """Checks ``kda_chunk`` is traced beside the ring, never in its place."""
-    monkeypatch.setattr(kda, "accelerator_api", lambda: "hip")
     monkeypatch.setattr(
         kda,
         "kda_chunk_servable",

@@ -13,11 +13,11 @@
 """GLM-5.3-Flash's KDA prefill routing, read off the graph.
 
 The graphs are only built, never compiled, so every accelerator is checked
-from any host with the driver queries patched. They are patched in every
-module that reads them: the KDA core and the op-wrapper module that owns the
-routing helpers each ask on their own, and an unpatched one answers for the
-host GPU. The core takes traced tensors, whose GPU inputs resolve to a
-virtual device of the patched accelerator, so no GPU is needed either.
+from any host with the driver queries patched. They are patched in the
+op-wrapper module that owns the routing helpers, which the KDA core asks;
+unpatched, it answers for the host GPU. The core takes traced tensors,
+whose GPU inputs resolve to a virtual device of the patched accelerator, so
+no GPU is needed either.
 """
 
 from __future__ import annotations
@@ -63,8 +63,7 @@ SLOTS = 4
 def _patch_accelerator(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
 ) -> None:
-    for module in (kimi_delta, kda):
-        monkeypatch.setattr(module, "accelerator_api", lambda: api)
+    monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
     monkeypatch.setattr(
         kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
@@ -73,7 +72,7 @@ def _patch_accelerator(
 @contextmanager
 def _virtual_gpu() -> Iterator[None]:
     """One virtual GPU of the patched accelerator, for the traced inputs."""
-    set_virtual_device_api(kda.accelerator_api())
+    set_virtual_device_api(kimi_delta.accelerator_api())
     set_virtual_device_target_arch(kimi_delta.accelerator_architecture_name())
     set_virtual_device_count(1)
     try:
@@ -179,11 +178,14 @@ def _chunk_io_dtypes(line: str) -> list[str]:
 
 
 def _assert_routed(
-    mlir: str, io_dtype: str, output_dtype: str | None = None
+    mlir: str,
+    io_dtype: str,
+    output_dtype: str | None = None,
+    fallback: str = "kda_decode",
 ) -> None:
     lines = _chunk_lines(mlir)
     assert lines, "prefill is not routed to kda_chunk"
-    assert "kda_decode" in mlir, "decode must stay on kda_decode"
+    assert fallback in mlir, f"the other branch must stay on {fallback}"
     assert "mo.if" in mlir, "the two ops must sit behind a conditional"
     for line in lines:
         expected = [io_dtype] * 3 + [output_dtype or io_dtype]
@@ -268,31 +270,27 @@ def test_gfx950_bf16_pool_stays_sequential(
     _assert_sequential(_core_mlir(pool_dtype=DType.bfloat16))
 
 
-def test_gfx950_verify_keeps_drafts_on_the_ring(
+@pytest.mark.parametrize(
+    ("api", "architecture", "output_dtype", "computebound"),
+    [("hip", "gfx950", "bf16", False), ("cuda", "sm_100a", "f32", True)],
+)
+def test_verify_keeps_drafts_on_the_ring(
     monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    architecture: str,
+    output_dtype: str,
+    computebound: bool,
 ) -> None:
     """A batch with drafts records into the ring the rollback folds.
 
     Only a draft-free prefill, which has nothing to roll back, takes
-    ``kda_chunk``, behind the same conditional as the forward's.
+    ``kda_chunk``, behind the same conditional as the forward's, with the
+    forward's chunk launch on either vendor.
     """
-    _patch_accelerator(monkeypatch, "hip", "gfx950")
+    _patch_accelerator(monkeypatch, api, architecture)
     mlir = _core_mlir(verify=True)
-    assert "kda_verify_ring" in mlir
-    assert "mo.if" in mlir
-    assert _chunk_lines(mlir)
-    assert "kda_decode" not in mlir
-
-
-def test_sm100_verify_stays_on_the_ring(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """On NVIDIA every verify, draft-free prefill included, uses the ring."""
-    _patch_accelerator(monkeypatch, "cuda", "sm_100a")
-    mlir = _core_mlir(verify=True)
-    assert "kda_verify_ring" in mlir
-    assert not _chunk_lines(mlir)
-    assert "mo.if" not in mlir
+    _assert_routed(mlir, "bf16", output_dtype, fallback="kda_verify_ring")
+    assert ("use_computebound = true" in mlir) == computebound
     assert "kda_decode" not in mlir
 
 

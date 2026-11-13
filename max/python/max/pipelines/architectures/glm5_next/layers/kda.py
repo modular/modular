@@ -27,7 +27,7 @@ from typing import Generic, TypeVar
 
 from max import functional as F
 from max import tree
-from max.driver import CPU, accelerator_api
+from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, TensorType
 from max.nn import Linear, Module, RMSNorm
@@ -372,15 +372,16 @@ def kda_core(
         )
     elif verify_width is None:
         core = decode()
-    elif chunked and accelerator_api() == "hip":
+    elif chunked:
         # A draft-free prefill has nothing to roll back, so it takes the
         # forward's chunked kernel. A verify stays on the sequential
         # recurrence, whose arithmetic the ring records and the fold replays.
-        # TODO(MAX-907): take kda_chunk here on NVIDIA too. In the fused MTP
-        # graph on 2xB200 its prefill moves the first token's top logit ~15
-        # bf16 ulps from the plain graph's, which the forward's does not.
+        # TODO(KERN-3993): on NVIDIA this branch makes each verify step
+        # 0.16-0.27 ms slower: every KDA layer pays the bf16 cast below, and
+        # the compiler schedules its output-gate projections after the verify
+        # ring instead of beside it.
         no_drafts = F.equal(F.shape_to_tensor(verify_width.shape)[0], 0)
-        # TODO(KERN-3879): the gfx950 bf16 cast is made outside the cond
+        # TODO(KERN-3879): the bf16 cast is made outside the cond
         # because, made inside a branch, mo-hoist-param-exprs leaves its
         # result on the outer token dim and the graph fails to verify. Every
         # verify computes and drops it. One cast of the whole conv output
