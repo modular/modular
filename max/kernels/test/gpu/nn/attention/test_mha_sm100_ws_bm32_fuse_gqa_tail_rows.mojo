@@ -15,12 +15,17 @@
 
 Target hardware family: NVIDIA SM100 (B200).
 
-The warp-specialized BM=32 depth-128 route fuses GQA groups 9 and 6 even though
-they do not divide the 32-row MMA tile. The Q TMA box then delivers
-`BM_eff * group` rows (27 at group 9, 30 at group 6) and the remaining 5 / 2
+The depth-128 BM=32 (warp-specialized) and BM=128 (1Q) routes fuse GQA groups 9
+and 6 even though they do not divide the MMA tile. The Q TMA box then delivers
+`BM_eff * group` rows (27 / 30 at BM=32, 126 at BM=128) and the remaining pad
 rows of the Q shared-memory tile are not written by TMA. `q_async_copy` in
 `load_warp.mojo` zero-fills those `config.gqa_pad_rows()` rows and leaves them
-out of the Q barrier's byte count; this test proves that matters.
+out of the Q barrier's byte count; this test proves that matters on the BM=32
+route, whose warps share row state. On the 1Q tile the pad rows stay in their
+own rows, so the poison arm cannot fail there; those cases instead rerun with
+`q_max_seq_len` past the packed bound, which forces the unfused BM=32 config,
+and require the two outputs to differ bitwise, so a silent fallback to the
+unfused route fails.
 
 Shared memory is not cleared between kernel launches, so a kernel that leaves
 those rows alone reads whatever the previous grid left there. Each case
@@ -35,9 +40,12 @@ alone is not enough.
 `_run_group` keeps `valid_length` within `BM_eff` (3 at group 9, 5 at group 6)
 so the dispatch single-tiles into the fused BM=32 WS config. `_run_boundary`
 covers the prompt lengths where the dispatch changes config: `BM_eff` is the
-last fused length, `BM_eff + 1` the first one on the unfused BM=32 config (kept
-there up to 32), and 33 the first Layout-E one. All of them are checked
-against the same naive oracle.
+last fused BM=32 length, `BM_eff + 1` the first one on the fused 1Q BM=128
+config (kept there up to 14 at group 9, 21 at group 6, which leave 2 pad rows),
+the next one the first on the unfused BM=32 config (kept there up to 32), and
+33 the first Layout-E one. Lengths 7 and 8 are a speculative verify step.
+Ragged batches mix lengths on both sides of the packed bounds. All of them are
+checked against the same naive oracle.
 """
 
 from std.collections import Set
@@ -104,23 +112,52 @@ def execute_tail_row_test[
     poison: Int,
     page_size: Int = 128,
     num_partitions: Int = 0,
+    dtype: DType = .bfloat16,
 ](
-    mask: mask_t, cache_length: Int, valid_length: Int, ctx: DeviceContext
+    mask: mask_t,
+    cache_length: Int,
+    valid_length: Int,
+    ctx: DeviceContext,
+    unfused_probe_len: Int = 0,
+) raises:
+    execute_tail_row_batch_test[
+        mask_t, num_q_heads, poison, page_size, num_partitions, dtype
+    ](mask, cache_length, [valid_length], ctx, unfused_probe_len)
+
+
+def execute_tail_row_batch_test[
+    mask_t: MHAMask,
+    num_q_heads: Int,
+    poison: Int,
+    page_size: Int = 128,
+    num_partitions: Int = 0,
+    dtype: DType = .bfloat16,
+](
+    mask: mask_t,
+    cache_length: Int,
+    valid_lengths: List[Int],
+    ctx: DeviceContext,
+    unfused_probe_len: Int = 0,
 ) raises:
     comptime head_size = 128
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=head_size)
-    comptime dtype = DType.bfloat16
     comptime group = num_q_heads // kv_params.num_heads
     comptime num_layers = 1
     comptime layer_idx = 0
 
+    var batch_size = len(valid_lengths)
+    var valid_length = 0
+    var total_length = 0
+    var lengths_str = String()
+    for vl in valid_lengths:
+        valid_length = max(valid_length, vl)
+        total_length += vl
+        lengths_str += String(vl) + " "
     var num_keys = cache_length + valid_length
-    var total_length = valid_length
-    var batch_size = 1
 
     print(
         t"test_mha_sm100_ws_bm32_fuse_gqa_tail_rows:"
-        t" mask={mask_t.name()} group={group} poison={poison} page_size={page_size} P={num_partitions} valid_length={valid_length} num_keys={num_keys}"
+        t" mask={mask_t.name()} dtype={dtype} group={group} poison={poison} page_size={page_size} P={num_partitions} valid_length={lengths_str}num_keys={num_keys} probe={unfused_probe_len}"
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -144,7 +181,10 @@ def execute_tail_row_test[
         batch_size + 1
     )
     input_row_offsets[0] = 0
-    input_row_offsets[1] = UInt32(valid_length)
+    for b in range(batch_size):
+        input_row_offsets[b + 1] = input_row_offsets[b] + UInt32(
+            valid_lengths[b]
+        )
     var input_row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
@@ -208,17 +248,20 @@ def execute_tail_row_test[
         batch_size * lut_cols
     )
     var lut_set = Set[Int]()
-    for blk in range(full_pages):
-        var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-        while randval in lut_set:
-            randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
-        lut_set.add(randval)
-        paged_lut_host[blk] = UInt32(randval)
-    for blk in range(full_pages, lut_cols):
-        paged_lut_host[blk] = paged_lut_host[full_pages - 1]
+    for b in range(batch_size):
+        var row = b * lut_cols
+        for blk in range(full_pages):
+            var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            while randval in lut_set:
+                randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            lut_set.add(randval)
+            paged_lut_host[row + blk] = UInt32(randval)
+        for blk in range(full_pages, lut_cols):
+            paged_lut_host[row + blk] = paged_lut_host[row + full_pages - 1]
 
     var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
-    cache_lengths_host[0] = UInt32(cache_length)
+    for b in range(batch_size):
+        cache_lengths_host[b] = UInt32(cache_length)
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_lt = (
@@ -295,6 +338,21 @@ def execute_tail_row_test[
         num_partitions=np_opt,
     )
     ctx.synchronize()
+    var probe = poison == NO_POISON and unfused_probe_len > 0
+    if probe:
+        flash_attention[ragged=True](
+            ctrl_out_lt,
+            q_lt,
+            k_cache,
+            v_cache,
+            mask,
+            input_row_offsets_lt,
+            scale,
+            ctx,
+            q_max_seq_len=unfused_probe_len,
+            num_partitions=np_opt,
+        )
+        ctx.synchronize()
 
     mha_gpu_naive[ragged=True](
         q_lt,
@@ -326,6 +384,8 @@ def execute_tail_row_test[
     var argmax_idx = 0
     var nan_count = 0
     var moved_count = 0
+    var probe_differs = 0
+    var probe_max_abs_diff: Float32 = 0.0
     # FNV-1a over the output bits, so two builds (e.g. fused vs unfused
     # routing) can be compared for bit-identity from their logs.
     var out_hash = UInt64(0xCBF29CE484222325)
@@ -338,6 +398,12 @@ def execute_tail_row_test[
             if test_out_host[flat] != ctrl_out_host[flat]:
                 moved_count += 1
         var expected = ref_out_host[flat].cast[.float32]()
+        if probe:
+            if test_out_host[flat] != ctrl_out_host[flat]:
+                probe_differs += 1
+            var p = ctrl_out_host[flat].cast[.float32]()
+            if isnan(p) or abs(p - expected) > probe_max_abs_diff:
+                probe_max_abs_diff = abs(p - expected)
         if isnan(a):
             nan_count += 1
         var diff = abs(a - expected)
@@ -347,7 +413,7 @@ def execute_tail_row_test[
     print(
         t"  max-abs diff(fused O, naive) = {max_abs_diff}  at flat idx"
         t" {argmax_idx}  nan_count= {nan_count}  moved_vs_zero_control="
-        t" {moved_count}  out_hash= {out_hash}"
+        t" {moved_count}  out_hash= {out_hash}  probe_differs= {probe_differs}"
     )
 
     _ = q_dev^
@@ -359,12 +425,19 @@ def execute_tail_row_test[
     _ = ctrl_out_dev^
     _ = ref_out_dev^
 
-    # bf16-MMA + f32-softmax vs f32 naive over the same bf16 inputs, matching
-    # `test_mha_sm100_ws_bm32`.
-    comptime atol = Float32(0.04)
+    # 16-bit MMA + f32-softmax vs f32 naive over the same inputs; the bf16 bound
+    # matches `test_mha_sm100_ws_bm32`, and fp16 scales it by the 8x finer ulp.
+    comptime atol = Float32(0.04) if dtype == .bfloat16 else Float32(0.005)
     # The poisoned run must be bit-identical to the zero-filled control: a stale
     # tail row that only perturbs the lazy-rescale vote still moves rounding.
-    if nan_count > 0 or max_abs_diff > atol or moved_count > 0:
+    # The forced-unfused run is a second oracle-checked route; bit-identical
+    # outputs mean the packed arm never ran.
+    var probe_failed = probe and (
+        probe_differs == 0
+        or isnan(probe_max_abs_diff)
+        or probe_max_abs_diff > atol
+    )
+    if nan_count > 0 or max_abs_diff > atol or moved_count > 0 or probe_failed:
         raise Error(
             "test_mha_sm100_ws_bm32_fuse_gqa_tail_rows: FAILED group="
             + String(group)
@@ -378,6 +451,10 @@ def execute_tail_row_test[
             + String(max_abs_diff)
             + " moved_vs_zero_control="
             + String(moved_count)
+            + " probe_differs="
+            + String(probe_differs)
+            + " probe_max_abs_diff="
+            + String(probe_max_abs_diff)
         )
     print("test_mha_sm100_ws_bm32_fuse_gqa_tail_rows: PASSED")
 
@@ -424,11 +501,18 @@ def _run_group[num_q_heads: Int](ctx: DeviceContext, max_valid: Int) raises:
         )
 
 
-def _run_boundary[num_q_heads: Int](ctx: DeviceContext, bm_eff: Int) raises:
+def _run_boundary[
+    num_q_heads: Int
+](ctx: DeviceContext, bm_eff: Int, bm_eff_1q: Int) raises:
     comptime for poison in [NO_POISON, POISON_NAN]:
-        for vl in [bm_eff, bm_eff + 1, 32, 33]:
+        for vl in [bm_eff, bm_eff + 1, 7, 8, bm_eff_1q, bm_eff_1q + 1, 32, 33]:
+            var probe = bm_eff_1q + 1 if bm_eff < vl and vl <= bm_eff_1q else 0
             execute_tail_row_test[CausalMask, num_q_heads, poison](
-                CausalMask(), cache_length=357, valid_length=vl, ctx=ctx
+                CausalMask(),
+                cache_length=357,
+                valid_length=vl,
+                ctx=ctx,
+                unfused_probe_len=probe,
             )
             execute_tail_row_test[
                 SlidingWindowCausalMask[512], num_q_heads, poison
@@ -437,12 +521,74 @@ def _run_boundary[num_q_heads: Int](ctx: DeviceContext, bm_eff: Int) raises:
                 cache_length=640,
                 valid_length=vl,
                 ctx=ctx,
+                unfused_probe_len=probe,
             )
-        # Cluster split-K (P=2) on both sides of the fused/unfused switch.
-        for vl in [bm_eff, bm_eff + 1]:
+        # Cluster split-K (P=2) on both sides of each switch.
+        for vl in [bm_eff, bm_eff + 1, bm_eff_1q, bm_eff_1q + 1]:
             execute_tail_row_test[
                 CausalMask, num_q_heads, poison, num_partitions=2
             ](CausalMask(), cache_length=1024, valid_length=vl, ctx=ctx)
+        # The fused 1Q tile unsplit and with workspace split-K.
+        execute_tail_row_test[
+            SlidingWindowCausalMask[512], num_q_heads, poison, num_partitions=1
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=2048,
+            valid_length=8,
+            ctx=ctx,
+        )
+        execute_tail_row_test[
+            CausalMask, num_q_heads, poison, num_partitions=3
+        ](CausalMask(), cache_length=2048, valid_length=8, ctx=ctx)
+
+    # Ragged batches on the packed tile, whose Q box for a short sequence spans
+    # the next one's rows; and a window lower edge (keys 119..132) that crosses
+    # a 128-key tile inside the packed rows.
+    var lengths: List[Int] = [8, bm_eff, bm_eff_1q]
+    execute_tail_row_batch_test[CausalMask, num_q_heads, NO_POISON](
+        CausalMask(), 357, lengths, ctx, unfused_probe_len=bm_eff_1q + 1
+    )
+    execute_tail_row_batch_test[
+        SlidingWindowCausalMask[512], num_q_heads, NO_POISON
+    ](
+        SlidingWindowCausalMask[512](),
+        640,
+        lengths,
+        ctx,
+        unfused_probe_len=bm_eff_1q + 1,
+    )
+    execute_tail_row_test[SlidingWindowCausalMask[512], num_q_heads, NO_POISON](
+        SlidingWindowCausalMask[512](),
+        cache_length=630,
+        valid_length=14,
+        ctx=ctx,
+        unfused_probe_len=bm_eff_1q + 1,
+    )
+
+
+def _run_fp16[num_q_heads: Int](ctx: DeviceContext, bm_eff_1q: Int) raises:
+    """Samples fp16, which the packed 1Q gate admits alongside bf16: the last
+    packed length and its successor, then cluster and workspace split-K."""
+    comptime f16 = DType.float16
+    for vl in [bm_eff_1q, bm_eff_1q + 1]:
+        var probe = bm_eff_1q + 1 if vl <= bm_eff_1q else 0
+        execute_tail_row_test[CausalMask, num_q_heads, NO_POISON, dtype=f16](
+            CausalMask(),
+            cache_length=357,
+            valid_length=vl,
+            ctx=ctx,
+            unfused_probe_len=probe,
+        )
+    comptime for p in [2, 3]:
+        execute_tail_row_test[
+            CausalMask, num_q_heads, NO_POISON, num_partitions=p, dtype=f16
+        ](
+            CausalMask(),
+            cache_length=2048,
+            valid_length=8,
+            ctx=ctx,
+            unfused_probe_len=bm_eff_1q + 1,
+        )
 
 
 def main() raises:
@@ -450,5 +596,7 @@ def main() raises:
         # group 9 (72 q heads): BM_eff = 3. group 6 (48 q heads): BM_eff = 5.
         _run_group[72](ctx, 3)
         _run_group[48](ctx, 5)
-        _run_boundary[72](ctx, 3)
-        _run_boundary[48](ctx, 5)
+        _run_boundary[72](ctx, 3, 14)
+        _run_boundary[48](ctx, 5, 21)
+        _run_fp16[72](ctx, 14)
+        _run_fp16[48](ctx, 21)

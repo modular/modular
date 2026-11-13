@@ -87,6 +87,7 @@ comptime SPLIT_KV_1Q_MAX_Q_ROWS = 128
 comptime WS_G_FUSED = 0
 comptime WS_G_UNFUSED = 1
 comptime WS_G_NONE = 2
+comptime WS_G_FUSED_1Q = 3
 
 
 @inline(.always)
@@ -95,17 +96,22 @@ def _ws_g_route(
     fused_bm_eff: Int,
     unfused_bm_eff: Int,
     max_prompt_len: Int,
+    fused_1q_bm_eff: Int = 0,
 ) -> Int:
-    """Picks the BM=32 Layout-G config for a prompt, or `WS_G_NONE`.
+    """Picks the WS-G or fused 1Q config for a prompt, or `WS_G_NONE`.
 
     A prompt single-tiles into the fused config when it fits `fused_bm_eff`
-    (`32 // group`), else into the unfused one when it fits `unfused_bm_eff`.
-    Otherwise the caller falls through to Layout-E / the 1Q-2Q carve. The two
-    configs are separate comptime instantiations, so this runtime choice is the
-    only thing keeping a prompt past `fused_bm_eff` off the slower Layout-E.
+    (`32 // group`), else into the fused 1Q BM=128 config when it fits
+    `fused_1q_bm_eff` (`128 // group`, 0 when there is none), else into the
+    unfused one when it fits `unfused_bm_eff`. Otherwise the caller falls
+    through to Layout-E / the 1Q-2Q carve. The configs are separate comptime
+    instantiations, so this runtime choice is the only thing keeping a prompt
+    past `fused_bm_eff` off the slower Layout-E.
     """
     if fused_available and fused_bm_eff >= max_prompt_len:
         return WS_G_FUSED
+    if fused_available and fused_1q_bm_eff >= max_prompt_len:
+        return WS_G_FUSED_1Q
     if unfused_bm_eff >= max_prompt_len:
         return WS_G_UNFUSED
     return WS_G_NONE
@@ -1632,6 +1638,80 @@ def mha_sm100_dispatch[
             comptime fa4_config_ws_fused = fa4_config_2q.with_bm(
                 32, fuse_nondividing=True
             )
+            # Past the fused BM=32 bound (a speculative verify step, a short
+            # prefill), the same groups fuse into the 1Q BM=128 tile, which
+            # holds 14 (group 9) or 21 (group 6) positions: one CTA per KV head
+            # rather than one per q-head on the unfused BM=32 tile. Split-K is
+            # sized as on the 1Q carve below. Only 16-bit Q/KV is validated on
+            # this tile.
+            comptime fa4_config_1q_fused = fa4_config_2q.with_bm(
+                128, fuse_nondividing=True
+            )
+            comptime if (
+                KVType.dtype.is_half_float()
+                and fa4_config_ws_fused.fuse_nondividing
+                and fa4_config_1q_fused.fuse_nondividing
+                and fa4_config_1q_fused.supported()
+                and MaskType.nonfull_sets[
+                    fa4_config_1q_fused.PairBM_eff(), fa4_config_1q_fused.BN
+                ]()[0]
+                != TileMaskStatus.UNKNOWN_MASK
+            ):
+                if (
+                    _ws_g_route(
+                        True,
+                        fa4_config_ws_fused.BM_eff(),
+                        fa4_config_ws_unfused.BM_eff(),
+                        Int(max_prompt_len_u32),
+                        fa4_config_1q_fused.BM_eff(),
+                    )
+                    == WS_G_FUSED_1Q
+                ):
+                    var p_fused_1q: UInt32
+                    if num_partitions_override > 0:
+                        p_fused_1q = UInt32(num_partitions_override)
+                    else:
+                        var raw_grid_fused_1q: UInt32 = _raw_grid[
+                            fa4_config_1q_fused
+                        ](max_prompt_len_u32, batch_size)
+                        p_fused_1q = UInt32(
+                            _bucket_ws[ctx.default_device_info.sm_count](
+                                Int(
+                                    _visible_keys[
+                                        fa4_config_1q_fused.PairBM_eff(),
+                                        fa4_config_1q_fused.BN,
+                                        KVType.page_size,
+                                    ](mask, max_cache_valid_length)
+                                    // 512
+                                ),
+                                Int(
+                                    ws_p_ceiling[
+                                        ctx.default_device_info.sm_count,
+                                        splitk_oversubscribe,
+                                    ](raw_grid_fused_1q)
+                                ),
+                                Int(raw_grid_fused_1q),
+                            )
+                        )
+                    if p_fused_1q > UInt32(1):
+                        comptime for C in CLUSTER_SPLITK_CANDIDATES:
+                            comptime fused_1q_splitk_cfg = (
+                                fa4_config_1q_fused.with_splitk(C)
+                            )
+                            comptime assert (
+                                fused_1q_splitk_cfg.supported()
+                            ), fused_1q_splitk_cfg.description()
+                            if p_fused_1q == UInt32(C):
+                                with_fa4_config[fused_1q_splitk_cfg](
+                                    StaticInt[C](), NoPartition[.float32]()
+                                )
+                                return
+                        launch_workspace[fa4_config_1q_fused](p_fused_1q)
+                        return
+                    with_fa4_config[fa4_config_1q_fused](
+                        StaticInt[1](), NoPartition[.float32]()
+                    )
+                    return
             comptime for ws_g_fused in [True, False]:
                 comptime fa4_config_ws = (
                     fa4_config_ws_fused if ws_g_fused else fa4_config_ws_unfused
