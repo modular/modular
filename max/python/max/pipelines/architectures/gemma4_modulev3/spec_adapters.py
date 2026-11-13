@@ -81,7 +81,10 @@ def _verify(
     target: Gemma4TextModel, batch: SequentialBatch[Tensor, Tensor, Tensor]
 ) -> Verified[list[Tensor], Tensor]:
     replicated = DeviceMapping.replicated(target.mesh)
-    # Images arrive only in prefill, which merges no drafts into a row.
+    # A step with images to encode verifies no drafts
+    # (`_should_verify_drafts` in overlap_text_generation.py), so the scatter
+    # indices hold in the merged sequence. A graph without image inputs
+    # merges none.
     outputs = target(
         batch.merged_tokens,
         PagedCacheValues.from_upstream(batch.kv_collections, replicated),
@@ -91,8 +94,12 @@ def _verify(
         batch.return_n_logits,
         # The target broadcasts the merged tokens and offsets itself.
         batch.merged_offsets,
-        batch.vision_embeddings[0],
-        batch.vision_scatter_indices[0],
+        batch.vision_embeddings[0] if batch.vision_embeddings else None,
+        (
+            batch.vision_scatter_indices[0]
+            if batch.vision_scatter_indices
+            else None
+        ),
     )
     # (last_logits, logits, offsets, hs_0..hs_{n-1}). The logits are
     # replicated after the vocab allgather, so the first device's serves.

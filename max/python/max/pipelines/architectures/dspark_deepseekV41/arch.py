@@ -15,7 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV41 import weight_adapters
 from ..deepseekV41.model_config import DeepseekV41Config, dspark_draft_width
@@ -38,7 +38,6 @@ dspark_deepseekV41_draft_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     # The stages draft from the trunk's states, image spans included.
     context_type=TextAndVisionContext,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_dspark_safetensor_state_dict,

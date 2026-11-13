@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Gemma 4's language-model call.
 
-A block draft verifies over the full-attention cache on one device, text
-only. The MTP assistant cross-attends into the target's sliding-window cache
-on every device the target spans, and its pairing takes images.
+A block draft verifies over the full-attention cache on one device. The MTP
+assistant cross-attends into the target's sliding-window cache on every
+device the target spans.
 """
 
 from __future__ import annotations
@@ -23,9 +23,7 @@ from dataclasses import replace
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import TensorValue
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer.transformer import (
     captures_by_device,
@@ -63,7 +61,7 @@ def verify(
             layers a block draft reads, or the last normalized layer the
             MTP assistant reads.
     """
-    del draft_config
+    del target_config, draft_config
     if hidden_states not in (
         ReturnHiddenStates.SELECTED_LAYERS,
         ReturnHiddenStates.ALL_NORMALIZED,
@@ -72,26 +70,22 @@ def verify(
             "A Gemma 4 target verifies only for drafts that read its selected"
             f" layers or its last normalized one. Got {hidden_states.value}."
         )
-    return partial(
-        _verify,
-        target,
-        target_config.text_config.hidden_size,
-        target_config.unquantized_dtype,
-    )
+    return partial(_verify, target)
 
 
 def _verify(
-    target: Module,
-    hidden_size: int,
-    dtype: DType,
-    batch: SequentialBatch | BlockBatch,
+    target: Module, batch: SequentialBatch | BlockBatch
 ) -> Verified[list[TensorValue]]:
     # Gemma 4's embedding and head use collectives unconditionally, so the
     # entry point is the distributed one: every argument arrives as a
-    # per-device list, beside the vision inputs a text-only forward still
-    # declares.
+    # per-device list.
+    # A step with images to encode verifies no drafts, mixed or not
+    # (`_should_verify_drafts` in overlap_text_generation.py), so the scatter
+    # indices hold in the merged sequence. A graph without image inputs
+    # merges none.
+    images = batch.vision_embeddings or None
+    image_indices = batch.vision_scatter_indices or None
     if isinstance(batch, SequentialBatch):
-        # Images arrive only in prefill, which merges no drafts into a row.
         # A later pipeline stage starts from the previous stage's hidden
         # states over the merged window instead of embedding its tokens.
         outputs = target(
@@ -101,25 +95,14 @@ def _verify(
             batch.passthrough_kv[_FULL_KV],
             batch.return_n_logits,
             batch.merged_offsets_per_dev,
-            batch.vision_embeddings,
-            batch.vision_scatter_indices,
+            images,
+            image_indices,
             boundary_inputs=batch.extra.get(STAGE_BOUNDARY),
         )
         return Verified(
             logits=outputs.logits["logits"],
             hidden=list(outputs.hidden_states.tensors())[: batch.n_devs],
         )
-    device = batch.device0
-    # The vision merge scatters nothing on an empty index set, but the
-    # signature still takes both operands.
-    empty_embeds = ops.constant(
-        np.zeros((0, hidden_size), dtype=np.float32),
-        DType.float32,
-        device=device,
-    ).cast(dtype)
-    empty_indices = ops.range(
-        0, 0, 1, out_dim=0, dtype=DType.int32, device=device
-    )
     outputs = target(
         batch.merged_tokens,
         batch.signal_buffers,
@@ -127,8 +110,8 @@ def _verify(
         batch.kv_collections,
         batch.return_n_logits,
         batch.merged_offsets_per_dev,
-        [empty_embeds],
-        [empty_indices],
+        images,
+        image_indices,
     )
     hidden = fuse_captured_hidden_states(
         captures_by_device(list(outputs.hidden_states.tensors()), 1)

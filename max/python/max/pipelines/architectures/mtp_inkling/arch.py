@@ -15,7 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 
 from ..inkling.model_config import InklingConfig
 from ..inkling.tokenizer import InklingTokenizer
@@ -51,5 +51,4 @@ mtp_inkling_draft_arch = SupportedArchitecture(
     checkpoint_draft_width=inkling_mtp_draft_width,
     # Its pairing caps the context a batch keeps resident.
     requires_max_batch_context_length=True,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

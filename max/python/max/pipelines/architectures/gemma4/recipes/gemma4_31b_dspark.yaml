@@ -29,8 +29,9 @@ speculative:
   speculative_method: dspark
   num_speculative_tokens: 7
 
-# model_type gemma4 reserves a vision encoder cache by default; this pair
-# serves text-only.
+# model_type gemma4 reserves a vision encoder cache by default. Turning it
+# off leaves that memory to the KV cache; the pair then re-encodes images on
+# every request.
 #
 # max_batch_size bounds the device-graph-capture ladder (one graph per decode
 # batch size): the memory-planner default resolves to 512 on one B200, whose

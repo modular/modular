@@ -255,10 +255,13 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         global_kv: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-        image_embeddings: Tensor,
-        image_token_indices: Tensor,
+        image_embeddings: Tensor | None,
+        image_token_indices: Tensor | None,
     ) -> tuple[Tensor, ...]:
-        """Runs the text model over the tokens and image embeddings."""
+        """Runs the text model over the tokens and image embeddings.
+
+        The image inputs are ``None`` in a graph that takes none.
+        """
         # Stage on every device with one collective each. A plain transfer
         # per device lowers to mgp.buffer.device_to_device wrapped in
         # mgp.device_wait on both sides (a host-enqueued cross-device stream
@@ -270,10 +273,12 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         input_row_offsets = F.distributed_broadcast(
             input_row_offsets, self.mesh
         )
-        image_embeddings = F.distributed_broadcast(image_embeddings, self.mesh)
-        image_token_indices = F.distributed_broadcast(
-            image_token_indices, self.mesh
-        )
+        images = None
+        if image_embeddings is not None and image_token_indices is not None:
+            images = (
+                F.distributed_broadcast(image_embeddings, self.mesh),
+                F.distributed_broadcast(image_token_indices, self.mesh),
+            )
         h = self.embed_tokens(tokens)
         self.prepare_freq_cis(self.mesh)
 
@@ -282,9 +287,11 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         # embeddings arrive pre-scaled.
         # Out-of-bounds indices are skipped, so an empty (text-only or decode)
         # batch is a no-op.
-        h = F_merge_multimodal_embeddings(
-            h, image_embeddings.cast(h.dtype), image_token_indices
-        )
+        if images is not None:
+            embeddings, indices = images
+            h = F_merge_multimodal_embeddings(
+                h, embeddings.cast(h.dtype), indices
+            )
 
         kv_by_type = {
             "sliding_attention": sliding_kv,

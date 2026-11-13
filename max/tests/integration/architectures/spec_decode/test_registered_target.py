@@ -330,13 +330,12 @@ def test_a_registered_vision_target_pairs_through_the_vision_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A registered target with a VISION module encodes a pairing's images
-    through the pipeline's vision cache, where its draft takes them too."""
+    through the pipeline's vision cache, whatever its draft takes."""
     _calls(monkeypatch, _VISION_TARGET.name)
-    draft = _draft(InputModality.TEXT, InputModality.IMAGE)
+    draft = _draft(InputModality.TEXT)
     target = replace(_VISION_TARGET, checkpoint_drafts={"mtp": "ToyDraft"})
-    assert _takes_images(target, draft)
-    assert not _takes_images(target, _draft(InputModality.TEXT))
-    assert not _takes_images(_DECODER, draft)
+    assert _takes_images(target)
+    assert not _takes_images(_DECODER)
 
     def find(name: str, prefer_module_v3: bool = False) -> Any:
         return draft if name == "ToyDraft" else target

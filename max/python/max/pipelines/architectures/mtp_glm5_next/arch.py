@@ -17,7 +17,7 @@ from __future__ import annotations
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 
 from ..glm5_next.model_config import Glm5NextConfig
 from ..glm5_next.mtp import Glm5NextMTP
@@ -38,13 +38,6 @@ mtp_glm5_next_draft_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     modules={GraphRole.DRAFT: Glm5NextMTP},
     draft=mtp_draft_registration,
-    # The layer reads the target's hidden states, which carry the batch's
-    # images, so it pairs with a target serving them.
-    input_modalities={
-        InputModality.TEXT,
-        InputModality.IMAGE,
-        InputModality.VIDEO,
-    },
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,

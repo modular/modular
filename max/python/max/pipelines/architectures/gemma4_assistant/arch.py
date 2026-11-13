@@ -15,7 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, WeightTransform
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.tokenizer import Gemma4Tokenizer
 from .model import Gemma4AssistantDraftArchConfig
@@ -52,5 +52,4 @@ gemma4_assistant_arch = SupportedArchitecture(
     supports_device_graph_capture=False,
     # Its pairing caps the context a batch keeps resident.
     requires_max_batch_context_length=True,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

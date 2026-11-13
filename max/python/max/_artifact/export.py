@@ -53,7 +53,7 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.tokenizer import resolve_token_id_bound
 from max.pipelines.lib.weight_transform import WeightEntry, WeightNaming
-from max.pipelines.modeling.types import PipelineTokenizer
+from max.pipelines.modeling.types import InputModality, PipelineTokenizer
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
@@ -656,6 +656,21 @@ def export_pipeline(
             " not record its compiled graphs by role"
         )
     model = pipeline_modules(pipeline, architecture)
+    checkpoint_arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=architecture,
+        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+        task=task,
+    )
+    if (
+        checkpoint_arch is not None
+        and InputModality.IMAGE in checkpoint_arch.input_modalities
+        and GraphRole.VISION not in model.roles
+    ):
+        logger.warning(
+            "%s takes images, but its artifact holds no vision graph, so a"
+            " serving engine serves it text only.",
+            architecture,
+        )
     decoder = model.roles.get("decoder") or model.roles.get("spec_decoder")
     dims = (
         batch_processor_dims(pipeline._pipeline_model, decoder)

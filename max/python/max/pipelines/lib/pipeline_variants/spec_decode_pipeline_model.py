@@ -165,17 +165,6 @@ __all__ = [
 
 logger = logging.getLogger("max.pipelines")
 
-_REFUSES_IMAGES_WITHOUT_VISION = frozenset(
-    {"MistralLarge4ForConditionalGeneration_ModuleV3"}
-)
-"""Targets whose text-only pairing refuses images at admission.
-
-A pairing of one of these keeps the target's vision tokenizer while its fused
-graph encodes no images, so tokenizing an image request would only fail later,
-at batch preparation, where it raises the worker. Every other target keeps the
-behaviour it ships, including the pairings that silently drop the image.
-"""
-
 
 class _UnifiedSpecDecodeModelMixin:
     """Shared execute / _next_seed for unified spec-decode models."""
@@ -330,22 +319,35 @@ def _draft_architecture(
     )
 
 
-def _takes_images(
-    target: SupportedArchitecture, draft: SupportedArchitecture
-) -> bool:
-    """Returns whether a pairing takes images.
+def _takes_images(target: SupportedArchitecture) -> bool:
+    """Returns whether a pairing of ``target`` takes images.
 
-    It does when its target builds a vision graph, as its own pipeline
-    model's or as its registration's ``VISION`` module, and its draft takes
-    images too.
+    It does when the target takes images and can encode them for the
+    pairing: it builds its vision graph, as its registration's ``VISION``
+    module or through its own pipeline model's vision hooks, and its
+    batching binds the compiled graph. A hook the pipeline model inherits
+    doesn't count, as for :func:`_builds_module`. A ModuleV3 target encodes
+    only through the vision cache. The draft has no say: the fused graph
+    passes the image rows to the target alone.
     """
     model = target.pipeline_model
-    builds_vision = (
-        model.vision_cls is not None
-        if model is not None and issubclass(model, ModuleV3DecoderPipelineModel)
-        else "build_vision_graph" in vars(model)
-    )
-    return builds_vision and InputModality.IMAGE in draft.input_modalities
+    if model is None:
+        return False
+    if issubclass(model, ModuleV3DecoderPipelineModel):
+        builds_vision = model.vision_cls is not None
+    else:
+        hooks = vars(model)
+        builds_vision = "build_vision_spec" in hooks or (
+            "build_vision_graph" in hooks
+        )
+    if not builds_vision or InputModality.IMAGE not in target.input_modalities:
+        return False
+    batching = _batching(target)
+    if _builds_modulev3(target) and not issubclass(
+        batching, SupportsVisionEncoding
+    ):
+        return False
+    return hasattr(batching, "bind_vision_encoder")
 
 
 def _batching(arch: SupportedArchitecture) -> type[Any]:
@@ -355,16 +357,14 @@ def _batching(arch: SupportedArchitecture) -> type[Any]:
     return batching
 
 
-def _encodes_in_batching(
-    target: SupportedArchitecture, draft: SupportedArchitecture
-) -> bool:
+def _encodes_in_batching(target: SupportedArchitecture) -> bool:
     """Returns whether a pairing's target encodes images in its batching.
 
     It does so in its own batch processor rather than through the pipeline's
     vision cache, and that batch processor then prepares each batch of the
     pairing.
     """
-    return _takes_images(target, draft) and not issubclass(
+    return _takes_images(target) and not issubclass(
         _batching(target), SupportsVisionEncoding
     )
 
@@ -384,8 +384,9 @@ def spec_decode_architecture(
     legacy override chain.
 
     The fused architecture is the target's own, changed only where the
-    unified graph differs: it takes text only unless the target builds a
-    vision graph and the draft takes images, sizes one KV tree for the target
+    unified graph differs: it takes images only where its target encodes
+    them for a pairing, and refuses them otherwise, sizes one KV tree for the
+    target
     and the draft and counts the draft's weights beside the target's, and
     drafts at the width the draft checkpoint was trained for. It runs on
     more than one device only where both architectures do, and is captured
@@ -424,12 +425,10 @@ def spec_decode_architecture(
     if draft.draft is not None and draft.draft.method != method:
         return None
     modulev3 = _builds_modulev3(base)
-    vision = _takes_images(base, draft)
+    vision = _takes_images(base)
     # A target that encodes its images in its own batching reserves no
     # vision cache.
-    vision_cache = vision and not _encodes_in_batching(base, draft)
-    if modulev3 and vision and not vision_cache:
-        return None
+    vision_cache = vision and not _encodes_in_batching(base)
     return replace(
         base,
         name=f"{base.name}+{method}",
@@ -470,19 +469,13 @@ def spec_decode_architecture(
         input_modalities=(
             base.input_modalities if vision else {InputModality.TEXT}
         ),
-        # A text-only pairing of an image-taking target keeps the vision
-        # tokenizer, so an image request would tokenize into a context the
-        # fused graph cannot encode, then reach batch preparation, where
-        # the refusal raises the worker instead of failing the one
-        # request. This validator refuses the images at admission, where
-        # the error fails that request alone. It is added only where the
-        # pairing is known to be safe to refuse: Mistral Large 4, whose
-        # text-only pairing ships that way. Qwen3.5 + MTP is the same shape
-        # and keeps its shipped behaviour, which drops the image at batch
-        # preparation instead (a known gap, not this pairing's to fix).
+        # A text-only pairing of an image-taking target keeps its vision
+        # tokenizer, so an image request would reach the fused graph with no
+        # image rows. Refusing the images at admission fails that request
+        # alone.
         context_validators=(
             [*base.context_validators, validate_no_images]
-            if not vision and base.name in _REFUSES_IMAGES_WITHOUT_VISION
+            if not vision and InputModality.IMAGE in base.input_modalities
             else base.context_validators
         ),
         multi_gpu_supported=(
@@ -1006,10 +999,10 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         assert speculative.speculative_method is not None
         self._method = speculative.speculative_method
         self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
-        target, draft = self._pairing.target, self._pairing.draft
-        self._takes_images = _takes_images(target, draft)
+        target = self._pairing.target
+        self._takes_images = _takes_images(target)
         self._prepares_batches = _encodes_in_batching(
-            target, draft
+            target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
         self._ep_comm_initializer: EPCommInitializer | None = None
 
@@ -1816,7 +1809,7 @@ class SpecDecodePipelineModel(
             return_hidden_states=hidden_states,
             target_layer_ids=reads.layer_ids,
             kv_params=config.kv_params.children["target"],
-            encodes_images=_takes_images(pairing.target, pairing.draft),
+            encodes_images=_takes_images(pairing.target),
         )
         target_builder = _module_builder(pairing.target)
         target, target_config = target_builder.build_module(target_context)
@@ -2344,8 +2337,8 @@ def _driver_call(
     # output that MAX doesn't compute, for an engine that runs the encoder
     # itself.
     vision = (
-        _takes_images(pairing.target, pairing.draft)
-        and not _encodes_in_batching(pairing.target, pairing.draft)
+        _takes_images(pairing.target)
+        and not _encodes_in_batching(pairing.target)
     ) or spec_adapters.takes_vision_outputs(target_arch, method, target_config)
     huggingface_config = pipeline_config.model.huggingface_config
     verify = spec_adapters.verify_for(

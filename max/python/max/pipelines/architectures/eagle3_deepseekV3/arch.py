@@ -17,7 +17,7 @@ from dataclasses import replace
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 
 from ..deepseekV3.model_config import DeepseekV3Config
 from ..kimik2_5.weight_adapters import (
@@ -48,7 +48,6 @@ eagle3_deepseekV3_draft_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_eagle3_draft_state_dict,
     },
     config=Eagle3DeepseekV3DraftArchConfig,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )
 
 # The Llama-style MHA head's checkpoint names Llama 3's Eagle3 draft, so

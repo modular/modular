@@ -40,8 +40,9 @@ speculative:
   speculative_method: dflash
   num_speculative_tokens: 15
 
-# model_type gemma4 reserves a vision encoder cache by default; this pair
-# serves text-only. max_batch_size bounds the capture ladder as in
+# model_type gemma4 reserves a vision encoder cache by default. Turning it
+# off leaves that memory to the KV cache; the pair then re-encodes images on
+# every request. max_batch_size bounds the capture ladder as in
 # gemma4_31b_dflash.yaml; NVFP4 target weights leave it more headroom here
 # than the bfloat16 recipe does.
 runtime:
