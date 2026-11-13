@@ -2631,6 +2631,7 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
     var buff = str_slice.unsafe_ptr()
 
     # proactively trim all whitespaces from the end of the string
+    # this will allow the digit loop to work with digits and not whitespaces
     while (
         str_len > 0
         and Codepoint(buff[unsafe_offset=str_len - 1]).is_posix_space()
