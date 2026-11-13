@@ -605,9 +605,10 @@ ParseResult TileCreateEpilogueOp::parse(OpAsmParser &parser,
   if (parser.parseKeyword("ptr") || parser.parseOperand(outputPtr) ||
       parseTileFusionLane(parser, lane) || parser.parseComma() ||
       parseFusedTensorAttrs(
-          parser, result, /*computeOutputArgName=*/{}, /*contractName=*/{},
-          getDeviceAttrName(result.name), getElementTypeAttrName(result.name),
-          getIoAttrName(result.name), getMutAttrName(result.name)) ||
+          parser, result, /*computeOutputArgName=*/{},
+          getContractAttrName(result.name), getDeviceAttrName(result.name),
+          getElementTypeAttrName(result.name), getIoAttrName(result.name),
+          getMutAttrName(result.name)) ||
       parser.parseOptionalAttrDictWithKeyword(result.attributes))
     return failure();
   result.addAttribute(getLaneAttrName(result.name), lane);
@@ -627,14 +628,14 @@ void TileCreateEpilogueOp::print(OpAsmPrinter &p) {
   p << " ptr " << getOutputPtr() << " ";
   printTileFusionLane(p, getLaneAttr());
   p << ",";
-  printFusedTensorAttrs(p, /*computeOutputArg=*/false, /*contract=*/{},
+  printFusedTensorAttrs(p, /*computeOutputArg=*/false, getContractAttr(),
                         getDeviceAttr(), getElementType(), getIoAttr(),
                         getMut());
   p.printOptionalAttrDictWithKeyword(
       (*this)->getAttrs(),
       {getLaneAttrName().getValue(), getDeviceAttrName().getValue(),
        getElementTypeAttrName().getValue(), getIoAttrName().getValue(),
-       getMutAttrName().getValue()});
+       getMutAttrName().getValue(), getContractAttrName().getValue()});
   p << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }

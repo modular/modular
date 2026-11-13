@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# A tile kernel whose output is `_FusedOutputTileTensor`, so the graph compiler
+# A tile kernel whose output is `_LegacyTileStoreAccess`, so the graph compiler
 # fuses an elementwise consumer as a STORE epilogue (`OutputFusionTile`). The
 # tile-fusion lit tests only inspect the IR and the emitted Mojo, so the body is
 # never run; `tile_store_ops` in `max/tests` holds the kernel that runs.
@@ -18,7 +18,13 @@
 from std.collections.string import StaticString
 
 import extensibility
-from extensibility import InputTensor, _FusedOutputTileTensor
+from extensibility import (
+    Fused,
+    Input,
+    Output,
+    TileTensorable,
+    _LegacyTileStoreAccess,
+)
 from max.gpu.host import DeviceContext
 
 comptime SM100 = (
@@ -32,13 +38,10 @@ comptime SM100 = (
 @extensibility.register("tile_rms_norm", SM100)
 struct TileRMSNormStub:
     @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-    ](
-        output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
+    def execute(
+        output: Some[Output & Fused & _LegacyTileStoreAccess],
+        input: Some[Input & TileTensorable],
+        gamma: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ):
         pass

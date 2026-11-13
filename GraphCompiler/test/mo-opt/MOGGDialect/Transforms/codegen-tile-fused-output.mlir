@@ -14,9 +14,11 @@
 // RUN: cat %t/*.mojo | FileCheck %s --check-prefix=EW
 // RUN: cat %t/*.mojo | FileCheck %s --check-prefix=EW-CALL
 
-// The sm_100a tile `mo.matmul` takes a `_FusedComputeOutputTileTensor`, so the
-// fused add becomes a `ComputeOutputFusionTile` whose `compute` stages the
-// residual through the kernel's copier and returns the summed tile.
+// The sm_100a tile `mo.matmul` declares its output with
+// `_LegacyTileComputeOutput`, so the fused add becomes a
+// `ComputeOutputFusionTile` whose `compute` stages the residual through the
+// kernel's copier and returns the summed tile. The kernel gets it wrapped in
+// `_MoggLegacyTileTransformFusionTensor`, not bound onto a slice.
 // CHECK: struct FusionStruct_{{[0-9]+}}[spec_0: {{.*}}, spec_1: {{.*}}](managed_tensor_slice.ComputeOutputFusionTile):
 // CHECK:   var tile_0: layout.TileTensor[DType.float32, {{.*}}]
 // CHECK:   var tile_1: layout.TileTensor[DType.float32, {{.*}}]
@@ -27,8 +29,10 @@
 // CHECK:     var [[RHS:.*]] = layout.TileTensor({{.*}}AddressSpace.GENERIC{{.*}}, val.layout)
 // CHECK:     var [[SUM:.*]] = builtin_kernels.elementwise.Add.elementwise(val, [[RHS]])
 // CHECK:     return rebind[layout.TileTensor[dtype, LayoutType, MutAnyOrigin]]([[SUM]])
-// CALL: var [[W:.*]] = {{.*}}._bind_to_fused_compute_output_tile(var__{{[0-9]+}})
+// CALL-NOT: _bind_to_fused_compute_output_tile
+// CALL: var [[W:var__[0-9]+]] = _MoggLegacyTileTransformFusionTensor[DType.float32, {{.*}}](var__{{[0-9]+}}, var__{{[0-9]+}}, var__{{[0-9]+}})
 // CALL: MatmulTileSM100.execute[{{.*}}has_epilogue_fusion = True{{.*}}]([[W]], {{.*}})
+// CALL: struct _MoggLegacyTileTransformFusionTensor[
 
 module attributes {mo.device_info_mapping = {gpu = #M.device_info<"gpu", "cuda", "sm_100a", "", tile_based_fusion = true>}} {
 mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.tensor<[256, 256], f32, gpu:0>, %z: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
@@ -37,17 +41,21 @@ mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.te
   mo.output %1 : !mo.tensor<[256, 256], f32, gpu:0>
 }
 
-// The `tile_rms_norm` test kernel takes a `_FusedOutputTileTensor`, so
-// the fused mul becomes an `OutputFusionTile` whose `store` writes the product
-// into its output capture with the kernel's store copier.
+// The `tile_rms_norm` test kernel declares its output with
+// `_LegacyTileStoreAccess`, so the fused mul becomes an `OutputFusionTile`
+// whose `store` writes the product into its output capture with the kernel's
+// store copier. The kernel gets it wrapped in
+// `_MoggLegacyTileStoreFusionTensor`.
 // STORE: struct FusionStruct_{{[0-9]+}}[{{.*}}](managed_tensor_slice.OutputFusionTile):
 // STORE:   def store[dtype : DType, rank : Int, LayoutType : layout.TensorLayout, Copier : layout.tile_io.TileCopier, StoreCopier : layout.tile_io.TileCopier](self, tile_coords: {{.*}}IndexList[rank], copier: Copier, store_copier: StoreCopier, val: layout.TileTensor[dtype, LayoutType, MutAnyOrigin]):
 // STORE:     copier.copy(
 // STORE:     var [[PROD:.*]] = builtin_kernels.elementwise.Mul.elementwise(val, {{.*}})
 // STORE:     var [[OUT:.*]] = self.tile_0.tile[{{.*}}](layout.Coord(Int(tile_coords[0]), Int(tile_coords[1])))
 // STORE:     store_copier.copy([[OUT]].unsafe_address_space_cast[StoreCopier.dst_address_space](), [[PROD]].unsafe_address_space_cast[StoreCopier.src_address_space]())
-// STORE-CALL: var [[W:.*]] = {{.*}}._bind_to_fused_output_tile(var__{{[0-9]+}})
+// STORE-CALL-NOT: _bind_to_fused_output_tile
+// STORE-CALL: var [[W:var__[0-9]+]] = _MoggLegacyTileStoreFusionTensor[DType.float32, {{.*}}](var__{{[0-9]+}}, var__{{[0-9]+}})
 // STORE-CALL: TileRMSNormStub.execute([[W]], {{.*}})
+// STORE-CALL: struct _MoggLegacyTileStoreFusionTensor[
 
 mo.graph @rms_norm_mul(%x: !mo.tensor<[256, 256], f32, gpu:0>, %gamma: !mo.tensor<[256], f32, gpu:0>, %scale: !mo.tensor<[256, 256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0> {
   %0 = mo.custom [symbol = "tile_rms_norm", device = #M.device_ref<"gpu", 0>](%x, %gamma) : (!mo.tensor<[256, 256], f32, gpu:0>, !mo.tensor<[256], f32, gpu:0>) -> !mo.tensor<[256, 256], f32, gpu:0>

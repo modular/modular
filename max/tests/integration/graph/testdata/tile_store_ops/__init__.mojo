@@ -25,18 +25,31 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from std.math import sqrt
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from layout.tile_tensor import stack_allocation
 from std.utils import IndexList
 from linalg.utils import TileConsumer
 from extensibility import (
+    Fused,
+    Input,
     InputTensor,
+    Output,
     OutputTensor,
-    _FusedOutputTileTensor,
+    TileTensorable,
+    _LegacyTileStorable,
+    _LegacyTileStoreAccess,
     get_kernel_tile_shape,
 )
+from std.builtin.device_passable import DevicePassable
 
-from builtin_kernels._tile_fusion import _tile_store_consumer
+from builtin_kernels._tile_fusion import _LegacyTileStoreConsumer
 
 comptime SM100 = (
     extensibility.ACCELERATOR
@@ -77,8 +90,8 @@ struct _NaiveRMSNormTileAdapter[
         Idx[Self.tile_shape[0]], Idx[Self.tile_shape[1]]
     )
 
-    var input: TileTensor[Self.dtype, Self.InLayout, MutUntrackedOrigin]
-    var gamma: TileTensor[Self.dtype, Self.GammaLayout, MutUntrackedOrigin]
+    var input: TileTensor[Self.dtype, Self.InLayout, ImmUntrackedOrigin]
+    var gamma: TileTensor[Self.dtype, Self.GammaLayout, ImmUntrackedOrigin]
     var n_dim: Int
     var epsilon: Float32
     var weight_offset: Scalar[Self.dtype]
@@ -147,37 +160,66 @@ struct RMSNormTileFallback:
         raise Error("tile_rms_norm runs only with tile_based_fusion")
 
 
-# Registered for sm_100a (B200) only, with the tile fused-output IOSpec
-# (`_FusedOutputTileTensor`): the graph compiler selects it only when the
-# target has `tile_based_fusion` set.
+# TODO(GEX-4340): the device entry of `RMSNormTileSM100`. The output crosses
+# the launch as its own argument, because only its device value can call
+# `store`; the adapter is built here, on the device.
+def _rms_norm_tile_sm100_kernel[
+    OutHost: DevicePassable,
+    dtype: DType,
+    InLayout: TensorLayout,
+    GammaLayout: TensorLayout,
+    tile_shape: IndexList[2],
+](
+    output: OutHost.device_type,
+    input: TileTensor[dtype, InLayout, ImmUntrackedOrigin],
+    gamma: TileTensor[dtype, GammaLayout, ImmUntrackedOrigin],
+    n_dim_dev: Int64,
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+):
+    comptime assert conforms_to(
+        OutHost.device_type, _LegacyTileStorable & TrivialRegisterPassable
+    ), "the output's device value must be _LegacyTileStorable"
+    var adapter = _NaiveRMSNormTileAdapter[tile_shape=tile_shape](
+        input,
+        gamma,
+        Int(n_dim_dev),
+        epsilon,
+        weight_offset,
+        _LegacyTileStoreConsumer[OutHost.device_type](output),
+    )
+    adapter()
+
+
+# Registered for sm_100a (B200) only, with the legacy tile store trait: the
+# graph compiler selects it only when the target has `tile_based_fusion` set.
 @extensibility.register("tile_rms_norm", SM100)
 struct RMSNormTileSM100:
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         epsilon: Float32 = 1e-6,
         weight_offset: Float32 = 0.0,
         multiply_before_cast: Bool = True,
     ](
-        output: _FusedOutputTileTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        output: Some[Output & Fused & _LegacyTileStoreAccess],
+        input: Some[Input & TileTensorable],
+        gamma: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        # The tile programming model (`tile_based_fusion=True`) binds `output`
-        # to `_FusedOutputTile`, and the selection filter routes the op to
-        # this sm_100a registration. Naive, correctness-only GPU rms_norm on
-        # MAX's own Mojo kernel (no vendor BLAS); see
-        # `_NaiveRMSNormTileAdapter`. Tested at (M, N) = (256, 256) f32 on
-        # B200.
+        # Naive, correctness-only GPU rms_norm on MAX's own Mojo kernel (no
+        # vendor BLAS); see `_NaiveRMSNormTileAdapter`. Tested at
+        # (M, N) = (256, 256) f32 on B200.
         comptime assert ctx.target.is_gpu(), "tile-codegen rms_norm is GPU-only"
+        comptime assert conforms_to(type_of(output), DevicePassable)
+        comptime dtype = type_of(output).dtype
         comptime assert (
-            rank == 2
+            type_of(output).rank == 2
         ), "tile-codegen rms_norm only supports rank-2 tensors"
         comptime assert (
             dtype == .float32
         ), "tile-codegen rms_norm is correctness-only and f32-only"
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(gamma).dtype == dtype
 
         # TODO(GEX-3905): a real rms_norm must own its own tile shape rather
         # than inheriting this shared elementwise `get_kernel_tile_shape`
@@ -185,28 +227,36 @@ struct RMSNormTileSM100:
         # the epilogue conforms to it -- instead of the driver and emitter
         # each independently reading `get_kernel_tile_shape`.
         comptime tile_shape = get_kernel_tile_shape[
-            output.dtype, ctx.target.device_kind_label()
+            dtype, ctx.target.device_kind_label()
         ]()
         comptime TM = tile_shape[0]
         comptime TN = tile_shape[1]
 
-        var m_dim = Int(output.dim_size[0]())
-        var n_dim = Int(output.dim_size[1]())
+        var shape = coord_to_index_list(output.shape())
+        var m_dim = shape[0]
+        var n_dim = shape[1]
         debug_assert(
             m_dim % TM == 0 and n_dim % TN == 0,
             "tile-codegen rms_norm requires tile-divisible output shapes",
         )
 
-        var adapter = _NaiveRMSNormTileAdapter[tile_shape=tile_shape](
-            input.to_tile_tensor(),
-            gamma.to_tile_tensor(),
-            n_dim,
+        var input_tile = input.to_tile_tensor[dtype]()
+        var gamma_tile = gamma.to_tile_tensor[dtype]()
+        ctx.enqueue_function[
+            _rms_norm_tile_sm100_kernel[
+                type_of(output),
+                dtype,
+                type_of(input_tile).LayoutType,
+                type_of(gamma_tile).LayoutType,
+                tile_shape,
+            ]
+        ](
+            output,
+            input_tile,
+            gamma_tile,
+            Int64(n_dim),
             epsilon,
             weight_offset.cast[dtype](),
-            _tile_store_consumer(output),
-        )
-        ctx.enqueue_function(
-            adapter,
             grid_dim=(n_dim // TN, m_dim // TM),
             block_dim=(TM * TN),
         )

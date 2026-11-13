@@ -23,6 +23,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
+#include "GraphCompiler/MOGGDialect/Analysis/LegacyTileTraits.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
@@ -483,6 +484,14 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
                ? Kind::ComputeTile
                : Kind::OutputTile;
 
+  // TODO(GEX-4340): the legacy tile trait form of the same two lanes; remove
+  // with GEX-4467.
+  if (tensorArg->traitContract)
+    if (std::optional<MOGG::LegacyTileLane> lane =
+            MOGG::legacyTileLane(*tensorArg->traitContract))
+      return *lane == MOGG::LegacyTileLane::compute ? Kind::ComputeTile
+                                                    : Kind::OutputTile;
+
   // A trait-lane `_LegacyComputeOutput` slot (contract access `transform`)
   // follows the same rules as a legacy `FusedComputeOutputTensor`. Its
   // `ioSpec` is the plain `OutputTensor` the contract maps to, so check the
@@ -601,7 +610,8 @@ static bool transformsStoreIndex(Block &body) {
 static LogicalResult
 lowerTileEpilogue(IterEpilogueOp epilogue, MAPToMOGGState &state,
                   MOGG::KernelOutputFusionLambdaType kind, Value outShape,
-                  ArrayRef<Value> moggCaptures, Value outputPtr) {
+                  ArrayRef<Value> moggCaptures, Value outputPtr,
+                  MOGG::TensorArgContractAttr contractAttr) {
   MLIRContext *ctx = epilogue.getContext();
   Location loc = epilogue.getLoc();
   Block &epiBody = epilogue.getBody().front();
@@ -620,7 +630,8 @@ lowerTileEpilogue(IterEpilogueOp epilogue, MAPToMOGGState &state,
                                              : MOGG::TileFusionLane::Store),
       state.builder.getStringAttr(state.device.getLabel()),
       TypeAttr::get(outElemType), state.builder.getBoolAttr(true),
-      MO::IOKindAttr::get(ctx, MO::IOKind::Output));
+      MO::IOKindAttr::get(ctx, MO::IOKind::Output),
+      /*contract=*/contractAttr);
 
   Block *body = state.builder.createBlock(&tileOp.getBody());
   for (size_t i = 0; i < numParams; ++i) {
@@ -728,7 +739,7 @@ LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
 
   if (isTile)
     return lowerTileEpilogue(*this, state, kind, outShape, moggCaptures,
-                             outputPtr);
+                             outputPtr, contractAttr);
 
   // A downgraded `_LegacyComputeOutput` slot (`OutputLegacyForCompute`) keeps
   // a store body, which emit wraps as a store fusion.

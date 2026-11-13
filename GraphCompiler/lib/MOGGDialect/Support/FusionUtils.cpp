@@ -17,6 +17,7 @@
 #include "GraphCompiler/MODialect/MOInterfaces.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
+#include "GraphCompiler/MOGGDialect/Analysis/LegacyTileTraits.h"
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MojoParameters.h"
@@ -99,7 +100,9 @@ bool kernelDeclaresTileOutput(KernelDeclOp decl) {
       adaptor.executeFunction->outputArguments, [](const auto &arg) {
         const auto *tensorArg =
             std::get_if<KernelDeclTensorAdaptor>(&arg.underlyingType);
-        return tensorArg && isTileFusedOutputIOSpec(tensorArg->ioSpec);
+        // TODO(GEX-4340): drop the legacy tile trait form with GEX-4467.
+        return (tensorArg && isTileFusedOutputIOSpec(tensorArg->ioSpec)) ||
+               isLegacyTileFusedOutput(arg);
       });
 }
 

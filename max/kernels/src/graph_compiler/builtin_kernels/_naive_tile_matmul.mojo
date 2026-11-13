@@ -47,13 +47,17 @@ from linalg.utils import (
     is_valid_epilogue,
 )
 from extensibility import (
-    ComputeOutputFusionTile,
-    InputTensor,
-    _FusedComputeOutputTileTensor,
+    Fused,
+    Input,
+    Output,
+    TileTensorable,
+    _LegacyTileComputable,
+    _LegacyTileComputeOutput,
     get_kernel_tile_shape,
 )
+from std.builtin.device_passable import DevicePassable
 
-from ._tile_fusion import _tile_store_consumer
+from ._tile_fusion import _LegacyTileComputeOp, _TileStoreConsumer
 
 comptime SM100 = (
     extensibility.ACCELERATOR
@@ -61,75 +65,6 @@ comptime SM100 = (
     & extensibility.arch("sm_100a")
 )
 """Holds for CUDA devices with the `sm_100a` architecture."""
-
-
-@fieldwise_init
-struct _ComputeFusionTileOp[
-    FusionType: ComputeOutputFusionTile,
-    //,
-](TileOperation):
-    """`TileOperation` adapter over `mo.matmul`'s output compute-fusion epilogue.
-
-    Holds the fused-output `ComputeOutputFusionTile` struct and forwards the
-    per-tile epilogue to its `compute`, exactly as `_ElementwiseFusionTileAdapter`
-    drives `elem.compute`. Holds only the `TrivialRegisterPassable` fusion
-    struct, so it rides into the kernel as a by-value capture.
-
-    Transitional scaffolding for the tile-codegen bring-up (see GEX-3919).
-    """
-
-    # TODO(jtodd): what is the right address space in this case?
-    comptime src_address_space = AddressSpace.GENERIC
-
-    var fusion: Self.FusionType
-
-    @inline(.always)
-    def __call__[
-        dtype: DType,
-        LayoutType: TensorLayout,
-    ](
-        mut self,
-        tile_coord: Coord,
-        tile: TileTensor[
-            dtype,
-            LayoutType,
-            MutAnyOrigin,
-            ...,
-            address_space=Self.src_address_space,
-        ],
-        thread_layout: _NewLayout,
-    ) -> type_of(tile):
-        # The kernel-supplied thread layout must be fully static so we can build
-        # a comptime-parameterized load copier from it; the fusion uses that
-        # copier to pull its own inputs (e.g. the broadcast bias) into local.
-        comptime assert type_of(
-            thread_layout
-        ).all_dims_known, "TileOperation thread_layout must be statically known"
-        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
-        var copier = GenericToLocalTileCopier[type_of(thread_layout)()]()
-        # `tile_coord` is an absolute element coord (the trait contract); the GC
-        # fusion's `compute` expects a tile/grid index, so divide by the tile
-        # shape (== `thread_layout`: one thread per element in this driver).
-        # TODO(KERN-2893, GEX-3919): choose a convention and stick to it
-        comptime TM = type_of(thread_layout).static_shape[0]
-        comptime TN = type_of(thread_layout).static_shape[1]
-        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
-        var ridx = IndexList[2](elem[0] // TM, elem[1] // TN)
-        # TODO(GEX-3973): Avoid these rebinds by being generic in the ManagedTensorSlice fusion methods
-        return rebind[type_of(tile)](
-            self.fusion.compute[dtype, 2, LayoutType, type_of(copier)](
-                ridx,
-                copier,
-                rebind[
-                    TileTensor[
-                        dtype,
-                        LayoutType,
-                        MutAnyOrigin,
-                        address_space=Self.src_address_space,
-                    ]
-                ](tile),
-            )
-        )
 
 
 @fieldwise_init
@@ -165,8 +100,8 @@ struct _NaiveMatmulTileAdapter[
     )
     comptime frag_layout = type_of(row_major[1, 1]())
 
-    var a: TileTensor[Self.a_dtype, Self.ALayout, MutUntrackedOrigin]
-    var b: TileTensor[Self.b_dtype, Self.BLayout, MutUntrackedOrigin]
+    var a: TileTensor[Self.a_dtype, Self.ALayout, ImmUntrackedOrigin]
+    var b: TileTensor[Self.b_dtype, Self.BLayout, ImmUntrackedOrigin]
     var k_dim: Int
     # The non-terminal `tile_operation`, if bound, transforms the fragment; the
     # terminal `tile_consumer` owns the store.
@@ -244,13 +179,51 @@ struct _NaiveMatmulTileAdapter[
         )
 
 
+# TODO(GEX-4340): the device entry of `MatmulTileSM100`. The output crosses
+# the launch as its own argument, because only its device value can call
+# `compute`; the adapter is built here, on the device.
+def _matmul_tile_sm100_kernel[
+    CHost: DevicePassable,
+    c_dtype: DType,
+    CLayout: TensorLayout,
+    a_dtype: DType,
+    ALayout: TensorLayout,
+    b_dtype: DType,
+    BLayout: TensorLayout,
+    tile_shape: IndexList[2],
+    has_epilogue_fusion: Bool,
+](
+    c: CHost.device_type,
+    c_tile: TileTensor[c_dtype, CLayout, MutUntrackedOrigin],
+    a: TileTensor[a_dtype, ALayout, ImmUntrackedOrigin],
+    b: TileTensor[b_dtype, BLayout, ImmUntrackedOrigin],
+    k_dim_dev: Int64,
+):
+    comptime assert conforms_to(
+        CHost.device_type, _LegacyTileComputable & TrivialRegisterPassable
+    ), "the output's device value must be _LegacyTileComputable"
+    var k_dim = Int(k_dim_dev)
+    var store = _TileStoreConsumer[c_dtype, CLayout](c_tile)
+    comptime if has_epilogue_fusion:
+        var op = _LegacyTileComputeOp[CHost.device_type](c)
+        var adapter = _NaiveMatmulTileAdapter[
+            c_dtype, tile_shape=tile_shape, TileOperationType=type_of(op)
+        ](a, b, k_dim, OptionalReg(op), store)
+        adapter()
+    else:
+        var adapter = _NaiveMatmulTileAdapter[c_dtype, tile_shape=tile_shape](
+            a, b, k_dim, OptionalReg[NullTileOperation](), store
+        )
+        adapter()
+
+
 # Transitional tile-codegen scaffolding (remove per GEX-3941): a SEPARATE,
-# device-specific `mo.matmul` registration for sm_100a (B200). It declares the
-# tile fused-output IOSpec (`_FusedComputeOutputTileTensor`); the generic
-# `Matmul` in `linalg.mojo` stays SIMD-only. Registering the tile matmul as its
-# own kernel (rather than a second `execute` overload on the generic struct)
-# avoids the importer's single-`execute`-slot collapse. It must NOT become the
-# canonical B200 matmul: the graph-compiler selection filter in
+# device-specific `mo.matmul` registration for sm_100a (B200). It declares its
+# fused output with the legacy tile compute trait; the generic `Matmul` in
+# `linalg.mojo` stays SIMD-only. Registering the tile matmul as its own kernel
+# (rather than a second `execute` overload on the generic struct) avoids the
+# importer's single-`execute`-slot collapse. It must NOT become the canonical
+# B200 matmul: the graph-compiler selection filter in
 # `MojoRegistry::getResolvedKernel` discounts this tile candidate unless the
 # target device has `tile_based_fusion` set, so a default B200 (flag off)
 # resolves to the generic SIMD `mo.matmul` and only the tile-codegen path
@@ -265,16 +238,14 @@ struct MatmulTileSM100:
         has_epilogue_fusion: Bool,
         _trace_name: StaticString,
     ](
-        c: _FusedComputeOutputTileTensor[rank=2, ...],
-        a: InputTensor[rank=2, ...],
-        b: InputTensor[rank=2, ...],
+        c: Some[Output & Fused & _LegacyTileComputeOutput & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
-        # The tile programming model (`tile_based_fusion=True`) binds `c` to
-        # `_FusedComputeOutputTile`, and the selection filter routes the op to
-        # this sm_100a registration. Naive, correctness-only GPU matmul on MAX's
-        # own Mojo kernel (no vendor BLAS); see `_NaiveMatmulTileAdapter`. Tested
-        # at (M, N, K) = (256, 256, 256) f32 on B200.
+        # Naive, correctness-only GPU matmul on MAX's own Mojo kernel (no
+        # vendor BLAS); see `_NaiveMatmulTileAdapter`. Tested at
+        # (M, N, K) = (256, 256, 256) f32 on B200.
         comptime assert ctx.target.is_gpu(), "tile-codegen matmul is GPU-only"
         comptime assert (
             not transpose_b
@@ -282,6 +253,11 @@ struct MatmulTileSM100:
         comptime assert (
             not packed_b
         ), "tile-codegen matmul does not support packed_b"
+        comptime assert conforms_to(type_of(c), DevicePassable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime dtype = type_of(c).dtype
 
         # TODO(GEX-3905): a real matmul must own its own tile shape (tensor-core
         # tiling) rather than inheriting this shared elementwise
@@ -289,40 +265,41 @@ struct MatmulTileSM100:
         # the fusion emitter so the epilogue conforms to it — instead of the
         # driver and emitter each independently reading `get_kernel_tile_shape`.
         comptime tile_shape = get_kernel_tile_shape[
-            c.dtype, ctx.target.device_kind_label()
+            dtype, ctx.target.device_kind_label()
         ]()
         comptime TM = tile_shape[0]
         comptime TN = tile_shape[1]
 
-        var m_dim = Int(c.dim_size[0]())
-        var n_dim = Int(c.dim_size[1]())
-        var k_dim = Int(a.dim_size[1]())
+        var c_shape = coord_to_index_list(c.shape())
+        var m_dim = c_shape[0]
+        var n_dim = c_shape[1]
+        var k_dim = coord_to_index_list(a.shape())[1]
         debug_assert(
             m_dim % TM == 0 and n_dim % TN == 0,
             "tile-codegen matmul requires tile-divisible output shapes",
         )
 
-        var a_tt = a.to_tile_tensor()
-        var b_tt = b.to_tile_tensor()
-        var store = _tile_store_consumer(c)
-
-        # A GC-generated compute epilogue rides in as a `TileOperation`.
-        comptime if has_epilogue_fusion:
-            var op = _ComputeFusionTileOp(c.compute_fusion_tile)
-            var adapter = _NaiveMatmulTileAdapter[
-                c.dtype, tile_shape=tile_shape, TileOperationType=type_of(op)
-            ](a_tt, b_tt, k_dim, OptionalReg(op), store)
-            ctx.enqueue_function(
-                adapter,
-                grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TM * TN),
-            )
-        else:
-            var adapter = _NaiveMatmulTileAdapter[
-                c.dtype, tile_shape=tile_shape
-            ](a_tt, b_tt, k_dim, OptionalReg[NullTileOperation](), store)
-            ctx.enqueue_function(
-                adapter,
-                grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TM * TN),
-            )
+        var c_tile = c.to_tile_tensor()
+        var a_tile = a.to_tile_tensor()
+        var b_tile = b.to_tile_tensor()
+        ctx.enqueue_function[
+            _matmul_tile_sm100_kernel[
+                type_of(c),
+                dtype,
+                type_of(c_tile).LayoutType,
+                type_of(a).dtype,
+                type_of(a_tile).LayoutType,
+                type_of(b).dtype,
+                type_of(b_tile).LayoutType,
+                tile_shape,
+                has_epilogue_fusion,
+            ]
+        ](
+            c,
+            c_tile,
+            a_tile,
+            b_tile,
+            Int64(k_dim),
+            grid_dim=(n_dim // TN, m_dim // TM),
+            block_dim=(TM * TN),
+        )
