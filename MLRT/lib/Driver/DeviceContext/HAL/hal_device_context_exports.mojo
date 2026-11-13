@@ -27,22 +27,34 @@ frees it with `MojoHAL_strfree`.
 
 from std.ffi import c_char, CStringSpan, external_call
 
-# The HAL types by their backend names rather than through `max.gpu.host`,
-# which serves the backend-dispatching wrappers.
+# The backend-dispatching wrappers. This file is built only for the HAL
+# backend, where each wrapper holds the HAL implementation.
+from max._driver.max_license.device_context_dispatch.device_buffer import (
+    DeviceBuffer,
+)
+from max._driver.max_license.device_context_dispatch.device_context import (
+    DeviceContext,
+    _DeviceContextScope,
+    use_legacy_backend,
+)
+from max._driver.max_license.device_context_dispatch.host_buffer import (
+    HostBuffer,
+)
+from max._driver.max_license.device_context_dispatch.host_types import (
+    DeviceEvent,
+    DeviceStream,
+)
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceBuffer as DeviceBuffer,
-    HALDeviceContext as DeviceContext,
-    HALDeviceEvent as DeviceEvent,
-    HALDeviceStream as DeviceStream,
-    HALHostBuffer as HostBuffer,
+    HALDeviceBuffer,
+    HALDeviceContext,
     _CompletionFlagBox,
-    _HALDeviceContextScope,
     _accelerator_api_and_arch,
 )
 from max.gpu.host import (
     _CString,
     DeviceAttribute,
 )
+from max.gpu.host.info import default_accelerator
 from std.memory import (
     alloc,
     ArcPointer,
@@ -73,7 +85,7 @@ comptime _DeviceBufferBoxPtr = Pointer[DeviceBuffer[.uint8], MutUntrackedOrigin]
 comptime _DeviceStreamBoxPtr = Pointer[DeviceStream, MutUntrackedOrigin]
 comptime _DeviceEventBoxPtr = Pointer[DeviceEvent, MutUntrackedOrigin]
 comptime _DeviceContextScopeBoxPtr = Pointer[
-    _HALDeviceContextScope, MutUntrackedOrigin
+    _DeviceContextScope[default_accelerator()], MutUntrackedOrigin
 ]
 # The C++ flag holds one reference; Mojo `CompletionFlag`s share the rest.
 comptime _CompletionFlagBoxPtr = Pointer[
@@ -85,6 +97,20 @@ comptime _RawMemoryPtr = Pointer[Byte, MutUntrackedOrigin]
 
 # An out-parameter slot the export writes for the C++ caller.
 comptime _OutPtr = Pointer[mut=True, _, MutUntrackedOrigin]
+
+
+def _wrap_device_memory(
+    ctx: HALDeviceContext[], ptr: _RawMemoryPtr, size: Int, *, owning: Bool
+) -> DeviceBuffer[.uint8]:
+    """Wraps device or host memory the caller owns as a buffer.
+
+    The dispatching `DeviceBuffer` wraps a raw pointer only on the legacy
+    backend, so this builds the HAL buffer and hands it to the wrapper.
+    """
+    comptime assert not use_legacy_backend(), "HAL backend only"
+    return DeviceBuffer[.uint8](
+        _impl=HALDeviceBuffer[.uint8](ctx, ptr, size, owning=owning)
+    )
 
 
 def _err_cstr(msg: String) -> _CString[]:
@@ -251,7 +277,7 @@ def MojoHAL_DeviceContext_createBuffer(
 ) abi("C") -> _CString[]:
     try:
         var buf = DeviceBuffer[.uint8](ctx[], Int(byte_size))
-        out_ptr[] = buf.unsafe_ptr()
+        out_ptr[] = buf.unwrap_hal().unsafe_ptr()
         var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
         boxed.unsafe_ptr().unsafe_write(buf^)
         out_buf[] = boxed^.unsafe_leak()
@@ -268,7 +294,9 @@ def MojoHAL_DeviceContext_createBufferOwning(
     byte_size: UInt64,
     owning: Bool,
 ) abi("C") -> _CString[]:
-    var buf = DeviceBuffer[.uint8](ctx[], ptr, Int(byte_size), owning=owning)
+    var buf = _wrap_device_memory(
+        ctx[].unwrap_hal(), ptr, Int(byte_size), owning=owning
+    )
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(buf^)
     out_buf[] = boxed^.unsafe_leak()
@@ -297,7 +325,8 @@ def MojoHAL_DeviceBuffer_relinquishOwnership(
     # (or its custom destructor) takes over the allocation.
     try:
         var boxed = buf
-        _ = boxed[]._ctx._context[].unwrap_memory(boxed[]._inner[]._buffer)
+        var hal_buf = boxed[].unwrap_hal()
+        _ = hal_buf._ctx._context[].unwrap_memory(hal_buf._inner[]._buffer)
         return None
     except e:
         return _err_cstr(String(e))
@@ -377,8 +406,8 @@ def MojoHAL_DeviceContext_enqueueCopyToDevice(
         return None
     try:
         var ctxref = ctx[]
-        var dst_buf = DeviceBuffer[.uint8](
-            ctxref, dst, Int(byte_size), owning=False
+        var dst_buf = _wrap_device_memory(
+            ctxref.unwrap_hal(), dst, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst_buf, src)
         return None
@@ -400,8 +429,8 @@ def MojoHAL_DeviceContext_enqueueCopyFromDevice(
         return None
     try:
         var ctxref = ctx[]
-        var src_buf = DeviceBuffer[.uint8](
-            ctxref, src, Int(byte_size), owning=False
+        var src_buf = _wrap_device_memory(
+            ctxref.unwrap_hal(), src, Int(byte_size), owning=False
         )
         ctxref.enqueue_copy(dst, src_buf)
         return None
@@ -423,11 +452,11 @@ def MojoHAL_DeviceContext_enqueueSetMemory(
         return None
     try:
         ref device_ctx = ctx[]
-        var view = DeviceBuffer[.uint8](
-            device_ctx, dst, Int(byte_size), owning=False
+        var view = _wrap_device_memory(
+            device_ctx.unwrap_hal(), dst, Int(byte_size), owning=False
         )
-        device_ctx._stream[].fill(
-            view._inner[]._buffer.view(), value, value_size
+        device_ctx.unwrap_hal()._stream[].fill(
+            view.unwrap_hal()._inner[]._buffer.view(), value, value_size
         )
         # `fill` receives a weak `BufferView` (a detached POD copy, not a
         # borrow of `view`), so ASAP-drop would otherwise release the plugin
@@ -474,7 +503,8 @@ def MojoHAL_DeviceContext_maxAllocationSize(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        ref device = ctx[]._device[]
+        var hal_ctx = ctx[].unwrap_hal()
+        ref device = hal_ctx._device[]
         var size = device._raw[].get_optional_device_property[
             "max_allocation_size", UInt64
         ](device._handle)
@@ -519,7 +549,7 @@ def MojoHAL_DeviceContext_getApi(
 @export
 def MojoHAL_DeviceContext_id(ctx: _DeviceContextBoxPtr) abi("C") -> Int64:
     # Field read, bypassing `id()` (which raises only for signature parity).
-    return ctx[]._device[].id
+    return ctx[].unwrap_hal()._device[].id
 
 
 @export
@@ -543,7 +573,7 @@ def MojoHAL_DeviceContext_getMemoryInfo(
     try:
         # The raw HAL context, not `DeviceContext.get_memory_info`, which
         # raises on `M_DRIVER_MEMORY_UNKNOWN` instead of passing it to C++.
-        var info = ctx[]._context[].get_memory_info()
+        var info = ctx[].unwrap_hal()._context[].get_memory_info()
         out_free[] = info[0]
         out_total[] = info[1]
         return None
@@ -586,15 +616,15 @@ def MojoHAL_HostBuffer_createSubBuffer(
     var parent_size = UInt64(len(parent_buf))
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
-    var view = DeviceBuffer[.uint8](
-        parent_buf.context(),
+    var view = _wrap_device_memory(
+        parent_buf.unwrap_hal().context(),
         parent_buf.unsafe_ptr().unsafe_offset(Int(byte_offset)),
         Int(byte_size),
         owning=False,
     )
     # The view's wrapper is non-owning; retaining the parent's inner keeps
     # the pinned allocation alive for the view's lifetime.
-    view._inner[]._parent_host = [parent_buf._inner]
+    view.unwrap_hal()._inner[]._parent_host = [parent_buf.unwrap_hal()._inner]
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_buf[] = boxed^.unsafe_leak()
@@ -615,14 +645,14 @@ def MojoHAL_DeviceBuffer_createSubBuffer(
     var parent_size = UInt64(len(parent_buf))
     if byte_size > parent_size or parent_size - byte_size < byte_offset:
         return _err_cstr("offset, len and elem_size are out of range")
-    var view = DeviceBuffer[.uint8](
-        parent_buf.context(),
-        parent_buf.unsafe_ptr().unsafe_offset(Int(byte_offset)),
+    var view = _wrap_device_memory(
+        parent_buf.unwrap_hal().context(),
+        parent_buf.unwrap_hal().unsafe_ptr().unsafe_offset(Int(byte_offset)),
         Int(byte_size),
         owning=False,
     )
     # The plugin may have given the view an address of its own.
-    out_ptr[] = view.unsafe_ptr()
+    out_ptr[] = view.unwrap_hal().unsafe_ptr()
     var boxed = alloc(Layout[DeviceBuffer[.uint8]].single())
     boxed.unsafe_ptr().unsafe_write(view^)
     out_buf[] = boxed^.unsafe_leak()
@@ -650,7 +680,7 @@ def MojoHAL_DeviceContext_sameStream(
     b: _DeviceContextBoxPtr,
 ) abi("C") -> Bool:
     # A `selectStream` view shares its context's stream: compare streams.
-    return a[]._stream is b[]._stream
+    return a[].unwrap_hal()._stream is b[].unwrap_hal()._stream
 
 
 # A memmapped file wrapped as a host-visible buffer view; munmaps on release.
@@ -703,7 +733,9 @@ def MojoHAL_DeviceContext_memmapFile(
     if Int(base) == -1:  # MAP_FAILED
         return _err_cstr("failed to mmap file")
 
-    var view = DeviceBuffer[.uint8](ctx[], base, Int(size), owning=False)
+    var view = _wrap_device_memory(
+        ctx[].unwrap_hal(), base, Int(size), owning=False
+    )
     var boxed = alloc(Layout[_MmapBox].single())
     boxed.unsafe_ptr().unsafe_write(_MmapBox(view^, base, UInt64(size)))
     out_buf[] = boxed^.unsafe_leak().unsafe_bitcast[DeviceBuffer[.uint8]]()
@@ -736,7 +768,8 @@ def MojoHAL_DeviceContext_stream(
     out_stream: _OutPtr[_DeviceStreamBoxPtr],
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
-    var stream = ctx[].stream()
+    comptime assert not use_legacy_backend(), "HAL backend only"
+    var stream = DeviceStream(_impl=ctx[].unwrap_hal().stream())
     var boxed = alloc(Layout[DeviceStream].single())
     boxed.unsafe_ptr().unsafe_write(stream^)
     out_stream[] = boxed^.unsafe_leak()
@@ -767,10 +800,11 @@ def MojoHAL_DeviceContext_withStream(
 ) abi("C") -> _CString[]:
     # A copy of `ctx` whose current stream is `stream` — backs the
     # `DeviceContext::selectStream` view on the C++ side.
-    var view = ctx[]
-    view._stream = stream[]._hal_stream()
+    var hal_view = ctx[].unwrap_hal()
+    comptime assert not use_legacy_backend(), "HAL backend only"
+    hal_view._stream = stream[].unwrap_hal()._hal_stream()
     var boxed = alloc(Layout[DeviceContext[]].single())
-    boxed.unsafe_ptr().unsafe_write(view^)
+    boxed.unsafe_ptr().unsafe_write(DeviceContext[](_impl=hal_view^))
     out_ctx[] = boxed^.unsafe_leak()
     return None
 
@@ -815,7 +849,13 @@ def MojoHAL_DeviceStream_nativeHandle(
     stream: _DeviceStreamBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_handle[] = stream[]._native_stream().unsafe_bitcast[Byte]()
+        var hal_stream = stream[].unwrap_hal()
+        out_handle[] = (
+            hal_stream._native_stream()
+            .unsafe_bitcast[Byte]()
+            .unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
         return None
     except e:
         return _err_cstr(String(e))
@@ -828,12 +868,12 @@ def MojoHAL_DeviceEvent_isReady(
 ) abi("C") -> _CString[]:
     try:
         var ev = event
-        if not ev[]._event[]:
+        if not ev[].unwrap_hal()._event[]:
             # An unrecorded event reports ready, matching the legacy
             # backends (cuEventQuery on a fresh event succeeds).
             out_ready[] = True
         else:
-            out_ready[] = ev[]._event[].value().is_ready()
+            out_ready[] = ev[].unwrap_hal()._event[].value().is_ready()
         return None
     except e:
         return _err_cstr(String(e))
@@ -853,7 +893,7 @@ def MojoHAL_DeviceContext_eventCreate(
         if record:
             event = DeviceEvent(ctx[])
         else:
-            event = DeviceEvent._create_unrecorded(ctx[])
+            event = ctx[].create_event()
         var boxed = alloc(Layout[DeviceEvent].single())
         boxed.unsafe_ptr().unsafe_write(event^)
         out_event[] = boxed^.unsafe_leak()
@@ -913,7 +953,7 @@ def MojoHAL_DeviceContext_bindToCurrentThread(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        ctx[]._context[].set_current()
+        ctx[].unwrap_hal()._context[].set_current()
         return None
     except e:
         return _err_cstr(String(e))
@@ -928,7 +968,9 @@ def MojoHAL_DeviceContext_pushContext(
     # current; restored by MojoHAL_DeviceContextScope_pop.
     try:
         var pushed = ctx[].push_context()
-        var boxed = alloc(Layout[_HALDeviceContextScope].single())
+        var boxed = alloc(
+            Layout[_DeviceContextScope[default_accelerator()]].single()
+        )
         var ptr = boxed.unsafe_ptr()
         ptr.unsafe_write(pushed^)
         try:
@@ -953,7 +995,7 @@ def MojoHAL_DeviceContextScope_pop(scope: _DeviceContextScopeBoxPtr) abi("C"):
     boxed.unsafe_deinit_pointee()
     dealloc(
         ThinAllocation(unsafe_owned_ptr=boxed).unsafe_with_layout(
-            Layout[_HALDeviceContextScope].single()
+            Layout[_DeviceContextScope[default_accelerator()]].single()
         )
     )
 
@@ -971,6 +1013,7 @@ def MojoHAL_DeviceContext_getDLPackStream(
         # wrapper keeps the stream alive.
         out_stream[] = (
             ctx[]
+            .unwrap_hal()
             .stream()
             ._native_stream()
             .unsafe_bitcast[Byte]()
@@ -993,7 +1036,7 @@ def MojoHAL_DeviceContext_allocateCompletionFlag(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        var flag = ArcPointer(_CompletionFlagBox(ctx[]))
+        var flag = ArcPointer(_CompletionFlagBox(ctx[].unwrap_hal()))
         var boxed = alloc(Layout[ArcPointer[_CompletionFlagBox]].single())
         boxed.unsafe_ptr().unsafe_write(flag^)
         out_flag[] = boxed^.unsafe_leak()
@@ -1060,7 +1103,7 @@ def MojoHAL_DeviceStream_launchHostFunc(
     user_data: OpaquePointer[MutUntrackedOrigin],
 ) abi("C") -> _CString[]:
     try:
-        stream[]._stream[].enqueue_host_func(func, user_data)
+        stream[].unwrap_hal()._stream[].enqueue_host_func(func, user_data)
         return None
     except e:
         return _err_cstr(String(e))
@@ -1073,7 +1116,7 @@ def MojoHAL_DeviceStream_waitOnFlag(
     value: UInt64,
 ) abi("C") -> _CString[]:
     try:
-        flag[][].wait(stream[], value)
+        flag[][].wait(stream[].unwrap_hal(), value)
         return None
     except e:
         return _err_cstr(String(e))
