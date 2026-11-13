@@ -935,8 +935,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
+    sha256 = "52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.5/52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
