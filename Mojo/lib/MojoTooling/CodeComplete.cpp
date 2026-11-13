@@ -334,7 +334,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
     }
 
     CodeCompletionResult result(name, kind);
-    if (!decl->getToolingKindName().empty())
+    SharedState &sharedState = parserContext->getSharedState();
+    if (!decl->getToolingKindName().empty() &&
+     succeeded(sharedState.getDeclResolver().resolveSignature(*decl, SMLoc())))
       result.documentation = getDeclFullMarkdownString(*decl);
     results.emplace_back(result);
   }
