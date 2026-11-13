@@ -5,8 +5,8 @@ description: >
   last use. Covers deinitializers and lifetime extension.
 ---
 
-<!-- Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) -->
-<!-- Last updated: 2026-11-03 -->
+{/* Compiler verified: 2026-10-16, Mojo 1.2.0.dev2026101520 (d2872eb2) */}
+{/* Last updated: 2026-11-12 */}
 
 Mojo destroys values as soon as they're no longer used. It doesn't wait for
 the end of a code block or even the end of an expression. With Mojo's
@@ -213,7 +213,8 @@ to `Pointer[Int, MutAnyOrigin]` implicitly.
 
 When working with foreign function interfaces (FFIs), prefer an origin tied
 to the owner of the value you pull a pointer from. For worked examples of C
-filling a Mojo-owned buffer, see [Calling C functions](/docs/manual/c-ffi/).
+filling a Mojo-owned buffer, see
+[Passing data to C ABI functions](/docs/manual/interop/passing-data-to-c).
 
 ### When the origin is gone
 

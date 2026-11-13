@@ -1,7 +1,7 @@
-# Code examples and tests for the C foreign function interface
+# Code examples and tests for interop safety
 
 This directory contains code examples and tests for the
-[Calling C from Mojo](../../../manual/c-ffi.mdx)
+[Interop safety](../../../../manual/interop/safety.mdx)
 section of the Mojo Manual.
 
 Contents:

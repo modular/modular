@@ -1,0 +1,70 @@
+load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_run_binary_test", "mojo_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+LIT_SRCS = glob(["*_lit.mojo"])
+
+MOJO_SRCS = glob(
+    ["*.mojo"],
+    exclude = LIT_SRCS,
+)
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in MOJO_SRCS
+]
+
+[
+    modular_run_binary_test(
+        name = src.split(".")[0] + "_test",
+        size = "small",
+        binary = src.split(".")[0],
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for src in MOJO_SRCS
+]
+
+# The page's custom C library, named the way each platform's linker expects
+# for `-lcustom`.
+[
+    modular_cc_binary(
+        name = "libcustom." + ext,
+        testonly = True,
+        srcs = ["custom.c"],
+        # The repo builds C with hidden symbols by default; the page's
+        # `cc` commands export custom_abs(), so match them.
+        copts = ["-fvisibility=default"],
+        linkshared = True,
+        target_compatible_with = [os],
+    )
+    for ext, os in [
+        ("dylib", "@platforms//os:macos"),
+        ("so", "@platforms//os:linux"),
+    ]
+]
+
+lit_tests(
+    name = "lit_tests",
+    srcs = LIT_SRCS,
+    data = select({
+        "@platforms//os:macos": [":libcustom.dylib"],
+        "//conditions:default": [":libcustom.so"],
+    }),
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = ["//Mojo/tools/mojo"],
+)
