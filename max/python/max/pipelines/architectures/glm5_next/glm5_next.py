@@ -45,7 +45,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
 
 from .hybrid_layout import SPARSE_ATTENTION
-from .layers.decoder import Glm5NextDecoderLayer
+from .layers.decoder import Glm5NextDecoderLayer, Pending, write_back
 from .layers.indexer import KPoolTail
 from .layers.kda import KdaStateAccess, KimiDeltaAttention
 from .layers.mlp import build_mlp
@@ -253,6 +253,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
         )
         kda_position = 0
         sparse_position = 0
+        pending: Pending | None = None
         for layer_idx, (layer_type, layer) in enumerate(
             zip(config.layer_types, self.layers, strict=True)
         ):
@@ -294,13 +295,18 @@ class Glm5NextTextModel(Module[..., Tensor]):
             moe = (
                 "moe" if layer_idx >= config.first_k_dense_replace else "dense"
             )
+            # The first layer has no pending write back, so it gets a
+            # subgraph of its own.
+            first = "_first" if pending is None else ""
             call = (
-                as_subgraph(layer, name=f"glm5_next_{layer_type}_{moe}")
+                as_subgraph(layer, name=f"glm5_next_{layer_type}_{moe}{first}")
                 if subgraphs
                 else layer
             )
-            streams = call(streams, attn_args, comm_buffers)
+            streams, pending = call(streams, attn_args, comm_buffers, pending)
 
+        assert pending is not None
+        streams = write_back(streams, *pending)
         return F.mean(streams, axis=1).squeeze(1)
 
 

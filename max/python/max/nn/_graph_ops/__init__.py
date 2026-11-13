@@ -37,6 +37,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import (
     AlgebraicDim,
+    BufferType,
     BufferValue,
     BufferValueLike,
     DeviceKind,
@@ -18400,3 +18401,143 @@ def mhc_post(
         ],
         parameters={"hc_mult": hc_mult, "hidden_size": hidden_size},
     )[0].tensor
+
+
+MEGA_MHC_COUNTERS = 1136
+"""Arrival counters one ``hyper_connection.mega_mhc`` call keeps. The op checks
+the count."""
+
+
+def mega_mhc(
+    x: TensorValue,
+    residual: TensorValue,
+    post: TensorValue,
+    comb: TensorValue,
+    projection: TensorValue,
+    mix_scales: TensorValue,
+    mix_bias: TensorValue,
+    norm_weight: TensorValue,
+    hc_norm_eps: float,
+    hc_pre_eps: float,
+    hc_post_scale: float,
+    sinkhorn_eps: float,
+    sinkhorn_iters: int,
+    rms_norm_eps: float,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Joins two sublayers of a four-stream hyper-connection model in one op.
+
+    Writes the previous sublayer's output back into the residual streams, as
+    :func:`mhc_post` does, derives the next sublayer's gates from the new
+    streams, and returns its normalized input, in one
+    ``hyper_connection.mega_mhc`` call. Unshifted: the collapse uses the new
+    site's own ``pre``. SM100 only; the hidden size must be a multiple of
+    1024.
+
+    Args:
+        x: The previous sublayer's output, bfloat16. Shape:
+            ``[total_seq_len, hidden_size]``.
+        residual: The incoming streams, bfloat16. Shape: ``[total_seq_len, 4,
+            hidden_size]``.
+        post: The previous site's ``post``, float32. Shape:
+            ``[total_seq_len, 4]``.
+        comb: The previous site's stream mixer, float32. Shape:
+            ``[total_seq_len, 4, 4]``.
+        projection: The gates' projection, float32. Shape: ``[24, 4 *
+            hidden_size]``.
+        mix_scales: The gates' scales, float32. Shape: ``[3]``.
+        mix_bias: The gates' bias, float32. Shape: ``[24]``.
+        norm_weight: The next sublayer's RMS norm weight, bfloat16. Shape:
+            ``[hidden_size]``.
+        hc_norm_eps: The epsilon of the gates' RMS norm.
+        hc_pre_eps: The epsilon of the ``pre`` gate.
+        hc_post_scale: The scale of the ``post`` gate.
+        sinkhorn_eps: The epsilon of the Sinkhorn iterations.
+        sinkhorn_iters: The number of Sinkhorn iterations.
+        rms_norm_eps: The epsilon of the next sublayer's RMS norm.
+
+    Returns:
+        The new streams, bfloat16 ``[total_seq_len, 4, hidden_size]``; the new
+        site's ``post``, float32 ``[total_seq_len, 4]``, and ``comb``, float32
+        ``[total_seq_len, 4, 4]``; and the next sublayer's normalized input,
+        bfloat16 ``[total_seq_len, hidden_size]``.
+
+    Raises:
+        ValueError: If a dtype, rank or device does not match, or the streams
+            are not four of a static width.
+    """
+    _check_rank(2, x=x, post=post)
+    _check_rank(3, residual=residual, comb=comb)
+    _check_dtype(
+        DType.bfloat16, x=x, residual=residual, norm_weight=norm_weight
+    )
+    _check_dtype(
+        DType.float32,
+        post=post,
+        comb=comb,
+        projection=projection,
+        mix_scales=mix_scales,
+        mix_bias=mix_bias,
+    )
+    _check_same_device(
+        x=x,
+        residual=residual,
+        post=post,
+        comb=comb,
+        projection=projection,
+        mix_scales=mix_scales,
+        mix_bias=mix_bias,
+        norm_weight=norm_weight,
+    )
+    hc_dim, hidden_dim = residual.shape[1], residual.shape[2]
+    if not isinstance(hidden_dim, StaticDim) or hc_dim != 4:
+        raise ValueError(
+            "expected four streams of a static width, got residual"
+            f" {residual.shape}"
+        )
+    hc_mult, hidden = 4, int(hidden_dim)
+    device = residual.device
+    rows = residual.shape[0]
+    results = ops.inplace_custom(
+        "hyper_connection.mega_mhc",
+        device=device,
+        values=[
+            x,
+            residual,
+            post,
+            ops.reshape(comb, [rows, hc_mult * hc_mult]),
+            # Read only by the shifted collapse.
+            post,
+            projection,
+            mix_scales,
+            mix_bias,
+            norm_weight,
+            ops.buffer_create(
+                BufferType(DType.uint64, [MEGA_MHC_COUNTERS], device=device),
+                init_value=0,
+            ),
+        ],
+        out_types=[
+            TensorType(DType.bfloat16, [rows, hc_mult, hidden], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+            TensorType(DType.bfloat16, [rows, hidden], device),
+        ],
+        parameters={
+            "hidden": hidden,
+            "shifted": False,
+            "hc_norm_eps": hc_norm_eps,
+            "hc_pre_eps": hc_pre_eps,
+            "hc_post_scale": hc_post_scale,
+            "sinkhorn_eps": sinkhorn_eps,
+            "sinkhorn_iters": sinkhorn_iters,
+            "rms_norm_eps": rms_norm_eps,
+        },
+    )
+    new_residual, _, new_post, new_comb, output = (r.tensor for r in results)
+    return (
+        new_residual,
+        new_post,
+        ops.reshape(new_comb, [rows, hc_mult, hc_mult]),
+        output,
+    )

@@ -16,15 +16,21 @@ Manifold-constrained hyper-connections replace the residual add, so this layer
 owns the residual arithmetic: each of its two sites collapses the
 ``[tokens, hc_mult, hidden]`` streams into the sublayer's input and writes the
 sublayer's output back into all of them.
+
+A layer returns its feed-forward output unwritten, as a :data:`Pending` write
+back, and the next layer's attention site applies it. On SM100 each site that
+follows a sublayer is then one ``hyper_connection.mega_mhc`` step: the write
+back, the site's gates, the collapse and the input norm in one launch.
 """
 
 from __future__ import annotations
 
 from max import functional as F
+from max.dtype import DType
 from max.nn import HyperConnection, Module, RMSNorm
-from max.nn._graph_ops import mhc_post_supports
+from max.nn._graph_ops import _is_sm10x_gpu, mhc_post_supports
 from max.nn.common_layers.quant_moe import ExpertParallelMoE
-from max.nn.kernels import mhc_post
+from max.nn.kernels import mega_mhc, mhc_post
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Sharded
@@ -32,7 +38,7 @@ from max.tensor.sharding import DeviceMapping, Sharded
 from ..model_config import Glm5NextConfig
 from .mlp import Glm5NextTensorParallelMoE
 
-__all__ = ["Glm5NextDecoderLayer", "feed_forward", "write_back"]
+__all__ = ["Glm5NextDecoderLayer", "Pending", "feed_forward", "write_back"]
 
 
 def write_back(
@@ -85,6 +91,59 @@ def feed_forward(
     return F.rebind(y.to(replicated), [rows, y.shape[1]])
 
 
+Pending = tuple[Tensor, Tensor, Tensor]
+"""A sublayer output not yet written back: ``(y, post, comb)``."""
+
+
+def _mega_mhc_applies(streams: Tensor, hc: HyperConnection) -> bool:
+    """Returns whether ``hyper_connection.mega_mhc`` can run a site.
+
+    The op reads four bf16 streams whose width is a multiple of 1024, on
+    SM100.
+    """
+    if any(device.is_host for device in streams.mesh.devices):
+        return False
+    return (
+        _is_sm10x_gpu()
+        and hc.hc_mult == 4
+        and streams.dtype == DType.bfloat16
+        and hc.hidden_size % 1024 == 0
+    )
+
+
+def _site(
+    streams: Tensor, pending: Pending | None, hc: HyperConnection, norm: RMSNorm
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Applies a pending write back, then runs the hyper-connection site.
+
+    Returns the streams, the site's ``post`` and ``comb``, and the sublayer's
+    normalized input.
+    """
+    if pending is not None and _mega_mhc_applies(streams, hc):
+        y, post, comb = pending
+        new_streams, post, comb, h = mega_mhc(
+            y.cast(DType.bfloat16),
+            streams,
+            post,
+            comb,
+            hc.hc_fn.cast(DType.float32),
+            hc.hc_scale,
+            hc.hc_base,
+            norm.weight.cast(DType.bfloat16),
+            hc.rms_norm_eps,
+            hc.hc_eps,
+            2.0,
+            hc.hc_eps,
+            hc.hc_sinkhorn_iters,
+            norm.eps,
+        )
+        return new_streams, post, comb, h
+    if pending is not None:
+        streams = write_back(streams, *pending)
+    post, comb, h = hc(streams, norm)
+    return streams, post, comb, h
+
+
 def _hyper_connection_site(config: Glm5NextConfig) -> HyperConnection:
     return HyperConnection(
         config.hidden_size,
@@ -96,7 +155,7 @@ def _hyper_connection_site(config: Glm5NextConfig) -> HyperConnection:
     )
 
 
-class Glm5NextDecoderLayer(Module[..., Tensor]):
+class Glm5NextDecoderLayer(Module[..., tuple[Tensor, Pending]]):
     """One decoder layer: attention site, then feed-forward site.
 
     Args:
@@ -128,15 +187,28 @@ class Glm5NextDecoderLayer(Module[..., Tensor]):
         streams: Tensor,
         attn_args: tuple[object, ...],
         comm_buffers: EPCommBuffers | None,
-    ) -> Tensor:
-        """Runs the layer's attention, then its MLP."""
-        replicated = DeviceMapping.replicated(streams.mesh)
-        post, comb, h = self.hc_attn(streams, self.input_layernorm)
-        # The attention output is a sum of per-device partials.
-        y = self.self_attn(h, *attn_args)
-        streams = write_back(streams, y.to(replicated), post, comb)
+        pending: Pending | None = None,
+    ) -> tuple[Tensor, Pending]:
+        """Runs the layer's attention, then its MLP.
 
-        post, comb, h = self.hc_ffn(streams, self.post_attention_layernorm)
-        return write_back(
-            streams, feed_forward(self.mlp, h, comm_buffers), post, comb
+        Args:
+            streams: The residual streams.
+            attn_args: The attention sublayer's inputs after ``h``.
+            comm_buffers: The expert-parallel buffers, or ``None``.
+            pending: The previous layer's feed-forward output, not yet
+                written back into ``streams``; ``None`` for the first layer.
+
+        Returns:
+            The streams and this layer's feed-forward output, not yet
+            written back.
+        """
+        replicated = DeviceMapping.replicated(streams.mesh)
+        streams, post, comb, h = _site(
+            streams, pending, self.hc_attn, self.input_layernorm
         )
+        # The attention output is a sum of per-device partials.
+        y = self.self_attn(h, *attn_args).to(replicated)
+        streams, post, comb, h = _site(
+            streams, (y, post, comb), self.hc_ffn, self.post_attention_layernorm
+        )
+        return streams, (feed_forward(self.mlp, h, comm_buffers), post, comb)

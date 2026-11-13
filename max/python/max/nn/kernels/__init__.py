@@ -31,7 +31,12 @@ from .attention import (
     store_k_scale_cache_ragged,
     store_v_cache_ragged,
 )
-from .hyper_connection import hyper_connection_gates, mhc_post, mhc_pre
+from .hyper_connection import (
+    hyper_connection_gates,
+    mega_mhc,
+    mhc_post,
+    mhc_pre,
+)
 from .mla import (
     cp_merge_topk,
     flare_mla_prefill_plan,
@@ -126,6 +131,7 @@ __all__ = [
     "kv_cache_pack_owned_rows",
     "kv_cache_row_bytes",
     "kv_cache_unpack_prefix_rows",
+    "mega_mhc",
     "mhc_post",
     "mhc_pre",
     "mla_decode_graph",

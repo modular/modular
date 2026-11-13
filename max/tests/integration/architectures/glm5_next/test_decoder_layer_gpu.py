@@ -33,10 +33,14 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import Module
 from max.nn import hyper_connection as hyper_connection_module
-from max.nn._graph_ops import mhc_pre_supports
+from max.nn._graph_ops import _is_sm10x_gpu, mhc_pre_supports
 from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.pipelines.architectures.glm5_next.layers import (
+    decoder as decoder_module,
+)
 from max.pipelines.architectures.glm5_next.layers.decoder import (
     Glm5NextDecoderLayer,
+    write_back,
 )
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig,
@@ -77,7 +81,8 @@ class _Layer1(Module[[Tensor], Tensor]):
         )
 
     def forward(self, streams: Tensor) -> Tensor:
-        return self.layer(streams, (), None)
+        streams, pending = self.layer(streams, (), None)
+        return write_back(streams, *pending)
 
 
 def _config(fn_dtype: DType) -> Glm5NextConfig:
@@ -152,12 +157,19 @@ def _uses_mhc_pre(fn_dtype: DType) -> bool:
     )
 
 
+def _uses_mega_mhc() -> bool:
+    """Whether the feed-forward site, which follows the attention write back,
+    runs as one ``hyper_connection.mega_mhc`` step."""
+    return accelerator_api() == "cuda" and _is_sm10x_gpu()
+
+
 @contextmanager
 def _op_chain_only() -> Iterator[None]:
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(
             hyper_connection_module, "mhc_pre_supports", lambda *args: False
         )
+        patch.setattr(decoder_module, "_mega_mhc_applies", lambda *args: False)
         yield
 
 
@@ -187,10 +199,14 @@ def test_input_norms_fold_into_mhc_pre(fn_dtype: DType) -> None:
     uses_kernel = _uses_mhc_pre(fn_dtype)
     assert graph.count("hyper_connection.mhc.pre") == (2 if uses_kernel else 0)
     assert (_RMS_NORM_OP.search(graph) is None) == uses_kernel
+    assert graph.count("hyper_connection.mega_mhc") == (
+        1 if _uses_mega_mhc() else 0
+    )
 
     with _op_chain_only():
         chain = str(layer.trace(_input_type(mesh)))
     assert "hyper_connection.mhc.pre" not in chain
+    assert "hyper_connection.mega_mhc" not in chain
     assert len(_RMS_NORM_OP.findall(chain)) == 2
 
 
@@ -212,7 +228,7 @@ def test_fused_layer_matches_op_chain(
     chain = run(op_chain=True)
     assert tuple(chain.shape) == (rows, _HC_MULT, _HIDDEN)
     assert torch.isfinite(chain).all()
-    if not _uses_mhc_pre(fn_dtype):
+    if not (_uses_mhc_pre(fn_dtype) or _uses_mega_mhc()):
         return
 
     fused = run(op_chain=False)
