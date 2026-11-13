@@ -50,7 +50,7 @@ from max._artifact.kv_cache import (
     KVPoolLeaf,
     MHAKVCache,
     MLAKVCache,
-    MSAKVCache,
+    MSAIndexKVCache,
     RecurrentStateCache,
     StateRegion,
 )
@@ -74,6 +74,7 @@ from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MSAIndexKVCacheParams,
     MSAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -730,7 +731,14 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
             scale_dtype=DType.float8_e8m0fnu, quantization_granularity=32
         ),
     )
-    msa = MSAKVCacheParams(
+    sparse = MSAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+    )
+    index = MSAIndexKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=1,
         head_dim=128,
@@ -766,7 +774,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
                     "full_attention": quantized,
                 }
             ),
-            "indexer": msa,
+            "sparse": sparse,
+            "indexer": index,
             "latent": mla,
             "state": state,
         }
@@ -776,7 +785,8 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
     assert [(cache.name, cache.kind) for cache in layout.caches] == [
         ("target.sliding_attention", "mha"),
         ("target.full_attention", "mha"),
-        ("indexer", "msa"),
+        ("sparse", "msa"),
+        ("indexer", "msa_index"),
         ("latent", "mla"),
         ("state", "recurrent"),
     ]
@@ -828,7 +838,7 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
             stride_alignment=region.stride_alignment,
         )
 
-    assert layout.caches[2] == MSAKVCache(
+    assert layout.caches[3] == MSAIndexKVCache(
         name="indexer",
         dtype=DType.bfloat16,
         num_layers=1,
@@ -845,7 +855,7 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         num_draft_tokens=0,
         leaves=(full_leaf("indexer"),),
     )
-    assert layout.caches[3] == MLAKVCache(
+    assert layout.caches[4] == MLAKVCache(
         name="latent",
         dtype=DType.bfloat16,
         num_layers=1,
@@ -862,7 +872,7 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         num_draft_tokens=0,
         leaves=(full_leaf("latent"),),
     )
-    assert layout.caches[4] == RecurrentStateCache(
+    assert layout.caches[5] == RecurrentStateCache(
         name="state",
         regions=(
             StateRegion(

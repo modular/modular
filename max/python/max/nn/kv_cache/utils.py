@@ -220,18 +220,33 @@ class MLAAttnKey(AttnKey):
 
 @dataclass(frozen=True)
 class MSAAttnKey(AttnKeyInterface):
-    """Decode dispatch metadata for multi-step attention (MSA)."""
+    """Decode dispatch metadata for MiniMax Sparse Attention (MSA).
+
+    Graph capture keys each captured graph by its caches' attention keys, so
+    the key holds the batch size even where no other cache's key does.
+    """
+
+    batch_size: int
 
     @classmethod
     def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
-        """A single host int, since MSA kernels read no dispatch metadata."""
+        """The batch size and the cache length, on the accelerator."""
         return DispatchMetadataSpec(
-            shape=(1,), dtype=DType.int64, on_device=False
+            shape=(2,), dtype=DType.int64, on_device=True
         )
 
     def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
-        """Writes the sentinel the placeholder input carries."""
-        into[:] = 42
+        """Writes the batch size and this step's cache length."""
+        into[:] = (self.batch_size, max_cache_valid_length)
+
+
+@dataclass(frozen=True)
+class MSAIndexAttnKey(MSAAttnKey):
+    """Decode dispatch metadata for the MSA indexer's index-K cache.
+
+    A type of its own, so a graph captured for one MSA cache is never
+    replayed for the other.
+    """
 
 
 @dataclass(frozen=True)

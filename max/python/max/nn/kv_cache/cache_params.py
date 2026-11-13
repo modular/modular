@@ -75,6 +75,7 @@ from .utils import (
     MHAAttnKey,
     MLAAttnKey,
     MSAAttnKey,
+    MSAIndexAttnKey,
     MultiAttnKey,
     padded_lut_cols,
 )
@@ -661,7 +662,7 @@ class KVCacheMemory:
     device order.
 
     ``replicated`` indicates that all buffers hold identical bytes. This is true
-    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
+    for certain cases like TP + MLA, TP + MSA's index-K cache, and so on.
     """
 
     replicated: bool
@@ -769,7 +770,8 @@ class KVCacheBuffer(KVCacheBufferInterface):
 
     ``replicates_kv_across_tp`` is ``True`` when the KV data is replicated
     identically across TP shards and ``False`` when it is sharded. The data is
-    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
+    replicated in certain cases like TP + MLA, TP + MSA's index-K cache, and so
+    on.
     """
 
     leaf_id: str = field(kw_only=True)
@@ -3063,12 +3065,19 @@ class MLAKVCacheParams(KVCacheParams):
 
 @dataclass(kw_only=True)
 class MSAKVCacheParams(MHAKVCacheParams):
-    """KV cache parameters for multi-step attention (MSA)."""
+    """KV cache parameters for MiniMax Sparse Attention (MSA).
+
+    A multi-head attention cache whose decode dispatch resolves to an
+    :class:`MSAAttnKey`.
+    """
+
+    # The MSA kernels address NVFP4 scales with 64-bit offsets.
+    nvfp4_max_scale_row_id: ClassVar[int | None] = None
 
     # TODO(SERVOPT-1502): MSA does not actually consume attention dispatch
     # metadata in its kernel. Once the indexer graph is migrated to a dedicated
     # MSA input record, drop ``attention_dispatch_metadata`` from the symbolic
-    # and runtime inputs entirely instead of carrying the 1-int placeholder.
+    # and runtime inputs entirely.
     def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
         """Returns the spec :class:`MSAAttnKey` packs into."""
         return MSAAttnKey.dispatch_metadata_spec()
@@ -3080,16 +3089,69 @@ class MSAKVCacheParams(MHAKVCacheParams):
         max_cache_valid_length: int,
     ) -> AttnKeyInterface:
         """Resolves the decode attention dispatch shape for the given shape."""
-        return MSAAttnKey()
+        return MSAAttnKey(batch_size=int(batch_size))
 
     def graph_capture_probe_cache_lengths(
         self, max_cache_length: int, q_max_seq_len: int = 1
     ) -> list[int]:
-        """Returns cache lengths to probe for distinct num_partitions."""
+        """Returns the cache lengths to capture: MSA has one launch shape."""
         return [1, max_cache_length]
 
     def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
         return MSAAttnKey.dispatch_metadata_spec().tensor_type(device)
+
+
+@dataclass(kw_only=True)
+class MSAIndexKVCacheParams(MHAKVCacheParams):
+    """KV cache parameters for the MSA indexer's index-K cache.
+
+    The cache holds one key head and no values. Every tensor-parallel device
+    holds the whole head, so the head count needn't divide the devices.
+    """
+
+    # The MSA kernels address NVFP4 scales with 64-bit offsets.
+    nvfp4_max_scale_row_id: ClassVar[int | None] = None
+
+    def __post_init__(self) -> None:
+        # Skips the MHA check that the heads divide the devices.
+        KVCacheParams.__post_init__(self)
+
+    @property
+    def kv_dim(self) -> int:
+        """Returns one: the cache holds keys only."""
+        return 1
+
+    @property
+    def n_kv_heads_per_device(self) -> int:
+        """Returns one: every device holds the whole head."""
+        return 1
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether more than one tensor-parallel device holds the head."""
+        return self.tensor_parallel_degree > 1
+
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MSAIndexAttnKey` packs into."""
+        return MSAIndexAttnKey.dispatch_metadata_spec()
+
+    def resolve_attn_key(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> AttnKeyInterface:
+        """Resolves the decode attention dispatch shape for the given shape."""
+        return MSAIndexAttnKey(batch_size=int(batch_size))
+
+    def graph_capture_probe_cache_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
+        """Returns the cache lengths to capture: one launch shape."""
+        return [1, max_cache_length]
+
+    def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
+        return MSAIndexAttnKey.dispatch_metadata_spec().tensor_type(device)
 
 
 @dataclass

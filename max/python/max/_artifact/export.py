@@ -30,6 +30,7 @@ from max.nn.kv_cache import (
     KVLeafRegion,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MSAIndexKVCacheParams,
     MSAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -71,6 +72,7 @@ from .kv_cache import (
     KVPoolLeaf,
     MHAKVCache,
     MLAKVCache,
+    MSAIndexKVCache,
     MSAKVCache,
     RecurrentStateCache,
     StateRegion,
@@ -373,6 +375,13 @@ def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
     return KVCacheLayout(page_size=params.page_size, caches=caches)
 
 
+_MHA_RECORDS: dict[type[CacheLeafParamInterface], type[MHAKVCache]] = {
+    MHAKVCacheParams: MHAKVCache,
+    MSAKVCacheParams: MSAKVCache,
+    MSAIndexKVCacheParams: MSAIndexKVCache,
+}
+
+
 def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
     if isinstance(params, MultiKVCacheParams):
         for key, child in params.children.items():
@@ -385,9 +394,8 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
     )
     # Exact types: MSA subclasses MHA, and a subclass this function doesn't
     # know may carry parameters the component doesn't record.
-    if type(params) in (MHAKVCacheParams, MSAKVCacheParams):
+    if (cls := _MHA_RECORDS.get(type(params))) is not None:
         assert isinstance(params, MHAKVCacheParams)
-        cls = MSAKVCache if type(params) is MSAKVCacheParams else MHAKVCache
         yield cls(
             name=path,
             dtype=params.dtype,

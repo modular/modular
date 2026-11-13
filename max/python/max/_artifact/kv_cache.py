@@ -140,13 +140,24 @@ class MHAKVCache:
 
 @dataclass(frozen=True)
 class MSAKVCache(MHAKVCache):
-    """A multi-step attention cache.
+    """A MiniMax Sparse Attention (MSA) cache.
 
     It mirrors MAX's ``MSAKVCacheParams``: a multi-head attention cache read
     through its own attention key.
     """
 
     kind: ClassVar[str] = "msa"
+
+
+@dataclass(frozen=True)
+class MSAIndexKVCache(MHAKVCache):
+    """The index-K cache that MiniMax Sparse Attention's indexer reads.
+
+    It mirrors MAX's ``MSAIndexKVCacheParams``: one key head and no values,
+    whole on every tensor-parallel device, read through its own attention key.
+    """
+
+    kind: ClassVar[str] = "msa_index"
 
 
 @dataclass(frozen=True)
@@ -242,7 +253,9 @@ class RecurrentStateCache:
     leaves: tuple[KVPoolLeaf, ...]
 
 
-KVCache = MHAKVCache | MSAKVCache | MLAKVCache | RecurrentStateCache
+KVCache = (
+    MHAKVCache | MSAKVCache | MSAIndexKVCache | MLAKVCache | RecurrentStateCache
+)
 """A cache of any kind the ``kv_cache`` component records."""
 
 
@@ -389,11 +402,16 @@ def _tuple(
     return lambda value: tuple(decoder(item) for item in expect(value, list))
 
 
+_MHA_KINDS: dict[str, type[MHAKVCache]] = {
+    cls.kind: cls for cls in (MHAKVCache, MSAKVCache, MSAIndexKVCache)
+}
+
+
 def _cache(value: ArtifactType) -> KVCache:
     obj = dict(expect(value, dict))
     kind = expect(obj.pop("kind"), str)
-    if kind in (MHAKVCache.kind, MSAKVCache.kind):
-        return _mha(obj, MSAKVCache if kind == MSAKVCache.kind else MHAKVCache)
+    if (cls := _MHA_KINDS.get(kind)) is not None:
+        return _mha(obj, cls)
     if kind == MLAKVCache.kind:
         return _mla(obj)
     if kind == RecurrentStateCache.kind:

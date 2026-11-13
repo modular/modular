@@ -45,6 +45,7 @@ from max._artifact.kv_cache import (
     KVPoolLeaf,
     MHAKVCache,
     MLAKVCache,
+    MSAIndexKVCache,
     MSAKVCache,
     RecurrentStateCache,
     StateRegion,
@@ -669,7 +670,7 @@ KV_CACHE = KVCacheLayout(
             allow_kv_head_replication=False,
         ),
         MSAKVCache(
-            **_attention_fields("indexer", "full_group"),
+            **_attention_fields("sparse", "full_group"),
             n_kv_heads=1,
             allow_kv_head_replication=False,
         ),
@@ -699,6 +700,11 @@ KV_CACHE = KVCacheLayout(
                 ),
             ),
         ),
+        MSAIndexKVCache(
+            **_attention_fields("indexer", "full_group"),
+            n_kv_heads=1,
+            allow_kv_head_replication=False,
+        ),
     ),
 )
 
@@ -712,9 +718,10 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
     ]
     assert [(cache["name"], cache["kind"]) for cache in caches] == [
         ("attention", "mha"),
-        ("indexer", "msa"),
+        ("sparse", "msa"),
         ("latent", "mla"),
         ("state", "recurrent"),
+        ("indexer", "msa_index"),
     ]
     assert caches[0] == {
         "name": "attention",
