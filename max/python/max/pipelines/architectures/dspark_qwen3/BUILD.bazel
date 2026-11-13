@@ -6,7 +6,6 @@ modular_py_library(
     name = "dspark_qwen3",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         "//max/python/max:tensor",
         "//max/python/max/driver",

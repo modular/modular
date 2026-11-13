@@ -22,7 +22,7 @@ from .model_config import (
     Qwen3DSparkDraftArchConfig,
     dspark_nemotron_draft_width,
 )
-from .weight_adapters import convert_registered_state_dict
+from .weight_adapters import dspark_qwen3_weight_rules
 
 # The DSpark draft checkpoint declares architectures ["Qwen3DSparkModel"]. It
 # is only served as a --draft-model beside a Nemotron-H target, so its
@@ -38,9 +38,6 @@ qwen3_dspark_draft_arch = SupportedArchitecture(
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     modules={GraphRole.DRAFT: DSparkQwen3Draft},
     draft=dspark_draft_registration,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_registered_state_dict,
-    },
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
@@ -48,4 +45,6 @@ qwen3_dspark_draft_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Qwen3DSparkDraftArchConfig,
     checkpoint_draft_width=dspark_nemotron_draft_width,
+    weight_rules=dspark_qwen3_weight_rules,
+    use_weight_rules=True,
 )

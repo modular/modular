@@ -212,6 +212,9 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": (
         "Inferact/Muse-Spark-Open-DSpark",
     ),
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark_mixed": (
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark",
+    ),
     "poolside/Laguna-S-2.1-NVFP4": ("poolside/Laguna-S-2.1-DFlash-NVFP4",),
     "poolside/Laguna-S-2.1-NVFP4__modulev3": (
         "poolside/Laguna-S-2.1-DFlash-NVFP4",

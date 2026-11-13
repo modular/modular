@@ -549,6 +549,17 @@ class MarkovHead(Module[..., Tensor]):
         return embedded @ w2.weight.local_shards[0].T
 
 
+class _HostEmbeddingTable(Module[..., Tensor]):
+    """An embedding table kept on the host as the checkpoint stores it."""
+
+    def __init__(self, vocab_size: int, hidden_size: int) -> None:
+        self.weight = Tensor.zeros([vocab_size, hidden_size], device=CPU())
+
+    def forward(self, row: int) -> Tensor:
+        """Returns one row of the table, on the host."""
+        return self.weight[row]
+
+
 class DSparkQwen3(Module[..., Tensor]):
     """The DSpark draft: context projection, layers and Markov head."""
 
@@ -604,9 +615,13 @@ class DSparkQwen3(Module[..., Tensor]):
             num_devices,
         )
         self.hidden_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        # The trained embedding of the mask token. The rest of the block's
-        # embeddings are the target's.
-        self.mask_embedding = Tensor.zeros([config.hidden_size])
+        # The checkpoint's table is the target's with the mask token's row
+        # trained. The block embeds every other id with the target's table,
+        # so the graph reads only that row: the table stays on the host as
+        # stored and the row is taken at init.
+        self.embed_tokens = _HostEmbeddingTable(
+            config.vocab_size, config.hidden_size
+        )
         self.layers = ModuleList(
             [
                 DSparkLayer(config, quantized, kv_params, i, rope, num_devices)
@@ -615,6 +630,11 @@ class DSparkQwen3(Module[..., Tensor]):
         )
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.markov_head = MarkovHead(config, quantized, num_devices)
+
+    @property
+    def mask_embedding(self) -> Tensor:
+        """The mask token's trained embedding, on the host."""
+        return self.embed_tokens(self.config.mask_token_id)
 
     def project_context(self, taps: Tensor) -> Tensor:
         """Projects the concatenated target taps to the draft's context."""

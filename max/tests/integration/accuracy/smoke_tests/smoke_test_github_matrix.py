@@ -132,6 +132,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark_mixed": VARIANT | MACH | _1xB200 | _2xB200,
     "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
     "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
     "poolside/Laguna-S-2.1-NVFP4": NIGHTLY | _1xB200,
