@@ -332,6 +332,10 @@ This version is still a work in progress.
       print("hello", file=f)
   ```
 
+- `Iterator` has a new `count()` method that consumes the iterator and returns
+  how many elements it yielded, e.g. `iter(my_list).count()`. It is O(n); an
+  iterator that knows its remaining length can override it.
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
