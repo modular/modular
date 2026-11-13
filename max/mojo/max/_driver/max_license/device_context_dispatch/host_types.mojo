@@ -30,9 +30,14 @@ from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
     HALDeviceStreamBase,
     HALHostBuffer,
-    _CompletionFlagBox,
 )
 from max._driver.max_license.hal import Event
+from max._driver.max_license.hal.extensions.completion_flag import FlagCondition
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsCompletionFlagResetV1,
+    SupportsCompletionFlagV1,
+)
+from max._driver.max_license.hal.plugins import FlagHandle
 from max._driver.max_license.hal.extensions.traits import (
     SupportsPeerAccessV1,
 )
@@ -176,15 +181,40 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     def synchronize(self) raises:
-        """Blocks until all work enqueued on this stream has completed.
+        """Blocks the calling CPU thread until all operations in this stream
+        complete.
+
+        This function waits until all previously issued commands in this stream
+        have completed execution. It provides a synchronization point between
+        host and device code.
 
         Raises:
-            If the synchronization fails.
+            If synchronization fails.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        var stream = ctx.create_stream()
+
+        # Launch kernel or memory operations on the stream
+        # ...
+
+        # Wait for completion
+        stream.synchronize()
+
+        # Now it's safe to use results on the host
+        ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.synchronize()
-        else:
-            self._impl.synchronize()
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].synchronize()
 
     def enqueue_wait_for(self, event: DeviceEvent) raises:
         """Makes this stream wait for the specified event.
@@ -261,19 +291,32 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         func: def(OpaquePointer[MutAnyOrigin]) thin -> None,
         user_data: OpaquePointer[MutAnyOrigin],
     ) raises:
-        """Enqueues a host function to run once this stream's work drains.
+        """Enqueues a host callback to run on this stream.
+
+        This corresponds to CUDA's `cuLaunchHostFunc`. The callback `func`
+        runs on a driver thread once all preceding work on this stream has
+        completed, and receives `user_data` as its only argument. Per the CUDA
+        contract, the callback must not call any device APIs.
+
+        Currently only implemented for CUDA streams; other backends raise.
 
         Args:
-            func: The host function to call.
-            user_data: An opaque value passed to `func`.
+            func: A `thin` C-compatible function pointer that accepts a single
+                `void*` argument.
+            user_data: An opaque pointer passed through to `func` when it
+                runs.
 
         Raises:
-            If the operation fails.
+            If the underlying device does not support host callbacks, or if
+            the driver rejects the enqueue.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_host_func(func, user_data)
-        else:
-            self._impl.enqueue_host_func(func, user_data)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].enqueue_host_func(func, user_data)
 
     def wait_for_flag(self, flag: CompletionFlag, value: UInt64) raises:
         """Stalls the stream until `flag` holds at least `value`.
@@ -488,6 +531,81 @@ struct DeviceEvent(ImplicitlyCopyable):
         # An event that was never recorded has nothing to wait on.
         if case .Some(recorded) = self._impl._event[]:
             recorded.synchronize()
+
+
+struct _CompletionFlagBox(Movable):
+    """A plugin flag shared with the C++ ``M::Driver::CompletionFlag``."""
+
+    var ctx: HALDeviceContext[]
+    var flag: FlagHandle
+
+    @staticmethod
+    def _flags[E: SupportsCompletionFlagV1](ext: E) raises -> E.FlagGroup:
+        if case .Some(flags) = ext.completion_flag():
+            return flags
+        raise Error("completion flags are not supported on this device")
+
+    def __init__(out self, ctx: HALDeviceContext[]) raises:
+        # `reset` must not fail later inside a driver callback.
+        if not ctx.supports_flag_wait():
+            raise Error("completion flags are not supported on this device")
+        comptime Ext = type_of(ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = ctx._context[]
+            var flags = Self._flags(hal_ctx.extensions())
+            self.flag = flags.create(hal_ctx._raw[], hal_ctx._handle)
+            self.ctx = ctx
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def __deinit__(deinit self):
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            try:
+                Self._flags(hal_ctx.extensions()).destroy(
+                    hal_ctx._raw[], hal_ctx._handle, self.flag
+                )
+            except e:
+                print("warning: failed to destroy completion flag:", e)
+
+    def signal(self, value: UInt64) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            Self._flags(hal_ctx.extensions()).signal(
+                hal_ctx._raw[], self.flag, value
+            )
+            return
+        raise Error("completion flags are not supported on this device")
+
+    def load(self) raises -> UInt64:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagV1):
+            ref hal_ctx = self.ctx._context[]
+            return Self._flags(hal_ctx.extensions()).load(
+                hal_ctx._raw[], self.flag
+            )
+        raise Error("completion flags are not supported on this device")
+
+    def reset(self) raises:
+        comptime Ext = type_of(self.ctx._context[].extensions())
+        comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
+            ref hal_ctx = self.ctx._context[]
+            if case .Some(reset) = hal_ctx.extensions().completion_flag_reset():
+                reset.reset(hal_ctx._raw[], self.flag)
+                return
+        raise Error("completion flag reset is not supported on this device")
+
+    def wait[
+        target: CompilationTarget
+    ](self, stream: HALDeviceStreamBase[target], value: UInt64) raises:
+        # The stream's plugin would get a flag handle it didn't create.
+        if stream._ctx.api() != self.ctx.api():
+            raise Error(
+                "completion flag waits are not supported across backends"
+            )
+        stream._stream[].wait_flag(self.flag, value, FlagCondition.geq)
 
 
 @fieldwise_init

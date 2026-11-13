@@ -20,14 +20,20 @@ written against.
 
 from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
-from std.ffi import c_size_t
+from std.atomic import Atomic
+from std.ffi import _Global, c_size_t
 from std.iter import downcast
 from std.memory import ArcPointer, Pointer
-from std.os import abort
+from std.os import abort, getenv
+from std.runtime import parallelism_level
+from std.runtime._asyncrt import TaskGroup
+from std.time import monotonic
+from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.reflection import (
     SourceLocation,
     call_location,
 )
+from std.sys import size_of
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_dispatch.function import (
@@ -36,11 +42,25 @@ from max._driver.max_license.device_context_dispatch.function import (
     _DispatchEnqueuer,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
+    HALDeviceBuffer,
     HALDeviceContext,
-    _CompletionFlagBox,
+    HALHostBuffer,
     _HALDeviceContextScope,
+    _GPU_DRIVER,
+    _check_copy_src_size,
+    _memset_value_as_u64,
+    _driver_satisfies_api,
 )
-from max._driver.max_license.hal import Event
+from max._driver.max_license.hal import (
+    Context,
+    Device as _HALDevice,
+    Event,
+    MEMORY_UNKNOWN,
+    get_device_spec,
+)
+from max._driver.max_license.hal.extensions.traits import (
+    SupportsPeerAccessV1,
+)
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from max._plugin import MaxPluginForTarget
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
@@ -67,6 +87,7 @@ from max.gpu.host.launch_config import (
 )
 from .host_types import (
     CompletionFlag,
+    _CompletionFlagBox,
     Device,
     DeviceEvent,
     DeviceStream,
@@ -78,6 +99,78 @@ from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
 )
 from ._device_context_extras import *
+
+
+struct _PeerState(Movable):
+    """Process-wide peer-access state, as in the legacy C++ `canAccessPeer_`.
+
+    `lock` guards only this bookkeeping, never a driver call, because
+    collectives read `all_enabled` from AsyncRT workers. The writer that
+    completes the matrix publishes `all_enabled`, so readers never lock.
+    """
+
+    var lock: BlockingSpinLock
+    var all_enabled: Atomic[Int32]
+    var device_count: Int
+    var enabled: List[Bool]
+    # Releasing the last ref resets the CUDA primary context and its peer grant.
+    var contexts: List[Optional[ArcPointer[Context[get_device_spec[0]()]]]]
+
+    def __init__(out self, device_count: Int):
+        self.lock = BlockingSpinLock()
+        self.all_enabled = Atomic[Int32](0)
+        self.device_count = device_count
+        self.enabled = List[Bool](
+            length=device_count * device_count, fill=False
+        )
+        self.contexts = List[
+            Optional[ArcPointer[Context[get_device_spec[0]()]]]
+        ](length=device_count, fill=None)
+
+    def retain(
+        mut self,
+        device_id: Int,
+        context: ArcPointer[Context[get_device_spec[0]()]],
+    ):
+        if not self.contexts[device_id]:
+            self.contexts[device_id] = context
+
+    def record_enabled(
+        mut self,
+        src: Int,
+        src_context: ArcPointer[Context[get_device_spec[0]()]],
+        dst: Int,
+        dst_context: ArcPointer[Context[get_device_spec[0]()]],
+    ):
+        """Records a granted `src` -> `dst` pair. Call with `lock` held."""
+        self.retain(src, src_context)
+        self.retain(dst, dst_context)
+        self.enabled[src * self.device_count + dst] = True
+        self.enabled[src * self.device_count + src] = True
+        if self.all_set():
+            self.all_enabled.store(1)
+
+    def all_set(self) -> Bool:
+        if self.device_count < 2:
+            return False
+        for b in self.enabled:
+            if not b:
+                return False
+        return True
+
+
+def _init_peer_state() -> _PeerState:
+    # `_Global` initializers must not raise; no plugin means zero devices.
+    try:
+        var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+        if case .Some(driver) = maybe_driver[]:
+            return _PeerState(Int(driver[].device_count()))
+        return _PeerState(0)
+    except:
+        return _PeerState(0)
+
+
+comptime _PEER_STATE = _Global["MODULAR_HAL_PEER_STATE", _init_peer_state]
 
 
 def use_legacy_backend() -> Bool:
@@ -332,11 +425,15 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
-        else:
-            return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
+        return rebind_var[DeviceContext.CPU](self^)
+
+    # FIXME: The more obvious spelling of this currently crashes the compiler:
+    #    context.map(DeviceContext.assert_cpu_target)
     @staticmethod
     def _map_assert_cpu_target(
         ctx: DeviceContext.Optional,
@@ -541,18 +638,43 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return self.device().id
 
     def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
-        """Returns the free and total memory of this device.
+        """Returns the free and total memory size for this device.
+
+        This method queries the current state of device memory, providing
+        information about how much memory is available and the total memory
+        capacity of the device. This is useful for memory management and
+        determining if there's enough space for planned operations.
 
         Returns:
-            A tuple of `(free, total)` bytes.
+            A tuple of (free memory, total memory) in bytes.
 
         Raises:
-            If querying the device memory fails.
+            If there's an error retrieving the memory information, or the
+            device can't measure its free memory.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        try:
+            (free, total) = ctx.get_memory_info()
+            print("Free memory:", free / (1024*1024), "MB")
+            print("Total memory:", total / (1024*1024), "MB")
+        except:
+            print("Failed to get memory information")
+        ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.get_memory_info()
-        else:
-            return self._impl.get_memory_info()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var info = self._impl._context[].get_memory_info()
+        if info[0] == MEMORY_UNKNOWN:
+            raise Error("free memory could not be measured on this device")
+        return (c_size_t(info[0]), c_size_t(info[1]))
 
     @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
@@ -614,10 +736,13 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error setting the current device.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.set_as_current()
-        else:
-            self._impl.set_as_current()
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._context[].set_current()
 
     def api(self) -> String:
         """Returns the name of the API used to program the device.
@@ -655,18 +780,41 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             abort(String(e))
 
     def get_api_version(self) raises -> Int:
-        """Returns the version of the device API in use.
+        """Returns the API version associated with this device.
+
+        This method retrieves the version number of the GPU driver currently
+        installed on the system for the device associated with this context.
+        The version is returned as an integer that can be used to check
+        compatibility with specific features or to troubleshoot driver-related
+        issues.
 
         Returns:
-            The API version.
+            An integer representing the driver version.
 
         Raises:
-            If querying the API version fails.
+            If the driver version cannot be retrieved or if the device context
+            is invalid.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            # Get the API version
+            var api_version = ctx.get_api_version()
+            print("GPU API version:", api_version)
+        ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.get_api_version()
-        else:
-            return self._impl.get_api_version()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # TODO: HAL stub - returns 0. Plumb plugin-side `cuDriverGetVersion`
+        # / `hipDriverGetVersion` when callers actually need to gate on
+        # driver version.
+        return 0
 
     @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     def arch_name(self) raises -> String:
@@ -689,11 +837,25 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         Returns:
             True if the device is compatible with MAX, False otherwise.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        print("Device is compatible with MAX:", ctx.is_compatible())
+        ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.is_compatible()
-        else:
-            return self._impl.is_compatible()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # TODO: HAL stub - always returns True. Hook this up to a plugin-side
+        # compute-capability + driver-version check when real semantics
+        # are needed.
+        return True
 
     @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     def is_host_unified(self) raises -> Bool:
@@ -708,33 +870,56 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return self.device().is_host_unified()
 
     def is_graph_capturing(self) raises -> Bool:
-        """Returns whether this context is currently capturing a graph.
+        """Returns whether work enqueued on this context is only recorded.
 
         Returns:
-            True while a graph capture is in progress.
+            True while a graph capture is in progress. Always False on the HAL
+            backend, which has no stream capture.
 
         Raises:
-            If the query fails.
+            If the query fails. The HAL backend never raises.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.is_graph_capturing()
-        else:
-            return self._impl.is_graph_capturing()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
+        return False
 
     @staticmethod
     def number_of_devices(*, var api: String = Self._default_api()) -> Int:
-        """Returns the number of devices available for the given API.
+        """Returns the number of devices available that support the specified
+        API.
 
         Args:
-            api: The device API to count devices for.
+            api: Requested device API (for example, "cuda" or "hip"). Defaults
+                to the device API specified by the current target accelerator.
 
         Returns:
-            The number of devices.
+            The number of devices, or 0 if no driver plugin is available or the
+            loaded plugin does not support the requested API.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return LegacyDeviceContext[Self.target].number_of_devices(api=api^)
-        else:
-            return HALDeviceContext[Self.target].number_of_devices(api=api^)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # The built-in host (CPU) backend always provides a single device and
+        # needs no plugin spec.
+        if api.lower() == "cpu":
+            return 1
+        try:
+            if not getenv("MODULAR_DRIVER_PLUGINS"):
+                return 0
+            # Reuse the process-global accelerator driver (loaded once).
+            var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+            if case .Some(driver) = maybe_driver[]:
+                if _driver_satisfies_api(driver[].name(), api):
+                    return Int(driver[].device_count())
+            return 0
+        except:
+            return 0
 
     # ===-------------------------------------------------------------------===#
     # Streams, events and completion flags
@@ -913,18 +1098,23 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
 
     def stream_priority_range(self) raises -> _OverlayStreamPriorityRange:
-        """Returns the range of stream priorities this device supports.
+        """Returns the range of stream priorities supported by this device
+        context.
 
         Returns:
-            The least and greatest stream priorities.
+            A `StreamPriorityRange` containing the minimum and maximum stream
+            priorities.
 
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.stream_priority_range()
-        else:
-            return self._impl.stream_priority_range()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # TODO: HAL stub - returns the trivial range.
+        return _OverlayStreamPriorityRange(0, 0)
 
     def push_context(self) raises -> _DeviceContextScope[Self.target]:
         """Returns a context manager that makes this device's driver context
@@ -1001,28 +1191,34 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def enqueue_create_buffer[
         dtype: DType
     ](self, size: Int) raises -> DeviceBuffer[dtype]:
-        """Enqueues an allocation of a device buffer of `size` elements.
+        """Enqueues a buffer creation using the `DeviceBuffer` constructor.
+
+        For GPU devices, the space is allocated in the device's global memory.
 
         Parameters:
-            dtype: The element dtype of the buffer.
+            dtype: The data type to be stored in the allocated memory.
 
         Args:
-            size: Number of elements to allocate.
+            size: The number of elements of `type` to allocate memory for.
 
         Returns:
-            The allocated device buffer.
+            The allocated buffer.
 
         Raises:
-            If the allocation fails.
+            If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceBuffer[dtype](
                 _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
-        else:
-            return DeviceBuffer[dtype](
-                _impl=self._impl.enqueue_create_buffer[dtype](size)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # NOTE: The HAL supports doing this asynchronously, but to match
+        # existing DeviceContext semantics we create a buffer immediately.
+        return DeviceBuffer[dtype](
+            _impl=HALDeviceBuffer[dtype](self._impl, size)
+        )
 
     def create_buffer_sync[
         dtype: DType
@@ -1041,40 +1237,72 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the allocation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceBuffer[dtype](
                 _impl=self._impl.create_buffer_sync[dtype](size)
             )
-        else:
-            return DeviceBuffer[dtype](
-                _impl=self._impl.create_buffer_sync[dtype](size)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return DeviceBuffer[dtype](
+            _impl=HALDeviceBuffer[dtype](self._impl, size)
+        )
 
     def enqueue_create_host_buffer[
         dtype: DType
     ](self, size: Int) raises -> HostBuffer[dtype]:
-        """Enqueues an allocation of a host buffer of `size` elements.
+        """Enqueues the creation of a HostBuffer.
+
+        This function allocates memory on the host that is accessible by the
+        device. The memory is page-locked (pinned) for efficient data transfer
+        between host and device.
+
+        Pinned memory is guaranteed to remain resident in the host's RAM, not be
+        paged/swapped out to disk. Memory allocated normally (for example, using
+        [`alloc()`](/docs/std/memory/alloc/alloc/))
+        is pageable—individual pages of memory can be moved to secondary storage
+        (disk/SSD) when main memory fills up.
+
+        Using pinned memory allows devices to make fast transfers
+        between host memory and device memory, because they can use direct
+        memory access (DMA) to transfer data without relying on the CPU.
+
+        Allocating too much pinned memory can cause performance issues, since it
+        reduces the amount of memory available for other processes.
 
         Parameters:
-            dtype: The element dtype of the buffer.
+            dtype: The data type to be stored in the allocated memory.
 
         Args:
-            size: Number of elements to allocate.
+            size: The number of elements of `type` to allocate memory for.
 
         Returns:
-            The allocated host buffer.
+            A `HostBuffer` object that wraps the allocated host memory.
 
         Raises:
-            If the allocation fails.
+            If memory allocation fails or if the device context is invalid.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            # Allocate host memory accessible by the device
+            var host_buffer = ctx.enqueue_create_host_buffer[.float32](1024)
+
+            # Use the host buffer for device operations
+            # ...
+        ```
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return HostBuffer[dtype](
                 _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
-        else:
-            return HostBuffer[dtype](
-                _impl=self._impl.enqueue_create_host_buffer[dtype](size)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return HostBuffer[dtype](_impl=HALHostBuffer[dtype](self._impl, size))
 
     def wrap_host_memory[
         origin: MutOrigin, //, dtype: DType
@@ -1132,17 +1360,31 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             dtype: Type of the data being copied.
 
         Args:
-            dst_ptr: Pointer to copy to.
-            src_ptr: Pointer to copy from.
+            dst_ptr: Host pointer to copy to.
+            src_ptr: Device pointer to copy from.
             size: Number of elements (of the specified `DType`) to copy.
 
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_ptr, src_ptr, size)
-        else:
-            self._impl.enqueue_copy(dst_ptr, src_ptr, size)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.enqueue_copy(
+            DeviceBuffer[dtype](
+                _impl=HALDeviceBuffer[dtype](
+                    self._impl, dst_ptr, size, owning=False
+                )
+            ),
+            DeviceBuffer[dtype](
+                _impl=HALDeviceBuffer[dtype](
+                    self._impl, src_ptr, size, owning=False
+                )
+            ),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1165,10 +1407,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].copy_to_device(
+            dst_buf._impl._inner[]._buffer.view(),
+            src_ptr.unsafe_bitcast[UInt8](),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1177,22 +1425,30 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dst_buf: HostBuffer[dtype],
         src_ptr: Pointer[mut=False, Scalar[dtype], _],
     ) raises:
-        """Enqueues an async copy from a device pointer to a host buffer.
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
-            dst_buf: Host buffer to copy to.
-            src_ptr: Device pointer to copy from.
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
 
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_ptr)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].copy_to_device(
+            dst_buf._impl._inner[]._buffer.view(),
+            src_ptr.unsafe_bitcast[UInt8](),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1214,10 +1470,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].copy_from_device(
+            dst_ptr.unsafe_bitcast[UInt8](),
+            src_buf._impl._inner[]._buffer.view(),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1237,70 +1499,117 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails, or if `dst_buf` is not on this context's
             device.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
+        # stream can't overwrite or free it until the copy has read it.
+        self._impl._check_device_to_device_copy(dst_buf._impl, src_buf._impl)
+        var src_ctx = src_buf._impl._ctx
+        var sync = not (src_ctx._hal_stream() is self._impl._hal_stream())
+        if sync:
+            self._impl.enqueue_wait_for(src_ctx)
+        self._impl._enqueue_copy_device_to_device(dst_buf._impl, src_buf._impl)
+        if sync:
+            src_ctx.enqueue_wait_for(self._impl)
 
     def enqueue_copy[
         dtype: DType
     ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
-        """Enqueues an async copy from host memory to a device buffer.
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
-            src_buf: Host buffer to copy from.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
 
         Raises:
-            If the operation fails.
+            If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        _check_copy_src_size(
+            dst_buf._impl._inner[]._buffer, src_buf._impl._inner[]._buffer
+        )
+        self._impl._stream[].copy_to_device(
+            dst_buf._impl._inner[]._buffer.view(),
+            src_buf._impl.unsafe_ptr().unsafe_bitcast[UInt8](),
+        )
 
     def enqueue_copy[
         dtype: DType
     ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
-        """Enqueues an async copy from a device buffer to host memory.
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
-            dst_buf: Host buffer to copy to.
-            src_buf: Device buffer to copy from.
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
 
         Raises:
-            If the operation fails.
+            If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        ref dst_mem = dst_buf._impl._inner[]._buffer
+        ref src_mem = src_buf._impl._inner[]._buffer
+        _check_copy_src_size(dst_mem, src_mem)
+        # `copy_from_device` copies the whole source view, so narrow it to the
+        # destination's size.
+        self._impl._stream[].copy_from_device(
+            dst_buf._impl.unsafe_ptr().unsafe_bitcast[UInt8](),
+            src_mem.view(byte_offset=0, byte_size=dst_mem.byte_size),
+        )
 
     def enqueue_copy[
         dtype: DType
     ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype]) raises:
-        """Enqueues an async copy from one host buffer to another.
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
-            dst_buf: Host buffer to copy to.
-            src_buf: Host buffer to copy from.
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
 
         Raises:
-            If the operation fails.
+            If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        _check_copy_src_size(
+            dst_buf._impl._inner[]._buffer, src_buf._impl._inner[]._buffer
+        )
+        self._impl._stream[].copy_intra_device(
+            dst_buf._impl._inner[]._buffer.view(),
+            src_buf._impl._inner[]._buffer.view(),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1309,22 +1618,29 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dst_ptr: Pointer[mut=True, Scalar[dtype], _],
         src_buf: HostBuffer[dtype],
     ) raises:
-        """Enqueues an async copy from host memory to a host pointer.
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
             dst_ptr: Host pointer to copy to.
-            src_buf: Host buffer to copy from.
+            src_buf: Device buffer to copy from.
 
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst_ptr, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].copy_from_device(
+            dst_ptr.unsafe_bitcast[UInt8](),
+            src_buf._impl._inner[]._buffer.view(),
+        )
 
     def enqueue_copy[
         dtype: DType
@@ -1333,7 +1649,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dst_buf: DeviceBuffer[dtype],
         src: Span[mut=False, Scalar[dtype], _],
     ) raises:
-        """Enqueues an async copy from a host span to a device buffer.
+        """Enqueues an async copy from a host `Span` to a device buffer.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the
+        destination buffer; this invariant is checked via `debug_assert`.
 
         Parameters:
             dtype: Type of the data being copied.
@@ -1345,32 +1665,50 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        debug_assert(
+            len(src) >= len(dst_buf._impl),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
 
     def enqueue_copy[
         dtype: DType
     ](
         self, dst_buf: HostBuffer[dtype], src: Span[mut=False, Scalar[dtype], _]
     ) raises:
-        """Enqueues an async copy from a host span to a host buffer.
+        """Enqueues an async copy from a host `Span` to a pinned host buffer.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the
+        destination buffer; this invariant is checked via `debug_assert`.
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
-            dst_buf: Host buffer to copy to.
+            dst_buf: Device buffer to copy to.
             src: Host span to copy from.
 
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst_buf._impl, src)
-        else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        debug_assert(
+            len(src) >= len(dst_buf._impl),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
 
     def enqueue_copy[
         dtype: DType
@@ -1379,7 +1717,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         dst: Span[mut=True, Scalar[dtype], _],
         src_buf: DeviceBuffer[dtype],
     ) raises:
-        """Enqueues an async copy from a device buffer to a host span.
+        """Enqueues an async copy from a device buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
 
         Parameters:
             dtype: Type of the data being copied.
@@ -1391,17 +1734,29 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        debug_assert(
+            len(dst) >= len(src_buf._impl),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
 
     def enqueue_copy[
         dtype: DType
     ](
         self, dst: Span[mut=True, Scalar[dtype], _], src_buf: HostBuffer[dtype]
     ) raises:
-        """Enqueues an async copy from a host buffer to a host span.
+        """Enqueues an async copy from a host buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the source
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
 
         Parameters:
             dtype: Type of the data being copied.
@@ -1413,34 +1768,48 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy(dst, src_buf._impl)
-        else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        debug_assert(
+            len(dst) >= len(src_buf._impl),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
 
     def enqueue_copy_no_cross_stream_sync[
         dtype: DType
     ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
-        """Enqueues a device-to-device copy that skips the cross-stream waits.
+        """Enqueues a device-to-device copy without cross-stream synchronization.
+
+        This behaves like `enqueue_copy` for two device buffers, except that
+        when the source and destination are on different streams the driver does
+        not insert its own cross-stream synchronization; the caller is
+        responsible for ordering (for example via explicit device-wait ops).
 
         Parameters:
             dtype: Type of the data being copied.
 
         Args:
-            dst_buf: Device buffer to copy to.
-            src_buf: Device buffer to copy from.
+            dst_buf: Destination device buffer.
+            src_buf: Source device buffer.
 
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_no_cross_stream_sync(
                 dst_buf._impl, src_buf._impl
             )
-        else:
-            self._impl.enqueue_copy_no_cross_stream_sync(
-                dst_buf._impl, src_buf._impl
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._check_device_to_device_copy(dst_buf._impl, src_buf._impl)
+        self._impl._enqueue_copy_device_to_device(dst_buf._impl, src_buf._impl)
 
     def enqueue_memset[
         dtype: DType
@@ -1458,10 +1827,17 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_memset(dst._impl, val)
-        else:
-            self._impl.enqueue_memset(dst._impl, val)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].fill(
+            dst._impl._inner[]._buffer.view(),
+            _memset_value_as_u64[dtype](val),
+            UInt64(size_of[dtype]()),
+        )
 
     def enqueue_memset[
         dtype: DType
@@ -1479,32 +1855,71 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_memset(dst._impl, val)
-        else:
-            self._impl.enqueue_memset(dst._impl, val)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._stream[].fill(
+            dst._impl._inner[]._buffer.view(),
+            _memset_value_as_u64[dtype](val),
+            UInt64(size_of[dtype]()),
+        )
 
     # The enqueued task holds a pointer to `func`.
     @inline(.always)
     def enqueue_cpu_range[
         FuncType: def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
-        """Enqueues `count` calls to `func` on the CPU, each with its index.
+        """Runs a function closure over a 1D range on a CPU `DeviceContext`.
+
+        The function is called as `func(i)` for each `i` in `range(count)`.
+        Instances run in parallel on the AsyncRT worker threads, but it is not
+        guaranteed that all instances run at the same time.
+
+        The HAL backend has no host-function enqueue plugin entry, so the range
+        runs synchronously there: it returns when every instance is done, and
+        `synchronize()` is then a no-op for this work.
 
         Parameters:
-            FuncType: The function type.
+            FuncType: The type of function to execute.
 
         Args:
-            func: The function to execute.
-            count: Number of times to call it.
+            func: The function closure to execute.
+            count: The number of instances of the function to run.
 
         Raises:
-            If the operation fails.
+            If self is not a CPU DeviceContext.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_cpu_range(func, count)
-        else:
-            self._impl.enqueue_cpu_range(func, count)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        if self.api() != "cpu":
+            raise Error(
+                "enqueue_cpu_range is only supported on CPU DeviceContexts"
+            )
+        if count <= 0:
+            return
+        if count == 1:
+            func(0)
+            return
+
+        @inline(.always)
+        __async def run(i: Int) {imm} -> None:
+            func(i)
+
+        # Spread instances over the workers the way the legacy CPU context
+        # does. Running one on this thread instead measured slower: a worker
+        # that waits here leaves its own queued instance to be stolen late.
+        var num_workers = max(parallelism_level(), 1)
+        var group = TaskGroup()
+        for i in range(count):
+            group._create_task(run(i), desired_worker_id=i % num_workers)
+        group.wait[origin_of(func)._mlir_origin]()
 
     # The enqueued task holds a pointer to `func`.
     @inline(.always)
@@ -2171,8 +2586,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     def execution_time[
         FuncType: def(Self) raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
-        """Measures the execution time of a function that takes a DeviceContext
-        parameter.
+        """Measures the execution time, in nanoseconds, of `func(self)` run
+        `num_iters` times (host monotonic clock, bracketed by `synchronize()`).
 
         It runs the function for the specified number of iterations and
         returns the total elapsed time in nanoseconds.
@@ -2190,18 +2605,21 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
 
             def run_legacy(inner: Self._Legacy) raises {imm}:
                 func(Self(_impl=inner.copy()))
 
             return self._impl.execution_time(run_legacy, num_iters)
-        else:
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-            def run_hal(inner: Self._HAL) raises {imm}:
-                func(Self(_impl=inner.copy()))
-
-            return self._impl.execution_time(run_hal, num_iters)
+        self.synchronize()
+        var start = monotonic()
+        for _ in range(num_iters):
+            func(self)
+        self.synchronize()
+        return Int(monotonic() - start)
 
     def execution_time[
         FuncType: def() raises -> None,
@@ -2223,16 +2641,24 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.execution_time(func, num_iters)
-        else:
-            return self._impl.execution_time(func, num_iters)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.synchronize()
+        var start = monotonic()
+        for _ in range(num_iters):
+            func()
+        self.synchronize()
+        return Int(monotonic() - start)
 
     def execution_time_iter[
         FuncType: def(Self, Int) raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
-        """Measures the execution time of a function that takes the iteration
-        index as input.
+        """Measures the execution time, in nanoseconds, of `func(self, i)` for
+        `i` in `range(num_iters)` (host monotonic clock, bracketed by
+        `synchronize()`).
 
         Parameters:
             FuncType: The body function type.
@@ -2247,18 +2673,21 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
 
             def run_legacy(inner: Self._Legacy, i: Int) raises {imm}:
                 func(Self(_impl=inner.copy()), i)
 
             return self._impl.execution_time_iter(run_legacy, num_iters)
-        else:
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-            def run_hal(inner: Self._HAL, i: Int) raises {imm}:
-                func(Self(_impl=inner.copy()), i)
-
-            return self._impl.execution_time_iter(run_hal, num_iters)
+        self.synchronize()
+        var start = monotonic()
+        for i in range(num_iters):
+            func(self, i)
+        self.synchronize()
+        return Int(monotonic() - start)
 
     # ===-------------------------------------------------------------------===#
     # Peer access and waits
@@ -2282,30 +2711,91 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         return self.device().can_access_peer(peer.device())
 
     def enable_peer_access(self, peer: DeviceContext) raises:
-        """Enables access to `peer`'s memory from this context.
+        """Enables direct memory access to the peer device.
 
         Args:
-            peer: The peer context.
+            peer: The peer device context whose memory becomes accessible.
 
         Raises:
-            If enabling peer access fails.
+            If enabling peer access fails: the build or `peer`'s driver lacks
+            peer access, or the plugin refuses the pair.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enable_peer_access(peer._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        if not (self._impl._driver is peer._impl._driver):
+            raise Error("Peer access not implemented")
+        comptime Ext = type_of(self._impl._context[].extensions())
+        comptime if conforms_to(Ext, SupportsPeerAccessV1):
+            self._impl._context[].extensions().enable_peer_access(
+                self._impl._context[].raw_driver()[],
+                self._impl._context[].handle(),
+                peer._impl._context[].handle(),
+            )
+            var src = Int(self._impl._device[].id)
+            var dst = Int(peer._impl._device[].id)
+            var state = _PEER_STATE.get_or_create_ptr()
+            with BlockingScopedLock(state[].lock):
+                state[].record_enabled(
+                    src, self._impl._context, dst, peer._impl._context
+                )
         else:
-            self._impl.enable_peer_access(peer._impl)
+            raise Error("Peer access not implemented")
 
     @staticmethod
     def enable_all_peer_access() raises:
-        """Enables peer access between every device it can be enabled on.
+        """Enables peer-to-peer access between all accelerators, both ways.
+
+        A silent no-op without peer access or with one accelerator, as on the
+        legacy backend; collective setup warns on a raise.
 
         Raises:
-            If enabling peer access fails.
+            On the first pair the plugin refuses.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             LegacyDeviceContext[Self.target].enable_all_peer_access()
-        else:
-            HALDeviceContext[Self.target].enable_all_peer_access()
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        comptime device_spec = HALDeviceContext[Self.target].device_spec
+        comptime Ext = _HALDevice[device_spec].Extensions
+        comptime if conforms_to(Ext, SupportsPeerAccessV1):
+            var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+            __guard case .Some(driver) = maybe_driver[] else:
+                return
+            var count = Int(driver[].device_count())
+            if count <= 1:
+                return
+            var state = _PEER_STATE.get_or_create_ptr()
+            if state[].all_enabled.load() != 0:
+                return
+            var contexts = List[ArcPointer[Context[device_spec]]]()
+            for i in range(count):
+                # Matches `__init__`'s lookup, so the contexts are shared.
+                var device = rebind[ArcPointer[_HALDevice[device_spec]]](
+                    driver[].get_device_dynamic[Optional[Int64](0)](Int64(i))
+                )
+                # A non-vendor `.so` may lack the group; stay a no-op.
+                if not device[].extensions().supports_peer_access():
+                    return
+                contexts.append(device[].get_context())
+            # Concurrent callers may repeat a grant; the plugin treats an
+            # already-enabled pair as success.
+            for i in range(count):
+                for j in range(count):
+                    if i == j:
+                        continue
+                    contexts[i][].extensions().enable_peer_access(
+                        contexts[i][].raw_driver()[],
+                        contexts[i][].handle(),
+                        contexts[j][].handle(),
+                    )
+                    with BlockingScopedLock(state[].lock):
+                        state[].record_enabled(i, contexts[i], j, contexts[j])
 
     @staticmethod
     def all_peer_access_enabled() raises -> Bool:
@@ -2317,24 +2807,29 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return LegacyDeviceContext[Self.target].all_peer_access_enabled()
-        else:
-            return HALDeviceContext[Self.target].all_peer_access_enabled()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return _PEER_STATE.get_or_create_ptr()[].all_enabled.load() != 0
 
     def supports_multicast(self) raises -> Bool:
-        """Returns whether this device supports multicast memory.
+        """Returns True if this device supports multicast memory mappings.
 
         Returns:
-            True when multicast is available.
+            True when multicast is available. Always False on the HAL backend,
+            where multicast is not implemented.
 
         Raises:
-            If the query fails.
+            If the query fails. The HAL backend never raises.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.supports_multicast()
-        else:
-            return self._impl.supports_multicast()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return False
 
     def enqueue_wait_for(self, other: DeviceContext) raises:
         """Enqueues a wait for all work currently pending on `other`.

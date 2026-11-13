@@ -18,7 +18,8 @@ from std.builtin.device_passable import (
 )
 from std.format import Writer
 from std.memory import Pointer
-from std.sys import is_gpu
+from std.os import abort
+from std.sys import is_gpu, size_of
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceBuffer,
@@ -152,10 +153,19 @@ struct DeviceBuffer[dtype: DType](
     @staticmethod
     @doc_hidden
     def empty(context: DeviceContext) -> Self:
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return Self(_impl=Self._Legacy.empty(context._impl))
-        else:
-            return Self(_impl=Self._HAL.empty(context._impl))
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return Self(
+            _impl=Self._HAL(
+                context._impl,
+                Self._DevicePtr.unsafe_dangling(),
+                0,
+                owning=False,
+            )
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait: DevicePassable
@@ -283,14 +293,32 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the range is invalid.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceBuffer[view_type](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
-        else:
-            return DeviceBuffer[view_type](
-                _impl=self._impl.create_sub_buffer[view_type](offset, size)
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        comptime elem_size = size_of[view_type]()
+        var byte_offset = UInt64(offset * elem_size)
+        var byte_size = UInt64(size * elem_size)
+        if byte_offset + byte_size > self._impl._inner[]._buffer.byte_size:
+            raise Error("create_sub_buffer: view is out of range")
+        var view = HALDeviceBuffer[view_type](
+            self._impl._ctx,
+            Pointer[Scalar[view_type], MutUntrackedOrigin](
+                unsafe_from_address=Int(
+                    self._impl._inner[]._device_addr + byte_offset
+                )
+            ),
+            size,
+            owning=False,
+        )
+        # The view's wrapper is non-owning; retaining the parent's inner keeps
+        # the shared allocation alive for the view's lifetime.
+        view._inner[]._parent = [self._impl._inner]
+        return DeviceBuffer[view_type](_impl=view^)
 
     def unsafe_ptr[
         mut: Bool, //, origin: Origin[mut=mut]
@@ -367,13 +395,31 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.take_ptr()
-        else:
-            return self._impl.take_ptr()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # Ownership of the underlying allocation transfers to the caller: the
+        # wrapper handle (freed when the last reference drops) no longer frees
+        # the memory.
+        try:
+            _ = self._impl._ctx._context[].unwrap_memory(
+                self._impl._inner[]._buffer
+            )
+        except e:
+            abort("DeviceBuffer.take_ptr: failed to release ownership")
+        return Self._DevicePtr(
+            unsafe_from_address=Int(self._impl._inner[]._device_addr)
+        )
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
-        """Enqueues an asynchronous copy to another device buffer.
+        """Enqueues an asynchronous copy from this buffer to another device
+        buffer.
+
+        This method schedules a memory copy operation from this buffer to the
+        destination buffer. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
 
         Args:
             dst: Device buffer to copy to.
@@ -381,15 +427,20 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_to(dst._impl)
-        else:
-            # The HAL host buffer copies through spans; it has no direct
-            # host-to-host overload.
-            self._impl.enqueue_copy_to(dst._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
-        """Enqueues an asynchronous copy to host memory.
+        """Enqueues an asynchronous copy from this buffer to a host buffer.
+
+        This method schedules a memory copy operation from this buffer to the
+        destination host buffer. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
 
         Args:
             dst: Host buffer to copy to.
@@ -397,10 +448,13 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_to(dst._impl)
-        else:
-            self._impl.enqueue_copy_to(dst._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
         self, dst_ptr: Pointer[mut=True, Scalar[Self.dtype], _]
@@ -416,7 +470,12 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(dst_ptr, self)
 
     def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
-        """Enqueues an asynchronous copy from another device buffer.
+        """Enqueues an asynchronous copy to this buffer from another device
+        buffer.
+
+        This method schedules a memory copy operation to this buffer from the
+        source buffer. The operation is asynchronous and will be executed in
+        the stream associated with this buffer's context.
 
         Args:
             src: Device buffer to copy from.
@@ -424,15 +483,20 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_from(src._impl)
-        else:
-            # The HAL host buffer copies through spans; it has no direct
-            # host-to-host overload.
-            self._impl.enqueue_copy_from(src._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
-        """Enqueues an asynchronous copy from host memory.
+        """Enqueues an asynchronous copy from a host buffer to this buffer.
+
+        This method schedules a memory copy operation from the source host
+        buffer to this buffer. The operation is asynchronous and will be
+        executed in the stream associated with this buffer's context.
 
         Args:
             src: Host buffer to copy from.
@@ -440,15 +504,22 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_from(src._impl)
-        else:
-            self._impl.enqueue_copy_from(src._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
         self, src_ptr: Pointer[mut=False, Scalar[Self.dtype], _]
     ) raises:
-        """Enqueues an asynchronous copy from host memory.
+        """Enqueues an asynchronous copy to this buffer from host memory.
+
+        This method schedules a memory copy operation to this buffer from the
+        given host pointer. The operation is asynchronous and will be executed
+        in the stream associated with this buffer's context.
 
         Args:
             src_ptr: Pointer to the source host memory.
@@ -456,15 +527,18 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_from(src_ptr)
-        else:
-            self._impl.enqueue_copy_from(src_ptr)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(self, src_ptr)
 
     def enqueue_copy_from(
         self, src: Span[mut=False, Scalar[Self.dtype], _]
     ) raises:
-        """Enqueues an asynchronous copy from a host span.
+        """Enqueues an asynchronous copy from a host `Span` to this buffer.
 
         Args:
             src: Host span to copy from.
@@ -472,15 +546,18 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_from(src)
-        else:
-            self._impl.enqueue_copy_from(src)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(self, src)
 
     def enqueue_copy_to(
         self, dst: Span[mut=True, Scalar[Self.dtype], _]
     ) raises:
-        """Enqueues an asynchronous copy to a host span.
+        """Enqueues an asynchronous copy from this buffer to a host `Span`.
 
         Args:
             dst: Host span to copy to.
@@ -488,13 +565,20 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_copy_to(dst)
-        else:
-            self._impl.enqueue_copy_to(dst)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_copy(dst, self)
 
     def enqueue_fill(self, val: Scalar[Self.dtype]) raises:
         """Enqueues an operation to fill this buffer with a specified value.
+
+        This method schedules a memory set operation that fills the entire
+        buffer with the specified value. The operation is asynchronous and will
+        be executed in the stream associated with this buffer's context.
 
         Args:
             val: The value to fill the buffer with.
@@ -502,10 +586,13 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the operation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_fill(val)
-        else:
-            self._impl.enqueue_fill(val)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.context().enqueue_memset(self, val)
 
     comptime _Handle = (
         _LegacyDeviceBufferPtr[
@@ -585,8 +672,12 @@ struct DeviceBuffer[dtype: DType](
         l2_promotion: Int32,
         oob_fill: Int32,
     ) raises:
-        """Encodes a tiled TMA descriptor for this buffer."""
-        comptime if use_legacy_backend():
+        """Encodes a tiled TMA descriptor for this buffer via the HAL plugin.
+
+        Used by `max.gpu.host._legacy._tensormap.create_tensormap`.
+        """
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl._tensor_map_encode_tiled(
                 tensor_map,
                 data_type,
@@ -600,20 +691,25 @@ struct DeviceBuffer[dtype: DType](
                 l2_promotion,
                 oob_fill,
             )
-        else:
-            self._impl._tensor_map_encode_tiled(
-                tensor_map,
-                data_type,
-                rank,
-                global_dim,
-                global_strides,
-                box_dim,
-                element_strides,
-                interleave,
-                swizzle,
-                l2_promotion,
-                oob_fill,
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # Same-width reinterpret of the callers' signed arrays to the C ABI's
+        # unsigned element types.
+        self._impl._ctx._context[].tensor_map_encode_tiled(
+            tensor_map,
+            data_type,
+            rank,
+            self._impl._inner[]._device_addr,
+            global_dim.unsafe_bitcast[UInt64](),
+            global_strides.unsafe_bitcast[UInt64](),
+            box_dim.unsafe_bitcast[UInt32](),
+            element_strides.unsafe_bitcast[UInt32](),
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
 
     def _tensor_map_encode_im2col(
         self,
@@ -632,8 +728,12 @@ struct DeviceBuffer[dtype: DType](
         l2_promotion: Int32,
         oob_fill: Int32,
     ) raises:
-        """Encodes an im2col TMA descriptor for this buffer."""
-        comptime if use_legacy_backend():
+        """Encodes an im2col TMA descriptor for this buffer via the HAL plugin.
+
+        Used by `max.gpu.host._legacy._tensormap.create_tensormap_im2col`.
+        """
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl._tensor_map_encode_im2col(
                 tensor_map,
                 data_type,
@@ -650,23 +750,26 @@ struct DeviceBuffer[dtype: DType](
                 l2_promotion,
                 oob_fill,
             )
-        else:
-            self._impl._tensor_map_encode_im2col(
-                tensor_map,
-                data_type,
-                rank,
-                global_dim,
-                global_strides,
-                pixel_box_lower_corner,
-                pixel_box_upper_corner,
-                channels_per_pixel,
-                pixels_per_column,
-                element_strides,
-                interleave,
-                swizzle,
-                l2_promotion,
-                oob_fill,
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self._impl._ctx._context[].tensor_map_encode_im2col(
+            tensor_map,
+            data_type,
+            rank,
+            self._impl._inner[]._device_addr,
+            global_dim.unsafe_bitcast[UInt64](),
+            global_strides.unsafe_bitcast[UInt64](),
+            pixel_box_lower_corner,
+            pixel_box_upper_corner,
+            channels_per_pixel,
+            pixels_per_column,
+            element_strides.unsafe_bitcast[UInt32](),
+            interleave,
+            swizzle,
+            l2_promotion,
+            oob_fill,
+        )
 
     def map_to_host(
         self,

@@ -275,26 +275,37 @@ struct DeviceFunction[
     def occupancy_max_active_blocks_per_multiprocessor(
         self, block_size: Int, dynamic_shared_mem_size: Int
     ) raises -> Int:
-        """Returns the maximum active blocks per multiprocessor for a launch.
+        """Returns the maximum number of active blocks per multiprocessor for
+        the given function.
 
         Args:
-            block_size: Threads per thread block.
-            dynamic_shared_mem_size: Dynamic shared memory per block, in bytes.
+            block_size: The number of threads per block.
+            dynamic_shared_mem_size: The size of dynamically allocated shared
+                memory in bytes.
 
         Returns:
-            The maximum number of active blocks per multiprocessor.
+            The maximum number of active blocks that can run concurrently per
+            multiprocessor.
 
         Raises:
-            If the query fails.
+            If the occupancy calculation fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, dynamic_shared_mem_size
             )
-        else:
-            return self._impl.occupancy_max_active_blocks_per_multiprocessor(
-                block_size, dynamic_shared_mem_size
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return Int(
+            self._impl._inner[]
+            ._context[]
+            .function_occupancy_max_active_blocks(
+                self._impl._inner[]._func_handle,
+                Int32(block_size),
+                UInt64(dynamic_shared_mem_size),
             )
+        )
 
 
 struct DeviceExternalFunction[
