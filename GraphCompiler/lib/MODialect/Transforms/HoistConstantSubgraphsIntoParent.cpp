@@ -550,12 +550,12 @@ private:
       IRMapping valueMapping;
       GraphOp parentGraphOp = callOp->getParentOfType<MO::GraphOp>();
       Region &parentGraphRegion = parentGraphOp.getBody();
-      KGEN::AttrTypeMangler::Cache manglerCache;
-      KGEN::AttrTypeMangler mangler(manglerCache);
       KGEN::ParameterUseDefGraph paramGraph(parentGraphRegion);
       paramGraph.calculate(analysisCache);
       KGEN::NameUniquer uniquer(paramGraph, paramGraph);
-      mangler.populate(builder, uniquer, subgraphDeclNames, paramGraph);
+      KGEN::AttrTypeMangler::Cache manglerCache;
+      KGEN::AttrTypeMangler mangler(manglerCache, builder, uniquer,
+                                    subgraphDeclNames, paramGraph);
 
       assert(parentGraphOp && "expected parent graph op");
 
