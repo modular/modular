@@ -18,9 +18,9 @@ import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
@@ -468,6 +468,21 @@ class TestOpenAIStreamRecorder:
         assert output.latency == pytest.approx(1.0)
 
 
+def _streaming_response(
+    mocker: MockerFixture, chunks: Sequence[bytes]
+) -> AsyncMock:
+    """Returns a 200 response mock whose body streams ``chunks``."""
+
+    async def content() -> AsyncIterator[bytes]:
+        for chunk in chunks:
+            yield chunk
+
+    response = mocker.AsyncMock()
+    response.status = 200
+    response.content = content()
+    return response
+
+
 class TestRequestDriver:
     """Test cases for RequestDriver classes."""
 
@@ -499,17 +514,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAICompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -546,17 +553,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -604,14 +603,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -669,14 +663,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -735,14 +724,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -787,14 +771,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -835,14 +814,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -885,13 +859,14 @@ class TestRequestDriver:
             }
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield f"data: {error_json}\n\n".encode()
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    f"data: {error_json}\n\n".encode(),
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -934,14 +909,15 @@ class TestRequestDriver:
             tools=tool_schemas,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -972,14 +948,15 @@ class TestRequestDriver:
             tools=None,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         driver = OpenAIChatCompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -1050,14 +1027,15 @@ class TestRequestDriver:
             ignore_eos=False,
         )
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
-            yield b"data: [DONE]\n\n"
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
+        )
 
         result = await OpenAIChatCompletionsRequestDriver().request(
             request_input
@@ -1090,15 +1068,9 @@ class TestRequestDriver:
             b"data: [DONE]\n\n",
         ]
 
-        async def async_iter() -> AsyncIterator[bytes]:
-            for item in mock_response_data:
-                yield item
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(mocker, mock_response_data)
+        )
 
         driver = OpenAICompletionsRequestDriver()
         result = await driver.request(request_input)
@@ -1126,16 +1098,14 @@ class TestRequestDriver:
         # Create a mock progress bar
         mock_pbar = mocker.Mock(spec=tqdm)
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"text_output": "Hello"}\n\n'
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "Hello"}\n\n',
+                ],
+            )
+        )
 
         base_driver = TRTLLMRequestDriver()
         driver = ProgressBarRequestDriver(base_driver, mock_pbar)
@@ -1162,16 +1132,14 @@ class TestRequestDriver:
             ignore_eos=False,
         )
 
-        # Create async iterator for response.content
-        async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data: {"text_output": "Hello"}\n\n'
-
-        # Setup the response object
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = async_iter()
-
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"text_output": "Hello"}\n\n',
+                ],
+            )
+        )
 
         driver = TRTLLMRequestDriver()
         result = await driver.request(request_input)
@@ -1230,11 +1198,6 @@ class TestDriverExtraBody:
         "vendor_ext": {"flags": ["a", "b"]},
     }
 
-    @staticmethod
-    async def _single_chunk(chunk: bytes) -> AsyncIterator[bytes]:
-        yield chunk
-        yield b"data: [DONE]\n\n"
-
     def _make_input(self, api_url: str) -> RequestFuncInput:
         return RequestFuncInput(
             model="test-model",
@@ -1255,12 +1218,15 @@ class TestDriverExtraBody:
         mock_openai_env: None,
         mocker: MockerFixture,
     ) -> None:
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = self._single_chunk(
-            b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
         )
-        mock_aiohttp_session.setup_post_response(mock_response)
 
         driver = OpenAIChatCompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -1279,12 +1245,15 @@ class TestDriverExtraBody:
         mock_openai_env: None,
         mocker: MockerFixture,
     ) -> None:
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = self._single_chunk(
-            b'data: {"choices": [{"text": "ok"}]}\n\n'
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    b'data: {"choices": [{"text": "ok"}]}\n\n',
+                    b"data: [DONE]\n\n",
+                ],
+            )
         )
-        mock_aiohttp_session.setup_post_response(mock_response)
 
         driver = OpenAICompletionsRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -1301,15 +1270,16 @@ class TestDriverExtraBody:
         mock_aiohttp_session: Any,
         mocker: MockerFixture,
     ) -> None:
-        async def trtllm_chunk() -> AsyncIterator[bytes]:
-            # The TRT-LLM driver validates every event as a chunk and has no
-            # ``[DONE]`` sentinel, so emit only a single data line.
-            yield b'data: {"text_output": "ok"}\n\n'
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = trtllm_chunk()
-        mock_aiohttp_session.setup_post_response(mock_response)
+        mock_aiohttp_session.setup_post_response(
+            _streaming_response(
+                mocker,
+                [
+                    # The TRT-LLM driver validates every event as a chunk and
+                    # has no ``[DONE]`` sentinel, so emit only one data line.
+                    b'data: {"text_output": "ok"}\n\n',
+                ],
+            )
+        )
 
         driver = TRTLLMRequestDriver(extra_body=self._EXTRA)
         result = await driver.request(
@@ -2035,14 +2005,11 @@ async def test_cache_warmup_empty_stream_requires_completed_generation(
     if case != "missing_done":
         events.append("[DONE]")
 
-    async def stream() -> AsyncIterator[bytes]:
-        for event in events:
-            yield f"data: {event}\n\n".encode()
-
-    response = mocker.AsyncMock()
+    response = _streaming_response(
+        mocker, [f"data: {event}\n\n".encode() for event in events]
+    )
     response.status = 400 if case == "http_error" else 200
     response.reason = "Bad Request"
-    response.content = stream()
     mock_aiohttp_session.setup_post_response(response)
     driver = (
         OpenAIChatCompletionsRequestDriver()
@@ -2170,13 +2137,9 @@ async def test_measured_empty_stream_succeeds_only_when_tiny_budget_is_spent(
         ignore_eos=True,
     )
 
-    async def stream() -> AsyncIterator[bytes]:
-        for event in events:
-            yield f"data: {event}\n\n".encode()
-
-    response = mocker.AsyncMock()
-    response.status = 200
-    response.content = stream()
+    response = _streaming_response(
+        mocker, [f"data: {event}\n\n".encode() for event in events]
+    )
     mock_aiohttp_session.setup_post_response(response)
     result = await OpenAIChatCompletionsRequestDriver().request(request_input)
 
