@@ -12,6 +12,7 @@ modular_py_test(
         ["test_*.py"],
         exclude = [
             "test_artifact.py",
+            "test_overlap_helpers.py",
             "test_export.py",
             "test_bounded_cache.py",
             "test_chat_encoder.py",
@@ -107,11 +108,26 @@ modular_py_test(
         "//max/python/max:_core",
         "//max/python/max/_artifact",
         "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/_artifact:overlap_helpers",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
+    ],
+)
+
+modular_py_test(
+    name = "test_overlap_helpers",
+    srcs = ["test_overlap_helpers.py"],
+    deps = [
+        "//max/python/max/_artifact",
+        "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/_artifact:overlap_helpers",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
     ],
 )
 

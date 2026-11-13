@@ -1165,8 +1165,9 @@ def cli_export(
 
     Takes the same pipeline options as ``serve`` and ``generate`` and builds
     the pipeline the same way, so the artifact holds the graphs a served
-    pipeline compiles, keyed by role. For an architecture with weight rules,
-    it also holds the rules its checkpoint loads through.
+    pipeline compiles, keyed by role, and the overlap helper graphs a serving
+    engine may load. For an architecture with weight rules, it also holds the
+    rules its checkpoint loads through.
     """
     from max._artifact import ArtifactError
     from max._artifact.export import export_pipeline

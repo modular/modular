@@ -20,6 +20,23 @@ modular_py_library(
     ],
 )
 
+# The overlap helper graphs and their component, which Mach's gen_mef
+# writes beside a MEF too.
+modular_py_library(
+    name = "overlap_helpers",
+    srcs = ["overlap_helpers.py"],
+    deps = [
+        ":_artifact",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        requirement("typing-extensions"),
+    ],
+)
+
 # The writer and reader, the model component, which holds
 # max.experimental CompiledCallables, the engine_config and kv_cache
 # components, and the max.pipelines.lib WeightTransform.
@@ -37,6 +54,7 @@ modular_py_library(
     ],
     deps = [
         ":_artifact",
+        ":overlap_helpers",
         "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max/driver",
@@ -54,8 +72,10 @@ modular_py_library(
     deps = [
         ":_artifact",
         ":model_artifact",
+        ":overlap_helpers",
         "//max/python/max:tensor",
         "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",

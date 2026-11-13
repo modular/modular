@@ -52,6 +52,7 @@ from max._artifact.kv_cache import (
 )
 from max._artifact.metadata import ARTIFACT_VERSION
 from max._artifact.model_artifact import ModelArtifact
+from max._artifact.overlap_helpers import OverlapHelpers
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.sampling_defaults import SamplingDefaults
 from max._artifact.serialization import deserialize, serialize
@@ -493,6 +494,7 @@ def test_component_types() -> None:
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
+        "overlap_helpers": OverlapHelpers,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
@@ -505,6 +507,7 @@ def test_component_types() -> None:
         "weight_loader": WeightNaming,
         "vision": VisionMetadata,
         "sampling_defaults": SamplingDefaults,
+        "overlap_helpers": OverlapHelpers,
         "scratch": FakeComponent,
         "extra": FakeComponent,
     }

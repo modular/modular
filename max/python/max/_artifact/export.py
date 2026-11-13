@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import huggingface_hub
 from max.driver import CPU
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import SymbolicDim
 from max.nn.kv_cache import (
@@ -78,6 +80,7 @@ from .kv_cache import (
     StateRegion,
 )
 from .model_artifact import ModelArtifact
+from .overlap_helpers import OverlapHelpers, export_spec_feeds, helper_builds
 from .pipeline_modules import PipelineModules
 from .sampling_defaults import SamplingDefaults
 from .serialization import serialize
@@ -202,6 +205,7 @@ def model_artifact(
     tokenizer: Tokenizer | None = None,
     sampling_defaults: SamplingDefaults | None = None,
     weight_loader: WeightNaming | None = None,
+    overlap_helpers: OverlapHelpers | None = None,
 ) -> ModelArtifact:
     """Assembles the artifact of a built pipeline's graphs.
 
@@ -220,6 +224,7 @@ def model_artifact(
         tokenizer: The tokenizer the checkpoint is served with.
         sampling_defaults: The sampling a request that sets none gets.
         weight_loader: The entries that name each graph's weights.
+        overlap_helpers: The overlap helper MEFs a serving engine may load.
 
     Returns:
         The artifact to serialize.
@@ -255,6 +260,53 @@ def model_artifact(
         weight_loader=weight_loader,
         vision=vision,
         sampling_defaults=sampling_defaults,
+        overlap_helpers=overlap_helpers,
+    )
+
+
+def pipeline_overlap_helpers(
+    pipeline_config: PipelineConfig,
+    pipeline_model: PipelineModel[Any, Any, Any],
+    modules: PipelineModules,
+    kv_params: CacheLeafParamInterface | None,
+) -> OverlapHelpers:
+    """Compiles the overlap helpers a serving engine may load for a pipeline.
+
+    A speculative pipeline's in-place spec feeds are sized from its devices,
+    its data-parallel degree, the attention caches in its KV tree, and the
+    dtype of the drafts its ``spec_decoder`` graph returns. An MTP pipeline
+    whose drafter ships in the target's checkpoint also gets the
+    shared-cache feed.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+        pipeline_model: The built pipeline model, whose devices the helpers
+            compile for.
+        modules: The pipeline's graphs, keyed by role.
+        kv_params: The pipeline's KV cache parameters, if it has a cache.
+
+    Returns:
+        The artifact's ``overlap_helpers`` component.
+    """
+    spec_decoder = modules.roles.get(GraphRole.SPEC_DECODER.value)
+    spec_feed = shared_feed = None
+    if spec_decoder is not None and kv_params is not None:
+        outputs = spec_decoder.out_layouts
+        speculative = pipeline_config.speculative
+        spec_feed, shared_feed = export_spec_feeds(
+            kv_params,
+            n_devices=len(pipeline_model.devices),
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # The graph returns its next drafts third.
+            next_draft_dtype=outputs[2].dtype
+            if len(outputs) > 2
+            else DType.int64,
+            may_share_cache_lengths=speculative is not None
+            and speculative.speculative_method == "mtp"
+            and pipeline_config.draft_model is None,
+        )
+    return OverlapHelpers.compile(
+        pipeline_model.devices, helper_builds(spec_feed, shared_feed)
     )
 
 
@@ -620,8 +672,9 @@ def export_pipeline(
     Builds the pipeline the same way serving does, so the artifact holds the
     graphs a served pipeline compiles, the settings it is built with, the
     FormatSpec document and tokenizer of the checkpoint it serves, the
-    sampling MAX Serve gives a request that sets none, and the entries that
-    name each graph's weights if its naming is rules.
+    sampling MAX Serve gives a request that sets none, the entries that
+    name each graph's weights if its naming is rules, and the overlap helper
+    MEFs a serving engine may load.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -691,17 +744,36 @@ def export_pipeline(
     named_graphs = {
         role: entries for role, entries in naming.items() if role in model.roles
     }
-    artifact = model_artifact(
-        model,
+    kv_params = (
+        pipeline.kv_manager.params
+        if isinstance(pipeline, SupportsKVManager)
+        else None
+    )
+    pipeline_model = (
         pipeline._pipeline_model
         if isinstance(pipeline, TextGenerationPipelineInterface)
-        else None,
+        else None
+    )
+    overlap_helpers = None
+    if pipeline_model is not None:
+        started = time.monotonic()
+        overlap_helpers = pipeline_overlap_helpers(
+            pipeline_config, pipeline_model, model, kv_params
+        )
+        logger.info(
+            "Compiled overlap helpers %s in %.1f s",
+            sorted(overlap_helpers.files),
+            time.monotonic() - started,
+        )
+    artifact = model_artifact(
+        model,
+        pipeline_model,
         dims,
         engine_config=pipeline_engine_config(
             pipeline_config, retrieved.memory_plan
         ),
-        kv_cache=pipeline_kv_cache(pipeline.kv_manager.params)
-        if isinstance(pipeline, SupportsKVManager)
+        kv_cache=pipeline_kv_cache(kv_params)
+        if kv_params is not None
         else None,
         format_spec=FormatSpec(format_spec)
         if format_spec is not None
@@ -711,6 +783,7 @@ def export_pipeline(
         ),
         sampling_defaults=pipeline_sampling_defaults(pipeline_config),
         weight_loader=WeightNaming(named_graphs) if named_graphs else None,
+        overlap_helpers=overlap_helpers,
     )
     written = serialize(artifact, dest)
     assert artifact.model is not None
