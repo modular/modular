@@ -25,7 +25,12 @@ from .context import Context
 from .memory import _enqueue_copy
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
-from .status import STATUS_SUCCESS, STATUS_UNSUPPORTED, HALError
+from .status import (
+    STATUS_INVALID_ARG,
+    STATUS_SUCCESS,
+    STATUS_UNSUPPORTED,
+    HALError,
+)
 from std.collections import Array, OptionalReg
 from std.memory import (
     ArcPointer,
@@ -44,6 +49,10 @@ from max.gpu.host import (
 )
 from max.gpu.host import LaunchAttribute
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
+from max.gpu.host.nvidia.launch_config import (
+    _CLUSTER_DIM_ATTRIBUTE_ERROR,
+    _holds_cluster_dim_attribute,
+)
 from max.gpu.host._launch_args import DeviceFunctionWrapper
 from .execution_config import check_config_fields_launchable
 from .kernel_args import _is_kernel_arg
@@ -549,6 +558,13 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
         comptime if conforms_to(
             ExecutionConfigType, LaunchAttributeHolderExecutionConfig
         ):
+            if _holds_cluster_dim_attribute(
+                execution_config.get_launch_attributes()
+            ):
+                raise HALError(
+                    STATUS_INVALID_ARG,
+                    message=String(_CLUSTER_DIM_ATTRIBUTE_ERROR),
+                )
             config_attributes.extend(execution_config.get_launch_attributes())
         comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
             var cluster_dim = execution_config.get_cluster_dim()

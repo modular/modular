@@ -18,10 +18,16 @@ NVIDIA sm_90 and newer only.
 
 from std.sys import size_of
 from std.sys.info import align_of
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_raises
 
-from max.gpu import block_idx, cluster_dim, thread_idx
-from max.gpu.host import DeviceContext, Dim, LaunchAttribute
+from max.gpu import block_idx, thread_idx
+from max.gpu.host import (
+    DeviceContext,
+    Dim,
+    LaunchAttribute,
+    LaunchAttributeID,
+    LaunchAttributeValue,
+)
 from max.gpu.host.nvidia import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
@@ -62,9 +68,8 @@ def consume(
     launch_dependent_grids()
 
 
-def record_cluster_size(dst: MutPointer[Int32, MutUntrackedOrigin]):
-    wait_on_dependent_grids()
-    dst[Int(block_idx.x)] = Int32(cluster_dim.x)
+def noop():
+    pass
 
 
 def cluster_large_smem(
@@ -155,21 +160,41 @@ def test_host_args(ctx: DeviceContext) raises:
 
 
 def test_attributes_reach_launch(ctx: DeviceContext) raises:
-    # A cluster dimension passed as a plain attribute only takes effect if the
-    # config's attributes reach the driver.
-    var sizes = ctx.enqueue_create_buffer[.int32](NUM_BLOCKS)
-    sizes.enqueue_fill(0)
-    ctx.enqueue_function[record_cluster_size](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=NUM_BLOCKS,
-            block_dim=1,
-            attributes=[LaunchAttribute.from_cluster_dim(Dim(2, 1, 1))],
-        ),
-        sizes,
-    )
-    with sizes.map_to_host() as h:
-        for i in range(NUM_BLOCKS):
-            assert_equal(h[i], 2)
+    # A cooperative launch fails when its blocks can't all be resident at once,
+    # which only happens if the config's attributes reach the driver.
+    with assert_raises():
+        ctx.enqueue_function[noop](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=1 << 16,
+                block_dim=1024,
+                attributes=[
+                    LaunchAttribute(
+                        LaunchAttributeID.COOPERATIVE,
+                        LaunchAttributeValue(True),
+                    )
+                ],
+            )
+        )
+
+
+def test_cluster_dim_attribute_rejected(ctx: DeviceContext) raises:
+    with assert_raises(contains="cluster_dim"):
+        ctx.enqueue_function[noop](
+            GridBlockAttributeLaunchConfig(
+                grid_dim=2,
+                block_dim=1,
+                attributes=[LaunchAttribute.from_cluster_dim(Dim(2, 1, 1))],
+            )
+        )
+    with assert_raises(contains="cluster_dim"):
+        ctx.enqueue_function[noop](
+            ClusterAttributeLaunchConfig(
+                grid_dim=2,
+                block_dim=1,
+                cluster_dim=Dim(2, 1, 1),
+                attributes=[LaunchAttribute.from_cluster_dim(Dim(2, 1, 1))],
+            )
+        )
 
 
 def test_cluster_large_smem_pdl(ctx: DeviceContext) raises:
@@ -204,5 +229,6 @@ def main() raises:
     with DeviceContext() as ctx:
         test_pdl_chain(ctx)
         test_host_args(ctx)
-        test_attributes_reach_launch(ctx)
         test_cluster_large_smem_pdl(ctx)
+        test_cluster_dim_attribute_rejected(ctx)
+        test_attributes_reach_launch(ctx)

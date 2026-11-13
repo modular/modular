@@ -109,6 +109,8 @@ from ..nvidia.launch_config import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
     LaunchAttributeHolderExecutionConfig,
+    _CLUSTER_DIM_ATTRIBUTE_ERROR,
+    _holds_cluster_dim_attribute,
 )
 
 from ._device_context_extras import *
@@ -5743,6 +5745,8 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             comptime assert conforms_to(
                 Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
             ), "this target does not support launch attributes"
+            if _holds_cluster_dim_attribute(config.get_launch_attributes()):
+                raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
             attributes = List(config.get_launch_attributes())
 
         self.enqueue_function[func](

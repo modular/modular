@@ -40,7 +40,7 @@ with DeviceContext() as ctx:
 """
 
 from .._legacy.dim import Dim
-from .._legacy.launch_attribute import LaunchAttribute
+from .._legacy.launch_attribute import LaunchAttribute, LaunchAttributeID
 from ..launch_config import (
     ClusterExecutionConfig,
     ExecutionConfig,
@@ -52,7 +52,10 @@ from ..launch_config import (
 trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
     """An `ExecutionConfig` that carries CUDA launch attributes.
 
-    Launching one on a target without launch attributes fails to compile.
+    Launching one on a target without launch attributes fails to compile. The
+    attributes can't set a cluster dimension: a cluster comes only from a
+    `ClusterExecutionConfig`'s `get_cluster_dim()`, and a launch whose
+    attributes hold one raises.
     """
 
     def get_launch_attributes[
@@ -67,6 +70,21 @@ trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
             The attributes to apply to the launch.
         """
         ...
+
+
+def _holds_cluster_dim_attribute[
+    o: ImmOrigin
+](attributes: Span[LaunchAttribute, o]) -> Bool:
+    for ref attribute in attributes:
+        if attribute.id == LaunchAttributeID.CLUSTER_DIMENSION:
+            return True
+    return False
+
+
+comptime _CLUSTER_DIM_ATTRIBUTE_ERROR = (
+    "a launch configuration's attributes can't set the cluster dimension;"
+    " use ClusterAttributeLaunchConfig and its cluster_dim"
+)
 
 
 struct GridBlockAttributeLaunchConfig(
@@ -108,7 +126,8 @@ struct GridBlockAttributeLaunchConfig(
             shared_mem_bytes: The dynamic shared memory per thread block, in
                 bytes.
             attributes: The launch attributes, for example the result of
-                `pdl_launch_attributes()`.
+                `pdl_launch_attributes()`. A cluster dimension isn't allowed
+                here; a launch with one raises.
         """
         self.grid_dim = grid_dim
         self.block_dim = block_dim
@@ -197,7 +216,8 @@ struct ClusterAttributeLaunchConfig(
             shared_mem_bytes: The dynamic shared memory per thread block, in
                 bytes.
             attributes: The launch attributes, for example the result of
-                `pdl_launch_attributes()`.
+                `pdl_launch_attributes()`. A cluster dimension isn't allowed
+                here; a launch with one raises.
         """
         self.grid_dim = grid_dim
         self.block_dim = block_dim
