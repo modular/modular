@@ -49,7 +49,6 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
-from std.collections import OptionalReg
 
 comptime logger = Logger()
 
@@ -117,7 +116,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -222,7 +221,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -296,7 +295,7 @@ def warp_specialize_gemm_with_multicasting[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -386,7 +385,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
     *,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     hilbert_swizzle: Bool = False,
@@ -486,9 +485,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
             sep=" ",
         )
 
-    comptime grid_shape_adjusted = grid_shape.value() if grid_shape else _get_grid_shape[
-        config.cluster_shape
-    ](
+    comptime grid_shape_adjusted = IndexList[2](
+        grid_shape.value()
+    ) if grid_shape else _get_grid_shape[config.cluster_shape](
         ceildiv(N_static, BN)
     )
 

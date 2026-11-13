@@ -19,7 +19,6 @@ static N and K, falling back to a generic kernel for unsupported shapes.
 """
 
 from std.math import ceildiv
-from std.collections import OptionalReg
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from layout import TileTensor
@@ -27,8 +26,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import H100
 from internal_utils import Table
 from std.logger import Logger
-
-from std.utils.index import Index, IndexList
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -62,14 +59,6 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 comptime logger = Logger()
-
-
-def _kernel_grid_shape(
-    grid_shape: Optional[Tuple[Int, Int]],
-) -> OptionalReg[IndexList[2]]:
-    if case .Some(shape) = grid_shape:
-        return Index(shape[0], shape[1])
-    return None
 
 
 def matmul_dispatch_sm90[
@@ -646,7 +635,7 @@ def matmul_dispatch_sm90_fp8[
             has_epilogue_fn=has_epilogue_fn,
             has_compute_fn=has_compute_fn,
             config=H100_FP8_TUNING_CONFIG,
-            grid_shape=Index(128, 1),
+            grid_shape=(128, 1),
             schedule=MatmulSchedule.DS_SCHEDULER,
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
         return DISPATCH_HIT
@@ -667,7 +656,7 @@ def matmul_dispatch_sm90_fp8[
             has_compute_fn=has_compute_fn,
             config=config,
             schedule=entry.schedule,
-            grid_shape=_kernel_grid_shape(entry.grid_shape),
+            grid_shape=entry.grid_shape,
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)
@@ -763,7 +752,7 @@ def matmul_dispatch_sm90_fp8[
                     has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
-                    grid_shape=Index(H100.sm_count, 1),
+                    grid_shape=(H100.sm_count, 1),
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
             else:
@@ -786,7 +775,7 @@ def matmul_dispatch_sm90_fp8[
                     has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
-                    grid_shape=Index(H100.sm_count, 1),
+                    grid_shape=(H100.sm_count, 1),
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
     return DISPATCH_MISS
@@ -903,7 +892,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=H100_TUNING_CONFIG,
-                grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
+                grid_shape=(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -945,7 +934,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     has_epilogue_fn=has_epilogue_fn,
                     has_compute_fn=has_compute_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
-                    grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
+                    grid_shape=(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
                 ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
@@ -1012,7 +1001,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
-                grid_shape=_kernel_grid_shape(entry.grid_shape),
+                grid_shape=entry.grid_shape,
                 splits=splits,
                 raster_order=entry.raster_order.value(),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
@@ -1023,7 +1012,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
-                grid_shape=_kernel_grid_shape(entry.grid_shape),
+                grid_shape=entry.grid_shape,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)
@@ -1503,7 +1492,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
@@ -1521,7 +1510,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
@@ -1540,7 +1529,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K2048_config,
-                grid_shape=Index(4, H100.sm_count // 4),
+                grid_shape=(4, H100.sm_count // 4),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -1581,7 +1570,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
@@ -1600,7 +1589,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N14336_K8192_config,
-                grid_shape=Index(8, H100.sm_count // 8),
+                grid_shape=(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
@@ -1641,7 +1630,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
@@ -1659,7 +1648,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
-                grid_shape=Index(128, 1),
+                grid_shape=(128, 1),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
@@ -1678,7 +1667,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K7168_config,
-                grid_shape=Index(8, H100.sm_count // 8),
+                grid_shape=(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT

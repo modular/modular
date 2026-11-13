@@ -40,7 +40,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 # Mask that keeps sign, exponent and the top 7 mantissa bits: the bf16 value
 # nearest below the fp32 input in magnitude.
@@ -164,6 +163,6 @@ def router_gate_tf32_gemm[
             )
 
     blackwell_matmul_tma_umma_warp_specialized[True, config=config](
-        IndexList[2](m, 2 * N), a, b_pairs_tt, sum_pairs, ctx
+        (m, 2 * N), a, b_pairs_tt, sum_pairs, ctx
     )
     _ = b_pairs^

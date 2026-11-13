@@ -39,7 +39,6 @@ from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.memory import unsafe_stack_allocation
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from ....utils import (
@@ -685,7 +684,7 @@ def _wmma_matmul_kernel[
     )
 
     # Block coordinates with swizzle for L2 locality
-    var grid_dim = IndexList[2](ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M))
+    var grid_dim = (ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M))
     var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]

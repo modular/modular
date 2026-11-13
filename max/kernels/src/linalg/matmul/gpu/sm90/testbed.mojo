@@ -21,12 +21,9 @@ from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
-from std.collections import OptionalReg
-from std.utils.index import IndexList
 
 from ....utils import ElementwiseComputeFn, no_compute_fn
 from ....utils_gpu import MatmulConfig
@@ -52,7 +49,7 @@ def test_matmul_sm90[
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,

@@ -35,7 +35,6 @@ from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys.info import _is_amd_rdna4
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from linalg.utils import (
@@ -322,7 +321,7 @@ def conv2d_kernel_rdna[
     comptime NUM_C_TILES = WARP_TILE_M * WARP_TILE_N
 
     # Block coordinates with swizzle for L2 locality
-    var grid_dim = IndexList[2](ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
+    var grid_dim = (ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
     var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]
