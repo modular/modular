@@ -105,6 +105,7 @@ MODELS: Mapping[str, set[str]] = {
     "microsoft/phi-4__modulev3": VARIANT | _1xB200 | _1xMI355,
     "MiniMaxAI/MiniMax-M3-MXFP8": NIGHTLY | _8xMI355,  # TODO(MODELS-1611)
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": NIGHTLY | VARIANT | PRIVATE | _8xB200,
+    "mistralai/Mistral-Large-4-1T-A52B-NVFP4": NIGHTLY | MACH | _8xB200,
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
     "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
     "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,

@@ -198,6 +198,7 @@ def test_mach_models_run_only_on_mach() -> None:
         "RadixArk/GLM-5.3-NVFP4__mtp_dpep",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
+        "mistralai/Mistral-Large-4-1T-A52B-NVFP4",
     }
     assert mach_only <= scheduled("mach-ci")
     for framework in ("max-ci", "vllm", "sglang"):
