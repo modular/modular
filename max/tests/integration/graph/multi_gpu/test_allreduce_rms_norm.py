@@ -14,10 +14,10 @@
 """Multi-GPU execution test for the fused allreduce + RMSNorm graph op.
 
 Runs the Mojo handler against an independent numpy fp64 reference of the
-semantics of the dispatch arm it takes on this target: on AMD the payloads
-below fuse, and the norm consumes the exact float32 peer sum; on other
-targets the op is today's unfused chain, whose allreduce rounds the sum to
-bfloat16 before the norm reads it. The gamma cast order is selected by
+semantics of the dispatch arm it takes on this target: on AMD, and on
+2xB200 for the payloads Lamport takes, the payloads below fuse, and the norm
+consumes the exact float32 peer sum; otherwise the op is the unfused chain,
+whose allreduce rounds the sum to bfloat16 before the norm reads it. The gamma cast order is selected by
 ``multiply_before_cast`` either way. The row counts cross the kernel's
 dispatch arms at two ranks and the production column count: 1 and 8 rows
 take the 1-stage kernel, 40 rows exceeds the 128 KB per-rank threshold and
@@ -45,6 +45,7 @@ from max.driver import (
     Accelerator,
     Buffer,
     accelerator_api,
+    accelerator_architecture_name,
     accelerator_count,
 )
 from max.dtype import DType
@@ -66,10 +67,15 @@ MAX_BF16_ULPS = 2
 MAX_FLIPPED_FRACTION = 0.02
 # The dispatch's fuse threshold (AR_NORM_FUSE_THRESHOLD in
 # comm/allreduce_residual_rmsnorm.mojo): 512 rows x 3584 cols of bfloat16.
-# A payload at or below it fuses on an AMD host with P2P; above it -- and
-# everywhere on other targets, where the threshold is 0 -- the op runs the
-# two-launch chain.
+# A payload at or below it fuses on an AMD host with P2P; above it the op
+# runs the two-launch chain.
 FUSE_THRESHOLD_BYTES = 512 * 3584 * 2
+# On 2xB200 the payloads the allreduce tuning table sends to Lamport fuse
+# instead, up to the Lamport workspace; other NVIDIA targets never fuse.
+LAMPORT_MAX_BYTES = 1024 * 1024
+# The Lamport kernel runs one block per row on 2 GPUs, one 8-wide bfloat16
+# pack per thread.
+LAMPORT_MAX_COLS = 1024 * 8
 # The fused kernel tiles at most 8192 columns with 8-wide vectors, or 16384
 # with 16-wide vectors when the width is a multiple of 16. Wider or
 # unaligned-wide column counts must take the two-launch arm instead of
@@ -83,10 +89,15 @@ def _fuses_on_target(rows: int, cols: int = COLS) -> bool:
     Assumes peer access between the test's GPUs; without it the op always
     takes the two-launch arm.
     """
+    if accelerator_api() == "hip":
+        return rows * cols * 2 <= FUSE_THRESHOLD_BYTES and (
+            cols <= 8192 or (cols <= 16384 and cols % 16 == 0)
+        )
     return (
-        accelerator_api() == "hip"
-        and rows * cols * 2 <= FUSE_THRESHOLD_BYTES
-        and (cols <= 8192 or (cols <= 16384 and cols % 16 == 0))
+        accelerator_architecture_name().startswith("sm_100")
+        and rows * cols * 2 <= LAMPORT_MAX_BYTES
+        and cols % 8 == 0
+        and cols <= LAMPORT_MAX_COLS
     )
 
 
@@ -415,8 +426,8 @@ def test_allreduce_rms_norm_execution(
 
     The reference must follow the arm the dispatch takes on this target:
     these payloads all sit under the fuse threshold, so they fuse on AMD
-    (the norm reads the unrounded float32 sum) and run the two-launch chain
-    elsewhere (the norm reads the bfloat16-rounded sum).
+    and 2xB200 (the norm reads the unrounded float32 sum) and run the
+    two-launch chain elsewhere (the norm reads the bfloat16-rounded sum).
     """
     outputs, host_shards, host_gammas = _execute(
         graphs, rows, multiply_before_cast
@@ -446,9 +457,9 @@ def test_allreduce_rms_norm_non_divisible_rows(
     the fused 1-stage kernel, 37-511 the fused 2-stage kernel (whose rank
     shard is ceildiv(rows, 2) rows, so an odd batch leaves one rank owning a
     partial shard and its last scratch slot unused), and 513 and 600 run
-    above the fuse gate as today's two-launch chain.
+    above the fuse gate as today's two-launch chain. On 2xB200, 3-129 fuse
+    through Lamport and 511 on run the two-launch chain.
     """
-    # Off AMD the op always runs the two-launch chain.
     two_launch = not _fuses_on_target(rows)
     outputs, host_shards, host_gammas = _execute(
         graphs, rows, multiply_before_cast, output_summed=two_launch

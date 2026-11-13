@@ -1123,6 +1123,66 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
             ]
 
 
+def _nvfp4_ep_forward_reductions(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    prebuilt_stacks: bool,
+) -> int:
+    """Counts the max reductions one NVFP4 EP forward traces."""
+    # The NVFP4 dispatch layout is NVIDIA's; the fake devices report none.
+    with (
+        patch("max.nn._graph_ops.ep.accelerator_api", return_value="cuda"),
+        F.lazy(),
+    ):
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(
+                DType.uint8,
+                len(devices),
+                dispatch_quant_config=nvfp4_quant_config,
+            ),
+            devices,
+        )
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=nvfp4_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
+            stacks = layer.expert_stacks() if prebuilt_stacks else None
+            before = str(Graph.current._mlir_op).count("mo.reduce.max")
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+            )
+            layer(x, comm_buffers, stacks=stacks)
+            return str(Graph.current._mlir_op).count("mo.reduce.max") - before
+
+
+def test_expert_parallel_moe_nvfp4_reads_the_stacks_global_scale(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """Forward takes the dispatch scale from prebuilt stacks.
+
+    Stacks built outside a cond already hold it on every device, so a
+    branch that recomputed it would reduce the experts' host scalars again
+    on every step.
+    """
+    own = _nvfp4_ep_forward_reductions(
+        mock_accelerator, nvfp4_quant_config, prebuilt_stacks=False
+    )
+    reused = _nvfp4_ep_forward_reductions(
+        mock_accelerator, nvfp4_quant_config, prebuilt_stacks=True
+    )
+    assert own == reused + 1
+
+
 # --------------------------------------------------------------------------- #
 # GLM-5.x router
 # --------------------------------------------------------------------------- #

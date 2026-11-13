@@ -61,13 +61,25 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from layout import Idx, TensorLayout, row_major
+from layout import (
+    Idx,
+    ImmTileTensor,
+    MutTileTensor,
+    TensorLayout,
+    row_major,
+)
 from layout.tile_tensor import _ComptimeConditionalTileTensor
 from std.memory import unsafe_stack_allocation
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from .sync import MAX_GPUS, MAX_NUM_BLOCKS_UPPER_BOUND, Signal, circular_add
+from .sync import (
+    MAX_GPUS,
+    MAX_NUM_BLOCKS_UPPER_BOUND,
+    Signal,
+    circular_add,
+    is_p2p_enabled,
+)
 from .lamport import (
     Lamport,
     LamportGeneration,
@@ -91,13 +103,17 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(
-    t"allreduce_lamport_rmsnorm_{dtype}_{ngpus}_{BLOCK_SIZE}x{CLUSTER_SIZE}_{has_residual}_{multiply_before_cast}"
+    t"allreduce_lamport_rmsnorm_{dtype}_{ngpus}_{BLOCK_SIZE}x{CLUSTER_SIZE}_{has_residual}_{multiply_before_cast}_{post_norm_residual}"
 )
 def _allreduce_lamport_rmsnorm_kernel[
     ResidualLayoutType: TensorLayout,
     residual_origin: Origin,
     ResidualOutLayoutType: TensorLayout,
     residual_out_origin: MutOrigin,
+    Gamma2LayoutType: TensorLayout,
+    gamma2_origin: ImmOrigin,
+    MixLayoutType: TensorLayout,
+    mix_origin: ImmOrigin,
     //,
     dtype: DType,
     ngpus: Int,
@@ -106,6 +122,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     CLUSTER_SIZE: Int = 1,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
+    post_norm_residual: Bool = False,
 ](
     result: MutPointer[Scalar[dtype], MutAnyOrigin],
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -122,6 +139,12 @@ def _allreduce_lamport_rmsnorm_kernel[
     residual_output: _ComptimeConditionalTileTensor[
         dtype, ResidualOutLayoutType, residual_out_origin, engaged=has_residual
     ],
+    gamma2: _ComptimeConditionalTileTensor[
+        dtype, Gamma2LayoutType, gamma2_origin, engaged=post_norm_residual
+    ],
+    mix: _ComptimeConditionalTileTensor[
+        DType.float32, MixLayoutType, mix_origin, engaged=post_norm_residual
+    ],
 ):
     """Row-blocked fused Lamport allreduce + RMSNorm; one 128-bit pack per thread.
 
@@ -130,7 +153,17 @@ def _allreduce_lamport_rmsnorm_kernel[
     sums of squares through distributed shared memory. Spreading a row over
     several SMs is what keeps the peer pushes and polls of a decode-sized
     message from serializing on one SM.
+
+    With `post_norm_residual`, the residual joins after the norm instead of
+    before it: `h = mix[0] * normed + mix[1] * residual`, each product and
+    the sum rounded to `dtype` as separate bf16 ops would, goes to
+    `residual_output`, and `result` gets `h` normed again with `gamma2`.
+    That is a transformer block's post-norm, scaled residual join and the
+    next pre-norm in one launch. Single-block rows only.
     """
+    comptime assert not post_norm_residual or (
+        has_residual and CLUSTER_SIZE == 1 and multiply_before_cast
+    ), "post_norm_residual needs a residual, 1-block rows, gamma before cast"
     var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var my_rank = Int(my_rank_dev)
@@ -189,6 +222,9 @@ def _allreduce_lamport_rmsnorm_kernel[
 
     # Preload this thread's gamma columns once (reused across all rows).
     var gamma_vec = SIMD[accum_type, atomic_width](0)
+    var gamma2_vec = SIMD[accum_type, atomic_width](0)
+    var mix_normed = Scalar[accum_type](0)
+    var mix_residual = Scalar[accum_type](0)
     if is_valid:
         gamma_vec = (
             gamma.unsafe_load[width=atomic_width, alignment=alignment](
@@ -196,6 +232,14 @@ def _allreduce_lamport_rmsnorm_kernel[
             ).cast[accum_type]()
             + weight_offset.cast[accum_type]()
         )
+        comptime if post_norm_residual:
+            gamma2_vec = (
+                gamma2[].load[width=atomic_width]((col,)).cast[accum_type]()
+                + weight_offset.cast[accum_type]()
+            )
+    comptime if post_norm_residual:
+        mix_normed = mix[].load[width=1]((0,)).cast[accum_type]()
+        mix_residual = mix[].load[width=1]((1,)).cast[accum_type]()
 
     for row in range(
         block_idx.x // CLUSTER_SIZE, rows, grid_dim.x // CLUSTER_SIZE
@@ -204,6 +248,7 @@ def _allreduce_lamport_rmsnorm_kernel[
         var global_pack = row * packs_per_row + pack
 
         var accum = SIMD[accum_type, atomic_width](0)
+        var residual_pack = SIMD[dtype, atomic_width](0)
         if is_valid:
             # (a) Local input pack -> producer-sanitize; kept in-register, so
             # this rank only touches the ngpus-1 remote slots.
@@ -211,7 +256,6 @@ def _allreduce_lamport_rmsnorm_kernel[
                 src.unsafe_load[width=atomic_width, alignment=alignment](base)
             )
             # Issued before the exchange so its latency hides behind the poll.
-            var residual_pack = SIMD[dtype, atomic_width](0)
             comptime if has_residual:
                 residual_pack = residual[].load[width=atomic_width]((row, col))
 
@@ -276,7 +320,7 @@ def _allreduce_lamport_rmsnorm_kernel[
 
             # The residual is replicated, so each rank adds it locally rather
             # than through the reduction.
-            comptime if has_residual:
+            comptime if has_residual and not post_norm_residual:
                 accum += residual_pack.cast[accum_type]()
                 residual_output[].store((row, col), accum.cast[dtype]())
 
@@ -295,17 +339,46 @@ def _allreduce_lamport_rmsnorm_kernel[
         var norm = rsqrt(
             row_sumsq / Scalar[accum_type](cols) + epsilon.cast[accum_type]()
         )
-        if is_valid:
-            var normalized: SIMD[dtype, atomic_width]
-            comptime if multiply_before_cast:
-                normalized = ((accum * norm) * gamma_vec).cast[dtype]()
-            else:
-                normalized = (accum * norm).cast[dtype]() * gamma_vec.cast[
-                    dtype
-                ]()
-            result.unsafe_store[width=atomic_width, alignment=alignment](
-                base, normalized
+        comptime if post_norm_residual:
+            var joined = SIMD[accum_type, atomic_width](0)
+            if is_valid:
+                var normed = ((accum * norm) * gamma_vec).cast[dtype]()
+                var scaled_normed = (
+                    normed.cast[accum_type]() * mix_normed
+                ).cast[dtype]()
+                var scaled_residual = (
+                    residual_pack.cast[accum_type]() * mix_residual
+                ).cast[dtype]()
+                var h = (
+                    scaled_normed.cast[accum_type]()
+                    + scaled_residual.cast[accum_type]()
+                ).cast[dtype]()
+                comptime if has_residual:
+                    residual_output[].store((row, col), h)
+                joined = h.cast[accum_type]()
+            var row_sumsq2 = block.sum[block_size=BLOCK_SIZE, broadcast=True](
+                (joined * joined).reduce_add()
             )
+            var norm2 = rsqrt(
+                row_sumsq2 / Scalar[accum_type](cols)
+                + epsilon.cast[accum_type]()
+            )
+            if is_valid:
+                result.unsafe_store[width=atomic_width, alignment=alignment](
+                    base, ((joined * norm2) * gamma2_vec).cast[dtype]()
+                )
+        else:
+            if is_valid:
+                var normalized: SIMD[dtype, atomic_width]
+                comptime if multiply_before_cast:
+                    normalized = ((accum * norm) * gamma_vec).cast[dtype]()
+                else:
+                    normalized = (accum * norm).cast[dtype]() * gamma_vec.cast[
+                        dtype
+                    ]()
+                result.unsafe_store[width=atomic_width, alignment=alignment](
+                    base, normalized
+                )
 
         # (f) Fused clear: reset this pack's remote slots in the generation
         # reused two calls from now, within the previous writer's extent.
@@ -370,9 +443,13 @@ def _clusters_supported[ngpus: Int]() -> Bool:
 
 
 @inline(.always)
-def _max_packs_per_row[ngpus: Int](num_bytes: Int) -> Int:
+def _max_packs_per_row[
+    ngpus: Int, *, post_norm_residual: Bool = False
+](num_bytes: Int) -> Int:
     """Returns the widest row the layout chosen for `num_bytes` can hold."""
-    comptime if _clusters_supported[ngpus]():
+    # The post-norm residual join's second norm reduces within one block,
+    # so it never spreads a row over a cluster.
+    comptime if _clusters_supported[ngpus]() and not post_norm_residual:
         if num_bytes <= _CLUSTER_MAX_BYTES:
             return _CLUSTER_BLOCK_SIZE * _MAX_CLUSTER_SIZE
     return _SINGLE_BLOCK_SIZE
@@ -412,6 +489,7 @@ def _lamport_allreduce_rmsnorm_launch[
     *,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
+    post_norm_residual: Bool = False,
 ](
     my_rank: Int,
     src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
@@ -433,12 +511,25 @@ def _lamport_allreduce_rmsnorm_launch[
     ] = _ComptimeConditionalTileTensor[
         dtype, _ZeroSizedLayout, MutAnyOrigin, engaged=False
     ](),
+    gamma2: _ComptimeConditionalTileTensor[
+        mut=False, dtype, engaged=post_norm_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        dtype, _ZeroSizedLayout, ImmUntrackedOrigin, engaged=False
+    ](),
+    mix: _ComptimeConditionalTileTensor[
+        mut=False, DType.float32, engaged=post_norm_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        DType.float32, _ZeroSizedLayout, ImmUntrackedOrigin, engaged=False
+    ](),
 ) raises:
     """Validates the shape and launches the fused Lamport kernel on this GPU.
 
     See `lamport_allreduce_rmsnorm` for the protocol. With `has_residual`,
     `residual` (`[rows, cols]`, replicated on every rank) is added to the
     reduced sum before the norm and the sum is stored to `residual_output`.
+    With `post_norm_residual` as well, the residual joins after the norm
+    instead, by the weights in `mix`, and `gamma2` norms the join; see
+    `lamport_allreduce_post_norm_residual_rmsnorm`.
     `multiply_before_cast` matches `ops.rms_norm`: True applies gamma in
     float32 before the single cast, False casts the normalized value first and
     applies gamma in `dtype`.
@@ -456,7 +547,9 @@ def _lamport_allreduce_rmsnorm_launch[
         )
     var packs_per_row = cols // atomic_width
     var num_bytes = rows * cols * size_of[dtype]()
-    if packs_per_row > _max_packs_per_row[ngpus](num_bytes):
+    if packs_per_row > _max_packs_per_row[
+        ngpus, post_norm_residual=post_norm_residual
+    ](num_bytes):
         raise Error(
             "lamport_allreduce_rmsnorm: cols too large for one pack/thread"
         )
@@ -476,12 +569,17 @@ def _lamport_allreduce_rmsnorm_launch[
             residual_origin=residual.T.origin,
             ResidualOutLayoutType=residual_output.T.LayoutType,
             residual_out_origin=residual_output.T.origin,
+            Gamma2LayoutType=gamma2.T.LayoutType,
+            gamma2_origin=gamma2.T.origin,
+            MixLayoutType=mix.T.LayoutType,
+            mix_origin=mix.T.origin,
             dtype,
             ngpus,
             block_size,
             CLUSTER_SIZE=cluster_size,
             has_residual=has_residual,
             multiply_before_cast=multiply_before_cast,
+            post_norm_residual=post_norm_residual,
         ]
         var num_clusters = min(MAX_NUM_BLOCKS_UPPER_BOUND // cluster_size, rows)
         ctx.enqueue_function[kernel](
@@ -496,6 +594,8 @@ def _lamport_allreduce_rmsnorm_launch[
             Int32(my_rank),
             residual,
             residual_output,
+            gamma2,
+            mix,
             grid_dim=num_clusters * cluster_size,
             block_dim=block_size,
             cluster_dim=OptionalReg(Dim(cluster_size, 1, 1)) if cluster_size
@@ -503,7 +603,8 @@ def _lamport_allreduce_rmsnorm_launch[
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
-    comptime if _clusters_supported[ngpus]():
+    # The post-norm residual join's second norm reduces within one block.
+    comptime if _clusters_supported[ngpus]() and not post_norm_residual:
         if num_bytes <= _CLUSTER_MAX_BYTES:
             # The narrowest power-of-two cluster whose blocks cover the row.
             comptime for cluster_size in [1, 2, 4, 8]:
@@ -555,3 +656,93 @@ def lamport_allreduce_rmsnorm[
         Scalar[dtype](0),
         ctx,
     )
+
+
+def lamport_allreduce_post_norm_residual_rmsnorm[
+    dtype: DType,
+    ngpus: Int,
+    //,
+](
+    my_rank: Int,
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    residual: ImmTileTensor[dtype, ...],
+    joined: MutTileTensor[dtype, ...],
+    normed: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma2: ImmTileTensor[dtype, ...],
+    mix: ImmTileTensor[DType.float32, ...],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    rows: Int,
+    cols: Int,
+    epsilon: Scalar[dtype],
+    ctx: DeviceContext,
+) raises:
+    """Per-device Lamport allreduce, post-norm, residual join and pre-norm.
+
+    For each `[rows, cols]` row, with `s` the allreduce sum of `src`:
+
+        joined = bf16(bf16(mix[0] * rmsnorm(s, gamma))
+                      + bf16(mix[1] * residual))
+        normed = rmsnorm(joined, gamma2)
+
+    Each product and the sum round to `dtype` on their own, as the unfused
+    ops do, and both norms multiply by gamma in float32 before the cast. The
+    protocol is `lamport_allreduce_rmsnorm`'s, with one block per row, so a
+    row holds at most one 128-bit pack per thread of a block. A message past
+    the Lamport workspace runs as consecutive row chunks that each fit it.
+    The kernel stores straight into the peers' signal buffers, so it needs
+    P2P access between the GPUs and raises without it.
+
+    Parameters:
+        dtype: Element type (bf16/fp16/fp32 transport), inferred.
+        ngpus: Number of participating GPUs, inferred from `rank_sigs`.
+
+    Args:
+        my_rank: This GPU's rank.
+        src: This rank's `[rows, cols]` partial sum.
+        residual: The `[rows, cols]` residual stream, replicated.
+        joined: Receives the joined residual stream.
+        normed: Receives `joined` normed with `gamma2`.
+        gamma: The first norm's weight, `[cols]`.
+        gamma2: The second norm's weight, `[cols]`.
+        mix: On the device, `[2]` float32: the weight of the normed sum, then
+            of the residual.
+        rank_sigs: Every rank's signal buffer.
+        rows: Rows of the message.
+        cols: Columns; both norms run over them.
+        epsilon: Both norms' epsilon.
+        ctx: This GPU's context.
+    """
+    # `is_p2p_enabled` is process-wide, so every rank raises before any of
+    # them enqueues.
+    if not is_p2p_enabled():
+        raise Error(
+            "lamport_allreduce_post_norm_residual_rmsnorm requires P2P access"
+            " between GPUs"
+        )
+    # Every rank takes the same chunks, so the Lamport generations, which
+    # rotate once per launch, stay in step across the ranks.
+    var chunk_rows = max(
+        1, Lamport.MAX_SMALL_MESSAGE_BYTES // (cols * size_of[dtype]())
+    )
+    for start in range(0, rows, chunk_rows):
+        var end = min(start + chunk_rows, rows)
+        var offset = start * cols
+        _lamport_allreduce_rmsnorm_launch[
+            dtype, ngpus, has_residual=True, post_norm_residual=True
+        ](
+            my_rank,
+            src.unsafe_offset(offset),
+            normed.unsafe_offset(offset),
+            gamma,
+            rank_sigs,
+            end - start,
+            cols,
+            epsilon,
+            Scalar[dtype](0),
+            ctx,
+            residual[start:end, :],
+            joined[start:end, :],
+            gamma2,
+            mix,
+        )

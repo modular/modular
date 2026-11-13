@@ -273,6 +273,15 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 F.constant(
                     residual_scales(idx), DType.float32, device=kv_mapping
                 ),
+                # Its own operand rather than a slice of the scales: a slice
+                # would fuse into the collective join that reads it, with its
+                # host index operands.
+                F.constant(
+                    residual_scales(idx)[:2], DType.float32, device=kv_mapping
+                ),
+                F.constant(
+                    residual_scales(idx)[2:], DType.float32, device=kv_mapping
+                ),
                 comm_buffers,
             )
             if idx in taps:

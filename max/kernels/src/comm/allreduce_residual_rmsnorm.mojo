@@ -1965,13 +1965,14 @@ def _dispatch_ar_norm[
 ) raises:
     """Runtime-select the fused allreduce+norm vs a two-launch fallback.
 
-    Fuses while the full `[rows, cols]` payload fits `AR_NORM_FUSE_THRESHOLD`;
-    above it, hand off to `two_launch` (a standalone allreduce into `sum_out`
-    followed by a separate norm), caller-supplied so `comm` stays free of
-    `nn`. Nothing is calibrated off-AMD, so those targets always take
-    `two_launch`, as does any host without P2P access: the fused kernels
-    read their peers' inputs directly, while the plain allreduce falls back
-    to staged copies.
+    On AMD, fuses while the full `[rows, cols]` payload fits
+    `AR_NORM_FUSE_THRESHOLD`; above it, hand off to `two_launch` (a
+    standalone allreduce into `sum_out` followed by a separate norm),
+    caller-supplied so `comm` stays free of `nn`. Elsewhere only the
+    payloads `allreduce_rmsnorm` sends to its Lamport kernel fuse, since the
+    other fused kernels are not calibrated there. A host without P2P access
+    always takes `two_launch`: the fused kernels read their peers' inputs
+    directly, while the plain allreduce falls back to staged copies.
 
     Widths the fused kernels cannot warp-tile also take `two_launch`. The
     gate reads only `rows` and `cols`, which are identical on every rank
@@ -1992,16 +1993,27 @@ def _dispatch_ar_norm[
         two_launch()
         return
 
-    comptime threshold = (
-        AR_NORM_FUSE_THRESHOLD if ctx.target.is_amd_gpu() else Int(0)
-    )
-
     var payload_bytes = input_buffers[0].num_elements() * size_of[in_dtype]()
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
-    if payload_bytes <= threshold and _fused_kernel_tiles_cols[in_dtype](
-        cols, ctx
-    ):
+    var fuse: Bool
+    comptime if ctx.target.is_amd_gpu():
+        fuse = payload_bytes <= AR_NORM_FUSE_THRESHOLD and (
+            _fused_kernel_tiles_cols[in_dtype](cols, ctx)
+        )
+    else:
+        # Off AMD only the latency-bound payloads fuse, the ones
+        # `allreduce_rmsnorm` sends to its Lamport kernel: there one launch
+        # saves the separate norm launch outright. The 1- and 2-stage fused
+        # kernels are not calibrated against the plain allreduce here.
+        comptime sm_version = get_sm_version()
+        var rows = input_buffers[0].num_elements() // cols
+        fuse = dispatch_select_comm_config[
+            ngpus, sm_version, allreduce_tuning_table
+        ](payload_bytes).algorithm == AllReduceAlgorithm.LAMPORT and (
+            lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
+        )
+    if fuse:
         # in == out dtype, so the kernel skips its FP8 epilogue and never
         # touches the scale operand; `sum_out` (unwritten on this arm)
         # doubles as the dummy.

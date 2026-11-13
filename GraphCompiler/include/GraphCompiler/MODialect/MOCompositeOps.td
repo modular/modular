@@ -959,6 +959,51 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op : MO_DistributedOp<"comp
 }
 
 //===----------------------------------------------------------------------===//
+// DistributedAllReducePostNormResidualRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_DistributedAllReducePostNormResidualRMSNormOp : MO_DistributedOp<"composite.distributed.allreduce_post_norm_residual_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + post-norm residual join across N devices.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs, norms the sum with `gamma`,
+    joins it to the replicated `residual` stream as
+    `mix[0] * normed + mix[1] * residual`, and norms the join with `gamma2`,
+    in one launch per device: a transformer block's post-norm, scaled
+    residual join and next pre-norm. Each product and the sum round to the
+    input dtype on their own, as the unfused ops do, and both norms multiply
+    by their weight in float32 before the cast. Returns the join (`joined`)
+    and its norm (`normed`), replicated.
+
+    `mix` is one `[2]` float32 tensor per device. bf16 in/out. A Lamport
+    kernel runs it with one block per row, in row chunks that each fit its
+    1 MiB workspace.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$gamma,
+    Variadic<MO_Tensor>:$gamma2,
+    Variadic<MO_Tensor>:$mix,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$epsilon
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$joined,
+    Variadic<MO_Tensor>:$normed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)` `{` `epsilon` `=` $epsilon `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedAllReduceRMSNormOp
 //===----------------------------------------------------------------------===//
 

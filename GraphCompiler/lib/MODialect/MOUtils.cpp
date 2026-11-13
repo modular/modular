@@ -36,6 +36,7 @@ bool M::MO::kernelRequiresSyncLaunch(Operation *op) {
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP8Op>(op) ||
          isa<Composite::DistributedAllGatherRMSNormQuantMXFP6Op>(op) ||
          isa<Composite::DistributedAllReduceRMSNormOp>(op) ||
+         isa<Composite::DistributedAllReducePostNormResidualRMSNormOp>(op) ||
          isa<DistributedBroadcastOp>(op) || isa<DistributedScatterOp>(op) ||
          isa<EPDispatchOp>(op) || isa<EPDispatchFP8Op>(op) ||
          isa<EPDispatchBlockScaledNVOp>(op) ||

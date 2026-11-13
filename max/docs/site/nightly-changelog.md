@@ -217,6 +217,13 @@ This version is still a work in progress.
   bfloat16. The `max.functional` form falls back to that two-launch path for
   inputs that are not 2-D bfloat16 and for meshes without signal buffers.
 
+- Added `ops.allreduce_post_norm_residual_rms_norm` and
+  `max.functional.allreduce_post_norm_residual_rms_norm`, which run a
+  transformer block's branch allreduce, its post-norm, the weighted join to
+  the residual stream and the next pre-norm in one launch per device. They
+  take bfloat16 2-D tensors and need P2P access between the GPUs. On NVIDIA
+  GPUs, `allreduce_rms_norm` now also fuses small payloads into one launch.
+
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
   `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
   counterparts take them for `coordinate_transform_mode` and

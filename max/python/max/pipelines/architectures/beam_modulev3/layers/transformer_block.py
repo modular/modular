@@ -23,7 +23,11 @@ from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import tensor_parallel_mlp
-from max.nn.common_layers.quant_moe import ExpertParallelMoE, QuantizedMoE
+from max.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
+    ExpertStacks,
+    QuantizedMoE,
+)
 from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
@@ -34,6 +38,11 @@ from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe import (
 )
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
+)
+from max.pipelines.architectures.muse_spark.layers.moe import (
+    DECODE_MAX_TOKENS,
+    decode_cond,
+    shard_types,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
@@ -169,6 +178,8 @@ class BeamTransformerBlock(Module[..., Tensor]):
         position_input: Tensor,
         input_row_offsets: Tensor,
         scales: Tensor,
+        attn_mix: Tensor,
+        ffn_mix: Tensor,
         comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
         """Runs the decoder block.
@@ -182,6 +193,9 @@ class BeamTransformerBlock(Module[..., Tensor]):
             input_row_offsets: Ragged row offsets.
             scales: The four float32 coefficients :func:`residual_scales`
                 returns.
+            attn_mix: The first two of them, as their own tensor: the
+                attention join's collective reads it.
+            ffn_mix: The last two, for the MLP join's collective.
             comm_buffers: The EP buffers, for an expert-parallel MoE.
 
         Returns:
@@ -195,27 +209,114 @@ class BeamTransformerBlock(Module[..., Tensor]):
             input_row_offsets,
         )
         if self.expert_parallel:
-            # Each device routes its own rows: reduce-scatter the attention
-            # output and slice the residual the same way.
-            attn_out = F.reduce_scatter(attn_out, scatter_axis=0)
-            residual = F.transfer_to(x, attn_out.mapping)
-        else:
-            attn_out = _replicated(attn_out)
-            residual = x
+            assert isinstance(self.mlp, ExpertParallelMoE)
+            # Built outside the cond, so init stacks the experts once for
+            # both branches.
+            stacks = self.mlp.expert_stacks()
+            (h,) = decode_cond(
+                x.shape[0],
+                [(x.mapping, shard_types(x))],
+                lambda: [
+                    self._replicated_rows(
+                        x, attn_out, attn_mix, ffn_mix, stacks
+                    )
+                ],
+                lambda: [
+                    self._exchanged_rows(
+                        x, attn_out, scales, stacks, comm_buffers
+                    )
+                ],
+                [w for _, w in self.parameters],
+            )
+            return F.rebind(h, x.shape)
         h = _scaled_add(
-            self.post_attention_layernorm(attn_out),
-            residual,
+            self.post_attention_layernorm(_replicated(attn_out)),
+            x,
             scales[0:2],
         )
-        if self.expert_parallel:
-            mlp_out = self.mlp(self.pre_feedforward_layernorm(h), comm_buffers)
-        else:
-            mlp_out = _replicated(self.mlp(self.pre_feedforward_layernorm(h)))
+        mlp_out = _replicated(self.mlp(self.pre_feedforward_layernorm(h)))
         h = _scaled_add(
             self.post_feedforward_layernorm(mlp_out),
             h,
             scales[2:4],
         )
-        if self.expert_parallel:
-            h = F.allgather(h, tensor_axis=0)
         return F.rebind(h, x.shape)
+
+    def _replicated_rows(
+        self,
+        x: Tensor,
+        attn_out: Tensor,
+        attn_mix: Tensor,
+        ffn_mix: Tensor,
+        stacks: ExpertStacks,
+    ) -> Tensor:
+        """The sparse block for a decode-sized step, as vLLM runs it.
+
+        Every device keeps every row: the attention output and the experts'
+        output each take one all-reduce fused with the norm after it, and
+        each device runs its own experts over all rows, with no token
+        exchange.
+        """
+        assert isinstance(self.mlp, ExpertParallelMoE)
+        post_attn = self.post_attention_layernorm
+        h, normed = F.allreduce_post_norm_residual_rms_norm(
+            attn_out,
+            x,
+            post_attn.weight,
+            self.pre_feedforward_layernorm.weight,
+            attn_mix,
+            post_attn.eps,
+        )
+        router_idx, router_weight = self.mlp.gate(normed)
+        routing = F.concat(
+            [router_idx.cast(DType.float32), router_weight.cast(DType.float32)],
+            axis=-1,
+        )
+        # Each device rounds its own float32 sum, as the exchange path's
+        # combine does; the fused all-reduce takes bfloat16 only.
+        partial = self.mlp.local_expert_partial_sums(
+            normed,
+            routing,
+            stacks,
+            max_rows=DECODE_MAX_TOKENS,
+            out_dtype=x.dtype,
+        )
+        post_ffn = self.post_feedforward_layernorm
+        # The next block norms its own input, so the join's second norm is
+        # unused.
+        joined, _ = F.allreduce_post_norm_residual_rms_norm(
+            partial, h, post_ffn.weight, post_ffn.weight, ffn_mix, post_ffn.eps
+        )
+        return joined
+
+    def _exchanged_rows(
+        self,
+        x: Tensor,
+        attn_out: Tensor,
+        scales: Tensor,
+        stacks: ExpertStacks,
+        comm_buffers: EPCommBuffers | None,
+    ) -> Tensor:
+        """The sparse block for a prefill-sized step.
+
+        Each device routes its own rows: the attention output is
+        reduce-scattered, the residual sliced the same way, the rows
+        exchanged with the experts' devices and gathered at the end.
+        """
+        attn_out = F.reduce_scatter(attn_out, scatter_axis=0)
+        h = _scaled_add(
+            self.post_attention_layernorm(attn_out),
+            F.transfer_to(x, attn_out.mapping),
+            scales[0:2],
+        )
+        mlp_out = self.mlp(
+            self.pre_feedforward_layernorm(h), comm_buffers, stacks=stacks
+        )
+        h = _scaled_add(
+            self.post_feedforward_layernorm(mlp_out),
+            h,
+            scales[2:4],
+        )
+        # The gathered shards sum back to the step's rows; the cond's
+        # branches must agree on that dim.
+        return F.rebind(F.allgather(h, tensor_axis=0), x.shape)

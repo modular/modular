@@ -636,6 +636,128 @@ def allreduce_rms_norm(
         )
 
 
+def allreduce_post_norm_residual_rms_norm(
+    t: Tensor,
+    residual: Tensor,
+    gamma: Tensor,
+    gamma2: Tensor,
+    mix: Tensor,
+    epsilon: float,
+) -> tuple[Tensor, Tensor]:
+    """All-reduces a branch and joins it to the residual between two norms.
+
+    A transformer block with post-norms (the sandwich-norm layout) ends each
+    branch with a norm, joins it to the residual stream with scalar weights
+    and norms the result for the next branch. This does all of it in one
+    launch per device:
+
+    .. code-block:: text
+
+        joined = mix[0] * rms_norm(allreduce(t), gamma) + mix[1] * residual
+        normed = rms_norm(joined, gamma2)
+
+    Each product and the sum round to bfloat16 on their own, as the unfused
+    ops do; both norms multiply by their weight in float32 before the cast
+    and take no weight offset. A Lamport kernel runs it (see
+    :func:`max.graph.ops.allreduce_post_norm_residual_rms_norm`), in row
+    chunks that each fit its 1 MiB workspace.
+
+    Args:
+        t: A ``[rows, cols]`` bfloat16 tensor that is
+            :class:`~max.tensor.sharding.Partial` on a one-dimensional mesh
+            of accelerators.
+        residual: The residual stream, replicated on that mesh.
+        gamma: The branch norm's weight, replicated on that mesh or a host
+            tensor, which is copied to every device.
+        gamma2: The next norm's weight, as ``gamma``.
+        mix: ``[2]`` float32, as ``gamma``: the weight of the normed branch,
+            then of the residual.
+        epsilon: Both norms' epsilon.
+
+    Returns:
+        ``(joined, normed)``, each replicated.
+
+    Raises:
+        ValueError: If ``t`` is not a 2-D bfloat16 Partial tensor on a
+            one-dimensional mesh, ``residual`` is not replicated on that
+            mesh, a weight is distributed but not replicated on it, or the
+            mesh has no accelerators.
+    """
+    mesh = t.mesh
+    if mesh.ndim != 1 or not isinstance(t.placements[0], Partial):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm needs a Partial tensor on a "
+            f"one-dimensional mesh, got {t.mapping}."
+        )
+    if t.dtype != DType.bfloat16 or t.rank != 2:
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm takes a 2-D bfloat16 "
+            f"tensor, got {t.dtype} of rank {t.rank}."
+        )
+    # Each device joins its own operands and the outputs are labelled
+    # replicated, so an operand that differs across devices would make the
+    # outputs differ under that label. A weight may instead be one host
+    # tensor, copied to every device.
+    for name, operand in (
+        ("residual", residual),
+        ("gamma", gamma),
+        ("gamma2", gamma2),
+        ("mix", mix),
+    ):
+        is_replicated = operand.mesh == mesh and operand.placements == (
+            Replicated(),
+        )
+        if not is_replicated and (name == "residual" or operand.is_distributed):
+            raise ValueError(
+                f"allreduce_post_norm_residual_rms_norm takes {name} "
+                f"replicated on the mesh of its input, got {operand.mapping}."
+            )
+
+    def run(
+        shards: list[Tensor],
+        residuals: list[Tensor],
+        gammas: list[Tensor] | Tensor,
+        gamma2s: list[Tensor] | Tensor,
+        mixes: list[Tensor] | Tensor,
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is None:
+            raise ValueError(
+                "allreduce_post_norm_residual_rms_norm runs only on "
+                "accelerators."
+            )
+        values = [TensorValue(shard) for shard in shards]
+
+        # The op reads each weight on its input's device, so a host weight,
+        # which reaches the group whole, needs a copy on every device.
+        def local(weights: list[Tensor] | Tensor) -> list[TensorValue]:
+            if not isinstance(weights, list):
+                weights = [weights] * len(values)
+            return [
+                w if w.device == v.device else w.to(v.device)
+                for w, v in zip(
+                    (TensorValue(w) for w in weights), values, strict=True
+                )
+            ]
+
+        joined, normed = ops.allreduce_post_norm_residual_rms_norm(
+            shards,
+            signal_buffers,
+            residuals,
+            local(gammas),
+            local(gamma2s),
+            local(mixes),
+            epsilon,
+        )
+        return list(zip(joined, normed, strict=True))
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with ensure_context():
+        return call_on_mesh(
+            run, mesh, (0,), out_specs=[replicated, replicated]
+        )(t, residual, gamma, gamma2, mix, _signal_buffers(mesh))
+
+
 def allgather_rms_norm(
     t: Tensor,
     gamma: Tensor,

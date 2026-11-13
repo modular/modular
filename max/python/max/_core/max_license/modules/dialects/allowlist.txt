@@ -105,6 +105,7 @@ MOComposite_DistributedAllGatherRMSNormOp            # CompositeDistributedAllga
 MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op  # CompositeDistributedAllgatherRmsNormQuantMxfp8Op
 MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op  # CompositeDistributedAllgatherRmsNormQuantMxfp6Op
 MOComposite_DistributedAllReduceRMSNormOp            # CompositeDistributedAllreduceRmsNormOp
+MOComposite_DistributedAllReducePostNormResidualRMSNormOp # CompositeDistributedAllreducePostNormResidualRmsNormOp
 MOComposite_DistributedReduceScatterRMSNormOp        # CompositeDistributedReduceScatterRmsNormOp
 MOComposite_FusedMatmulAddOp                         # CompositeMatmulAddOp; declares output params; graph.py reaches it structurally
 MOComposite_GroupedMatmulBlockScaledOp               # CompositeGroupedMatmulBlockScaledOp

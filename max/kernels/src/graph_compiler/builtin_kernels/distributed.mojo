@@ -31,7 +31,10 @@ from comm.allgather import allgather, allgather_rows_slice
 from comm.allreduce import allreduce
 from comm.alltoall import all_to_all
 
-from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
+from comm.allreduce_lamport_rmsnorm import (
+    lamport_allreduce_rmsnorm,
+    lamport_allreduce_post_norm_residual_rmsnorm,
+)
 from comm.allreduce_residual_rmsnorm import (
     _dispatch_ar_norm,
     allreduce_residual_rmsnorm,
@@ -3687,6 +3690,164 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
 
         _launch_device_collective[num_devices](
             launch_fused_ag_norm_quant, dev_ctxs_input.copy()
+        )
+
+
+@extensibility.register(
+    "mo.composite.distributed.allreduce_post_norm_residual_rms_norm"
+)
+struct DistributedAllReducePostNormResidualRMSNorm:
+    """Registers `mo.composite.distributed.allreduce_post_norm_residual_rms_norm`.
+
+    One Lamport launch per device sums `inputs`, norms the sum with `gammas`,
+    joins it to `residuals` as `mix[0] * normed + mix[1] * residual` and
+    norms the join with `gammas2`; see
+    `comm.allreduce_lamport_rmsnorm.lamport_allreduce_post_norm_residual_rmsnorm`.
+    """
+
+    @staticmethod
+    def execute[
+        Joined: TypeList[Trait=Output & Tensor, ...],
+        Normed: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        Residuals: TypeList[Trait=Input & Tensor, ...],
+        Gammas: TypeList[Trait=Input & Tensor, ...],
+        Gammas2: TypeList[Trait=Input & Tensor, ...],
+        Mixes: TypeList[Trait=Input & Tensor, ...],
+        //,
+        _trace_name: StaticString,
+        epsilon: Float32,
+    ](
+        outputs_joined: TensorTuple[*Joined],
+        outputs_normed: TensorTuple[*Normed],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
+        residuals: TensorTuple[*Residuals],
+        gammas: TensorTuple[*Gammas],
+        gammas2: TensorTuple[*Gammas2],
+        mixes: TensorTuple[*Mixes],
+        dev_ctxs_input: DeviceContextArray[_, _],
+    ) raises:
+        """Fused allreduce + post-norm residual join (bf16 in/out).
+
+        Parameters:
+            Joined: The element types of `outputs_joined` (inferred).
+            Normed: The element types of `outputs_normed` (inferred).
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
+            Residuals: The element types of `residuals` (inferred).
+            Gammas: The element types of `gammas` (inferred).
+            Gammas2: The element types of `gammas2` (inferred).
+            Mixes: The element types of `mixes` (inferred).
+            _trace_name: Trace name for profiling.
+            epsilon: Both norms' epsilon.
+
+        Args:
+            outputs_joined: Per-device joined residual stream.
+            outputs_normed: Per-device join normed with `gammas2`.
+            inputs: Per-device `[rows, cols]` partial sums to reduce.
+            signal_buffers: Per-device synchronization buffers.
+            residuals: Per-device residual stream, replicated.
+            gammas: Per-device first norm weight, `[cols]`.
+            gammas2: Per-device second norm weight, `[cols]`.
+            mixes: Per-device `[2]` float32 weights of the normed sum and of
+                the residual.
+            dev_ctxs_input: Device contexts for participating GPUs.
+        """
+        comptime num_devices = len(Ins)
+        comptime dtype = Ins[0].dtype
+        comptime rank = Ins[0].rank
+        comptime assert len(Sigs) == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+        comptime assert (
+            rank == 2
+        ), "allreduce_post_norm_residual_rms_norm is 2-D"
+        _check_tensor_tuple[num_devices, dtype, rank, *Ins]()
+        _check_tensor_tuple[num_devices, dtype, rank, *Residuals]()
+        _check_tensor_tuple[num_devices, dtype, rank, *Joined]()
+        _check_tensor_tuple[num_devices, dtype, rank, *Normed]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
+        _check_tensor_tuple[num_devices, dtype, 1, *Gammas]()
+        _check_tensor_tuple[num_devices, dtype, 1, *Gammas2]()
+        _check_tensor_tuple[num_devices, .float32, 1, *Mixes]()
+        _check_signal_buffer_size(Int(signal_buffers[0].shape().product()), 0)
+
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
+                signal_buffers[i]
+                .to_tile_tensor()
+                .unsafe_ptr()
+                .unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
+        var rows = Int(inputs[0].shape()[0].value())
+        var cols = Int(inputs[0].shape()[1].value())
+
+        @inline(.always)
+        def launch_post_norm_residual[
+            index: Int
+        ]() raises {
+            imm inputs,
+            imm residuals,
+            imm outputs_joined,
+            imm outputs_normed,
+            imm gammas,
+            imm gammas2,
+            imm mixes,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm rows,
+            imm cols,
+        }:
+            comptime assert conforms_to(type_of(inputs[index]), TileTensorable)
+            comptime assert conforms_to(
+                type_of(residuals[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(outputs_joined[index]), TileTensorable
+            )
+            comptime assert conforms_to(
+                type_of(outputs_normed[index]), TileTensorable
+            )
+            comptime assert conforms_to(type_of(gammas[index]), TileTensorable)
+            comptime assert conforms_to(type_of(gammas2[index]), TileTensorable)
+            comptime assert conforms_to(type_of(mixes[index]), TileTensorable)
+            # `src`, `normed` and `gamma` take the pointer types of the shared
+            # Lamport launcher.
+            lamport_allreduce_post_norm_residual_rmsnorm(
+                index,
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    inputs[index].to_tile_tensor[dtype]().unsafe_ptr()
+                ),
+                residuals[index].to_tile_tensor[dtype]().as_imm(),
+                outputs_joined[index].to_tile_tensor[dtype](),
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs_normed[index].to_tile_tensor[dtype]().unsafe_ptr()
+                ),
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    gammas[index].to_tile_tensor[dtype]().unsafe_ptr()
+                ),
+                gammas2[index].to_tile_tensor[dtype]().as_imm(),
+                mixes[index].to_tile_tensor[.float32]().as_imm(),
+                rank_sigs,
+                rows,
+                cols,
+                epsilon.cast[dtype](),
+                dev_ctxs_input[index],
+            )
+
+        _launch_device_collective[num_devices](
+            launch_post_norm_residual, dev_ctxs_input.copy()
         )
 
 

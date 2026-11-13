@@ -1225,15 +1225,21 @@ class ExpertParallelMoE(QuantizedMoE):
         def device_layer_idx(i: int) -> TensorValue | None:
             return layer_idx_per_device[i] if layer_idx_per_device else None
 
+        global_scale: Tensor | None = None
+        input_scales: list[Tensor] | None = None
         if ep_requires_dispatch_scales(self.quant_config):
-            global_scale = self._nvfp4_global_input_scale()
+            # Prebuilt stacks already hold the scale on each device, so a
+            # cond branch reuses it rather than reducing the host scalars
+            # again on every step.
+            if stacks is not None and stacks.global_scale is not None:
+                device_scales = stacks.global_scale
+            else:
+                global_scale = self._nvfp4_global_input_scale()
+                device_scales = [global_scale] * self.mesh.num_devices
             input_scales = [
-                F.broadcast_to(global_scale, [self.num_experts])
-                for _ in self.mesh.devices
+                F.broadcast_to(scale, [self.num_experts])
+                for scale in device_scales
             ]
-        else:
-            global_scale = None
-            input_scales = None
 
         has_unfused_shared = (
             self.shared_experts is not None and not config.fused_shared_expert
