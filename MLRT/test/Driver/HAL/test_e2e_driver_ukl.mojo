@@ -19,30 +19,28 @@ behind the plugin's function wrapper and launches it with whichever execution
 config the plugin takes.
 """
 
-from std.builtin.rebind import downcast
-from std.math import ceildiv
-from std.os import getenv
 from std.sys import size_of
-from std.sys.info import is_gpu
 from std.testing import assert_equal
 
 from layout import TensorLayout, TileTensor, row_major
 from max._driver import Driver, Context
 from max._driver.max_license.hal.buffer import Buffer
-from max._driver.max_license.hal._machine import DeviceRef, DeviceSpec
-from max._driver.max_license.hal.execution_config import CoresExecutionConfig
+from max._driver.max_license.hal._machine import DeviceSpec
 from max._driver.max_license.hal.queue import Queue
-from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import (
-    ExecutionConfig,
-    GridBlockExecutionConfig,
-    GridBlockLaunchConfig,
+
+from ukl_test_support import (
+    alloc_zeroed,
+    device_ptr,
+    download,
+    driver_plugins,
+    first_item,
+    item_stride,
+    launch,
+    launch_config,
+    upload,
 )
 
 comptime LENGTH = 1000
-comptime BLOCK = 256
-# A cores config enables the first `CORES` cores, so the set has no gaps.
-comptime CORES = 2
 comptime M = 6
 comptime K = 5
 comptime N = 7
@@ -53,25 +51,6 @@ comptime N = 7
 # ===-----------------------------------------------------------------------===#
 
 
-@inline(.always)
-def _first_item() -> Int:
-    comptime if is_gpu():
-        return global_idx.x
-    else:
-        return 0
-
-
-# A device that isn't SIMT runs the kernel once on every enabled thread with no
-# portable index to split the work by, so each thread covers every item. The
-# outputs never alias the inputs, so the duplicate stores agree.
-@inline(.always)
-def _item_stride() -> Int:
-    comptime if is_gpu():
-        return Int(grid_dim.x) * Int(block_dim.x)
-    else:
-        return 1
-
-
 def vec_add[
     dtype: DType
 ](
@@ -80,7 +59,7 @@ def vec_add[
     output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     n: Int32,
 ):
-    for i in range(_first_item(), Int(n), _item_stride()):
+    for i in range(first_item(), Int(n), item_stride()):
         output[unsafe_offset=i] = a[unsafe_offset=i] + b[unsafe_offset=i]
 
 
@@ -92,7 +71,7 @@ def axpy[
     y: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
     output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
 ):
-    for i in range(_first_item(), n, _item_stride()):
+    for i in range(first_item(), n, item_stride()):
         output[unsafe_offset=i] = a * x[unsafe_offset=i] + y[unsafe_offset=i]
 
 
@@ -103,7 +82,7 @@ def add[
     b: Scalar[dtype],
     output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
 ):
-    if _first_item() == 0:
+    if first_item() == 0:
         output[] = a + b
 
 
@@ -121,7 +100,7 @@ def matmul[
     """Writes the row-major product of `a` (`m x k`) and `b` (`k x n`)."""
     var k = Int(a.dim[1]())
     var n = Int(b.dim[1]())
-    for i in range(_first_item(), Int(a.dim[0]()) * n, _item_stride()):
+    for i in range(first_item(), Int(a.dim[0]()) * n, item_stride()):
         var row = i // n
         var col = i % n
         var acc = Scalar[dtype](0)
@@ -137,82 +116,6 @@ def matmul[
 # ===-----------------------------------------------------------------------===#
 
 
-comptime _Hooks[spec: DeviceSpec] = Queue[spec]._HALHooks
-comptime _PluginConfig[spec: DeviceSpec]: ExecutionConfig = _Hooks[
-    spec
-].ExecutionConfigType[DeviceRef(spec, 0, private=())]
-
-comptime LaunchConfig[spec: DeviceSpec]: ExecutionConfig = (
-    _PluginConfig[spec] if (
-        _Hooks[spec].Launcher.launches_config
-        and not conforms_to(_PluginConfig[spec], GridBlockExecutionConfig)
-    ) else GridBlockLaunchConfig
-)
-"""The plugin's own config when its launcher takes one that isn't grid/block
-shaped, and a portable grid/block config otherwise."""
-
-
-def _launch[
-    spec: DeviceSpec,
-    declared: TypeList[Trait=AnyType, ...],
-    //,
-    kernel: def(*args: *declared) thin -> None,
-    *Ts: AnyType,
-](queue: Queue[spec], items: Int, *args: *Ts) raises:
-    """Launches `kernel` over `items` work items with the config the device
-    takes. The queue's context compiles and loads `kernel` on first use and
-    keeps it loaded."""
-    comptime Config = LaunchConfig[spec]
-    comptime if conforms_to(Config, GridBlockExecutionConfig):
-        queue.execute[kernel](
-            *args,
-            execution_config=GridBlockLaunchConfig(
-                grid_dim=ceildiv(items, BLOCK), block_dim=BLOCK
-            ),
-        )
-    elif conforms_to(Config, CoresExecutionConfig):
-        queue.execute[kernel](
-            *args,
-            execution_config=downcast[
-                Config, CoresExecutionConfig & Deinitable
-            ](num_cores=CORES),
-        )
-    else:
-        comptime assert False, "the device takes neither grid/block nor cores"
-
-
-def _device_ptr[
-    dtype: DType, spec: DeviceSpec
-](ctx: Context[spec], buf: Buffer[spec]) raises -> ImmPointer[
-    Scalar[dtype], ImmUntrackedOrigin
-]:
-    return ImmPointer[Scalar[dtype], ImmUntrackedOrigin](
-        unsafe_from_address=Int(ctx.memory_get_address(buf))
-    )
-
-
-def _upload[
-    dtype: DType, spec: DeviceSpec
-](
-    ctx: Context[spec], queue: Queue[spec], values: List[Scalar[dtype]]
-) raises -> Buffer[spec]:
-    var buf = ctx.alloc_sync(UInt64(len(values) * size_of[Scalar[dtype]]()))
-    queue.copy_to_device(
-        buf.view(), values.unsafe_ptr().unsafe_bitcast[UInt8]()
-    )
-    # The copy reads `values`, which the caller may drop once this returns.
-    queue.synchronize()
-    return buf^
-
-
-def _alloc[
-    dtype: DType, spec: DeviceSpec
-](ctx: Context[spec], queue: Queue[spec], length: Int) raises -> Buffer[spec]:
-    var buf = ctx.alloc_sync(UInt64(length * size_of[Scalar[dtype]]()))
-    queue.set_memory(buf.view(), 0)
-    return buf^
-
-
 def _expect[
     dtype: DType, spec: DeviceSpec
 ](
@@ -223,11 +126,7 @@ def _expect[
 ) raises:
     """Copies `buf` back once the queue's work is done and checks it holds
     `expected`."""
-    var result = List[Scalar[dtype]](length=len(expected), fill=0)
-    queue.copy_from_device(
-        result.unsafe_ptr().unsafe_bitcast[UInt8](), buf.view()
-    )
-    queue.synchronize()
+    var result = download[dtype](queue, buf, len(expected))
     for i in range(len(expected)):
         assert_equal(
             result[i], expected[i], String(what, " ", dtype, "[", i, "]")
@@ -256,11 +155,11 @@ def test_vec_add[
     print("vec_add", dtype)
     var a_host = _ramp[dtype](LENGTH, 97)
     var b_host = _ramp[dtype](LENGTH, 89)
-    var a = _upload(ctx, queue, a_host)
-    var b = _upload(ctx, queue, b_host)
-    var out = _alloc[dtype](ctx, queue, LENGTH)
+    var a = upload(ctx, queue, a_host)
+    var b = upload(ctx, queue, b_host)
+    var out = alloc_zeroed[dtype](ctx, queue, LENGTH)
 
-    _launch[vec_add[dtype]](queue, LENGTH, a, b.view(), out, Int32(LENGTH))
+    launch[vec_add[dtype]](queue, LENGTH, a, b.view(), out, Int32(LENGTH))
 
     var expected = List[Scalar[dtype]](capacity=LENGTH)
     for i in range(LENGTH):
@@ -279,12 +178,12 @@ def test_axpy[
     comptime alpha = Scalar[dtype](3)
     var x_host = _ramp[dtype](LENGTH, 31)
     var y_host = _ramp[dtype](LENGTH, 17)
-    var x = _upload(ctx, queue, x_host)
-    var y = _upload(ctx, queue, y_host)
-    var out = _alloc[dtype](ctx, queue, LENGTH)
+    var x = upload(ctx, queue, x_host)
+    var y = upload(ctx, queue, y_host)
+    var out = alloc_zeroed[dtype](ctx, queue, LENGTH)
 
-    _launch[axpy[dtype, LENGTH]](
-        queue, LENGTH, alpha, _device_ptr[dtype](ctx, x), y, out.view()
+    launch[axpy[dtype, LENGTH]](
+        queue, LENGTH, alpha, device_ptr[dtype](ctx, x), y, out.view()
     )
 
     var expected = List[Scalar[dtype]](capacity=LENGTH)
@@ -301,8 +200,8 @@ def test_add[
 ](ctx: Context[spec], queue: Queue[spec]) raises:
     """Passes only scalars and the output."""
     print("add", dtype)
-    var out = _alloc[dtype](ctx, queue, 1)
-    _launch[add[dtype]](queue, 1, Scalar[dtype](7), Scalar[dtype](5), out)
+    var out = alloc_zeroed[dtype](ctx, queue, 1)
+    launch[add[dtype]](queue, 1, Scalar[dtype](7), Scalar[dtype](5), out)
     _expect(queue, out, [Scalar[dtype](12)], "add")
     ctx.free_sync(out^)
 
@@ -327,17 +226,17 @@ def test_matmul[
     print("matmul", dtype)
     var a_host = _ramp[dtype](M * K, 7)
     var b_host = _ramp[dtype](K * N, 5)
-    var a = _upload(ctx, queue, a_host)
-    var b = _upload(ctx, queue, b_host)
-    var out = _alloc[dtype](ctx, queue, M * N)
+    var a = upload(ctx, queue, a_host)
+    var b = upload(ctx, queue, b_host)
+    var out = alloc_zeroed[dtype](ctx, queue, M * N)
 
     var a_tile = TileTensor(
-        ptr=_device_ptr[dtype](ctx, a), layout=row_major[M, K]()
+        ptr=device_ptr[dtype](ctx, a), layout=row_major[M, K]()
     )
     var b_tile = TileTensor(
-        ptr=_device_ptr[dtype](ctx, b), layout=row_major[K, N]()
+        ptr=device_ptr[dtype](ctx, b), layout=row_major[K, N]()
     )
-    _launch[matmul[dtype, a_tile.LayoutType, b_tile.LayoutType]](
+    launch[matmul[dtype, a_tile.LayoutType, b_tile.LayoutType]](
         queue, M * N, a_tile, b_tile, out
     )
 
@@ -356,19 +255,19 @@ def test_matmul_dynamic_shape[
     comptime dtype = DType.float32
     var a_host = _ramp[dtype](M * K, 7)
     var b_host = _ramp[dtype](K * N, 5)
-    var a = _upload(ctx, queue, a_host)
-    var b = _upload(ctx, queue, b_host)
-    var out = _alloc[dtype](ctx, queue, M * N)
+    var a = upload(ctx, queue, a_host)
+    var b = upload(ctx, queue, b_host)
+    var out = alloc_zeroed[dtype](ctx, queue, M * N)
 
     var m = M
     var k = K
     var a_tile = TileTensor(
-        ptr=_device_ptr[dtype](ctx, a), layout=row_major(m, k)
+        ptr=device_ptr[dtype](ctx, a), layout=row_major(m, k)
     )
     var b_tile = TileTensor(
-        ptr=_device_ptr[dtype](ctx, b), layout=row_major[K, N]()
+        ptr=device_ptr[dtype](ctx, b), layout=row_major[K, N]()
     )
-    _launch[matmul[dtype, a_tile.LayoutType, b_tile.LayoutType]](
+    launch[matmul[dtype, a_tile.LayoutType, b_tile.LayoutType]](
         queue, M * N, a_tile, b_tile, out
     )
 
@@ -381,7 +280,7 @@ def test_matmul_dynamic_shape[
 def test_no_args[spec: DeviceSpec](queue: Queue[spec]) raises:
     """Launches a kernel that takes no arguments, so packs no slots."""
     print("no arguments")
-    _launch[no_args](queue, 1)
+    launch[no_args](queue, 1)
     queue.synchronize()
 
 
@@ -404,30 +303,13 @@ def test_axpy_on_stream[spec: DeviceSpec](ctx: Context[spec]) raises:
     # The upper half of `out` from the upper half of `x`.
     var x_upper = x.view(byte_offset=half_bytes, byte_size=half_bytes)
     var out_upper = out.view(byte_offset=half_bytes, byte_size=half_bytes)
-    comptime kernel = axpy[dtype, half]
-    comptime Config = LaunchConfig[spec]
-    comptime if conforms_to(Config, GridBlockExecutionConfig):
-        stream[].execute[kernel](
-            Float32(2),
-            x_upper,
-            x_upper,
-            out_upper,
-            execution_config=GridBlockLaunchConfig(
-                grid_dim=ceildiv(half, BLOCK), block_dim=BLOCK
-            ),
-        )
-    elif conforms_to(Config, CoresExecutionConfig):
-        stream[].execute[kernel](
-            Float32(2),
-            x_upper,
-            x_upper,
-            out_upper,
-            execution_config=downcast[
-                Config, CoresExecutionConfig & Deinitable
-            ](num_cores=CORES),
-        )
-    else:
-        comptime assert False, "the device takes neither grid/block nor cores"
+    stream[].execute[axpy[dtype, half]](
+        Float32(2),
+        x_upper,
+        x_upper,
+        out_upper,
+        execution_config=launch_config[spec](half),
+    )
 
     var result = List[Scalar[dtype]](length=LENGTH, fill=0)
     stream[].copy_from_device(
@@ -451,15 +333,7 @@ def test_every_kernel[
 
 
 def main() raises:
-    # A toolchain that sets `MODULAR_DRIVER_PLUGINS` to a plugin of its own
-    # leaves the test's plugin in `MODULAR_HAL_TEST_DRIVER_PLUGINS`.
-    var plugin_spec = getenv("MODULAR_HAL_TEST_DRIVER_PLUGINS")
-    if not plugin_spec:
-        plugin_spec = getenv("MODULAR_DRIVER_PLUGINS")
-    if not plugin_spec:
-        raise Error("MODULAR_DRIVER_PLUGINS not set")
-
-    var driver = Driver.create(plugin_spec)
+    var driver = Driver.create(driver_plugins())
     var device = driver[].get_device[0]()
     var ctx = device[].get_context()
 

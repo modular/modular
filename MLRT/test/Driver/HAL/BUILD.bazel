@@ -290,47 +290,61 @@ mojo_test(
     ],
 )
 
-# The typed `Queue.execute`, which packs the kernel's arguments itself. Plugins
-# run the same source against their own devices.
+# Kernel suites on the typed `Queue.execute`, which packs the kernel's
+# arguments itself: element-wise kernels and matmul over every dtype, and the
+# kernels a GPT-2 forward pass is built from. Plugins run the same sources
+# against their own devices.
+UKL_TEST_SRCS = [
+    "test_e2e_driver_ukl.mojo",
+    "test_gpt2_kernels_ukl.mojo",
+]
+
 exports_files(
-    ["test_e2e_driver_ukl.mojo"],
+    UKL_TEST_SRCS + ["ukl_test_support.mojo"],
     visibility = ["//plugins:__subpackages__"],
 )
 
-mojo_test(
-    name = "test_e2e_driver_ukl.mojo.test",
-    srcs = ["test_e2e_driver_ukl.mojo"],
-    data = select({
-        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
-        "//:apple_gpu": ["//Target:MetalPlugin.so"],
-        "//:amd_gpu": ["//Target:HIPPlugin.so"],
-        "//conditions:default": [],
-    }),
-    env = select({
-        "//:nvidia_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
-        },
-        "//:apple_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
-        },
-        "//:amd_gpu": {
-            "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
-        },
-        "//conditions:default": {},
-    }),
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "//:nvidia_gpu": [],
-        "//:apple_gpu": [],
-        "//:amd_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:layout",
-        "//max:max_mojo",
-        "@mojo//:std",
-    ],
-)
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [
+            src,
+            "ukl_test_support.mojo",
+        ],
+        data = select({
+            "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+            "//:apple_gpu": ["//Target:MetalPlugin.so"],
+            "//:amd_gpu": ["//Target:HIPPlugin.so"],
+            "//conditions:default": [],
+        }),
+        env = select({
+            "//:nvidia_gpu": {
+                "MODULAR_DRIVER_PLUGINS": "CUDA@$(rootpath //Target:CUDAPlugin.so)",
+            },
+            "//:apple_gpu": {
+                "MODULAR_DRIVER_PLUGINS": "Metal@$(rootpath //Target:MetalPlugin.so)",
+            },
+            "//:amd_gpu": {
+                "MODULAR_DRIVER_PLUGINS": "HIP@$(rootpath //Target:HIPPlugin.so)",
+            },
+            "//conditions:default": {},
+        }),
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "//:nvidia_gpu": [],
+            "//:apple_gpu": [],
+            "//:amd_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:layout",
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in UKL_TEST_SRCS
+]
 
 # Launches the typed `Queue.execute` rejects at compile time. The accelerator is
 # pinned in each RUN line, so they need no device.
