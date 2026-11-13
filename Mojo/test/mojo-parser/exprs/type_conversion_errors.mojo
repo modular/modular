@@ -183,6 +183,36 @@ def stripping_raises():
         *args: *TypeList.splat[1, Int]()
     ) raises ImplicitFromInt thin = fn_raises_int
 
+
+comptime IntPair = TypeList.splat[2, Int]()
+
+
+def test_pack_then_keyword_only():
+    def pack_tag(*args: *IntPair, tag: Int):
+        pass
+
+    def pack_only(*args: *IntPair):
+        pass
+
+    def kw_second(a: Int, *, b: Int):
+        pass
+
+    def wrong_name(a: Int, b: Int, *, label: Int):
+        pass
+
+    # expected-error @+1 {{cannot implicitly convert 'def pack_tag(*args: *IntPair, *, tag: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp1: def(*args: *IntPair) thin = pack_tag
+
+    # expected-error @+1 {{cannot implicitly convert 'def pack_only(*args: *IntPair) thin -> None' value to 'def(*args: *IntPair, *, tag: Int) thin -> None'}}
+    var fp2: def(*args: *IntPair, tag: Int) thin = pack_only
+
+    # The pack passes its elements by position.
+    # expected-error @+1 {{cannot implicitly convert 'def kw_second(a: Int, *, b: Int) thin -> None' value to 'def(*args: *IntPair) thin -> None'}}
+    var fp3: def(*args: *IntPair) thin = kw_second
+
+    # expected-error @+1 {{cannot implicitly convert 'def wrong_name(a: Int, b: Int, *, label: Int) thin -> None' value to 'def(*args: *IntPair, *, tag: Int) thin -> None'}}
+    var fp4: def(*args: *IntPair, tag: Int) thin = wrong_name
+
 struct SimplePair(Copyable):
     var left: Int
     var right: Int

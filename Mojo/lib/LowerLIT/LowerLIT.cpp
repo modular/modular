@@ -790,18 +790,15 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
 /// is a pack and how its elements are passed.
 static SmallVector<ArgConvention> getLoweredArgConventions(FuncType sig) {
   SmallVector<ArgConvention> conventions(sig.getArgConventions());
-  PogListAttr argList = sig.getArgListAttrs();
-  if (!argList || !argList.hasPackVarArg())
+  std::optional<size_t> packIndex = sig.findPackVarArgIndex();
+  if (!packIndex)
     return conventions;
+  PogListAttr argList = sig.getArgListAttrs();
   assert(argList.size() == conventions.size() &&
          "a pack signature has one argument per source argument");
-  for (auto [idx, pog] : llvm::enumerate(argList.getPogs())) {
-    if (pog.isPack()) {
-      conventions[idx] = getPackConvention(argList.getOrigVariadicConvention());
-      return conventions;
-    }
-  }
-  llvm_unreachable("hasPackVarArg found no pack");
+  conventions[*packIndex] =
+      getPackConvention(argList.getOrigVariadicConvention());
+  return conventions;
 }
 
 static LogicalResult lowerAttributesAndTypes(

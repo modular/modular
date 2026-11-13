@@ -722,18 +722,15 @@ bool FuncType::isKwVarArg(size_t index) {
 bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
 
 std::optional<size_t> FuncType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult() - isThrows();
-  if (numUserArgs == 0)
+  PogListAttr argList = getArgListAttrs();
+  if (!argList)
     return std::nullopt;
-  size_t lastUserArgIndex = numUserArgs - 1;
-  if (isKwVarArg(lastUserArgIndex)) {
-    if (lastUserArgIndex == 0)
-      return std::nullopt;
-    --lastUserArgIndex;
-  }
-  if (isPack(lastUserArgIndex))
-    return std::make_optional(lastUserArgIndex);
-  return std::nullopt;
+  ArrayRef<PogMetadataAttr> pogs = argList.getPogs();
+  const auto *it =
+      llvm::find_if(pogs, [](PogMetadataAttr pog) { return pog.isPack(); });
+  if (it == pogs.end())
+    return std::nullopt;
+  return it - pogs.begin();
 }
 
 bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }

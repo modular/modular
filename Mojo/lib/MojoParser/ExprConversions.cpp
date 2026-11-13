@@ -343,17 +343,17 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       ctx, thunkSignature.getInputParamTypes().size() + 1, remappedConstraints);
   // The thunk has the expected function type's ABI, which includes which
   // argument is a pack vararg and how its elements are passed.
+  std::optional<size_t> thunkPackIndex = thunkSignature.findPackVarArgIndex();
   PogListAttr thunkArgList =
       PogListAttr::get(ctx, thunkSignature.getNumArguments());
-  for (size_t i = 0, e = thunkSignature.getNumArguments(); i != e; ++i) {
-    if (!thunkSignature.isPack(i))
-      continue;
+  if (thunkPackIndex) {
     SmallVector<PogMetadataAttr> pogs(thunkArgList.getPogs());
-    pogs[i] = PogMetadataAttr::get(pogs[i].getName(), pogs[i].getPassingKind(),
-                                   VariadicKind::PackVarArg);
-    thunkArgList = PogListAttr::get(ctx, pogs, /*bodyConstraints=*/{},
-                                    thunkSignature.getVariadicConvention(i));
-    break;
+    PogMetadataAttr &pog = pogs[*thunkPackIndex];
+    pog = PogMetadataAttr::get(pog.getName(), pog.getPassingKind(),
+                               VariadicKind::PackVarArg);
+    thunkArgList =
+        PogListAttr::get(ctx, pogs, /*bodyConstraints=*/{},
+                         thunkSignature.getVariadicConvention(*thunkPackIndex));
   }
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls, paramListAttrs, functionType.getInputs(),
@@ -382,10 +382,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   SyntheticNode node(useLoc);
   CallOperands operands(CallSyntax::kMethodCall, &node, EC_ConversionThunk);
 
-  std::optional<size_t> thunkVariadicArgIndexOpt =
-      thunkSignature.findPackVarArgIndex();
-  std::optional<size_t> actualVariadicArgIndexOpt =
-      actualSignature.findPackVarArgIndex();
+  std::optional<size_t> actualPackIndex = actualSignature.findPackVarArgIndex();
+  assert((!actualPackIndex || actualPackIndex == thunkPackIndex) &&
+         "function conversion must keep the pack at the same index");
 
   ArrayRef<Type> actualArgTypes = actualSignature.getArguments().drop_back(
       actualSignature.hasMemoryOnlyResult() + actualSignature.isThrows());
@@ -402,17 +401,32 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   assert(actualKwVarArgIndex.has_value() == thunkKwVarArgIndex.has_value() &&
          "function conversion must preserve kwargs");
 
+  // When only the thunk has a pack, the actual arguments in [packBegin,
+  // packEnd) get the elements of the pack, and the actual arguments after them
+  // get the keyword-only arguments that follow the pack.
+  size_t packBegin = actualArgTypes.size();
+  size_t packEnd = actualArgTypes.size();
+  if (thunkPackIndex && !actualPackIndex) {
+    size_t actualPositionalArgCount =
+        actualKwVarArgIndex.value_or(actualArgTypes.size());
+    size_t thunkPositionalArgCount =
+        thunkKwVarArgIndex.value_or(thunkArgTypes.size());
+    packBegin = *thunkPackIndex;
+    packEnd = actualPositionalArgCount -
+              (thunkPositionalArgCount - *thunkPackIndex - 1);
+  }
+
   for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
        actualArgIndex++) {
     bool actualArgIsKwVarArg =
         actualKwVarArgIndex && actualArgIndex == *actualKwVarArgIndex;
     bool actualArgIsVariadicPack =
-        actualVariadicArgIndexOpt && thunkVariadicArgIndexOpt &&
-        actualVariadicArgIndexOpt == thunkVariadicArgIndexOpt &&
-        actualArgIndex == *actualVariadicArgIndexOpt;
+        actualPackIndex && actualArgIndex == *actualPackIndex;
     bool actualArgIsForVariadic =
-        !actualArgIsKwVarArg && thunkVariadicArgIndexOpt.has_value() &&
-        actualArgIndex >= thunkVariadicArgIndexOpt.value();
+        actualArgIndex >= packBegin && actualArgIndex < packEnd;
+    size_t thunkArgIndex = actualArgIndex < packEnd
+                               ? actualArgIndex
+                               : actualArgIndex - packEnd + packBegin + 1;
 
     Value argForActual;
     KGEN::ArgConvention convForActual;
@@ -420,15 +434,12 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       argForActual = thunk.getArgument(*thunkKwVarArgIndex);
       convForActual = thunkSignature.getArgConvention(*thunkKwVarArgIndex);
     } else if (actualArgIsVariadicPack) {
-      argForActual = thunk.getArgument(*thunkVariadicArgIndexOpt);
-      convForActual =
-          thunkSignature.getArgConvention(*thunkVariadicArgIndexOpt);
+      argForActual = thunk.getArgument(*thunkPackIndex);
+      convForActual = thunkSignature.getArgConvention(*thunkPackIndex);
     } else if (actualArgIsForVariadic) {
-      size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
-      size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
+      size_t indexInVariadic = actualArgIndex - packBegin;
 
-      MBValue packRefMBValue =
-          MBValue(thunk.getArgument(thunkVariadicArgIndex));
+      MBValue packRefMBValue = MBValue(thunk.getArgument(*thunkPackIndex));
 
       // Emit: the_pack[index]
       CValue indexCValue =
@@ -447,8 +458,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       argForActual = getItemResult.getMlirValue();
       convForActual = ArgConvention::ImmMem;
     } else {
-      argForActual = thunk.getArgument(actualArgIndex);
-      convForActual = thunkSignature.getArgConvention(actualArgIndex);
+      argForActual = thunk.getArgument(thunkArgIndex);
+      convForActual = thunkSignature.getArgConvention(thunkArgIndex);
     }
 
     AnyValue value;
@@ -493,9 +504,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     // Pass any required-keyword args with a name.
     StringAttr name;
     if (!actualArgIsForVariadic &&
-        thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
+        thunkSignature.getArgListAttrs().getPassingKind(thunkArgIndex) ==
             PassingKind::KwOnly)
-      name = thunkSignature.getArgName(actualArgIndex);
+      name = thunkSignature.getArgName(thunkArgIndex);
     operands.add(name, {value, &node},
                  name ? ArgUnpackStyle::kKeyword : ArgUnpackStyle::kPositional);
   }

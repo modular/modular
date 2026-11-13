@@ -496,6 +496,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     Type getIfVariadicListOrPack(size_t index);
 
     /// Returns the index of the pack variadic arg, or std::nullopt if none.
+    /// Keyword-only arguments and a keyword vararg can follow the pack.
     std::optional<size_t> findPackVarArgIndex();
 
     /// Returns true if the signature has keyword variadic arguments.
