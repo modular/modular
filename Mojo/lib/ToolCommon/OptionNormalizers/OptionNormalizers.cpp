@@ -114,3 +114,20 @@ std::optional<Sanitizers> M::normalizeSanitizer(llvm::opt::OptSpecifier opt,
   }
   return sanitizers;
 }
+
+std::optional<SmallVector<std::string>>
+M::normalizeOutputNamespace(llvm::opt::OptSpecifier opt, int,
+                            const llvm::opt::ArgList &args,
+                            MarshallingErrors &errors) {
+  const llvm::opt::Arg *arg = args.getLastArg(opt);
+  if (!arg)
+    return std::nullopt;
+  StringRef ns = arg->getValue();
+  SmallVector<StringRef> components;
+  ns.split(components, '.');
+  if (llvm::is_contained(components, StringRef())) {
+    errors.push_back(llvm::formatv("invalid namespace '{0}'", ns));
+    return std::nullopt;
+  }
+  return llvm::to_vector_of<std::string>(components);
+}

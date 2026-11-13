@@ -14,6 +14,7 @@
 #ifndef KGEN_MOJOPARSER_ENTRYPOINT_H
 #define KGEN_MOJOPARSER_ENTRYPOINT_H
 
+#include "Mojo/MojoParser/ModuleSpec.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -69,10 +70,15 @@ importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
 /// that contains the package, represented as a `lit.package` op, as well as the
 /// package op itself.
 ///
+/// `importPath`, when not empty, is the absolute path the package will be
+/// imported by once precompiled (namespace components, then its output name),
+/// and self-imports spelled that way resolve to the package being parsed.
+///
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
 importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
+                  const KGEN::LIT::ImportPath &importPath,
                   llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
                   const CompilationOptions &options,
                   const FrontendOptions &frontendOptions, mlir::TimingScope &ts,

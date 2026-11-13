@@ -149,8 +149,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
     // Compute the viable imports for the given location.
     SmallVector<std::string> searchDirs;
-    shared.getModuleLoader().traverseImportDirectories(
-        completionBufferId, [&](StringRef dir) {
+    ModuleLoader &loader = shared.getModuleLoader();
+    loader.traverseImportDirectories(
+        loader.workingDirectoryFor(completionBufferId), [&](StringRef dir) {
           searchDirs.push_back(dir.str());
           return WalkResult::advance();
         });

@@ -100,6 +100,8 @@ defm d : CommandOption<["-"], "d", OutputOptionGroup,
   HelpText<"Writes a dependency file for the output to PATH.">>,
   MarshallingInfoString<KGENOpts<"dependencyFilename">>;
 
+include "Common/NamespaceOptions.td"
+
 def save_temps : Flag<["--", "-"], "save-temps">,
   Group<OutputOptionGroup>,
   HelpText<"Keeps the intermediate files in the directory given by "

@@ -152,22 +152,24 @@ writeLLVMBitcodeToDenseAttr(MLIRContext *ctx, StringRef bitcodeFile) {
 static void
 collectLinkDependencies(Region &scope, ArrayRef<StringAttr> scopePath,
                         LIT::PackageOp parsedPackageOp, StringRef sourceName,
-                        StringRef outputName,
+                        ArrayRef<StringRef> importPath,
                         SmallVectorImpl<SymbolRefAttr> &dependencies) {
   for (LIT::PackageOp package : scope.getOps<LIT::PackageOp>()) {
     SmallVector<StringAttr> path(scopePath);
     path.push_back(package.getSymNameAttr());
     if (package.getIsNamespace()) {
       collectLinkDependencies(package.getBodyRegion(), path, parsedPackageOp,
-                              sourceName, outputName, dependencies);
+                              sourceName, importPath, dependencies);
       continue;
     }
     // A package is never its own link dependency, under either its parse-time
-    // (source directory) name or its output name: a recorded self-dependency
+    // (source directory) name or its import path: a recorded self-dependency
     // dangles once the package is renamed for output.
     if (package == parsedPackageOp ||
-        (path.size() == 1 && (package.getSymName() == sourceName ||
-                              package.getSymName() == outputName)))
+        (path.size() == 1 && package.getSymName() == sourceName) ||
+        llvm::equal(path, importPath, [](StringAttr a, StringRef b) {
+          return a.getValue() == b;
+        }))
       continue;
     SmallVector<FlatSymbolRefAttr> nested;
     for (StringAttr component : ArrayRef(path).drop_front())
@@ -178,10 +180,11 @@ collectLinkDependencies(Region &scope, ArrayRef<StringAttr> scopePath,
 
 ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
     ModuleOp theModule, LIT::PackageOp parsedPackageOp, StringRef sourceName,
-    StringRef outputName, ArrayRef<std::string> bitcodeLibs) {
+    ArrayRef<StringRef> importPath, ArrayRef<std::string> bitcodeLibs) {
+  assert(!importPath.empty() && "expected the package's output name");
   SmallVector<SymbolRefAttr> dependencies;
   collectLinkDependencies(theModule.getBodyRegion(), /*scopePath=*/{},
-                          parsedPackageOp, sourceName, outputName,
+                          parsedPackageOp, sourceName, importPath,
                           dependencies);
   if (!dependencies.empty()) {
     parsedPackageOp.setDependenciesAttr(
@@ -192,15 +195,19 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
       buildPackageModule(theModule, parsedPackageOp);
 
   // The package parses under its source directory's name so that absolute
-  // self-imports resolve to the package under compilation; the output name
-  // applies from here on: to symbol references and the recorded import paths
-  // that name the package (both re-resolved when the package is imported,
-  // under the output file's name), and to the debug-info source names that
-  // snapshot the package lineage.
-  if (outputName != sourceName) {
+  // self-imports resolve to the package under compilation; its import path
+  // (the output name, under any output namespace) applies from here on: to
+  // symbol references and the recorded import paths that name the package
+  // (both re-resolved when the package is imported, under that path), and to
+  // the debug-info source names that snapshot the package lineage.
+  if (importPath != ArrayRef<StringRef>(sourceName)) {
     MLIRContext *ctx = theModule.getContext();
-    auto newName = StringAttr::get(ctx, outputName);
     auto sourceNameAttr = StringAttr::get(ctx, sourceName);
+    SmallVector<StringAttr> importPathAttrs;
+    for (StringRef component : importPath)
+      importPathAttrs.push_back(StringAttr::get(ctx, component));
+    StringAttr newName = importPathAttrs.back();
+    ArrayRef<StringAttr> namespacePath = ArrayRef(importPathAttrs).drop_back();
     // Qualified references rooted at the package resolve through the
     // parser's scoping rather than MLIR symbol tables, so rewrite them
     // directly rather than through SymbolTable::replaceAllSymbolUses.
@@ -214,7 +221,11 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
         [&](SymbolRefAttr ref) -> std::pair<Attribute, WalkResult> {
           if (ref.getRootReference() != sourceNameAttr)
             return {ref, WalkResult::skip()};
-          return {SymbolRefAttr::get(newName, ref.getNestedReferences()),
+          SmallVector<FlatSymbolRefAttr> nested;
+          for (StringAttr component : ArrayRef(importPathAttrs).drop_front())
+            nested.push_back(FlatSymbolRefAttr::get(component));
+          llvm::append_range(nested, ref.getNestedReferences());
+          return {SymbolRefAttr::get(importPathAttrs.front(), nested),
                   WalkResult::skip()};
         });
     // Debug-info source names snapshot the symbol lineage as plain strings at
@@ -227,7 +238,9 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
     // it roots a reference. Preceded by `::` it is instead a nested component
     // of a reference rooted elsewhere, and names a module, not the package.
     std::string sourceToken = ("@" + sourceName + "::").str();
-    std::string newToken = ("@" + outputName + "::").str();
+    std::string newToken;
+    for (StringRef component : importPath)
+      newToken += ("@" + component + "::").str();
     auto rewriteNameText = [&](StringAttr str) -> StringAttr {
       StringRef text = str.getValue();
       if (!text.contains(sourceToken))
@@ -243,13 +256,28 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
       rewritten += text;
       return StringAttr::get(ctx, rewritten);
     };
+    // Under an output namespace the package root gains a parent package per
+    // namespace component, as a source parse under the namespace would give.
+    DebugInfo::SourceNameAttr namespaceParent;
+    for (StringAttr component : namespacePath) {
+      namespaceParent = DebugInfo::SourceNameAttr::get(
+          component, /*paramTypes=*/{}, /*argTypes=*/{}, /*paramValues=*/{},
+          namespaceParent, DebugInfo::SourceNameKind::Package,
+          /*decorators=*/{});
+    }
     replacer.addReplacement([&](DebugInfo::SourceNameAttr attr)
                                 -> std::pair<Attribute, WalkResult> {
-      bool isPackageRoot =
-          attr.getKind() == DebugInfo::SourceNameKind::Package &&
-          !attr.getParent() && attr.getName() == sourceNameAttr;
-      StringAttr name =
-          isPackageRoot ? newName : rewriteNameText(attr.getName());
+      // Skip the rebuilt root: its namespace ancestors are parentless packages
+      // as well, and one may share the source directory's name.
+      if (attr.getKind() == DebugInfo::SourceNameKind::Package &&
+          !attr.getParent() && attr.getName() == sourceNameAttr) {
+        return {DebugInfo::SourceNameAttr::get(
+                    newName, attr.getParamTypes(), attr.getArgTypes(),
+                    attr.getParamValues(), namespaceParent, attr.getKind(),
+                    attr.getDecorators()),
+                WalkResult::skip()};
+      }
+      StringAttr name = rewriteNameText(attr.getName());
       SmallVector<StringAttr> paramValues;
       for (StringAttr value : attr.getParamValues())
         paramValues.push_back(rewriteNameText(value));
@@ -264,15 +292,15 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
     // Recorded import paths are raw name components, and any import op form
     // may carry one rooted at the package (a resolved import kept inside a
     // file module, an unresolved import, a wildcard import). All re-resolve
-    // under the output file's name when the package is imported.
+    // under the package's import path when the package is imported.
     replacer.addReplacement(
         [&](LIT::ImportPathAttr path) -> std::pair<Attribute, WalkResult> {
           auto components = path.getComponents();
           if (path.getRelativeLevel() != 0 || components.empty() ||
               components.front() != sourceNameAttr)
             return {path, WalkResult::advance()};
-          SmallVector<StringAttr> newComponents(components);
-          newComponents.front() = newName;
+          SmallVector<StringAttr> newComponents(importPathAttrs);
+          llvm::append_range(newComponents, components.drop_front());
           return {
               LIT::ImportPathAttr::get(ctx, /*relativeLevel=*/0, newComponents),
               WalkResult::advance()};
@@ -282,6 +310,19 @@ ErrorOr<OwningOpRef<ModuleOp>> M::KGEN::buildPrecompiledPackage(
                                           /*replaceLocs=*/true,
                                           /*replaceTypes=*/true);
     mlir::SymbolTable::setSymbolName(thePackage, newName);
+
+    // Nest the package in one namespace per component, the shape the
+    // namespace's directories give it once imported, so the rewritten
+    // references resolve within the artifact too. The importer checks this
+    // chain against the mount path and splices in only the innermost package.
+    Operation *outermost = thePackage;
+    for (StringAttr component : llvm::reverse(namespacePath)) {
+      OpBuilder b(outermost);
+      auto wrapper = LIT::PackageOp::create(b, thePackage->getLoc(), component);
+      wrapper.setIsNamespace(true);
+      outermost->moveBefore(wrapper.getBody(), wrapper.getBody()->end());
+      outermost = wrapper;
+    }
   }
 
   // Process bitcode libraries if any were specified

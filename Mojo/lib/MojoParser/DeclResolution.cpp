@@ -2721,7 +2721,9 @@ LogicalResult PackageASTDecl::resolvePackage() {
 
   // A namespace is the union of plain directories across import roots, none
   // of which has an __init__, so its children are all it has. Its spec's path
-  // records only the first portion, which the namespace doesn't depend on.
+  // records at most the first portion, which the namespace doesn't depend on:
+  // the namespace a package is being precompiled into may have no directory
+  // at all yet.
   if (!state->spec->isNamespace()) {
     // Grab the directory that this package is defined in.
     std::optional<std::string> directoryStr = state->sourcePath();

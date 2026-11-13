@@ -128,6 +128,9 @@ struct CLOptions : public CommonOptions {
   std::string dependencyFilename;
   bool emitTextualAsm = false;
   bool ignoreFailures = false;
+  /// The `--namespace` that `--precompile` builds the package under, outermost
+  /// component first.
+  SmallVector<std::string> outputNamespace;
   /// The driver state, which formats the errors and diagnostics.
   const State *state = nullptr;
 
@@ -751,7 +754,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
 /// Precompiles the package directory given as the input, as `mojo precompile`
 /// does. The package parses under its directory's name, and takes the name of
-/// the `.mojoc` file it is written to.
+/// the `.mojoc` file it is written to, under any `-namespace`.
 static LogicalResult runPrecompile(CLOptions &clOptions) {
   StringRef input = clOptions.inputFilename;
   if (!Filesystem::isMojoSourcePackagePath(input.str()))
@@ -768,6 +771,9 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   std::string outputName = outputPath.extension() == ".mojoc"
                                ? outputPath.stem().string()
                                : sourceName;
+  LIT::ImportPath importPath;
+  llvm::append_range(importPath.components, clOptions.outputNamespace);
+  importPath.components.push_back(outputName);
 
   if (isMLIRThreadingDisabled())
     clOptions.cpuDeviceOptions.withSingleThreaded();
@@ -802,13 +808,14 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
 
   TimingScope ts;
   auto [module, packageOp] = LIT::importMojoPackage(
-      *ctxOr, packagePath.string(), sourceName, sourceMgr, &context, options,
-      clOptions.frontendOptions, ts);
+      *ctxOr, packagePath.string(), sourceName, importPath, sourceMgr, &context,
+      options, clOptions.frontendOptions, ts);
   if (!module)
     return failure(clOptions.reportError("could not parse the package"));
 
-  ErrorOr<OwningOpRef<ModuleOp>> built = buildPrecompiledPackage(
-      *module, packageOp, sourceName, outputName, options.bitcodeLibs);
+  ErrorOr<OwningOpRef<ModuleOp>> built =
+      buildPrecompiledPackage(*module, packageOp, sourceName,
+                              importPath.components, options.bitcodeLibs);
   if (failed(built))
     return failure(clOptions.reportError(built.getError()));
 
@@ -878,6 +885,7 @@ int main(int argc, char **argv) {
     CompilationOptions &compilationOptions = clOptions.compilationOptions;
     TargetArgs &targetArgs = clOptions.targetArgs;
     AsyncRT::CPUDeviceOptions &cpuDeviceOptions = clOptions.cpuDeviceOptions;
+    SmallVector<std::string> &outputNamespace = clOptions.outputNamespace;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Mojo/tools/kgen/KGENOptions.inc"

@@ -147,6 +147,10 @@ This version is still a work in progress.
     std.os.rmdir(...) # This no longer works - use rmdir, or import std.os.
   ```
 
+- It is now possible to `import` a precompiled (`.mojoc`) package from a
+  namespace, assuming it has been precompiled to be built at that namespace.
+  See the help for `mojo precompile --namespace` for more information.
+
 ## Library stabilizations
 
 - `List.insert`
@@ -384,6 +388,12 @@ This version is still a work in progress.
   hits the cache, elaboration is skipped and nothing is reported. Clear
   compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
   to get a full report.
+
+- `mojo precompile` may now take a `--namespace` option to allow it to bake the
+  provided namespace into the package. A package `pkg` built with `--namespace
+  foo.bar` must be placed at `foo/bar/pkg.mojoc` and imported as `foo.bar.pkg`.
+  While precompiling, the package may refer to itself both by `pkg` and by
+  `foo.bar.pkg`. Both paths resolve to the source being compiled.
 
 ## Removed
 

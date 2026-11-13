@@ -470,7 +470,7 @@ public:
   /// Resolve `moduleName` to the path of its precompiled binary package.
   ErrorOr<std::string> resolveBinaryPackagePath(llvm::StringRef moduleName) {
     auto modulePath = sharedState.getModuleLoader().resolveModulePath(
-        moduleName, llvm::SMLoc());
+        moduleName, /*workingDir=*/std::filesystem::path());
     if (!modulePath)
       return Error(
           llvm::formatv("Failed to resolve module path for `{}`", moduleName)
@@ -540,7 +540,7 @@ M::MOGG::getKernelPackagePathsForCacheKey(mlir::MLIRContext *ctx) {
   // comment explains why their contents must reach the cache key.
   llvm::StringSet<> seen;
   resolver.getSharedState().getModuleLoader().traverseImportDirectories(
-      /*importBufferFileId=*/0, [&](llvm::StringRef dir) {
+      /*workingDir=*/std::filesystem::path(), [&](llvm::StringRef dir) {
         std::error_code ec;
         for (llvm::sys::fs::directory_iterator it(dir, ec), e; it != e && !ec;
              it.increment(ec)) {

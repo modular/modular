@@ -55,3 +55,11 @@
 # RUN: not kgen -precompile %t.dir/user/u.mojo 2>&1 \
 # RUN:   | FileCheck %s --check-prefix=NOT-PKG
 # NOT-PKG: '{{.*}}u.mojo' does not correspond to a Mojo package
+
+## Every dotted component of a namespace must be non-empty.
+# RUN: not %precompile-mojo-isolated %t.dir/pkg -namespace= 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-EMPTY
+# RUN: not %precompile-mojo-isolated %t.dir/pkg -namespace a..b 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-INNER
+# NS-EMPTY: invalid namespace ''
+# NS-INNER: invalid namespace 'a..b'

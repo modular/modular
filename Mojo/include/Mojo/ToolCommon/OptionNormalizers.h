@@ -25,6 +25,7 @@
 #include "llvm/Option/ArgList.h"
 
 #include <optional>
+#include <string>
 
 namespace M {
 
@@ -46,6 +47,12 @@ std::optional<KGEN::FpMode> normalizeFpMode(llvm::opt::OptSpecifier opt, int,
 std::optional<Sanitizers> normalizeSanitizer(llvm::opt::OptSpecifier opt, int,
                                              const llvm::opt::ArgList &args,
                                              MarshallingErrors &errors);
+/// Splits a dotted output namespace such as `foo.bar` into its components,
+/// outermost first. Every component must be non-empty.
+std::optional<llvm::SmallVector<std::string>>
+normalizeOutputNamespace(llvm::opt::OptSpecifier opt, int,
+                         const llvm::opt::ArgList &args,
+                         MarshallingErrors &errors);
 
 } // namespace M
 
