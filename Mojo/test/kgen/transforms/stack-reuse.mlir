@@ -320,7 +320,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
   // Cannot convert the constant of strings into pop.global_constant
   // CHECK: @negative_large_constant_with_strings
-  kgen.func @negative_large_constant_with_strings(%arg0: index) -> index {
+  kgen.func @negative_large_constant_with_strings(%arg0: index) -> !kgen.scalar<index> {
     // CHECK-NEXT: kgen.param.constant
     %array = kgen.param.constant: array<8, string> = <["0.0", "0.001953125", "0.00390625", "0.005859375", "0.0078125", "0.009765625", "0.01171875", "0.013671875"]>
     %3 = pop.stack_allocation 1 x array<8, string> marked
@@ -333,6 +333,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %6 = pop.string.address %5
     %7 = pop.pointer.bitcast %6 : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
     %8 = pop.string.size %5
-    hlcf.return %8 : index
+    hlcf.return %8 : !kgen.scalar<index>
   }
 }

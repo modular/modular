@@ -211,9 +211,7 @@ struct StringSpan[origin: ImmOrigin](
     def __init__(out self: StaticString, _kgen: __mlir_type.`!kgen.string`):
         # FIXME(MSTDL-160): !kgen.string's are not guaranteed to be UTF-8
         # encoded, they can be arbitrary binary data.
-        var length: Int = Int(
-            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(_kgen))
-        )
+        var length: Int = Int(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         var ptr = ImmPointer[_, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).unsafe_bitcast[Byte]()

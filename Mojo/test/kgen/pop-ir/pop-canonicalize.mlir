@@ -1816,14 +1816,14 @@ kgen.func @select_to_cond(%cond: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
 
 
 // CHECK-LABEL: @string_ops
-kgen.func @string_ops() -> index {
+kgen.func @string_ops() -> !kgen.scalar<index> {
   %str = kgen.param.constant: string = <"four">
-  // CHECK-DAG: kgen.param.constant = <4>
+  // CHECK-DAG: kgen.param.constant: scalar<index> = <4>
   %0 = pop.string.size %str
   %hello_world = kgen.param.constant: string = <"hello world">
   %world = kgen.param.constant: string = <" world">
   %empty_str = kgen.param.constant: string = <"">
-  hlcf.return %0 : index
+  hlcf.return %0 : !kgen.scalar<index>
 }
 
 

@@ -903,11 +903,11 @@ kgen.func @multi_lifetimes() {
 }
 
 // CHECK-LABEL: @extract_size
-kgen.func @extract_size(%a: !kgen.string) ->  index {
+kgen.func @extract_size(%a: !kgen.string) ->  !kgen.scalar<index> {
   // CHECK: unrealized_conversion_cast %arg0 : !kgen.string to !llvm.struct<(ptr, i64)>
   // CHECK: llvm.extractvalue %0[1] : !llvm.struct<(ptr, i64)>
   %1 = pop.string.size %a
-  hlcf.return %1: index
+  hlcf.return %1: !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @extract_addr

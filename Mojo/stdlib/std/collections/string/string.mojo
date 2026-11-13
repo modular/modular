@@ -366,7 +366,7 @@ struct String(
             data: The static constant string to refer to.
         """
         self._len_or_data = Int(
-            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(data.value))
+            mlir_value=__mlir_op.`pop.string.size`(data.value)
         )
         self._ptr_or_data = Pointer[_, MutUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(data.value)

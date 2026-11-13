@@ -2316,7 +2316,7 @@ def POP_StringSizeOp : POPOp<"string.size", [Pure]> {
   }];
 
   let arguments = (ins KGEN_StringType:$str);
-  let results = (outs Index:$result);
+  let results = (outs IndexScalar:$result);
   let assemblyFormat = "$str attr-dict";
   let hasFolder = 1;
 }

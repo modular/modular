@@ -2532,7 +2532,7 @@ StringAddressOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 OpFoldResult StringSizeOp::fold(FoldAdaptor adaptor) {
   if (auto str = dyn_cast_or_null<TypedAttr>(adaptor.getStr()))
-    return StringSizeAttr::get(getContext(), str);
+    return CastFromBuiltinAttr::get(StringSizeAttr::get(getContext(), str));
   return {};
 }
 

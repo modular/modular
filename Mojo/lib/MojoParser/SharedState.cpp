@@ -2722,7 +2722,8 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   // FIXME(StringLiteral): Remove this operation.
   if (auto strSize = dyn_cast<POP::StringSizeOp>(op)) {
     if (auto str = findValue(strSize.getStr()))
-      return POP::StringSizeAttr::get(str.getContext(), str);
+      return KGEN::CastFromBuiltinAttr::get(
+          POP::StringSizeAttr::get(str.getContext(), str));
   }
 
   if (auto call = dyn_cast<LIT::CallOp>(op)) {

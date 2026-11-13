@@ -962,15 +962,15 @@ kgen.generator @atomic_rmw<scope: string>(%ptr: !kgen.pointer<scalar<index>>,
   hlcf.return
 }
 
-// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string, %arg1: !kgen.string, %arg2: !kgen.string) -> index
+// CHECK-LABEL: kgen.func @string_ops(%arg0: !kgen.string, %arg1: !kgen.string, %arg2: !kgen.string) -> !kgen.scalar<index>
 kgen.func @string_ops(%a: !kgen.string,
                       %src: !kgen.string,
-                      %target: !kgen.string) ->  index {
+                      %target: !kgen.string) ->  !kgen.scalar<index> {
   // CHECK: pop.string.address %arg0
   %0 = pop.string.address %a
   // CHECK: pop.string.size %arg0
   %1 = pop.string.size %a
-  hlcf.return %1: index
+  hlcf.return %1: !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.generator @dtype_utils
