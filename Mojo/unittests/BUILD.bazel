@@ -42,6 +42,7 @@ modular_cc_test(
         "//Mojo:POPDialect",
         "//Mojo:ToolCommon",
         "//Mojo:Transforms",
+        "//Support:Threading",
         "@llvm-project//mlir:Parser",
     ],
 )

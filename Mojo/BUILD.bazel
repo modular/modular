@@ -933,6 +933,8 @@ modular_cc_library(
         ":Support",
         "//AsyncRT:CompilerSupport",
         "//Support:ADT",
+        # KGENParameters.h uses failableParallelForEach from Threading.h.
+        "//Support:Compiler",
         "//Support:DebugInfoDialect",
         "//Support:HashUtils",
         "//Support:IPInt",

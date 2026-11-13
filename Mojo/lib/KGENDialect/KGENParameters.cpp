@@ -133,11 +133,19 @@ ParameterCollector::fromSignature(const Signature &signature) {
   return Type(cast<ParameterScopeTypeInterface>(signature));
 }
 
+ParameterCollector::Analysis
+ParameterCollector::Analysis::makeThreadCache(const Analysis &base) {
+  assert(!base.base && "layering over a layered cache is not supported");
+  Analysis layer;
+  layer.base = &base;
+  return layer;
+}
+
 bool ParameterCollector::isInParameterLessCache(AttrOrType expr) const {
   const void *key = isa<Attribute>(expr)
                         ? cast<Attribute>(expr).getAsOpaquePointer()
                         : cast<Type>(expr).getAsOpaquePointer();
-  return cache.parameterLess.contains(key);
+  return cache.lookup(key) != nullptr;
 }
 
 unsigned ParameterCollector::getOrCreateSignatureContextId(size_t depth) {
@@ -245,11 +253,10 @@ void ParameterCollector::collectUsesFromAttrImpl(
     bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   // If we have already scanned it and know that it has no parameters in it,
   // return early.
-  if (auto it = cache.parameterLess.find(attr.getAsOpaquePointer());
-      it != cache.parameterLess.end()) {
-    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
+  if (const auto *info = cache.lookup(attr.getAsOpaquePointer())) {
+    hasCtxEvalExpr |= info->hasCtxEvalExpr;
     requiredSignatureDepth =
-        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
+        std::max(requiredSignatureDepth, info->requiredSignatureDepth);
     return;
   }
 
@@ -383,7 +390,7 @@ void ParameterCollector::collectUsesFromAttrUncached(
   if (oldSize == uses.size() && !nestedRequiredDepth) {
     // Check whether this is a parameterless expression.
     hasNestedCtxEvalExpr |= isa<ContextuallyEvaluatedAttrInterface>(attr);
-    cache.parameterLess.try_emplace(
+    cache.try_emplace(
         attr.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedCtxEvalExpr, nestedRequiredDepth});
     hasCtxEvalExpr |= hasNestedCtxEvalExpr;
@@ -414,11 +421,10 @@ void ParameterCollector::collectUsesFromTypesImpl(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   // Ignore types we have already scanned.
-  if (auto it = cache.parameterLess.find(type.getAsOpaquePointer());
-      it != cache.parameterLess.end()) {
-    hasCtxEvalExpr |= it->second.hasCtxEvalExpr;
+  if (const auto *info = cache.lookup(type.getAsOpaquePointer())) {
+    hasCtxEvalExpr |= info->hasCtxEvalExpr;
     requiredSignatureDepth =
-        std::max(requiredSignatureDepth, it->second.requiredSignatureDepth);
+        std::max(requiredSignatureDepth, info->requiredSignatureDepth);
     return;
   }
 
@@ -456,7 +462,7 @@ void ParameterCollector::collectUsesFromTypesUncached(
   // "parameterless".  We want other operations using the same type to record
   // the uses as well.
   if (oldSize == uses.size() && !nestedRequiredDepth) {
-    cache.parameterLess.try_emplace(
+    cache.try_emplace(
         type.getAsOpaquePointer(),
         Analysis::ParameterlessInfo{hasNestedConstExpr, nestedRequiredDepth});
     hasCtxEvalExpr |= hasNestedConstExpr;

@@ -22,6 +22,7 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/SymbolExport.h"
 #include "mlir/Pass/AnalysisManager.h"
 #include "llvm/ADT/DenseSet.h"
@@ -218,11 +219,79 @@ public:
       size_t requiredSignatureDepth = 0;
     };
 
+    /// Returns an empty cache that reads through to `base` and records new
+    /// entries only in itself. Worker threads use it to share one cache
+    /// without each holding a full copy; `ThreadLocalCache` calls it to create
+    /// each thread's cache. `base` must outlive the result and must not change
+    /// while the result is in use.
+    static Analysis makeThreadCache(const Analysis &base);
+
+    /// Returns the cached facts for `key`, or null if neither this cache nor
+    /// its base holds `key`.
+    const ParameterlessInfo *lookup(const void *key) const {
+      if (base)
+        if (auto it = base->parameterLess.find(key);
+            it != base->parameterLess.end())
+          return &it->second;
+      auto it = parameterLess.find(key);
+      return it == parameterLess.end() ? nullptr : &it->second;
+    }
+
+    /// Inserts into this cache. The base cache is read-only and does not
+    /// change.
+    void try_emplace(const void *key, ParameterlessInfo info) {
+      parameterLess.try_emplace(key, info);
+    }
+
+    /// Adds the entries this cache holds itself, not those of its base, to
+    /// `target`.
+    void mergeInto(Analysis &target) const {
+      target.parameterLess.insert_range(parameterLess);
+    }
+
+    /// Calls `func(cache, element)` for each element of `range` and stops at
+    /// the first failure. The elements run in parallel if `ctx` has threading
+    /// enabled, and in order on the calling thread otherwise. Each worker's
+    /// `cache` reads through to this cache and records new entries only in
+    /// itself, because this cache must not change while other workers read it.
+    /// Afterwards, this cache also holds the entries of all workers.
+    template <typename RangeT, typename FuncT>
+    LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
+                                          FuncT &&func) {
+      Analysis layer = makeThreadCache(*this);
+      LogicalResult result = M::failableParallelForEach(
+          ctx, std::forward<RangeT>(range), std::forward<FuncT>(func), layer,
+          [this](Analysis &, ArrayRef<Analysis> workerLayers) {
+            for (const Analysis &workerLayer : workerLayers)
+              workerLayer.mergeInto(*this);
+          });
+      // `M::failableParallelForEach` passes `layer` itself to one worker and
+      // gives only the copies to the merge function above.
+      layer.mergeInto(*this);
+      return result;
+    }
+
+    /// Same as `failableParallelForEach`, for a `func` that cannot fail.
+    template <typename RangeT, typename FuncT>
+    void parallelForEach(MLIRContext *ctx, RangeT &&range, FuncT &&func) {
+      (void)failableParallelForEach(
+          ctx, std::forward<RangeT>(range),
+          [&](Analysis &cache, auto &&element) {
+            func(cache, std::forward<decltype(element)>(element));
+            return llvm::success();
+          });
+    }
+
+  private:
     /// Types and attributes contained in this map are known to have no
     /// parameter uses as sub-elements. They are mapped to whether there is an
     /// unresolved parameter operator and the intrinsic required signature depth
-    /// for the sub-elements to be valid.
+    /// for the sub-elements to be valid. A layered cache holds only the
+    /// entries that are not in `base`.
     DenseMap<const void *, ParameterlessInfo> parameterLess;
+
+    /// The shared cache this cache reads through to, or null.
+    const Analysis *base = nullptr;
   };
 
   /// Create a parameter collector with a collection cache.
@@ -309,7 +378,7 @@ private:
   /// Returns the attribute or type that `signature` wraps.
   static AttrOrType fromSignature(const Signature &signature);
 
-  /// Returns whether `cache.parameterLess` holds `expr`.
+  /// Returns whether `cache` or its base holds `expr`.
   bool isInParameterLessCache(AttrOrType expr) const;
 
   /// The first time we encounter an attribute with a reference to an

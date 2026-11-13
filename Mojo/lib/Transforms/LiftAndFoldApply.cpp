@@ -310,7 +310,7 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
 
     std::vector<GeneratorOp> work;
     llvm::append_range(work, getOperation().getOps<GeneratorOp>());
-    parallelForEach(&getContext(), work, workFunc, paramCache);
+    paramCache.parallelForEach(&getContext(), work, workFunc);
 
     // This effectively disable the verifier, because MLIR assumes that
     // if the pass said that it preserved all analyses then it can't have

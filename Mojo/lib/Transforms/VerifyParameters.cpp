@@ -175,7 +175,6 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
     auto &paramCache = getAnalysis<ParamCache>();
-    bool emptyCache = paramCache.parameterLess.empty();
 
     std::vector<std::pair<Region *, size_t>> declRegions;
     ModuleOp module = getOperation();
@@ -207,25 +206,8 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
           return mlir::success();
         };
 
-    auto consolidateFn = [emptyCache](ParamCache &original,
-                                      ArrayRef<ParamCache> threadCaches) {
-      // Consolidate the caches, but only when the original cache was empty
-      // before this run. In reality, the cache does not grow much after the
-      // first run of this pass on an input IR, so consolidation is only
-      // worthwhile on the first run of the pass, when the cache is empty.
-      // `original` is itself one worker's cache, so test the flag captured
-      // before the run rather than `original`.
-      if (!emptyCache)
-        return;
-      for (const ParamCache &threadCache : threadCaches) {
-        original.parameterLess.insert(threadCache.parameterLess.begin(),
-                                      threadCache.parameterLess.end());
-      }
-    };
-
-    if (failed(failableParallelForEach(&getContext(), declRegions,
-                                       std::move(workFunc), paramCache,
-                                       consolidateFn)))
+    if (failed(paramCache.failableParallelForEach(&getContext(), declRegions,
+                                                  std::move(workFunc))))
       return signalPassFailure();
 
     // This pass does not modify any IR, so mark all analyses as preserved. In
