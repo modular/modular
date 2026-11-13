@@ -61,6 +61,7 @@ from max._plugin.cuda.targets import (
     OrinNano,
     RTX2060,
     RTX3090,
+    RTX4080SUPER,
     RTX4090,
     RTX4090m,
     RTX5090,
