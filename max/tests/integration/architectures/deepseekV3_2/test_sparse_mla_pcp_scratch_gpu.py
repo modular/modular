@@ -88,8 +88,8 @@ _PAGE_SIZE = 128
 _TOTAL_NUM_PAGES = 64
 _MAX_SEQ_LEN = 4096
 # Past every context here, so each query selects its whole causal context
-# and the comparison does not hinge on top-k ties.
-_TOPK = 2048
+# and the comparison does not hinge on top-k ties. 1024 > max context (658).
+_TOPK = 1024
 
 # Each request's cached prefix and the chunk the step under test prefills.
 # Neither is page aligned, and the chunk starts mid-page.
