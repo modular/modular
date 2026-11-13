@@ -511,6 +511,35 @@ def test_atol() raises:
     ):
         _ = atol("-9223372036854775809")
 
+    # trailing underscore followed by whitespace
+    with assert_raises():
+        _ = atol("9_ ")
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 10: '1_2_ '"
+    ):
+        _ = atol("1_2_ ")
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 16: 'ff_ '"
+    ):
+        _ = atol("ff_ ", 16)
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 0: '0x1_ '"
+    ):
+        _ = atol("0x1_ ", 0)
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 10: '9_\n'"
+    ):
+        _ = atol("9_\n")
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 10: '9_\t '"
+    ):
+        _ = atol("9_\t ")
+
     assert_equal(Int.MAX, atol("9223372036854775807"))
     assert_equal(Int.MIN, atol("-9223372036854775808"))
     assert_equal(Int.MAX, atol("0x7FFF_FFFF_FFFF_FFFF", 16))

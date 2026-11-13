@@ -2628,6 +2628,15 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
     var start: Int
     var str_len = str_slice.byte_length()
 
+    var buff = str_slice.unsafe_ptr()
+
+    # proactively trim all whitespaces from the end of the string
+    while (
+        str_len > 0
+        and Codepoint(buff[unsafe_offset=str_len - 1]).is_posix_space()
+    ):
+        str_len -= 1
+
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
     if start >= str_len:
         raise Error(_str_to_base_error(base, str_slice))
@@ -2656,9 +2665,7 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
             ord("A") + (real_base - 11),
         )
 
-    var buff = str_slice.unsafe_ptr()
     var found_valid_chars_after_start = False
-    var has_space_after_number = False
 
     # The largest magnitude that fits in `Int`: one more for negative results,
     # since |Int.MIN| == Int.MAX + 1.
@@ -2689,10 +2696,6 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
             digit = UInt(ord_current - ord_letter_min[0] + 10)
         elif ord_letter_min[1] <= ord_current <= ord_letter_max[1]:
             digit = UInt(ord_current - ord_letter_min[1] + 10)
-        elif Codepoint(UInt8(ord_current)).is_posix_space():
-            has_space_after_number = True
-            start = pos + 1
-            break
         else:
             raise Error(_str_to_base_error(base, str_slice))
         found_valid_chars_after_start = True
@@ -2701,10 +2704,8 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
             raise Error(_str_to_base_error(base, str_slice), too_large)
         result += digit
 
-        if (
-            pos + 1 < str_len
-            and not Codepoint(buff[unsafe_offset=pos + 1]).is_posix_space()
-        ):
+        # perform lookahead without considering whitespace.
+        if pos + 1 < str_len:
             if result > mul_cutoff:
                 raise Error(_str_to_base_error(base, str_slice), too_large)
             result *= UInt(real_base)
@@ -2712,10 +2713,6 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
     if was_last_digit_underscore or (not found_valid_chars_after_start):
         raise Error(_str_to_base_error(base, str_slice))
 
-    if has_space_after_number:
-        for pos in range(start, str_len):
-            if not Codepoint(buff[unsafe_offset=pos]).is_posix_space():
-                raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         if result == UInt(Int.MAX) + 1:
             return Int.MIN
