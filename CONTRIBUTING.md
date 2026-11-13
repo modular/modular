@@ -363,7 +363,7 @@ Here are a few implementation details that help us keep things running smoothly:
 
     ```plaintext
     ORIGINAL_AUTHOR=username 12345678+username@users.noreply.github.com
-    PUBLIC_PR_LINK=modularml/mojo#2439
+    PUBLIC_PR_LINK=modular/modular#2439
     ```
 
 - This repo is synced nightly with Modular's internal repo around 2 am ET
