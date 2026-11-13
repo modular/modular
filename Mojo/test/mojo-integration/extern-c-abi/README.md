@@ -43,13 +43,20 @@ passing).
 ### Multiple Arguments (`test_struct_arguments_multi.mojo`)
 
 Tests register allocation *across* arguments rather than classification of a
-single one — every other file here passes exactly one struct (6 tests):
+single one — every other file here passes exactly one struct (10 tests):
 
 - A scalar preceding a MEMORY-class struct, and preceding a sub-eightbyte
   struct with tail padding
 - An HFA arriving after 8 leading doubles, with no SIMD register left, so it
-  reaches plain stack passing. The 7-double case, where one register is left
-  and AAPCS must burn it rather than split the aggregate, is MOCO-4611
+  reaches plain stack passing
+- An HFA arriving after 7 leading doubles, with one SIMD register left, which
+  AAPCS passes whole on the stack rather than split
+- A 16-byte struct after 7 leading integers, with one general register left,
+  which AAPCS also passes whole on the stack
+- A 2-byte struct after 8 leading integers, which must take a whole 8-byte
+  stack slot
+- A struct holding an `__int128` after one integer, which AAPCS on Linux
+  starts in an even register (X2, skipping X1)
 - A trailing scalar after an HFA, which must take the next free SIMD register
 - 3x `double` (24 bytes), where AAPCS keeps the HFA in D0-D2 and SysV calls
   it MEMORY, in both argument and return position
@@ -99,7 +106,7 @@ This validates both argument passing AND return value ABI.
 - `c_abi_test_float_structs.c` - Float and mixed int/float functions (13
   functions)
 - `c_abi_test_ptr_structs.c` - Pointer struct functions (2 functions)
-- `c_abi_test_multi_args.c` - Cross-argument allocation (6 functions)
+- `c_abi_test_multi_args.c` - Cross-argument allocation (10 functions)
 - `c_abi_variadic_prototype.c` - Integer variadic functions (5 functions)
 - `c_abi_variadic_floats.c` - Float variadic functions (13 functions)
 
@@ -111,7 +118,7 @@ Struct argument tests (consolidated):
 - `test_struct_arguments_floats.mojo` - Float/double structs (8 tests)
 - `test_struct_arguments_mixed.mojo` - Mixed int/float structs (5 tests)
 - `test_struct_arguments_pointers.mojo` - Pointer structs (3 tests)
-- `test_struct_arguments_multi.mojo` - Cross-argument allocation (6 tests)
+- `test_struct_arguments_multi.mojo` - Cross-argument allocation (10 tests)
 
 Variadic function tests:
 

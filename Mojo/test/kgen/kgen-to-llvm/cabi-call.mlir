@@ -236,17 +236,17 @@ kgen.func @caller_indirect_narrow(
   hlcf.return %r : !kgen.scalar<ui8>
 }
 
-// A struct of one narrow integer is coerced to an integer of its size, which
+// A struct of one narrow integer is coerced to i64 (i8 when returned), which
 // clang does not extend, so neither the definition nor the call marks it,
 // whatever the sign of the field.
 // CHECK-LABEL: llvm.func internal @callee_single_field
-// CHECK-SAME:    (%{{.*}}: i8, %{{.*}}: i16, %{{.*}}: i8) -> i8 attributes
+// CHECK-SAME:    (%{{.*}}: i64, %{{.*}}: i64, %{{.*}}: i64) -> i8 attributes
 kgen.func @callee_single_field(%s: !kgen.struct<(scalar<si8>)>, %u: !kgen.struct<(scalar<ui16>)>, %b: !kgen.struct<(scalar<bool>)>) cabi -> !kgen.struct<(scalar<si8>)> {
   hlcf.return %s : !kgen.struct<(scalar<si8>)>
 }
 
 // CHECK-LABEL: llvm.func internal @caller_single_field
-// CHECK:         llvm.call @callee_single_field(%{{.*}}) : (i8, i16, i8) -> i8
+// CHECK:         llvm.call @callee_single_field(%{{.*}}) : (i64, i64, i64) -> i8
 kgen.func @caller_single_field(%s: !kgen.struct<(scalar<si8>)>, %u: !kgen.struct<(scalar<ui16>)>, %b: !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)> {
   %r = kgen.call @callee_single_field(%s, %u, %b) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
   hlcf.return %r : !kgen.struct<(scalar<si8>)>

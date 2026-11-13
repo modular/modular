@@ -52,7 +52,28 @@ struct VecInner c_func_vec_inner_16byte(struct VecInner s) {
   return s;
 }
 
+struct Vec3 {
+  float x, y, z;
+};
+
+// 24 bytes, 6 float members: not an HFA, so passed by pointer and returned via
+// sret on every target.
+struct Box {
+  struct Vec3 min, max;
+};
+
+struct Box c_func_nested_float_24byte(struct Box b) {
+  b.min.x += 1.0f;
+  b.min.y += 1.0f;
+  b.min.z += 1.0f;
+  b.max.x += 1.0f;
+  b.max.y += 1.0f;
+  b.max.z += 1.0f;
+  return b;
+}
+
 // 12 bytes: SSEPair on x86-64, the array classified per element.
+// An HFA of 3 floats on arm64.
 struct FloatArray3 {
   float v[3];
 };
@@ -62,4 +83,23 @@ struct FloatArray3 c_func_float_array_12byte(struct FloatArray3 s) {
   s.v[1] += 1.0f;
   s.v[2] += 1.0f;
   return s;
+}
+
+// An empty struct (a GNU C extension) has size 0 and is skipped: TaggedPair is
+// 8 bytes and 2 floats, an HFA on arm64 and one SSE eightbyte on x86-64.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-empty-struct"
+struct EmptyTag {};
+#pragma clang diagnostic pop
+
+struct TaggedPair {
+  float x;
+  struct EmptyTag tag;
+  float y;
+};
+
+struct TaggedPair c_func_empty_member_8byte(struct TaggedPair p) {
+  p.x += 1.0f;
+  p.y += 1.0f;
+  return p;
 }

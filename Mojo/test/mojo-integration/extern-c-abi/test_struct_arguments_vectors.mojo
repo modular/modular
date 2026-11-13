@@ -37,5 +37,29 @@ def test_vec_8byte():
 # CHECK: vec_8byte: 2.0 3.0
 
 
+# ============================================================================
+# Integer vector struct: { SIMD[DType.int32, 4], SIMD[DType.int32, 4] } (32 B)
+# Correct ABI (arm64):  HVA of 2 members — a 128-bit vector is a member
+#                       whatever its element type → q0-q1.
+# Correct ABI (x86-64): >16 bytes → MEMORY.
+# ============================================================================
+@fieldwise_init
+struct IntVectorPair(TrivialRegisterPassable):
+    var a: SIMD[.int32, 4]
+    var b: SIMD[.int32, 4]
+
+
+def test_vec_int_32byte():
+    var s = IntVectorPair(
+        SIMD[.int32, 4](1, 2, 3, 4), SIMD[.int32, 4](5, 6, 7, 8)
+    )
+    var result = external_call["c_func_vec_int_32byte", IntVectorPair](s)
+    print("vec_int_32byte:", result.a, result.b)
+
+
+# CHECK: vec_int_32byte: [2, 3, 4, 5] [6, 7, 8, 9]
+
+
 def main():
     test_vec_8byte()
+    test_vec_int_32byte()
