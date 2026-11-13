@@ -93,17 +93,9 @@ modular_py_test(
     ],
 )
 
-# TODO: Should we do anything with these? Maybe delete some of them?
 filegroup(
     name = "unreferenced-files",
     srcs = [
-        "action/main.py",
-        "scripts/__init__.py",
-        "scripts/check_pre_commit_rev_in_example.py",
-        "scripts/check_version_in_basics_example.py",
-        "scripts/diff_shades_gha_helper.py",
-        "scripts/fuzz.py",
-        "scripts/migrate-black.py",
         "src/mblib2to3/README",
     ],
     tags = ["maybe-unused"],
