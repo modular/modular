@@ -22,7 +22,7 @@ from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
 from std.ffi import c_size_t
 from std.iter import downcast
-from std.memory import Pointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.reflection import (
     SourceLocation,
@@ -37,8 +37,11 @@ from max._driver.max_license.device_context_dispatch.function import (
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
+    _CompletionFlagBox,
     _HALDeviceContextScope,
 )
+from max._driver.max_license.hal import Event
+from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from max._plugin import MaxPluginForTarget
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
@@ -762,32 +765,70 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
 
     def create_event(self) raises -> DeviceEvent:
-        """Creates a new event for cross-stream synchronization.
+        """Creates a new event for synchronization between streams.
 
         Returns:
-            The new `DeviceEvent`.
+            A `DeviceEvent` that can be used for synchronization.
 
         Raises:
             If the event cannot be created.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create an event
+        var event = ctx.create_event()
+
+        # Record the event in the default stream
+        default_stream.record_event(event)
+
+        # new_stream waits for the event, then continues
+        new_stream.enqueue_wait_for(event)
+        default_stream.synchronize()
+        ```
         """
         comptime if use_legacy_backend():
             return DeviceEvent(_impl=self._impl.create_event())
-        else:
-            return DeviceEvent(_impl=self._impl.create_event())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # The HAL uses logical events where creation and recording happen in
+        # one step. To work around this, create a `DeviceEvent` without a
+        # backing HAL event and let the first `record_event` fill it in.
+        return DeviceEvent(
+            _impl=DeviceEvent._HAL(
+                self.into_unknown_target(),
+                ArcPointer(Optional[Event[EVENT_FLAG_CPU_VISIBLE]](None)),
+            )
+        )
 
     def allocate_completion_flag(self) raises -> CompletionFlag:
-        """Allocates a device-side completion flag.
+        """Allocates a `CompletionFlag`, initialized to 0, on this device.
 
         Returns:
-            The new `CompletionFlag`.
+            The new flag.
 
         Raises:
-            If the allocation fails.
+            If the allocation fails, or if the device's plugin has no
+            completion flags.
         """
         comptime if use_legacy_backend():
             return CompletionFlag(_impl=self._impl.allocate_completion_flag())
-        else:
-            return CompletionFlag(_impl=self._impl.allocate_completion_flag())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        return CompletionFlag(
+            _impl=CompletionFlag._HAL(
+                ArcPointer(
+                    _CompletionFlagBox(self._impl.assert_default_target())
+                )
+            )
+        )
 
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports waiting on a completion flag.

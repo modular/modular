@@ -19,19 +19,23 @@ implementation, and keeps the legacy signature where the two disagree.
 
 from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
+from std.ffi import external_call
 from std.format import Writer
+from std.memory import ArcPointer
+from std.os import abort
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALCompletionFlag,
     HALDevice,
     HALDeviceBuffer,
     HALDeviceContext,
-    HALDeviceEvent,
     HALDeviceMulticastBuffer,
     HALDeviceStreamBase,
     HALHostBuffer,
+    _CompletionFlagBox,
 )
+from max._driver.max_license.hal import Event
+from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from .device_context import use_legacy_backend
 from max.gpu.host._legacy.device_context import (
     LegacyCompletionFlag,
@@ -182,32 +186,72 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             self._impl.synchronize()
 
     def enqueue_wait_for(self, event: DeviceEvent) raises:
-        """Enqueues a wait for `event` on this stream.
+        """Makes this stream wait for the specified event.
+
+        This function inserts a wait operation into this stream that will
+        block all subsequent operations in the stream until the specified
+        event has been recorded and completed.
 
         Args:
             event: The event to wait for.
 
         Raises:
-            If the operation fails.
+            If the wait operation fails.
         """
         comptime if use_legacy_backend():
             self._impl.enqueue_wait_for(event._impl)
-        else:
-            self._impl.enqueue_wait_for(event._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # An event that was never recorded has nothing to wait on.
+        if case .Some(recorded) = event._impl._event[]:
+            self._impl._stream[].wait_for_events(recorded)
 
     def record_event(self, event: DeviceEvent) raises:
-        """Records `event` on this stream.
+        """Records an event in this stream.
+
+        This function records the given event at the current point in this
+        stream. All operations in the stream that were enqueued before this call
+        will complete before the event is triggered.
 
         Args:
             event: The event to record.
 
         Raises:
-            If the operation fails.
+            If event recording fails.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+
+        var default_stream = ctx.stream()
+        var new_stream = ctx.create_stream()
+
+        # Create an event
+        var event = ctx.create_event()
+
+        # Record the event in the default stream
+        default_stream.record_event(event)
+
+        # Work enqueued on new_stream after this call waits for the event
+        new_stream.enqueue_wait_for(event)
+        ```
         """
         comptime if use_legacy_backend():
             self._impl.record_event(event._impl)
-        else:
-            self._impl.record_event(event._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # Create and record the backing event for this `DeviceEvent`. If it was
+        # previously recorded and no other `DeviceEvent`s have been constructed
+        # by copy from this event, the existing backing event will be released.
+        var hal_event = self._impl._stream[].record_event[
+            EVENT_FLAG_CPU_VISIBLE
+        ]()
+        event._impl._event[] = Optional(hal_event^)
 
     def enqueue_host_func(
         self,
@@ -229,19 +273,26 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             self._impl.enqueue_host_func(func, user_data)
 
     def wait_for_flag(self, flag: CompletionFlag, value: UInt64) raises:
-        """Blocks until `flag` reaches `value` on the device.
+        """Stalls the stream until `flag` holds at least `value`.
+
+        While the wait is pending, the thread that signals `flag` must not
+        block on this stream first: no `synchronize`, no copy into or out of
+        pageable host memory, and don't drop the flag.
 
         Args:
-            flag: The completion flag to poll.
-            value: The value to wait for.
+            flag: A `M::Driver::CompletionFlag`.
+            value: The 64-bit value to wait for. Keep values below 2^63.
 
         Raises:
-            If the operation fails.
+            If the device has no completion flags, the flag belongs to
+            another backend, or enqueueing the wait fails.
         """
         comptime if use_legacy_backend():
             self._impl.wait_for_flag(flag._impl, value)
-        else:
-            self._impl.wait_for_flag(flag._impl, value)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        flag._impl._inner[].wait(self._impl, value)
 
     @deprecated("Use `wait_for_flag` instead.")
     def wait_for_host_value(self, flag: CompletionFlag, value: UInt64) raises:
@@ -315,28 +366,74 @@ comptime DeviceStream = DeviceStreamBase[]
 """The stream type on the default accelerator."""
 
 
+@fieldwise_init
+struct _HALDeviceEvent(ImplicitlyCopyable, Movable):
+    """The state of a `DeviceEvent` on the HAL backend."""
+
+    # The context keeps the device alive for as long as the event exists.
+    var _ctx: DeviceContext.Unknown
+    # The HAL has logical events, where creation and recording happen in one
+    # step, so the backing event is empty until the event is first recorded.
+    # `_event` is an `ArcPointer[Optional[...]]` so that all copies of a
+    # `DeviceEvent` share the same backing event, which matches the behavior of
+    # the existing reference-counted legacy `DeviceEvent`.
+    var _event: ArcPointer[Optional[Event[EVENT_FLAG_CPU_VISIBLE]]]
+
+
 struct DeviceEvent(ImplicitlyCopyable):
-    """An event used to synchronize work across streams."""
+    """Represents a GPU event for synchronization between streams.
+
+    A `DeviceEvent` allows for fine-grained synchronization between different
+    GPU streams. Events can be recorded in one stream and waited for in another,
+    enabling efficient coordination of asynchronous GPU operations.
+
+    Example:
+
+    ```mojo
+    from max.gpu.host import DeviceContext
+
+    var ctx = DeviceContext()
+
+    var default_stream = ctx.stream()
+    var new_stream = ctx.create_stream()
+
+    # Create an event
+    var event = ctx.create_event()
+
+    # Record the event in the default stream
+    default_stream.record_event(event)
+
+    # Work enqueued on new_stream after this call waits for the event
+    new_stream.enqueue_wait_for(event)
+    ```
+    """
 
     comptime _Legacy = LegacyDeviceEvent
-    comptime _HAL = HALDeviceEvent
+    comptime _HAL = _HALDeviceEvent
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     var _impl: Self._Impl
 
     def __init__(out self, ctx: DeviceContext[default_accelerator()]) raises:
-        """Creates an event on the given device context's device.
+        """Creates a new event recorded on the given context's default stream.
 
         Args:
-            ctx: The device context that owns the event.
+            ctx: The device context to record the event on.
 
         Raises:
-            If the event cannot be created.
+            If event creation or recording fails.
         """
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx._impl)
-        else:
-            self._impl = Self._HAL(ctx._impl)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        var hal_event = ctx._impl._stream[].record_event[
+            EVENT_FLAG_CPU_VISIBLE
+        ]()
+        self._impl = Self._HAL(
+            ctx.into_unknown_target(), ArcPointer(Optional(hal_event^))
+        )
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend event.
@@ -369,22 +466,45 @@ struct DeviceEvent(ImplicitlyCopyable):
         return self._impl
 
     def synchronize(self) raises:
-        """Blocks until this event's work has completed.
+        """Blocks the calling CPU thread until this event completes.
+
+        This function waits until the event has been recorded and all
+        operations before the event in the stream have completed.
 
         Raises:
-            If the synchronization fails.
+            If synchronization fails.
         """
         comptime if use_legacy_backend():
             self._impl.synchronize()
-        else:
-            self._impl.synchronize()
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # An event that was never recorded has nothing to wait on.
+        if case .Some(recorded) = self._impl._event[]:
+            recorded.synchronize()
+
+
+@fieldwise_init
+struct _HALCompletionFlag(ImplicitlyCopyable):
+    """The state of a `CompletionFlag` on the HAL backend.
+
+    Shares the plugin flag that backs a C++ `M::Driver::CompletionFlag`, so a
+    standalone Mojo program needs no C++ runtime to use one.
+    """
+
+    var _inner: ArcPointer[_CompletionFlagBox]
 
 
 struct CompletionFlag(ImplicitlyCopyable):
-    """A device-side counter a host or device can wait on."""
+    """A host-visible completion flag a host or device can wait on.
+
+    On the HAL backend, this shares the plugin flag that backs a C++
+    `M::Driver::CompletionFlag`, so a standalone Mojo program needs no C++
+    runtime to use one.
+    """
 
     comptime _Legacy = LegacyCompletionFlag
-    comptime _HAL = HALCompletionFlag
+    comptime _HAL = _HALCompletionFlag
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     var _impl: Self._Impl
@@ -398,7 +518,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._impl = _impl^
 
     def __init__(out self, ctx: DeviceContext) raises:
-        """Allocates a flag on the device of `ctx`.
+        """Allocates a flag, initialized to 0, on the device of `ctx`.
 
         Args:
             ctx: The device context to allocate the flag on.
@@ -423,15 +543,36 @@ struct CompletionFlag(ImplicitlyCopyable):
         self._impl = Self._Legacy(handle=handle)
 
     def __init__(out self, *, unsafe_from_address: Int):
-        """Wraps the flag stored at a raw address.
+        """Wraps the C++ flag at an integer address, taking a reference.
+
+        Intended for graph-op execute methods that extract a packed pointer
+        from a payload buffer (mirroring how `runtime.launch_host_func`
+        rebuilds its trampoline and user-data pointers). The caller asserts
+        that `unsafe_from_address` points to a valid
+        `M::Driver::CompletionFlag` that outlives every wait enqueued through
+        this flag.
 
         Args:
-            unsafe_from_address: The address of the flag.
+            unsafe_from_address: Raw address of an `M::Driver::CompletionFlag`
+                (as packed into a graph payload buffer by the producer side).
         """
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
-        else:
-            self._impl = Self._HAL(unsafe_from_address=unsafe_from_address)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # The runtime library built this box, and a graph kernel reads its
+        # layout here, so both must come from the same source build.
+        self._impl = Self._HAL(
+            external_call[
+                "AsyncRT_CompletionFlag_mojoBox",
+                Pointer[ArcPointer[_CompletionFlagBox], MutUntrackedOrigin],
+            ](
+                OpaquePointer[MutUntrackedOrigin](
+                    unsafe_from_address=unsafe_from_address
+                )
+            )[]
+        )
 
     def unwrap_legacy(self) -> Self._Legacy:
         """Returns the underlying legacy flag.
@@ -456,33 +597,58 @@ struct CompletionFlag(ImplicitlyCopyable):
         return self._impl
 
     def signal(self, value: UInt64):
-        """Sets the flag to `value`.
+        """Stores `value` in the flag with release ordering.
+
+        Don't signal a lower value than the last one without a reset in
+        between. Aborts if the plugin fails.
 
         Args:
-            value: The value to publish.
+            value: The value to store.
         """
         comptime if use_legacy_backend():
             self._impl.signal(value)
-        else:
-            self._impl.signal(value)
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        # The legacy signature can't fail, so a plugin error aborts rather than
+        # leaving a wait that never passes. `load` and `reset` do the same.
+        try:
+            self._impl._inner[].signal(value)
+        except e:
+            abort(t"CompletionFlag.signal: {e}")
 
     def load(self) -> UInt64:
-        """Returns the flag's current value.
+        """Loads the flag's value with acquire ordering.
+
+        Aborts if the plugin fails.
 
         Returns:
-            The flag's value.
+            The value the flag holds.
         """
         comptime if use_legacy_backend():
             return self._impl.load()
-        else:
-            return self._impl.load()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        try:
+            return self._impl._inner[].load()
+        except e:
+            abort(t"CompletionFlag.load: {e}")
 
     def reset(self):
-        """Resets the flag to zero."""
+        """Sets the flag back to 0.
+
+        Don't reset while a wait on the flag is pending; doing so is undefined
+        behavior. Aborts if the plugin fails.
+        """
         comptime if use_legacy_backend():
             self._impl.reset()
-        else:
-            self._impl.reset()
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-4206)
+
+        try:
+            self._impl._inner[].reset()
+        except e:
+            abort(t"CompletionFlag.reset: {e}")
 
 
 struct Device[target: CompilationTarget, origin: ImmOrigin]:

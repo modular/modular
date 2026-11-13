@@ -1021,19 +1021,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     def stream(self) -> HALDeviceStreamBase[Self.target]:
         return HALDeviceStreamBase[Self.target](self)
 
-    def allocate_completion_flag(self) raises -> HALCompletionFlag:
-        """Allocates a `CompletionFlag`, initialized to 0, on this device.
-
-        Returns:
-            The new flag.
-
-        Raises:
-            If the device's plugin has no completion flags.
-        """
-        return HALCompletionFlag(
-            _inner=ArcPointer(_CompletionFlagBox(self.assert_default_target()))
-        )
-
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports completion flags.
 
@@ -1078,39 +1065,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         """
         var hal_stream = self._context[].create_stream()
         return HALDeviceStreamBase[Self.target](self, hal_stream^)
-
-    def create_event(self) -> HALDeviceEvent:
-        """Creates a new event for synchronization between streams.
-
-        Returns:
-            A DeviceEvent that can be used for synchronization.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-
-        var default_stream = ctx.stream()
-        var new_stream = ctx.create_stream()
-
-        # Create an event
-        var event = ctx.create_event()
-
-        # Wait for the event in new_stream
-        new_stream.enqueue_wait_for(event)
-
-        # new_stream can continue
-        default_stream.record_event(event)
-        default_stream.synchronize()
-        ```
-        """
-
-        # The HAL uses logical events where creation and recording happen in
-        # one step. To work around this, initially create a DeviceEvent without
-        # a backing HAL event.
-        return HALDeviceEvent._create_unrecorded(self)
 
     @inline(.always)
     def compile_function[
@@ -2597,9 +2551,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         """
         # Compose existing primitives: record an event on `other`'s default
         # stream, then make this context's stream wait on it.
-        var event = other.create_event()
-        other.stream().record_event(event)
-        self.stream().enqueue_wait_for(event)
+        var event = other._stream[].record_event[EVENT_FLAG_CPU_VISIBLE]()
+        self._stream[].wait_for_events(event)
 
     @staticmethod
     def number_of_devices(*, var api: String = Self._default_api()) -> Int:
@@ -3879,102 +3832,6 @@ struct HALDeviceStreamBase[target: CompilationTarget = default_accelerator()](
         """
         self._stream[].enqueue_host_func(func, user_data)
 
-    def enqueue_wait_for(self, event: HALDeviceEvent) raises:
-        """Makes this stream wait for the specified event.
-
-        This function inserts a wait operation into this stream that will
-        block all subsequent operations in the stream until the specified
-        event has been recorded and completed.
-
-        Args:
-            event: The event to wait for.
-
-        Raises:
-            If the wait operation fails.
-        """
-        # If an event hasn't been recorded yet, there's nothing to wait on
-        if case .Some(recorded) = event._event[]:
-            self._stream[].wait_for_events(recorded)
-
-    def record_event(self, event: HALDeviceEvent) raises:
-        """Records an event in this stream.
-
-        This function records the given event at the current point in this stream.
-        All operations in the stream that were enqueued before this call will
-        complete before the event is triggered.
-
-        Args:
-            event: The event to record.
-
-        Raises:
-            If event recording fails.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-
-        var default_stream = ctx.stream()
-        var new_stream = ctx.create_stream()
-
-        # Create event on the context
-        var event = ctx.create_event()
-
-        # Wait for the event on the new stream
-        new_stream.enqueue_wait_for(event)
-
-        # Stream 2 can continue
-        default_stream.record_event(event)
-        ```
-        """
-        # Create and record the backing event for this DeviceEvent. If it was
-        # previously recorded and no other DeviceEvents have been constructed
-        # by copy from this event, the existing backing event will be released.
-        var hal_event = self._stream[].record_event[EVENT_FLAG_CPU_VISIBLE]()
-        event._event[] = Optional(hal_event^)
-
-    @doc_hidden
-    def wait_for_flag(
-        self,
-        flag: HALCompletionFlag,
-        value: UInt64,
-    ) raises:
-        """Stalls the stream until `flag` holds at least `value`.
-
-        While the wait is pending, the thread that signals `flag` must not
-        block on this stream first: no `synchronize`, no copy into or out of
-        pageable host memory, and don't drop the flag.
-
-        Args:
-            flag: A ``M::Driver::CompletionFlag``.
-            value: The 64-bit value to wait for. Keep values below 2^63.
-
-        Raises:
-            If the device has no completion flags, the flag belongs to
-            another backend, or enqueueing the wait fails.
-        """
-        flag._inner[].wait(self, value)
-
-    @deprecated("Use `wait_for_flag` instead.")
-    @doc_hidden
-    def wait_for_host_value(
-        self,
-        flag: HALCompletionFlag,
-        value: UInt64,
-    ) raises:
-        """Stalls this stream until ``flag`` reaches ``value``.
-
-        Args:
-            flag: The flag to wait on.
-            value: The value to wait for.
-
-        Raises:
-            If the wait cannot be enqueued.
-        """
-        self.wait_for_flag(flag, value)
-
     def _native_stream[
         origin: Origin, //
     ](ref[origin] self) raises -> OpaquePointer[origin]:
@@ -4263,108 +4120,6 @@ struct HALDeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 *args,
                 location=location.or_else(call_location()),
             )
-
-
-# ===-----------------------------------------------------------------------===#
-# DeviceEvent
-# ===-----------------------------------------------------------------------===#
-
-
-struct HALDeviceEvent(ImplicitlyCopyable, Movable):
-    """Represents a GPU event for synchronization between streams.
-
-    A DeviceEvent allows for fine-grained synchronization between different
-    GPU streams. Events can be recorded in one stream and waited for in another,
-    enabling efficient coordination of asynchronous GPU operations.
-
-    Example:
-
-    ```mojo
-    from max.gpu.host import DeviceContext
-
-    var ctx = DeviceContext()
-
-    var default_stream = ctx.stream()
-    var new_stream = ctx.create_stream()
-
-    # Create event in default_stream
-    var event = ctx.create_event()
-
-    # Wait for the event in new_stream
-    new_stream.enqueue_wait_for(event)
-
-    # Stream 2 can continue
-    default_stream.record_event(event)
-    ```
-    """
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    # `_event` is an `ArcPointer[Optional[...]]` so that all copies of a
-    # DeviceEvent  share the same backing event, which matches the behavior
-    # of the existing reference-counted DeviceEvent implementation.
-    var _ctx: HALDeviceContext.Unknown
-    var _event: ArcPointer[Optional[Event[EVENT_FLAG_CPU_VISIBLE]]]
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    def __init__(out self, ctx: HALDeviceContext) raises:
-        """Creates a new event recorded on the given context's default stream.
-
-        Args:
-            ctx: The device context to record the event on.
-
-        Raises:
-            If event creation or recording fails.
-        """
-        var hal_event = ctx._stream[].record_event[EVENT_FLAG_CPU_VISIBLE]()
-        self._ctx = ctx.into_unknown_target()
-        self._event = ArcPointer(Optional(hal_event^))
-
-    @doc_hidden
-    def __init__(
-        out self,
-        ctx: HALDeviceContext,
-        var event: Optional[Event[EVENT_FLAG_CPU_VISIBLE]],
-    ):
-        """Initializes a DeviceEvent wrapping a possibly-empty HAL event.
-
-        Args:
-            ctx: The device context that owns the event.
-            event: The (possibly-unrecorded) HAL event to wrap.
-        """
-        self._ctx = ctx.into_unknown_target()
-        self._event = ArcPointer(event^)
-
-    @doc_hidden
-    @staticmethod
-    def _create_unrecorded(ctx: HALDeviceContext) -> HALDeviceEvent:
-        """Returns a `DeviceEvent` with no HAL event allocated yet."""
-        return HALDeviceEvent(
-            ctx, Optional[Event[EVENT_FLAG_CPU_VISIBLE]](None)
-        )
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    def synchronize(self) raises:
-        """Blocks the calling CPU thread until this event completes.
-
-        This function waits until the event has been recorded and all
-        operations before the event in the stream have completed.
-
-        Raises:
-            If synchronization fails.
-        """
-        # If an event hasn't been recorded yet, there's nothing to wait on
-        if case .Some(recorded) = self._event[]:
-            recorded.synchronize()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5902,108 +5657,6 @@ struct _CompletionFlagBox(Movable):
                 "completion flag waits are not supported across backends"
             )
         stream._stream[].wait_flag(self.flag, value, FlagCondition.geq)
-
-
-struct HALCompletionFlag(ImplicitlyCopyable):
-    """Host-visible completion flag.
-
-    Shares the plugin flag that backs a C++ ``M::Driver::CompletionFlag``, so
-    a standalone Mojo program needs no C++ runtime to use one.
-    """
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    var _inner: ArcPointer[_CompletionFlagBox]
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    def __init__(out self, *, var _inner: ArcPointer[_CompletionFlagBox]):
-        """Wraps a plugin flag.
-
-        Args:
-            _inner: The shared plugin flag.
-        """
-        self._inner = _inner^
-
-    @inline(.always)
-    def __init__(out self, *, unsafe_from_address: Int):
-        """Wraps the C++ flag at an integer address, taking a reference.
-
-        Intended for graph-op execute methods that extract a packed
-        pointer from a payload buffer (mirroring how
-        `runtime.launch_host_func` rebuilds its trampoline/user-data
-        pointers). The caller asserts that ``unsafe_from_address``
-        points to a valid ``M::Driver::CompletionFlag`` that outlives every
-        wait enqueued through this flag.
-
-        Args:
-            unsafe_from_address: Raw address of an
-                ``M::Driver::CompletionFlag`` (as packed into a graph
-                payload buffer by the producer side).
-        """
-        # The runtime library built this box, and a graph kernel reads its
-        # layout here, so both must come from the same source build.
-        self._inner = external_call[
-            "AsyncRT_CompletionFlag_mojoBox",
-            Pointer[ArcPointer[_CompletionFlagBox], MutUntrackedOrigin],
-        ](
-            OpaquePointer[MutUntrackedOrigin](
-                unsafe_from_address=unsafe_from_address
-            )
-        )[]
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    # The legacy signatures can't fail, so a plugin error aborts rather than
-    # leaving a wait that never passes.
-
-    @inline(.always)
-    def signal(self, value: UInt64):
-        """Stores ``value`` in the flag with release ordering.
-
-        Don't signal a lower value than the last one without a reset in
-        between. Aborts if the plugin fails.
-
-        Args:
-            value: The value to store.
-        """
-        try:
-            self._inner[].signal(value)
-        except e:
-            abort(t"CompletionFlag.signal: {e}")
-
-    @inline(.always)
-    def load(self) -> UInt64:
-        """Loads the flag's value with acquire ordering.
-
-        Aborts if the plugin fails.
-
-        Returns:
-            The value the flag holds.
-        """
-        try:
-            return self._inner[].load()
-        except e:
-            abort(t"CompletionFlag.load: {e}")
-
-    @inline(.always)
-    def reset(self):
-        """Sets the flag back to 0.
-
-        Don't reset while a wait on the flag is pending; doing so is undefined
-        behavior. Aborts if the plugin fails.
-        """
-        try:
-            self._inner[].reset()
-        except e:
-            abort(t"CompletionFlag.reset: {e}")
 
 
 struct HALDeviceContextArray[
