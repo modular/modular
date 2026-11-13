@@ -263,8 +263,8 @@ def resolve_prefill_context_parallel(value: bool | None) -> bool:
     prefill step too short to split, the predicated graph still pays PCP's
     per-layer host work, so a DCP export only runs it when asked. An explicit
     True passes through for the config to refuse where PCP cannot run (no
-    DCP, a gathered query, an interleave above 1, FP8 MLA weights or more
-    than one data-parallel replica).
+    DCP, a gathered query, FP8 MLA weights or more than one data-parallel
+    replica).
     """
     return bool(value)
 
@@ -432,12 +432,6 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
                 "--prefill-context-parallel."
             )
         interleave = self.decode_context_parallel_interleave
-        if self.prefill_context_parallel and interleave != 1:
-            raise ValueError(
-                "prefill_context_parallel requires "
-                "decode_context_parallel_interleave 1 for now (got "
-                f"{interleave}); export without --prefill-context-parallel."
-            )
         if interleave < 1:
             raise ValueError(
                 "decode_context_parallel_interleave must be positive (got "

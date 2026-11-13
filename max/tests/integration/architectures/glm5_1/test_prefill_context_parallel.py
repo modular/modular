@@ -100,7 +100,9 @@ def _replicated(values: np.ndarray[Any, Any], mesh: DeviceMesh) -> Tensor:
 _NAMESPACES = itertools.count()
 
 
-def _split(offsets: Tensor, rows: Tensor, dcp: int) -> PrefillContextParallel:
+def _split(
+    offsets: Tensor, rows: Tensor, dcp: int, interleave: int = 1
+) -> PrefillContextParallel:
     """The split alone: the scratch and prefix fields stay unset, since
     nothing here reads them. Each split takes its own namespace: a test
     builds several batches into one eager graph, and a rank's row count is
@@ -111,7 +113,7 @@ def _split(offsets: Tensor, rows: Tensor, dcp: int) -> PrefillContextParallel:
     unset = cast(Any, None)
     return PrefillContextParallel(
         dcp=dcp,
-        interleave=1,
+        interleave=interleave,
         namespace=namespace,
         batch_row_offsets=offsets,
         row_offsets=row_offsets,
@@ -163,19 +165,28 @@ def test_local_row_count_is_the_ceiling_first_split() -> None:
             assert counts[0] - counts[-1] <= 1
 
 
-def test_rows_keep_their_request_and_position() -> None:
+# Interleave 1 stripes the cache one position per rank; 128 gives each rank
+# whole device pages, the layout a non-DCP decode engine imports page by
+# page. The cache layout decides only where the prefix and the new rows are
+# stored, so the row split is the same under both.
+INTERLEAVES = (1, 128)
+
+
+@pytest.mark.parametrize("interleave", INTERLEAVES)
+def test_rows_keep_their_request_and_position(interleave: int) -> None:
     """Each rank's rows, row offsets and query starts on a TP4 group, and
     the rows all-gather back in batch order on every rank."""
     for lengths in BATCHES.values():
-        _check_rows(lengths)
+        _check_rows(lengths, interleave)
 
 
-def _check_rows(lengths: list[int]) -> None:
+def _check_rows(lengths: list[int], interleave: int) -> None:
     offsets = _offsets(lengths)
     total = int(offsets[-1])
     dcp = 4
     rows = _replicated(np.arange(total, dtype=np.float32).reshape(-1, 1), TP4)
-    split = _split(_replicated(offsets, TP4), rows, dcp)
+    split = _split(_replicated(offsets, TP4), rows, dcp, interleave)
+    assert split.interleave == interleave
     local = split.local_rows(rows)
     assert local.placements == (Sharded(0),)
     for rank in range(dcp):
@@ -192,15 +203,16 @@ def _check_rows(lengths: list[int]) -> None:
         _expect(shard, np.arange(total, dtype=np.float32).reshape(-1, 1))
 
 
-def test_head_sharding_restores_batch_order() -> None:
+@pytest.mark.parametrize("interleave", INTERLEAVES)
+def test_head_sharding_restores_batch_order(interleave: int) -> None:
     """Each rank attends its rows with all of the group's heads; the
     all-to-all leaves rank ``j`` its run of heads over every row in batch
     order, padding and all."""
     for lengths in BATCHES.values():
-        _check_heads(lengths)
+        _check_heads(lengths, interleave)
 
 
-def _check_heads(lengths: list[int]) -> None:
+def _check_heads(lengths: list[int], interleave: int) -> None:
     total = int(_offsets(lengths)[-1])
     dcp, heads, depth = 4, 8, 2
     # Row t, head h, lane d holds 100 * t + 10 * h + d.
@@ -210,7 +222,7 @@ def _check_heads(lengths: list[int]) -> None:
         + np.arange(depth)[None, None, :]
     ).astype(np.float32)
     rows = _replicated(whole, TP4)
-    split = _split(_replicated(_offsets(lengths), TP4), rows, dcp)
+    split = _split(_replicated(_offsets(lengths), TP4), rows, dcp, interleave)
     merged = split.to_head_sharded(split.local_rows(rows), rows)
     assert merged.placements == (Sharded(1),)
     per_rank = heads // dcp
@@ -295,8 +307,8 @@ def test_prefill_context_parallel_is_opt_in() -> None:
     assert not resolve_prefill_context_parallel(None)
     assert not resolve_prefill_context_parallel(False)
     # An explicit request passes through, for the config to refuse where PCP
-    # cannot run (no DCP, a gathered query, interleave above 1, FP8 MLA or
-    # more than one data-parallel replica).
+    # cannot run (no DCP, a gathered query, FP8 MLA or more than one
+    # data-parallel replica). Both interleave 1 and 128 pass.
     assert resolve_prefill_context_parallel(True)
 
 
