@@ -33,7 +33,6 @@ from std.math import ceildiv
 from std.sys import argv, get_defined_int, size_of
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
     HostBuffer,
@@ -382,7 +381,7 @@ def bench_case(ctx: DeviceContext[], b: Bench, seq_len: Int, opts: Opts) raises:
         seq_len,
         stride,
         num_heads,
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ctx.device().multiprocessor_count(),
     )
     for compact_only in [False, True]:
         var us = _time(ctx, b, a, compact_only, iters, opts.warm)
@@ -429,9 +428,7 @@ def main() raises:
     comptime if default_accelerator().is_amd_gpu():
         with DeviceContext() as ctx:
             var b = Bench(ctx)
-            var num_cus = ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            )
+            var num_cus = ctx.device().multiprocessor_count()
             print(
                 t"# CUs={num_cus} heads={num_heads} stride={stride} ctx_len={ctx_len} hole_period={opts.hole_period}"
             )

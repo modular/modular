@@ -44,7 +44,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives import block
 from layout import (
@@ -827,9 +827,7 @@ def _softmax_gpu[
 
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
     var num_rows = shape_il.flattened_length() // shape_il[axis]
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     comptime sm_overprovision_factor = 32  # tunable
 
     # Single-pass online softmax. The sink and logsoftmax variants stay on

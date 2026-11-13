@@ -43,7 +43,7 @@ from max.gpu.primitives.grid_controls import (
 )
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import bitcast, unsafe_stack_allocation
 from std.math import align_up, ceildiv, sqrt
@@ -5118,9 +5118,7 @@ def persistent_topk_block_split[
                 topk_cluster_split,
             )
 
-            var sm_count = ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            )
+            var sm_count = ctx.device().multiprocessor_count()
             if (
                 total_seq_len > 0
                 and total_seq_len
@@ -5173,9 +5171,7 @@ def persistent_topk_block_split[
     if N >= _HSEL_MIN_N:
         # Both selects below want the same question answered: do the rows fill
         # the GPU?
-        var cu_count = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var cu_count = ctx.device().multiprocessor_count()
         var hsel_fills_gpu = total_seq_len >= cu_count
 
         # Short enough to hold in registers: read the row once and let every later
@@ -5564,9 +5560,7 @@ def persistent_topk_block_split[
 
     var _N = Int(N)
     var num_tiles = ceildiv(_N, _TILE)
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     var S = _choose_split_factor(total_seq_len, num_tiles, sm_count)
     if S <= 1:
         persistent_topk_block(ctx, in_scores, out_idxs, N, K, total_seq_len)

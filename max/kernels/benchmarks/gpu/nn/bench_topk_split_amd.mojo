@@ -56,7 +56,6 @@ from std.math import ceildiv
 from std.memory import bitcast
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     DeviceGraph,
     DeviceGraphBuilder,
@@ -124,7 +123,7 @@ def _bench(
     scores_path: String = "",
     bounds_path: String = "",
 ) raises:
-    var cu = ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var cu = ctx.device().multiprocessor_count()
     var plan = _hsplit_plan(rows, N, K, cu)
     var slices = plan[0]
     var slice_len = plan[1]

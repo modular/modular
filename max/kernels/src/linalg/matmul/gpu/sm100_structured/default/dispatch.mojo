@@ -27,7 +27,6 @@ from std.sys import (
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
-from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     DefaultEngine,
@@ -1152,9 +1151,7 @@ def _outlier_fits_device[
         tuning_config.cluster_shape[1],
         tuning_config.num_split_k,
     )
-    return grid[0] * grid[1] * grid[2] <= ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    return grid[0] * grid[1] * grid[2] <= ctx.device().multiprocessor_count()
 
 
 def select_and_launch_sm100_config[

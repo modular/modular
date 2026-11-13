@@ -21,7 +21,7 @@ from max.gpu import thread_idx
 from max.gpu.primitives.warp import _ReduceFn
 from std.os import abort
 from std.sys.info import is_amd_gpu
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 
 
@@ -103,9 +103,7 @@ def coop_group_size(
         limit = 1
         while limit * 2 <= min(requested, _MAX_COOP_GROUP):
             limit *= 2
-    var mp_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var mp_count = ctx.device().multiprocessor_count()
     var group_size = 1
     var c = 2
     while c <= limit:

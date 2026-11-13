@@ -28,7 +28,6 @@ from std.sys import size_of
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
-from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
@@ -1383,9 +1382,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 c_row_stride,
             )
         var ctas = grid_dim[0] * grid_dim[1] * grid_dim[2]
-        var resident = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var resident = ctx.device().multiprocessor_count()
         if ctas > resident:
             raise Error(
                 "split-K parallel reduction needs every CTA resident: grid of ",

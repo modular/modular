@@ -26,7 +26,7 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx
 from layout.tile_tensor import row_major as tt_row_major
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
@@ -5695,7 +5695,7 @@ def _amd_sparse_decode_partitions(
             batch_size,
             indices_stride,
             num_heads,
-            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx.device().multiprocessor_count(),
         )
     return None
 

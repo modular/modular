@@ -50,7 +50,6 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier, schedule_barrier
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     get_gpu_target,
 )
@@ -4449,9 +4448,7 @@ def _gemv_gpu_impl[
             DType.float8_e4m3fn,
         ):
             if k % simd_width == 0:
-                if ceildiv(n, 2) <= ctx.device().get_attribute(
-                    DeviceAttribute.MAX_GRID_DIM_Y
-                ):
+                if ceildiv(n, 2) <= ctx.device().max_grid_dim_y():
                     kernel_func = GEMVAlgorithm.GemvSplitK
                 else:
                     kernel_func = GEMVAlgorithm.GemvKernelVector

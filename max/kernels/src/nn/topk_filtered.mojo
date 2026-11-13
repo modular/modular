@@ -53,7 +53,6 @@ from max.gpu.primitives.grid_controls import (
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     FuncAttribute,
     default_accelerator,
@@ -820,9 +819,7 @@ def filtered_topk_block_split[
         return
     comptime if default_accelerator().is_nvidia_gpu():
         if N > PERSISTENT_TOPK_MAX_N and N > FILTER_MIN_RATIO * K:
-            var sm_count = ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            )
+            var sm_count = ctx.device().multiprocessor_count()
             if rows >= sm_count:
                 var fallback = ctx.enqueue_create_buffer[.uint8](rows)
                 filtered_topk_launch(

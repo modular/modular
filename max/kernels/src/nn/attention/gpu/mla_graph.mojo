@@ -43,7 +43,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.primitives.warp import shuffle_xor
 from layout import (
@@ -2597,9 +2597,7 @@ def _amd_sparse_mla_bf16_rows[
     )
     comptime q_row_stride = num_heads * k_cache_dim
     comptime output_row_stride = num_heads * kv_latent_dim
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     for token0 in range(0, seq_len, max_launch_tokens):
         var tokens = min(max_launch_tokens, seq_len - token0)
         var q_rows = TileTensor(
@@ -3196,9 +3194,7 @@ def mla_decode_branch_fp8[
                     batch_size,
                     indices_stride,
                     num_heads,
-                    ctx.device().get_attribute(
-                        DeviceAttribute.MULTIPROCESSOR_COUNT
-                    ),
+                    ctx.device().multiprocessor_count(),
                 ),
             )
             _ = valid_lengths_buf^

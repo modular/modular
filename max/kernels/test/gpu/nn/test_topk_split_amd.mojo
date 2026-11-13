@@ -37,7 +37,6 @@ that reads past its bound selects it and fails. NaN is outside the contract;
 from std.builtin.sort import sort
 from std.math import cos, log, sqrt
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     DeviceGraph,
     DeviceGraphBuilder,
@@ -227,9 +226,7 @@ def _case[
     var ns = slices
     var sl = slice_len
     if ns == 0:
-        var cu = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var cu = ctx.device().multiprocessor_count()
         var plan = _hsplit_plan(B, N, K, cu)
         ns = plan[0]
         sl = plan[1]
@@ -583,9 +580,7 @@ def test_forced_geometry(ctx: DeviceContext) raises:
         slices=1,
         slice_len=16000,
     )
-    var B = (
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT) + 13
-    )
+    var B = ctx.device().multiprocessor_count() + 13
     _case(
         ctx,
         _random_scores(B, 20000, 9),

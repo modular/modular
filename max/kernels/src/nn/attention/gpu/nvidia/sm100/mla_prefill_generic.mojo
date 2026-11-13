@@ -47,7 +47,7 @@ from nn.attention.gpu.nvidia.common import (
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
 from layout.layout import row_major as tt_row_major
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
@@ -2924,9 +2924,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
+                ctx.device().multiprocessor_count(),
             ):
                 _launch[cfg_1q]()
             else:

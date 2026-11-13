@@ -21,7 +21,7 @@ from std.testing import assert_false
 
 from std.utils import IndexList
 
-# This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
+# This is `Device.max_threads_per_block()` (in ONNXRT it is a global
 # with value of 256).
 comptime MAX_THREADS_PER_BLOCK = 256
 

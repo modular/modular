@@ -14,7 +14,6 @@
 """Keep the BF16 sparse MLA capture key aligned with the launched split grid."""
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceContext,
     DeviceGraph,
     DeviceGraphBuilder,
@@ -50,9 +49,7 @@ def _check_key(
     """Checks the capture key on a BF16 and an FP8 cache against the split
     each arm launches, pinned at MI355X's CU count so a change to either
     side shows up here rather than agreeing by construction."""
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     comptime context_length = 80000
     var _, _, bf16_key = amd_mla_decode_dispatch_scalars(
         batch, context_length, q_len, heads, False, ctx, stride

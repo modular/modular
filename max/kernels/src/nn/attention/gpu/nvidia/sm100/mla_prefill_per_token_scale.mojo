@@ -48,7 +48,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia import GridBlockAttributeLaunchConfig
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -2236,9 +2236,7 @@ def mla_sm100_prefill_per_token_scale[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
+                ctx.device().multiprocessor_count(),
             ):
                 _launch[cfg_1q]()
             else:

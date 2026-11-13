@@ -47,7 +47,7 @@ from std.memory import bitcast
 from std.random import rand, randn, seed
 from std.testing import assert_equal, assert_true
 
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.paged_sparse_kv_index_remap import PagedKVRemap
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
@@ -252,9 +252,7 @@ def _run_case[
     # is the kernel family it takes; a case that drifted to another arm would
     # stop covering what it names.
     var stride = bound_len + q_len
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     var took: Int
     if total_q >= sm_count:
         took = ARM_FILLS_GPU

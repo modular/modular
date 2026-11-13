@@ -16,7 +16,7 @@ from std.random import randn, random_float64, seed
 
 from layout import Coord, TileTensor, row_major
 from layout.layout import Layout
-from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from nn.mhc import mhc_post, mhc_post_block_size, mhc_post_non_temporal
 from std.testing import assert_raises, assert_true
 from std.utils.numerics import FPUtils
@@ -201,9 +201,7 @@ def test_mhc_post_zero_rows(ctx: DeviceContext) raises:
 
 def test_mhc_post_non_temporal_threshold(ctx: DeviceContext) raises:
     # Both arms compute the same values, so only this pins the switch point.
-    var num_cus = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var num_cus = ctx.device().multiprocessor_count()
     var first_nt_row: Int
     comptime if default_accelerator().is_amd_gpu():
         first_nt_row = num_cus

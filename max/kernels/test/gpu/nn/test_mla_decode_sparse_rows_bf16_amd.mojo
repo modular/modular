@@ -30,7 +30,6 @@ from std.sys import get_defined_int, size_of
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import (
-    DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
     DeviceGraph,
@@ -387,9 +386,7 @@ def stage_chunks(
                 tokens,
                 indices_stride,
                 num_heads,
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
+                ctx.device().multiprocessor_count(),
             ),
         )
 
@@ -501,7 +498,7 @@ def check_correctness[
         seq_len,
         stride,
         num_heads,
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ctx.device().multiprocessor_count(),
     )
     if expect_np > 0:
         assert_equal(np, expect_np, "case does not reach the intended split")
@@ -607,7 +604,7 @@ def check_empty(
         seq_len,
         stride,
         num_heads,
-        ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        ctx.device().multiprocessor_count(),
     )
     if seq_len == 257:
         assert_true(np == 1, "empty-row unsplit case must use one partition")
@@ -708,7 +705,7 @@ def main() raises:
             # The arm puts one query token per grid.z slice in each launch.
             assert_true(
                 _AMD_SPARSE_MLA_MAX_LAUNCH_TOKENS
-                <= ctx.device().get_attribute(DeviceAttribute.MAX_GRID_DIM_Z),
+                <= ctx.device().max_grid_dim_z(),
                 "the arm's tokens per launch exceed the device grid.z limit",
             )
             var b = Bench(ctx)

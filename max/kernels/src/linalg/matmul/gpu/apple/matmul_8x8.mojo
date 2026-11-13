@@ -19,7 +19,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.compute.arch.mma_apple import _mma_apple_8x8
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TensorLayout, TensorEngine, TileTensor
 from layout.coord import Coord
 from std.math import ceildiv
@@ -456,7 +456,7 @@ def enqueue_apple_matmul_8x8[
     it in place of `c`."""
     var cores: Int
     try:
-        cores = ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        cores = ctx.device().multiprocessor_count()
     except:
         cores = _BLOCK_CALIBRATION_CORES
     var choice = _apple_8x8_block_choice(m, n, cores)

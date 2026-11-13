@@ -43,7 +43,7 @@ the group size, a vocabulary whose width is not a multiple of the vector width,
 and the non-deterministic and deterministic draw paths.
 """
 
-from max.gpu.host import DeviceAttribute, DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.math import gcd
 from layout import TileTensor, row_major
 from std.testing import assert_true
@@ -189,9 +189,7 @@ def check_split_parity[
     # A device with multiprocessors to spare has to split: a launch that
     # silently stayed at one block per row would make this whole test pass for
     # nothing.
-    var mp_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var mp_count = ctx.device().multiprocessor_count()
     var can_split = rows * 2 <= mp_count and n_vec >= 2 * BLOCK
     if can_split:
         assert_true(

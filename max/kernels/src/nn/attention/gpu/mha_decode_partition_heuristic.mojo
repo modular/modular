@@ -22,7 +22,7 @@ and MLA decode shapes.
 """
 
 from std.bit import next_power_of_two, prev_power_of_two
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import align_up, ceildiv, clamp
 
 # The split-K reducer's `MAX_PARTITIONS` limit.
@@ -778,9 +778,7 @@ def mha_decoding_num_partitions(
     if api == "hip" or api == "cuda":
         # MULTIPROCESSOR_COUNT is only meaningful for the split-K heuristics,
         # so query it lazily here rather than for every backend.
-        var sm_count = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var sm_count = ctx.device().multiprocessor_count()
         if api == "hip":
             return hip_mha_decoding_num_partitions(
                 batch_size,
@@ -843,9 +841,7 @@ def mha_decoding_max_num_partitions(
     # max == actual so the (max >= actual) invariant holds and no over-launch
     # path is taken.
     if ctx.api() == "cuda":
-        var sm_count = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var sm_count = ctx.device().multiprocessor_count()
         return cuda_mha_decoding_max_num_partitions(
             batch_size, heads_per_group, sm_count
         )
@@ -902,9 +898,7 @@ def amd_mla_decode_dispatch_scalars(
     """
     var np: Int
     if sparse_indices_stride > 0:
-        var sm_count = ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        var sm_count = ctx.device().multiprocessor_count()
         if q_max_seq_len == 1 and is_fp8_kv:
             np = amd_sparse_mla_inplace_decode_num_partitions(
                 batch_size, sparse_indices_stride, num_heads, sm_count

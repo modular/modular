@@ -44,7 +44,7 @@ covered by `test_mla_decode_sparse_kv_fp8.mojo` and friends.
 from std.math import ceildiv, exp, isnan
 from std.memory import bitcast
 
-from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -2044,9 +2044,7 @@ def main() raises:
             # The production split, `amd_sparse_mla_decode_num_partitions`:
             # 16 splits of 128 rows, so the 1200- and 530-row tokens leave 6
             # and 11 splits wholly past their valid length.
-            var sm_count = ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            )
+            var sm_count = ctx.device().multiprocessor_count()
             var topk_split = amd_sparse_mla_decode_num_partitions(
                 3, 2048, 8, sm_count
             )

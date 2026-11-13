@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.memory import OpaquePointer
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 
@@ -158,9 +158,7 @@ def multiprocessor_count(
     device_context_ptr: PythonObject,
 ) raises -> PythonObject:
     var device_ctx = DeviceContext(_get_ctx(device_context_ptr))
-    var sm_count = device_ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = device_ctx.device().multiprocessor_count()
     ref cpython = Python().cpython()
     return PythonObject(from_owned=cpython.PyLong_FromSsize_t(sm_count))
 
@@ -229,9 +227,7 @@ def mla_dispatch_args_scalar(
             num_heads,
             is_fp8_kv,
             sparse_indices_stride,
-            device_ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            ),
+            device_ctx.device().multiprocessor_count(),
             kv_form=kv_form,
             page_size=page_size,
             fixed_topk=fixed_topk,

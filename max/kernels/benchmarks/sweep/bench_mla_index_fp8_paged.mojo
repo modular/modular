@@ -377,9 +377,7 @@ def run_config[
     )
     var row_bytes = max_num_keys * size_of[scores_dtype]()
     var l2_bytes = ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE)
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
     ctx.synchronize()
     h.timer.lap("config_setup")
 
@@ -544,7 +542,7 @@ def main() raises:
             t"MLAIDXDEV l2_bytes="
             t" {ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE)} "
             t" sm_count="
-            t" {ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)}"
+            t" {ctx.device().multiprocessor_count()}"
         )
         var rot = h.rotation()
 

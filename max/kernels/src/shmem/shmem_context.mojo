@@ -224,9 +224,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
             self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
@@ -259,9 +257,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
             self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
@@ -300,9 +296,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch
         # capability with: hipLaunchAttributeCooperative and create function
         # that works across NVIDIA/AMD. For now assume cooperative capability.

@@ -30,7 +30,7 @@ from std.random import rand
 from std.sys import get_defined_int
 
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
-from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from .backend import device_fill_supported
 
@@ -62,12 +62,9 @@ def _launch_dims(ctx: DeviceContext, n: Int) -> Tuple[Int, Int]:
     try:
         block = min(
             block,
-            ctx.device().get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
+            ctx.device().max_threads_per_block(),
         )
-        max_grid = (
-            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
-            * _BLOCKS_PER_SM
-        )
+        max_grid = ctx.device().multiprocessor_count() * _BLOCKS_PER_SM
     except:
         pass
     return (block, max(1, min(ceildiv(n, block), max_grid)))

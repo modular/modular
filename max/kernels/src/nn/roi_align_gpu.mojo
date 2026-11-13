@@ -22,7 +22,7 @@ rounding tolerance (the GPU compiler may reorder/contract the same
 operations).
 """
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceContext, DeviceAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -239,9 +239,7 @@ def _roi_align_impl[
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
-    var sm_count = ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var sm_count = ctx.device().multiprocessor_count()
 
     var linear_block_count: Int
     var rows_per_block: Int

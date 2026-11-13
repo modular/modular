@@ -54,7 +54,7 @@ from std.utils.index import StaticTuple
 from layout import TensorLayout, TileTensor, row_major, stack_allocation
 from max.gpu.compute.mma import mma
 from max.gpu.sync import barrier, schedule_barrier
-from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.host.info import is_gpu
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -2024,9 +2024,7 @@ def mhc_post[
         )
 
     var gpu_ctx = context
-    var num_cus = gpu_ctx.device().get_attribute(
-        DeviceAttribute.MULTIPROCESSOR_COUNT
-    )
+    var num_cus = gpu_ctx.device().multiprocessor_count()
     var non_temporal = force_non_temporal.or_else(
         mhc_post_non_temporal(num_rows, num_cus)
     )
