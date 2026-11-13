@@ -790,6 +790,14 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     return dict(zip(names, trailing, strict=True))
 
 
+def _takes_prefill_rows(target_config: Any) -> bool:
+    """Returns whether the DSpark verify commits a prefill row.
+
+    Only the data-parallel (DEP) layout takes one.
+    """
+    return target_config.data_parallel_degree > 1
+
+
 ADAPTER = TargetAdapter(
     primary_kv=WINDOW_LEAF,
     verify=verify,
@@ -802,4 +810,5 @@ ADAPTER = TargetAdapter(
     trailing_input_types=trailing_input_types,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
+    verify_takes_prefill_rows=_takes_prefill_rows,
 )

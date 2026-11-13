@@ -38,6 +38,7 @@ from max.pipelines.speculative.block_driver import (
 from max.pipelines.speculative.driver import TensorAdapter
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
@@ -294,4 +295,5 @@ ADAPTER = TargetAdapter(
     # Mach's block adapter binds no `in_thinking_phase`, and Laguna serves
     # with a reasoning parser, which would otherwise declare it.
     relaxed_thinking_acceptance=False,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
 )

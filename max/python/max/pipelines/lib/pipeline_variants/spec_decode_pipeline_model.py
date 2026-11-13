@@ -1540,6 +1540,36 @@ class SpecDecodePipelineModel(
             self.pairing.adapter_arch, speculative.speculative_method
         )
 
+    @property
+    def verify_takes_prefill_rows(self) -> bool:
+        """Whether the verify commits a prefill row riding a verify step.
+
+        An export's ``engine_config`` carries this, so an engine may mix a
+        prompt row into the step.
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        assert speculative.speculative_method is not None
+        return spec_adapters.verify_takes_prefill_rows(
+            self.pairing.adapter_arch,
+            speculative.speculative_method,
+            self.arch_config_as(SpecDecodeArchConfig).target,
+        )
+
+    @property
+    def successor_replay(self) -> bool:
+        """Whether an engine replays a cached prompt row's boundary token.
+
+        The draft head reads the successor; an export's ``engine_config``
+        carries this.
+        """
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        assert speculative.speculative_method is not None
+        return spec_adapters.successor_replay(
+            self.pairing.adapter_arch, speculative.speculative_method
+        )
+
     @cached_property
     def takes_signal_buffers(self) -> bool:
         """Returns whether the graph takes signal buffers.

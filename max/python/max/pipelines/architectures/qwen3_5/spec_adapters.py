@@ -81,6 +81,7 @@ from max.pipelines.speculative.gated_delta_rollback import (
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
     verify_lengths,
 )
 from max.pipelines.speculative.spec_target import DistributedVerify, Verified
@@ -467,6 +468,7 @@ ADAPTER = TargetAdapter(
     check=check,
     # The conv verify and the gated delta ring both commit a long row.
     verify_commits_long_rows=True,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
     # The verify reads 3-axis positions past the canonical tail. They are
     # the target's, so every method takes them.
     trailing_input_types=_mrope_input_types,

@@ -35,6 +35,7 @@ from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     STAGE_BOUNDARY,
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 
@@ -126,7 +127,10 @@ ADAPTER = replace(
     _BASE,
     by_method={
         "mtp": replace(
-            _BASE, primary_kv=_SLIDING_KV, speculates_on_last_stage=True
+            _BASE,
+            primary_kv=_SLIDING_KV,
+            speculates_on_last_stage=True,
+            verify_takes_prefill_rows=always_takes_prefill_rows,
         )
     },
 )

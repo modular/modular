@@ -148,6 +148,17 @@ def _default_batch_replay_buffers(target_inputs: object) -> list[Buffer]:
     return []
 
 
+def _default_takes_prefill_rows(target_config: Any) -> bool:
+    del target_config
+    return False
+
+
+def always_takes_prefill_rows(target_config: Any) -> bool:
+    """Returns that every method of this adapter commits a prefill row."""
+    del target_config
+    return True
+
+
 def _default_block_proposer(
     verify: VerifyFn,
     draft: Module,
@@ -291,6 +302,16 @@ class TargetAdapter:
     """Whether the target's verify commits a row longer than one token and
     its drafts, at the row's last real token, in every recurrent leaf it
     keeps. An engine may then mix a prompt row into a verify step."""
+
+    verify_takes_prefill_rows: Callable[[Any], bool] = (
+        _default_takes_prefill_rows
+    )
+    """Returns whether the verify commits a prefill row that rides a verify
+    step. An engine may then mix a prompt row into the step."""
+
+    successor_replay: bool = False
+    """Whether an engine replays a cached prompt row's boundary token
+    for the draft head."""
 
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on

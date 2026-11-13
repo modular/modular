@@ -63,6 +63,7 @@ from max.pipelines.speculative.block_driver import (
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
@@ -465,5 +466,6 @@ ADAPTER = TargetAdapter(
     relaxed_thinking_acceptance=False,
     # The conv and scan kernels commit a prefill row's state in the verify itself.
     verify_commits_long_rows=True,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
     block_proposer=block_proposer,
 )

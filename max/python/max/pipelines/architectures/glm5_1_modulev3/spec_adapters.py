@@ -573,6 +573,14 @@ def check(speculative: SpeculativeConfig, structured_output: bool) -> None:
         )
 
 
+def _takes_prefill_rows(target_config: Any) -> bool:
+    """Returns whether the MTP verify commits a prefill row.
+
+    Attention that splits positions across ranks takes no prompt row.
+    """
+    return target_config.decode_context_parallel_degree <= 1
+
+
 ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
@@ -580,4 +588,7 @@ ADAPTER = TargetAdapter(
     hisparse_input_types=hisparse_input_types,
     check=check,
     sequential_proposer=sequential_proposer,
+    verify_takes_prefill_rows=_takes_prefill_rows,
+    # The NextN head reads each position's successor token.
+    successor_replay=True,
 )

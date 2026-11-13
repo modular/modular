@@ -63,12 +63,39 @@ class EngineSpeculativeConfig:
             ``sampled``, which adds the draft's probabilities to the graph.
         reasoning_parser: The reasoning parser, if any. With one, a block
             draft's graph takes whether each request is still thinking.
+        verify_takes_prefill_rows: Whether the verify commits a prefill row
+            that rides a verify step.
+        verify_commits_long_rows: Whether the verify commits a row longer
+            than one token and its drafts in every recurrent leaf.
+        successor_replay: Whether an engine replays a cached prompt
+            row's boundary token for the draft head.
     """
 
     speculative_method: str
     num_speculative_tokens: int
     draft_proposal: str
     reasoning_parser: str | None
+    verify_takes_prefill_rows: bool = False
+    verify_commits_long_rows: bool = False
+    successor_replay: bool = False
+
+
+@dataclass(frozen=True)
+class SpecGraphFacts:
+    """The verify facts of a built fused speculative graph.
+
+    Args:
+        verify_takes_prefill_rows: Whether the verify commits a prefill row
+            that rides a verify step.
+        verify_commits_long_rows: Whether the verify commits a row longer
+            than one token and its drafts in every recurrent leaf.
+        successor_replay: Whether an engine replays a cached prompt
+            row's boundary token for the draft head.
+    """
+
+    verify_takes_prefill_rows: bool
+    verify_commits_long_rows: bool
+    successor_replay: bool
 
 
 @dataclass(frozen=True)
@@ -137,6 +164,13 @@ class EngineConfig:
                 "num_speculative_tokens": speculative.num_speculative_tokens,
                 "draft_proposal": speculative.draft_proposal,
                 "reasoning_parser": speculative.reasoning_parser,
+                "verify_takes_prefill_rows": (
+                    speculative.verify_takes_prefill_rows
+                ),
+                "verify_commits_long_rows": (
+                    speculative.verify_commits_long_rows
+                ),
+                "successor_replay": speculative.successor_replay,
             },
         }
 
@@ -214,4 +248,13 @@ def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
         num_speculative_tokens=expect(obj["num_speculative_tokens"], int),
         draft_proposal=expect(obj["draft_proposal"], str),
         reasoning_parser=decode_optional(_str)(obj["reasoning_parser"]),
+        # An artifact written before these fields existed reads each as
+        # false.
+        verify_takes_prefill_rows=expect(
+            obj.get("verify_takes_prefill_rows", False), bool
+        ),
+        verify_commits_long_rows=expect(
+            obj.get("verify_commits_long_rows", False), bool
+        ),
+        successor_replay=expect(obj.get("successor_replay", False), bool),
     )

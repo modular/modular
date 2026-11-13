@@ -585,6 +585,10 @@ ENGINE_CONFIG = EngineConfig(
         num_speculative_tokens=3,
         draft_proposal="argmax",
         reasoning_parser="gemma4",
+        # Mixed values, so a swapped field cannot pass.
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
     ),
 )
 
@@ -611,10 +615,39 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "num_speculative_tokens": 3,
                 "draft_proposal": "argmax",
                 "reasoning_parser": "gemma4",
+                "verify_takes_prefill_rows": True,
+                "verify_commits_long_rows": False,
+                "successor_replay": True,
             },
         }
     }
     assert deserialize(dest).engine_config == ENGINE_CONFIG
+
+
+def test_an_artifact_before_the_verify_facts_reads_all_false(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["speculative"]["verify_takes_prefill_rows"]
+    del sections["engine_config"]["speculative"]["verify_commits_long_rows"]
+    del sections["engine_config"]["speculative"]["successor_replay"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.speculative is not None
+    assert not engine_config.speculative.verify_takes_prefill_rows
+    assert not engine_config.speculative.verify_commits_long_rows
+    assert not engine_config.speculative.successor_replay
+
+
+def test_a_wrong_typed_verify_fact_is_rejected(tmp_path: Path) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    sections["engine_config"]["speculative"]["verify_takes_prefill_rows"] = 1
+    _rewrite_sections(dest, sections)
+    with pytest.raises(ArtifactError, match="component 'engine_config'"):
+        deserialize(dest)
 
 
 @pytest.mark.parametrize(

@@ -49,6 +49,7 @@ from max.pipelines.speculative.block_driver import (
 from max.pipelines.speculative.driver import SequentialBatch, TensorAdapter
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
@@ -452,4 +453,5 @@ ADAPTER = TargetAdapter(
     ep_input_types=ep_input_types,
     # Where Mach binds them for the graph-API pairing's export too.
     signal_buffer_index=_SIGNAL_BUFFER_INDEX,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
 )

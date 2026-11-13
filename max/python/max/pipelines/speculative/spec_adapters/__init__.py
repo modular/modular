@@ -78,11 +78,13 @@ __all__ = [
     "sequential_proposer",
     "signal_buffer_index",
     "speculates_on_last_stage",
+    "successor_replay",
     "trailing_buffers",
     "trailing_input_tree",
     "trailing_input_types",
     "verify_commits_long_rows",
     "verify_for",
+    "verify_takes_prefill_rows",
 ]
 
 
@@ -288,6 +290,28 @@ def verify_commits_long_rows(target_arch: str, method: str) -> bool:
     writes the answer to the export's sidecar.
     """
     return _adapter(target_arch, method).verify_commits_long_rows
+
+
+def verify_takes_prefill_rows(
+    target_arch: str, method: str, target_config: Any
+) -> bool:
+    """Returns whether the verify commits a prefill row in a verify step.
+
+    An engine may then mix a prompt row into the step, as Mach's artifact
+    boot decides from the export's record.
+    """
+    return _adapter(target_arch, method).verify_takes_prefill_rows(
+        target_config
+    )
+
+
+def successor_replay(target_arch: str, method: str) -> bool:
+    """Returns whether the draft head reads each position's successor.
+
+    An engine then replays a cached prompt row's boundary token, as Mach's
+    artifact boot decides from the export's record.
+    """
+    return _adapter(target_arch, method).successor_replay
 
 
 def signal_buffer_index(target_arch: str) -> int | None:

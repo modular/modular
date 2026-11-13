@@ -49,6 +49,9 @@ from max.pipelines.lib.graph_specs import (
 )
 from max.pipelines.lib.interfaces import PipelineModel, PipelineModelWithKVCache
 from max.pipelines.lib.memory_plan import MemoryPlan
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
@@ -65,6 +68,7 @@ from .engine_config import (
     EngineConfig,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
+    SpecGraphFacts,
 )
 from .format_spec import FormatSpec
 from .kv_cache import (
@@ -364,8 +368,28 @@ def per_step_dims(layouts: Sequence[TensorLayout]) -> list[str]:
     )
 
 
+def _verify_facts(pipeline: object) -> SpecGraphFacts | None:
+    """Returns the fused graph's verify facts off the built pipeline model.
+
+    ``None`` for a pipeline whose model is not a fused spec-decode one.
+    """
+    if not isinstance(pipeline, TextGenerationPipelineInterface):
+        return None
+    model = pipeline._pipeline_model
+    if not isinstance(model, SpecDecodePipelineModel):
+        return None
+    return SpecGraphFacts(
+        verify_takes_prefill_rows=model.verify_takes_prefill_rows,
+        verify_commits_long_rows=model.verify_commits_long_rows,
+        successor_replay=model.successor_replay,
+    )
+
+
 def pipeline_engine_config(
-    pipeline_config: PipelineConfig, memory_plan: MemoryPlan
+    pipeline_config: PipelineConfig,
+    memory_plan: MemoryPlan,
+    *,
+    verify_facts: SpecGraphFacts | None = None,
 ) -> EngineConfig:
     """Returns the settings a pipeline is built with, for its artifact.
 
@@ -376,6 +400,8 @@ def pipeline_engine_config(
     Args:
         pipeline_config: The pipeline's configuration.
         memory_plan: The memory plan the pipeline is built with.
+        verify_facts: The fused graph's verify facts, read off the built
+            spec-decode pipeline model; ``None`` for a pipeline without one.
 
     Returns:
         The artifact's ``engine_config`` component.
@@ -390,6 +416,11 @@ def pipeline_engine_config(
     runtime = pipeline_config.runtime
     sampling = pipeline_config.sampling
     speculative = pipeline_config.speculative
+    facts = (
+        SpecGraphFacts(False, False, False)
+        if verify_facts is None
+        else verify_facts
+    )
     spec_config: EngineSpeculativeConfig | None = None
     if speculative is not None:
         # The config keeps a speculative section only when a method is set.
@@ -399,6 +430,9 @@ def pipeline_engine_config(
             num_speculative_tokens=speculative.draft_width,
             draft_proposal=speculative.draft_proposal,
             reasoning_parser=runtime.reasoning_parser,
+            verify_takes_prefill_rows=facts.verify_takes_prefill_rows,
+            verify_commits_long_rows=facts.verify_commits_long_rows,
+            successor_replay=facts.successor_replay,
         )
     return EngineConfig(
         max_batch_size=memory_plan.planned_max_batch_size,
@@ -787,7 +821,9 @@ def export_pipeline(
         pipeline_model,
         dims,
         engine_config=pipeline_engine_config(
-            pipeline_config, retrieved.memory_plan
+            pipeline_config,
+            retrieved.memory_plan,
+            verify_facts=_verify_facts(pipeline),
         ),
         kv_cache=pipeline_kv_cache(kv_params)
         if kv_params is not None

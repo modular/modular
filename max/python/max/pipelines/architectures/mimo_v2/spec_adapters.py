@@ -26,7 +26,10 @@ from max.nn.legacy.transformer.transformer import (
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import SequentialBatch
-from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    TargetAdapter,
+    always_takes_prefill_rows,
+)
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
 
@@ -94,4 +97,8 @@ def _verify(
     )
 
 
-ADAPTER = TargetAdapter(primary_kv=PRIMARY_KV, verify=verify)
+ADAPTER = TargetAdapter(
+    primary_kv=PRIMARY_KV,
+    verify=verify,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
+)

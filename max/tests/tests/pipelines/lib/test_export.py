@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 import huggingface_hub
@@ -33,9 +33,11 @@ from max._artifact.engine_config import (
     EngineConfig,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
+    SpecGraphFacts,
 )
 from max._artifact.export import (
     SupportsCompiledModules,
+    _verify_facts,
     batch_processor_dims,
     checkpoint_format_spec,
     checkpoint_tokenizer,
@@ -108,6 +110,12 @@ from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+)
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative import SpeculativeConfig
 from max.tensor.compilation import CompiledCallable
@@ -717,6 +725,141 @@ def test_engine_config_copies_the_speculative_settings() -> None:
             reasoning_parser="gemma4",
         )
     )
+
+
+def test_engine_config_records_the_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # Mixed values, so a swapped field cannot pass.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_records_the_reversed_verify_facts() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    # The reverse mix, so the two keys cannot be swapped anywhere.
+    facts = SpecGraphFacts(
+        verify_takes_prefill_rows=False,
+        verify_commits_long_rows=True,
+        successor_replay=True,
+    )
+    speculative = pipeline_engine_config(
+        config, _PLAN, verify_facts=facts
+    ).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert speculative.verify_commits_long_rows
+    assert speculative.successor_replay
+
+
+def test_engine_config_without_verify_facts_reads_all_false() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+    )
+    speculative = pipeline_engine_config(config, _PLAN).speculative
+    assert speculative is not None
+    assert not speculative.verify_takes_prefill_rows
+    assert not speculative.verify_commits_long_rows
+    assert not speculative.successor_replay
+
+
+def test_verify_facts_read_the_spec_pipeline_model() -> None:
+    class _SpecModel(SpecDecodePipelineModel):
+        def __init__(self) -> None:
+            # The export reads only the three fact properties.
+            pass
+
+        @property
+        def verify_takes_prefill_rows(self) -> bool:
+            return True
+
+        @property
+        def verify_commits_long_rows(self) -> bool:
+            return False
+
+        @property
+        def successor_replay(self) -> bool:
+            return True
+
+    class _SpecPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = _SpecModel()
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    class _PlainPipeline(TextGenerationPipelineInterface[Any]):
+        _pipeline_model = cast(PipelineModelWithKVCache[Any], object())
+
+        @property
+        def max_batch_size(self) -> int:
+            return 1
+
+        @property
+        def kv_manager(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def pipeline_config(self) -> Any:
+            raise NotImplementedError
+
+        @property
+        def tokenizer(self) -> Any:
+            raise NotImplementedError
+
+        def execute(self, inputs: Any) -> Any:
+            raise NotImplementedError
+
+        def release(self, request_id: Any) -> None:
+            raise NotImplementedError
+
+    assert _verify_facts(_SpecPipeline()) == SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=True,
+    )
+    # A pipeline whose model is not a fused spec-decode one has no facts.
+    assert _verify_facts(_PlainPipeline()) is None
 
 
 def _mha(num_layers: int, window_size: int | None = None) -> MHAKVCacheParams:
