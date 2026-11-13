@@ -29,6 +29,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn._graph_ops import (
     _fp6_format_code,
+    _moe_sigmoid_gemv_group_limited_router_unsupported,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
 )
@@ -319,3 +320,66 @@ def test_grouped_amd_matmul_rejects_an_ignored_a_scale_row_bound(
             a_scales_max_rows_per_expert=64,
             **kwargs,
         )
+
+
+# Beam-1.0's router.
+_GROUP_LIMITED_ROUTER: dict[str, Any] = {
+    "n_routed_experts": 256,
+    "n_experts_per_tok": 8,
+    "n_groups": 8,
+    "topk_group": 4,
+    "hidden_size": 5120,
+    "warp_size": 32,
+    "weight_dtype": DType.float32,
+}
+
+
+def test_group_limited_router_takes_beam_routing() -> None:
+    assert (
+        _moe_sigmoid_gemv_group_limited_router_unsupported(
+            **_GROUP_LIMITED_ROUTER
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"weight_dtype": DType.bfloat16}, "float32"),
+        ({"n_groups": 0}, "split evenly"),
+        ({"n_groups": 1}, "divide the warp"),
+        ({"n_groups": 128}, "n_experts_per_tok must be in"),
+        ({"topk_group": 9}, "topk_group must be in"),
+        (
+            {"n_routed_experts": 96, "n_groups": 3, "topk_group": 2},
+            "n_groups must be a power of two",
+        ),
+        ({"topk_group": 3}, "candidates must be a power of two"),
+        # Two scores per group overrun the candidates' shared memory.
+        (
+            {"n_groups": 16, "topk_group": 4, "n_experts_per_tok": 4},
+            "shared memory",
+        ),
+        ({"topk_group": 1}, "shared memory"),
+    ],
+    ids=[
+        "bf16_ids",
+        "no_groups",
+        "group_wider_than_warp",
+        "top_k_wider_than_group",
+        "more_kept_than_groups",
+        "groups_not_power_of_two",
+        "candidates_not_power_of_two",
+        "group_scores_overrun_16",
+        "group_scores_overrun_8",
+    ],
+)
+def test_group_limited_router_rejects_unsupported_routing(
+    overrides: dict[str, Any], reason: str
+) -> None:
+    """Configs the kernel can't run fail at build, not as bad routing."""
+    result = _moe_sigmoid_gemv_group_limited_router_unsupported(
+        **{**_GROUP_LIMITED_ROUTER, **overrides}
+    )
+    assert result is not None and reason in result

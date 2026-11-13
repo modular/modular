@@ -26,6 +26,9 @@ from max.nn._graph_ops import (
     moe_router_group_limited as _moe_router_group_limited,
 )
 from max.nn._graph_ops import (
+    moe_sigmoid_gemv_group_limited_router_packed as _moe_sigmoid_gemv_glr_packed,
+)
+from max.nn._graph_ops import (
     moe_single_group_router_packed as _moe_single_group_router_packed,
 )
 from max.nn._graph_ops.ep import fused_silu as _fused_silu
@@ -190,6 +193,27 @@ mixed_gemv_epilogue = F.functional(
 )
 
 
+def _moe_sigmoid_gemv_group_limited_router_packed_rule(
+    hidden_states: TensorLayout,
+    gate_weight: TensorLayout,
+    expert_bias: TensorLayout,
+    n_experts_per_tok: int,
+    n_groups: int,
+    topk_group: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> list[AxisAssignment]:
+    # As for `moe_sigmoid_gemv_router`: every device needs the full gate dot
+    # product.
+    return [AxisAssignment((R, R, R), (R,))]
+
+
+moe_sigmoid_gemv_group_limited_router_packed = F.functional(
+    _moe_sigmoid_gemv_glr_packed,
+    rule=_moe_sigmoid_gemv_group_limited_router_packed_rule,
+)
+
+
 __all__ = [
     "fused_silu",
     "fused_silu_quantized",
@@ -199,6 +223,7 @@ __all__ = [
     "moe_create_indices_packed",
     "moe_finalize",
     "moe_router_group_limited",
+    "moe_sigmoid_gemv_group_limited_router_packed",
     "moe_sigmoid_gemv_router",
     "moe_single_group_router_packed",
 ]

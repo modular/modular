@@ -74,6 +74,7 @@ from .moe import (
     moe_create_indices_packed,
     moe_finalize,
     moe_router_group_limited,
+    moe_sigmoid_gemv_group_limited_router_packed,
     moe_sigmoid_gemv_router,
     moe_single_group_router_packed,
 )
@@ -172,6 +173,7 @@ __all__ = [
     "moe_finalize",
     "moe_fp8_host_usage_stats",
     "moe_router_group_limited",
+    "moe_sigmoid_gemv_group_limited_router_packed",
     "moe_sigmoid_gemv_router",
     "moe_single_group_router_packed",
     "mtp_eh_norm",

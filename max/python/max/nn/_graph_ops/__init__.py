@@ -9666,6 +9666,233 @@ def _moe_sigmoid_gemv_router(
     return (results[0].tensor, results[1].tensor)
 
 
+def _moe_sigmoid_gemv_group_limited_router_unsupported(
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    n_groups: int,
+    topk_group: int,
+    hidden_size: int,
+    warp_size: int,
+    weight_dtype: DType,
+) -> str | None:
+    """Returns why the fused group-limited router can't run a config, or None.
+
+    One warp sorts each group and scores it by its top two experts, so a
+    group holds at least two experts and the top-k, and divides the warp.
+    Warp 0 then sorts the group scores and the kept groups' top-k
+    candidates, so both counts are powers of two that fit one warp. The
+    group scores, two per group, reuse the candidates' shared memory. The
+    packed output holds expert ids as floats, which only float32 keeps exact
+    for every expert count the kernel takes.
+
+    Args:
+        n_routed_experts: The number of routed experts.
+        n_experts_per_tok: The number of experts selected per token.
+        n_groups: The number of expert groups.
+        topk_group: The number of groups kept per token.
+        hidden_size: The gate GEMV's reduction length.
+        warp_size: The target's warp width (32 on NVIDIA, 64 on AMD).
+        weight_dtype: The gate weight's dtype.
+
+    Returns:
+        A description of the first unsupported parameter, or None if the
+        kernel supports the configuration.
+    """
+    if weight_dtype != DType.float32:
+        return (
+            "the packed expert ids need a float32 gate weight but got"
+            f" {weight_dtype}"
+        )
+    if n_groups <= 0 or n_routed_experts <= 0 or n_routed_experts % n_groups:
+        return (
+            f"{n_routed_experts} routed experts must split evenly into"
+            f" {n_groups} groups"
+        )
+    group_size = n_routed_experts // n_groups
+    if group_size < 2 or warp_size % group_size:
+        return (
+            f"a group of {group_size} experts must hold at least 2 and divide"
+            f" the warp width of {warp_size}"
+        )
+    if not 0 < n_experts_per_tok <= group_size:
+        return (
+            f"n_experts_per_tok must be in [1, {group_size}], the group size,"
+            f" but got {n_experts_per_tok}"
+        )
+    if not 0 < topk_group <= n_groups:
+        return f"topk_group must be in [1, {n_groups}] but got {topk_group}"
+    if n_groups & (n_groups - 1):
+        return f"n_groups must be a power of two but got {n_groups}"
+    candidates = topk_group * n_experts_per_tok
+    if candidates > warp_size or candidates & (candidates - 1):
+        return (
+            f"topk_group {topk_group} x n_experts_per_tok {n_experts_per_tok}"
+            f" candidates must be a power of two no wider than the warp width"
+            f" of {warp_size}"
+        )
+    if 2 * n_groups > candidates:
+        return (
+            f"the {n_groups} groups' 2 scores each must fit the shared memory"
+            f" of the {candidates} candidates"
+        )
+    return _moe_sigmoid_gemv_router_unsupported(
+        n_routed_experts=n_routed_experts,
+        n_experts_per_tok=n_experts_per_tok,
+        hidden_size=hidden_size,
+        warp_size=warp_size,
+        weight_dtype=weight_dtype,
+    )
+
+
+def moe_sigmoid_gemv_group_limited_router_packed_supports(
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    n_groups: int,
+    topk_group: int,
+    hidden_size: int,
+    weight_dtype: DType,
+) -> bool:
+    """Returns whether the host's GPU runs a group-limited routing config.
+
+    Args:
+        n_routed_experts: The number of routed experts.
+        n_experts_per_tok: The number of experts selected per token.
+        n_groups: The number of expert groups.
+        topk_group: The number of groups kept per token.
+        hidden_size: The hidden states' width.
+        weight_dtype: The gate weight's dtype.
+
+    Returns:
+        True if :func:`moe_sigmoid_gemv_group_limited_router_packed` takes
+        the configuration on the host's NVIDIA or AMD GPU.
+    """
+    return (
+        not _is_apple_gpu()
+        and _moe_sigmoid_gemv_group_limited_router_unsupported(
+            n_routed_experts=n_routed_experts,
+            n_experts_per_tok=n_experts_per_tok,
+            n_groups=n_groups,
+            topk_group=topk_group,
+            hidden_size=hidden_size,
+            warp_size=64 if _is_amd_gpu() else 32,
+            weight_dtype=weight_dtype,
+        )
+        is None
+    )
+
+
+def moe_sigmoid_gemv_group_limited_router_packed(
+    hidden_states: TensorValue,
+    gate_weight: TensorValue,
+    expert_bias: TensorValue,
+    n_experts_per_tok: int,
+    n_groups: int,
+    topk_group: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> TensorValue:
+    """Routes tokens with a sigmoid gate and group-limited top-k, packed.
+
+    Equivalent to :func:`moe_router_group_limited` on
+    ``sigmoid(hidden_states.cast(gate_weight.dtype) @ gate_weight.T)``, with
+    the ids and weights packed as :func:`moe_single_group_router_packed`
+    packs them, as one op (``moe.sigmoid.gemv.group.limited.router.packed``).
+    A split-K gate GEMV writes partial dot products, and the router adds them
+    and applies the sigmoid as it loads its scores, so no separate matmul
+    reduction, sigmoid or concat runs. The gate GEMV accumulates in float32.
+
+    NVIDIA and AMD GPUs only. The router runs one thread per routed expert;
+    each group must fit one warp, and the kept groups' top-k candidates
+    must fit one warp too.
+    :func:`moe_sigmoid_gemv_group_limited_router_packed_supports` tells
+    whether the op takes a routing configuration.
+
+    Args:
+        hidden_states: The token hidden states. Shape:
+            ``[num_tokens, hidden_size]``.
+        gate_weight: The float32 router weight. Shape:
+            ``[n_routed_experts, hidden_size]``.
+        expert_bias: The per-expert correction bias, used for selection
+            only. Shape: ``[n_routed_experts]``.
+        n_experts_per_tok: The number of experts to select per token.
+        n_groups: The number of expert groups.
+        topk_group: The number of groups kept per token.
+        norm_weights: Whether to normalize the selected weights to sum to
+            one before scaling.
+        routed_scaling_factor: The factor multiplied into every weight.
+
+    Returns:
+        Each token's expert ids, as float32, then their weights. Shape:
+        ``[num_tokens, 2 * n_experts_per_tok]``.
+
+    Raises:
+        ValueError: If the inputs aren't on a GPU, or their shapes or the
+            routing configuration aren't supported by the kernel.
+    """
+    device = DeviceRef.from_device(hidden_states.device)
+    if not device.is_gpu() or _is_apple_gpu():
+        raise ValueError(
+            "moe_sigmoid_gemv_group_limited_router_packed is only supported"
+            " on NVIDIA and AMD GPUs"
+        )
+    if gate_weight.rank != 2 or hidden_states.rank != 2:
+        raise ValueError(
+            "expected rank-2 hidden_states and gate_weight but got"
+            f" {hidden_states.rank} and {gate_weight.rank}"
+        )
+    if gate_weight.shape[1] != hidden_states.shape[1]:
+        raise ValueError(
+            "expected gate_weight of shape [n_routed_experts, hidden_size]"
+            f" but got {gate_weight.shape}"
+        )
+    if expert_bias.rank != 1 or expert_bias.shape[0] != gate_weight.shape[0]:
+        raise ValueError(
+            "expected expert_bias of shape [n_routed_experts] but got"
+            f" {expert_bias.shape}"
+        )
+    n_routed_experts = int(gate_weight.shape[0])
+    reason = _moe_sigmoid_gemv_group_limited_router_unsupported(
+        n_routed_experts=n_routed_experts,
+        n_experts_per_tok=n_experts_per_tok,
+        n_groups=n_groups,
+        topk_group=topk_group,
+        hidden_size=int(gate_weight.shape[1]),
+        warp_size=64 if _is_amd_gpu() else 32,
+        weight_dtype=gate_weight.dtype,
+    )
+    if reason is not None:
+        raise ValueError(reason)
+
+    tokens = hidden_states.shape[0]
+    results = ops.custom(
+        "moe.sigmoid.gemv.group.limited.router.packed",
+        device=device,
+        values=[
+            hidden_states,
+            gate_weight,
+            expert_bias,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(DType.int32, [tokens, n_experts_per_tok], device),
+            TensorType(gate_weight.dtype, [tokens, n_experts_per_tok], device),
+            TensorType(
+                gate_weight.dtype, [tokens, 2 * n_experts_per_tok], device
+            ),
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_groups": n_groups,
+            "topk_group": topk_group,
+            "norm_weights": norm_weights,
+        },
+    )
+    return results[2].tensor
+
+
 def moe_sink_gate_router(
     logits: TensorValue,
     expert_bias: TensorValue,

@@ -102,6 +102,7 @@ from nn.moe import (
     moe_finalize,
     moe_finalize_bounded,
     router_group_limited,
+    sigmoid_gemv_group_limited_router,
     sigmoid_gemv_single_group_router,
     sink_gate_router,
     single_group_router,
@@ -3159,6 +3160,68 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
             expert_bias.to_tile_tensor[mut=False](),
             routed_scaling_factor,
             context,
+        )
+
+
+@extensibility.register("moe.sigmoid.gemv.group.limited.router.packed")
+struct Struct_moe_sigmoid_gemv_group_limited_router_packed:
+    """Registers the `moe.sigmoid.gemv.group.limited.router.packed` graph op.
+
+    Fuses the router GEMV and sigmoid into the group-limited router, which
+    also writes each token's ids, as the weight dtype, then its weights to
+    one `[tokens, 2 * top_k]` row of `packed`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        n_groups: Int,
+        topk_group: Int,
+        norm_weights: Bool,
+    ](
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        packed: Some[Output & Tensor],
+        hidden: Some[Input & Tensor],
+        gate_weight: Some[Input & Tensor],
+        expert_bias: Some[Input & Tensor],
+        routed_scaling_factor: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(type_of(hidden), TileTensorable)
+        comptime assert conforms_to(type_of(gate_weight), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime weight_type = type_of(expert_weights).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(hidden).rank == 2
+        comptime assert type_of(gate_weight).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(packed).dtype == weight_type
+        sigmoid_gemv_group_limited_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            n_groups,
+            topk_group,
+            norm_weights=norm_weights,
+            packed=True,
+        ](
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor(),
+            hidden.to_tile_tensor[mut=False](),
+            gate_weight.to_tile_tensor[weight_type, mut=False](),
+            expert_bias.to_tile_tensor[mut=False](),
+            routed_scaling_factor,
+            context,
+            packed.to_tile_tensor[weight_type]().ptr.unsafe_origin_cast[
+                MutUntrackedOrigin
+            ](),
         )
 
 

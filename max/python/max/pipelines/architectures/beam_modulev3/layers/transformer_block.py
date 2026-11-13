@@ -267,11 +267,8 @@ class BeamTransformerBlock(Module[..., Tensor]):
             attn_mix,
             post_attn.eps,
         )
-        router_idx, router_weight = self.mlp.gate(normed)
-        routing = F.concat(
-            [router_idx.cast(DType.float32), router_weight.cast(DType.float32)],
-            axis=-1,
-        )
+        assert isinstance(self.mlp.gate, BeamTopKRouter)
+        routing = self.mlp.gate.packed(normed)
         # Each device rounds its own float32 sum, as the exchange path's
         # combine does; the fused all-reduce takes bfloat16 only.
         partial = self.mlp.local_expert_partial_sums(
