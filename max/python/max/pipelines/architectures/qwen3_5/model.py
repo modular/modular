@@ -34,7 +34,6 @@ from max._artifact.vision import (
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph.buffer_utils import cast_tensors_to
 from max.nn.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.nn.legacy.image_preprocess import (
     image_preprocess_input_types,
@@ -68,7 +67,7 @@ from .batch_processor import Qwen3_5BatchProcessor
 from .model_config import Qwen3_5Config
 from .preprocess_graph import Qwen3_5ImagePreprocess
 from .qwen3_5 import Qwen3_5
-from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
+from .vision_packing import Qwen3_5VisionInputs
 from .weight_adapters import qwen3_5_weight_entry
 
 logger = logging.getLogger("max.pipelines")
@@ -204,6 +203,28 @@ def _loaded_module(
     return module
 
 
+# The model names its tower's weights under this prefix, as the checkpoint's
+# rules do.
+_VISION_PREFIX = "vision_encoder."
+
+
+def _vision_spec(model: Qwen3_5) -> GraphSpec | None:
+    """Returns the graph of ``model``'s vision tower, if it has one."""
+    if model.vision_encoder is None:
+        return None
+    return GraphSpec(
+        model.vision_encoder,
+        "qwen3_5_vision",
+        model.vision_encoder.input_tree(),
+        weights={
+            name: value
+            for name, value in model.state_dict().items()
+            if name.startswith(_VISION_PREFIX)
+        },
+        group=_COMPILE_GROUP,
+    )
+
+
 def qwen3_5_vision_metadata(
     huggingface_config: AutoConfig,
 ) -> VisionMetadata | None:
@@ -282,46 +303,55 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
-    # Vision model (None for text-only checkpoints)
-    vision_model: Model | None = None
     _models: Mapping[str, Model]
     # The adapted checkpoint, which `graph_specs` loads into the modules.
     _checkpoint: dict[str, Any]
-    _session: InferenceSession | None = None
 
-    # Model dtype and hidden size (set during graph build, used for empty buffers)
-    _hidden_size: int = 0
-    _model_dtype: DType = DType.bfloat16
-    # State-pool storage dtype. Deliberately separate from _model_dtype: the
-    # vision empties keep the compute dtype even when the pools are fp32.
+    # State-pool storage dtype, which can be wider than the compute dtype.
     _state_dtype: DType = DType.bfloat16
     # Per-request state bytes the config budgeted, checked in `load_model`.
     _accounted_state_bytes: int = 0
 
     _num_linear_layers: int = 0
 
-    # Whether the built graph takes M-RoPE positions; set during graph build.
-    _mrope_enabled: bool = False
-
-    # Zero-row vision embeddings for decode / text-only steps, so buffers()
-    # always has the right input count. Cached: see empty_vision_embeddings.
-    _empty_vision_embeddings: list[Buffer] | None = None
-
     @classmethod
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Qwen3_5, Qwen3_5Config]:
-        """Builds the hybrid model from the checkpoint ``context`` names.
+        """Builds the language model from the checkpoint ``context`` names.
 
-        A caller that sized the cache passes its KV params. A module that
-        encodes no images builds no vision tower, but keeps the 3-axis
-        positions of a checkpoint that has one.
+        A caller that sized the cache passes its KV params. The vision tower
+        builds in its own graph, as :meth:`build_vision_spec` returns it, so
+        the module keeps only the 3-axis positions of a checkpoint that has
+        one.
+        """
+        state_dict = parse_state_dict_from_weights(
+            context.pipeline_config, context.weights, context.adapter
+        )
+        config = cls._finalized_config(context, state_dict, vision=False)
+        return _loaded_module(config, state_dict), config
+
+    @classmethod
+    def build_vision_spec(cls, context: ModelLoadContext) -> GraphSpec:
+        """Returns the vision tower's graph spec.
+
+        Raises:
+            ValueError: If the checkpoint has no vision tower, or no
+                ``mrope_section`` to place the image tokens.
         """
         state_dict = parse_state_dict_from_weights(
             context.pipeline_config, context.weights, context.adapter
         )
         config = cls._finalized_config(context, state_dict)
-        return _loaded_module(config, state_dict), config
+        spec = _vision_spec(_loaded_module(config, state_dict))
+        if spec is None:
+            raise ValueError("This Qwen3.5 checkpoint has no vision tower.")
+        if not config.mrope_enabled:
+            raise ValueError(
+                "This Qwen3.5 checkpoint declares no mrope_section, so its"
+                " image tokens would take flat positions."
+            )
+        return spec
 
     @classmethod
     def weight_entries(
@@ -337,7 +367,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @classmethod
     def _finalized_config(
-        cls, context: ModelLoadContext, state_dict: dict[str, Any]
+        cls,
+        context: ModelLoadContext,
+        state_dict: dict[str, Any],
+        *,
+        vision: bool = True,
     ) -> Qwen3_5Config:
         huggingface_config = context.huggingface_config
         config = Qwen3_5Config.initialize_from_config(
@@ -348,7 +382,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         if context.kv_params is not None:
             assert isinstance(context.kv_params, KVCacheParamInterface)
             config.kv_params = context.kv_params
-        if not context.encodes_images:
+        if not vision:
             # Tokens after an image still take its positions.
             config.mrope_without_encoder = config.vision_config is not None
             config.vision_config = None
@@ -376,8 +410,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Loads the graphs into ``session`` and returns the decoder."""
-        self._session = session
-
         self._input_row_offsets_prealloc: Buffer | None = None
         max_batch_size = self.max_batch_size
         assert max_batch_size is not None, (
@@ -392,7 +424,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ).to(self.devices[0])
 
         self._models = self.load_graphs(session)
-        self.vision_model = self._models.get(GraphRole.VISION)
+        vision_model = self._models.get(GraphRole.VISION)
+        if vision_model is not None:
+            self._batching.bind_vision_encoder(
+                vision_model=vision_model, session=session
+            )
         # The modules hold what they need of it; keeping the checkpoint would
         # pin its host copies for the model's lifetime.
         self._checkpoint = {}
@@ -421,6 +457,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             " must agree."
         )
 
+    @property
+    def _batching(self) -> Qwen3_5BatchProcessor:
+        assert isinstance(self._batch_processor, Qwen3_5BatchProcessor)
+        return self._batch_processor
+
     def pack_vision_inputs(
         self,
         selection: Sequence[
@@ -428,12 +469,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         ],
         devices: list[Device],
     ) -> Qwen3_5VisionInputs | None:
-        """Pack the pipeline-selected cache-miss images to device.
-
-        Runs in the pipeline's prep-ahead window so the host-to-device copy
-        overlaps the prior batch.
-        """
-        return pack_uncached_images(selection, devices)
+        """Packs the selected images, as the batch processor does."""
+        return self._batching.pack_vision_inputs(selection, devices)
 
     def vision_execute(
         self,
@@ -443,53 +480,12 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         devices: list[Device],
         packed: Qwen3_5VisionInputs | None,
     ) -> VisionEncodeResult:
-        """Run the vision encoder on the media ``pack_vision_inputs`` packed.
-
-        Returns explicit per-item token counts rather than letting the driver
-        derive them from placeholder spans. A clip's span covers ``grid_t``
-        placeholder runs AND the timestamp text between them, so its width
-        exceeds the rows the encoder emits; an image's span happens to match,
-        which is why the derived counts were correct until now.
-        """
-        if packed is None:
-            return VisionEncodeResult(
-                embeddings=self.empty_vision_embeddings(devices)
-            )
-        assert self.vision_model is not None
-        assert self._session is not None
-        vision_outputs = self.vision_model.execute(
-            *packed.graph_inputs(devices), *self.signal_buffers
-        )
-        assert isinstance(vision_outputs[0], Buffer)
-        embeddings = cast_tensors_to(
-            [vision_outputs[0]], self._model_dtype, self._session
-        )[0]
-        # The hidden state is replicated across devices, so every replica
-        # merges the same embeddings.
-        return VisionEncodeResult(
-            embeddings=[embeddings.to(device) for device in devices],
-            per_image_token_counts=[
-                img.embedding_rows
-                for _ctx, miss_images in selection
-                for img in miss_images
-            ],
-        )
+        """Encodes the selected images, as the batch processor does."""
+        return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Per-device zero-row image embeddings for cached / text-only batches.
-
-        Cached: hit on every text-only / decode step, so it must not allocate
-        per call, and graph-capture replay only skips an input refresh for an
-        identical buffer object.
-        """
-        if self._empty_vision_embeddings is None:
-            self._empty_vision_embeddings = [
-                Buffer.zeros(
-                    shape=[0, self._hidden_size], dtype=self._model_dtype
-                ).to(device)
-                for device in devices
-            ]
-        return self._empty_vision_embeddings
+        """Returns the batch processor's embeddings for a batch with no new images."""
+        return self._batching.empty_vision_embeddings(devices)
 
     def _load_state_dict(self) -> dict[str, Any]:
         self._checkpoint = super()._load_state_dict()
@@ -569,31 +565,18 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             nn_model.input_tree(self.kv_params)
         )
 
-        # Split the processed state dict into vision and LM parts. Vision
-        # keys keep their "vision_encoder." prefix: the weights are named
-        # from nn_model, the root, when it loads them.
-        processed = nn_model.state_dict()
-        vision_prefix = "vision_encoder."
-        vision_state_dict = {
-            k: v for k, v in processed.items() if k.startswith(vision_prefix)
-        }
+        # The decoder takes the language model's weights, and the vision
+        # tower's spec its own.
         self.state_dict = {
             k: v
-            for k, v in processed.items()
-            if not k.startswith(vision_prefix)
+            for k, v in nn_model.state_dict().items()
+            if not k.startswith(_VISION_PREFIX)
         }
 
         self._num_linear_layers = len(nn_model.linear_layer_indices)
-        self._hidden_size = model_config.hidden_size
-        self._model_dtype = model_config.compute_dtype
         self._state_dtype = model_config.state_dtype
         self._accounted_state_bytes = model_config._per_request_state_bytes()
-
-        vision_encoder = nn_model.vision_encoder
-        self._mrope_enabled = nn_model.mrope_enabled
-        if isinstance(self._batch_processor, Qwen3_5BatchProcessor):
-            self._batch_processor.mrope_enabled = self._mrope_enabled
-            self._batch_processor.vision_enabled = vision_encoder is not None
+        self._batching.compute_dtype = model_config.compute_dtype
 
         specs: dict[str, GraphSpec] = {
             GraphRole.DECODER: GraphSpec(
@@ -605,14 +588,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
         }
         # Text-only checkpoints have no vision tower, hence no vision graph.
-        if vision_encoder is not None:
-            specs[GraphRole.VISION] = GraphSpec(
-                vision_encoder,
-                "qwen3_5_vision",
-                vision_encoder.input_tree(),
-                weights=vision_state_dict,
-                group=_COMPILE_GROUP,
-            )
+        if (vision := _vision_spec(nn_model)) is not None:
+            specs[GraphRole.VISION] = vision
         return specs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

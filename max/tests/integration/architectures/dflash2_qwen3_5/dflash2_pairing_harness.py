@@ -62,7 +62,8 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 from max.pipelines.speculative import SpeculativeConfig
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
-TARGET_ARCH = "Qwen3_5ForConditionalGeneration"
+# The tiny target has no vision tower, so it pairs as a text-only one.
+TARGET_ARCH = "Qwen3_5ForCausalLM"
 DRAFT_ARCH = "DFlash2DraftModel"
 
 CONV_KERNEL = 4

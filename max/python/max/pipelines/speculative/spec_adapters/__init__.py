@@ -382,17 +382,6 @@ def replay_extra(
     return _adapter(target_arch, method).replay_extra(target_config, replay)
 
 
-def takes_vision_outputs(
-    target_arch: str, method: str, target_config: Any
-) -> bool:
-    """Returns whether the graph takes an external vision output.
-
-    Such an output comes from an engine that runs the encoder itself, so MAX
-    does not compute it.
-    """
-    return _adapter(target_arch, method).takes_vision_outputs(target_config)
-
-
 def block_proposer(
     target_arch: str,
     verify: VerifyFn,

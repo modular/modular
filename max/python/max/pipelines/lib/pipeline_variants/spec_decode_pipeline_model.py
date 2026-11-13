@@ -1123,26 +1123,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         initializer = self._ep_comm_initializer
         if initializer is not None and not config.input_spec.distributed:
             inputs.ep_inputs = tuple(initializer.model_inputs())
-        if config.input_spec.enable_vision and not self._takes_images:
-            embeddings, indices = self._no_images
-            inputs.vision_embeddings = embeddings
-            inputs.vision_scatter_indices = indices
         return inputs
-
-    @cached_property
-    def _no_images(self) -> tuple[list[Buffer], list[Buffer]]:
-        """Returns zero-row vision inputs, for an encoder MAX doesn't run."""
-        spec = self.spec_config.input_spec
-        assert spec is not None and spec.vision_hidden_size is not None
-        embeddings = Buffer.zeros(
-            shape=[0, spec.vision_hidden_size], dtype=DType.bfloat16
-        )
-        indices = Buffer.zeros(shape=[0], dtype=DType.int32)
-        devices = self.runtime.devices
-        return (
-            [embeddings.to(device) for device in devices],
-            [indices.to(device) for device in devices],
-        )
 
     def _target_inputs(
         self,
@@ -2333,13 +2314,10 @@ def _driver_call(
     )
     # A target that encodes its images in its own batching passes them
     # past the tail, so only one that encodes through the vision cache
-    # takes the pipeline's vision inputs. A graph may also take an encoder's
-    # output that MAX doesn't compute, for an engine that runs the encoder
-    # itself.
-    vision = (
-        _takes_images(pairing.target)
-        and not _encodes_in_batching(pairing.target)
-    ) or spec_adapters.takes_vision_outputs(target_arch, method, target_config)
+    # takes the pipeline's vision inputs.
+    vision = _takes_images(pairing.target) and not _encodes_in_batching(
+        pairing.target
+    )
     huggingface_config = pipeline_config.model.huggingface_config
     verify = spec_adapters.verify_for(
         target_arch, target, target_config, hidden_states, draft_config

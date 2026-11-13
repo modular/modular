@@ -10,6 +10,9 @@ This version is still a work in progress.
 
 ## Models
 
+- Qwen 3.5 models served with MTP or DFlash2 speculative decoding now read the
+  images and videos in a request. They used to answer without them.
+
 - GLM-5.1, GLM-5.2, and GLM-5.3 now default `clear_thinking` to `False`, which
   keeps the `reasoning_content` a client sends back for earlier turns in the
   prompt. GLM-5.3 previously defaulted it to `True`, and GLM-5.1's and

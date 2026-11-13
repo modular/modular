@@ -39,7 +39,6 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
 from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -86,6 +85,7 @@ from max.pipelines.speculative.spec_adapters.target_adapter import (
 )
 from max.pipelines.speculative.spec_target import DistributedVerify, Verified
 
+from .batch_processor import context_position_rows
 from .state_cache import ATTN_CACHE_KEY, STATE_CACHE_KEY
 
 if TYPE_CHECKING:
@@ -100,7 +100,7 @@ PRIMARY_KV = ATTN_CACHE_KEY
 
 POSITION_IDS = "position_ids"
 """Where a driver batch's ``extra`` holds the merged window's M-RoPE
-positions, for an MTP head over a target that runs M-RoPE."""
+positions, for a target that runs M-RoPE."""
 
 
 @runtime_checkable
@@ -284,15 +284,15 @@ def _regions(target_config: Any) -> tuple[RecurrentStateRegion, ...]:
     return tuple(state.regions)
 
 
-def _mtp_trailing_input_types(
+def _mrope_input_types(
     target_config: Any,
 ) -> list[TensorType | BufferType]:
-    """Returns the leaves of :func:`_mtp_trailing_input_tree`."""
-    named = _mtp_trailing_input_tree(target_config)
+    """Returns the leaves of :func:`_mrope_input_tree`."""
+    named = _mrope_input_tree(target_config)
     return [] if named is None else tree.leaves(named)
 
 
-def _mtp_trailing_input_tree(
+def _mrope_input_tree(
     target_config: Any,
 ) -> OrderedDict[str, object] | None:
     """Names the M-RoPE positions, for a target that runs M-RoPE.
@@ -312,39 +312,34 @@ def _mtp_trailing_input_tree(
     )
 
 
-def _mtp_extra(target_config: Any, trailing: Sequence[Any]) -> dict[str, Any]:
+def _mrope_extra(target_config: Any, trailing: Sequence[Any]) -> dict[str, Any]:
     """Names the M-RoPE positions, when the graph takes them."""
     if not target_config.mrope_enabled:
         return {}
     return {POSITION_IDS: trailing[0].tensor}
 
 
-def _mtp_trailing_buffers(
+def _mrope_buffers(
     target_config: Any,
     contexts: Sequence[TextContext],
     devices: Sequence[Device],
 ) -> list[Buffer]:
     """Returns the merged window's positions, for a target that runs M-RoPE.
 
-    A text-only pairing holds no image, so each request's positions count on
-    from its processed length on all three axes, through its drafts.
+    Each request's run covers its tokens and the drafts it verifies.
     """
     if not target_config.mrope_enabled:
         return []
     positions = np.concatenate(
         [
-            ctx.tokens.processed_length + np.arange(length, dtype=np.int64)
+            context_position_rows(ctx, length)
             for ctx, length in zip(
                 contexts, verify_lengths(contexts), strict=True
             )
-        ]
-    )
-    return [Buffer.from_numpy(np.tile(positions, (3, 1))).to(devices[0])]
-
-
-def _mtp_takes_vision_outputs(target_config: Any) -> bool:
-    """M-RoPE marks a checkpoint whose prompts can hold images."""
-    return target_config.mrope_enabled
+        ],
+        axis=1,
+    ).astype(np.int64)
+    return [Buffer.from_numpy(positions).to(devices[0])]
 
 
 def check(speculative: SpeculativeConfig, structured_output: bool) -> None:
@@ -466,24 +461,16 @@ def _roll_forward(
     )
 
 
-_BASE = TargetAdapter(
+ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     check=check,
     # The conv verify and the gated delta ring both commit a long row.
     verify_commits_long_rows=True,
-)
-# The MTP head reads 3-axis positions past the canonical tail.
-ADAPTER = replace(
-    _BASE,
-    by_method={
-        "mtp": replace(
-            _BASE,
-            trailing_input_types=_mtp_trailing_input_types,
-            trailing_input_tree=_mtp_trailing_input_tree,
-            extra=_mtp_extra,
-            trailing_buffers=_mtp_trailing_buffers,
-            takes_vision_outputs=_mtp_takes_vision_outputs,
-        )
-    },
+    # The verify reads 3-axis positions past the canonical tail. They are
+    # the target's, so every method takes them.
+    trailing_input_types=_mrope_input_types,
+    trailing_input_tree=_mrope_input_tree,
+    extra=_mrope_extra,
+    trailing_buffers=_mrope_buffers,
 )

@@ -263,16 +263,6 @@ def verify(
     )
 
 
-def takes_vision_outputs(target_config: Any) -> bool:
-    """Returns ``True``: the graph takes the image rows Mach's tower encodes.
-
-    MAX registers the pairing for text only, so it refuses image requests and
-    binds zero rows; the serving engine runs the encoder and passes its rows.
-    """
-    del target_config
-    return True
-
-
 def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     """Returns the EP buffers, which the graph takes past its tail."""
     assert isinstance(target, MuseSparkDecoder)
@@ -298,7 +288,6 @@ ADAPTER = TargetAdapter(
     primary_kv=FULL_KV,
     verify=verify,
     ep_input_types=ep_input_types,
-    takes_vision_outputs=takes_vision_outputs,
     # Mach's Muse Spark DSpark graph takes no ``in_thinking_phase``.
     relaxed_thinking_acceptance=False,
     block_proposer=block_proposer,

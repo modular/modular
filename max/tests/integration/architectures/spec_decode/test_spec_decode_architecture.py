@@ -44,20 +44,12 @@ def test_a_pairing_takes_images_exactly_when_its_target_encodes_them() -> None:
     """A pairing serves images when its target encodes them for a pairing,
     and refuses them at admission otherwise; its draft has no say.
 
-    Qwen3.5 declares image input but encodes its images in its own pipeline
-    model, which a pairing doesn't build, so its MTP pairing refuses them, as
-    Mistral Large 4 + DSpark does (``test_spec_decode_layout``). Inkling,
-    DeepseekV41 and Glm5Next encode for a pairing, so theirs serve images,
-    though no draft declares image input.
+    These targets encode for a pairing, so theirs serve images, though no
+    draft declares image input. Mistral Large 4 + DSpark refuses them
+    (``test_spec_decode_layout``).
     """
-    qwen = spec_decode_architecture(
-        "Qwen3_5ForConditionalGeneration", "mtp", None
-    )
-    assert qwen is not None
-    assert validate_no_images in qwen.context_validators
-    assert qwen.input_modalities == {InputModality.TEXT}
-
     vision_pairings: list[tuple[str, Literal["mtp", "dspark"]]] = [
+        ("Qwen3_5ForConditionalGeneration", "mtp"),
         ("InklingForConditionalGeneration", "mtp"),
         ("DeepseekV41ForCausalLM", "dspark"),
         ("Glm5NextForConditionalGeneration", "mtp"),

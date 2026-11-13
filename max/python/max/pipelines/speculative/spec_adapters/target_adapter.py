@@ -140,11 +140,6 @@ def _default_batch_replay_buffers(target_inputs: object) -> list[Buffer]:
     return []
 
 
-def _default_takes_vision_outputs(target_config: Any) -> bool:
-    del target_config
-    return False
-
-
 def _default_block_proposer(
     verify: VerifyFn,
     draft: Module,
@@ -340,10 +335,6 @@ class TargetAdapter:
     )
     """Returns what the target's call reads of the replay graph's inputs,
     added to a driver batch's ``extra``."""
-
-    takes_vision_outputs: Callable[[Any], bool] = _default_takes_vision_outputs
-    """Returns whether the graph takes a vision encoder's output that MAX
-    doesn't compute, for an engine that runs the encoder itself."""
 
     block_proposer: Callable[
         [VerifyFn, Module, Any, SpeculativeConfig],

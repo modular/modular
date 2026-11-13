@@ -55,6 +55,7 @@ from max.nn.kv_cache import (
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
+    context_position_rows,
 )
 from max.pipelines.architectures.qwen3_5.layers.attention import (
     Qwen3_5Attention,
@@ -355,6 +356,26 @@ def test_decode_continues_positions_past_an_image(
                 past_length=prompt_length + step,
             ),
         )
+
+
+def test_a_verify_window_continues_positions_through_its_drafts() -> None:
+    """A speculative step's drafts take the positions after its token.
+
+    The verify window is longer than the step's active tokens, and past an
+    image every one of its positions carries the request's rope delta.
+    """
+    context, _ = _image_context(GRIDS[0])
+    prompt_length = len(context.tokens)
+    context.update(new_token=1)
+
+    np.testing.assert_array_equal(
+        context_position_rows(context, length=4),
+        _hf_decode_positions(
+            rope_delta=context.rope_delta,
+            past_length=prompt_length,
+            num_new_tokens=4,
+        ),
+    )
 
 
 def test_decode_positions_of_a_batch_stay_with_their_requests() -> None:
