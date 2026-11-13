@@ -671,10 +671,10 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
   // picks the input holding the vector at `$index`, rebases the index and
   // calls the branch. Sharing the width lets a region use values the
   // enclosing closure computed, such as a constant hoisted out of it.
-  // Only a foreach closure holds a select so far: it enters an
-  // `ElementwiseLambdaRegion` with the width used here, and its launch keeps
-  // every vector inside one input (`CallForeachOp::emitMojo`), so a rebased
-  // index keeps the vector's alignment.
+  // A select sits in a foreach's closure or, fused into a reduction, in a
+  // fold's or the row tile's. Each enters an `ElementwiseLambdaRegion` with the
+  // width used here, and its launch keeps every vector inside one input (the
+  // width limit), so a rebased index keeps the vector's alignment.
   auto primDecl =
       state.registry.lookupPrimitive(IndexConcatSelectOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -682,8 +682,8 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
   MojoValue primitive(primitiveMojoName(primDecl));
 
   ASSERT_STREAM(state.findRegion<ElementwiseLambdaRegion>(),
-                "IndexConcatSelectOp::emitMojo reached outside a foreach "
-                "closure; a concat select is not lowered into functors yet");
+                "IndexConcatSelectOp::emitMojo reached outside a closure; "
+                "a concat select has no functor lowering");
   MojoValue width = state.currentRegion<ElementwiseLambdaRegion>().width();
   MojoBuilder &builder = *state.file;
 

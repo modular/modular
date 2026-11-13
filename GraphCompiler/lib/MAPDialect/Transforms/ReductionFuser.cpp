@@ -121,10 +121,6 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
   if (!isPlainForeach(src) || src->getBlock() != dst->getBlock() ||
       !sameDevice(src, dst))
     return false;
-  // TODO(GEX-3957): a row kernel can't lower a concat select yet; the next
-  // change fuses one into a fold.
-  if (holdsConcatSelect(src))
-    return false;
   Value result = src.getResult(0);
   if (!llvm::all_of(result.getUsers(),
                     [&](Operation *user) { return user == dst; }))
@@ -136,6 +132,24 @@ bool canFuseProducer(IterRowwiseOp dst, IterElementwiseOp src) {
         (!llvm::all_of(arg.getUsers(), llvm::IsaPred<LoadOp>) ||
          anyLoadCrossesReshape(arg)))
       return false;
+  // A concat select fuses only into a fold reading it at the fold's own
+  // index: a map phase has no lowering for it, and a transformed index would
+  // break the vector it picks its input for.
+  //
+  //   %c = concat(%a, %b); %s = reduce.add(%c)             -> fuses
+  //   %c = concat(%a, %b); %y = add(%c, reduce.add(%c))    -> no: map phase
+  //   %c = concat(%a, %b); %s = reduce.add(transpose(%c))  -> no: transformed
+  auto atFoldIndex = [](Value index) {
+    auto fold = dyn_cast<IterReduceOp>(index.getParentRegion()->getParentOp());
+    return fold &&
+           index ==
+               cast<RowwisePhaseOpInterface>(fold.getOperation()).getIndexArg();
+  };
+  if (holdsConcatSelect(src))
+    for (auto [input, arg] :
+         llvm::zip(dst.getInputs(), dst.getInputBlockArgs()))
+      if (input == result && !loadsOnlyAt(arg, atFoldIndex))
+        return false;
   return true;
 }
 

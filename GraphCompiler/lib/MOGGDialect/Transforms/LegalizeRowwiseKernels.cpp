@@ -58,8 +58,11 @@
 #include "Support/AssertStream.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/PassManager.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 
 using namespace M;
@@ -105,25 +108,35 @@ SmallVector<TensorLoadOp> elementLoads(RowwisePhaseOpInterface phase,
   return loads;
 }
 
-// Without a `mogg.rowwise.tile` from MAP, the row's tile loads the input its
-// first fold reads at the element index, and each phase's load of it there
-// becomes `mogg.rowwise.tile.load`.
-LogicalResult createPlainTile(CallRowwiseOp op) {
-  if (folds(op).empty())
-    return op.emitOpError("has no fold");
-  RowwiseReduceOp first = *folds(op).begin();
-  TensorLoadOp firstLoad;
+// The two values a row's tile can hold, both read by its first fold at the
+// element index: a captured tensor's load, or a concat select over its inputs.
+TensorLoadOp capturedLoadAt(CallRowwiseOp op, RowwiseReduceOp first) {
+  TensorLoadOp found;
   first.getBody().walk([&](TensorLoadOp load) {
     if (load.getIndex() != first.getIndexArg() ||
         !llvm::is_contained(captureArgs(op), load.getTensor()))
       return WalkResult::advance();
-    firstLoad = load;
+    found = load;
     return WalkResult::interrupt();
   });
-  if (!firstLoad)
-    return op.emitOpError("has no input its first fold loads at the element "
-                          "index");
+  return found;
+}
 
+IndexConcatSelectOp concatSelectAt(RowwiseReduceOp first) {
+  IndexConcatSelectOp found;
+  first.getBody().walk([&](IndexConcatSelectOp select) {
+    if (select.getIndex() != first.getIndexArg())
+      return WalkResult::advance();
+    found = select;
+    return WalkResult::interrupt();
+  });
+  return found;
+}
+
+// Makes `load`'s tensor the row's tile: each phase's load of it at its own
+// index becomes `mogg.rowwise.tile.load`.
+LogicalResult createLoadTile(CallRowwiseOp op, RowwiseReduceOp first,
+                             TensorLoadOp firstLoad) {
   Value tensor = firstLoad.getTensor();
   auto type = cast<SimdType>(firstLoad.getType());
   OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
@@ -145,6 +158,76 @@ LogicalResult createPlainTile(CallRowwiseOp op) {
       load.erase();
     }
   return success();
+}
+
+// Makes `select` the row's tile: the Row's load closure then reads each
+// element from the input holding it. The tile runs ahead of the body, so of the
+// body's own values the select may read only those free to recompute (a
+// constant input of the concat), which are cloned into the tile.
+LogicalResult createSelectTile(CallRowwiseOp op, RowwiseReduceOp first,
+                               IndexConcatSelectOp select) {
+  // Captures, the select's own values, and values from outside the call (such
+  // as a dynamic select's run-time shapes) are all in scope for the tile.
+  auto available = [&](Value v) {
+    Operation *owner = v.getParentRegion()->getParentOp();
+    return v == first.getIndexArg() || llvm::is_contained(captureArgs(op), v) ||
+           select->isAncestor(owner) || !op->isAncestor(owner);
+  };
+  auto recomputable = [](Value v) {
+    Operation *def = v.getDefiningOp();
+    return def && def->getNumOperands() == 0 && def->getNumRegions() == 0 &&
+           isMemoryEffectFree(def);
+  };
+  llvm::SetVector<Operation *> copied;
+  WalkResult outside = select->walk([&](Operation *inner) {
+    for (Value operand : inner->getOperands()) {
+      if (available(operand))
+        continue;
+      if (!recomputable(operand))
+        return WalkResult::interrupt();
+      copied.insert(operand.getDefiningOp());
+    }
+    return WalkResult::advance();
+  });
+  if (outside.wasInterrupted())
+    return select.emitOpError("reads a value of the row body, which the row "
+                              "tile can't");
+
+  auto type = cast<SimdType>(select.getResult().getType());
+  OpBuilder builder = OpBuilder::atBlockBegin(&op.getBody().front());
+  auto tile = RowwiseTileOp::create(builder, op.getLoc(), type);
+  Block *block = builder.createBlock(&tile.getBody());
+  IRMapping mapping;
+  mapping.map(first.getIndexArg(),
+              block->addArgument(first.getIndexArg().getType(), op.getLoc()));
+  for (Operation *def : copied)
+    builder.clone(*def, mapping);
+  YieldOp::create(builder, op.getLoc(),
+                  builder.clone(*select, mapping)->getResult(0));
+
+  OpBuilder foldBuilder(select);
+  select.getResult().replaceAllUsesWith(
+      RowwiseTileLoadOp::create(foldBuilder, select.getLoc(), type)
+          .getResult());
+  select.erase();
+  return success();
+}
+
+// Without a `mogg.rowwise.tile` from MAP, the row's tile holds what its first
+// fold reads at the element index. A captured tensor's load comes first, as a
+// fold reading one beside a concat (`sum(concat(a, b) + c)`) keeps `c` in the
+// tile.
+LogicalResult createPlainTile(CallRowwiseOp op) {
+  if (folds(op).empty())
+    return op.emitOpError("has no fold");
+  RowwiseReduceOp first = *folds(op).begin();
+  if (TensorLoadOp load = capturedLoadAt(op, first))
+    return createLoadTile(op, first, load);
+  if (IndexConcatSelectOp select = concatSelectAt(first))
+    return createSelectTile(op, first, select);
+  return op.emitOpError("has a first fold reading neither a captured tensor "
+                        "nor a concat select at its element index, the values "
+                        "a row's tile can hold");
 }
 
 LogicalResult createTile(CallRowwiseOp op) {

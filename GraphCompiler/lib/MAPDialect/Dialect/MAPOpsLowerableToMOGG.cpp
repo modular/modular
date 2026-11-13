@@ -1175,6 +1175,9 @@ LogicalResult IterRowwiseBodyOp::lowerToMOGG(MAPToMOGGState &state) {
   Location loc = getLoc();
   Value rowShape = buildShape(loc, getShape(), state);
 
+  // A dynamic select in a fold reads its runtime shapes, as in a foreach.
+  IndexShapeCaptures::build(getBody(), loc, state).bindInScope(state);
+
   Block &body = getBody().front();
   BlockArgument oldRowArg = body.getArgument(0);
   ValueRange captures = getCaptures();
