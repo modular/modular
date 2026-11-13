@@ -23,6 +23,7 @@ from std.math import isclose
 from std.random import rand
 
 from layout import Coord, TileTensor, row_major
+from max.gpu.host import DeviceContext
 from nn.conv.conv import ConvInfoStatic, conv_nhwc_direct
 from nn.conv.conv_transpose import conv_transposed_cpu
 from nn.conv.conv_utils import append_shape, extend_shape
@@ -148,6 +149,47 @@ def test_conv_nhwc_direct_fused() raises:
         if not isclose(fused_ptr[i], plain_ptr[i] * SCALE):
             print("FAIL at", i, fused_ptr[i], plain_ptr[i] * SCALE)
             raise Error("conv_nhwc_direct fused epilogue mismatch")
+
+    # The layout overload gets no output buffer, so the epilogue is the only
+    # writer of `layout_ptr`.
+    var layout_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var layout_out_ptr = TileTensor(layout_ptr, plain_tt.layout).unsafe_ptr()
+
+    @inline(.always)
+    def layout_epilogue[
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]) {
+        var layout_out_ptr, var col_stride, var row_stride, var plane_stride
+    }:
+        comptime assert coords.rank == 4
+        var flat = (
+            Int(coords[0]) * plane_stride
+            + Int(coords[1]) * row_stride
+            + Int(coords[2]) * col_stride
+            + Int(coords[3])
+        )
+        (layout_out_ptr.unsafe_offset(flat)).unsafe_store(
+            val.cast[dtype]() * SCALE
+        )
+
+    conv_nhwc_direct[dtype, dtype, dtype, False, conv_attr](
+        input_tt,
+        filter_tt,
+        plain_tt.layout,
+        stride,
+        dilation,
+        Index(0, 0),
+        Index(0, 0),
+        Index(0, 0),
+        1,
+        layout_epilogue,
+        DeviceContext.CPU(api="cpu"),
+    )
+
+    for i in range(output_size):
+        if not isclose(layout_ptr[i], plain_ptr[i] * SCALE):
+            print("FAIL at", i, layout_ptr[i], plain_ptr[i] * SCALE)
+            raise Error("conv_nhwc_direct layout epilogue mismatch")
     print("PASS")
 
 

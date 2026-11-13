@@ -450,31 +450,6 @@ def pad_reflect_shape(
     )
 
 
-def _index_list[size: Int](values: InputTensor) -> IndexList[size]:
-    var result = IndexList[size](0)
-
-    comptime for i in range(size):
-        result[i] = Int(values._ptr[i])
-    return result
-
-
-def _check_conv_attrs[
-    spatial_rank: Int
-](strides: InputTensor, dilation: InputTensor, paddings: InputTensor) raises:
-    comptime assert (
-        strides.dtype.is_integral() and dilation.dtype.is_integral()
-    ), "stride and dilation must have integral type"
-
-    if strides.size() != spatial_rank:
-        raise Error("(input_rank-2) values expected in conv strides")
-
-    if dilation.size() != spatial_rank:
-        raise Error("(input_rank-2) values expected in conv dilation")
-
-    if paddings.size() != 2 * spatial_rank:
-        raise Error("(2*(input_rank-2)) value expected in conv paddings")
-
-
 struct _ConvAttrs[spatial_rank: Int]:
     """The stride, dilation, and padding operands of `mo.conv`, validated and
     read to the host once for its CPU and GPU registrations.
@@ -511,38 +486,154 @@ struct _ConvAttrs[spatial_rank: Int]:
         self.dilation = _index_list[Self.spatial_rank](dilation)
         self.padding = _index_list[2 * Self.spatial_rank](paddings)
 
+    def pad_d(self) -> IndexList[2]:
+        """Returns the depth padding, zero for a 1-D or 2-D convolution."""
+        return self._pad[0]()
+
+    def pad_h(self) -> IndexList[2]:
+        """Returns the height padding, zero for a 1-D convolution."""
+        return self._pad[1]()
+
+    def pad_w(self) -> IndexList[2]:
+        """Returns the width padding."""
+        return self._pad[2]()
+
+    def _pad[dim: Int](self) -> IndexList[2]:
+        # `dim` counts depth, height, and width. A convolution with fewer
+        # spatial dimensions lacks the leading ones.
+        comptime i = dim - (3 - Self.spatial_rank)
+        comptime if i < 0:
+            return IndexList[2](0)
+        else:
+            return Index(self.padding[2 * i], self.padding[2 * i + 1])
+
+
+# Shared by both `ConvCPU.execute` overloads: the static attributes
+# `conv_nhwc_direct` specializes on. A dynamic channel count reads as
+# `UNKNOWN_VALUE`.
+def _conv_cpu_info[
+    InputType: Tensor,
+    FilterType: Tensor,
+    static_strides: Coord,
+    static_dilations: Coord,
+    static_padding: Coord,
+]() -> ConvInfoStatic[InputType.rank - 2]:
+    return ConvInfoStatic[InputType.rank - 2](
+        static_padding,
+        static_strides,
+        static_dilations,
+        # Input C in NHWC.
+        InputType._shape_types[InputType.rank - 1].static_value,
+        # Filter C in RSCF or FRSCf.
+        FilterType._shape_types[FilterType.rank - 2].static_value,
+    )
+
 
 @extensibility.register("mo.conv", extensibility.CPU)
 struct ConvCPU:
-    """Registers the `mo.conv` graph op for CPU devices."""
+    """Registers the `mo.conv` graph op for CPU devices.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none. The CPU kernel keeps partial sums in its output buffer, so
+    the fused form gives the kernel only the output's layout and the kernel
+    accumulates in a buffer of its own, then the epilogue stores each
+    finished row into the fused output. The plain form has the kernel write
+    the output directly. The pair is grandfathered on the graph compiler's
+    allow list; new kernels declare one `execute` with a `StoreAccess`
+    output.
+    """
 
     @staticmethod
     def execute[
         input_layout: StaticString,
         filter_layout: StaticString,
-        has_epilogue_fusion: Bool,
         static_strides: Coord,
         static_dilations: Coord,
         static_padding: Coord,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[...],
-        input: InputTensor[rank=output.rank, ...],
-        filter: InputTensor,
-        strides: InputTensor,
-        dilation: InputTensor,
-        paddings: InputTensor,
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & TileTensorable],
+        filter: Some[Input & TileTensorable],
+        strides: Some[Input & TileTensorable],
+        dilation: Some[Input & TileTensorable],
+        paddings: Some[Input & TileTensorable],
         num_groups: Scalar,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), Storable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert (
+            input_layout == "NHWC"
+        ), "only NHWC input layout is supported"
+        comptime assert (
+            filter_layout != "FCRS"
+        ), "Filter layout FCRS is not supported on CPU"
+        comptime dtype = type_of(output).dtype
+
+        # The epilogue closure copies its capture into the kernel's loops, so
+        # refine the output to the register-passable value it arrives as.
+        comptime assert conforms_to(type_of(output), TrivialRegisterPassable)
+
         @inline(.always)
         def output_fn[
             _dtype: DType, _width: SIMDLength, _alignment: Int = 1
         ](coords: Coord, val: SIMD[_dtype, _width]) {var output}:
-            output._lambda_store[width=_width, element_alignment=_alignment](
-                coords, rebind[SIMD[output.dtype, _width]](val)
+            output.store[width=Int(_width), element_alignment=_alignment](
+                coords, rebind[SIMD[dtype, Int(_width)]](val)
             )
 
+        var attrs = _ConvAttrs[type_of(input).rank - 2](
+            strides.to_tile_tensor(),
+            dilation.to_tile_tensor(),
+            paddings.to_tile_tensor(),
+        )
+        conv_nhwc_direct[
+            type_of(input).dtype,
+            type_of(filter).dtype,
+            dtype,
+            filter_layout == "FRSCf" or filter_layout == "FQRSCf",
+            _conv_cpu_info[
+                type_of(input),
+                type_of(filter),
+                static_strides,
+                static_dilations,
+                static_padding,
+            ](),
+        ](
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            row_major(output.shape()),
+            attrs.stride,
+            attrs.dilation,
+            attrs.pad_d(),
+            attrs.pad_h(),
+            attrs.pad_w(),
+            Int(num_groups),
+            output_fn,
+            ctx,
+        )
+
+    @staticmethod
+    def execute[
+        input_layout: StaticString,
+        filter_layout: StaticString,
+        static_strides: Coord,
+        static_dilations: Coord,
+        static_padding: Coord,
+        _trace_name: StaticString,
+    ](
+        output: Some[Output & TileTensorable],
+        input: Some[Input & TileTensorable],
+        filter: Some[Input & TileTensorable],
+        strides: Some[Input & TileTensorable],
+        dilation: Some[Input & TileTensorable],
+        paddings: Some[Input & TileTensorable],
+        num_groups: Scalar,
+        ctx: DeviceContext,
+    ) raises where not conforms_to(type_of(output), Fused):
+        comptime assert type_of(input).rank == type_of(output).rank
         comptime assert (
             input_layout == "NHWC"
         ), "only NHWC input layout is supported"
@@ -550,61 +641,35 @@ struct ConvCPU:
             filter_layout != "FCRS"
         ), "Filter layout FCRS is not supported on CPU"
 
-        _check_conv_attrs[input.rank - 2](strides, dilation, paddings)
-
-        var pad_d_tuple = IndexList[2](0)
-        var pad_h_tuple = IndexList[2](0)
-        var pad_w_tuple = IndexList[2](0)
-
-        comptime match input.rank:
-            case 3:
-                pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            case 4:
-                pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-                pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-            case 5:
-                pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-                pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-                pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
-            case _:
-                pass
-
-        comptime input_shape_val = (
-            input.static_spec.static_layout._shape_types[
-                input.rank - 1
-            ].static_value
-        )  # input C, NHWC; -1 where dynamic
-        comptime filter_shape_val = (
-            filter.static_spec.static_layout._shape_types[
-                filter.rank - 2
-            ].static_value
-        )  # filter C, RSCF or FRSCf; -1 where dynamic
-        comptime conv_attr = ConvInfoStatic[input.rank - 2](
-            static_padding,
-            static_strides,
-            static_dilations,
-            input_shape_val,
-            filter_shape_val,
+        var attrs = _ConvAttrs[type_of(input).rank - 2](
+            strides.to_tile_tensor(),
+            dilation.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
-
         conv_nhwc_direct[
-            input.dtype,
-            filter.dtype,
-            output.dtype,
+            type_of(input).dtype,
+            type_of(filter).dtype,
+            type_of(output).dtype,
             filter_layout == "FRSCf" or filter_layout == "FQRSCf",
-            conv_attr,
-            has_epilogue_fusion,
+            _conv_cpu_info[
+                type_of(input),
+                type_of(filter),
+                static_strides,
+                static_dilations,
+                static_padding,
+            ](),
+            has_epilogue_fusion=False,
         ](
-            input.to_tile_tensor[.int64](),
-            filter.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
-            _index_list[input.rank - 2](strides),
-            _index_list[input.rank - 2](dilation),
-            pad_d_tuple,
-            pad_h_tuple,
-            pad_w_tuple,
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            output.to_tile_tensor(),
+            attrs.stride,
+            attrs.dilation,
+            attrs.pad_d(),
+            attrs.pad_h(),
+            attrs.pad_w(),
             Int(num_groups),
-            output_fn,
+            no_conv_simd_epilogue_fn,
             Optional(ctx.assert_cpu_target()),
         )
 

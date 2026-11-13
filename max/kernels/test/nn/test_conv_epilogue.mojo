@@ -247,7 +247,7 @@ def test[
             type_of(epilogue),
         ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
 
-    # Check results, return on the first failed comparison.
+    # Check results, raise on the first failed comparison.
     var output_flat = output.reshape(row_major(output_size))
     var output_ref_flat = output_ref.reshape(row_major(output_size))
     for i in range(output_size):
@@ -265,7 +265,7 @@ def test[
             print("Golden value: ", output_ref_flat[i])
             print("Actual value: ", output_flat[i])
             bias_ptr.unsafe_free()
-            return
+            raise Error("test_conv_epilogue: output mismatch")
 
     # CHECK: Succeed
     print("Succeed")
@@ -312,6 +312,20 @@ def main() raises:
         Index(3),  # stride
         Index(1),  # dilation
         Index(0, 0),  # pad_w
+        1,  # num_groups
+    )
+
+    # Few output rows and filters but many input channels, so the kernel
+    # partitions C across threads and reduces the partitions afterwards.
+    test[2, .float32, False](
+        1,  # N
+        Index(9, 9),  # H, W
+        2048,  # C
+        Index(3, 3),  # R, S
+        16,  # F
+        Index(1, 1),  # stride
+        Index(1, 1),  # dilation
+        Index(0, 0, 0, 0),  # pad_h, pad_w
         1,  # num_groups
     )
 

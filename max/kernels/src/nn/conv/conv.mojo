@@ -387,7 +387,9 @@ def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     return Index(n, ho, wo)
 
 
-# Reduce helper when the input channel dimension is partitioned.
+# Reduce helper when the input channel dimension is partitioned. Partition 0
+# accumulates in `output`, and `scratch` holds partitions 1 to
+# `num_partitions - 1`, so the reduction adds `scratch` into `output` in place.
 @inline(.always)
 def _reduce_output[
     dtype: DType,
@@ -420,19 +422,18 @@ def _reduce_output[
             width: Int
         ](offset: Int) {F, scratch, num_partitions, output, imm buf_size, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
-            var vec = scratch.load[width=width, alignment=align_of[dtype]()](
-                Coord(tid_output_offset)
+            var output_coord = output.layout.idx2crd(tid_output_offset)
+            var vec = output.load[width=width, alignment=align_of[dtype]()](
+                output_coord
             )
             # The number of partitions here is typically small.
             # There may not be much benefit from unrolling the reduction axis.
             # Only unroll the last dimension.
             for i in range(1, num_partitions):
                 vec += scratch.load[width=width, alignment=align_of[dtype]()](
-                    Coord(tid_output_offset + i * buf_size)
+                    Coord(tid_output_offset + (i - 1) * buf_size)
                 )
-            output.store[alignment=align_of[dtype]()](
-                output.layout.idx2crd(tid_output_offset), vec
-            )
+            output.store[alignment=align_of[dtype]()](output_coord, vec)
 
         vectorize[simd_size, unroll_factor=4](reduce_range[1] * F, sum)
 
@@ -631,17 +632,22 @@ struct ConvDirectNHWC[
         ](num_threads, conv_shape)
         var num_tasks = num_partitions.product()
 
-        # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
-        # here to turn off the check.
+        # Partition 0 of the input channels accumulates in `output`, and each
+        # other partition accumulates in its own slice of `scratch`.
+        # Safety: the task outputs alias `output`, so cast to an untracked
+        # origin here to turn off the check.
         var output_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         var output_size = output.num_elements()
-        var scratch_size = num_partitions[1] * output_size
+        var scratch_size = (num_partitions[1] - 1) * output_size
+        var scratch_ptr = output_ptr
         if num_partitions[1] > 1:
-            output_ptr = alloc[Scalar[Self.output_type]](
+            scratch_ptr = alloc[Scalar[Self.output_type]](
                 {length = scratch_size}
             ).unsafe_leak()
-        # Wrap the pointer inside TileTensor so it can be properly captured by async closure.
-        var output_scratch = TileTensor(output_ptr, row_major(scratch_size))
+        # Wrap the pointers inside TileTensor so they can be properly captured
+        # by async closure.
+        var output_flat = TileTensor(output_ptr, row_major(output_size))
+        var output_scratch = TileTensor(scratch_ptr, row_major(scratch_size))
 
         @inline(.always)
         def task_func(
@@ -649,6 +655,7 @@ struct ConvDirectNHWC[
         ) {
             var num_partitions,
             var cf_tile_size,
+            var output_flat,
             var output_scratch,
             var output_size,
             imm,
@@ -670,12 +677,15 @@ struct ConvDirectNHWC[
 
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
+            var task_output_ptr = output_flat.unsafe_ptr()
+            if task_id_c > 0:
+                task_output_ptr = output_scratch.unsafe_ptr().unsafe_offset(
+                    (task_id_c - 1) * output_size
+                )
             var task_output = TileTensor[
                 Self.output_type, Self.output_layout, Self.output_origin
             ](
-                (
-                    output_scratch.ptr.unsafe_offset(task_id_c * output_size)
-                ).unsafe_origin_cast[Self.output_origin](),
+                task_output_ptr.unsafe_origin_cast[Self.output_origin](),
                 output.layout,
             )
 
@@ -721,7 +731,7 @@ struct ConvDirectNHWC[
                 ctx,
             )
             dealloc(
-                ThinAllocation(unsafe_owned_ptr=output_ptr).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=scratch_ptr).unsafe_with_layout(
                     {length = scratch_size}
                 )
             )
@@ -3628,6 +3638,101 @@ def conv_nhwc_direct[
             elementwise_epilogue,
             ctx,
         )
+
+
+def conv_nhwc_direct[
+    conv_info_rank: Int,
+    EpilogueFnType: ConvSimdEpilogueFn,
+    OutputLayoutType: TensorLayout,
+    //,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_packed: Bool,
+    conv_info_static: ConvInfoStatic[conv_info_rank],
+](
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output_layout: OutputLayoutType,
+    stride: IndexList[conv_info_rank],
+    dilation: IndexList[conv_info_rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+    elementwise_lambda: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Runs a direct (register-tiled) NHWC convolution on CPU and hands every
+    output vector to an elementwise epilogue.
+
+    The same convolution as the overload that takes `output`, for a caller
+    whose epilogue owns every write, such as a graph op whose output is fused.
+    The kernel keeps partial sums in memory between input-channel tiles, so
+    this overload accumulates in a temporary buffer with the output's shape
+    and gives each finished row to `elementwise_lambda`. The output is given
+    as a layout, so the kernel never sees a pointer it could write through.
+
+    Parameters:
+        conv_info_rank: Number of spatial dimensions in the convolution (1,
+            2, or 3) (inferred).
+        EpilogueFnType: Type of `elementwise_lambda` (inferred).
+        OutputLayoutType: Type of `output_layout` (inferred).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output values.
+        filter_packed: True when the filter is prepacked for grouped
+            convolution.
+        conv_info_static: Statically known convolution attributes including
+            padding, stride, dilation, and group count.
+
+    Args:
+        input: Input activation TileTensor in NHWC or NDHWC layout.
+        filter: Filter weights TileTensor.
+        output_layout: Layout of the output in NHWC or NDHWC order; only its
+            shape is read.
+        stride: Stride along each spatial dimension.
+        dilation: Dilation factor along each spatial dimension.
+        pad_d: Padding before and after the depth dimension, stored as
+            `(before, after)`.
+        pad_h: Padding before and after the height dimension, stored as
+            `(before, after)`.
+        pad_w: Padding before and after the width dimension, stored as
+            `(before, after)`.
+        num_groups: Number of convolution groups for grouped convolution.
+        elementwise_lambda: Elementwise SIMD function that receives every
+            output vector.
+        ctx: Device context that allocates the accumulation buffer and
+            launches the parallel kernel.
+    """
+    # TODO(GEX-4431): let kernels declare scratch to the graph so this
+    # buffer is memory planned instead of allocated on every call.
+    var accum_buf = ctx.enqueue_create_buffer[output_type](
+        output_layout.product()
+    )
+    var accum = TileTensor(accum_buf, row_major(output_layout.shape_coord()))
+    conv_nhwc_direct[
+        input_type,
+        filter_type,
+        output_type,
+        filter_packed,
+        conv_info_static,
+        has_epilogue_fusion=True,
+    ](
+        input,
+        filter,
+        accum,
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
+        num_groups,
+        elementwise_lambda,
+        Optional(ctx.assert_cpu_target()),
+    )
+    # The convolution is synchronous, so the buffer is free to release here.
+    _ = accum_buf^
 
 
 # ===----------------------------------------------------------------------=== #
