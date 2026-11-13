@@ -26,7 +26,6 @@ from max.gpu import lane_id, WARP_SIZE
 from max.gpu.intrinsics import ds_read_tr16_b64
 from std.math.uutils import ufloordiv, umod
 from std.sys import simd_width_of
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from layout import TileTensor
 from layout.swizzle import Swizzle
@@ -43,7 +42,7 @@ from structured_kernels.amd_tile_io import (
 struct TiledMmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     transpose_b: Bool = False,
 ]:
     """TileTensor-native MMA operation for AMD attention kernels.
@@ -218,7 +217,7 @@ struct TiledMmaOp[
 
 struct KVMmaOp[
     in_type: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_mmas: Int,
     num_k_mmas: Int,
     num_k_tiles: Int,
@@ -354,9 +353,7 @@ struct KVMmaOp[
 
         # Half-K MMA tile shape: 16 × 16 × 64 (matches load_b's
         # `num_packs == 2` half).
-        comptime half_k_shape = IndexList[3](
-            Self.MMA_M, Self.mma_shape[1], Self.MMA_K // 2
-        )
+        comptime half_k_shape = (Self.MMA_M, Self.mma_shape[1], Self.MMA_K // 2)
         # Half-K per-lane fragment width. Bound symbolically to the
         # MMA shape so `lo.join(hi)` stays correct if MMA_K ever
         # changes. For FP8 16x16x128 this equals 16, matching

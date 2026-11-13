@@ -31,7 +31,6 @@ from layout.layout import (
 )
 from layout.tensor_core import num_matrix_reg
 from layout.tile_tensor import stack_allocation
-from std.utils import IndexList
 
 from structured_kernels.amd_tile_io import RegTileLoader
 
@@ -74,7 +73,7 @@ def _cast_f32_to_fp8_raw[
 
 struct QRegisterBuffer[
     dtype: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     WM: Int,
     WN: Int,
     BN: Int,
@@ -398,7 +397,7 @@ struct PRegisterBuffer[
     num_n_mmas: Int,
     output_frag_size: Int,
     shared_memory_backed: Bool,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     tr_load_enabled: Bool = False,
     num_stages: Int = 1,
     p_swizzle: Optional[Swizzle] = None,

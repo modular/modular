@@ -61,7 +61,7 @@ from structured_kernels.amd_tile_io import (
     _IndexedSubTileLayout,
 )
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 
 struct KVCacheIterator[
@@ -190,7 +190,7 @@ def _get_k_swizzle[mma_m: Int, bk: Int]() -> Optional[Swizzle]:
 struct KVBuffer[
     kv_t: MHAOperand,
     //,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
@@ -1065,7 +1065,7 @@ struct KVBuffer[
 struct DecodeStreamingKVBuffer[
     kv_t: MHAOperand,
     //,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,

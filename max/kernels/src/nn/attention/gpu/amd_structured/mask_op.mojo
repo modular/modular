@@ -33,7 +33,6 @@ from std.math.uutils import umod
 from std.sys import _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from max.gpu import block_idx, lane_id
-from std.utils import IndexList
 
 from layout import TileTensor
 from layout.layout import Layout, col_major
@@ -45,7 +44,7 @@ from nn.attention.mha_utils import _kernel_mask
 struct MaskTileOp[
     accum_type: DType,
     token_gen: Bool,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_m_mmas: Int,
     num_n_mmas: Int,
     mask_t: MHAMask,
