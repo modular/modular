@@ -42,7 +42,7 @@ owns each output, so the monoid state is already final after `reduce`.
 """
 
 from std.atomic import Atomic
-from std.math import align_down, ceildiv
+from std.math import align_down, align_up, ceildiv
 from std.memory import unsafe_memset_zero
 from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
@@ -75,6 +75,34 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 # `_CPU_SPLITK_MIN_AXIS_PER_SPLIT` caps the split factor so each split
 # keeps enough work to amortize.
 comptime _CPU_SPLITK_MIN_AXIS = 262144
+
+
+@inline(.always)
+def _splitk_stripe(
+    axis_size: Int, num_splits: Int, split: Int, width: Int
+) -> Tuple[Int, Int]:
+    """Returns the `[lo, hi)` range of the reduce axis that `split` walks.
+
+    Stripes are an even share rounded up to a multiple of `width`, so every
+    vector starts on one: a fused concat keeps each vector inside one input
+    only then. The stripes tile `[0, axis_size)`; the last ones may be empty.
+
+    Args:
+        axis_size: Length of the reduce axis.
+        num_splits: The number of stripes.
+        split: The stripe's number.
+        width: The vector width.
+
+    Returns:
+        The stripe's bounds.
+    """
+    var stripe = align_up(ceildiv(axis_size, num_splits), width)
+    return (
+        min(split * stripe, axis_size),
+        min((split + 1) * stripe, axis_size),
+    )
+
+
 comptime _CPU_SPLITK_MIN_AXIS_PER_SPLIT = 32768
 comptime _CPU_SPLITK_MIN_SPLITS = 2
 # Split cap for the pointwise (normalize-shaped) split-axis tier. Each phase
@@ -291,11 +319,14 @@ def reduce[
     var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Splitk:
-        var num_splits = Int(ctx._blocks_per_row)
-        var split = Int(ctx._block_in_row)
-        var stripe = ceildiv(axis_size, num_splits)
-        var lo = split * stripe
-        var hi = min((split + 1) * stripe, axis_size)
+        var stripe = _splitk_stripe(
+            axis_size,
+            Int(ctx._blocks_per_row),
+            Int(ctx._block_in_row),
+            ctx.simd_width,
+        )
+        var lo = stripe[0]
+        var hi = stripe[1]
         _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, lo, hi, tile_fn
         )
@@ -372,10 +403,11 @@ def reduce[
         # workers, so worker 0 walks the whole row alone (see `pjoin`).
         comptime fits = size_of[State.Single]() <= _SPLITK_STATE_BYTES
         var num_splits = Int(ctx._blocks_per_row) if fits else 1
-        var split = Int(ctx._block_in_row)
-        var stripe = ceildiv(axis_size, num_splits)
-        var lo = min(split * stripe, axis_size)
-        var hi = min((split + 1) * stripe, axis_size)
+        var stripe = _splitk_stripe(
+            axis_size, num_splits, Int(ctx._block_in_row), ctx.simd_width
+        )
+        var lo = stripe[0]
+        var hi = stripe[1]
         _simd_walk_unrolled[W=ctx.simd_width, axis=ctx.axis](
             coords, lo, hi, state, tile_fn
         )

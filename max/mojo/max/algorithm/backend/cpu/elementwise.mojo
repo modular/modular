@@ -55,6 +55,29 @@ def _elementwise_impl_cpu[
 
 
 @inline(.always)
+def _aligned_chunk_size(
+    problem_size: Int, num_workers: Int, simd_width: Int
+) -> Int:
+    """Returns the elements each worker of a 1-D split takes.
+
+    An even share rounded up to a multiple of `simd_width`, so every chunk,
+    and every vector in it, starts on a multiple of the width, as on GPU and
+    for rank > 1: callers such as a fused concat rely on a vector never
+    straddling a boundary that is a multiple of the width. The last workers
+    may get nothing.
+
+    Args:
+        problem_size: The number of elements to split.
+        num_workers: The number of workers.
+        simd_width: The vector width.
+
+    Returns:
+        The chunk size.
+    """
+    return ceildiv(ceildiv(problem_size, num_workers), simd_width) * simd_width
+
+
+@inline(.always)
 def _elementwise_impl_cpu_1d[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
@@ -79,13 +102,16 @@ def _elementwise_impl_cpu_1d[
     var problem_size = shape.product()
 
     var num_workers = _get_num_workers(problem_size, ctx=ctx)
-    var chunk_size = ceildiv(problem_size, num_workers)
+    var chunk_size = _aligned_chunk_size(problem_size, num_workers, simd_width)
 
     @inline(.always)
     def task_func(i: Int) {imm}:
         var start_offset = i * chunk_size
         var end_offset = min((i + 1) * chunk_size, problem_size)
         var len = end_offset - start_offset
+        # Rounding the chunks up can leave the last workers nothing.
+        if len <= 0:
+            return
 
         @inline(.always)
         def func_wrapper[

@@ -17,6 +17,8 @@ _EXTRA_DEPS = {
         deps = [
             "//max:algorithm",
             "//max:builtin_kernels",
+            "//max:layout",
+            "//max:max_mojo",
             "@mojo//:std",
         ] + _EXTRA_DEPS.get(src, []),
     )
