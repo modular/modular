@@ -16,61 +16,6 @@
 
 namespace M::MOGG {
 
-MojoValue MojoValue::operator[](ArrayRef<MojoValue> values) const {
-  std::string str;
-  llvm::raw_string_ostream stream(str);
-  stream << text;
-  if (!values.empty()) {
-    stream << "[";
-    llvm::interleaveComma(values, stream);
-    stream << "]";
-  }
-
-  return str;
-}
-
-MojoValue MojoValue::operator()(ArrayRef<MojoValue> parameters,
-                                ArrayRef<MojoValue> operands) const {
-  std::string str;
-  llvm::raw_string_ostream stream(str);
-  stream << text;
-  if (!parameters.empty()) {
-    stream << "[";
-    llvm::interleaveComma(parameters, stream);
-    stream << "]";
-  }
-
-  stream << "(";
-  llvm::interleaveComma(operands, stream);
-  stream << ")";
-  return str;
-}
-
-MojoValue MojoValue::escape() const {
-  std::string res = "\"";
-  for (char c : text) {
-    switch (c) {
-    case '\\':
-      res += "\\\\";
-      break;
-    case '"':
-      res += "\\\"";
-      break;
-    case '\n':
-      res += "\\n";
-      break;
-    case '\r':
-      res += "\\r";
-      break;
-    default:
-      res += c;
-      break;
-    }
-  }
-  res += '"';
-  return MojoValue(res);
-}
-
 MojoValue createTypedVar(const MojoValue &name, const MojoValue &type) {
   return llvm::formatv("{}: {}", name.text, type.text).str();
 }
@@ -347,7 +292,7 @@ MojoValue MojoBuilder::listLiteral(ArrayRef<MojoValue> values) {
 void MojoBuilder::call(const MojoValue &funcName,
                        ArrayRef<MojoValue> parameters,
                        ArrayRef<MojoValue> operands) {
-  statement(funcName(parameters, operands));
+  statement(funcName[parameters](operands));
 }
 
 void MojoBuilder::verbatim(const MojoValue &text) { statement(text); }

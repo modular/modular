@@ -599,7 +599,7 @@ static bool isLITStaticStringType(Type ty) {
       llvm::formatv("{}::{}", symbol.getRootReference().strref(),
                     symbol.getLeafReference().strref())
           .str();
-  if (symbolName != kMojoInternalStaticStringTypeName)
+  if (symbolName != kMojoInternalStaticStringTypeName.text)
     return false;
 
   auto paramValues = structTy.getParamValues();

@@ -14,6 +14,7 @@
 #define GENERICML_GRAPHCOMPILER_SUPPORT_EMITMOJODECLARATIVECALL_H
 
 #include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
+#include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
@@ -31,7 +32,7 @@ struct KernelCallee {
 
   // Returns `Kernel[...].fn[...](operands...)`.
   MojoValue operator()(ArrayRef<MojoValue> operands) const {
-    return function(parameters, operands);
+    return function[parameters](operands);
   }
 };
 
@@ -93,7 +94,7 @@ struct DeviceKernelArgs {
       indices.push_back(it->second);
       if (!inserted)
         continue;
-      MojoValue type = builder.comptime(MojoValue("type_of")({}, {operand}));
+      MojoValue type = builder.comptime(kFnTypeOf({operand}));
       types.push_back(type);
       kinds.push_back(kind);
       parameters.emplace_back("operand", kind == DeviceArgKind::Scalar
@@ -123,7 +124,7 @@ struct DeviceKernelArgs {
     SmallVector<MojoValue> operands;
     for (unsigned i : indices)
       operands.push_back(kinds[i] == DeviceArgKind::Tile
-                             ? types[i]({}, {body.arguments[i].resolvedName})
+                             ? types[i]({body.arguments[i].resolvedName})
                              : body.arguments[i].resolvedName);
     return operands;
   }

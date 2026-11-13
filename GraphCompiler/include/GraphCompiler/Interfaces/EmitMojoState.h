@@ -83,7 +83,7 @@ struct EmitMojoState {
                      "leave the declaration scope first");
     if (!emittedDeclarations.insert(definition).second)
       return; // already in this file.
-    file.declarations().verbatim(MojoValue(definition));
+    file.declarations().verbatim(definition);
   }
 
   /// The `mogg.routine.async` return values, set by ops feeding
@@ -236,17 +236,14 @@ public:
       auto bufferRank =
           int64_t(tensorSpec.getRank() == 0 ? 1 : tensorSpec.getRank());
       SmallVector<MojoValue> params = {
-          mlirDTypeToMojoType(tensorSpec.getOptDType().value()),
-          MojoValue(bufferRank)};
+          mlirDTypeToMojoType(tensorSpec.getOptDType().value()), bufferRank};
       if (deviceTensorType.getMut())
-        params.push_back(MojoValue(kParameterKind)
-                             .equal(MojoValue(kStructDeviceGraphInputKind)
-                                        .get(kInputKindMutable)));
+        params.push_back(kParameterKind.equal(
+            kStructDeviceGraphInputKind.get(kInputKindMutable)));
       else if (M::isHostPlaced(deviceTensorType.getDevice()))
-        params.push_back(MojoValue(kParameterKind)
-                             .equal(MojoValue(kStructDeviceGraphInputKind)
-                                        .get(kInputKindHost)));
-      return MojoValue(kStructOwnedTensor)[params];
+        params.push_back(kParameterKind.equal(
+            kStructDeviceGraphInputKind.get(kInputKindHost)));
+      return kStructOwnedTensor[params];
     } else if (isa<MEF::ChainType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else if (isa<MGP::DeviceContextType, ContextType>(mlirType)) {
@@ -272,7 +269,7 @@ public:
     } else if (auto tensorType = dyn_cast<MO::TensorType>(mlirType)) {
       return mlirTensorTypeToMojoType(tensorType);
     } else if (auto tensorSpecType = dyn_cast<MGP::TensorSpecType>(mlirType)) {
-      return MojoValue(kStructIndexList)[int64_t(tensorSpecType.getRank())];
+      return kStructIndexList[int64_t(tensorSpecType.getRank())];
     } else if (isa<MGP::ContextType>(mlirType)) {
       return kStructStateContext;
     } else if (isa<IndexType>(mlirType)) {
@@ -293,8 +290,8 @@ public:
         return kStructBool;
       return kStructInt;
     } else if (auto shapeResultType = dyn_cast<ShapeFuncResultType>(mlirType)) {
-      MOGG::MojoValue rankParam = MOGG::MojoValue(shapeResultType.getRank());
-      return MOGG::MojoValue(MOGG::kStructIndexList)[rankParam];
+      MOGG::MojoValue rankParam = shapeResultType.getRank();
+      return MOGG::kStructIndexList[rankParam];
     } else if (isa<MGP::OpaqueType, MO::OpaqueType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else {
@@ -314,7 +311,7 @@ public:
 
   static MojoValue mlirDTypeToMojoType(DType dtype) {
     KGEN::KGENDType kgenDtype(dtype);
-    return MojoValue(kStructDType).get(kgenDtype.getAsString(/*libForm*/ true));
+    return kStructDType.get(kgenDtype.getAsString(/*libForm*/ true));
   }
 
   static MojoValue mlirTensorTypeToMojoType(MO::TensorType tensorType) {
@@ -354,13 +351,13 @@ public:
     SmallVector<MojoValue> dimsAsMojoValues;
     for (auto dim : dims) {
       if (dim == mlir::ShapedType::kDynamic)
-        dimsAsMojoValues.push_back(MojoValue(kStructInt)({}, {MojoValue(-1)}));
+        dimsAsMojoValues.push_back(kStructInt({-1}));
       else
         dimsAsMojoValues.push_back(getComptimeIdx(dim));
     }
     if (dimsAsMojoValues.empty())
       dimsAsMojoValues.push_back(getComptimeIdx(1));
-    return MojoValue(kStructCoord)({}, dimsAsMojoValues);
+    return kStructCoord(dimsAsMojoValues);
   }
 
   MojoValue getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,
@@ -391,12 +388,10 @@ public:
   }
 
   /// A compile-time index, `Idx[value]`.
-  static MojoValue getComptimeIdx(int64_t value) {
-    return MojoValue(kAliasIdx)[MojoValue(value)];
-  }
+  static MojoValue getComptimeIdx(int64_t value) { return kAliasIdx[value]; }
 
   static MojoValue getSIMDType(DType dtype, MojoValue width) {
-    return MojoValue(kStructSIMD)[{mlirDTypeToMojoType(dtype), width}];
+    return kStructSIMD[{mlirDTypeToMojoType(dtype), width}];
   }
 
   /// Looks up a parameter name in a function adaptor's result-parameter

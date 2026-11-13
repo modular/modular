@@ -151,12 +151,12 @@ MojoValue EmitMojoState::getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,
     }
   }
   if (mojoDims.empty())
-    mojoDims.push_back(MojoValue(static_cast<int64_t>(1)));
+    mojoDims.push_back(static_cast<int64_t>(1));
 
   MojoValue rankParam =
       MojoValue(shapeAttr.getRank() == 0 ? 1 : shapeAttr.getRank());
 
-  return MojoValue(kStructIndexList)({rankParam}, mojoDims);
+  return kStructIndexList[{rankParam}](mojoDims);
 }
 
 MojoValue EmitMojoState::getShapeAsCoordMojoValue(MOSH::ShapeAttr shapeAttr,
@@ -171,17 +171,16 @@ MojoValue EmitMojoState::getShapeAsCoordMojoValue(MOSH::ShapeAttr shapeAttr,
       // layout machinery rebinds to.
       ASSERT_STREAM(nextDynDim < dynamicDims.size(),
                     "Missing dynamic dimension");
-      MojoValue scalarInt =
-          MojoValue(kStructScalar)[MojoValue(kStructDType).get(kEnumDTypeInt)];
+      MojoValue scalarInt = kStructScalar[kStructDType.get(kEnumDTypeInt)];
       coordElems.push_back(
-          scalarInt({}, {getMojoValueFor(dynamicDims[nextDynDim++])}));
+          scalarInt({getMojoValueFor(dynamicDims[nextDynDim++])}));
     }
   }
   // Rank-0 tensors are represented as rank-1 with a single static `1`.
   if (coordElems.empty())
     coordElems.push_back(getComptimeIdx(1));
 
-  return MojoValue(kStructCoord)({}, coordElems);
+  return kStructCoord(coordElems);
 }
 
 void EmitMojoState::addDebugPrintTensorSpecs(const MojoValue &tensorValue,
@@ -193,7 +192,7 @@ void EmitMojoState::addDebugPrintTensorSpecs(const MojoValue &tensorValue,
 
   // We check if all indices are 0 to only print once.
   ManagedTensorSliceRef mts(tensorValue);
-  file->if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
+  file->if_(kFnAllZeros(indicesValue), [&]() {
     file->call(kFnPrint, {},
                {MojoValue(isInput ? kParameterInput : kParameterOutput).quote(),
                 MojoValue("#" + std::to_string(operandIndex) + ":").quote(),
@@ -211,7 +210,7 @@ void EmitMojoState::addDebugPrintLambdaParam(MOGG::BindLambdaKind lambdaKind,
     return;
 
   // We check if all indices are 0 to only print once.
-  file->if_(MojoValue(kFnAllZeros)({}, indicesValue), [&]() {
+  file->if_(kFnAllZeros(indicesValue), [&]() {
     file->call(kFnPrint, {},
                {
                    MojoValue(stringifyBindLambdaKind(lambdaKind)).quote(),
@@ -225,7 +224,7 @@ void EmitMojoState::addDebugPrintLambdaParam(MOGG::BindLambdaKind lambdaKind,
 
 MojoValue EmitMojoState::mlirOpaqueTypeToMojoType(MO::OpaqueType opaqueType) {
   // ImportPackagesPass already rewrote the symbol to a qualified Mojo name.
-  return MojoValue(opaqueType.getSymbol().getValue());
+  return opaqueType.getSymbol().getValue();
 }
 
 SmallVector<MojoValue>

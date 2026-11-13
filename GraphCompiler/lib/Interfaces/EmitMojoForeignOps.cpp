@@ -134,16 +134,16 @@ LogicalResult emitMojo(mlir::index::CeilDivUOp op, EmitMojoState &state) {
 LogicalResult emitMojo(mlir::index::MinSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue minFunc = "min";
-  state.setMojoValueFor(
-      op.getResult(), state.file->var(minFunc({}, {operands[0], operands[1]})));
+  state.setMojoValueFor(op.getResult(),
+                        state.file->var(minFunc({operands[0], operands[1]})));
   return success();
 }
 
 LogicalResult emitMojo(mlir::index::MaxSOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue maxFunc = kFnMax;
-  state.setMojoValueFor(
-      op.getResult(), state.file->var(maxFunc({}, {operands[0], operands[1]})));
+  state.setMojoValueFor(op.getResult(),
+                        state.file->var(maxFunc({operands[0], operands[1]})));
   return success();
 }
 
@@ -256,8 +256,7 @@ LogicalResult emitMojo(KGEN::POP::SelectOp op, EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(op.getOperationName());
   // sym_name on PrimitiveDeclOp is the fully-qualified Mojo source name.
   MojoValue selectFunc(primDecl.getSymNameAttr().strref());
-  state.setMojoValueFor(op.getResult(),
-                        state.file->var(selectFunc({}, operands)));
+  state.setMojoValueFor(op.getResult(), state.file->var(selectFunc(operands)));
   return success();
 }
 
@@ -278,16 +277,16 @@ LogicalResult emitMojo(KGEN::POP::ShrOp op, EmitMojoState &state) {
 LogicalResult emitMojo(KGEN::POP::MinOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue minFunc = "min";
-  state.setMojoValueFor(
-      op.getResult(), state.file->var(minFunc({}, {operands[0], operands[1]})));
+  state.setMojoValueFor(op.getResult(),
+                        state.file->var(minFunc({operands[0], operands[1]})));
   return success();
 }
 
 LogicalResult emitMojo(KGEN::POP::MaxOp op, EmitMojoState &state) {
   auto operands = state.getMojoValuesFor(op->getOperands());
   static const MojoValue maxFunc = kFnMax;
-  state.setMojoValueFor(
-      op.getResult(), state.file->var(maxFunc({}, {operands[0], operands[1]})));
+  state.setMojoValueFor(op.getResult(),
+                        state.file->var(maxFunc({operands[0], operands[1]})));
   return success();
 }
 
@@ -320,8 +319,7 @@ LogicalResult emitMojo(KGEN::POP::SIMDSelectOp op, EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(op.getOperationName());
   // sym_name on PrimitiveDeclOp is the fully-qualified Mojo source name.
   MojoValue selectFunc(primDecl.getSymNameAttr().strref());
-  state.setMojoValueFor(op.getResult(),
-                        state.file->var(selectFunc({}, operands)));
+  state.setMojoValueFor(op.getResult(), state.file->var(selectFunc(operands)));
   return success();
 }
 

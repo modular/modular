@@ -207,7 +207,7 @@ LogicalResult BufferAllocOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue byteSizeVar = state.getMojoValueFor(getRuntimeSize());
   MojoValue deviceCtxVar = state.getMojoValueFor(getDeviceContext());
 
-  MojoValue result = state.file->var(function({}, {byteSizeVar, deviceCtxVar}));
+  MojoValue result = state.file->var(function({byteSizeVar, deviceCtxVar}));
   state.setMojoValueFor(getResult(), result);
 
   return success();
@@ -292,8 +292,8 @@ LogicalResult BufferMemsetOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue deviceParam =
       MojoValue(getBuffer().getType().getDevice().getLabel()).quote();
   MojoValue bufferVal = state.getMojoValueFor(getBuffer());
-  MojoValue valueBitsVal = MojoValue(getValueBits());
-  MojoValue elemSizeVal = MojoValue(getElemSize());
+  MojoValue valueBitsVal = getValueBits();
+  MojoValue elemSizeVal = getElemSize();
   MojoValue deviceCtxVal = state.getMojoValueFor(getDeviceContext());
 
   state.file->call(function, {deviceParam},
@@ -463,7 +463,7 @@ LogicalResult BufferSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   MojoValue function(primitiveMojoName(primDecl));
 
   MojoValue res =
-      state.file->var(function({}, state.getMojoValuesFor(getOperands())));
+      state.file->var(function(state.getMojoValuesFor(getOperands())));
   state.setMojoValueFor(getOutBuffer(), res);
 
   return success();
@@ -555,7 +555,7 @@ LogicalResult BufferBulkSliceOp::emitMojo(MOGG::EmitMojoState &state) {
 
   // Returns Array[MutByteBuffer, N].
   MojoValue result = state.file->var(
-      function({}, {baseArg, offsetsArray, sizesArray, deviceCtxVar}));
+      function({baseArg, offsetsArray, sizesArray, deviceCtxVar}));
 
   // Bind each slice to a named var: consumers may transfer it with `^`, which
   // needs an origin a subscript expression lacks.
@@ -578,7 +578,7 @@ LogicalResult BufferToIndexOp::emitMojo(MOGG::EmitMojoState &state) {
 
   MojoValue bufferVar = state.getMojoValueFor(getInBuffer());
 
-  MojoValue result = state.file->var(function({}, {bufferVar}));
+  MojoValue result = state.file->var(function({bufferVar}));
 
   state.setMojoValueFor(getOut(), result);
 
@@ -596,9 +596,9 @@ LogicalResult BufferToBoolOp::emitMojo(MOGG::EmitMojoState &state) {
   DeviceBufferType bufferType = getBuffer().getType();
   MojoValue deviceParam = MojoValue(bufferType.getDevice().getLabel()).quote();
 
-  state.setMojoValueFor(
-      getResult(), state.file->var(function(
-                       {deviceParam}, {state.getMojoValueFor(getBuffer())})));
+  state.setMojoValueFor(getResult(),
+                        state.file->var(function[{deviceParam}](
+                            {state.getMojoValueFor(getBuffer())})));
   return success();
 }
 
@@ -685,8 +685,9 @@ LogicalResult BufferPlanOp::emitMojo(MOGG::EmitMojoState &state) {
 
   // [alignments, canShare, staticSizes](runtimeSizes) -> (highWatermark,
   // offsets: StaticTuple)
-  MojoValue result = state.file->var(function(
-      {alignmentsParam, canShareParam, staticSizesParam}, {runtimeSizesArray}));
+  MojoValue result = state.file->var(
+      function[{alignmentsParam, canShareParam, staticSizesParam}](
+          {runtimeSizesArray}));
 
   state.setMojoValueFor(getHighWatermark(), result[0]);
 
@@ -894,7 +895,7 @@ LogicalResult DebugTensorPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue function(primitiveMojoName(primDecl));
 
   auto tensorSpec = getSpec().getType();
-  MOGG::MojoValue specRankParam = MOGG::MojoValue(int(tensorSpec.getRank()));
+  MOGG::MojoValue specRankParam = int(tensorSpec.getRank());
   MOGG::MojoValue dtypeParam =
       state.mlirDTypeToMojoType(tensorSpec.getOptDType().value());
 
@@ -902,7 +903,7 @@ LogicalResult DebugTensorPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   MOGG::MojoValue bufferVar = state.getMojoValueFor(getBuffer());
   MOGG::MojoValue labelLiteral = MOGG::MojoValue(getLabel()).quote();
   MOGG::MojoValue labelString =
-      state.file->var(MOGG::MojoValue(MOGG::kStructString)({}, {labelLiteral}));
+      state.file->var(MOGG::kStructString({labelLiteral}));
   MOGG::MojoStringRef label(labelString);
   MOGG::MojoValue labelPtrVar = label.unsafePtr();
   MOGG::MojoValue labelSizeVar = label.byteLength();

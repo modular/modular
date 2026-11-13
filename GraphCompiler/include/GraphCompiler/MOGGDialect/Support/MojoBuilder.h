@@ -26,25 +26,74 @@
 #include "llvm/Support/FormatVariadic.h"
 
 #include <stack>
+#include <string>
 
 namespace M::MOGG {
 
 class MojoBuilder;
 
-/// Mojo source text for a variable (lvalue) or value (rvalue), with helpers
-/// for composing expressions.
-class MojoValue {
+class MojoValue;
+
+/// The text of a Mojo value and every operation on it. `Storage` holds the
+/// text: `std::string` for a value built at run time, `llvm::StringRef` for one
+/// known at compile time. The bodies follow `MojoValue`, which they return.
+template <typename Storage>
+class MojoValueOps {
+public:
+  MojoValueOps() = default;
+  constexpr MojoValueOps(Storage text) : text(std::move(text)) {}
+
+  static MojoValue None();
+  MojoValue rebind(const MojoValue &type) const;
+  MojoValue get(const MojoValue &member) const;
+  MojoValue operator[](const MojoValue &index) const;
+  MojoValue operator[](ArrayRef<MojoValue> values) const;
+  /// Positional `ptr[idx]` is deprecated.
+  MojoValue pointerOffsetGet(size_t index) const;
+  /// `f(operands)`; comptime parameters go in `[]`, as in Mojo:
+  /// `f[parameters](operands)`.
+  MojoValue operator()(ArrayRef<MojoValue> operands = {}) const;
+  MojoValue equal(const MojoValue &value) const;
+  MojoValue quote() const;
+  /// Escapes \\, ", \n, and \r for a single-line Mojo string literal.
+  MojoValue escape() const;
+  MojoValue operator+(const MojoValue &other) const;
+  MojoValue operator*(const MojoValue &other) const;
+  MojoValue operator%(const MojoValue &other) const;
+  MojoValue operator<<(const MojoValue &other) const;
+  MojoValue operator>>(const MojoValue &other) const;
+  MojoValue bitwise_logical_and(const MojoValue &other) const;
+  MojoValue bitwise_logical_or(const MojoValue &other) const;
+  MojoValue bitwise_logical_xor(const MojoValue &other) const;
+  MojoValue div(const MojoValue &other) const;
+  MojoValue idiv(const MojoValue &other) const;
+  MojoValue sdiv(const MojoValue &other) const;
+  MojoValue eq(const MojoValue &other) const;
+  MojoValue neq(const MojoValue &other) const;
+  MojoValue ge(const MojoValue &other) const;
+  MojoValue gt(const MojoValue &other) const;
+  MojoValue le(const MojoValue &other) const;
+  MojoValue lt(const MojoValue &other) const;
+  /// Postfix `^`, transferring ownership of move-only types.
+  MojoValue transfer() const;
+
+  Storage text;
+};
+
+/// Mojo source text for a variable (lvalue) or value (rvalue), with helpers for
+/// composing expressions.
+class MojoValue : public MojoValueOps<std::string> {
 public:
   MojoValue() = default;
-  MojoValue(std::string &&str) : text(std::move(str)) {}
-  MojoValue(StringLiteral str) : text(str) {}
-  MojoValue(StringRef str) : text(str) {}
+  MojoValue(std::string &&str) : MojoValueOps(std::move(str)) {}
+  MojoValue(StringLiteral str) : MojoValueOps(str.str()) {}
+  MojoValue(StringRef str) : MojoValueOps(str.str()) {}
   template <typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
-  MojoValue(T integer) : text(std::to_string(integer)) {}
+  MojoValue(T integer) : MojoValueOps(std::to_string(integer)) {}
   MojoValue(const llvm::APSInt &integer) {
     SmallVector<char> chars;
     integer.toString(chars);
-    this->text.assign(chars.begin(), chars.end());
+    text.assign(chars.begin(), chars.end());
   }
   MojoValue(const llvm::APFloat &value) {
     assert(value.isFinite() && "inf/nan have no Mojo float literal spelling");
@@ -55,101 +104,225 @@ public:
       str += ".0";
     text = str.str();
   }
-  MojoValue(bool val) : text(val ? "True" : "False") {}
-  MojoValue(const char *str) : text(str) {}
+  MojoValue(bool val) : MojoValueOps(std::string(val ? "True" : "False")) {}
+  MojoValue(const char *str) : MojoValueOps(std::string(str)) {}
   ~MojoValue() = default;
+};
 
-  static MojoValue None() { return MojoValue("None"); }
-  MojoValue rebind(const MojoValue &type) const {
-    return llvm::formatv("rebind[{}]({})", type.text, text).str();
-  }
-  MojoValue get(const MojoValue &member) const {
-    return llvm::formatv("{}.{}", text, member.text).str();
-  }
-  MojoValue operator[](const MojoValue &idx) const {
-    return llvm::formatv("{}[{}]", text, idx.text).str();
-  }
-  MojoValue operator[](ArrayRef<MojoValue> values) const;
-  /// Positional `ptr[idx]` is deprecated.
-  MojoValue pointerOffsetGet(size_t idx) const {
-    return llvm::formatv("{}[unsafe_offset={}]", text, idx).str();
-  }
-  MojoValue operator()(ArrayRef<MojoValue> parameters = {},
-                       ArrayRef<MojoValue> operands = {}) const;
-  MojoValue equal(const MojoValue &value) const {
-    return llvm::formatv("{} = {}", text, value.text).str();
-  }
-  MojoValue quote() const {
-    std::string res;
-    llvm::raw_string_ostream os(res);
-    os << '"';
-    KGEN::printAsMojoStringLiteral(text, os);
-    os << '"';
-    return MojoValue(res);
-  }
-  /// Escapes \\, ", \n, and \r for a single-line Mojo string literal.
-  MojoValue escape() const;
-  MojoValue operator+(const MojoValue &other) const {
-    return llvm::formatv("{} + {}", text, other.text).str();
-  }
-  MojoValue operator*(const MojoValue &other) const {
-    return llvm::formatv("{} * {}", text, other.text).str();
-  }
-  MojoValue operator%(const MojoValue &other) const {
-    return llvm::formatv("{} % {}", text, other.text).str();
-  }
-  MojoValue operator<<(const MojoValue &other) const {
-    return llvm::formatv("{} << {}", text, other.text).str();
-  }
-  MojoValue operator>>(const MojoValue &other) const {
-    return llvm::formatv("{} >> {}", text, other.text).str();
-  }
-  MojoValue bitwise_logical_and(const MojoValue &other) const {
-    return llvm::formatv("{} & {}", text, other.text).str();
-  }
-  MojoValue bitwise_logical_or(const MojoValue &other) const {
-    return llvm::formatv("{} | {}", text, other.text).str();
-  }
-  MojoValue bitwise_logical_xor(const MojoValue &other) const {
-    return llvm::formatv("{} ^ {}", text, other.text).str();
-  }
-  MojoValue div(const MojoValue &other) const {
-    return llvm::formatv("{} / {}", text, other.text).str();
-  }
-  MojoValue idiv(const MojoValue &other) const {
-    return llvm::formatv("{} // {}", text, other.text).str();
-  }
-  MojoValue sdiv(const MojoValue &other) const {
-    return llvm::formatv("-((-{}) // {})", text, other.text).str();
-  }
-  MojoValue eq(const MojoValue &other) const {
-    return llvm::formatv("{} == {}", text, other.text).str();
-  }
-  MojoValue neq(const MojoValue &other) const {
-    return llvm::formatv("{} != {}", text, other.text).str();
-  }
-  MojoValue ge(const MojoValue &other) const {
-    return llvm::formatv("{} >= {}", text, other.text).str();
-  }
-  MojoValue gt(const MojoValue &other) const {
-    return llvm::formatv("{} > {}", text, other.text).str();
-  }
-  MojoValue le(const MojoValue &other) const {
-    return llvm::formatv("{} <= {}", text, other.text).str();
-  }
-  MojoValue lt(const MojoValue &other) const {
-    return llvm::formatv("{} < {}", text, other.text).str();
-  }
+/// A Mojo name known at compile time: a type, a function, a parameter, a field,
+/// or a fragment of source. It has the same operations as `MojoValue` over a
+/// `StringRef`, so it stays a constant, and converts when a value is needed.
+class MojoStaticValue : public MojoValueOps<llvm::StringRef> {
+public:
+  constexpr MojoStaticValue(llvm::StringLiteral text) : MojoValueOps(text) {}
 
-  /// Postfix `^`, transferring ownership of move-only types.
-  MojoValue transfer() const { return llvm::formatv("{}^", text).str(); }
+  /// A string literal constant, e.g. `constexpr MojoStaticValue kInt = "Int"`.
+  template <size_t N>
+  constexpr MojoStaticValue(const char (&text)[N])
+      : MojoValueOps(llvm::StringRef(text, N - 1)) {}
 
-  std::string text;
+  operator MojoValue() const { return MojoValue(text); }
+  constexpr operator llvm::StringRef() const { return text; }
+
+  /// The text as an owned string, for callers that build one (`std::string`
+  /// has no conversion from `StringRef`).
+  std::string str() const { return text.str(); }
 };
 
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
                                      const MojoValue &value) {
   return os << value.text;
+}
+
+inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
+                                     const MojoStaticValue &value) {
+  return os << value.text;
+}
+
+// The operations, shared by `MojoValue` and `MojoStaticValue`. Defined here
+// because they return `MojoValue`, which is complete now.
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::None() {
+  return MojoValue("None");
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::rebind(const MojoValue &type) const {
+  return llvm::formatv("rebind[{}]({})", type.text, text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::get(const MojoValue &member) const {
+  return llvm::formatv("{}.{}", text, member.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator[](const MojoValue &index) const {
+  return llvm::formatv("{}[{}]", text, index.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator[](ArrayRef<MojoValue> values) const {
+  std::string str;
+  llvm::raw_string_ostream stream(str);
+  stream << text;
+  if (!values.empty()) {
+    stream << "[";
+    llvm::interleaveComma(values, stream);
+    stream << "]";
+  }
+  return str;
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::pointerOffsetGet(size_t index) const {
+  return llvm::formatv("{}[unsafe_offset={}]", text, index).str();
+}
+
+template <typename Storage>
+MojoValue
+MojoValueOps<Storage>::operator()(ArrayRef<MojoValue> operands) const {
+  std::string str;
+  llvm::raw_string_ostream stream(str);
+  stream << text << "(";
+  llvm::interleaveComma(operands, stream);
+  stream << ")";
+  return str;
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::equal(const MojoValue &value) const {
+  return llvm::formatv("{} = {}", text, value.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::quote() const {
+  std::string res;
+  llvm::raw_string_ostream os(res);
+  os << '"';
+  KGEN::printAsMojoStringLiteral(text, os);
+  os << '"';
+  return MojoValue(res);
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::escape() const {
+  std::string res;
+  res += '"';
+  for (char c : text) {
+    switch (c) {
+    case '\\':
+      res += "\\\\";
+      break;
+    case '"':
+      res += "\\\"";
+      break;
+    case '\n':
+      res += "\\n";
+      break;
+    case '\r':
+      res += "\\r";
+      break;
+    default:
+      res += c;
+      break;
+    }
+  }
+  res += '"';
+  return MojoValue(res);
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator+(const MojoValue &other) const {
+  return llvm::formatv("{} + {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator*(const MojoValue &other) const {
+  return llvm::formatv("{} * {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator%(const MojoValue &other) const {
+  return llvm::formatv("{} % {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator<<(const MojoValue &other) const {
+  return llvm::formatv("{} << {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::operator>>(const MojoValue &other) const {
+  return llvm::formatv("{} >> {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue
+MojoValueOps<Storage>::bitwise_logical_and(const MojoValue &other) const {
+  return llvm::formatv("{} & {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue
+MojoValueOps<Storage>::bitwise_logical_or(const MojoValue &other) const {
+  return llvm::formatv("{} | {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue
+MojoValueOps<Storage>::bitwise_logical_xor(const MojoValue &other) const {
+  return llvm::formatv("{} ^ {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::div(const MojoValue &other) const {
+  return llvm::formatv("{} / {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::idiv(const MojoValue &other) const {
+  return llvm::formatv("{} // {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::sdiv(const MojoValue &other) const {
+  return llvm::formatv("-((-{}) // {})", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::eq(const MojoValue &other) const {
+  return llvm::formatv("{} == {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::neq(const MojoValue &other) const {
+  return llvm::formatv("{} != {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::ge(const MojoValue &other) const {
+  return llvm::formatv("{} >= {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::gt(const MojoValue &other) const {
+  return llvm::formatv("{} > {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::le(const MojoValue &other) const {
+  return llvm::formatv("{} <= {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::lt(const MojoValue &other) const {
+  return llvm::formatv("{} < {}", text, other.text).str();
+}
+
+template <typename Storage>
+MojoValue MojoValueOps<Storage>::transfer() const {
+  return llvm::formatv("{}^", text).str();
 }
 
 // A prefix plus a unique index (e.g. `bar_45`), resolved by MojoBuilder.

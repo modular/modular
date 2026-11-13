@@ -33,18 +33,16 @@ namespace {
 
 // Symbol path arrays for recognising known struct types. Components live in
 // MojoIdentifiers.h (`kPackage*`, `kLeaf*`).
-static constexpr std::array<llvm::StringLiteral, 3> kMaxManagedTensorSlice = {
+static constexpr std::array<llvm::StringRef, 3> kMaxManagedTensorSlice = {
     kPackageExtensibility, kPackageManagedTensorSlice, kLeafManagedTensorSlice};
-static constexpr std::array<llvm::StringLiteral, 3> kMaxVariadicTensors = {
+static constexpr std::array<llvm::StringRef, 3> kMaxVariadicTensors = {
     kPackageExtensibility, kPackageManagedTensorSlice, kLeafVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3>
-    kMaxFusedInputVariadicTensors = {kPackageExtensibility,
-                                     kPackageManagedTensorSlice,
-                                     kLeafFusedInputVariadicTensors};
-static constexpr std::array<llvm::StringLiteral, 3>
-    kMaxFusedOutputVariadicTensors = {kPackageExtensibility,
-                                      kPackageManagedTensorSlice,
-                                      kLeafFusedOutputVariadicTensors};
+static constexpr std::array<llvm::StringRef, 3> kMaxFusedInputVariadicTensors =
+    {kPackageExtensibility, kPackageManagedTensorSlice,
+     kLeafFusedInputVariadicTensors};
+static constexpr std::array<llvm::StringRef, 3> kMaxFusedOutputVariadicTensors =
+    {kPackageExtensibility, kPackageManagedTensorSlice,
+     kLeafFusedOutputVariadicTensors};
 
 // Dict keys shared by `tensorArgContractToDict` (writer) and
 // `dictToTensorArgContract` (reader).
@@ -68,7 +66,7 @@ static mlir::StringAttr buildOpaqueSymbol(mlir::MLIRContext *ctx,
 
 /// Check whether a symbol matches a dotted-path array (root + nested refs).
 static bool symbolMatches(mlir::SymbolRefAttr symbol,
-                          llvm::ArrayRef<llvm::StringLiteral> path) {
+                          llvm::ArrayRef<llvm::StringRef> path) {
   if (symbol.getNestedReferences().size() != path.size() - 1)
     return false;
   if (!symbol.getRootReference().strref().contains(path.front()))

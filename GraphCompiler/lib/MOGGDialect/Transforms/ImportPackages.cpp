@@ -64,16 +64,16 @@ namespace {
 ///
 /// Extend this when a `shape`/`elementwise` function returns another
 /// parameterised stdlib struct (today `SIMD` and `IndexList`).
-static llvm::ArrayRef<llvm::StringLiteral>
+static llvm::ArrayRef<llvm::StringRef>
 getStdlibStructParamNames(mlir::SymbolRefAttr symbol) {
   // Slot names and order must match `getParamValues()` exactly, including
   // inferred (`//`) and keyword-only (`*`) parameters hoisted onto the LIT
   // type.
-  static constexpr llvm::StringLiteral kSimdParams[] = {kParameterDType,
-                                                        kParameterSize};
-  static constexpr llvm::StringLiteral kIndexListParams[] = {
-      kParameterSize, kParameterElementType};
-  static constexpr llvm::StringLiteral kTileTensorParams[] = {
+  static constexpr llvm::StringRef kSimdParams[] = {kParameterDType,
+                                                    kParameterSize};
+  static constexpr llvm::StringRef kIndexListParams[] = {kParameterSize,
+                                                         kParameterElementType};
+  static constexpr llvm::StringRef kTileTensorParams[] = {
       kParameterMut,           kParameterDType,   kParameterLayoutType,
       kParameterOrigin,        kParameterStorage, kParameterAddressSpace,
       kParameterLinearIdxType, "origin_mut",
