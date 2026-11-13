@@ -433,6 +433,19 @@ def test_atol() raises:
     ):
         _ = atol("5_")
 
+    # A trailing underscore is invalid when whitespace follows it, too.
+    with assert_raises():
+        _ = atol("9_ ")
+    with assert_raises():
+        _ = atol("1_2_ ")
+    with assert_raises():
+        _ = atol(" 9_\n")
+    with assert_raises():
+        _ = atol("ff_ ", 16)
+    with assert_raises():
+        _ = atol("0x1_ ", 0)
+    assert_equal(atol("1_2 "), 12)
+
     with assert_raises(
         contains="String is not convertible to integer with base 5: '5'"
     ):

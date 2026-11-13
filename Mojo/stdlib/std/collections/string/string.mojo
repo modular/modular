@@ -2679,8 +2679,6 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
             else:
                 was_last_digit_underscore = True
                 continue
-        else:
-            was_last_digit_underscore = False
 
         var digit: UInt
         if ord_0 <= ord_current <= ord_num_max:
@@ -2696,6 +2694,9 @@ def atol(str_slice: StringSpan, base: Int = 10) raises -> Int:
         else:
             raise Error(_str_to_base_error(base, str_slice))
         found_valid_chars_after_start = True
+        # Reset only after a digit, so whitespace that ends the number
+        # leaves a trailing underscore for the check after the loop.
+        was_last_digit_underscore = False
 
         if result > limit - digit:
             raise Error(_str_to_base_error(base, str_slice), too_large)
