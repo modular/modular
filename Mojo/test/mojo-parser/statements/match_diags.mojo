@@ -849,3 +849,18 @@ def print_token(tok: Token):
             pass
         case .eof:
             pass
+
+
+# `Tuple[*Ts]` has no fixed arity, so a tuple pattern is rejected but a
+# catch-all still works.
+def match_parametric_tuple_pattern[*Ts: Movable](t: Tuple[*Ts]):
+    match t:
+    # expected-error @+1 {{cannot match value of parametric tuple type 'Tuple[*Ts]' against a pattern with a fixed number of elements}}
+    case (a, b):
+        pass
+
+
+def match_parametric_tuple_catchall[*Ts: Movable](t: Tuple[*Ts]):
+    match t:
+    case _:
+        pass

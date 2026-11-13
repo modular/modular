@@ -53,3 +53,18 @@ def example[list: List[Int]]():
     # expected-error @below {{cannot destructure into list patterns yet}}
     comptime for [a, b] in list:
       pass
+
+
+# // -----
+
+
+# `Tuple[*Ts]` has no fixed arity, so it cannot be destructured.
+def unpack_parametric_tuple[*Ts: Movable, t: Tuple[*Ts]]():
+    # expected-error @below {{cannot unpack value of parametric tuple type 'Tuple[*Ts]' into a fixed arity}}
+    comptime (a, b) = t
+
+
+def unpack_parametric_tuple_in_for[*Ts: Movable, t: Tuple[*Ts]]():
+    # expected-error @below {{cannot unpack value of parametric tuple type}}
+    comptime for (a, b) in [t]:
+        pass
