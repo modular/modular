@@ -532,3 +532,9 @@ This version is still a work in progress.
 
 - `input()` no longer raises `EOF` after the first line when stdin is a pipe
   or redirected file.
+
+- [#7339](https://github.com/modular/modular/issues/7339) - Mojo now keeps
+  compilation caches that another installed Mojo or MAX still uses.
+  MAX, the `mojo` CLI and projects on different Mojo versions can now share one
+  cache directory. A process can still lose its cache if its Mojo install is
+  replaced while it runs.
