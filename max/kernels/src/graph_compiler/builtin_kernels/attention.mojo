@@ -8320,27 +8320,22 @@ struct Struct_mla_store_ragged_paged_nvfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        cache_dtype: DType,
-        scale_dtype: DType,
-        freq_dtype: DType,
-        gamma_dtype: DType,
-        //,
         dcp_size: Int = 1,
         dcp_interleave: Int = 1,
     ](
         kv: Some[Input & Fused & LoadAccess],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_norm_gamma: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        kv_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         epsilon: Float32,
         dcp_rank: Int32,
@@ -8384,22 +8379,56 @@ struct Struct_mla_store_ragged_paged_nvfp4:
         comptime assert (
             context.target.is_gpu()
         ), "attention.mla.store.ragged.paged.nvfp4 is only supported on GPU"
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(kv_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(scales_lookup_table), TileTensorable
+        )
+        comptime cache_dtype = type_of(kv_blocks).dtype
+        comptime scale_dtype = type_of(kv_scales).dtype
         comptime assert (
             cache_dtype == DType.uint8 and scale_dtype == DType.float8_e4m3fn
         ), "the nvfp4 store takes uint8 values with e4m3 scales"
         comptime assert type_of(kv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_norm_gamma).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(kv_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(scales_lookup_table).rank == 2
         comptime assert type_of(kv).dtype == DType.bfloat16
 
-        comptime cache_row_bytes = kv_blocks.static_spec.shape_tuple[5]
-        comptime scales_per_row = kv_scales.static_spec.shape_tuple[5]
-        comptime kv_norm_dim = kv_norm_gamma.static_spec.shape_tuple[0]
+        comptime cache_row_bytes = type_of(kv_blocks)._shape_types[
+            5
+        ].static_value
+        comptime scales_per_row = type_of(kv_scales)._shape_types[
+            5
+        ].static_value
+        comptime kv_norm_dim = type_of(kv_norm_gamma)._shape_types[
+            0
+        ].static_value
         comptime fp8_tail = _scaled_cache_fp8_tail_size[
             cache_dtype, scale_dtype
-        ](Int(cache_row_bytes), Int(scales_per_row))
+        ](cache_row_bytes, scales_per_row)
         # Two e2m1 values share a byte over the scaled prefix; the rope dims
         # past the last scale are already one FP8 byte each.
         comptime logical_head_size = (
-            2 * (Int(cache_row_bytes) - fp8_tail) + fp8_tail
+            2 * (cache_row_bytes - fp8_tail) + fp8_tail
         )
         comptime assert (
             fp8_tail > 0
@@ -8407,20 +8436,20 @@ struct Struct_mla_store_ragged_paged_nvfp4:
         comptime assert (
             type_of(kv)._shape_types[1].static_value == logical_head_size
         ), "kv's width must equal the cache row's logical head size"
-        comptime assert logical_head_size > Int(
-            kv_norm_dim
+        comptime assert (
+            logical_head_size > kv_norm_dim
         ), "the cache row's logical width must exceed kv_norm_dim"
 
         var kv_collection = generic_get_paged_cache_with_scales(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            kv_scales,
-            scales_page_stride,
-            scales_lookup_table,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
+            kv_scales.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor[.int64](),
+            scales_lookup_table.to_tile_tensor[.uint32](),
         )
 
         comptime if dcp_size > 1:
