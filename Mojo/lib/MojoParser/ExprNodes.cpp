@@ -1739,8 +1739,13 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     auto structType = cast<StructType>(baseVal.getType());
     auto fieldType = fieldOp.getReboundType(
         structType, &emitter.shared.getEvaluationContext());
-    auto extractVal = StructExtractOp::create(
+    Value extractVal = StructExtractOp::create(
         *emitter.builder, mlirLoc, fieldType, baseVal, fieldOp.getNameAttr());
+    // Refine the extracted value as the by-reference path below refines its
+    // field reference, so a conditional type field of a register-passable
+    // struct sees the assumptions in scope.
+    extractVal = maybeEmitRefinementRebind(extractVal, emitter.declScope,
+                                           *emitter.builder, mlirLoc);
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
 

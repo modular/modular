@@ -1483,6 +1483,22 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
           cast<RefType>(entry.value.getType()).getElementType()};
 }
 
+/// Returns true if `gep` reaches its base through a rebind of a value that is
+/// tracked under a non-struct type, such as a conditional type `A if c else B`
+/// refined to one arm. Such a value is tracked as a single element, so the
+/// field offsets of the arm, and of the structs nested in it, are not known.
+static bool isFieldOfNonStructTrackedValue(RefStructGEROp gep) {
+  while (gep && gep.usesFieldAccess()) {
+    Value container = gep.getContainer();
+    Type trackedType = RefImmutOp::stripRebinds(container).getType();
+    if (auto trackedRef = dyn_cast<RefType>(trackedType))
+      if (!sugarDynCast<LIT::StructType>(trackedRef.getElementType()))
+        return true;
+    gep = RefImmutOp::stripRebinds(container).getDefiningOp<RefStructGEROp>();
+  }
+  return false;
+}
+
 /// Given a pointer that is being accessed indirectly by an operation, return
 /// the value number being referenced, or zero if not tracked.
 ///
@@ -1523,12 +1539,9 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
     // non-struct type, such as a conditional type `A if c else B` refined to
     // one arm. That value is tracked as a single element, so the arm's field
     // offsets don't apply to its bit range. Treat the access as one to the
-    // whole value.
-    Type trackedType =
-        RefImmutOp::stripRebinds(structGER.getContainer()).getType();
-    if (auto trackedRef = dyn_cast<RefType>(trackedType))
-      if (!sugarDynCast<LIT::StructType>(trackedRef.getElementType()))
-        return baseVal;
+    // whole value, however deep in the chain of field accesses the rebind is.
+    if (isFieldOfNonStructTrackedValue(structGER))
+      return baseVal;
 
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();

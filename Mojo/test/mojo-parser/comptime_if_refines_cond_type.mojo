@@ -175,6 +175,41 @@ struct Dispatch[target: Int](Movable):
             return Self(impl=Bar())
 
 
+@fieldwise_init
+struct TrivFoo(ImplicitlyCopyable, TrivialRegisterPassable):
+    var x: Int
+
+    def foo(self):
+        pass
+
+
+@fieldwise_init
+struct TrivBar(ImplicitlyCopyable, TrivialRegisterPassable):
+    var x: Int
+
+    def bar(self):
+        pass
+
+
+# A conditional type field of a register-passable struct is read by value, not
+# through a reference, and refines the same way.
+struct TrivialDispatch[target: Int](ImplicitlyCopyable, TrivialRegisterPassable):
+    comptime _use_legacy = selects_legacy[Self.target]()
+    comptime _Impl = TrivFoo if Self._use_legacy else TrivBar
+
+    var _impl: Self._Impl
+
+    # CHECK-LABEL: lit.fn @"call(comptime_if_refines_cond_type::TrivialDispatch
+    # CHECK: kgen.rebind {{.*}} to !TrivFoo
+    # CHECK: } else {
+    # CHECK: kgen.rebind {{.*}} to !TrivBar
+    def call(self):
+        comptime if Self._use_legacy:
+            self._impl.foo()
+        else:
+            self._impl.bar()
+
+
 def main():
     then_and_else[True](Foo())
     then_and_else[False](Bar())
