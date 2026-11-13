@@ -108,6 +108,20 @@ def test_default_sessions_and_graph(tmp_path: Path) -> None:
     _assert_success(result)
 
 
+def test_graph_before_default_session(tmp_path: Path) -> None:
+    result = _run(
+        """
+        from max.graph import Graph
+        with Graph("before_default_session"):
+            pass
+        from max.engine import InferenceSession
+        session = InferenceSession()
+        """,
+        tmp_path,
+    )
+    _assert_success(result)
+
+
 @pytest.mark.parametrize("num_threads", [None, 2])
 def test_thread_configuration_conflict_is_rejected(
     num_threads: int | None, tmp_path: Path

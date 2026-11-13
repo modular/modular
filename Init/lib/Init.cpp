@@ -136,6 +136,23 @@ ErrorOr<ContextRef> Init::getOrCreateContext(StringRef programName,
   return ctxOr;
 }
 
+ErrorOr<ContextRef>
+Init::getOrCreateContextWithDefaults(StringRef programName,
+                                     const Init::Options &creationDefaults,
+                                     StringRef subCommand) {
+  std::lock_guard<std::mutex> lock(getGlobalContextMutex());
+  if (Context *existing = getCurrentMaxContextPointerOrNull()) {
+    return ContextRef::copy(existing);
+  }
+
+  auto ctxOr = createContextImpl(programName, creationDefaults, subCommand);
+  if (ctxOr.isError()) {
+    return ctxOr.takeError();
+  }
+  setCurrentMaxContextPointer(ctxOr->getPointer());
+  return ctxOr;
+}
+
 ContextRef Init::getContext() {
   std::lock_guard<std::mutex> lock(getGlobalContextMutex());
   Context *existing = getCurrentMaxContextPointerOrNull();

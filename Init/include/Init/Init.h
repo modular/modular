@@ -80,6 +80,15 @@ MODULAR_CXX_EXPORT ErrorOr<ContextRef>
 getOrCreateContext(StringRef programName, const Options &options = {},
                    StringRef subCommand = "");
 
+/// Returns the existing process-wide context without checking its options, or
+/// creates it using creationDefaults when none exists. Use this when the caller
+/// needs the context but does not impose configuration requirements.
+/// Acquisition and creation are serialized under the global context mutex.
+MODULAR_CXX_EXPORT ErrorOr<ContextRef>
+getOrCreateContextWithDefaults(StringRef programName,
+                               const Options &creationDefaults,
+                               StringRef subCommand = "");
+
 /// Returns a reference to the existing process-wide \c M::Context, reports a
 /// fatal error if no context has been created yet.
 MODULAR_CXX_EXPORT ContextRef getContext();
