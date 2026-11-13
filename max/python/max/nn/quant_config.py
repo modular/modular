@@ -18,10 +18,21 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol, TypeVar, overload
 
 from max.driver import accelerator_api
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
+from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType, TensorValue
+from typing_extensions import Self
+
+
+class _Invertible(Protocol):
+    """A tensor that ``1.0 / tensor`` inverts, such as a ModuleV3 tensor."""
+
+    def __rtruediv__(self, lhs: float, /) -> Self: ...
+
+
+_InvertibleT = TypeVar("_InvertibleT", bound=_Invertible)
 
 NVFP4_BLOCK_SIZE = 16
 """Inputs covered by one NVFP4 weight block scale."""
@@ -325,6 +336,15 @@ class QuantConfig:
     Note that scales in the 5D TCGEN-interleaved layout are typically flattened
     to 2D ``[M, K//16]`` in the checkpoint."""
 
+    compressed_tensors_global_scales: bool = False
+    """Whether the checkpoint stores the NVFP4 per-tensor scales as
+    compressed-tensors does (NVFP4 only).
+
+    compressed-tensors stores ``weight_global_scale`` and
+    ``input_global_scale``, the reciprocals of modelopt's ``weight_scale_2``
+    and ``input_scale``. Layers declare the stored tensors and invert them in
+    the graph, so the matmuls see modelopt's scales either way."""
+
     _mxfp6_element_format: str = "e2m3"
 
     source: WeightSource = WeightSource.CHECKPOINT
@@ -493,8 +513,9 @@ class QuantConfig:
         bias_dtype: DType | None = None,
         shared_experts_weight_dtype: DType | None = None,
         can_use_fused_mlp: bool = False,
+        compressed_tensors_global_scales: bool = False,
     ) -> QuantConfig:
-        """Builds a modelopt NVFP4 config.
+        """Builds an NVFP4 config.
 
         Weights are packed E2M1 codes with one E4M3 scale per 16 inputs and a
         float32 per-tensor scale. The activation's per-tensor scale is static,
@@ -510,6 +531,9 @@ class QuantConfig:
             shared_experts_weight_dtype: The weight dtype of the MoE shared
                 experts, when it differs from the routed experts'.
             can_use_fused_mlp: Whether the fused MLP path may be used.
+            compressed_tensors_global_scales: Whether the checkpoint stores
+                the per-tensor scales as compressed-tensors' global scales
+                rather than as modelopt's.
 
         Returns:
             The config.
@@ -533,6 +557,7 @@ class QuantConfig:
             shared_experts_weight_dtype=shared_experts_weight_dtype,
             format=QuantFormat.NVFP4,
             can_use_fused_mlp=can_use_fused_mlp,
+            compressed_tensors_global_scales=compressed_tensors_global_scales,
         )
 
     @property
@@ -594,6 +619,36 @@ class QuantConfig:
         checkpoint already holds them that way.
         """
         return self.source is WeightSource.QUANTIZE
+
+    @overload
+    def per_tensor_scale(self, stored: None) -> None: ...
+
+    @overload
+    def per_tensor_scale(self, stored: TensorValue) -> TensorValue: ...
+
+    @overload
+    def per_tensor_scale(self, stored: _InvertibleT) -> _InvertibleT: ...
+
+    def per_tensor_scale(
+        self, stored: TensorValue | _Invertible | None
+    ) -> TensorValue | _Invertible | None:
+        """Returns an NVFP4 per-tensor scale as the quantized ops take it.
+
+        That is modelopt's ``input_scale`` or ``weight_scale_2``. A
+        checkpoint with :attr:`compressed_tensors_global_scales` stores the
+        reciprocal, which this inverts in the graph. Pass a stack of scales
+        rather than each scale, so the graph divides once per stack.
+
+        Args:
+            stored: The scale or stack of scales as the checkpoint stores
+                them, or ``None``.
+
+        Returns:
+            The scales the quantized ops take, or ``None``.
+        """
+        if stored is None or not self.compressed_tensors_global_scales:
+            return stored
+        return 1.0 / stored
 
     @property
     def is_nvfp4(self) -> bool:

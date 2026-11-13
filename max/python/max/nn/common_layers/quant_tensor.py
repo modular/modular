@@ -388,6 +388,151 @@ class NVFP4Tensor(_QuantizedWeight):
         )
 
 
+class CompressedTensorsNVFP4Tensor(_QuantizedWeight):
+    """NVFP4 as compressed-tensors stores it.
+
+    The packed ``weight`` and block ``weight_scale`` are an
+    :class:`NVFP4Tensor`'s. The per-tensor ``weight_global_scale`` and
+    ``input_global_scale`` are the reciprocals of its ``weight_scale_2`` and
+    ``input_scale``. :func:`~.quant_ops.stack` and :func:`~.quant_ops.matmul`
+    read it as an :class:`NVFP4Tensor` and invert the global scales in the
+    graph, once per stack.
+
+    Args:
+        weight: Packed ``uint8`` weight data of shape ``[rows, cols // 2]``.
+        weight_scale: Per-block ``float8_e4m3fn`` scales of shape
+            ``[ceil(rows / block_m), ceil(cols / block_k)]``.
+        weight_global_scale: Per-tensor ``float32`` global scale, scalar
+            ``()``.
+        input_global_scale: Static per-tensor ``float32`` activation global
+            scale, scalar ``()``.
+        block_size: Per-block size as ``(block_m, block_k)``; ``(1, 16)`` for
+            NVFP4.
+    """
+
+    weight_scale: Tensor
+    weight_global_scale: Tensor
+    input_global_scale: Tensor
+
+    def __init__(
+        self,
+        *,
+        weight: Tensor,
+        weight_scale: Tensor,
+        weight_global_scale: Tensor,
+        input_global_scale: Tensor,
+        block_size: tuple[int, int] = (1, 16),
+    ) -> None:
+        super().__init__()
+        self.weight = weight
+        self.weight_scale = weight_scale
+        self.weight_global_scale = weight_global_scale
+        self.input_global_scale = input_global_scale
+        self._block_size = block_size
+
+    @classmethod
+    def zeros(
+        cls,
+        shape: tuple[int, int],
+        *,
+        block_size: tuple[int, int] = (1, 16),
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Builds a zero weight of logical ``shape``.
+
+        As :meth:`NVFP4Tensor.zeros`, but with global scales of one: the
+        reciprocal of a zero scale would dequantize the zero weight to NaN.
+        """
+        zeros = NVFP4Tensor.zeros(shape, block_size=block_size)
+        return cls(
+            weight=zeros.weight,
+            weight_scale=zeros.weight_scale,
+            weight_global_scale=Tensor.ones(
+                (), dtype=DType.float32, device=CPU()
+            ),
+            input_global_scale=Tensor.ones(
+                (), dtype=DType.float32, device=CPU()
+            ),
+            block_size=block_size,
+        )
+
+    @property
+    def block_size(self) -> tuple[int, int]:
+        """Quantization block shape as ``(rows, cols)``."""
+        return self._block_size
+
+    def as_nvfp4(self) -> NVFP4Tensor:
+        """This weight with modelopt's per-tensor scales.
+
+        Inverts each global scale; stack the weights first to invert a
+        stack once.
+        """
+        return NVFP4Tensor(
+            weight=self.weight,
+            weight_scale=self.weight_scale,
+            weight_scale_2=1.0 / self.weight_global_scale,
+            input_scale=1.0 / self.input_global_scale,
+            block_size=self.block_size,
+        )
+
+    def _with_data(
+        self, weight: Tensor, weight_scale: Tensor
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Returns a copy holding ``weight`` and ``weight_scale``."""
+        return CompressedTensorsNVFP4Tensor(
+            weight=weight,
+            weight_scale=weight_scale,
+            weight_global_scale=self.weight_global_scale,
+            input_global_scale=self.input_global_scale,
+            block_size=self.block_size,
+        )
+
+    def shard(
+        self, axis: int, mesh: DeviceMesh
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Co-shard ``weight``/``weight_scale`` along ``axis`` onto ``mesh``."""
+        mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
+        return self._with_data(
+            self.weight.to(mapping), self.weight_scale.to(mapping)
+        )
+
+    @property
+    def local_shards(self) -> tuple[CompressedTensorsNVFP4Tensor, ...]:
+        """Per-device shards, pairing each ``weight`` shard with its scales."""
+        return tuple(
+            self._with_data(w, s)
+            for w, s in zip(
+                self.weight.local_shards,
+                self.weight_scale.local_shards,
+                strict=True,
+            )
+        )
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        """Device mesh of the packed ``weight`` tensor."""
+        return self.weight.mesh
+
+    @property
+    def _mapping(self) -> DeviceMapping:
+        return self.weight.mapping
+
+    @_mapping.setter
+    def _mapping(self, mapping: DeviceMapping) -> None:
+        self.weight._mapping = mapping
+        self.weight_scale._mapping = mapping
+
+    def to(
+        self, target: Device | DeviceMesh | DeviceMapping
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Returns a copy with ``weight`` and ``weight_scale`` on ``target``.
+
+        The global scales stay on the host.
+        """
+        return self._with_data(
+            self.weight.to(target), self.weight_scale.to(target)
+        )
+
+
 class MXFP8Tensor(_QuantizedWeight):
     """MXFP8 (OCP microscaling) block-scaled quantized tensor.
 
@@ -1089,6 +1234,7 @@ QuantAwareTensor: TypeAlias = (
     Tensor
     | FP8BlockTensor
     | NVFP4Tensor
+    | CompressedTensorsNVFP4Tensor
     | MXFP8Tensor
     | MXFP4Tensor
     | NVFP4TensorQuantizer
@@ -1112,6 +1258,13 @@ def all_nvfp4(
 ) -> TypeGuard[Sequence[NVFP4Tensor]]:
     """Narrow a sequence of mixed weights to a homogeneous NVFP4 sequence."""
     return all(isinstance(w, NVFP4Tensor) for w in weights)
+
+
+def all_compressed_tensors_nvfp4(
+    weights: Sequence[QuantAwareTensor],
+) -> TypeGuard[Sequence[CompressedTensorsNVFP4Tensor]]:
+    """Narrow a sequence of mixed weights to compressed-tensors NVFP4."""
+    return all(isinstance(w, CompressedTensorsNVFP4Tensor) for w in weights)
 
 
 def all_mxfp8(

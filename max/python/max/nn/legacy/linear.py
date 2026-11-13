@@ -88,14 +88,22 @@ class Linear(Module, Shardable):
 
     input_scale: Weight | None = None
     """The optional input scale stored on CPU with shape ().
-    Model init moves the input_scale to the target device if present."""
+    Model init moves the input_scale to the target device if present.
+
+    As the checkpoint stores it: for compressed-tensors global scales, the
+    reciprocal, named ``input_global_scale``. Read it through
+    :meth:`~max.nn.quant_config.QuantConfig.per_tensor_scale`."""
 
     weight_scale: Weight | None = None
     """The optional weight scale stored on CPU with shape () or (N,).
     Model init moves the weight_scale to the target device if present."""
 
     weight_scale_2: Weight | None = None
-    """The optional weight scale 2 used for fp4 quantization."""
+    """The optional weight scale 2 used for fp4 quantization.
+
+    As the checkpoint stores it, like :attr:`input_scale`: for
+    compressed-tensors global scales, the reciprocal, named
+    ``weight_global_scale``."""
 
     device: DeviceRef
     """The device where matrix operations are performed."""
@@ -174,9 +182,16 @@ class Linear(Module, Shardable):
                     )
 
         if quant_config and not is_sharding:
+            input_scale_name, weight_scale_2_name = (
+                ("input_global_scale", "weight_global_scale")
+                if quant_config.compressed_tensors_global_scales
+                else ("input_scale", "weight_scale_2")
+            )
             if quant_config.is_static:
                 self.input_scale = Weight(
-                    name=f"{name}.input_scale" if name else "input_scale",
+                    name=f"{name}.{input_scale_name}"
+                    if name
+                    else input_scale_name,
                     dtype=quant_config.input_scale.dtype,
                     shape=(),
                     device=DeviceRef.CPU(),
@@ -207,7 +222,9 @@ class Linear(Module, Shardable):
             )
             if quant_config.is_nvfp4:
                 self.weight_scale_2 = Weight(
-                    name=f"{name}.weight_scale_2" if name else "weight_scale_2",
+                    name=f"{name}.{weight_scale_2_name}"
+                    if name
+                    else weight_scale_2_name,
                     dtype=quant_config.input_scale.dtype,
                     shape=(),
                     device=DeviceRef.CPU(),
@@ -547,14 +564,20 @@ class Linear(Module, Shardable):
             else None
         )
 
+        input_scale: TensorValue | None = self.input_scale
+        weight_scale_2: TensorValue | None = self.weight_scale_2
+        if self.quant_config is not None:
+            input_scale = self.quant_config.per_tensor_scale(input_scale)
+            weight_scale_2 = self.quant_config.per_tensor_scale(weight_scale_2)
+
         res = linear(
             x,
             weight,
             self.weight.quantization_encoding,
             self.quant_config,
-            self.input_scale,
+            input_scale,
             self.weight_scale,
-            self.weight_scale_2,
+            weight_scale_2,
             bias=fused_bias,
         )
 
@@ -1042,14 +1065,20 @@ class MLP(Module, Shardable):
 
     def _concat_or_max_gate_up_input_scale(self) -> TensorValue | None:
         """Gets the max input scale of the gate and up projection."""
+        if self.quant_config is None:
+            return None
         return self._concat_or_max_gate_up_tensors(
-            self.gate_proj.input_scale, self.up_proj.input_scale
+            self.quant_config.per_tensor_scale(self.gate_proj.input_scale),
+            self.quant_config.per_tensor_scale(self.up_proj.input_scale),
         )
 
     def _concat_or_max_gate_up_weight_scale_2(self) -> TensorValue | None:
         """Gets the max weight scale 2 of the gate and up projection."""
+        if self.quant_config is None:
+            return None
         return self._concat_or_max_gate_up_tensors(
-            self.gate_proj.weight_scale_2, self.up_proj.weight_scale_2
+            self.quant_config.per_tensor_scale(self.gate_proj.weight_scale_2),
+            self.quant_config.per_tensor_scale(self.up_proj.weight_scale_2),
         )
 
     def _can_used_fused_mlp(self) -> bool:

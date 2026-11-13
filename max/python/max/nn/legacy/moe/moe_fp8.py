@@ -122,6 +122,7 @@ class MoEQuantized(MoE):
 
     def _collect_scale_2(self, proj_name: str) -> TensorValue:
         """Stacks per-expert secondary scales for NVFP4 kernels."""
+        assert self.quant_config is not None
         scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
         shared_scale = (
             getattr(self.shared_experts, proj_name).weight_scale_2
@@ -129,12 +130,13 @@ class MoEQuantized(MoE):
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
-        return ops.stack(scales, axis=0)
+        return self.quant_config.per_tensor_scale(ops.stack(scales, axis=0))
 
     def _collect_input_scale(
         self, proj_name: str, collect_all: bool = False
     ) -> TensorValue:
         """Stacks per-expert input scales for NVFP4 kernels."""
+        assert self.quant_config is not None
         expert_collect = self._all_experts if collect_all else self.experts
         scales = [getattr(e, proj_name).input_scale for e in expert_collect]
         shared_scale = (
@@ -143,7 +145,7 @@ class MoEQuantized(MoE):
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
-        return ops.stack(scales, axis=0)
+        return self.quant_config.per_tensor_scale(ops.stack(scales, axis=0))
 
     @property
     def gate_up_proj_scales(self) -> TensorValue:

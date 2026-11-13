@@ -69,6 +69,7 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.placements import Sharded
 
 from .quant_tensor import (
+    CompressedTensorsNVFP4Tensor,
     FP8BlockActivation,
     FP8BlockTensor,
     MXFP4Quantizer,
@@ -80,6 +81,7 @@ from .quant_tensor import (
     NVFP4Tensor,
     NVFP4TensorQuantizer,
     QuantAwareTensor,
+    all_compressed_tensors_nvfp4,
     all_fp8_block,
     all_mxfp4,
     all_mxfp8,
@@ -426,7 +428,13 @@ def quantized_weight(
             block_size=block_size,
             report_error=quant_config.report_error,
         )
-    return _CONTAINERS[quant_config.format].zeros(shape, block_size=block_size)
+    # The same format, stored with compressed-tensors' global scales.
+    container: _ContainerFactory = (
+        CompressedTensorsNVFP4Tensor
+        if quant_config.compressed_tensors_global_scales
+        else _CONTAINERS[quant_config.format]
+    )
+    return container.zeros(shape, block_size=block_size)
 
 
 def stack_blockwise_mega_ffn(
@@ -508,6 +516,20 @@ def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
         ``items``.
     """
     first = items[0]
+    if isinstance(first, CompressedTensorsNVFP4Tensor):
+        assert all_compressed_tensors_nvfp4(items)
+        # Stacked before they are inverted: one division per stack.
+        return CompressedTensorsNVFP4Tensor(
+            weight=F.stack([w.weight for w in items], axis=axis),
+            weight_scale=F.stack([w.weight_scale for w in items], axis=axis),
+            weight_global_scale=F.stack(
+                [w.weight_global_scale for w in items], axis=axis
+            ),
+            input_global_scale=F.stack(
+                [w.input_global_scale for w in items], axis=axis
+            ),
+            block_size=first.block_size,
+        ).as_nvfp4()
     if isinstance(first, FP8BlockTensor):
         assert all_fp8_block(items)
         return FP8BlockTensor(
@@ -593,6 +615,31 @@ def combine_quant_per_device(
                 weight=d, weight_scale_inv=s, block_size=first.block_size
             )
             for d, s in zip(data, weight_scale_inv, strict=True)
+        ]
+    if isinstance(first, CompressedTensorsNVFP4Tensor):
+        assert all_compressed_tensors_nvfp4(items)
+        ct_scale_items = (
+            items if global_scale_items is None else global_scale_items
+        )
+        assert all_compressed_tensors_nvfp4(ct_scale_items)
+        data = combine([w.weight for w in items])
+        weight_scale = combine([w.weight_scale for w in items])
+        # Stacked before they are inverted: one division per stack.
+        weight_scale_2 = 1.0 / F.stack(
+            [w.weight_global_scale for w in ct_scale_items], axis=0
+        )
+        input_scale = 1.0 / F.stack(
+            [w.input_global_scale for w in ct_scale_items], axis=0
+        )
+        return [
+            NVFP4Tensor(
+                weight=d,
+                weight_scale=s,
+                weight_scale_2=weight_scale_2,
+                input_scale=input_scale,
+                block_size=first.block_size,
+            )
+            for d, s in zip(data, weight_scale, strict=True)
         ]
     if isinstance(first, NVFP4Tensor):
         assert all_nvfp4(items)
@@ -695,6 +742,12 @@ def concat_weights(
             "first is"
         )
         return concat_nvfp4(*weights, axis=axis)
+    if isinstance(weights[0], CompressedTensorsNVFP4Tensor):
+        assert all_compressed_tensors_nvfp4(weights), (
+            "concat_weights requires all weights to be "
+            "CompressedTensorsNVFP4Tensor when the first is"
+        )
+        return concat_compressed_tensors_nvfp4(*weights, axis=axis)
     if isinstance(weights[0], MXFP8Tensor):
         assert all_mxfp8(weights), (
             "concat_weights requires all weights to be MXFP8Tensor when the "
@@ -759,6 +812,8 @@ def matmul(x: Tensor, weight: QuantAwareTensor) -> Tensor:
         return _matmul_fp8_block(x, weight)
     if isinstance(weight, NVFP4Tensor):
         return _matmul_nvfp4(x, weight)
+    if isinstance(weight, CompressedTensorsNVFP4Tensor):
+        return _matmul_nvfp4(x, weight.as_nvfp4())
     if isinstance(weight, MXFP8Tensor):
         return _matmul_mxfp8(x, weight)
     if isinstance(weight, MXFP4Tensor):
@@ -1709,6 +1764,34 @@ def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
         weight_scale=F.concat([q.weight_scale for q in tensors], axis=0),
         weight_scale_2=tensors[0].weight_scale_2,
         input_scale=tensors[0].input_scale,
+        block_size=block_size,
+    )
+
+
+def concat_compressed_tensors_nvfp4(
+    *tensors: CompressedTensorsNVFP4Tensor, axis: int = 0
+) -> CompressedTensorsNVFP4Tensor:
+    """Concatenate compressed-tensors NVFP4 weights along the row axis.
+
+    As :func:`concat_nvfp4`, keeping the first tensor's global scales, still
+    as stored, so that :func:`stack` inverts a stack of them once.
+    """
+    if axis != 0:
+        raise ValueError(
+            "CompressedTensorsNVFP4Tensor concat only supports axis=0 (row "
+            "axis)"
+        )
+    block_size = tensors[0].block_size
+    if any(t.block_size != block_size for t in tensors[1:]):
+        raise ValueError(
+            "All CompressedTensorsNVFP4Tensors must have the same block_size "
+            "to concat"
+        )
+    return CompressedTensorsNVFP4Tensor(
+        weight=F.concat([t.weight for t in tensors], axis=0),
+        weight_scale=F.concat([t.weight_scale for t in tensors], axis=0),
+        weight_global_scale=tensors[0].weight_global_scale,
+        input_global_scale=tensors[0].input_global_scale,
         block_size=block_size,
     )
 

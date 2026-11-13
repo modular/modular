@@ -418,11 +418,12 @@ class AttentionWithRope(Module, Shardable):
         assert k_is is not None
         assert v_is is not None
 
-        return ops.max(
+        stacked = self.quant_config.per_tensor_scale(
             ops.concat(
                 (q_is.reshape((1,)), k_is.reshape((1,)), v_is.reshape((1,)))
             )
-        ).reshape(())
+        )
+        return ops.max(stacked).reshape(())
 
     @property
     def qkv_weight_scale(self) -> TensorValue:
@@ -489,7 +490,7 @@ class AttentionWithRope(Module, Shardable):
         assert k_ws2 is not None
         assert v_ws2 is not None
 
-        return ops.max(
+        stacked = self.quant_config.per_tensor_scale(
             ops.concat(
                 (
                     q_ws2.reshape((1,)),
@@ -497,7 +498,8 @@ class AttentionWithRope(Module, Shardable):
                     v_ws2.reshape((1,)),
                 )
             )
-        ).reshape(())
+        )
+        return ops.max(stacked).reshape(())
 
     def __call__(
         self,

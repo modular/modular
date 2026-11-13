@@ -253,7 +253,8 @@ class StackedLinear(Module):
             s = self._child(n).input_scale
             assert s is not None
             scales.append(s.reshape((1,)))
-        return ops.max(ops.concat(scales)).reshape(())
+        stacked = self._quant_config.per_tensor_scale(ops.concat(scales))
+        return ops.max(stacked).reshape(())
 
     @property
     def stacked_weight_scale(self) -> TensorValue | None:
@@ -315,7 +316,8 @@ class StackedLinear(Module):
             s = self._child(n).weight_scale_2
             assert s is not None
             scales.append(s.reshape((1,)))
-        return ops.max(ops.concat(scales)).reshape(())
+        stacked = self._quant_config.per_tensor_scale(ops.concat(scales))
+        return ops.max(stacked).reshape(())
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

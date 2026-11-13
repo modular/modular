@@ -52,8 +52,9 @@ _EXPERT_BLOCK_SCALE = re.compile(
     r"layers\.(\d+)\.mlp\.experts\.\d+\.(?:gate|up|down)_proj\.weight_scale"
 )
 
-# The two other tensors an NVFP4 projection needs alongside its block scales.
-_NVFP4_SCALE_SIBLINGS = ("weight_scale_2", "input_scale")
+# The two other tensors an NVFP4 projection needs alongside its block scales,
+# the compressed-tensors global scales every Laguna checkpoint stores.
+_NVFP4_SCALE_SIBLINGS = ("weight_global_scale", "input_global_scale")
 
 # Compute dtypes a projection can be in and still be unquantized.
 _UNQUANTIZED_DTYPES = (DType.bfloat16, DType.float16, DType.float32)

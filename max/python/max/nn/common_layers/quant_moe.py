@@ -76,6 +76,8 @@ from .quant_tensor import (
     NVFP4Activation,
     NVFP4Tensor,
     QuantAwareTensor,
+    all_compressed_tensors_nvfp4,
+    all_nvfp4,
 )
 
 _M = TypeVar("_M", bound=Module[..., Any])
@@ -763,11 +765,15 @@ class ExpertParallelMoE(QuantizedMoE):
 
     def _nvfp4_global_input_scale(self) -> Tensor:
         """Scalar max static gate ``input_scale`` across all experts."""
-        gate_scales: list[Tensor] = []
-        for expert in self.experts:
-            assert isinstance(expert.gate_proj.weight, NVFP4Tensor)
-            gate_scales.append(expert.gate_proj.weight.input_scale)
-        gate_scales = F.stack(gate_scales, axis=0)
+        gates = [expert.gate_proj.weight for expert in self.experts]
+        if all_compressed_tensors_nvfp4(gates):
+            # Stacked before they are inverted: one division per stack.
+            gate_scales = 1.0 / F.stack(
+                [w.input_global_scale for w in gates], axis=0
+            )
+        else:
+            assert all_nvfp4(gates)
+            gate_scales = F.stack([w.input_scale for w in gates], axis=0)
         return F.max(gate_scales, axis=0)
 
     def _blockwise_mega_ffn_amd_eligible(self) -> bool:
