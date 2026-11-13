@@ -514,3 +514,6 @@ This version is still a work in progress.
 - Fixed a bug where a function that modified the elements of a `mut` variadic
   pack (`mut *args: *Ts`), or of a `VariadicPack` with mutable elements, could
   leave the values passed to it unchanged.
+
+- `input()` no longer raises `EOF` after the first line when stdin is a pipe
+  or redirected file.

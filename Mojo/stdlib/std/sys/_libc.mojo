@@ -106,11 +106,24 @@ def pclose(stream: FILE_ptr) -> c_int:
 @inline(.always)
 def setvbuf(
     stream: FILE_ptr,
-    buffer: MutPointer[c_char, _],
+    buffer: Optional[Pointer[c_char, MutUntrackedOrigin]],
     mode: c_int,
     size: c_size_t,
 ) -> c_int:
-    return external_call["setvbuf", c_int](stream, buffer)
+    return external_call["setvbuf", c_int](stream, buffer, mode, size)
+
+
+struct BufferMode:
+    """
+    Modes for use in `setvbuf` to control buffer output.
+    """
+
+    comptime buffered = 0
+    """Equivalent to `_IOFBF`."""
+    comptime line_buffered = 1
+    """Equivalent to `_IOLBF`."""
+    comptime unbuffered = 2
+    """Equivalent to `_IONBF`."""
 
 
 # ===-----------------------------------------------------------------------===#

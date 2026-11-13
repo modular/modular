@@ -20,6 +20,7 @@ from std.collections.string.string_span import get_static_string
 from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
+    c_char,
     c_size_t,
     c_ssize_t,
     external_call,
@@ -32,12 +33,14 @@ from std.sys import (
     stdout,
 )
 from std.sys._libc import (
+    BufferMode,
     close as libc_close,
     dup,
     fclose,
     fdopen,
     fflush,
     FILE_ptr,
+    setvbuf,
 )
 from std.sys.info import CompilationTarget
 
@@ -420,4 +423,15 @@ def input(prompt: String = "") raises -> String:
     """
     if prompt != "":
         print(prompt, end="")
-    return _fdopen["r"](stdin).readline()
+    with _fdopen["r"](stdin) as fd:
+        # Each call opens a fresh stream on stdin, so it must be unbuffered:
+        # a buffered stream reads past the newline and those bytes are lost
+        # when it closes, starving the next `input()` call.
+        if fd.handle:
+            _ = setvbuf(
+                fd.handle,
+                Optional[Pointer[c_char, MutUntrackedOrigin]](),
+                BufferMode.unbuffered,
+                0,
+            )
+        return fd.readline()
