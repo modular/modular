@@ -58,6 +58,11 @@ This version is still a work in progress.
 
 ## Inference server
 
+- `max serve` now sends about ten tokens per streamed chunk instead of one,
+  which cuts network traffic and per-chunk overhead without changing time to
+  first token. `MAX_SERVE_STREAM_MIN_CHUNK_TOKENS=1` restores the old
+  behavior.
+
 - `max serve`, `max generate`, `AutoModel`, and `AutoPipeline` now prefer
   ModuleV3 when an architecture has both ModuleV3 and graph API
   implementations. Pass `--no-prefer-module-v3` on the command line or
