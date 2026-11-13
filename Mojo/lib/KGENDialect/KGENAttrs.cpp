@@ -1304,6 +1304,21 @@ Type BindParamsAttr::getType() const {
                          /*evaluationContext=*/nullptr);
 }
 
+/// Strips top-level sugar, including rebinds between canonically equal types,
+/// which canonicalization would remove. The result may differ from `value` in
+/// type sugar, so it is only suitable for deciding whether a fold applies.
+static TypedAttr stripSugarAndSugarRebinds(TypedAttr value) {
+  while (true) {
+    value = SugarAttr::strip(value);
+    auto rebind = dyn_cast<ParamOperatorAttr>(value);
+    // FIXME(MOCO-5297): Recognize sugar-only rebinds structurally.
+    if (!rebind || rebind.getOpcode() != POC::Rebind ||
+        !isEqualCanon(rebind.getOperand(0).getType(), rebind.getType()))
+      return value;
+    value = rebind.getOperand(0);
+  }
+}
+
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
                               DenseBoolArrayAttr discharged,
@@ -1316,10 +1331,15 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       isEqualCanon(generator.getType(), type))
     return generator;
 
+  // Look through sugar so the fold decision here agrees with the one made on
+  // the canonical form, which may run without an evaluation context. Results
+  // are rebound to `type` to restore the requested sugar.
+  TypedAttr strippedGenerator = stripSugarAndSugarRebinds(generator);
+
   // If the generator is a curried BindParamsAttr, flatten the new bindings into
   // the existing ones. A non-curried one has instantiated its body, so the
   // new bindings belong to that body instead.
-  auto bindParams = sugarDynCast<BindParamsAttr>(generator);
+  auto bindParams = dyn_cast<BindParamsAttr>(strippedGenerator);
   if (bindParams && isCurriedBinding(bindParams)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
@@ -1337,18 +1357,20 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     TypedAttr flattened =
         BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
                             mergedParamValues, mergedMask, evaluationContext);
-    assert((!flattened || isEqualCanon(flattened.getType(), type)) &&
+    if (!flattened)
+      return {};
+    assert(isEqualCanon(flattened.getType(), type) &&
            "bind_params simplification must preserve the requested type");
-    return flattened;
+    return ParamOperatorAttr::getRebind(flattened, type);
   }
 
   // If the generator is a GeneratorAttr, specialize it directly. A null nested
   // evaluation propagates upwards as a null result.
-  if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
+  if (auto genAttr = dyn_cast<GeneratorAttr>(strippedGenerator)) {
     // TODO: We allow `FuncSymbolGenerator` without eval context since graph
     // compiler is relying on this.
     assert(
-        (evaluationContext || FuncSymbolGenerator::dynCast(generator)) &&
+        (evaluationContext || FuncSymbolGenerator::dynCast(genAttr)) &&
         "A foldable BindParamsAttr must be created with an evaluation context");
     SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
         cast<GeneratorType>(genAttr.getType()), paramValues);
@@ -1366,12 +1388,12 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
       return {};
 
     if (isEqualCanon(specializedGenerator.getType(), type))
-      return specializedGenerator;
+      return ParamOperatorAttr::getRebind(specializedGenerator, type);
 
     if (specializedGenerator.isFullyBound()) {
       TypedAttr instantiatedValue = specializedGenerator.getInstantiatedValue();
       if (instantiatedValue && isEqualCanon(instantiatedValue.getType(), type))
-        return instantiatedValue;
+        return ParamOperatorAttr::getRebind(instantiatedValue, type);
     }
 
     llvm_unreachable("requested bind_params type is inconsistent with the "
