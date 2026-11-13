@@ -130,6 +130,7 @@ class DeepseekV4Indexer(Module):
         indexers: Sequence[DeepseekV4Indexer],
         scores: Sequence[TensorValue],
         valid: Sequence[TensorValue],
+        live: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         """:meth:`select` on every device over the all-reduced scores.
@@ -140,8 +141,10 @@ class DeepseekV4Indexer(Module):
         """
         reduced = ops.allreduce.sum(list(scores), signal_buffers)
         return [
-            indexer.select(score, v)
-            for indexer, score, v in zip(indexers, reduced, valid, strict=True)
+            indexer.select(score, v, n)
+            for indexer, score, v, n in zip(
+                indexers, reduced, valid, live, strict=True
+            )
         ]
 
     def __call__(
@@ -175,7 +178,12 @@ class DeepseekV4Indexer(Module):
             ``[T, k]`` int32 candidate numbers (rows of ``candidates``), with
             ``-1`` in unusable slots. ``k = min(index_topk, n)``.
         """
-        return self.select(self.score(x, qr, freqs_cis, candidates), valid)
+        live = ops.squeeze(
+            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
+        )
+        return self.select(
+            self.score(x, qr, freqs_cis, candidates), valid, live
+        )
 
     def score(
         self,
@@ -257,11 +265,13 @@ class DeepseekV4Indexer(Module):
         return q, weights
 
     def select(
-        self, index_score: TensorValue, valid: TensorValue
+        self, index_score: TensorValue, valid: TensorValue, live: TensorValue
     ) -> TensorValue:
         """The top-k of :meth:`score`'s ``[T, n]`` under ``valid``.
 
-        Returns what :meth:`__call__` returns.
+        ``live`` is ``[T]`` int64, the count of ``valid``'s true columns
+        (:meth:`~.csa.CompressedStream.live`). Returns what :meth:`__call__`
+        returns.
         """
         n = int(index_score.shape[1])
 
@@ -276,9 +286,6 @@ class DeepseekV4Indexer(Module):
         k = min(self.index_topk, n)
         # Until more than ``k`` entries have closed a query selects all of
         # them, so it asks for no more picks than it has candidates.
-        live = ops.squeeze(
-            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
-        )
         picks = ops.min(live, k)
         topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
         topk_idxs = ops.cast(topk_idxs, DType.int32)

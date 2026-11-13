@@ -130,6 +130,7 @@ class PendingAttention:
     freqs_cis: TensorValue
     stream: CompressedStream | None
     valid: TensorValue | None
+    live: TensorValue | None
     index_score: TensorValue | None
     candidates: TensorValue | None
 
@@ -331,8 +332,9 @@ class DeepseekV4Attention(Module):
         if state.index_score is not None:
             assert self.indexer is not None
             assert state.valid is not None
+            assert state.live is not None
             state.candidates = self.indexer.select(
-                state.index_score, state.valid
+                state.index_score, state.valid, state.live
             )
         return self.end(state, rows, cache)
 
@@ -377,6 +379,7 @@ class DeepseekV4Attention(Module):
         stream: CompressedStream | None = None
         candidates: TensorValue | None = None
         valid: TensorValue | None = None
+        live: TensorValue | None = None
         index_score: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
@@ -398,6 +401,7 @@ class DeepseekV4Attention(Module):
             cutoff = (positions + scalar(1, device)) // ratio
             valid = stream.valid(cutoff)
             if self.indexer is not None:
+                live = stream.live(cutoff)
                 idx_stream = compressed_stream(
                     self.indexer.compressor,
                     x2,
@@ -426,7 +430,15 @@ class DeepseekV4Attention(Module):
                     scalar(-1, device),
                 )
         return PendingAttention(
-            index, q, kv, freqs_cis, stream, valid, index_score, candidates
+            index,
+            q,
+            kv,
+            freqs_cis,
+            stream,
+            valid,
+            live,
+            index_score,
+            candidates,
         )
 
     def end(

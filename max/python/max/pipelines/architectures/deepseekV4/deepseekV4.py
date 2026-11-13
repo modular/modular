@@ -380,16 +380,18 @@ class DeepseekV4Block(Module):
             )
         ]
         if blocks[0].attn.indexer is not None:
-            indexers, scores, valid = [], [], []
+            indexers, scores, valid, live = [], [], [], []
             for block, state in zip(blocks, states, strict=True):
                 assert block.attn.indexer is not None
                 assert state.index_score is not None
                 assert state.valid is not None
+                assert state.live is not None
                 indexers.append(block.attn.indexer)
                 scores.append(state.index_score)
                 valid.append(state.valid)
+                live.append(state.live)
             selected = DeepseekV4Indexer.select_tensor_parallel(
-                indexers, scores, valid, signal_buffers
+                indexers, scores, valid, live, signal_buffers
             )
             for state, candidates in zip(states, selected, strict=True):
                 state.candidates = candidates

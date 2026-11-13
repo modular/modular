@@ -174,6 +174,22 @@ class CompressedStream:
         ) < ops.reshape(cutoff, [t, 1])
         return ops.concat([cached, fresh], axis=-1)
 
+    def live(self, cutoff: TensorValue) -> TensorValue:
+        """``[T]`` int64 count of :meth:`valid`'s true columns, in closed form.
+
+        A row-sum of the ``[T, n_cand]`` mask launches one warp per token,
+        a handful of CTAs in decode.
+
+        Args:
+            cutoff: As in :meth:`valid`.
+        """
+        device = cutoff.device
+        cap = scalar(self.cap, device)
+        base = self.token_base
+        cached = ops.min(base, cap)
+        fresh = ops.min(ops.max(cutoff - base, scalar(0, device)), cap)
+        return ops.cast(cached + fresh, DType.int64)
+
 
 def compressed_stream(
     compressor: DeepseekV4Compressor,

@@ -179,7 +179,10 @@ def indexer_select(request: pytest.FixtureRequest) -> tuple[Device, Model]:
         # select only reads index_topk from the layer.
         layer = Mock(spec=DeepseekV4Indexer)
         layer.index_topk = MAX_K
-        graph.output(DeepseekV4Indexer.select(layer, score, valid))
+        live = ops.squeeze(
+            ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
+        )
+        graph.output(DeepseekV4Indexer.select(layer, score, valid, live))
     session = InferenceSession(devices=[device])
     return device, session.load(graph)
 
