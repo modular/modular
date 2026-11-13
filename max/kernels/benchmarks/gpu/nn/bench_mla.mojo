@@ -612,6 +612,38 @@ def bench_dense[
     mode: String,
     ctx: DeviceContext[],
     skip_prefill: Bool = False,
+    skip_decode: Bool = False,
+) raises:
+    if not skip_decode:
+        _bench_decode_cell[cfg, kernels](
+            m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+        )
+
+    if skip_prefill:
+        return
+    bench_prefill[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.prefill_depth,
+        cfg.num_heads,
+        cfg.kv_depth,
+        cfg.cache_depth,
+        cfg.cache_num_heads,
+        cache_busting=cfg.cache_busting,
+        kernels=kernels,
+    ](m, seq_len, num_keys, batch_size, ctx)
+
+
+def _bench_decode_cell[
+    cfg: MLA_cfg, kernels: MLAKernels
+](
+    mut m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    num_partitions: Int,
+    mode: String,
+    ctx: DeviceContext[],
 ) raises:
     bench_decode[
         cfg.qkv_type,
@@ -631,20 +663,6 @@ def bench_dense[
         mode,
         ctx,
     )
-
-    if skip_prefill:
-        return
-    bench_prefill[
-        cfg.qkv_type,
-        cfg.output_type,
-        cfg.prefill_depth,
-        cfg.num_heads,
-        cfg.kv_depth,
-        cfg.cache_depth,
-        cfg.cache_num_heads,
-        cache_busting=cfg.cache_busting,
-        kernels=kernels,
-    ](m, seq_len, num_keys, batch_size, ctx)
 
 
 def main() raises:
@@ -677,6 +695,7 @@ def main() raises:
     var np_list = String(arg_parse("np_list", ""))
     var nk_list = String(arg_parse("nk_list", ""))
     var skip_prefill = arg_parse("skip_prefill", False)
+    var skip_decode = arg_parse("skip_decode", False)
     var partitions = List[Int]()
     if np_list:
         for item in np_list.split(","):
@@ -714,7 +733,14 @@ def main() raises:
         if mode != "sparse_prefill":
             comptime if _is_sm10x_gpu(ctx.default_device_info):
                 bench_dense[cfg, SM100MLA](
-                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                    m,
+                    seq_len,
+                    num_keys,
+                    batch_size,
+                    num_partitions,
+                    mode,
+                    ctx,
+                    skip_decode=skip_decode,
                 )
             elif ctx.target.is_amd_gpu():
                 for nk in key_counts:
@@ -730,10 +756,18 @@ def main() raises:
                             # Prefill takes no partition count: time it once
                             # per key count.
                             skip_prefill or np != partitions[0],
+                            skip_decode=skip_decode,
                         )
             else:
                 bench_dense[cfg, LegacyNVMLA](
-                    m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+                    m,
+                    seq_len,
+                    num_keys,
+                    batch_size,
+                    num_partitions,
+                    mode,
+                    ctx,
+                    skip_decode=skip_decode,
                 )
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):

@@ -406,6 +406,10 @@ struct PRegisterBuffer[
     # bounded and finite (e.g. softmax output in (0, 1]). Saves ~200
     # VALU ops per iteration in the FP8 MLA prefill hot path.
     raw_fp8_cast: Bool = False,
+    # Leaves P unscaled here: the caller folds `2^p_scale_log2` into the softmax
+    # `exp2` argument (see `SoftmaxRegisterState.exp_pkfma`), and
+    # `OutputRegisterBuffer.apply_softmax_denominator` still divides it out.
+    p_scale_in_exp: Bool = False,
 ]:
     """Holds the P attention-score tile across register and shared memory.
 
@@ -456,6 +460,9 @@ struct PRegisterBuffer[
             casts; only safe when P is a softmax output in (0, 1]. With a
             float8_e4m3fn operand it also scales P by 2^`p_scale_log2`
             before the cast (defaults to False).
+        p_scale_in_exp: When True, `_scale_p` leaves P unscaled because the
+            caller folds the `2^p_scale_log2` pre-scale into the softmax
+            `exp2` argument (defaults to False).
     """
 
     comptime reg_dtype = Self.accum_type_
@@ -477,7 +484,7 @@ struct PRegisterBuffer[
     def _scale_p[
         width: Int
     ](p: SIMD[Self.accum_type_, width]) -> SIMD[Self.accum_type_, width]:
-        comptime if Self.p_scale_log2 != 0:
+        comptime if Self.p_scale_log2 != 0 and not Self.p_scale_in_exp:
             return p * Scalar[Self.accum_type_](1 << Self.p_scale_log2)
         return p
 

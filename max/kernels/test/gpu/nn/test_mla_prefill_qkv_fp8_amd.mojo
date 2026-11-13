@@ -44,3 +44,5 @@ def main() raises:
             DType.bfloat16,
             4,
         ](ctx)
+        T.test_mla_prefill_qkv_fp8_split_kv[1](ctx)
+        T.test_mla_prefill_qkv_fp8_split_kv[2](ctx)

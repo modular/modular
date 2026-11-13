@@ -20,7 +20,8 @@ from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import MLAKernels, flare_mla_prefill
-from std.testing import assert_almost_equal
+from std.math import sqrt
+from std.testing import assert_almost_equal, assert_true
 
 
 struct MLAPrefillQKVFP8Tests[K: MLAKernels]:
@@ -39,7 +40,12 @@ struct MLAPrefillQKVFP8Tests[K: MLAKernels]:
         batch_size: Int = 1,
         use_causal_mask: Bool = True,
         v_depth: Int = kv_depth,
-    ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+    ](
+        seq_len: Int,
+        num_keys: Int,
+        ctx: DeviceContext,
+        max_rel_l2: Float64 = Float64.MAX,
+    ) raises:
         print(
             t"test_mla_prefill batch_size: {batch_size} seq_len:"
             t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
@@ -364,6 +370,8 @@ struct MLAPrefillQKVFP8Tests[K: MLAKernels]:
         #  - softmax probabilities stored as FP8 in TMEM lose precision
         #  - error accumulates across KV tiles (seq_len/BN iterations)
         var max_error = Float32(0)
+        var err_sq = Float64(0)
+        var ref_sq = Float64(0)
         for b in range(batch_size):
             for s in range(seq_len):
                 for h in range(num_heads):
@@ -372,13 +380,21 @@ struct MLAPrefillQKVFP8Tests[K: MLAKernels]:
                         var rhs = output_ref[b, s, h, d]
                         var diff = abs(Float32(lhs[0]) - Float32(rhs[0]))
                         max_error = max(max_error, diff)
+                        err_sq += Float64(diff) * Float64(diff)
+                        ref_sq += Float64(rhs[0]) * Float64(rhs[0])
                         assert_almost_equal(
                             lhs,
                             rhs,
                             atol=5e-2,
                             rtol=2e-2,
                         )
-        print("max_error:", max_error)
+        var rel_l2 = sqrt(err_sq / ref_sq) if ref_sq > 0 else Float64(0)
+        print("max_error:", max_error, "rel_l2:", rel_l2)
+        # The absolute tolerance is loose next to long-context outputs (an
+        # average over many keys), so long shapes also bound the rel-L2.
+        assert_true(
+            rel_l2 <= max_rel_l2, String(t"rel_l2 {rel_l2} > {max_rel_l2}")
+        )
 
         _ = q_device_ptr
         _ = k_device_ptr
@@ -520,3 +536,27 @@ struct MLAPrefillQKVFP8Tests[K: MLAKernels]:
             batch_size=batch_size,
             v_depth=256,
         ](150, 150, ctx)
+
+    @staticmethod
+    def test_mla_prefill_qkv_fp8_split_kv[
+        batch_size: Int = 1,
+    ](ctx: DeviceContext) raises:
+        """Kimi K3 per-rank shapes (12 heads) that take the split-KV grid.
+
+        Both shapes carry a cached prefix longer than the new tokens, so
+        `amd_mla_prefill_num_splits` splits them. (300, 8492) has a partial
+        query tile over a short prefix; (129, 32897) runs the widest split
+        count at the smallest query tile.
+        """
+        for shape in [(300, 8492), (129, 32897)]:
+            Self.test_prefill[
+                DType.float8_e4m3fn,
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                depth=192,
+                num_heads=12,
+                kv_depth=128,
+                cache_depth=576,
+                cache_num_heads=1,
+                batch_size=batch_size,
+            ](shape[0], shape[1], ctx, max_rel_l2=0.05)

@@ -20,7 +20,7 @@ prediction (MTP) query folding, per-token scale, and sparse-attention support.
 """
 
 from std.collections import Array, OptionalReg
-from std.math import align_up, ceildiv, recip
+from std.math import align_up, ceildiv, exp2, recip
 from std.math.uutils import umod, ufloordiv, udivmod
 from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
@@ -105,7 +105,7 @@ from layout.coord import coord
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import unsafe_stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -1402,6 +1402,97 @@ struct AMDMLA(MLAKernels):
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
             v_depth=v_depth,
         ]
+
+        # Ragged query rows, the row count of every plane the split path
+        # allocates and the combine indexes.
+        var total_rows = Int(q.dim[0]())
+
+        # Split the key range when the (head, query tile, batch) grid leaves
+        # the GPU underfilled: short chunks over a long cached context. Causal
+        # only, on the ragged rank-3 layout: the split heuristic and its two key
+        # bounds were sized for that mask (the only prefill mask K3 runs) over a
+        # cached prefix, where the per-CTA key range is a long rectangle. Other
+        # masks keep the unsplit grid until a split is measured for them;
+        # correctness does not depend on the gate, since the combine drops fully
+        # masked splits.
+        comptime if mask_t == CausalMask and rank == 3:
+            # `num_kv_rows()` is the K buffer's extent, which for a verify step
+            # is a bucket bound rather than the cached keys a sequence really
+            # has, so the count only gates the launch: each CTA caps its own
+            # split by the key tiles its mask reports (see `mla_prefill`).
+            var num_splits = amd_mla_prefill_num_splits(
+                config.num_heads,
+                BM,
+                max_prompt_len,
+                batch_size,
+                k.num_kv_rows(),
+            )
+            if num_splits > 1:
+                var num_pairs = total_rows * config.num_heads
+                var partial = ctx.enqueue_create_buffer[DType.float32](
+                    num_splits * num_pairs * v_depth
+                )
+                var lse = ctx.enqueue_create_buffer[DType.float32](
+                    num_splits * num_pairs
+                )
+                comptime split_kernel = mla_prefill_amd[
+                    config.dtype,
+                    k_t,
+                    v_t,
+                    k_rope_t,
+                    DType.float32,
+                    mask_t,
+                    type_of(valid_length).LayoutType,
+                    config,
+                    group=group,
+                    q_depth=q_depth,
+                    cache_depth=cache_depth,
+                    _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+                    v_depth=v_depth,
+                    split_kv=True,
+                ]
+                ctx.enqueue_function[split_kernel](
+                    q_device,
+                    k,
+                    v,
+                    k_rope,
+                    partial,
+                    scale,
+                    Int32(batch_size),
+                    Int32(max_prompt_len),
+                    valid_length.as_imm(),
+                    cache_offsets,
+                    mask_functor,
+                    Int32(num_splits),
+                    OptionalReg[MutPointer[Float32, MutUntrackedOrigin]](
+                        lse.unsafe_ptr().unsafe_origin_cast[
+                            MutUntrackedOrigin
+                        ]()
+                    ),
+                    Int32(total_rows),
+                    grid_dim=LaunchDim(
+                        config.num_heads,
+                        ceildiv(max_prompt_len, BM),
+                        batch_size * num_splits,
+                    ),
+                    block_dim=(config.num_threads(), 1, 1),
+                    shared_mem_bytes=smem_use,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+                comptime combine = mla_prefill_split_kv_combine[
+                    output.dtype, config.num_heads, v_depth
+                ]
+                ctx.enqueue_function[combine](
+                    output_device,
+                    partial,
+                    lse,
+                    Int32(total_rows),
+                    Int32(num_splits),
+                    grid_dim=ceildiv(num_pairs, AMD_MLA_PREFILL_COMBINE_WARPS),
+                    block_dim=WARP_SIZE * AMD_MLA_PREFILL_COMBINE_WARPS,
+                )
+                return
+
         var grid_dim = LaunchDim(
             config.num_heads,
             ceildiv(max_prompt_len, BM),
@@ -1419,6 +1510,9 @@ struct AMDMLA(MLAKernels):
             valid_length.as_imm(),
             cache_offsets,
             mask_functor,
+            Int32(1),
+            OptionalReg[MutPointer[Float32, MutUntrackedOrigin]](None),
+            Int32(total_rows),
             grid_dim=grid_dim,
             block_dim=(config.num_threads(), 1, 1),
             shared_mem_bytes=smem_use,
@@ -4849,6 +4943,7 @@ def mla_prefill_amd[
     cache_depth: Int = 576,
     _ndbuffer_mha_operand: Bool = False,
     v_depth: Int = config.depth,
+    split_kv: Bool = False,
 ](
     q_ptr: MutPointer[Scalar[q_type], MutAnyOrigin],
     k: k_t,
@@ -4861,12 +4956,21 @@ def mla_prefill_amd[
     valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
     cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     mask: mask_t,
+    num_splits: Int32 = 1,
+    lse_ptr: OptionalReg[MutPointer[Float32, MutUntrackedOrigin]] = None,
+    total_rows_arg: Int32 = 0,
 ):
     var _batch_size = Int(batch_size)
     var _seq_len_arg = Int(seq_len_arg)
     var valid_length = valid_length_tt
     comptime depth = config.depth
-    var batch_idx = block_idx.z
+    # Split-KV packs (batch, split) into grid.z, split-minor.
+    var batch_idx: Int
+    var split_idx = 0
+    comptime if split_kv:
+        batch_idx, split_idx = udivmod(block_idx.z, Int(num_splits))
+    else:
+        batch_idx = block_idx.z
 
     # mha inputs
     var seq_len: Int
@@ -4901,9 +5005,35 @@ def mla_prefill_amd[
 
         var q_batch_offset = start_of_seq * q_depth * config.num_heads
         var o_batch_offset = start_of_seq * v_depth * config.num_heads
+        # Each split owns a full `[total_rows, num_heads, v_depth]` partial
+        # output plane, and a `[num_splits, total_rows, num_heads]`
+        # log2-sum-exp stack the split indexes by its own `split_idx`.
+        # `total_rows_arg` is the host's `q.dim[0]`, the same row count the
+        # combine and the plane allocations use.
+        var split_total_rows = 0
+        comptime if split_kv:
+            debug_assert(
+                total_rows_arg > 0,
+                "split-KV MLA prefill requires total_rows_arg > 0",
+            )
+            split_total_rows = Int(total_rows_arg)
+            o_batch_offset += (
+                split_idx * split_total_rows * config.num_heads * v_depth
+            )
 
         var attention = Attention[
-            config, 1, False, q_depth=q_depth, output_depth=v_depth
+            config,
+            1,
+            False,
+            q_depth=q_depth,
+            output_depth=v_depth,
+            p_scale_in_exp=True,
+            # Sums each row's P values with packed adds and a log-depth tree
+            # (see `Softmax.packed_row_sum`).
+            packed_row_sum=True,
+            # Keep the per-key-tile mask classification in SALU (32-bit,
+            # wave-uniform); only the causal mask has that path.
+            uniform_mask_row=mask_t == CausalMask,
         ](
             output_ptr.unsafe_offset(o_batch_offset),
             q_ptr.unsafe_offset(q_batch_offset),
@@ -4918,9 +5048,140 @@ def mla_prefill_amd[
             Int(start_pos),
             Int(cache_start_pos),
         )
-        attention.mla_prefill(
+        attention.mla_prefill[
+            split_kv=split_kv,
+            split_min_keys=AMD_MLA_PREFILL_SPLIT_MIN_KEYS,
+        ](
             k_rope,
+            split_idx,
+            Int(num_splits),
+            lse_ptr,
+            start_of_seq,
+            split_total_rows,
         )
+
+
+# Split sizes for the gfx950 part this kernel targets: the CTA target is two
+# generations of the 2-CTA/CU residency over 256 CUs, and both key floors were
+# measured against the causal mask that the split gate accepts.
+# TODO: derive the CTA target from the device's CU count and re-measure the
+# key floors for a non-causal prefill mask; until then a part with a different
+# CU count, or a split for another mask, reuses these.
+# Grid size (in CTAs) the split aims for: two generations of the 2-CTA/CU
+# residency on 256 CUs.
+comptime AMD_MLA_PREFILL_SPLIT_TARGET_CTAS = 1024
+# Key positions each split keeps off a grid smaller than
+# AMD_MLA_PREFILL_RESIDENT_CTAS, so a split stays loop-bound.
+comptime AMD_MLA_PREFILL_SPLIT_MIN_KEYS = 1024
+# CTA count at which the unsplit grid fills one residency generation of the GPU
+# (256 CUs with 2 CTAs each), leaving only the tail wave for a split to remove.
+comptime AMD_MLA_PREFILL_RESIDENT_CTAS = 512
+# Key positions each split keeps off a resident grid, where the fp32 partial
+# write and the combine have to earn back more than a tail wave.
+comptime AMD_MLA_PREFILL_FULL_GRID_SPLIT_MIN_KEYS = 16384
+comptime AMD_MLA_PREFILL_MAX_SPLITS = 32
+# Warps the split-KV combine launches per CTA: one (row, head) pair each.
+comptime AMD_MLA_PREFILL_COMBINE_WARPS = 4
+
+
+def amd_mla_prefill_num_splits(
+    num_heads: Int,
+    block_m: Int,
+    max_prompt_len: Int,
+    batch_size: Int,
+    num_keys: Int,
+) -> Int:
+    """Returns the KV split count for the AMD MLA prefill grid.
+
+    A split divides the per-CTA key range evenly, which needs a cached prefix
+    at least as long as the new tokens. Without a prefix the causal triangle
+    leaves the early query tiles few key tiles per split, so the fp32 partials
+    and the combine are not earned back by the extra CTAs.
+
+    When the unsplit grid already fills one residency generation
+    (AMD_MLA_PREFILL_RESIDENT_CTAS), a split removes only the tail wave, so
+    every split must keep AMD_MLA_PREFILL_FULL_GRID_SPLIT_MIN_KEYS keys for its
+    fp32 partial and the combine pass to be worth a launch (no split below 32K
+    keys). Smaller grids use the shorter AMD_MLA_PREFILL_SPLIT_MIN_KEYS bound.
+
+    Args:
+        num_heads: Query heads per device.
+        block_m: Query rows per CTA.
+        max_prompt_len: Longest query span in the batch.
+        batch_size: Number of sequences.
+        num_keys: Total keys across the batch.
+
+    Returns:
+        The number of KV splits, 1 when the unsplit grid is kept.
+    """
+    var keys_per_seq = ufloordiv(num_keys, max(batch_size, 1))
+    if keys_per_seq - max_prompt_len < max_prompt_len:
+        return 1
+    var ctas = num_heads * ceildiv(max_prompt_len, block_m) * batch_size
+    # A resident grid only gains from long splits; an underfilled one can take
+    # short ones.
+    var min_keys = AMD_MLA_PREFILL_SPLIT_MIN_KEYS
+    if ctas >= AMD_MLA_PREFILL_RESIDENT_CTAS:
+        min_keys = AMD_MLA_PREFILL_FULL_GRID_SPLIT_MIN_KEYS
+    var splits = min(
+        ceildiv(AMD_MLA_PREFILL_SPLIT_TARGET_CTAS, max(ctas, 1)),
+        ufloordiv(keys_per_seq, min_keys),
+        AMD_MLA_PREFILL_MAX_SPLITS,
+    )
+    return max(splits, 1)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(WARP_SIZE * AMD_MLA_PREFILL_COMBINE_WARPS)
+    )
+)
+@__name(t"mla_prefill_split_kv_combine_{output_type}_nqh{num_heads}_d{v_depth}")
+def mla_prefill_split_kv_combine[
+    output_type: DType,
+    num_heads: Int,
+    v_depth: Int,
+](
+    output_ptr: MutPointer[Scalar[output_type], MutUntrackedOrigin],
+    partial_ptr: ImmPointer[Float32, ImmUntrackedOrigin],
+    lse_ptr: ImmPointer[Float32, ImmUntrackedOrigin],
+    total_rows: Int32,
+    num_splits_arg: Int32,
+):
+    """Merges the KV splits of an AMD MLA prefill into the output.
+
+    One warp per (row, head): weights each split's normalized fp32 partial by
+    `exp2(lse_split - lse_max)`; splits with no key tiles (lse = -inf) are
+    skipped, so their unwritten partials are never read.
+    """
+    comptime assert v_depth % WARP_SIZE == 0, "v_depth must tile the warp"
+    comptime elems = v_depth // WARP_SIZE
+    var num_splits = Int(num_splits_arg)
+    var num_pairs = Int(total_rows) * num_heads
+    var pair = block_idx.x * AMD_MLA_PREFILL_COMBINE_WARPS + Int(warp_id())
+    if pair >= num_pairs:
+        return
+    var lse_tt = TileTensor(lse_ptr, row_major((num_splits, num_pairs)))
+    var partial_tt = TileTensor(
+        partial_ptr, row_major((num_splits, num_pairs, Idx[v_depth]))
+    )
+    var output_tt = TileTensor(output_ptr, row_major((num_pairs, Idx[v_depth])))
+    var col = Int(lane_id()) * elems
+
+    var lse_max = min_or_neg_inf[DType.float32]()
+    for s in range(num_splits):
+        lse_max = max(lse_max, lse_tt[s, pair][0])
+
+    var acc = SIMD[DType.float32, elems](0)
+    var weight_sum = Float32(0)
+    for s in range(num_splits):
+        var lse = lse_tt[s, pair][0]
+        if lse == min_or_neg_inf[DType.float32]():
+            continue
+        var weight = exp2(lse - lse_max)
+        weight_sum += weight
+        acc += weight * partial_tt.load[width=elems]((s, pair, col))
+    output_tt.store((pair, col), (acc / weight_sum).cast[output_type]())
 
 
 @__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(2))

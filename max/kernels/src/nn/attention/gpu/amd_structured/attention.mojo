@@ -90,6 +90,17 @@ struct Attention[
     # Default 1 = single-token decode (query_rows == group), byte-identical.
     # gfx950 decode only.
     q_seq_len: Int = 1,
+    # Folds the fp8 P pre-scale (`2**p_scale_log2`, see `PRegisterBuffer`) into
+    # the softmax `exp2` argument. The caller must pass the same power of two as
+    # `arg_bias_log2` to `online_softmax_step_0_pkfma` and divide it out of the
+    # row sum before `apply_softmax_denominator`.
+    p_scale_in_exp: Bool = False,
+    # Sums each row's P values with packed adds (see `Softmax.packed_row_sum`).
+    packed_row_sum: Bool = False,
+    # Classifies each key tile in wave-uniform 32-bit math (see `mask_status`)
+    # and keeps the tile's `kv_start_row` in an SGPR. Requires a mask whose tile
+    # status depends only on tile coordinates, such as `CausalMask`.
+    uniform_mask_row: Bool = False,
 ]:
     """Holds the per-warp register, SMEM, and softmax state for a gfx950 MHA/MLA attention tile.
 
@@ -128,6 +139,13 @@ struct Attention[
             speculative decode (defaults to 1, single-token decode). The
             tile's HEIGHT, which `mha_decoding` pads above the tokens a
             sequence carries; those arrive as the runtime `seq_len`.
+        p_scale_in_exp: Fold the fp8 P pre-scale into the softmax `exp2`
+            argument instead of multiplying P before the cast (defaults to
+            False).
+        packed_row_sum: Sum each row's P values with packed adds and a
+            log-depth tree, reordering the fp32 sum (defaults to False).
+        uniform_mask_row: Classify key tiles in wave-uniform 32-bit math and
+            keep `kv_start_row` wave-uniform (defaults to False).
     """
 
     # Block/warp dimensions from MHAConfig.
@@ -302,6 +320,7 @@ struct Attention[
         num_stages=Self._p_buffer_stages,
         p_swizzle=Self._p_swizzle,
         raw_fp8_cast=Self._raw_fp8_cast,
+        p_scale_in_exp=Self.p_scale_in_exp,
     ]
 
     # --- TileTensor layouts for Q, output, and KV tiles ---
@@ -501,6 +520,7 @@ struct Attention[
         Self.num_warps_n,
         Self.mma_shape[0],
         Self.use_exp2,
+        packed_row_sum=Self.packed_row_sum,
     ]
 
     comptime _warp_scratch_layout = row_major[
@@ -771,7 +791,12 @@ struct Attention[
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
-        self.cache_start_pos = cache_start_pos
+        comptime if Self.uniform_mask_row:
+            # Pinned: it is loaded per lane from the cache offsets, and the
+            # per-tile mask classification must stay wave-uniform to be SALU.
+            self.cache_start_pos = Int(readfirstlane(Int32(cache_start_pos)))
+        else:
+            self.cache_start_pos = cache_start_pos
         self.kv_start_row = 0
 
         comptime if Self.sink:
@@ -843,6 +868,23 @@ struct Attention[
                 (Int(fold_seq_len), Int(Self.BN)),
             )
         else:
+            comptime if Self.uniform_mask_row:
+                # `CausalMask.status`'s corner test in 32-bit: gfx9 SALU has
+                # 32-bit compares but no `s_cmp_lt/gt_i64`, so the 64-bit form
+                # can only run on VALU.
+                comptime assert (
+                    Self.mask_t == CausalMask
+                ), "uniform_mask_row supports only the causal mask"
+                var q_row = Int32(self.mask_block_row) + Int32(self.start_pos)
+                var kv_row = Int32(kv_tile_start_row) + Int32(
+                    self.cache_start_pos
+                )
+                # The same two corner bits as `CausalMask.status`: the first
+                # query row is before the tile's last key (partial), and the
+                # last query row is before the tile's first key (fully masked).
+                var min_q_lt_max_k = UInt8(q_row + 1 < kv_row + Int32(Self.BN))
+                var max_q_lt_min_k = UInt8(q_row + Int32(Self.BM) <= kv_row)
+                return TileMaskStatus(min_q_lt_max_k + (max_q_lt_min_k << 1))
             return self.mask.status(
                 UInt32(self.batch_idx),
                 (
@@ -985,7 +1027,14 @@ struct Attention[
             self.scale_p_reg[stage]()
         var num_rows = self.get_num_rows()
         self.mask_apply[stage](self.kv_start_row, num_rows, not_last_iter)
-        self.kv_start_row += UInt32(Self.BN)
+        comptime if Self.uniform_mask_row:
+            # Pin the counter so the next tile's classification and row clamp
+            # stay in SALU.
+            self.kv_start_row = UInt32(
+                readfirstlane(Int32(self.kv_start_row + UInt32(Self.BN)))
+            )
+        else:
+            self.kv_start_row += UInt32(Self.BN)
 
     # --- Softmax ---
 
@@ -1103,7 +1152,9 @@ struct Attention[
         self.softmax.update_sum()
 
     @inline(.always)
-    def online_softmax_step_0_pkfma[stage: Int, mask: Bool = True](mut self):
+    def online_softmax_step_0_pkfma[
+        stage: Int, mask: Bool = True, arg_bias_log2: Int = 0
+    ](mut self):
         """Step 0 deferred-scale variant that emits `v_pk_fma_f32`.
 
         Like `_fma`, but uses `Softmax.exp_pkfma` which folds the
@@ -1117,6 +1168,9 @@ struct Attention[
             stage: The P register buffer stage to operate on.
             mask: Whether to apply the attention mask (without score scaling)
                 before max and exp (defaults to `True`).
+            arg_bias_log2: Exponent bias handed to `exp_pkfma`, pre-scaling P
+                by `2**arg_bias_log2` instead of a separate multiply before
+                the fp8 cast (defaults to 0).
         """
         comptime if mask:
             self.apply_mask[stage, scale=False]()
@@ -1127,20 +1181,28 @@ struct Attention[
         self.softmax.calculate_qk_max[unscale_seed=True](
             score_tile, warp_scratch, self._seed_inv_scale()
         )
-        self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
+        self.softmax.exp_pkfma[start=0, stride=2, arg_bias_log2=arg_bias_log2](
+            score_tile, self.scale
+        )
 
     @inline(.always)
-    def online_softmax_step_1_pkfma[stage: Int](mut self):
+    def online_softmax_step_1_pkfma[
+        stage: Int, arg_bias_log2: Int = 0
+    ](mut self,):
         """Step 1 pkfma counterpart of `_fma` step 1.
 
         Parameters:
             stage: The P register buffer stage to operate on.
+            arg_bias_log2: Exponent bias handed to `exp_pkfma`; see
+                `online_softmax_step_0_pkfma` (defaults to 0).
         """
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.exp_pkfma[start=1, stride=2](score_tile, self.scale)
+        self.softmax.exp_pkfma[start=1, stride=2, arg_bias_log2=arg_bias_log2](
+            score_tile, self.scale
+        )
         self.softmax.scale_rowmax(self.scale)
         self.softmax.calculate_qk_sum(score_tile, warp_scratch)
         self.softmax.calculate_correction()
