@@ -545,6 +545,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_tp_moe.py"],
     data = ["//max/tests/integration/architectures/mistral_large4/testdata"],
+    tags = ["skip-external-ci"],
     target_compatible_with = select({
         # No NVPTX target for the staged sm_100a virtual devices.
         "@platforms//os:macos": ["@platforms//:incompatible"],
