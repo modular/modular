@@ -1317,7 +1317,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // If this is an param attribute that refused to fold, see if we're able to
   // get a custom error message from it to explain what is going on.
   if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-    auto errorMessage = itf.validateForElaborator();
+    auto errorMessage = itf.validateForElaborator(tc.getTarget());
     if (errorMessage.isError())
       return errorMessage.takeError();
   }
