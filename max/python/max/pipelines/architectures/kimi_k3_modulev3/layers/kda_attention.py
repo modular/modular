@@ -90,7 +90,7 @@ from max.nn._graph_ops.state_space.kimi_delta import (
     KdaGateMode,
 )
 from max.nn._graph_ops.state_space.kimi_delta import (
-    kda_verify_ring_conv as kda_verify_ring_conv_op,
+    kda_verify_ring_conv_packed as kda_verify_ring_conv_op,
 )
 from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
@@ -256,12 +256,11 @@ kda_verify_ring = F.functional(_kda_verify_ring)
 
 
 def _kda_verify_ring_conv(
-    raw_qkv: Tensor,
+    packed_qkvg: Tensor,
     conv_weight: Tensor,
     conv_pool: Tensor,
     conv_row_id: Tensor,
     raw_gate: Tensor,
-    beta_logits: Tensor,
     a_log: Tensor,
     dt_bias: Tensor,
     input_row_offsets: Tensor,
@@ -271,13 +270,12 @@ def _kda_verify_ring_conv(
     ring_row_id: Tensor | PerShard[Tensor],
     verify_width: TensorValue,
     norm_weight: Tensor,
-    norm_gate: Tensor,
     out_type: TensorType,
     *,
     gate_mode: KdaGateMode,
     norm_eps: float,
 ) -> tuple[TensorValue, TensorValue]:
-    """Runs the fused verify op; see ``kimi_delta.kda_verify_ring_conv``.
+    """Runs the fused verify op; see ``kimi_delta.kda_verify_ring_conv_packed``.
 
     A thin bridge onto the shared wrapper rather than a local
     ``ops.inplace_custom`` call, so the operand contract and its checks
@@ -290,24 +288,24 @@ def _kda_verify_ring_conv(
     assert isinstance(ring_pool, Tensor)
     assert isinstance(ring_row_id, Tensor)
     return kda_verify_ring_conv_op(
-        TensorValue(raw_qkv),
+        TensorValue(packed_qkvg),
         TensorValue(conv_weight),
         BufferValue(conv_pool),
         TensorValue(conv_row_id),
         TensorValue(raw_gate),
-        TensorValue(beta_logits),
         TensorValue(a_log),
         TensorValue(dt_bias),
-        ops.cast(TensorValue(input_row_offsets), DType.int32),
+        TensorValue(input_row_offsets),
         BufferValue(state_pool),
-        ops.cast(TensorValue(recurrent_row_id), DType.int32),
+        TensorValue(recurrent_row_id),
         BufferValue(ring_pool),
         TensorValue(ring_row_id),
         verify_width,
         TensorValue(norm_weight),
-        TensorValue(norm_gate),
         out_type=TensorType(
-            out_type.dtype, out_type.shape, device=TensorValue(raw_qkv).device
+            out_type.dtype,
+            out_type.shape,
+            device=TensorValue(packed_qkvg).device,
         ),
         norm_eps=norm_eps,
         gate_mode=gate_mode,
@@ -471,8 +469,12 @@ class KimiK3KDAAttention(
         )
         # Fused q/k/v depthwise conv weight: see `_fuse_qkv_conv_weight`
         # in the weight adapter, which concatenates the checkpoint's
-        # separate per-projection conv weights at load time.
-        self.conv_weight = Tensor.zeros([3 * inner, conv_kernel_size])
+        # separate per-projection conv weights at load time. fp32 at load
+        # like `a_log`/`dt_bias`, the dtype the conv kernel binds, so a
+        # verify step does not widen the weight on every launch.
+        self.conv_weight = Tensor.zeros(
+            [3 * inner, conv_kernel_size], dtype=DType.float32
+        )
 
         self.f_a_proj = Linear(in_dim=hidden_size, out_dim=head_dim, bias=False)
         self.f_b_proj = Linear(in_dim=head_dim, out_dim=inner, bias=False)
@@ -490,7 +492,10 @@ class KimiK3KDAAttention(
     """
 
     def _fused_verify_eligible(
-        self, qkv: Tensor, row_offsets: Tensor, verify_width: TensorValue
+        self,
+        packed_qkvg: Tensor,
+        row_offsets: Tensor,
+        verify_width: TensorValue,
     ) -> bool:
         """Whether the fused verify op covers this layer's config and batch.
 
@@ -513,12 +518,12 @@ class KimiK3KDAAttention(
             self.gate_lower_bound is not None
             and self.head_dim == 128
             and int(self.conv_weight.shape[1]) == 4
-            and qkv.dtype in (DType.bfloat16, DType.float32)
-            and self.o_norm.weight.dtype == qkv.dtype
+            and packed_qkvg.dtype in (DType.bfloat16, DType.float32)
+            and self.o_norm.weight.dtype == packed_qkvg.dtype
             and _on_fused_conv_arch()
         ):
             return False
-        total = _static_extent(qkv.shape[0])
+        total = _static_extent(packed_qkvg.shape[0])
         batch = _static_extent(row_offsets.shape[0])
         drafts = _static_extent(verify_width.shape[0])
         if total is None or batch is None:
@@ -536,9 +541,7 @@ class KimiK3KDAAttention(
     def _fused_verify_forward(
         self,
         x: Tensor,
-        qkv: Tensor,
-        gate_pre: Tensor,
-        beta_pre: Tensor,
+        packed_qkvg: Tensor,
         binding: KdaVerifyBinding,
         conv_pool: Tensor,
         conv_row_id: Tensor,
@@ -548,33 +551,23 @@ class KimiK3KDAAttention(
     ) -> Tensor:
         """Runs the whole verify chain as the one fused op.
 
-        The beta and norm-gate blocks come from the one fused input GEMM
-        (`gate_pre`, `beta_pre`); the raw gate -- the two-stage projection
-        the GEMM does not cover -- and the per-channel gate parameters are
-        built here rather than hoisted ahead of the verify branch, so the
-        plain and the unfused-verify paths keep their exact construction
-        order.
+        The op takes the fused input GEMM's packed ``q | k | v | gate | beta``
+        output whole and carves the qkv, the norm-gate and the beta views out
+        of it itself (see ``kimi_delta.kda_verify_ring_conv_packed``), so no
+        block is materialized as a copy ahead of the launch. The raw gate --
+        the two-stage projection the GEMM does not cover -- and the
+        per-channel gate parameters are built here rather than hoisted ahead
+        of the verify branch, so the plain and the unfused-verify paths keep
+        their exact construction order.
         """
         total_seq_len = x.shape[0]
-        # The fused op takes the gate and beta at the ranks it requires
-        # ([1, T, H, K] and [1, T, H]), which the reshapes below build; it
-        # does not add the leading axis itself.
+        # The fused op takes the gate at the rank it requires ([1, T, H, K]),
+        # which the reshape below builds; it does not add the leading axis
+        # itself.
         raw_gate = F.reshape(
             self.f_b_proj(self.f_a_proj(x)),
             [1, total_seq_len, self.num_heads, self.head_dim],
         )
-        beta_logits = F.reshape(
-            F.cast(beta_pre, DType.float32),
-            [1, total_seq_len, self.num_heads],
-        )
-        norm_gate = F.reshape(
-            gate_pre,
-            [total_seq_len, self.num_heads, self.head_dim],
-        )
-        # The fused op runs its conv over the same fp32 weight cast the
-        # unfused arm's conv op takes, so both arms round the weight once,
-        # identically.
-        conv_weight = self.conv_weight.cast(DType.float32)
         # The output type is the caller's declaration, as the unfused path's
         # own op call: under TP the op's output holds the per-device head
         # count, which only the layer knows.
@@ -588,14 +581,13 @@ class KimiK3KDAAttention(
             device=x.mesh.devices[0] if x.is_distributed else x.device,
         )
         normed, window = kda_verify_ring_conv(
-            qkv,
-            conv_weight,
+            packed_qkvg,
+            self.conv_weight,
             conv_pool,
             conv_row_id,
             raw_gate,
-            beta_logits,
-            F.cast(self.a_log, DType.float32),
-            F.cast(self.dt_bias, DType.float32),
+            self.a_log,
+            self.dt_bias,
             input_row_offsets,
             state_pool,
             recurrent_row_id,
@@ -603,7 +595,6 @@ class KimiK3KDAAttention(
             binding.ring_row_id,
             binding.verify_width,
             self.o_norm.weight,
-            norm_gate,
             out_type,
             gate_mode="safe",
             norm_eps=self.o_norm.eps,
@@ -667,19 +658,15 @@ class KimiK3KDAAttention(
         # are GLOBAL (a distributed `split` sections each rank's own piece),
         # so each rank lands its own q/k/v block, its own g and its own
         # beta heads.
-        qkv, gate_pre, beta_pre = self.qkvg_proj(x).split(
-            [3 * inner, inner, self.num_heads], axis=1
-        )
+        packed_qkvg = self.qkvg_proj(x)
         if binding is not None and self._fused_verify_eligible(
-            qkv, input_row_offsets, binding.verify_width
+            packed_qkvg, input_row_offsets, binding.verify_width
         ):
             # The fused verify arm: one launch covers the conv, the glue,
             # the ring and the norm (see the module docstring).
             return self._fused_verify_forward(
                 x,
-                qkv,
-                gate_pre,
-                beta_pre,
+                packed_qkvg,
                 binding,
                 conv_pool,
                 conv_row_id,
@@ -687,18 +674,17 @@ class KimiK3KDAAttention(
                 recurrent_row_id,
                 input_row_offsets,
             )
+        qkv, gate_pre, beta_pre = packed_qkvg.split(
+            [3 * inner, inner, self.num_heads], axis=1
+        )
         if binding is None:
             qkv = kimi_short_conv_qkv(
                 qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
             )
         else:
-            # The verify conv takes the same fp32 weight cast the fused
-            # arm's in-kernel conv uses, so both arms round the weight
-            # once, identically.
-            conv_weight = self.conv_weight.cast(DType.float32)
             conv_out, window = kimi_short_conv_qkv_verify(
                 qkv,
-                conv_weight,
+                self.conv_weight,
                 conv_pool,
                 conv_row_id,
                 input_row_offsets,

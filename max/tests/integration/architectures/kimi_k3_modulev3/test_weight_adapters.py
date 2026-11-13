@@ -205,7 +205,7 @@ def _checkpoint(
     """A small, real Kimi K3 checkpoint: layer 0 is KDA + dense MLP, layer 1
     is MLA + MoE. Stored fp32 throughout except where a comment says
     otherwise, matching the real checkpoint, so the adapter's dtype
-    resolution (see `test_unpinned_weights_resolve_to_the_model_dtype`) is
+    resolution (see `test_o_norm_weight_follows_the_working_dtype`) is
     exercised rather than hidden behind an already-bf16 fixture.
 
     Args:
@@ -747,12 +747,12 @@ def test_fused_qkv_conv_matches_model_py(
         for axis in ("q", "k", "v")
     )
     fused = km._fuse_qkv_conv_weight(q, k, v)
-    # `conv_weight` isn't fp32-pinned, so the adapter resolves it to the
-    # model dtype (bf16) like the real value is; round the reference the
-    # same way, through the same `WeightData.astype` the adapter itself
-    # uses, so this compares the fusion math, not bf16 rounding noise.
+    # `conv_weight` is fp32-pinned and the checkpoint stores it fp32, so the
+    # adapter passes the fused values through unchanged: the conv kernel
+    # binds fp32, and rounding at load would move the weight off the
+    # checkpoint's own value.
     expected = _to_numpy(
-        WeightData.from_numpy(fused, "ref").astype(DType.bfloat16)
+        WeightData.from_numpy(fused, "ref").astype(DType.float32)
     )
     actual = _to_numpy(converted["layers.0.attention.conv_weight"])
     np.testing.assert_array_equal(actual, expected)
@@ -820,6 +820,7 @@ def test_routed_entry_and_exit_are_not_swapped(
     [
         "layers.0.attention.a_log",
         "layers.0.attention.dt_bias",
+        "layers.0.attention.conv_weight",
         "layers.1.ffn.gate.e_score_correction_bias",
     ],
 )
@@ -843,23 +844,17 @@ def test_gate_score_weight_follows_the_working_dtype(
     )
 
 
-@pytest.mark.parametrize(
-    "key",
-    [
-        "layers.0.attention.conv_weight",
-        "layers.0.attention.o_norm.weight",
-    ],
-)
-def test_unpinned_weights_resolve_to_the_model_dtype(
-    converted: dict[str, WeightData], key: str
+def test_o_norm_weight_follows_the_working_dtype(
+    converted: dict[str, WeightData],
 ) -> None:
-    """These parameters are only cast to fp32 transiently at compute time
-    (see ``kda_attention.py``); the stored parameter itself follows the
-    model's working dtype like everything else, so the adapter must resolve
-    it there too rather than pin it fp32. `b_proj` rides inside the fused
+    """`o_norm.weight` follows the model's working dtype: the fused verify
+    kernel binds it to the qkv family's dtype, so a wider one would only
+    break that binding's dtype grouping. `b_proj` rides inside the fused
     qkvg weight now; its fp32-stored rows resolving to the model dtype is
     covered by the fused weight's own dtype test below."""
-    assert converted[key].dtype == DType.bfloat16
+    assert converted["layers.0.attention.o_norm.weight"].dtype == (
+        DType.bfloat16
+    )
 
 
 def test_non_pinned_weights_keep_their_stored_dtype(

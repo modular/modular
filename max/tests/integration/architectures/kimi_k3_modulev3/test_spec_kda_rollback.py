@@ -140,7 +140,8 @@ def _build_layers(
     mesh: DeviceMesh, dtype: DType = DType.float32
 ) -> list[KimiK3KDAAttention]:
     """Two KDA layers with distinct dyadic weights in ``dtype``, sharded over
-    the mesh; ``a_log`` and ``dt_bias`` stay float32."""
+    the mesh; ``a_log``, ``dt_bias`` and ``conv_weight`` stay float32, as the
+    weight adapter loads them."""
     num_devices = mesh.num_devices
     rng = np.random.default_rng(20261103)
     qkv = [_sparse(rng, _INNER, _HIDDEN, 0.5) for _ in range(3)]
@@ -182,7 +183,7 @@ def _build_layers(
                 else interleave_for_tp(np.split(conv_weight, 3), num_devices)
             ),
             dtype=DType.float32,
-        ).cast(dtype)
+        )
         layer.f_a_proj.weight = Tensor(
             _sparse(rng, _HEAD_DIM, _HIDDEN, 0.25), dtype=DType.float32
         ).cast(dtype)

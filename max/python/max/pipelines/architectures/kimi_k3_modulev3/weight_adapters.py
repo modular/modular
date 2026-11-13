@@ -85,20 +85,21 @@ _DIRECT_ATTN_WEIGHTS = {
 _PACKED = "weight_packed"
 
 # Weights whose MAX parameter is explicitly declared fp32 regardless of the
-# model's working dtype: KDA's `a_log`/`dt_bias` gate parameters
-# (`kda_attention.py`), and the router's `e_score_correction_bias` (built
-# from the explicit `correction_bias_dtype` in `moe_router.py`). The
+# model's working dtype: KDA's `a_log`/`dt_bias` gate parameters and its
+# `conv_weight` (`kda_attention.py`), and the router's
+# `e_score_correction_bias` (built from the explicit `correction_bias_dtype`
+# in `moe_router.py`). The KDA kernels bind fp32 for those operands, so
+# loading them fp32 keeps the per-step graph free of widening casts. The
 # router's `gate_score.weight` follows the working dtype like everything
 # else: the checkpoint stores it bf16 and the gate GEMV computes
 # bf16 x bf16 -> fp32, so pinning it fp32 would only double the replicated
-# weight. `conv_weight`/`o_norm.weight` only get cast to fp32 transiently at
-# compute time -- their parameters themselves follow the model's working
-# dtype like everything else, so they are deliberately not pinned here.
-# `b_proj` rides inside the fused qkvg weight and takes its dtype from the
-# fuse's cast.
+# weight. `o_norm.weight` also follows the working dtype: the kernel binds it
+# to the qkv family's dtype, so it needs no widening. `b_proj` rides inside
+# the fused qkvg weight and takes its dtype from the fuse's cast.
 _FP32_SUFFIXES = (
     ".a_log",
     ".dt_bias",
+    ".conv_weight",
     ".gate.e_score_correction_bias",
 )
 

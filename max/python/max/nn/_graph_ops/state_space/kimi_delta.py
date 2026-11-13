@@ -57,6 +57,7 @@ __all__ = [
     "kda_state_fold",
     "kda_verify_ring",
     "kda_verify_ring_conv",
+    "kda_verify_ring_conv_packed",
 ]
 
 KdaGateMode = Literal["original", "safe"]
@@ -1289,6 +1290,290 @@ def kda_verify_ring(
     return ops.squeeze(results[0].tensor, 0)
 
 
+def _check_verify_ring_conv(
+    qkv: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_row_id: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue | None,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    norm_weight: TensorValue,
+    norm_gate: TensorValue | None,
+    *,
+    op_name: str,
+    state_layout: KdaStateLayout,
+) -> Dim:
+    """Checks one fused verify call's operands; returns the conv's width.
+
+    Both registrations of the op take the same operands but for how the qkv,
+    the o_norm gate and the beta logits arrive, so the contract is checked
+    once here. Given ``norm_gate``, ``qkv`` is the raw packed qkv whose
+    ``conv_dim``-wide thirds the conv reads, the gate is its own operand and
+    ``beta_logits`` is at the gate dtype; without it, ``qkv`` is the whole
+    packed projection row the op views all three out of, so the token axis,
+    the value-head axis, the conv width and beta's dtype come from that row.
+    """
+    # The qkv family shares one dtype parameter at the op, and it is the
+    # model's working dtype: bf16 in production, fp32 in the fp32-exact
+    # integration tests. The kernel casts every one of them to fp32 on
+    # load, so both round exactly as the unfused chain does at their own
+    # dtype.
+    qkv_family = [
+        ("raw_qkv", qkv),
+        ("raw_gate", raw_gate),
+        ("norm_weight", norm_weight),
+    ]
+    if norm_gate is not None:
+        qkv_family.append(("norm_gate", norm_gate))
+    for name, tensor in qkv_family:
+        if tensor.dtype not in (DType.bfloat16, DType.float32):
+            raise ValueError(
+                f"expected {name} to be bfloat16 or float32, was {tensor.dtype}"
+            )
+    # The op binds `norm_weight` and `norm_gate` to `raw_qkv`'s dtype
+    # parameter; a mismatch would fail inside the op's registration rather
+    # than here.
+    same_dtype = [("norm_weight", norm_weight)]
+    if norm_gate is not None:
+        same_dtype.append(("norm_gate", norm_gate))
+    for name, tensor in same_dtype:
+        if tensor.dtype != qkv.dtype:
+            raise ValueError(
+                f"expected {name} to share raw_qkv's dtype {qkv.dtype},"
+                f" was {tensor.dtype}"
+            )
+    _check_dtype(DType.float32, conv_weight=conv_weight)
+    _check_dtype(DType.float32, a_log=a_log, dt_bias=dt_bias)
+    if beta_logits is not None:
+        _check_dtype(DType.float32, beta_logits=beta_logits)
+    _check_dtype(
+        DType.uint32,
+        conv_row_id=conv_row_id,
+        cu_seqlens=cu_seqlens,
+        state_indices=state_indices,
+        ring_indices=ring_indices,
+    )
+    _check_dtype(DType.float32, ring=ring)
+    _check_rank(2, raw_qkv=qkv, conv_weight=conv_weight)
+    _check_rank(3, conv_pool=conv_pool)
+    if norm_gate is not None:
+        _check_rank(3, norm_gate=norm_gate)
+    _check_rank(4, raw_gate=raw_gate)
+    _check_rank(4, state_pool=state_pool, ring=ring)
+    _check_rank(
+        1,
+        conv_row_id=conv_row_id,
+        cu_seqlens=cu_seqlens,
+        state_indices=state_indices,
+        ring_indices=ring_indices,
+        norm_weight=norm_weight,
+    )
+    if beta_logits is not None:
+        _check_rank(3, beta_logits=beta_logits)
+    _check_rank(2, a_log=a_log, dt_bias=dt_bias)
+
+    total_tokens = raw_gate.shape[1]
+    num_value_heads = raw_gate.shape[2]
+    key_head_dim = raw_gate.shape[3]
+    value_head_dim = (
+        norm_weight.shape[0] if norm_gate is None else norm_gate.shape[2]
+    )
+    batch_size = state_indices.shape[0]
+    inner = num_value_heads * value_head_dim
+    conv_dim = 3 * inner if norm_gate is None else qkv.shape[1]
+
+    token_axis = {
+        "raw_gate": total_tokens,
+        "raw_qkv": qkv.shape[0],
+    }
+    value_head_axis = {
+        "raw_gate": num_value_heads,
+        "a_log": a_log.shape[0],
+        "dt_bias": dt_bias.shape[0],
+        "state_pool": state_pool.shape[1],
+        "ring": ring.shape[1],
+    }
+    if beta_logits is not None:
+        token_axis["beta_logits"] = beta_logits.shape[1]
+        value_head_axis["beta_logits"] = beta_logits.shape[2]
+    if norm_gate is not None:
+        token_axis["norm_gate"] = norm_gate.shape[0]
+        value_head_axis["norm_gate"] = norm_gate.shape[1]
+    _check_same_dim("the packed token axis", **token_axis)
+    _check_same_dim("the value-head axis", **value_head_axis)
+    _check_same_dim(
+        "the key-head width",
+        raw_gate=key_head_dim,
+        a_log=a_log.shape[1],
+        dt_bias=dt_bias.shape[1],
+    )
+    if norm_gate is None:
+        # A GEMM that pads its output width leaves the tail unread.
+        if isinstance(qkv.shape[1], StaticDim) and isinstance(
+            4 * inner + num_value_heads, StaticDim
+        ):
+            packed_width = int(qkv.shape[1])
+            needed = int(4 * inner + num_value_heads)
+            if packed_width < needed:
+                raise ValueError(
+                    f"expected {op_name}'s packed row to hold q | k | v, the"
+                    f" norm gate and beta in its leading {needed} columns,"
+                    f" was {packed_width}"
+                )
+    else:
+        _check_same_dim(
+            "the value-head width",
+            norm_gate=value_head_dim,
+            norm_weight=norm_weight.shape[0],
+        )
+        if conv_dim != 3 * inner:
+            raise ValueError(
+                "expected raw_qkv to hold q | k | v thirds of "
+                f"{inner} channels ({3 * inner} total), was {conv_dim}"
+            )
+    if conv_weight.shape[0] != conv_dim or conv_weight.shape[1] != 4:
+        raise ValueError(
+            f"expected conv_weight to be [{conv_dim}, 4], was "
+            f"{conv_weight.shape}"
+        )
+    if conv_pool.shape[1] != conv_dim or conv_pool.shape[2] != 3:
+        raise ValueError(
+            f"expected conv_pool to be [conv_rows, {conv_dim}, 3], was "
+            f"{conv_pool.shape}"
+        )
+    if (
+        isinstance(cu_seqlens.shape[0], StaticDim)
+        and isinstance(batch_size, StaticDim)
+        and int(cu_seqlens.shape[0]) != int(batch_size) + 1
+    ):
+        raise ValueError(
+            "expected cu_seqlens to hold one more entry than "
+            f"state_indices, was {cu_seqlens.shape[0]} and {batch_size}"
+        )
+    if (
+        isinstance(conv_row_id.shape[0], StaticDim)
+        and isinstance(batch_size, StaticDim)
+        and int(conv_row_id.shape[0]) != int(batch_size)
+    ):
+        raise ValueError(
+            "expected conv_row_id to hold one entry per sequence, was "
+            f"{conv_row_id.shape[0]} and {batch_size}"
+        )
+    if (
+        isinstance(ring_indices.shape[0], StaticDim)
+        and isinstance(batch_size, StaticDim)
+        and int(ring_indices.shape[0]) != int(batch_size)
+    ):
+        raise ValueError(
+            "expected ring_indices to hold one entry per sequence, was "
+            f"{ring_indices.shape[0]} and {batch_size}"
+        )
+    # The pool's trailing axes are ordered by `state_layout`; getting this
+    # wrong transposes the state rather than failing a shape check.
+    pool_axes = (state_pool.shape[2], state_pool.shape[3])
+    expected = (
+        (key_head_dim, value_head_dim)
+        if state_layout == "K_FIRST"
+        else (value_head_dim, key_head_dim)
+    )
+    if pool_axes != expected:
+        raise ValueError(
+            f"expected state_pool to have trailing axes {expected} for "
+            f"state_layout={state_layout!r}, was {pool_axes}"
+        )
+    if isinstance(key_head_dim, StaticDim) and isinstance(
+        value_head_dim, StaticDim
+    ):
+        pair = (int(key_head_dim), int(value_head_dim))
+        if pair != (128, 128):
+            raise ValueError(
+                f"{op_name} is compiled for (key_head_dim, value_head_dim)"
+                f" = (128, 128), got {pair}"
+            )
+    return conv_dim
+
+
+def _launch_verify_ring_conv(
+    op_name: str,
+    qkv: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_row_id: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue | None,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    norm_weight: TensorValue,
+    norm_gate: TensorValue | None,
+    verify_width: TensorValue,
+    out_type: TensorType,
+    conv_dim: Dim,
+    *,
+    norm_eps: float,
+    gate_mode: KdaGateMode,
+    beta_mode: KdaBetaMode,
+    state_layout: KdaStateLayout,
+) -> tuple[TensorValue, TensorValue]:
+    """Enqueues one fused verify launch on already-checked operands."""
+    device = raw_gate.device
+    window_rows = Dim(state_indices.shape[0]) * (Dim(verify_width.shape[0]) + 1)
+    values: list[TensorValue | BufferValue] = [
+        qkv,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        raw_gate,
+    ]
+    # The packed registration views beta out of `qkv`'s own row, so it takes
+    # no beta operand.
+    if beta_logits is not None:
+        values.append(beta_logits)
+    values += [
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+    ]
+    if norm_gate is not None:
+        values.append(norm_gate)
+    values.append(verify_width)
+    results = ops.inplace_custom(
+        op_name,
+        device,
+        values,
+        [
+            out_type,
+            TensorType(DType.float32, [window_rows, conv_dim], device),
+        ],
+        parameters={
+            "gate_mode": gate_mode,
+            "beta_mode": beta_mode,
+            "state_layout": state_layout,
+            "norm_eps": norm_eps,
+        },
+    )
+    return (
+        cast(TensorValue, results[0]),
+        cast(TensorValue, results[1]),
+    )
+
+
 def kda_verify_ring_conv(
     raw_qkv: TensorValue,
     conv_weight: TensorValue,
@@ -1346,9 +1631,14 @@ def kda_verify_ring_conv(
     ``raw_qkv`` holds the q, k and v projections as contiguous thirds of
     ``num_value_heads * value_head_dim`` channels -- the merged qkv
     projection's output layout -- so the op requires as many key heads as
-    value heads; the conv-dim check below rejects anything else. The
+    value heads; the conv-dim check rejects anything else. The
     qkv family (``raw_qkv``, ``raw_gate``, ``norm_weight``, ``norm_gate``)
     takes the model's working dtype, bf16 or fp32.
+
+    The four row tables take the uint32 the state leaves and the batch
+    offsets carry, so a verify layer hands them over without a cast launch
+    apiece; the op reads them as int32 where it indexes, which holds every
+    row a pool can address.
 
     Args:
         raw_qkv: ``[total_tokens, 3 * num_value_heads * value_head_dim]``
@@ -1356,27 +1646,27 @@ def kda_verify_ring_conv(
         conv_weight: ``[conv_dim, 4]`` fp32 depthwise conv weights.
         conv_pool: ``[conv_rows, conv_dim, 3]`` conv window pool, mutated in
             place at ``conv_row_id`` only at a verify width of zero.
-        conv_row_id: ``[batch_size]`` conv-pool row of each sequence.
+        conv_row_id: ``[batch_size]`` uint32 conv-pool row of each sequence.
         raw_gate: ``[1, total_tokens, num_value_heads, key_head_dim]``
             (the op takes rank 4) RAW
             forget-gate pre-activation at the working dtype, before the
             layer's ``(g + dt_bias) * exp(a_log)`` elementwise pass.
-        beta_logits: ``[total_tokens, num_value_heads]``.
+        beta_logits: ``[1, total_tokens, num_value_heads]``.
         a_log: ``[num_value_heads, key_head_dim]`` PER-CHANNEL log of the
             gate's ``A``.
         dt_bias: ``[num_value_heads, key_head_dim]``.
-        cu_seqlens: ``[batch_size + 1]`` int32 exclusive prefix offsets.
+        cu_seqlens: ``[batch_size + 1]`` uint32 exclusive prefix offsets.
         state_pool: ``[max_slots, num_value_heads, key_head_dim,
             value_head_dim]`` live pool, laid out per ``state_layout``.
-        state_indices: ``[batch_size]`` int32 pool slot per sequence.
+        state_indices: ``[batch_size]`` uint32 pool slot per sequence.
         ring: ``[ring_rows, num_value_heads, RING_LEN, record_stride]``
             float32 ring pool.
-        ring_indices: ``[batch_size]`` int32 ring row per sequence.
+        ring_indices: ``[batch_size]`` uint32 ring row per sequence.
         verify_width: The operand
             :func:`~max.nn._graph_ops.state_space.verify_width_operand`
             returns.
         norm_weight: ``[value_head_dim]`` o_norm weight, the working dtype.
-        norm_gate: ``[1, total_tokens, num_value_heads, value_head_dim]``
+        norm_gate: ``[total_tokens, num_value_heads, value_head_dim]``
             o_norm gate, the working dtype.
         out_type: The op result's declared type, ``[1, total_tokens,
             num_value_heads, value_head_dim]`` on one device; the readout
@@ -1404,197 +1694,137 @@ def kda_verify_ring_conv(
             extents disagree. The kernel's own shape guards are
             ``debug_assert``, so they are absent from a production build.
     """
-    # The qkv family shares one dtype parameter at the op, and it is the
-    # model's working dtype: bf16 in production, fp32 in the fp32-exact
-    # integration tests. The kernel casts every one of them to fp32 on
-    # load, so both round exactly as the unfused chain does at their own
-    # dtype.
-    for name, tensor in (
-        ("raw_qkv", raw_qkv),
-        ("raw_gate", raw_gate),
-        ("norm_weight", norm_weight),
-        ("norm_gate", norm_gate),
-    ):
-        if tensor.dtype not in (DType.bfloat16, DType.float32):
-            raise ValueError(
-                f"expected {name} to be bfloat16 or float32, was {tensor.dtype}"
-            )
-    # The op binds `norm_weight` and `norm_gate` to `raw_qkv`'s dtype
-    # parameter; a mismatch would fail inside the op's registration rather
-    # than here.
-    for name, tensor in (
-        ("norm_weight", norm_weight),
-        ("norm_gate", norm_gate),
-    ):
-        if tensor.dtype != raw_qkv.dtype:
-            raise ValueError(
-                f"expected {name} to share raw_qkv's dtype {raw_qkv.dtype},"
-                f" was {tensor.dtype}"
-            )
-    _check_dtype(DType.float32, conv_weight=conv_weight)
-    _check_dtype(
-        DType.float32, beta_logits=beta_logits, a_log=a_log, dt_bias=dt_bias
+    conv_dim = _check_verify_ring_conv(
+        raw_qkv,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        norm_gate,
+        op_name="kda_verify_ring_conv",
+        state_layout=state_layout,
     )
-    _check_dtype(
-        DType.int32, cu_seqlens=cu_seqlens, state_indices=state_indices
-    )
-    _check_dtype(DType.float32, ring=ring)
-    _check_rank(2, raw_qkv=raw_qkv, conv_weight=conv_weight)
-    _check_rank(3, conv_pool=conv_pool, norm_gate=norm_gate)
-    _check_rank(4, raw_gate=raw_gate)
-    _check_rank(4, state_pool=state_pool, ring=ring)
-    _check_rank(
-        1,
-        conv_row_id=conv_row_id,
-        cu_seqlens=cu_seqlens,
-        state_indices=state_indices,
-        ring_indices=ring_indices,
-        norm_weight=norm_weight,
-    )
-    _check_rank(3, beta_logits=beta_logits)
-    _check_rank(2, a_log=a_log, dt_bias=dt_bias)
-
-    total_tokens = raw_gate.shape[1]
-    num_value_heads = raw_gate.shape[2]
-    key_head_dim = raw_gate.shape[3]
-    value_head_dim = norm_gate.shape[2]
-    batch_size = state_indices.shape[0]
-    conv_dim = raw_qkv.shape[1]
-    inner = num_value_heads * value_head_dim
-
-    _check_same_dim(
-        "the packed token axis",
-        raw_gate=total_tokens,
-        raw_qkv=raw_qkv.shape[0],
-        beta_logits=beta_logits.shape[1],
-        norm_gate=norm_gate.shape[0],
-    )
-    _check_same_dim(
-        "the value-head axis",
-        raw_gate=num_value_heads,
-        beta_logits=beta_logits.shape[2],
-        norm_gate=norm_gate.shape[1],
-        a_log=a_log.shape[0],
-        dt_bias=dt_bias.shape[0],
-        state_pool=state_pool.shape[1],
-        ring=ring.shape[1],
-    )
-    _check_same_dim(
-        "the key-head width",
-        raw_gate=key_head_dim,
-        a_log=a_log.shape[1],
-        dt_bias=dt_bias.shape[1],
-    )
-    _check_same_dim(
-        "the value-head width",
-        norm_gate=value_head_dim,
-        norm_weight=norm_weight.shape[0],
-    )
-    if conv_dim != 3 * inner:
-        raise ValueError(
-            "expected raw_qkv to hold q | k | v thirds of "
-            f"{inner} channels ({3 * inner} total), was {conv_dim}"
-        )
-    if conv_weight.shape[0] != conv_dim or conv_weight.shape[1] != 4:
-        raise ValueError(
-            f"expected conv_weight to be [{conv_dim}, 4], was "
-            f"{conv_weight.shape}"
-        )
-    if conv_pool.shape[1] != conv_dim or conv_pool.shape[2] != 3:
-        raise ValueError(
-            f"expected conv_pool to be [conv_rows, {conv_dim}, 3], was "
-            f"{conv_pool.shape}"
-        )
-    if (
-        isinstance(cu_seqlens.shape[0], StaticDim)
-        and isinstance(batch_size, StaticDim)
-        and int(cu_seqlens.shape[0]) != int(batch_size) + 1
-    ):
-        raise ValueError(
-            "expected cu_seqlens to hold one more entry than "
-            f"state_indices, was {cu_seqlens.shape[0]} and {batch_size}"
-        )
-    if (
-        isinstance(conv_row_id.shape[0], StaticDim)
-        and isinstance(batch_size, StaticDim)
-        and int(conv_row_id.shape[0]) != int(batch_size)
-    ):
-        raise ValueError(
-            "expected conv_row_id to hold one entry per sequence, was "
-            f"{conv_row_id.shape[0]} and {batch_size}"
-        )
-    if (
-        isinstance(ring_indices.shape[0], StaticDim)
-        and isinstance(batch_size, StaticDim)
-        and int(ring_indices.shape[0]) != int(batch_size)
-    ):
-        raise ValueError(
-            "expected ring_indices to hold one entry per sequence, was "
-            f"{ring_indices.shape[0]} and {batch_size}"
-        )
-    # The pool's trailing axes are ordered by `state_layout`; getting this
-    # wrong transposes the state rather than failing a shape check.
-    pool_axes = (state_pool.shape[2], state_pool.shape[3])
-    expected = (
-        (
-            key_head_dim,
-            value_head_dim,
-        )
-        if state_layout == "K_FIRST"
-        else (value_head_dim, key_head_dim)
-    )
-    if pool_axes != expected:
-        raise ValueError(
-            f"expected state_pool to have trailing axes {expected} for "
-            f"state_layout={state_layout!r}, was {pool_axes}"
-        )
-    if isinstance(key_head_dim, StaticDim) and isinstance(
-        value_head_dim, StaticDim
-    ):
-        pair = (int(key_head_dim), int(value_head_dim))
-        if pair != (128, 128):
-            raise ValueError(
-                "kda_verify_ring_conv is compiled for (key_head_dim,"
-                f" value_head_dim) = (128, 128), got {pair}"
-            )
-
-    device = raw_gate.device
-    window_rows = Dim(batch_size) * (Dim(verify_width.shape[0]) + 1)
-    results = ops.inplace_custom(
+    return _launch_verify_ring_conv(
         "kda_verify_ring_conv",
-        device,
-        [
-            raw_qkv,
-            conv_weight,
-            conv_pool,
-            ops.cast(conv_row_id, DType.int32),
-            raw_gate,
-            beta_logits,
-            a_log,
-            dt_bias,
-            ops.cast(cu_seqlens, DType.int32),
-            state_pool,
-            ops.cast(state_indices, DType.int32),
-            ring,
-            ops.cast(ring_indices, DType.int32),
-            norm_weight,
-            norm_gate,
-            verify_width,
-        ],
-        [
-            out_type,
-            TensorType(DType.float32, [window_rows, conv_dim], device),
-        ],
-        parameters={
-            "gate_mode": gate_mode,
-            "beta_mode": beta_mode,
-            "state_layout": state_layout,
-            "norm_eps": norm_eps,
-        },
+        raw_qkv,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        norm_gate,
+        verify_width,
+        out_type,
+        conv_dim,
+        norm_eps=norm_eps,
+        gate_mode=gate_mode,
+        beta_mode=beta_mode,
+        state_layout=state_layout,
     )
-    return (
-        cast(TensorValue, results[0]),
-        cast(TensorValue, results[1]),
+
+
+def kda_verify_ring_conv_packed(
+    packed_qkvg: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_row_id: TensorValue,
+    raw_gate: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    verify_width: TensorValue,
+    norm_weight: TensorValue,
+    out_type: TensorType,
+    *,
+    norm_eps: float,
+    gate_mode: KdaGateMode = "safe",
+    beta_mode: KdaBetaMode = "logits",
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> tuple[TensorValue, TensorValue]:
+    """Runs :func:`kda_verify_ring_conv` on the packed input projection row.
+
+    Same op, same launch, same contract -- only the qkv, o_norm-gate and beta
+    operands come from one packed tensor: ``packed_qkvg``'s leading
+    ``3 * num_value_heads * value_head_dim`` columns are the qkv the conv
+    reads, the next ``num_value_heads * value_head_dim`` are the gate, and
+    the ``num_value_heads`` after those are the beta logits, which the op
+    widens to fp32 exactly. Handing the projection's whole output over skips
+    the elementwise copies a ``split`` and its casts would launch per layer
+    per step. Every other argument is :func:`kda_verify_ring_conv`'s, minus
+    the ``norm_gate`` and ``beta_logits`` operands this op views out of
+    ``packed_qkvg``; ``packed_qkvg`` takes its ``raw_qkv``'s place.
+
+    Returns:
+        :func:`kda_verify_ring_conv`'s two results.
+
+    Raises:
+        ValueError: If the dtype groupings bind no kernel, or the ranks and
+            extents disagree.
+    """
+    conv_dim = _check_verify_ring_conv(
+        packed_qkvg,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        raw_gate,
+        None,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        None,
+        op_name="kda_verify_ring_conv_packed",
+        state_layout=state_layout,
+    )
+    return _launch_verify_ring_conv(
+        "kda_verify_ring_conv_packed",
+        packed_qkvg,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        raw_gate,
+        None,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        None,
+        verify_width,
+        out_type,
+        conv_dim,
+        norm_eps=norm_eps,
+        gate_mode=gate_mode,
+        beta_mode=beta_mode,
+        state_layout=state_layout,
     )
 
 
