@@ -141,6 +141,9 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
     in the tree :meth:`~max.nn.legacy.comm.ep.EPBatchManager.input_tree`
     declares."""
 
+    hisparse: tuple[TensorT, ...] | None = None
+    """Host and hot page tables per device, followed by the host mirror."""
+
     lora: tuple[TensorT, ...] | None = None
     """The LoRA routing and adapter inputs, when serving LoRA adapters.
 

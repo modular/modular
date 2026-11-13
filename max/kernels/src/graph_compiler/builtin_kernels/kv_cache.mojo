@@ -18,6 +18,7 @@
 
 """Registers KV-cache graph ops backed by the `kv_cache` and `nn.kv_cache` kernels."""
 
+from std.sys.info import size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -53,6 +54,10 @@ from nn.kv_cache_gather import (
     kv_cache_gather_rows_ragged,
     kv_cache_pack_owned_rows,
     kv_cache_unpack_prefix_rows,
+)
+from kv_cache.hisparse import (
+    hisparse_gather_group,
+    hisparse_resolve,
 )
 from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
@@ -302,6 +307,195 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
             slots.to_tile_tensor[.int32](),
             row_offsets.to_tile_tensor[.uint32](),
             cache,
+            context,
+        )
+
+
+@inline(.always)
+def _hisparse_page_geometry(
+    blocks: TileTensor[...], page_stride: Int, elem_bytes: Int
+) -> Tuple[Int, Int]:
+    """Returns a cache page's stride and data size in bytes.
+
+    `page_stride` is the runtime input, in elements, or -1 when the pages are
+    packed and the view's own stride applies.
+    """
+    var data = 1
+    comptime for d in range(1, 6):
+        data *= Int(blocks.dim[d]())
+    var stride = page_stride
+    if stride < 0:
+        stride = Int(blocks.dynamic_stride(0))
+    return (stride * elem_bytes, data * elem_bytes)
+
+
+@extensibility.register("kv_cache.hisparse.resolve.paged")
+struct Struct_kv_cache_hisparse_resolve_paged:
+    """Registers the `kv_cache.hisparse.resolve.paged` graph op.
+
+    Copies the indexer's physical rows and rewrites the selections on
+    host-only pages to hot-buffer rows. See `kv_cache.hisparse`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hot_pages: Int,
+        num_groups: Int,
+        max_misses: Int,
+        hash_capacity: Int,
+    ](
+        resolved: Some[Output & Tensor],
+        physical: Some[Input & Tensor],
+        logical: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        lookup_table: Some[Input & Tensor],
+        host_table: Some[Input & Tensor],
+        hot_table: Some[Input & Tensor],
+        group: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(resolved), TileTensorable)
+        comptime assert conforms_to(type_of(physical), TileTensorable)
+        comptime assert conforms_to(type_of(logical), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(host_table), TileTensorable)
+        comptime assert conforms_to(type_of(hot_table), TileTensorable)
+        comptime assert type_of(resolved).rank == 2
+        comptime assert type_of(physical).rank == 2
+        comptime assert type_of(logical).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(lookup_table).rank == 2
+        comptime assert type_of(host_table).rank == 2
+        comptime assert type_of(hot_table).rank == 2
+        comptime kv_type = type_of(kv_blocks).dtype
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime assert context.target.is_gpu(), "hisparse runs on the GPU"
+
+        var out_tt = resolved.to_tile_tensor[.int32]()
+        var physical_tt = physical.to_tile_tensor[.int32]()
+        var logical_tt = logical.to_tile_tensor[.int32]()
+        var lut_tt = lookup_table.to_tile_tensor[.uint32]()
+        var host_tt = host_table.to_tile_tensor[.int32]()
+        var hot_tt = hot_table.to_tile_tensor[.uint32]()
+        var blocks_tt = kv_blocks.to_tile_tensor[kv_type]()
+        var tokens = Int(physical_tt.dim[0]())
+        var top_k = Int(physical_tt.dim[1]())
+        if (
+            Int(logical_tt.dim[0]()) != tokens
+            or Int(logical_tt.dim[1]()) != top_k
+            or Int(out_tt.dim[0]()) != tokens
+            or Int(out_tt.dim[1]()) != top_k
+        ):
+            raise Error("hisparse resolve: physical, logical and output differ")
+        if Int(hot_tt.dim[1]()) != hot_pages + 1:
+            raise Error("hisparse resolve: hot table must have hot_pages + 1")
+        if Int(host_tt.dim[1]()) != Int(lut_tt.dim[1]()):
+            raise Error("hisparse resolve: host table width differs from LUT")
+        var geometry = _hisparse_page_geometry(
+            blocks_tt,
+            Int(page_stride.to_tile_tensor[.int64]()[0]),
+            size_of[Scalar[kv_type]](),
+        )
+        if tokens > 0:
+            context.enqueue_copy(
+                out_tt.unsafe_ptr(),
+                physical_tt.unsafe_ptr().as_imm(),
+                tokens * top_k,
+            )
+        hisparse_resolve[
+            page_size, hot_pages, num_groups, max_misses, hash_capacity
+        ](
+            out_tt.unsafe_ptr(),
+            logical_tt.unsafe_ptr().as_imm(),
+            input_row_offsets.to_tile_tensor[.uint32]().unsafe_ptr().as_imm(),
+            lut_tt.unsafe_ptr().as_imm(),
+            host_tt.unsafe_ptr().as_imm(),
+            hot_tt.unsafe_ptr().as_imm(),
+            blocks_tt.unsafe_ptr().unsafe_bitcast[UInt8](),
+            geometry[0],
+            geometry[1],
+            Int(hot_tt.dim[0]()),
+            Int(lut_tt.dim[1]()),
+            top_k,
+            Int(group),
+            context,
+        )
+
+
+@extensibility.register("kv_cache.hisparse.gather_group.paged")
+struct Struct_kv_cache_hisparse_gather_group_paged:
+    """Registers the `kv_cache.hisparse.gather_group.paged` graph op.
+
+    Copies the last resolve's misses for consecutive layers that share one
+    indexer selection in one launch: the first layer and the ``shared`` layers
+    that reuse its top-k. See `kv_cache.hisparse`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hot_pages: Int,
+        num_groups: Int,
+        max_misses: Int,
+        hash_capacity: Int,
+    ](
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        hot_table: Some[Input & Tensor],
+        host_mirror: Some[Input & Tensor],
+        first_layer_idx: UInt32,
+        layer_count: UInt32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(hot_table), TileTensorable)
+        comptime assert conforms_to(type_of(host_mirror), TileTensorable)
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(hot_table).rank == 2
+        comptime assert type_of(host_mirror).rank == 1
+        comptime kv_type = type_of(kv_blocks).dtype
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime assert context.target.is_gpu(), "hisparse runs on the GPU"
+
+        var blocks_tt = kv_blocks.to_tile_tensor[kv_type]()
+        var hot_tt = hot_table.to_tile_tensor[.uint32]()
+        if Int(blocks_tt.dim[1]()) != 1:
+            raise Error("hisparse gather: the cache must hold one plane (MLA)")
+        if Int(hot_tt.dim[1]()) != hot_pages + 1:
+            raise Error("hisparse gather: hot table must have hot_pages + 1")
+        comptime elem_bytes = size_of[Scalar[kv_type]]()
+        var geometry = _hisparse_page_geometry(
+            blocks_tt,
+            Int(page_stride.to_tile_tensor[.int64]()[0]),
+            elem_bytes,
+        )
+        var row_bytes = (
+            Int(blocks_tt.dim[4]()) * Int(blocks_tt.dim[5]()) * elem_bytes
+        )
+        var layer_stride_bytes = Int(blocks_tt.dynamic_stride(2)) * elem_bytes
+        hisparse_gather_group[
+            page_size, hot_pages, num_groups, max_misses, hash_capacity
+        ](
+            blocks_tt.unsafe_ptr().unsafe_bitcast[UInt8](),
+            host_mirror.to_tile_tensor[.uint8]().unsafe_ptr().as_imm(),
+            hot_tt.unsafe_ptr().as_imm(),
+            geometry[0],
+            geometry[1],
+            Int(first_layer_idx) * layer_stride_bytes,
+            row_bytes,
+            Int(layer_count),
+            layer_stride_bytes,
+            Int(hot_tt.dim[0]()),
             context,
         )
 

@@ -171,27 +171,36 @@ class DeepseekV3Model(DeepseekV2Model):
         self._ep_batch_manager = None
 
         ep_size = self.pipeline_config.runtime.ep_size
-        if ep_size <= 1:
-            return
+        if ep_size > 1:
+            # Expert parallelism: ep_size > 1 distributes routed experts across
+            # the devices via the NVSHMEM EPBatchManager. The communication
+            # buffers are allocated once here and threaded through the graph as
+            # extra inputs.
+            if ep_size % len(self.devices) != 0:
+                raise ValueError(
+                    f"ep_size={ep_size} must be divisible by the number of"
+                    f" GPUs on this node ({len(self.devices)}); for"
+                    f" single-node set ep_size={len(self.devices)}."
+                )
+            ep_config = self._build_ep_config(model_config)
+            model_config.ep_config = ep_config
+            self._ep_batch_manager = EPBatchManager(ep_config)
+            self._modulev3_extra_input_types = (
+                self._ep_batch_manager.input_types()
+            )
+            if not is_virtual_device_mode():
+                self.ep_comm_initializer = self._init_ep_comm(
+                    self.session, ep_config
+                )
+                ep_config.node_id = self.ep_comm_initializer.config.node_id
 
-        # Expert parallelism: ep_size > 1 distributes routed experts across the
-        # devices via the NVSHMEM EPBatchManager. The communication buffers are
-        # allocated once here and threaded through the graph as extra inputs.
-        if ep_size % len(self.devices) != 0:
-            raise ValueError(
-                f"ep_size={ep_size} must be divisible by the number of GPUs on"
-                f" this node ({len(self.devices)}); for single-node set"
-                f" ep_size={len(self.devices)}."
+        # Hybrid HiSparse (a partly host-resident MLA latent) appends its three
+        # input groups after the EP buffers; with EP off they are the only
+        # extra inputs. Only the V3.2 config family carries the field.
+        if getattr(model_config, "hisparse", None) is not None:
+            self._modulev3_extra_input_types.extend(
+                model_config.hisparse_input_types()
             )
-        ep_config = self._build_ep_config(model_config)
-        model_config.ep_config = ep_config
-        self._ep_batch_manager = EPBatchManager(ep_config)
-        self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
-        if not is_virtual_device_mode():
-            self.ep_comm_initializer = self._init_ep_comm(
-                self.session, ep_config
-            )
-            ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override
     def _instantiate_module(self, model_config: Any) -> Any:

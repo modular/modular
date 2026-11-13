@@ -19,10 +19,12 @@ from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, TensorType
+from max.nn._graph_ops import HiSparseParams
 from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -45,6 +47,8 @@ from max.pipelines.modeling.config_enums import (
 )
 from max.pipelines.speculative.config import SpeculativeMethod
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import Tensor
+from max.tree import dataclass as tree_dataclass
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -109,6 +113,65 @@ def indexer_cache_layer_map(
         else:
             slots.append(0)
     return slots
+
+
+def hisparse_gather_groups(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Counts the layers one HiSparse gather launch fills, per layer.
+
+    A ``full`` layer's selections are also read by the ``shared`` layers that
+    follow it, so its gather copies their rows in the same launch. Every other
+    entry is ``1``: a ``shared`` layer never gathers its own rows, and a
+    ``full`` layer with no followers gathers only itself.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        For each of the first ``num_layers`` layers, the number of consecutive
+        layers starting there that share its selection, ``1`` when the layer
+        does not gather.
+    """
+    counts = [1] * num_layers
+    if not indexer_types:
+        return counts
+    for idx in range(min(num_layers, len(indexer_types))):
+        if indexer_types[idx] != "full":
+            continue
+        end = idx + 1
+        while end < num_layers and indexer_types[end] == "shared":
+            end += 1
+        counts[idx] = end - idx
+    return counts
+
+
+@tree_dataclass(frozen=True)
+class HiSparseInputs:
+    """The HiSparse tables one layer reads, as the graph hands them over.
+
+    A tree dataclass, so the tables cross a shared MoE subgraph's signature
+    as operands rather than as constants captured in its body. The layer's
+    LRU group is not carried here: the resolve reads the indexer's cache-slot
+    argument, which is the same rank among the ``full`` layers, so one
+    subgraph body serves every ``full`` layer.
+    """
+
+    host_table: Tensor
+    """``[batch, pages]`` int32 host mirror page of each logical latent
+    page, ``-1`` where none, one shard per device."""
+
+    hot_table: Tensor
+    """``[batch, hot_pages + 1]`` uint32 hot pages, then the state page,
+    one shard per device."""
+
+    host_mirror: Tensor
+    """``[bytes]`` uint8 host mirror the device reads, on the CPU device."""
+
+    params: HiSparseParams
+    """The static sizes the resolve and gather compile with."""
 
 
 def num_indexer_cache_layers(
@@ -206,6 +269,51 @@ def resolve_prefill_context_parallel(value: bool | None) -> bool:
     return bool(value)
 
 
+def hisparse_params_for(
+    *,
+    pipeline_config: PipelineConfig,
+    model_config: MAXModelConfig,
+    huggingface_config: AutoConfig,
+) -> HiSparseParams | None:
+    """The Hybrid HiSparse sizes a ``--hisparse`` export compiles in.
+
+    ``None`` unless the export asked for HiSparse, which leaves the config —
+    and so the graph — exactly what it is today. The hot buffer holds one
+    top-k of rows per query row the step runs, plus one spare top-k of LRU
+    slack, as vLLM sizes it; the query rows are the verify step's ``K + 1``
+    when the export speculates and one otherwise. One LRU group per full
+    indexer layer, because each keeps its own hot-buffer state.
+
+    Args:
+        pipeline_config: The export's config, read for the speculative draft
+            count.
+        model_config: The target's model config, read for the KV page size
+            and the ``sparse_offload`` flag the exporter sets.
+        huggingface_config: The checkpoint's config, read for the top-k and
+            the indexer schedule.
+
+    Returns:
+        The sizes, or ``None`` when the export leaves every page resident.
+    """
+    if not model_config.kv_cache.sparse_offload:
+        return None
+    speculative = pipeline_config.speculative
+    query_rows = 1 + (
+        speculative.num_speculative_tokens or 0 if speculative else 0
+    )
+    indexer_types = resolve_indexer_types(
+        huggingface_config, huggingface_config.num_hidden_layers
+    )
+    return HiSparseParams.for_top_k(
+        top_k=huggingface_config.index_topk,
+        query_rows=query_rows,
+        page_size=model_config.kv_cache.kv_cache_page_size,
+        num_groups=num_indexer_cache_layers(
+            indexer_types, huggingface_config.num_hidden_layers
+        ),
+    )
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     """Configuration for DeepseekV3.2 models (ModuleV3)."""
@@ -276,6 +384,13 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
     steps stay on DCP. Needs ``decode_context_parallel_degree > 1`` and
     ``dcp_q_replicate``. See
     :mod:`.layers.prefill_context_parallel`.
+    """
+
+    hisparse: HiSparseParams | None = None
+    """Hybrid HiSparse sizes, or ``None`` to keep every latent page resident.
+
+    Set by the exporter once the host mirror is sized; the graph it builds
+    takes the three HiSparse input groups after the expert-parallel tail.
     """
 
     def __post_init__(self) -> None:
@@ -354,6 +469,75 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
                 "'shared' because no preceding full indexer layer exists to "
                 f"reuse a top-k selection from (got {self.indexer_types[0]!r})."
             )
+        if self.hisparse is not None:
+            self._check_hisparse()
+
+    def _check_hisparse(self) -> None:
+        """Refuses a HiSparse deployment this graph does not build.
+
+        Raises:
+            ValueError: If the latent cache is NVFP4, whose scale rows the hot
+                buffer does not mirror yet, or if prefill context parallelism
+                is on, whose prefill path reads no hot buffer.
+        """
+        assert self.hisparse is not None
+        if self.prefill_context_parallel:
+            raise ValueError(
+                "hisparse is not supported with prefill context parallelism;"
+                " its prefill path reads no hot buffer."
+            )
+        selection_width = sparse_selection_width(
+            self.mla_kv_params, self.index_topk
+        )
+        if selection_width != self.index_topk:
+            raise ValueError(
+                "hisparse needs an FP8 latent cache, but this one is NVFP4 "
+                f"(sparse_selection_width={selection_width} != "
+                f"index_topk={self.index_topk}); mirroring the hot rows' "
+                "scales is a follow-up."
+            )
+
+    def hisparse_input_types(self) -> list[TensorType]:
+        """Returns the HiSparse graph inputs, in the order the graph takes.
+
+        The host and hot tables are per-device device tensors staged each
+        step like the MLA lookup table, whose page-count dim the host table
+        shares; the host mirror is one CPU tensor the runtime binds once at
+        boot.
+
+        Raises:
+            ValueError: If :attr:`hisparse` is unset.
+        """
+        params = self.hisparse
+        if params is None:
+            raise ValueError("hisparse_input_types requires hisparse to be set")
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        assert isinstance(kv_inputs, dict)
+        mla = kv_inputs["mla"]
+        assert isinstance(mla, tuple)
+        host: list[TensorType] = []
+        hot: list[TensorType] = []
+        for per_device in mla:
+            assert isinstance(per_device, KVCacheInputsPerDevice)
+            lookup_table = per_device.lookup_table
+            assert isinstance(lookup_table, TensorType)
+            host.append(
+                TensorType(DType.int32, lookup_table.shape, lookup_table.device)
+            )
+            hot.append(
+                TensorType(
+                    DType.uint32,
+                    [lookup_table.shape[0], params.hot_pages + 1],
+                    lookup_table.device,
+                )
+            )
+        return [
+            *host,
+            *hot,
+            TensorType(
+                DType.uint8, ["hisparse_mirror_bytes"], device=DeviceRef.CPU()
+            ),
+        ]
 
     @override
     def get_kv_params(self) -> KVCacheParamInterface:  # type: ignore[override]
@@ -595,6 +779,14 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
         else:
             graph_mode = "auto"
 
+        # Set only by the exporter's ``--hisparse``; ``None`` otherwise, so
+        # every existing export builds the same config it always did.
+        hisparse = hisparse_params_for(
+            pipeline_config=pipeline_config,
+            model_config=model_config,
+            huggingface_config=config,
+        )
+
         return cls(
             dtype=dtype,
             kv_params=kv_params,
@@ -658,4 +850,5 @@ class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
                 config, "indexer_rope_interleave", False
             ),
             quantization_encoding=quantization_encoding,
+            hisparse=hisparse,
         )

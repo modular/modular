@@ -443,6 +443,7 @@ def test_decoder_inputs_take_the_canonical_order() -> None:
         "kv",
         "batch_context_lengths",
         "ep",
+        "hisparse",
         "lora",
         "constants",
         "state",

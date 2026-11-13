@@ -418,6 +418,7 @@ def decoder_input_types(
     token_positions: TensorType | None = None,
     batch_context_lengths: BatchContext[tuple[TensorType, ...]] | None = None,
     ep: object | None = None,
+    hisparse: Sequence[TensorType] = (),
     lora: Sequence[TensorType] = (),
     constants: object | None = None,
     state: Sequence[Any] = (),
@@ -449,6 +450,8 @@ def decoder_input_types(
         ep: The expert-parallel input types, when serving with expert
             parallelism, in the layout of the config's
             :attr:`~max.pipelines.lib.registration_runtime.ExpertParallelDeploymentConfig.expert_parallel_inputs`.
+        hisparse: The per-device host and hot tables, followed by the CPU
+            mirror, when the decoder enables HiSparse.
         lora: The LoRA input types, when serving LoRA adapters.
         constants: The checkpoint-backed deployment input types.
         state: The input types of the decoder's per-request state.
@@ -483,6 +486,8 @@ def decoder_input_types(
         types["batch_context_lengths"] = batch_context_lengths
     if ep is not None:
         types["ep"] = ep
+    if hisparse:
+        types["hisparse"] = tuple(hisparse)
     if lora:
         types["lora"] = tuple(lora)
     if constants is not None:
@@ -613,6 +618,9 @@ class DecoderModelInputs(ModelInputs):
     ep_inputs: tuple[Buffer, ...] = ()
     """The expert-parallel communication buffers, under expert parallelism."""
 
+    hisparse_inputs: tuple[Buffer, ...] = ()
+    """The HiSparse tables and host mirror, when declared."""
+
     signal_buffers: tuple[Buffer, ...] = ()
     """The graph-API decoder's allreduce signal buffers, when required."""
 
@@ -655,6 +663,7 @@ class DecoderModelInputs(ModelInputs):
                 else None
             ),
             ep=self.ep_inputs,
+            hisparse=self.hisparse_inputs,
             lora=tuple(self.lora_buffers),
             constants=self.constants,
             state=self.state,
@@ -1550,6 +1559,11 @@ class ModuleV3DecoderPipelineModel(
                 model_config
             ),
             ep=self._decoder_ep_inputs(model_config),
+            hisparse=(
+                model_config.hisparse_input_types()
+                if getattr(model_config, "hisparse", None) is not None
+                else ()
+            ),
             lora=lora_types,
             constants=constants.input_types if constants is not None else None,
             state=(

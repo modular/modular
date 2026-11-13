@@ -46,7 +46,16 @@ from ..driver import SequentialBatch, SequentialProposer
 from ..spec_target import Verified
 from .target_adapter import STAGE_BOUNDARY, TargetAdapter
 
+HISPARSE_INPUTS = "hisparse_inputs"
+"""The key of a driver batch's ``extra`` that holds the target's HiSparse
+graph inputs: the host and hot tables per device, then the host mirror, in
+the order the signature declares them.
+
+Only a target whose graph declares them reads the key; the draft never
+does, because its latent and indexer stay fully resident."""
+
 __all__ = [
+    "HISPARSE_INPUTS",
     "STAGE_BOUNDARY",
     "VerifyFn",
     "batch_distributed_buffers",
@@ -59,6 +68,7 @@ __all__ = [
     "export_contract",
     "extra",
     "has_adapter",
+    "hisparse_input_types",
     "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
@@ -189,6 +199,16 @@ def ep_input_types(
 def ep_tail(target_arch: str, target: Module) -> bool:
     """Returns whether the target declares them on an undistributed signature."""
     return _adapter(target_arch).ep_tail(target)
+
+
+def hisparse_input_types(
+    target_arch: str, method: str, target_config: Any
+) -> Sequence[TensorType | BufferType]:
+    """Returns the target's HiSparse inputs, which follow the EP inputs.
+
+    Empty when the target keeps every latent page resident.
+    """
+    return _adapter(target_arch, method).hisparse_input_types(target_config)
 
 
 def batch_distributed_buffers(

@@ -90,7 +90,10 @@ from max.pipelines.speculative.config import (
     SpeculativeMethod,
 )
 from max.pipelines.speculative.driver import SequentialDriver
-from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
+from max.pipelines.speculative.spec_adapters import (
+    HISPARSE_INPUTS,
+    STAGE_BOUNDARY,
+)
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     ReplayBatching,
 )
@@ -2063,6 +2066,13 @@ class _DriverCall:
         extra = spec_adapters.extra(
             self.target_arch, self.method, self.target_config, trailing
         )
+        # The HiSparse inputs sit inside the canonical signature, so they
+        # reach the target's call through the batch's ``extra`` like the
+        # trailing ones do.
+        if graph_inputs.hisparse:
+            extra[HISPARSE_INPUTS] = [
+                value.tensor for value in graph_inputs.hisparse
+            ]
         if replay:
             extra.update(
                 spec_adapters.replay_extra(
@@ -2375,6 +2385,11 @@ def _driver_call(
         # Sizes the draft distributions under draft_proposal="sampled".
         vocab_size=huggingface_config.get_text_config().vocab_size,
         ep_input_types=ep_input_types,
+        # The target's HiSparse tables follow the EP inputs, so an export
+        # without them keeps every slot above and below.
+        hisparse_input_types=spec_adapters.hisparse_input_types(
+            target_arch, method, target_config
+        ),
         # A later pipeline stage's boundary comes after the whole signature
         # the model takes unstaged.
         trailing_input_types=[

@@ -416,6 +416,23 @@ class KVCacheConfig(ConfigModel):
     )
     """Optional 32-byte hex seed for KV-cache hashing."""
 
+    sparse_offload: bool = Field(
+        default=False,
+        description=(
+            "Build the graph for Hybrid HiSparse, which lets a decoding "
+            "request give up the GPU copy of its older latent pages to a "
+            "pinned host mirror and read back only the rows its indexer "
+            "selects, through a per-request hot buffer. Only the GLM-5.x "
+            "ModuleV3 architecture reads it, and only with an FP8 latent "
+            "at data-parallel degree 1; everything else ignores it."
+        ),
+    )
+    """Whether the graph takes Hybrid HiSparse's host and hot tables.
+
+    The exporter's ``--hisparse`` sets it; the sizes it implies are recorded
+    in the export's input-spec sidecar, which the engine checks at boot.
+    """
+
     _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single

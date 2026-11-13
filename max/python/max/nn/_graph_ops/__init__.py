@@ -24,6 +24,7 @@ from collections.abc import (
     MutableSequence,
     Sequence,
 )
+from dataclasses import dataclass
 from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
@@ -3253,6 +3254,202 @@ def kv_cache_gather_rows_ragged(
         ],
         parameters={"key_or_value": key_or_value},
     )[0].tensor
+
+
+@dataclass(frozen=True)
+class HiSparseParams:
+    """The static sizes the HiSparse resolve and gather ops compile with.
+
+    Every request in mixed residency holds ``hot_pages`` pages of hot rows
+    plus one state page, and keeps one LRU state per indexer layer.
+    """
+
+    hot_pages: int
+    """Pages of hot rows per request."""
+    num_groups: int
+    """Indexer layers, each with its own LRU state."""
+    max_misses: int
+    """Most distinct host-only selections a request makes per indexer layer
+    in one step: every query row's top-k."""
+    hash_capacity: int
+    """Entries in the per-call selection hash, a power of two above
+    ``max_misses``."""
+
+    # The shared memory the resolve kernel's hash may take: the most a
+    # block opts into on Hopper and Blackwell. The kernel allocates
+    # ``3 * hash_capacity * 4`` bytes of it.
+    RESOLVE_HASH_SHARED_MEMORY_BYTES = 232_448
+
+    @classmethod
+    def for_top_k(
+        cls, *, top_k: int, query_rows: int, page_size: int, num_groups: int
+    ) -> HiSparseParams:
+        """Sizes the hot buffer as vLLM does, ``(query_rows + 1) * top_k`` rows.
+
+        Args:
+            top_k: Selections per query token.
+            query_rows: Most query tokens a decoding request runs per step:
+                1 without speculation, ``K + 1`` when verifying ``K`` drafts.
+            page_size: Rows per cache page.
+            num_groups: Indexer layers.
+
+        Returns:
+            The sizes, with one spare top-k of LRU slack.
+
+        Raises:
+            ValueError: If the hash the sizes imply does not fit the resolve
+                kernel's shared memory.
+        """
+        hot_rows = (query_rows + 1) * top_k
+        max_misses = query_rows * top_k
+        capacity = 1
+        while capacity < max_misses + max_misses // 3:
+            capacity *= 2
+        hash_bytes = 3 * capacity * 4
+        if hash_bytes > cls.RESOLVE_HASH_SHARED_MEMORY_BYTES:
+            raise ValueError(
+                f"HiSparse's selection hash needs {hash_bytes} bytes of shared"
+                " memory, over the"
+                f" {cls.RESOLVE_HASH_SHARED_MEMORY_BYTES} the resolve kernel"
+                f" may take: top_k {top_k} at speculative width"
+                f" {query_rows - 1} runs {query_rows} query rows"
+            )
+        return cls(
+            hot_pages=-(-hot_rows // page_size),
+            num_groups=num_groups,
+            max_misses=max_misses,
+            hash_capacity=capacity,
+        )
+
+    def parameters(self) -> dict[str, int]:
+        """Returns the ops' compile-time parameters."""
+        return {
+            "hot_pages": self.hot_pages,
+            "num_groups": self.num_groups,
+            "max_misses": self.max_misses,
+            "hash_capacity": self.hash_capacity,
+        }
+
+
+@_rejects_split_head_dims
+def hisparse_resolve(
+    physical: TensorValue,
+    logical: TensorValue,
+    input_row_offsets: TensorValue,
+    mla_collection: PagedCacheValues,
+    host_table: TensorValue,
+    hot_table: TensorValue,
+    group: TensorValue,
+    params: HiSparseParams,
+) -> TensorValue:
+    """Rewrites selections on host-only MLA pages to hot-buffer rows.
+
+    A selection whose page holds the null page 0 in ``mla_collection``'s
+    lookup table is read from the request's hot buffer. A miss takes the least
+    recently used slot no row of this step needs and is queued for
+    :func:`hisparse_gather_group`. Every other selection is copied through.
+
+    Args:
+        physical: ``[tokens, top_k]`` int32 physical rows from the indexer.
+        logical: ``[tokens, top_k]`` int32 logical positions of the same
+            selections.
+        input_row_offsets: ``[batch + 1]`` uint32 ragged offsets.
+        mla_collection: The MLA cache the rows index.
+        host_table: ``[batch, pages]`` int32 host mirror page of each logical
+            page, ``-1`` where none, as wide as the lookup table.
+        hot_table: ``[batch, hot_pages + 1]`` uint32 hot pages, then the state
+            page; a zero state page means no hot region.
+        group: A uint32 CPU scalar, this indexer layer's index among the
+            indexer layers. A runtime input rather than a constant, so the
+            layers that share one subgraph body each pass their own; the op
+            raises at run time on a group outside ``[0, num_groups)``.
+        params: The static sizes.
+
+    Returns:
+        ``[tokens, top_k]`` int32 rows for sparse MLA.
+    """
+    _check_rank(2, physical=physical, logical=logical)
+    _check_rank(1, input_row_offsets=input_row_offsets)
+    _check_rank(2, host_table=host_table, hot_table=hot_table)
+    _check_dtype(DType.int32, physical=physical, logical=logical)
+    _check_dtype(DType.int32, host_table=host_table)
+    _check_dtype(DType.uint32, hot_table=hot_table)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
+    _validate_argument_tensor(
+        "group", group, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    return ops.inplace_custom(
+        "kv_cache.hisparse.resolve.paged",
+        device=physical.device,
+        values=[
+            physical,
+            logical,
+            input_row_offsets,
+            mla_collection.kv_blocks,
+            mla_collection.page_stride,
+            mla_collection.lookup_table,
+            host_table,
+            hot_table,
+            group,
+        ],
+        out_types=[TensorType(DType.int32, physical.shape, physical.device)],
+        parameters=params.parameters(),
+    )[0].tensor
+
+
+@_rejects_split_head_dims
+def hisparse_gather_group(
+    mla_collection: PagedCacheValues,
+    hot_table: TensorValue,
+    host_mirror: TensorValue,
+    first_layer_idx: TensorValue,
+    layer_count: TensorValue,
+    params: HiSparseParams,
+) -> None:
+    """Copies one selection's misses for consecutive layers in one launch.
+
+    Run it after :func:`hisparse_resolve` and before the first layer's
+    attention. It fills the hot rows of ``layer_count`` layers starting at
+    ``first_layer_idx``: the indexer layer and the ``shared`` layers that
+    reuse its selections, which then skip their own gather.
+
+    Args:
+        mla_collection: The MLA cache that holds the hot rows.
+        hot_table: As passed to :func:`hisparse_resolve`.
+        host_mirror: ``[bytes]`` uint8 host mirror the device can read, its
+            pages laid out like the cache's.
+        first_layer_idx: uint32 scalar, the first layer to copy.
+        layer_count: uint32 scalar, how many consecutive layers to copy.
+        params: The static sizes, as passed to :func:`hisparse_resolve`.
+    """
+    _check_rank(1, host_mirror=host_mirror)
+    _check_dtype(DType.uint8, host_mirror=host_mirror)
+    _check_dtype(DType.uint32, hot_table=hot_table)
+    _validate_argument_tensor(
+        "first_layer_idx",
+        first_layer_idx,
+        dtype=DType.uint32,
+        device=DeviceRef.CPU(),
+    )
+    _validate_argument_tensor(
+        "layer_count",
+        layer_count,
+        dtype=DType.uint32,
+        device=DeviceRef.CPU(),
+    )
+    ops.inplace_custom(
+        "kv_cache.hisparse.gather_group.paged",
+        device=hot_table.device,
+        values=[
+            mla_collection.kv_blocks,
+            mla_collection.page_stride,
+            hot_table,
+            host_mirror,
+            first_layer_idx,
+            layer_count,
+        ],
+        parameters=params.parameters(),
+    )
 
 
 @_rejects_split_head_dims

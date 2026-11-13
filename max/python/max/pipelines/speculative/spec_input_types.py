@@ -243,6 +243,7 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     signal_buffers: list[_B] = field(default_factory=list)
     batch_context_lengths: list[_T] = field(default_factory=list)
     ep_inputs: list[_V] = field(default_factory=list)
+    hisparse: list[_V] = field(default_factory=list)
 
     scratch: list[_B] = field(default_factory=list)
     """The model's workspace buffers, which the graph takes first as a
@@ -308,6 +309,7 @@ def declared_spec_decode_inputs(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
+    hisparse_input_types: Sequence[TensorType | BufferType] = (),
     scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> SpecDecodeGraphInputs[TensorType, BufferType, TensorType | BufferType]:
@@ -321,6 +323,7 @@ def declared_spec_decode_inputs(
             the target leaf's then the draft leaf's, carry both caches' blocks
             and dispatch metadata.
         ep_input_types: The target's expert-parallel inputs.
+        hisparse_input_types: The target's HiSparse tables and host mirror.
         scratch_types: The model's workspace buffers.
         trailing_input_types: The inputs the target's call takes past the
             canonical tail.
@@ -479,6 +482,7 @@ def declared_spec_decode_inputs(
             [batch_context_length for _ in devices] if spec.distributed else []
         ),
         ep_inputs=list(ep_input_types),
+        hisparse=list(hisparse_input_types),
         scratch=list(scratch_types),
         trailing=list(trailing_input_types),
     )
@@ -672,6 +676,8 @@ def spec_decode_input_tree(
         # buffers beside the KV tree, which is where its base MEF binds them,
         # rather than after the tail.
         named["ep"] = _laid_out(ep, inputs.ep_inputs)
+    if inputs.hisparse:
+        named["hisparse"] = tuple(inputs.hisparse)
     tail, *bitmask = spec_decode_tail_groups(
         inputs,
         thinking=spec.include_in_thinking_phase,
@@ -695,6 +701,7 @@ def build_spec_decode_input_types(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
+    hisparse_input_types: Sequence[TensorType | BufferType] = (),
     scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> tuple[TensorType | BufferType, ...]:
@@ -710,6 +717,7 @@ def build_spec_decode_input_types(
         spec,
         kv_params=kv_params,
         ep_input_types=ep_input_types,
+        hisparse_input_types=hisparse_input_types,
         scratch_types=scratch_types,
         trailing_input_types=trailing_input_types,
     )
@@ -726,6 +734,7 @@ def decode_spec_decode_input_values(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
+    hisparse_input_types: Sequence[TensorType | BufferType] = (),
     scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> SpecDecodeGraphInputs:
@@ -740,6 +749,7 @@ def decode_spec_decode_input_values(
         spec: The spec the signature was built from.
         kv_params: The unified ``{"target", "draft"}`` KV params.
         ep_input_types: The target's expert-parallel inputs.
+        hisparse_input_types: The target's HiSparse tables and host mirror.
         scratch_types: The model's workspace buffers.
         trailing_input_types: The inputs the signature takes past the
             canonical tail, returned as :attr:`SpecDecodeGraphInputs.trailing`.
@@ -755,6 +765,7 @@ def decode_spec_decode_input_values(
         spec,
         kv_params=kv_params,
         ep_input_types=ep_input_types,
+        hisparse_input_types=hisparse_input_types,
         scratch_types=scratch_types,
         trailing_input_types=trailing_input_types,
     )
@@ -816,6 +827,7 @@ def decode_spec_decode_input_values(
             for value in tree.leaves(named.get("batch_context_lengths", ()))
         ],
         ep_inputs=tree.leaves(named.get("ep", ())),
+        hisparse=tree.leaves(named.get("hisparse", ())),
         scratch=[
             value.buffer
             for value in named.get("scratch", {}).get("buffers", ())
@@ -930,6 +942,10 @@ class SpecDecodeGraphSignature:
         """The target's expert-parallel inputs; empty when EP is off."""
         return ()
 
+    def hisparse_input_types(self) -> Sequence[TensorType | BufferType]:
+        """The target's HiSparse tables ahead of the speculative tail."""
+        return ()
+
     def scratch_types(self) -> Sequence[BufferType]:
         """This model's workspace buffers; empty for most models.
 
@@ -973,6 +989,7 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
+            hisparse_input_types=self.hisparse_input_types(),
             scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )
@@ -1009,6 +1026,7 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
+            hisparse_input_types=self.hisparse_input_types(),
             scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )
@@ -1050,6 +1068,7 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
+            hisparse_input_types=self.hisparse_input_types(),
             scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )

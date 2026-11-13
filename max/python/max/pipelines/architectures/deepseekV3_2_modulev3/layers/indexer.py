@@ -29,8 +29,10 @@ from max.nn.common_layers.context_parallel import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.kernels import (
+    hisparse_resolve,
     mla_fp8_index_top_k_physical,
     mla_fp8_index_top_k_physical_cp,
+    mla_fp8_index_top_k_with_physical,
     quantize_dynamic_scaled_float8,
     rope_ragged,
     store_k_cache_ragged,
@@ -49,6 +51,7 @@ from max.tensor import Tensor
 from max.tensor.sharding.mappings import DeviceMapping
 from max.tensor.sharding.placements import Sharded
 
+from ..model_config import HiSparseInputs
 from .prefill_context_parallel import PrefillContextParallel
 
 
@@ -156,6 +159,7 @@ class Indexer(
             Tensor,
             PagedCacheValues,
             MHAMaskVariant,
+            HiSparseInputs | None,
         ],
         Tensor,
     ]
@@ -230,6 +234,7 @@ class Indexer(
         layer_idx: Tensor,
         mla_collection: PagedCacheValues,
         mask_variant: MHAMaskVariant,
+        hisparse: HiSparseInputs | None = None,
     ) -> Tensor:
         """Runs the indexer over the activations and the normed queries.
 
@@ -244,6 +249,8 @@ class Indexer(
             layer_idx: Layer index for cache lookup
             mla_collection: The MLA cache the selected rows index.
             mask_variant: Mask applied to the index scores.
+            hisparse: The HiSparse tables, to rewrite the selections on
+                host-only pages to hot-buffer rows.
 
         Returns:
             Tensor of shape (total_seq_len, index_topk): the physical rows in
@@ -339,7 +346,25 @@ class Indexer(
             )
             return merge_topk(local_rows, local_scores, self.dcp_size)
 
-        return mla_fp8_index_top_k_physical(
+        if hisparse is None:
+            return mla_fp8_index_top_k_physical(
+                q_fp8,
+                F.squeeze(weights, axis=-1),
+                input_row_offsets,
+                indexer_k_collection,
+                mla_collection,
+                layer_idx,
+                self.index_topk,
+                self.quant_config.scales_granularity_mnk[2],
+                mask_variant,
+            ).rebind_mapping(q_fp8.mapping)
+
+        # HiSparse rewrites the selections on host-only pages in place, so it
+        # needs the logical positions beside the physical rows. The group is
+        # the cache slot this layer already reads, its rank among the ``full``
+        # layers, passed as a runtime input so the layers sharing one MoE
+        # subgraph body each keep their own LRU state.
+        logical, physical = mla_fp8_index_top_k_with_physical(
             q_fp8,
             F.squeeze(weights, axis=-1),
             input_row_offsets,
@@ -349,6 +374,16 @@ class Indexer(
             self.index_topk,
             self.quant_config.scales_granularity_mnk[2],
             mask_variant,
+        )
+        return hisparse_resolve(
+            physical,
+            logical,
+            input_row_offsets,
+            mla_collection,
+            hisparse.host_table,
+            hisparse.hot_table,
+            layer_idx,
+            hisparse.params,
         ).rebind_mapping(q_fp8.mapping)
 
     def forward_pcp(

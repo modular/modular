@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from itertools import islice
 from typing import ClassVar
 
 from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
+from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
@@ -66,7 +68,12 @@ from .layers.transformer_block import (
     BlockOutput,
     DeepseekV3_2TransformerBlock,
 )
-from .model_config import DeepseekV3_2Config, indexer_cache_layer_map
+from .model_config import (
+    DeepseekV3_2Config,
+    HiSparseInputs,
+    hisparse_gather_groups,
+    indexer_cache_layer_map,
+)
 
 
 def mask_padded_tail(
@@ -180,22 +187,7 @@ def rotary_embedding(config: DeepseekV3_2Config) -> RotaryEmbedding:
     )
 
 
-class DeepseekV3_2TextModel(
-    Module[
-        [
-            Tensor,
-            PagedCacheValues,
-            PagedCacheValues,
-            Tensor,
-            Tensor,
-            Tensor,
-            Tensor | None,
-            Tensor | None,
-            EPCommBuffers | None,
-        ],
-        tuple[Tensor, ...],
-    ]
-):
+class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
     """The DeepseekV3.2 language model.
 
     DeepseekV3 with sparse attention: a lightning indexer selects the keys each
@@ -275,6 +267,7 @@ class DeepseekV3_2TextModel(
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
+        hisparse: HiSparseInputs | None = None,
     ) -> tuple[Tensor, ...]:
         """Runs the embedding and decoder stack over the tokens."""
         if self.mesh is not None:
@@ -363,7 +356,7 @@ class DeepseekV3_2TextModel(
                 kv_collection,
                 indexer_kv_collection,
             )
-        h = self._run_layers(h, *layer_args, pcp=pcp)
+        h = self._run_layers(h, *layer_args, pcp=pcp, hisparse=hisparse)
 
         self._check_output_modes()
         outputs: list[Tensor] = []
@@ -395,11 +388,13 @@ class DeepseekV3_2TextModel(
         mla_prefill_metadata: MLAPrefillMetadata | None,
         comm_buffers: EPCommBuffers | None,
         pcp: PrefillContextParallelStep | None = None,
+        hisparse: HiSparseInputs | None = None,
     ) -> Tensor:
         """Runs the decoder blocks over ``h``.
 
         With ``pcp`` every block's attention chooses prefill context
-        parallelism per step.
+        parallelism per step. With ``hisparse`` every ``full`` layer resolves
+        its selection against the hot buffer and gathers the misses.
         """
         # MoE blocks share a subgraph, as in V3. ``full`` and ``shared``
         # layers differ structurally (shared layers carry no indexer weights),
@@ -408,6 +403,11 @@ class DeepseekV3_2TextModel(
         # the difference.
         topk_indices: Selection | None = None
         indexer_slots = indexer_cache_layer_map(
+            self.config.indexer_types, len(self.layers)
+        )
+        # How many consecutive layers one gather launch fills at each layer:
+        # the full layer and the ``shared`` layers that reuse its top-k.
+        gather_groups = hisparse_gather_groups(
             self.config.indexer_types, len(self.layers)
         )
         # Each block hands the next its input norm, fused into its post-MLP
@@ -420,6 +420,13 @@ class DeepseekV3_2TextModel(
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
             indexer_slot_tensor = F.constant(
                 indexer_slots[idx], DType.uint32, device=CPU()
+            )
+            # A runtime input, not a Python constant: the ``full`` layers
+            # share one subgraph body but not one gather width.
+            gather_group = (
+                F.constant(gather_groups[idx], DType.uint32, device=CPU())
+                if hisparse is not None
+                else None
             )
             call: Callable[..., BlockOutput] = layer
             group = "shared" if layer.self_attn.skip_topk else "full"
@@ -458,6 +465,8 @@ class DeepseekV3_2TextModel(
                 norm_x=norm_h,
                 next_input_gamma=next_input_gamma,
                 pcp=pcp,
+                hisparse=hisparse,
+                hisparse_group_size=gather_group,
             )
             norm_h = rest[0] if rest else None
         return h
@@ -560,6 +569,65 @@ def project_to_logits(
     )
 
 
+def hisparse_inputs_from_values(
+    config: DeepseekV3_2Config,
+    values: Sequence[TensorValue | BufferValue | Tensor],
+) -> HiSparseInputs | None:
+    """Groups the HiSparse graph inputs into the tables one layer reads.
+
+    The host and hot tables arrive one per device, like the KV leaves, and
+    are stacked the same way so each layer reads its own device's shard;
+    the host mirror is the one CPU tensor. Returns ``None``, and refuses
+    any trailing input, when the graph was built without HiSparse.
+
+    Args:
+        config: The config the graph was built from, which sizes the tables.
+        values: The HiSparse graph inputs, in their declared order: the
+            host tables, the hot tables, then the host mirror. Graph values
+            or single-device tensors, as the plain graph and the fused
+            spec graph hand them over.
+
+    Raises:
+        ValueError: If the values disagree with what the config declares.
+    """
+    if config.hisparse is None:
+        if values:
+            raise ValueError(
+                "the graph takes trailing inputs past the EP buffers, but"
+                " hisparse is not set"
+            )
+        return None
+    n_devices = len(config.devices)
+    if len(values) != 2 * n_devices + 1:
+        raise ValueError(
+            "hisparse is set, so the graph takes one host table and one"
+            " hot table per device plus the host mirror past the EP"
+            f" buffers ({2 * n_devices + 1} inputs); got {len(values)}"
+        )
+    host_tables, hot_tables, host_mirror = (
+        values[:n_devices],
+        values[n_devices : 2 * n_devices],
+        values[-1],
+    )
+    mesh = config.mesh
+    assert mesh is not None
+    # Mapped like the KV leaves: tensor-parallel devices stage the same
+    # tables, and data-parallel replicas each stage their own rows'.
+    mapping = DeviceMapping(
+        mesh,
+        tuple(
+            Unknown() if name == DP else Replicated()
+            for name in mesh.axis_names
+        ),
+    )
+    return HiSparseInputs(
+        host_table=Tensor.from_shard_values(list(host_tables), mapping),
+        hot_table=Tensor.from_shard_values(list(hot_tables), mapping),
+        host_mirror=Tensor.from_shard_values([host_mirror]),
+        params=config.hisparse,
+    )
+
+
 class DeepseekV3_2(Module[..., ModuleV3Outputs]):
     """Top-level DeepseekV3.2 wrapper that unflattens variadic KV cache args."""
 
@@ -627,11 +695,14 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
 
         comm_buffers: EPCommBuffers | None = None
         if self.ep_batch_manager is not None:
-            # Any variadic graph values left after the KV cache are the EP
-            # communication buffers. Wrap them as an explicit forward argument
-            # so they thread through each MoE block's subgraph boundary.
-            ep_buffers = list(kv_inputs)
+            # The variadic graph values between the KV cache and the HiSparse
+            # tail are the EP communication buffers. Wrap them as an explicit
+            # forward argument so they thread through each MoE block's
+            # subgraph boundary.
+            n_ep = len(self.ep_batch_manager.input_types())
+            ep_buffers = list(islice(kv_inputs, n_ep))
             comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
+        hisparse = self._hisparse_inputs(list(kv_inputs))
         outputs = self.language_model(
             tokens,
             kv_collection,
@@ -642,8 +713,21 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
             data_parallel_splits,
             input_row_offsets_i64,
             comm_buffers,
+            hisparse,
         )
         return self.language_model.module_outputs(outputs)
+
+    def _hisparse_inputs(
+        self, values: Sequence[TensorValue | BufferValue]
+    ) -> HiSparseInputs | None:
+        """Groups the trailing graph inputs into the HiSparse tables.
+
+        The host and hot tables arrive one per device, like the KV leaves, and
+        are stacked the same way so each layer reads its own device's shard;
+        the host mirror is the one CPU tensor. Returns ``None``, and refuses
+        any trailing input, when the graph was built without HiSparse.
+        """
+        return hisparse_inputs_from_values(self.config, values)
 
 
 class DeepseekV3_2Decoder(Module[[DecoderInputs], DecoderOutputs]):

@@ -53,6 +53,7 @@ from max.pipelines.speculative.driver import (
     TensorAdapter,
     gather_variable_rows,
 )
+from max.pipelines.speculative.spec_adapters import HISPARSE_INPUTS
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
@@ -65,7 +66,10 @@ from max.tensor.sharding import (
 )
 
 from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
-from ..deepseekV3_2_modulev3.deepseekV3_2 import project_to_logits
+from ..deepseekV3_2_modulev3.deepseekV3_2 import (
+    hisparse_inputs_from_values,
+    project_to_logits,
+)
 from ..deepseekV3_2_modulev3.layers.prefill_context_parallel import (
     PrefillContextParallelStep,
     prefill_predicate,
@@ -216,6 +220,17 @@ class Glm5_1Target:
                 batch.distributed.host_merged_offsets, DType.int64
             )
 
+        # Only the target reads the HiSparse tables. The fused graph runs
+        # every target forward -- a context step's rows ride the verify's
+        # merged batch -- while the NextN draft's latent and indexer stay
+        # fully resident, so its proposer never sees them.
+        hisparse = (
+            hisparse_inputs_from_values(
+                self.target.config, batch.extra[HISPARSE_INPUTS]
+            )
+            if HISPARSE_INPUTS in batch.extra
+            else None
+        )
         logits, _, hidden = language_model(
             batch.merged_tokens,
             PagedCacheValues.from_upstream(batch.kv_collections, kv_mapping),
@@ -230,6 +245,7 @@ class Glm5_1Target:
             data_parallel_splits,
             merged_offsets_i64,
             comm_buffers,
+            hisparse,
         )
         # Under data parallelism each device's shard is its replica's rows,
         # the layout the proposer's step 0 reads.
@@ -525,6 +541,15 @@ def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     return target.ep_batch_manager.input_types()
 
 
+def hisparse_input_types(
+    target_config: Any,
+) -> Sequence[TensorType | BufferType]:
+    """Returns the target's HiSparse inputs, empty with every page resident."""
+    if getattr(target_config, "hisparse", None) is None:
+        return ()
+    return target_config.hisparse_input_types()
+
+
 def sequential_proposer(
     verify: VerifyFn,
     draft: Any,
@@ -552,6 +577,7 @@ ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     ep_input_types=ep_input_types,
+    hisparse_input_types=hisparse_input_types,
     check=check,
     sequential_proposer=sequential_proposer,
 )

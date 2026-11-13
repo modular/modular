@@ -60,3 +60,41 @@ def test_ep_inputs_follow_the_tail_of_a_signature_that_isnt_distributed() -> (
             decoded.append((t.dtype, [int(d) for d in t.shape]))
         graph.output()
     assert decoded == [(DType.int64, [3]), (DType.int32, [5])]
+
+
+def test_distributed_fused_spec_signature_declares_hisparse_once() -> None:
+    devices = [DeviceRef.GPU(i) for i in range(8)]
+    spec = SpecDecodeInputTypeSpec(devices=devices, distributed=True)
+    kv = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=64,
+        num_layers=2,
+        devices=devices,
+        n_kv_heads=8,
+    )
+    sparse = (
+        *(TensorType(DType.int32, ["batch", 12], device=d) for d in devices),
+        *(TensorType(DType.uint32, ["batch", 113], device=d) for d in devices),
+        TensorType(DType.uint8, ["mirror_bytes"], device=CPU),
+    )
+    base = build_spec_decode_input_types(spec, kv_params=kv, ep_input_types=EP)
+    types = build_spec_decode_input_types(
+        spec, kv_params=kv, ep_input_types=EP, hisparse_input_types=sparse
+    )
+    assert len(types) == len(base) + 17
+    ep_end = next(
+        i + len(EP)
+        for i in range(len(base) - len(EP) + 1)
+        if base[i : i + len(EP)] == EP
+    )
+    assert types[ep_end : ep_end + 17] == sparse
+    with Graph("hisparse_fused_spec_signature", input_types=types) as graph:
+        named = decode_spec_decode_input_values(
+            graph.inputs,
+            spec,
+            kv_params=kv,
+            ep_input_types=EP,
+            hisparse_input_types=sparse,
+        )
+        assert len(named.hisparse) == 17
+        graph.output()

@@ -41,6 +41,7 @@ from typing_extensions import Self, override
 from ..deepseekV3_2_modulev3.model_config import (
     DeepseekV3_2Config,
     check_replica_layout,
+    hisparse_params_for,
     resolve_dcp_q_replicate,
     resolve_indexer_types,
     resolve_prefill_context_parallel,
@@ -118,6 +119,14 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
         else:
             graph_mode = "auto"
 
+        # Set only by the exporter's ``--hisparse``; ``None`` otherwise, so
+        # every existing export builds the same config it always did.
+        hisparse = hisparse_params_for(
+            pipeline_config=pipeline_config,
+            model_config=model_config,
+            huggingface_config=config,
+        )
+
         return cls(
             dtype=dtype,
             kv_params=kv_params,
@@ -180,6 +189,7 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
             ),
             quantization_encoding=quantization_encoding,
             unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
+            hisparse=hisparse,
         )
 
     def finalize(

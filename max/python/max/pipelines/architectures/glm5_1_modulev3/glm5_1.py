@@ -34,6 +34,7 @@ from max.tensor.sharding import (
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import (
     DeepseekV3_2TextModel,
+    hisparse_inputs_from_values,
     replica_context_lengths,
 )
 from .model_config import Glm5_1Config
@@ -118,6 +119,10 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
             comm_buffers = self.ep_batch_manager.comm_buffers(
                 [x._graph_value for x in tree.leaves(inputs.ep)]
             )
+        hisparse = hisparse_inputs_from_values(
+            self.config,
+            [x._graph_value for x in tree.leaves(inputs.hisparse or ())],
+        )
         outputs = self.language_model(
             inputs.tokens,
             collection("mla"),
@@ -128,5 +133,6 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
             data_parallel_splits,
             input_row_offsets_i64,
             comm_buffers,
+            hisparse,
         )
         return self.language_model.module_outputs(outputs)

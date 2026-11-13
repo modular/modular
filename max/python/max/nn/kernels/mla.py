@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.nn._graph_ops import cp_merge_topk as _cp_merge_topk
 from max.nn._graph_ops import flare_mla_prefill_plan as _flare_mla_prefill_plan
+from max.nn._graph_ops import hisparse_gather_group as _hisparse_gather_group
+from max.nn._graph_ops import hisparse_resolve as _hisparse_resolve
 from max.nn._graph_ops import (
     indexer_k_quantize_store as _indexer_k_quantize_store,
 )
@@ -42,6 +44,9 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops import (
     mla_fp8_index_top_k_physical_cp as _mla_fp8_index_top_k_physical_cp,
+)
+from max.nn._graph_ops import (
+    mla_fp8_index_top_k_with_physical as _mla_fp8_index_top_k_with_physical,
 )
 from max.nn._graph_ops import mla_kpool_append as _mla_kpool_append
 from max.nn._graph_ops import mla_kpool_compress as _mla_kpool_compress
@@ -67,8 +72,13 @@ if TYPE_CHECKING:
 flare_mla_prefill_plan = F.functional(_flare_mla_prefill_plan)
 mla_prefill_graph = F.functional(_mla_prefill_graph)
 mla_decode_graph = F.functional(_mla_decode_graph)
+hisparse_resolve = F.functional(_hisparse_resolve)
+hisparse_gather_group = F.functional(_hisparse_gather_group)
 mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
 mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
+mla_fp8_index_top_k_with_physical = F.functional(
+    _mla_fp8_index_top_k_with_physical
+)
 mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
 mla_fp8_index_top_k_physical_cp = F.functional(_mla_fp8_index_top_k_physical_cp)
 mla_kpool_append = F.functional(_mla_kpool_append)
@@ -125,6 +135,8 @@ def kv_cache_row_bytes(kv_collection: "PagedCacheValues") -> int:
 __all__ = [
     "cp_merge_topk",
     "flare_mla_prefill_plan",
+    "hisparse_gather_group",
+    "hisparse_resolve",
     "kv_cache_pack_owned_rows",
     "kv_cache_row_bytes",
     "kv_cache_unpack_prefix_rows",
@@ -133,6 +145,7 @@ __all__ = [
     "mla_fp8_index_top_k",
     "mla_fp8_index_top_k_physical",
     "mla_fp8_index_top_k_physical_cp",
+    "mla_fp8_index_top_k_with_physical",
     "mla_kpool_append",
     "mla_kpool_compress",
     "mla_kpool_expand_topk",

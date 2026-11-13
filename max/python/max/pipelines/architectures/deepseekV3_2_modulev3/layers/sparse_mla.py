@@ -46,6 +46,7 @@ from max.nn.common_layers.quant_mla import (
 )
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
 from max.nn.kernels import (
+    hisparse_gather_group,
     mla_decode_graph,
     mla_decode_graph_cp,
     mla_prefill_decode_graph,
@@ -56,6 +57,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, NamedMapping, Sharded, Unknown
 
 from ...deepseekV3_2.layers.sparse_mla import sparse_selection_width
+from ..model_config import HiSparseInputs
 from .indexer import Indexer
 from .prefill_context_parallel import (
     PrefillContextParallel,
@@ -635,6 +637,8 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         indexer_layer_idx: Tensor | None = None,
         selection_lag: int = 0,
         pcp: PrefillContextParallelStep | None = None,
+        hisparse: HiSparseInputs | None = None,
+        hisparse_group_size: Tensor | None = None,
     ) -> tuple[Tensor, Selection]:
         """Returns the attention output and the top-k selection it used.
 
@@ -646,6 +650,10 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         (:meth:`_attend_pcp`) and the DCP path (:meth:`_attend`), each on
         its share of the rows (see :meth:`_predicated`), and returns the
         selection split into its DCP and PCP rows' halves.
+
+        ``hisparse_group_size`` is how many consecutive layers, starting at
+        this one, read the selection this layer resolves: the gather that
+        fills their hot rows runs here, once.
         """
         args: tuple[Any, ...] = (
             x,
@@ -665,7 +673,11 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                 raise ValueError(
                     "a split selection comes only from a predicated layer"
                 )
-            attn_out, topk_indices = self._attend(*args)
+            attn_out, topk_indices = self._attend(
+                *args,
+                hisparse=hisparse,
+                hisparse_group_size=hisparse_group_size,
+            )
             return self.o_proj(attn_out), topk_indices
         if pcp.cut is None:
             raise ValueError(
@@ -759,6 +771,9 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         reuse_prev_topk: bool,
         indexer_layer_idx: Tensor | None,
         selection_lag: int,
+        *,
+        hisparse: HiSparseInputs | None = None,
+        hisparse_group_size: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """The attention before ``o_proj``, and its selection."""
         if selection_lag != 0 and not reuse_prev_topk:
@@ -790,8 +805,10 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
 
         freqs_cis = F.cast(freqs_cis, xq.dtype)
 
-        if self.indexer is not None and not reuse_prev_topk:
+        runs_indexer = self.indexer is not None and not reuse_prev_topk
+        if runs_indexer:
             # ``full`` layer: run the lightning indexer and select top-k keys.
+            assert self.indexer is not None
             topk_indices = self.indexer(
                 x,
                 q_a_normed,
@@ -803,6 +820,7 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                 layer_idx if indexer_layer_idx is None else indexer_layer_idx,
                 kv_collection,
                 MHAMaskVariant.CAUSAL_MASK,
+                hisparse,
             )
         else:
             # ``shared`` layer: reuse the previous full layer's top-k selection
@@ -815,6 +833,22 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
                     "indices from a previous full indexer layer."
                 )
             topk_indices = prev_topk_indices
+
+        if hisparse is not None and runs_indexer:
+            # Copy this layer's bytes for the misses the indexer layer's
+            # resolve queued, from the host mirror into the hot rows, before
+            # the attention reads them. The same launch fills the consecutive
+            # ``shared`` layers that reuse this selection, so they skip their
+            # own gather.
+            assert hisparse_group_size is not None
+            hisparse_gather_group(
+                kv_collection,
+                hisparse.hot_table,
+                hisparse.host_mirror,
+                layer_idx,
+                hisparse_group_size,
+                hisparse.params,
+            )
 
         attn_out = self._mla_impl(
             xq,

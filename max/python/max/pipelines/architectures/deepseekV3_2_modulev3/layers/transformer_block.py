@@ -40,7 +40,7 @@ from ...deepseekV3_modulev3.layers.transformer_block import (
     post_mlp,
     residual_partial_sum,
 )
-from ..model_config import DeepseekV3_2Config
+from ..model_config import DeepseekV3_2Config, HiSparseInputs
 from .mlp import DeepseekV3_2MLP
 from .moe import (
     DeepseekV3_2ExpertParallelMoE,
@@ -276,6 +276,8 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
         next_input_gamma: Tensor | None = None,
         selection_lag: int = 0,
         pcp: PrefillContextParallelStep | None = None,
+        hisparse: HiSparseInputs | None = None,
+        hisparse_group_size: Tensor | None = None,
     ) -> BlockOutput:
         """Returns the block output and its top-k selection.
 
@@ -303,6 +305,8 @@ class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
             indexer_layer_idx,
             selection_lag,
             pcp=pcp,
+            hisparse=hisparse,
+            hisparse_group_size=hisparse_group_size,
         )
 
         if self.fuse_post_attention_norm:

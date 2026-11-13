@@ -96,6 +96,14 @@ def _default_trailing_input_tree(
     return None
 
 
+def _default_hisparse_input_types(
+    target_config: Any,
+) -> Sequence[TensorType | BufferType]:
+    """Returns no HiSparse inputs when latent pages stay resident."""
+    del target_config
+    return ()
+
+
 def _default_trailing_buffers(
     target_config: Any,
     contexts: Sequence[TextContext],
@@ -251,6 +259,11 @@ class TargetAdapter:
     instead: :attr:`ep_input_types` are then declared after the KV tree and
     nothing else of the distributed group is. ``False`` for every target that
     keeps them on the distributed signature."""
+
+    hisparse_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
+        _default_hisparse_input_types
+    )
+    """Returns the target's HiSparse input types from its config."""
 
     batch_distributed_buffers: Callable[
         [Any], tuple[Sequence[Buffer] | None, Sequence[Buffer]]
