@@ -108,13 +108,57 @@ def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
         ascending: Sort direction.
 
     Returns:
-        MAX_FINITE for ascending sort, MIN_FINITE for descending sort.
+        MAX for ascending sort, MIN for descending sort (+inf / -inf for
+        floating-point types). No real value sorts beyond the sentinel; a
+        real value equal to it is ordered first by `_sorts_after`.
     """
 
     comptime if ascending:
-        return Scalar[dtype].MAX_FINITE
+        return Scalar[dtype].MAX
     else:
-        return Scalar[dtype].MIN_FINITE
+        return Scalar[dtype].MIN
+
+
+comptime _PAD_INDEX = -1
+"""Index stored in the padding slots of the GPU sort buffers."""
+
+
+@inline(.always)
+def _is_pad[dtype: DType](idx: Scalar[dtype]) -> Bool:
+    """Returns True if `idx` marks a padding slot."""
+    return idx == Scalar[dtype](_PAD_INDEX)
+
+
+@inline(.always)
+def _sorts_after[
+    ascending: Bool, dtype: DType
+](va: Scalar[dtype], vb: Scalar[dtype], a_is_pad: Bool, b_is_pad: Bool) -> Bool:
+    """Returns True if element a belongs after element b in sorted order.
+
+    Padding holds the sentinel (the extreme value in the sort direction), so
+    it can only tie with a real element, never sort before one by value. On a
+    tie, padding goes last. This keeps every real element, including +-inf
+    and values equal to the sentinel, in the first `n` slots.
+
+    Parameters:
+        ascending: Sort direction.
+        dtype: Data type of the values.
+
+    Args:
+        va: Value of element a.
+        vb: Value of element b.
+        a_is_pad: Whether element a is padding.
+        b_is_pad: Whether element b is padding.
+
+    Returns:
+        True if element a must be placed after element b.
+    """
+    if va == vb:
+        return a_is_pad and not b_is_pad
+    comptime if ascending:
+        return va > vb
+    else:
+        return va < vb
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
@@ -172,7 +216,7 @@ def _bitonic_local_sort_kernel[
             shared_vals.unsafe_store(
                 tid, _sentinel_val[input_dtype, ascending]()
             )
-            shared_idxs.unsafe_store(tid, Scalar[indices_dtype](-1))
+            shared_idxs.unsafe_store(tid, Scalar[indices_dtype](_PAD_INDEX))
 
         var k = 2
         while k <= BLOCK_SIZE:
@@ -183,22 +227,19 @@ def _bitonic_local_sort_kernel[
                 if partner > tid:
                     var vi = shared_vals.unsafe_load(tid)
                     var vp = shared_vals.unsafe_load(partner)
+                    var ii = shared_idxs.unsafe_load(tid)
+                    var ip = shared_idxs.unsafe_load(partner)
 
-                    var cmp_val: Bool
-                    comptime if ascending:
-                        cmp_val = vi > vp
-                    else:
-                        cmp_val = vi < vp
+                    var cmp_val = _sorts_after[ascending](
+                        vi, vp, _is_pad(ii), _is_pad(ip)
+                    )
 
                     # Global merges require adjacent blocks to form bitonic runs.
                     var direction = (gid & k) == 0
                     if cmp_val == direction:
                         shared_vals.unsafe_store(tid, vp)
                         shared_vals.unsafe_store(partner, vi)
-                        var ii = shared_idxs.unsafe_load(tid)
-                        shared_idxs.unsafe_store(
-                            tid, shared_idxs.unsafe_load(partner)
-                        )
+                        shared_idxs.unsafe_store(tid, ip)
                         shared_idxs.unsafe_store(partner, ii)
                 j >>= 1
             k <<= 1
@@ -271,21 +312,18 @@ def _bitonic_merge_local_kernel[
             if partner > tid:
                 var vi = shared_vals.unsafe_load(tid)
                 var vp = shared_vals.unsafe_load(partner)
+                var ii = shared_idxs.unsafe_load(tid)
+                var ip = shared_idxs.unsafe_load(partner)
 
-                var cmp_val: Bool
-                comptime if ascending:
-                    cmp_val = vi > vp
-                else:
-                    cmp_val = vi < vp
+                var cmp_val = _sorts_after[ascending](
+                    vi, vp, _is_pad(ii), _is_pad(ip)
+                )
 
                 var direction = (gid & _stage) == 0
                 if cmp_val == direction:
                     shared_vals.unsafe_store(tid, vp)
                     shared_vals.unsafe_store(partner, vi)
-                    var ii = shared_idxs.unsafe_load(tid)
-                    shared_idxs.unsafe_store(
-                        tid, shared_idxs.unsafe_load(partner)
-                    )
+                    shared_idxs.unsafe_store(tid, ip)
                     shared_idxs.unsafe_store(partner, ii)
             j >>= 1
 
@@ -366,11 +404,19 @@ def _argsort_gpu_impl[
         var partner = i ^ _step
         with PDL():
             if partner > i and partner < _n_arg:
+                var vi = input_arg.load[width=1]((i,))
+                var vp = input_arg.load[width=1]((partner,))
                 var cmp_val: Bool
-                comptime if ascending:
-                    cmp_val = input_arg[i] > input_arg[partner]
+                if vi == vp:
+                    # Only ties need the indices (padding loses ties).
+                    cmp_val = _sorts_after[ascending](
+                        vi,
+                        vp,
+                        _is_pad(indices_arg.load[width=1]((i,))),
+                        _is_pad(indices_arg.load[width=1]((partner,))),
+                    )
                 else:
-                    cmp_val = input_arg[i] < input_arg[partner]
+                    cmp_val = _sorts_after[ascending](vi, vp, False, False)
 
                 var bitonic_merge_direction = (i & _stage) == 0
                 if cmp_val == bitonic_merge_direction:
@@ -536,10 +582,10 @@ def _argsort_gpu[
             )
             return
 
-        # otherwise we pad with a sentinel value and the max/min value for the type.
-        comptime UNKNOWN_VALUE = -1
+        # Otherwise pad with index -1 and the sentinel value. `_sorts_after`
+        # keeps padding behind every real element.
         padded_indices.store[alignment=align_of[padded_indices.dtype]()](
-            (i,), SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
+            (i,), SIMD[padded_indices.dtype, width](_PAD_INDEX)
         )
         padded_input.store[alignment=align_of[padded_input.dtype]()](
             (i,),
