@@ -996,8 +996,9 @@ LogicalResult MOGraphLowering::lower(MO::DebugPrintOp printOp) {
   if (targetDevice != hostDevice)
     chain = opLoweringState.sync(chain);
 
-  loweringState.setCurrentExecuteChain(
-      cast<TypedValue<MEF::ChainType>>(outChain));
+  // Only the users of its MO out-chain, control flow, calls and the
+  // terminator wait on the print, as after a grt.if.
+  loweringState.addControlFlowChain(outChain);
 
   loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
   return success();
@@ -1023,8 +1024,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugTensorPrintOp printOp) {
     auto outChain = opLoweringState.debugTensorPrint(
         chain, buffer, tensorSpec, printOp.getLabelAttr(),
         printOp.getInput().getType());
-    loweringState.setCurrentExecuteChain(
-        cast<TypedValue<MEF::ChainType>>(outChain));
+    loweringState.addControlFlowChain(outChain);
 
     loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
     return success();
@@ -1046,8 +1046,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugTensorPrintOp printOp) {
       moTensorType);
   auto outChain = opLoweringState.hostDebugTensorPrint(
       transferChain, hostBuffer, tensorSpec, printOp.getLabelAttr());
-  loweringState.setCurrentExecuteChain(
-      cast<TypedValue<MEF::ChainType>>(outChain));
+  loweringState.addControlFlowChain(outChain);
   loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
   return success();
 }
@@ -1498,8 +1497,11 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
   ASSERT_STREAM(MO::isOnHost(whileOp), << "mo.while is for host only");
   MGP::MOOpLoweringState opLoweringState(loweringState, whileOp);
 
-  // Thread the current 'execute' chain through 'cond' and 'body'.
+  // Thread the current 'execute' chain, after any earlier control flow,
+  // through 'cond' and 'body'. Later ops keep the chain from before the
+  // while, as after a grt.if.
   Value rootChain = loweringState.getExecuteChain();
+  Value outerChain = loweringState.getCurrentExecuteChain();
   Value currentChain = loweringState.joinControlFlowChains(whileOp.getLoc());
   bool currentIsRoot = currentChain == rootChain;
   currentChain = opLoweringState.getGuardChain(currentChain);
@@ -1615,8 +1617,11 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
 
   Value outChain = loweredWhileOp.getResult(0);
 
-  loweringState.setCurrentExecuteChain(outChain);
+  // Only users of the while's results, and later ops ordered against control
+  // flow, wait on its out-chain.
   loweringState.setRootExecuteChain(rootChain);
+  loweringState.setCurrentExecuteChain(outerChain);
+  loweringState.addControlFlowChain(outChain);
 
   for (auto [origResult, loweredResult] :
        llvm::zip(whileOp.getResults(),
@@ -1626,6 +1631,8 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
                                                      outChain);
     } else {
       loweringState.emplaceExecuteLoweredValue(origResult, loweredResult);
+      if (!isa<MEF::ChainType>(loweredResult.getType()))
+        loweringState.guardValueWithChain(origResult, outChain);
     }
   }
 
