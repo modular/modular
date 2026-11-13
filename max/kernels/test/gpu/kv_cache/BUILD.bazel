@@ -76,6 +76,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_hisparse.mojo": _APPLE_GPU_INCOMPATIBLE,  # Apple GPU has no strong compare-exchange, which the resolve hash needs
     # AMD: gfx950 AGPR-Copy-MFMA regression. B200: the ragged entry point
     # compiles sink=True kernels for this sink-less d512 caller.
     "test_mha_gemma4_sink_repro.mojo": select({
