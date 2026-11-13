@@ -1003,6 +1003,23 @@ def _load_from_lds[
                 _type=SIMD[.float16, 8]._mlir_type
             ](llvm_res)
         )
+    elif dtype.is_float8() and width == 4:
+        # A dword: one row of E8M0 scale bytes, as the A8W4 down strip reads
+        # them. The scopes are the wider float8 tiers': the load is noalias
+        # against `amdgpu.AsyncCopies`, so the backend may move it across a
+        # DMA into the bytes it reads. A caller must have drained that DMA
+        # (`s_waitcnt vmcnt`) and barred the waves that issued it before its
+        # first such read, as the strip does after its fill.
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type=__mlir_type.`vector<4 x i8>`,
+            alignment=to_i64(Int64(alignment)),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
+            _type=SIMD[.uint8, 4]._mlir_type
+        ](llvm_res)
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x i8>`,

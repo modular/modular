@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests alias-scoped raw-buffer DMA into LDS."""
+"""Tests alias-scoped raw-buffer DMA into LDS, and the LDS reads back out of
+it: a fragment a lane wide (BF16 8, float8 16) and the dword (float8 4) the
+staged E8M0 scale rows are read with."""
 
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.host import DeviceContext
@@ -115,4 +117,5 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
 def main() raises:
     with DeviceContext() as ctx:
         _run_case[.bfloat16, 8](ctx)
+        _run_case[.float8_e4m3fn, 4](ctx)
         _run_case[.float8_e4m3fn, 16](ctx)
