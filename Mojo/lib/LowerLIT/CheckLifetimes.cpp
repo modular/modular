@@ -38,6 +38,10 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/Support/SaveAndRestore.h"
 
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+
 using namespace M;
 using namespace KGEN;
 using M::HLCF::ReturnOp;
@@ -195,12 +199,53 @@ struct StructInfo {
 };
 } // namespace
 
-/// Module-level state shared across all worker threads in the CheckLifetimes
-/// pass. The declaration maps are immutable after construction; the counter
-/// uses atomic operations so no external lock is needed.
 namespace {
+/// The flattened bit layout of a struct type: one bit range per stored field,
+/// plus one trailing bit for the whole object.
+struct StructLayout {
+  struct Field {
+    StructFieldOp field;
+    unsigned startBit;
+    unsigned numBits;
+  };
+  /// Stored fields in declaration order.
+  SmallVector<Field> fields;
+  /// Total bits, including the whole-object bit.
+  unsigned numBits = 0;
+};
+
+/// Module-level state shared across all worker threads in the CheckLifetimes
+/// pass. The declaration maps are immutable after construction; struct layouts
+/// are filled in lazily under `layoutMutex`.
 struct WholeProgramState {
   WholeProgramState(Operation *module, std::vector<FnOp> &funcList);
+
+  /// Return the layout for `type`. The first caller runs `compute` to fill it
+  /// in; concurrent callers for the same type block until that finishes, so
+  /// each layout is computed once per pass. `compute` may request layouts of
+  /// other types: `std::call_once` is not reentrant, and a struct's fields
+  /// cannot reach the struct itself, so the containment graph is acyclic and
+  /// no thread can wait on a layout it is itself computing.
+  const StructLayout &
+  getOrComputeLayout(LIT::StructType type,
+                     llvm::function_ref<void(StructLayout &)> compute) const {
+    LayoutEntry *entry = nullptr;
+    {
+      std::shared_lock<std::shared_mutex> lock(layoutMutex);
+      auto it = layouts.find(type);
+      if (it != layouts.end())
+        entry = it->second.get();
+    }
+    if (!entry) {
+      std::unique_lock<std::shared_mutex> lock(layoutMutex);
+      std::unique_ptr<LayoutEntry> &slot = layouts[type];
+      if (!slot)
+        slot = std::make_unique<LayoutEntry>();
+      entry = slot.get();
+    }
+    std::call_once(entry->once, [&] { compute(entry->layout); });
+    return entry->layout;
+  }
 
   /// Immutable declaration maps, populated once before threading begins.
   DenseMap<SymbolRefAttr, StructInfo> structMap;
@@ -209,6 +254,18 @@ struct WholeProgramState {
 
   // This is the Deinitable.__deinit__ trait member function.
   FnOp deinitableDtor;
+
+private:
+  struct LayoutEntry {
+    std::once_flag once;
+    StructLayout layout;
+  };
+
+  /// Struct layouts computed lazily by the worker threads, so each struct type
+  /// is laid out once for the whole pass rather than once per thread. Entries
+  /// are never erased, so references into them stay valid.
+  mutable std::shared_mutex layoutMutex;
+  mutable DenseMap<LIT::StructType, std::unique_ptr<LayoutEntry>> layouts;
 };
 } // namespace
 
@@ -310,10 +367,10 @@ struct TypeDeclInfo {
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type) const;
 
-  /// Return the start bit for a field with the specified name in the specified
-  /// type.
-  unsigned getFieldIndex(LIT::StructType type, StringAttr fieldName) const;
-  int getFieldIndexOrInvalid(LIT::StructType type, StringAttr fieldName) const;
+  /// Return the layout of the stored field with the specified name in the
+  /// specified type, or nullopt when the type has no such field.
+  std::optional<StructLayout::Field> findField(LIT::StructType type,
+                                               StringAttr fieldName) const;
 
   /// Given a subfield bit index that indicates a stored field in the specified
   /// type, return the StructFieldOp of the accessed field, the first bit
@@ -375,23 +432,20 @@ struct TypeDeclInfo {
     return evaluator;
   }
 
-  /// Shared, immutable module-level state (declaration maps + anonymous-origin
-  /// counter). Not owned here.
+  /// Module-level state shared by all threads. Not owned here.
   const WholeProgramState *shared;
 
   /// Used for evaluating things like get_witness when we generate destructor
   /// calls.
   mutable LIT::LITSymTabEvaluationContext evaluationContext;
 
-  /// This keeps track of the number of fields in the struct specified by the
-  /// (fully flattened) symbol and parameters.
-  mutable DenseMap<LIT::StructType, unsigned> numFields;
+  /// Thread-local view of the shared layouts, to skip the lock on repeat
+  /// lookups.
+  mutable DenseMap<LIT::StructType, const StructLayout *> layoutCache;
 
-  /// A map from StructType and field name to index within the struct.  This
-  /// isn't the field number, this is the number of recursively flattened
-  /// fields until the start of the field.
-  mutable DenseMap<std::pair<LIT::StructType, StringAttr>, unsigned>
-      fieldIndices;
+  /// Return the layout of `structType`, computing and publishing it on first
+  /// use by any thread.
+  const StructLayout &getStructLayout(LIT::StructType structType) const;
 };
 
 /// Return true if the specified type is RegisterPassableTrivial - no copy,
@@ -735,56 +789,60 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   auto structType = sugarDynCast<LIT::StructType>(type);
   if (!structType)
     return 1;
+  return getStructLayout(structType).numBits;
+}
 
-  // See if we've already looked this up, if so, just return the known value.
-  auto it = numFields.find(structType);
-  if (it != numFields.end())
-    return it->second;
+const StructLayout &
+TypeDeclInfo::getStructLayout(LIT::StructType structType) const {
+  if (auto it = layoutCache.find(structType); it != layoutCache.end())
+    return *it->second;
 
-  // If not, we compute it recursively.  Structs cannot be infinitely deep, so
-  // we can just do this recursively.
-  auto smIt = shared->structMap.find(structType.getSymbol());
-  assert(smIt != shared->structMap.end() && smIt->second.decl &&
-         "reference to struct that wasn't declared");
-  LIT::StructDeclOp decl = smIt->second.decl;
+  const StructLayout &layout =
+      shared->getOrComputeLayout(structType, [&](StructLayout &computed) {
+        // Structs cannot be infinitely deep, so we can compute this
+        // recursively.
+        auto smIt = shared->structMap.find(structType.getSymbol());
+        assert(smIt != shared->structMap.end() && smIt->second.decl &&
+               "reference to struct that wasn't declared");
+        LIT::StructDeclOp decl = smIt->second.decl;
 
-  // Initialize a parameter evaluator. We need to compute the resolved field
-  // types to recursively compute the number of fields.
-  ParameterEvaluator evaluator =
-      getParameterEvaluator(decl.getInputParams(), structType.getParamValues());
+        // We need the resolved field types to recursively compute the number
+        // of fields.
+        ParameterEvaluator evaluator = getParameterEvaluator(
+            decl.getInputParams(), structType.getParamValues());
 
-  size_t totalFields = 0;
-  for (auto field : decl.getFieldDecls()) {
-    fieldIndices[{structType, field.getNameAttr()}] = totalFields;
-    totalFields +=
-        getNumFieldsInType(evaluator.getReboundType(field.getType()));
+        unsigned totalFields = 0;
+        for (auto field : decl.getFieldDecls()) {
+          unsigned numBits =
+              getNumFieldsInType(evaluator.getReboundType(field.getType()));
+          computed.fields.push_back({field, totalFields, numBits});
+          totalFields += numBits;
+        }
+
+        // We always track an extra bit per struct.  On the outer level of a
+        // value this tracks whether the object is fully constructed (not just
+        // field constructed).  On individual fields, it tracks whether the
+        // field itself is initialized or whether its subfields are
+        // initialized.  This also allows us to support (sub)fields that have
+        // zero members soundly.
+        computed.numBits = totalFields + 1;
+      });
+  layoutCache[structType] = &layout;
+  return layout;
+}
+
+/// Return the layout of the stored field with the specified name in the
+/// specified type, or nullopt when the type has no such field.
+std::optional<StructLayout::Field>
+TypeDeclInfo::findField(LIT::StructType type, StringAttr fieldName) const {
+  for (const StructLayout::Field &field : getStructLayout(type).fields) {
+    // `StructFieldOp` is a handle whose accessors are non-const, so compare
+    // through a copy rather than the stored field.
+    StructFieldOp fieldOp = field.field;
+    if (fieldOp.getNameAttr() == fieldName)
+      return field;
   }
-
-  // We always track an extra bit per struct.  On the outer level of a value
-  // this tracks whether the object is fully constructed (not just field
-  // constructed).  On individual fields, it tracks whether the field itself is
-  // initialized or whether its subfields are initialized.  This also allows us
-  // to support (sub)fields that have zero members soundly.
-  ++totalFields;
-
-  return numFields[structType] = totalFields;
-}
-
-/// Return the start bit for a field with the specified name in the specified
-/// type, or -1 if the field isn't found.
-int TypeDeclInfo::getFieldIndexOrInvalid(LIT::StructType type,
-                                         StringAttr fieldName) const {
-  auto it = fieldIndices.find({type, fieldName});
-  return it == fieldIndices.end() ? -1 : it->second;
-}
-
-/// Return the start bit for a field with the specified name in the specified
-/// type.
-unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
-                                     StringAttr fieldName) const {
-  int idx = getFieldIndexOrInvalid(type, fieldName);
-  assert(idx >= 0 && "invalid field name for struct type");
-  return unsigned(idx);
+  return std::nullopt;
 }
 
 /// Given a subfield bit index that indicates a stored field in the specified
@@ -793,20 +851,13 @@ unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
 std::tuple<StructFieldOp, unsigned, unsigned>
 TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
                                  unsigned bitIndex) const {
-  LIT::StructDeclOp decl = getStructInfoForType(declRef).decl;
-
-  ParameterEvaluator evaluator =
-      getParameterEvaluator(decl.getInputParams(), declRef.getParamValues());
-  // Scan to find the field that contains this.
-  unsigned startFieldIdx = 0;
-  for (auto field : decl.getFieldDecls()) {
-    // This range check is needed to handle zero-sized fields: they don't
-    // contain a field even if they start at the beginning of it.
-    Type reboundType = evaluator.getReboundType(field.getType());
-    unsigned numSubFields = getNumFieldsInType(reboundType);
-    if (startFieldIdx <= bitIndex && startFieldIdx + numSubFields > bitIndex)
-      return {field, startFieldIdx, numSubFields};
-    startFieldIdx += numSubFields;
+  for (const StructLayout::Field &layoutField :
+       getStructLayout(declRef).fields) {
+    // A field holds the bit iff the index falls in [startBit, startBit +
+    // numBits); the trailing whole-object bit belongs to no field.
+    if (layoutField.startBit <= bitIndex &&
+        layoutField.startBit + layoutField.numBits > bitIndex)
+      return {layoutField.field, layoutField.startBit, layoutField.numBits};
   }
 
   llvm_unreachable("invalid index into struct field numbering");
@@ -1388,19 +1439,16 @@ std::pair<ValueRef, Type> ValueSet::getValueRefAndTypeForOrigin(
     auto containerType = sugarDynCast<LIT::StructType>(type);
     if (!containerType)
       return {valueRef, Type()};
-    int fieldOffset =
-        getTypeDeclInfo().getFieldIndexOrInvalid(containerType, fieldName);
-    if (fieldOffset == -1)
+    std::optional<StructLayout::Field> fieldLayout =
+        getTypeDeclInfo().findField(containerType, fieldName);
+    if (!fieldLayout)
       return {valueRef, Type()};
 
-    // Figure out the declared type of the field.
-    auto [fieldDecl, _, numFieldBits] =
-        getTypeDeclInfo().getFieldContaining(containerType, fieldOffset);
-    assert(fieldDecl.getNameAttr() == fieldName && "index/name mismatch");
-
-    // Refine the ValueRef and type.
-    return {valueRef.getSubfield(fieldOffset, numFieldBits),
-            fieldDecl.getType()};
+    // Refine the ValueRef and type. The field type is rebound at this
+    // instantiation so that a nested origin like `a.x.w` indexes the real
+    // layout rather than the declared one.
+    return {valueRef.getSubfield(fieldLayout->startBit, fieldLayout->numBits),
+            fieldLayout->field.getReboundType(containerType)};
   }
 
   // If this is an interior origin like `a.field["name"]`, then the interior
@@ -1484,9 +1532,11 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();
-    unsigned fieldOffset = getTypeDeclInfo().getFieldIndex(
-        sugarCast<LIT::StructType>(containerType), structGER.getFieldAttr());
-    unsigned startBit = baseVal.startBit + fieldOffset;
+    std::optional<StructLayout::Field> fieldLayout =
+        getTypeDeclInfo().findField(sugarCast<LIT::StructType>(containerType),
+                                    structGER.getFieldAttr());
+    assert(fieldLayout && "invalid field name for struct type");
+    unsigned startBit = baseVal.startBit + fieldLayout->startBit;
     auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
                     startBit + getTypeDeclInfo().getNumFieldsInType(resultType),
