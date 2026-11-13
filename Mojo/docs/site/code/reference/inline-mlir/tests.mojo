@@ -231,6 +231,26 @@ def test_explicit_type_attr() raises:
     assert_equal(Bool(casted), True)
 
 
+# --- __mlir_op: f-string form ---
+
+
+def test_fstring_op() raises:
+    """The f-string form binds Mojo values with %{name}."""
+    var a = Int(40).__mlir_index__()
+    var b = Int(2).__mlir_index__()
+    var sum = __mlir_op[`index.add %{a}, %{b}`]
+    assert_equal(Int(mlir_value=sum), 42)
+
+
+def test_fstring_op_type_of() raises:
+    """%{type_of(name)} inserts the MLIR type of a bound value."""
+    var x = Int(255).__mlir_index__()
+    var low_bit = __mlir_op[
+        `index.castu %{x} : %{type_of(x)} to i1`, _type=__mlir_type.i1
+    ]
+    assert_equal(Bool(low_bit), True)
+
+
 # --- Wrapper struct pattern ---
 
 
@@ -477,6 +497,8 @@ def main() raises:
     test_pop_cast_roundtrip()
     test_pop_simd_splat()
     test_explicit_type_attr()
+    test_fstring_op()
+    test_fstring_op_type_of()
     test_wrapper_struct_arithmetic()
     test_wrapper_struct_comparison()
     test_wrapper_struct_write()

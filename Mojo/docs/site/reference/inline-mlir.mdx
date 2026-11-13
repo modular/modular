@@ -404,6 +404,38 @@ def main():
     print(clamp(7, 0, 10))   # 7
 ```
 
+### F-string form
+
+Instead of passing operands and attributes separately, you can write the
+operation as MLIR assembly text in a backtick template. A `%{name}` placeholder
+binds the Mojo value `name` as an operand:
+
+```mojo
+var a = Int(40).__mlir_index__()
+var b = Int(2).__mlir_index__()
+var sum = __mlir_op[`index.add %{a}, %{b}`]
+```
+
+The template must contain exactly one operation. You can also use these
+features:
+
+- `%{type_of(name)}` inserts the MLIR type of a bound value, for operations
+  that spell out their types:
+
+  ```mojo
+  var low_bit = __mlir_op[
+      `index.castu %{x} : %{type_of(x)} to i1`, _type=__mlir_type.i1
+  ]
+  ```
+
+- `_type` is optional. If you provide it, the compiler checks it against the
+  parsed operation's result types.
+- Multiple backtick strings are concatenated, so long templates can span
+  several lines.
+
+The compiler doesn't verify the operation when it parses the template, so
+check it against the dialect's documentation.
+
 ### Special attributes
 
 Three attributes have special meaning to the compiler:
