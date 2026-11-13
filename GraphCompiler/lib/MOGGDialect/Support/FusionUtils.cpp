@@ -96,14 +96,12 @@ bool kernelDeclaresTileOutput(KernelDeclOp decl) {
   KernelDeclAdaptor adaptor(decl);
   if (!adaptor.executeFunction.has_value())
     return false;
-  return llvm::any_of(
-      adaptor.executeFunction->outputArguments, [](const auto &arg) {
-        const auto *tensorArg =
-            std::get_if<KernelDeclTensorAdaptor>(&arg.underlyingType);
-        // TODO(GEX-4340): drop the legacy tile trait form with GEX-4467.
-        return (tensorArg && isTileFusedOutputIOSpec(tensorArg->ioSpec)) ||
-               isLegacyTileFusedOutput(arg);
-      });
+  return llvm::any_of(adaptor.executeFunction->outputArguments,
+                      [](const auto &arg) {
+                        // TODO(GEX-4340): the legacy tile traits are the only
+                        // tile output form until GEX-4467.
+                        return isLegacyTileFusedOutput(arg);
+                      });
 }
 
 } // namespace M::MOGG

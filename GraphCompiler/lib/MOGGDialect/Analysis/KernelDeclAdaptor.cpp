@@ -139,10 +139,6 @@ getIOSpecFromStructType(KGEN::LIT::StructType structType) {
         input = kIOSpecIOFusedOutput;
       else if (name == kIoFusedComputeOutput)
         input = kIOSpecIOFusedComputeOutput;
-      else if (name == kIoFusedComputeOutputTile)
-        input = kIOSpecIOFusedComputeOutputTile;
-      else if (name == kIoFusedOutputTile)
-        input = kIOSpecIOFusedOutputTile;
     }
   }
 
@@ -180,10 +176,6 @@ getIOSpecFromStructType(KGEN::LIT::StructType structType) {
     return IOSpec::FusedOutputTensor;
   if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutput)
     return IOSpec::FusedComputeOutputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutputTile)
-    return IOSpec::FusedComputeOutputTileTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutputTile)
-    return IOSpec::FusedOutputTileTensor;
   return std::nullopt;
 }
 
@@ -860,10 +852,6 @@ StringRef toString(IOSpec spec) {
     return kFusedOutputTensor;
   case IOSpec::FusedComputeOutputTensor:
     return kFusedComputeOutputTensor;
-  case IOSpec::FusedComputeOutputTileTensor:
-    return kFusedComputeOutputTileTensor;
-  case IOSpec::FusedOutputTileTensor:
-    return kFusedOutputTileTensor;
   }
 }
 
@@ -880,10 +868,6 @@ std::optional<IOSpec> toIOSpec(StringRef str) {
     return IOSpec::FusedOutputTensor;
   if (str == kFusedComputeOutputTensor)
     return IOSpec::FusedComputeOutputTensor;
-  if (str == kFusedComputeOutputTileTensor)
-    return IOSpec::FusedComputeOutputTileTensor;
-  if (str == kFusedOutputTileTensor)
-    return IOSpec::FusedOutputTileTensor;
   return std::nullopt;
 }
 
@@ -912,35 +896,18 @@ std::pair<TypedAttr, TypedAttr> getParams(IOSpec ioSpec, Builder &builder) {
   case IOSpec::FusedComputeOutputTensor:
     return {builder.getBoolAttr(kIOSpecMutable),
             builder.getIndexAttr(kIOSpecIOFusedComputeOutput)};
-
-  case IOSpec::FusedComputeOutputTileTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedComputeOutputTile)};
-
-  case IOSpec::FusedOutputTileTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedOutputTile)};
   }
 }
 
 bool isOutputIOSpec(IOSpec spec) {
   return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTileTensor ||
-         spec == IOSpec::FusedOutputTileTensor;
+         spec == IOSpec::FusedComputeOutputTensor;
 }
 
 bool isFusableIOSpec(IOSpec spec) {
   return spec == IOSpec::FusedInputTensor ||
          spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTileTensor ||
-         spec == IOSpec::FusedOutputTileTensor;
-}
-
-bool isTileFusedOutputIOSpec(IOSpec spec) {
-  return spec == IOSpec::FusedComputeOutputTileTensor ||
-         spec == IOSpec::FusedOutputTileTensor;
+         spec == IOSpec::FusedComputeOutputTensor;
 }
 
 bool isMutableIOSpec(IOSpec spec) { return spec == IOSpec::MutableInputTensor; }

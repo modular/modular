@@ -11,10 +11,10 @@ func.func @compute_epilogue(%ptr: !mogg.pointer) {
   %out = mogg.tensor.create(%ptr, %s) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
   %z = mogg.tensor.create(%ptr, %s) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
   %optr = mogg.tensor.get_ptr(%out) : !mogg.tensor
-  // CHECK: mogg.tile.create.epilogue %{{.*}} (%[[VAL:.*]] : !mogg.tile<f32>, %[[IDX:.*]] : !mogg.tile_coord<2>) capturing {%[[COUT:.*]] = %{{.*}} : !mogg.tensor, %[[CZ:.*]] = %{{.*}} : !mogg.tensor} ptr %{{.*}} lane = compute, device = "gpu", elementType = f32, io = Output, mut = true {
+  // CHECK: mogg.tile.create.epilogue %{{.*}} (%[[VAL:.*]] : !mogg.tile<f32>, %[[IDX:.*]] : !mogg.tile_coord<2>) capturing {%[[COUT:.*]] = %{{.*}} : !mogg.tensor, %[[CZ:.*]] = %{{.*}} : !mogg.tensor} ptr %{{.*}} lane = compute, contract = <{role = output, fused = true, access = legacy_tile_transform, capabilities = none}> device = "gpu", elementType = f32, io = Output, mut = true {
   // CHECK-NEXT:   %[[ZV:.*]] = mogg.tile.load %[[CZ]][%[[IDX]]]
   // CHECK-NEXT:   mogg.yield %[[ZV]] : !mogg.tile<f32>
-  %epi = mogg.tile.create.epilogue %s (%val : !mogg.tile<f32>, %idx : !mogg.tile_coord<2>) capturing {%cout = %out : !mogg.tensor, %cz = %z : !mogg.tensor} ptr %optr lane = compute, device = "gpu", elementType = f32, io = Output, mut = true {
+  %epi = mogg.tile.create.epilogue %s (%val : !mogg.tile<f32>, %idx : !mogg.tile_coord<2>) capturing {%cout = %out : !mogg.tensor, %cz = %z : !mogg.tensor} ptr %optr lane = compute, contract = <{role = output, fused = true, access = legacy_tile_transform, capabilities = none}> device = "gpu", elementType = f32, io = Output, mut = true {
     %zv = mogg.tile.load %cz[%idx] : !mogg.tensor, !mogg.tile_coord<2> -> !mogg.tile<f32>
     mogg.yield %zv : !mogg.tile<f32>
   }
@@ -27,9 +27,9 @@ func.func @store_epilogue(%ptr: !mogg.pointer) {
   %s = mogg.shape.create() <shape = #mosh<ape[16, 8]> : !mosh.ape>
   %out = mogg.tensor.create(%ptr, %s) <device = "gpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[16, 8]> : !mosh.ape> : !mogg.tensor
   %optr = mogg.tensor.get_ptr(%out) : !mogg.tensor
-  // CHECK: mogg.tile.create.epilogue %{{.*}} (%[[VAL:.*]] : !mogg.tile<f32>, %[[IDX:.*]] : !mogg.tile_coord<2>) capturing {%[[COUT:.*]] = %{{.*}} : !mogg.tensor} ptr %{{.*}} lane = store, device = "gpu", elementType = f32, io = Output, mut = true {
+  // CHECK: mogg.tile.create.epilogue %{{.*}} (%[[VAL:.*]] : !mogg.tile<f32>, %[[IDX:.*]] : !mogg.tile_coord<2>) capturing {%[[COUT:.*]] = %{{.*}} : !mogg.tensor} ptr %{{.*}} lane = store, contract = <{role = output, fused = true, access = legacy_tile_store, capabilities = none}> device = "gpu", elementType = f32, io = Output, mut = true {
   // CHECK-NEXT:   mogg.tile.store %[[COUT]][%[[IDX]]] = %[[VAL]]
-  %epi = mogg.tile.create.epilogue %s (%val : !mogg.tile<f32>, %idx : !mogg.tile_coord<2>) capturing {%cout = %out : !mogg.tensor} ptr %optr lane = store, device = "gpu", elementType = f32, io = Output, mut = true {
+  %epi = mogg.tile.create.epilogue %s (%val : !mogg.tile<f32>, %idx : !mogg.tile_coord<2>) capturing {%cout = %out : !mogg.tensor} ptr %optr lane = store, contract = <{role = output, fused = true, access = legacy_tile_store, capabilities = none}> device = "gpu", elementType = f32, io = Output, mut = true {
     mogg.tile.store %cout[%idx] = %val : !mogg.tensor, !mogg.tile_coord<2>, !mogg.tile<f32>
   }
   return

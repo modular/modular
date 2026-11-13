@@ -275,10 +275,6 @@ constexpr MojoStaticValue kStructVariadicTensors =
     "extensibility.VariadicTensors";
 constexpr MojoStaticValue kStructTensorTuple = "extensibility.TensorTuple";
 constexpr MojoStaticValue kStructStaticString = "StaticString";
-constexpr MojoStaticValue kStructMsNoComputeFusionTile =
-    "managed_tensor_slice._NoComputeFusionTile";
-constexpr MojoStaticValue kStructMsNoOutputFusionTile =
-    "managed_tensor_slice._NoOutputFusionTile";
 constexpr MojoStaticValue kStructMsFusionPack =
     "managed_tensor_slice._FusionPack";
 constexpr MojoStaticValue kStructMsFusedInputVariadicTensors =
@@ -554,8 +550,6 @@ constexpr int64_t kIOSpecIOInput = 1;
 constexpr int64_t kIOSpecIOFusedInput = 2;
 constexpr int64_t kIOSpecIOFusedOutput = 3;
 constexpr int64_t kIOSpecIOFusedComputeOutput = 31;
-constexpr int64_t kIOSpecIOFusedComputeOutputTile = 32;
-constexpr int64_t kIOSpecIOFusedOutputTile = 33;
 constexpr int64_t kIOSpecIOUnknown = -1;
 
 constexpr MojoStaticValue kInputTensor = "InputTensor";
@@ -565,9 +559,6 @@ constexpr MojoStaticValue kFusedInputTensor = "FusedInputTensor";
 constexpr MojoStaticValue kFusedOutputTensor = "FusedOutputTensor";
 constexpr MojoStaticValue kFusedComputeOutputTensor =
     "FusedComputeOutputTensor";
-constexpr MojoStaticValue kFusedComputeOutputTileTensor =
-    "FusedComputeOutputTileTensor";
-constexpr MojoStaticValue kFusedOutputTileTensor = "FusedOutputTileTensor";
 
 /// Mojo `IO` member names, as they appear in `KGEN::SugarKind::MemberAlias`
 /// attributes of a stored `IOSpec` parameter.
@@ -576,8 +567,6 @@ constexpr MojoStaticValue kIoOutput = "Output";
 constexpr MojoStaticValue kIoFusedInput = "FusedInput";
 constexpr MojoStaticValue kIoFusedOutput = "FusedOutput";
 constexpr MojoStaticValue kIoFusedComputeOutput = "FusedComputeOutput";
-constexpr MojoStaticValue kIoFusedComputeOutputTile = "_FusedComputeOutputTile";
-constexpr MojoStaticValue kIoFusedOutputTile = "_FusedOutputTile";
 
 //===----------------------------------------------------------------------===//
 // Wrapper classes for high-traffic Mojo types
@@ -609,10 +598,6 @@ public:
   static constexpr MojoStaticValue kBindToFusedOutput = "_bind_to_fused_output";
   static constexpr MojoStaticValue kBindToFusedComputeOutput =
       "_bind_to_fused_compute_output";
-  static constexpr MojoStaticValue kBindToFusedComputeOutputTile =
-      "_bind_to_fused_compute_output_tile";
-  static constexpr MojoStaticValue kBindToFusedOutputTile =
-      "_bind_to_fused_output_tile";
 
   /// Fusion functor fields and the matching type parameters.
   static constexpr MojoStaticValue kInFusion = "in_fusion";
@@ -641,12 +626,6 @@ public:
   MojoValue shape() const { return value.get(kShape)(); }
   MojoValue strides() const { return value.get(kStrides)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
-  MojoValue bindToFusedComputeOutputTile() const {
-    return value.get(kBindToFusedComputeOutputTile);
-  }
-  MojoValue bindToFusedOutputTile() const {
-    return value.get(kBindToFusedOutputTile);
-  }
 
   /// Return the uncalled method handle.
   MojoValue bindToFusedInput() const { return value.get(kBindToFusedInput); }

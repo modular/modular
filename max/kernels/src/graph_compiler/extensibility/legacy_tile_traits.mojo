@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Interim tensor-argument traits for tile-based epilogue fusion.
 
-TODO(GEX-4340): These traits are a stopgap. They move the kernels that used the
-`_FusedComputeOutputTileTensor` and `_FusedOutputTileTensor` IOSpecs onto
-tensor-argument traits until the tile epilogue interface of GEX-4467 replaces
+TODO(GEX-4340): These traits are a stopgap. They replace the tile IOSpecs of
+the tile-fused kernels until the tile epilogue interface of GEX-4467 replaces
 them, and they are deleted then. The graph compiler accepts them only on a
 fixed list of kernel registrations, so do not use them in a new kernel.
 

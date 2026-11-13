@@ -477,13 +477,6 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
   if (!tensorArg)
     return Kind::Output;
 
-  // A tile argument fixes the lambda kind by itself: the SIMD fallbacks below
-  // have no tile counterpart.
-  if (MOGG::isTileFusedOutputIOSpec(tensorArg->ioSpec))
-    return tensorArg->ioSpec == MOGG::IOSpec::FusedComputeOutputTileTensor
-               ? Kind::ComputeTile
-               : Kind::OutputTile;
-
   // TODO(GEX-4340): the legacy tile trait form of the same two lanes; remove
   // with GEX-4467.
   if (tensorArg->traitContract)

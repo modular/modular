@@ -88,9 +88,9 @@ enum class KernelOutputFusionLambdaType {
   OutputLegacyForCompute, // Store lambda for mixed-precision
                           // (_FusedComputeOutputTensor).
   Compute,                // Return lambda (_FusedComputeOutputTensor).
-  ComputeTile, // TileTensor return lambda (_FusedComputeOutputTileTensor).
+  ComputeTile, // TileTensor return lambda (_LegacyTileComputeOutput).
   OutputTile,  // Tile store lambda; the fusion owns the store
-               // (_FusedOutputTileTensor).
+               // (_LegacyTileStoreAccess).
   // TODO(GEX-3912): SIMD reuses `Compute` for standalone and epilogue fusion,
   // but tile needs `ElementwiseTile` because standalone writes into `dst` while
   // the epilogue transforms `val`. An inout-`dst` tile compute interface would

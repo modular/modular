@@ -438,18 +438,15 @@ LogicalResult TileCreateEpilogueOp::verify() {
   if (getCaptures().empty())
     return emitOpError("requires at least one (store-target) capture");
   // TODO(GEX-4340): remove with the legacy tile traits.
-  if (TensorArgContractAttr contract = getContractAttr()) {
-    if (!contract.getFused() || contract.getRole() != TensorArgRoleKind::output)
-      return emitOpError("a legacy tile contract must be fused with role "
-                         "output");
-    TensorArgAccessKind wanted =
-        getLane() == TileFusionLane::Compute
-            ? TensorArgAccessKind::legacy_tile_transform
-            : TensorArgAccessKind::legacy_tile_store;
-    if (contract.getAccess() != wanted)
-      return emitOpError("the contract access must be ")
-             << stringifyTensorArgAccessKind(wanted) << " on this lane";
-  }
+  TensorArgContractAttr contract = getContractAttr();
+  if (!contract.getFused() || contract.getRole() != TensorArgRoleKind::output)
+    return emitOpError("a legacy tile contract must be fused with role output");
+  TensorArgAccessKind wanted = getLane() == TileFusionLane::Compute
+                                   ? TensorArgAccessKind::legacy_tile_transform
+                                   : TensorArgAccessKind::legacy_tile_store;
+  if (contract.getAccess() != wanted)
+    return emitOpError("the contract access must be ")
+           << stringifyTensorArgAccessKind(wanted) << " on this lane";
   if (body.getNumArguments() != 2 + getCaptures().size())
     return emitOpError("body takes a value, an index, and one arg per capture");
   constexpr unsigned kFirstCapture = 2;

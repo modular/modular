@@ -1243,10 +1243,10 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
     MO_IOKind:$io,
     // TODO(GEX-4340): How the kernel that takes this output declares it: a
     // fused output with a legacy tile access form. MAP lowering copies it from
-    // the kernel declaration, the verifier checks its access form against
-    // `$lane`, and emit uses it to choose the legacy tile trait wrapper. A tile
-    // epilogue without it feeds a tile IOSpec output. Remove with GEX-4467.
-    OptionalAttr<MOGG_TensorArgContractAttr>:$contract
+    // the kernel declaration, so later passes need not look the kernel up, and
+    // the verifier checks its access form against `$lane`. Remove with
+    // GEX-4467.
+    MOGG_TensorArgContractAttr:$contract
   );
   let results = (outs MOGG_Tensor:$tensor);
   let regions = (region SizedRegion<1>:$body);

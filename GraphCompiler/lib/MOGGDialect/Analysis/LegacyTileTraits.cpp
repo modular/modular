@@ -36,9 +36,8 @@ struct LegacyTileRegistration {
 /// The only registrations that may bind a legacy tile trait.
 ///
 /// DO NOT ADD TO THIS LIST. It holds the kernels that used the tile IOSpecs
-/// (`_FusedComputeOutputTileTensor`, `_FusedOutputTileTensor`) when the
-/// traits replaced them, and it only shrinks. A new tile kernel waits for the
-/// tile epilogue interface of GEX-4467.
+/// when the traits replaced them, and it only shrinks. A new tile kernel waits
+/// for the tile epilogue interface of GEX-4467.
 constexpr LegacyTileRegistration kLegacyTileRegistrations[] = {
     {"mo.matmul", R"(type("gpu") & api("neuron"))"},
     {"mo.composite.reduce.rms_norm", R"(type("gpu") & api("neuron"))"},

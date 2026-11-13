@@ -49,8 +49,6 @@ enum class IOSpec {
   FusedInputTensor,
   FusedOutputTensor,
   FusedComputeOutputTensor,
-  FusedComputeOutputTileTensor,
-  FusedOutputTileTensor,
 };
 
 //===----------------------------------------------------------------------===//
@@ -249,7 +247,6 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,
 
 bool isOutputIOSpec(IOSpec spec);
 bool isFusableIOSpec(IOSpec spec);
-bool isTileFusedOutputIOSpec(IOSpec spec);
 bool isMutableIOSpec(IOSpec spec);
 
 //===----------------------------------------------------------------------===//

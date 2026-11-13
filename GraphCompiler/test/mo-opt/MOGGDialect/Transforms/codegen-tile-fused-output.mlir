@@ -18,7 +18,7 @@
 // `_LegacyTileComputeOutput`, so the fused add becomes a
 // `ComputeOutputFusionTile` whose `compute` stages the residual through the
 // kernel's copier and returns the summed tile. The kernel gets it wrapped in
-// `_MoggLegacyTileTransformFusionTensor`, not bound onto a slice.
+// `_MoggLegacyTileTransformFusionTensor`.
 // CHECK: struct FusionStruct_{{[0-9]+}}[spec_0: {{.*}}, spec_1: {{.*}}](managed_tensor_slice.ComputeOutputFusionTile):
 // CHECK:   var tile_0: layout.TileTensor[DType.float32, {{.*}}]
 // CHECK:   var tile_1: layout.TileTensor[DType.float32, {{.*}}]
@@ -29,7 +29,6 @@
 // CHECK:     var [[RHS:.*]] = layout.TileTensor({{.*}}AddressSpace.GENERIC{{.*}}, val.layout)
 // CHECK:     var [[SUM:.*]] = builtin_kernels.elementwise.Add.elementwise(val, [[RHS]])
 // CHECK:     return rebind[layout.TileTensor[dtype, LayoutType, MutAnyOrigin]]([[SUM]])
-// CALL-NOT: _bind_to_fused_compute_output_tile
 // CALL: var [[W:var__[0-9]+]] = _MoggLegacyTileTransformFusionTensor[DType.float32, {{.*}}](var__{{[0-9]+}}, var__{{[0-9]+}}, var__{{[0-9]+}})
 // CALL: MatmulTileSM100.execute[{{.*}}has_epilogue_fusion = True{{.*}}]([[W]], {{.*}})
 // CALL: struct _MoggLegacyTileTransformFusionTensor[
@@ -52,7 +51,6 @@ mo.graph @matmul_residual_add(%a: !mo.tensor<[256, 256], f32, gpu:0>, %b: !mo.te
 // STORE:     var [[PROD:.*]] = builtin_kernels.elementwise.Mul.elementwise(val, {{.*}})
 // STORE:     var [[OUT:.*]] = self.tile_0.tile[{{.*}}](layout.Coord(Int(tile_coords[0]), Int(tile_coords[1])))
 // STORE:     store_copier.copy([[OUT]].unsafe_address_space_cast[StoreCopier.dst_address_space](), [[PROD]].unsafe_address_space_cast[StoreCopier.src_address_space]())
-// STORE-CALL-NOT: _bind_to_fused_output_tile
 // STORE-CALL: var [[W:var__[0-9]+]] = _MoggLegacyTileStoreFusionTensor[DType.float32, {{.*}}](var__{{[0-9]+}}, var__{{[0-9]+}})
 // STORE-CALL: TileRMSNormStub.execute([[W]], {{.*}})
 // STORE-CALL: struct _MoggLegacyTileStoreFusionTensor[

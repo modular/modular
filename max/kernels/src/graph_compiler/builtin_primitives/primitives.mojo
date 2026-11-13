@@ -3048,8 +3048,6 @@ struct _ElementwiseFusionTileAdapter[
     InFusion: InputFusion,
     OutFusion: OutputFusion,
     ComputeFusion: ComputeOutputFusion,
-    ComputeFusionTile: ComputeOutputFusionTile,
-    OutFusionTile: OutputFusionTile,
     io_spec: IOSpec[True, _],
     static_spec: StaticTensorSpec[
         dtype,
@@ -3058,8 +3056,6 @@ struct _ElementwiseFusionTileAdapter[
         InFusion,
         OutFusion,
         ComputeFusion,
-        ComputeFusionTile,
-        OutFusionTile,
     ],
     //,
     E: ElementwiseFusionTile,
@@ -3081,8 +3077,6 @@ struct _ElementwiseFusionTileAdapter[
         InFusion: The tensor's input-fusion type.
         OutFusion: The tensor's output-fusion type.
         ComputeFusion: The tensor's compute-output-fusion type.
-        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
-        OutFusionTile: The tensor's output-fusion-tile (store) type.
         io_spec: The tensor's IO spec.
         static_spec: The tensor's static spec.
         E: The tile elementwise fusion struct type.

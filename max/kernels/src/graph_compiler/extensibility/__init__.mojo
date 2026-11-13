@@ -35,11 +35,9 @@ from .tile_tensor_adapters import *
 # kv_cache packages reference them by name. Re-export them explicitly.
 from .managed_tensor_slice import (
     _FusedComputeOutputTensor,
-    _FusedComputeOutputTileTensor,
     _FusedInputTensor,
     _FusedInputVariadicTensors,
     _FusedOutputTensor,
-    _FusedOutputTileTensor,
     _FusedOutputVariadicTensors,
     _MutableInputTensor,
     _MutableInputVariadicTensors,

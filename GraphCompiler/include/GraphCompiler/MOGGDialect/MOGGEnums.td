@@ -123,10 +123,9 @@ def MOGG_TensorArgBound
 }
 
 // Which tile fusion trait a `mogg.tile.create.epilogue` body implements. The
-// kernel's declared output kind fixes it: a `_FusedComputeOutputTileTensor`
+// kernel's declared output kind fixes it: a `_LegacyTileComputeOutput` output
 // takes a compute lane, which yields the tile for the kernel to store, and a
-// `_FusedOutputTileTensor` takes a store lane, which owns the store. The
-// legacy tile compute and store traits select the same two lanes.
+// `_LegacyTileStoreAccess` output takes a store lane, which owns the store.
 def MOGG_TileFusionLane
     : I32EnumAttr<"TileFusionLane", "tile fusion lane", [
   I32EnumAttrCase<"Compute", 0, "compute">,

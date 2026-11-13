@@ -2535,61 +2535,10 @@ static LogicalResult emitLegacyTileTraitEpilogue(TileCreateEpilogueOp op,
   return success();
 }
 
-/// Binds a tile fused output (`_FusedComputeOutputTileTensor` /
-/// `_FusedOutputTileTensor`) onto a slice over `$outputPtr`. A pass-through
-/// body binds the "no fusion" sentinel, so the kernel stores by itself.
 LogicalResult TileCreateEpilogueOp::emitMojo(EmitMojoState &state) {
-  // TODO(GEX-4340): remove with the legacy tile traits.
-  if (getContract())
-    return emitLegacyTileTraitEpilogue(*this, state);
-  ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
-  if (dtypeOr.isError())
-    return emitOpError("failed to convert epilogue element type to Mojo");
-  Block &body = getBody().front();
-  FailureOr<unsigned> rank = fusedRegionRank(*this, getShape());
-  if (failed(rank))
-    return failure();
-  TileFusionKind lane = getLane() == TileFusionLane::Compute
-                            ? TileFusionKind::Compute
-                            : TileFusionKind::Store;
-
-  MojoValue fusion;
-  if (isPassThroughTileBody(body)) {
-    fusion = MojoValue(lane == TileFusionKind::Compute
-                           ? kStructMsNoComputeFusionTile
-                           : kStructMsNoOutputFusionTile)();
-  } else {
-    // Body args are (value, index, captures...); capture 0 is the store
-    // target.
-    SmallVector<TileCapture> captures;
-    for (auto [i, cap] : llvm::enumerate(getCaptures())) {
-      FailureOr<TileCapture> capture =
-          makeTileCapture(*this, cap, body.getArgument(2 + i), i);
-      if (failed(capture))
-        return failure();
-      captures.push_back(*capture);
-    }
-    FailureOr<MojoValue> name = emitTileFusionStruct(
-        *this, state, lane, body, captures, /*index=*/body.getArgument(1),
-        /*value=*/body.getArgument(0), /*storeTarget=*/body.getArgument(2),
-        *dtypeOr, getDevice());
-    if (failed(name))
-      return failure();
-    fusion = instantiateTileFusionStruct(state, *name, captures);
-  }
-
-  MojoValue layout =
-      state.file->var(rowMajorLayout(state.getMojoValueFor(getShape())));
-  ManagedTensorSliceRef baseSlice(emitBaseSliceFromPtr(
-      state, state.mlirDTypeToMojoType(*dtypeOr), *rank, layout,
-      MojoValue(static_cast<uint64_t>(
-          M::Driver::getPreferredAlignment(getDevice().str()))),
-      state.getMojoValueFor(getOutputPtr())));
-  MojoValue bind = lane == TileFusionKind::Compute
-                       ? baseSlice.bindToFusedComputeOutputTile()
-                       : baseSlice.bindToFusedOutputTile();
-  state.setMojoValueFor(getTensor(), state.file->var(bind({fusion})));
-  return success();
+  // TODO(GEX-4340): the legacy tile traits are the only tile epilogue form
+  // until GEX-4467.
+  return emitLegacyTileTraitEpilogue(*this, state);
 }
 
 /// Drives a standalone elementwise body through an `ElementwiseFusionTile`
