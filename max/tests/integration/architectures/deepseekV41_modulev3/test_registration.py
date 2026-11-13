@@ -113,7 +113,6 @@ def test_registered_abi_has_a_distinct_name_and_separate_constant_field() -> (
     order = RegisteredDeepseekV41Decoder.input_layout
     assert order.index("kv") < order.index("constants") < order.index("state")
     assert "constants" in DecoderInputs.__dataclass_fields__
-    assert RegisteredDeepseekV41Config.export_ep_init
 
 
 def test_finalization_consumes_adapter_sidecars_after_pinning(

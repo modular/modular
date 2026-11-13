@@ -120,8 +120,6 @@ from max.graph.weights import WeightsAdapter
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPInit
-from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.graph_groups import (
     BatchContext,
     BlockDiffusionGraphInputs,
@@ -1606,29 +1604,6 @@ class ModuleV3DecoderPipelineModel(
         specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
-        # A build on devices already keeps the init graph it ran.
-        if (
-            isinstance(model_config, DeploymentConfig)
-            and model_config.export_ep_init
-            and self._runtime.ep is not None
-            and GraphRole.EP_INIT not in self.compiled_modules
-        ):
-            ep = self._runtime.ep
-            init = EPInit(
-                ep,
-                [
-                    _ep_counter_words(
-                        ep.n_experts,
-                        ep.n_gpus_per_node,
-                        ep.use_allreduce,
-                        ep.moe_dim,
-                        ep.uses_p2p_small_path,
-                    )
-                ],
-            )
-            specs[GraphRole.EP_INIT] = GraphSpec(
-                init, "ep_init", init.input_types(), weights={}
-            )
         return specs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

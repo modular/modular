@@ -85,7 +85,6 @@ class RegisteredDeepseekV41Config(
     """Completes the registered decoder's checkpoint and deployment inputs."""
 
     ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
-    export_ep_init: ClassVar[bool] = True
 
     pipeline_config: PipelineConfig | None = field(default=None, repr=False)
     text_config: AutoConfig | None = field(default=None, repr=False)

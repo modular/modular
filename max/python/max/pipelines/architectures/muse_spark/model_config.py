@@ -399,9 +399,6 @@ class MuseSparkConfig(
     # Each MoE block dispatches only its own slice of the rows (P2P), so
     # exporters must not pick the allreduce EP backend.
     ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
-    # Mach boots expert parallelism from an exported ep_init graph, which
-    # a virtual-device export can only get from the graph specs.
-    export_ep_init: ClassVar[bool] = True
 
     weight_prefixes: ClassVar[Mapping[str, str]] = {
         GraphRole.DECODER: "decoder.",

@@ -111,7 +111,6 @@ class BeamConfig(
     ep_dispatch_token_layout: ClassVar[str | None] = "tp_sharded"
     """Attention reduce-scatters the tokens over the TP ranks before the
     expert dispatch."""
-    export_ep_init: ClassVar[bool] = True
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float4_e2m1fnx2"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {

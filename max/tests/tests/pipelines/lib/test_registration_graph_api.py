@@ -640,7 +640,7 @@ def test_deployment_without_ep_does_not_initialize_an_exchange(
     assert config.events == ["apply_runtime"]
 
 
-def test_virtual_ep_deployment_sizes_without_allocating_buffers(
+def test_virtual_ep_deployment_compiles_the_init_graph_without_running_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = replace(_DeploymentConfig(), finalized=True)
@@ -658,12 +658,17 @@ def test_virtual_ep_deployment_sizes_without_allocating_buffers(
     monkeypatch.setattr(
         "max.pipelines.lib.registration_runtime.init_ep_comm", unexpected
     )
+    graph = object()
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.compile_ep_init",
+        lambda session, ep: (object(), {"ep_init": graph}),
+    )
     initialized, exchange, ep_init = initialize_ep_comm_buffers(
         config, runtime, model._session
     )
     assert initialized.ep is not None
     assert exchange is None
-    assert ep_init == {}
+    assert ep_init == {"ep_init": graph}
     assert config.events == ["apply_runtime", "size_exchange"]
 
 

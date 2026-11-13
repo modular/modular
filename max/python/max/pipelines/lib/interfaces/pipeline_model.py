@@ -140,6 +140,32 @@ def _cast_to_parameter_dtypes(
     return adapted
 
 
+def compile_ep_init(
+    session: InferenceSession, ep_config: EPConfig
+) -> tuple[EPCommInitializer, dict[str, CompiledCallable[..., Any]]]:
+    """Compiles the expert-parallel handshake as the ``ep_init`` graph role.
+
+    It touches no device, so a build on virtual devices, which can't run the
+    handshake, still records the graph its serving engine runs.
+
+    Args:
+        session: The session that compiles the handshake graph.
+        ep_config: The EP configuration.
+
+    Returns:
+        The EP communication initializer, whose ``run_init`` does the device
+        work, and the compiled handshake graph keyed by
+        :attr:`GraphRole.EP_INIT`.
+    """
+    initializer = EPCommInitializer(ep_config)
+    init = initializer.init_module()
+    modules = compile_and_init_graphs(
+        session,
+        {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
+    )
+    return initializer, modules
+
+
 def init_ep_comm(
     session: InferenceSession, ep_config: EPConfig
 ) -> tuple[EPCommInitializer, dict[str, CompiledCallable[..., Any]]]:
@@ -156,12 +182,7 @@ def init_ep_comm(
         The initialized EP communication buffers, and the compiled handshake
         graph keyed by :attr:`GraphRole.EP_INIT`.
     """
-    initializer = EPCommInitializer(ep_config)
-    init = initializer.init_module()
-    modules = compile_and_init_graphs(
-        session,
-        {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
-    )
+    initializer, modules = compile_ep_init(session, ep_config)
     initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
     return initializer, modules
 

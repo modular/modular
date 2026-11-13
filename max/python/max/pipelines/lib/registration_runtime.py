@@ -46,7 +46,11 @@ from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
-from .interfaces.pipeline_model import ModelLoadContext, init_ep_comm
+from .interfaces.pipeline_model import (
+    ModelLoadContext,
+    compile_ep_init,
+    init_ep_comm,
+)
 from .weight_transform import WeightEntry
 
 __all__ = [
@@ -158,10 +162,6 @@ class DeploymentConfig:
     what else the framework does for it. A config that doesn't subclass it
     takes every default.
     """
-
-    export_ep_init: ClassVar[bool] = False
-    """Whether a build on virtual devices compiles the exchange initialization
-    graph too. A build on devices runs the graph, and always keeps it."""
 
     preserve_checkpoint_keys: ClassVar[bool] = False
     """Whether finalization reads raw keys before :meth:`prepare_weights`
@@ -320,8 +320,8 @@ def initialize_ep_comm_buffers(
         decoder's graph takes, as the config's
         :attr:`~ExpertParallelDeploymentConfig.expert_parallel_inputs`
         selects them, and the init graph by role, for the pipeline's
-        ``compiled_modules``. The buffers are ``None`` and the graphs empty
-        on virtual devices, which can't run the init graph.
+        ``compiled_modules``. On virtual devices, which can't run the init
+        graph, the graph is only compiled and the buffers are ``None``.
 
     Raises:
         ValueError: If the expert-parallel size isn't a multiple of the
@@ -334,12 +334,12 @@ def initialize_ep_comm_buffers(
             f"devices on this node ({n_devices})"
         )
     ep = config.expert_parallel_config(runtime)
-    exchange = None
-    modules: dict[str, CompiledCallable[..., Any]] = {}
-    if not is_virtual_device_mode():
-        initializer, modules = init_ep_comm(session, ep)
-        ep.node_id = initializer.config.node_id
-        exchange = config.expert_parallel_inputs.exchange(initializer)
+    if is_virtual_device_mode():
+        _, modules = compile_ep_init(session, ep)
+        return dataclasses.replace(runtime, ep=ep), None, modules
+    initializer, modules = init_ep_comm(session, ep)
+    ep.node_id = initializer.config.node_id
+    exchange = config.expert_parallel_inputs.exchange(initializer)
     return dataclasses.replace(runtime, ep=ep), exchange, modules
 
 

@@ -132,6 +132,7 @@ from ..interfaces.pipeline_model import (
     UnifiedSpecDecodeInputs,
     WeightLoad,
     _cast_to_parameter_dtypes,
+    compile_ep_init,
     init_ep_comm,
 )
 from ..memory_plan import MemoryPlan
@@ -2792,18 +2793,21 @@ class _EPRuntime:
 
     The first module to start it sizes its buffers. The draft builds first,
     and one that dispatches its own experts through them dispatches at
-    least as wide as a quantized target. Never started in virtual device
-    mode, where NVSHMEM can't link.
+    least as wide as a quantized target. In virtual device mode, where
+    NVSHMEM can't link, it only compiles the init graph.
     """
 
     session: InferenceSession
     initializer: EPCommInitializer | None = None
     modules: dict[str, CompiledCallable[..., Any]] = field(default_factory=dict)
-    """The init graph the runtime ran, by role, for ``compiled_modules``."""
+    """The init graph, by role, for ``compiled_modules``."""
 
     def start(self, ep_config: EPConfig) -> None:
         """Starts the runtime once, and gives ``ep_config`` its node ID."""
         if is_virtual_device_mode():
+            # An export still records the init graph, which nothing can run.
+            if not self.modules:
+                _, self.modules = compile_ep_init(self.session, ep_config)
             return
         if self.initializer is None:
             self.initializer, self.modules = init_ep_comm(
