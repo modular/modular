@@ -1271,9 +1271,10 @@ class ModuleV3DecoderPipelineModel(
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            runtime, self.ep_comm_initializer = initialize_ep_comm_buffers(
-                config, runtime, self._session
+            runtime, self.ep_comm_initializer, ep_init = (
+                initialize_ep_comm_buffers(config, runtime, self._session)
             )
+            self.compiled_modules = {**self.compiled_modules, **ep_init}
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
             config = config.apply_runtime(runtime)
@@ -1591,10 +1592,12 @@ class ModuleV3DecoderPipelineModel(
         specs: dict[str, GraphSpec] = {GraphRole.DECODER: spec}
         if vision_spec is not None:
             specs[GraphRole.VISION] = vision_spec
+        # A build on devices already keeps the init graph it ran.
         if (
             isinstance(model_config, DeploymentConfig)
             and model_config.export_ep_init
             and self._runtime.ep is not None
+            and GraphRole.EP_INIT not in self.compiled_modules
         ):
             ep = self._runtime.ep
             init = EPInit(

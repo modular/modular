@@ -1841,13 +1841,7 @@ class DeepseekV41Model(
         ep_config = model_config.ep_config
         if ep_config is None or is_virtual_device_mode():
             return
-        initializer = EPCommInitializer(ep_config)
-        init = initializer.init_module()
-        specs: dict[str, GraphSpec] = {
-            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
-        }
-        modules = compile_and_init_graphs(session, specs)
-        initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+        initializer = self._init_ep_comm(session, ep_config)
         self.ep_comm_initializer = initializer
         # Every V4.1 batch processor takes the buffers as graph inputs.
         bind = getattr(self.batch_processor, "bind_ep_buffers", None)
@@ -1907,11 +1901,12 @@ class DeepseekV41Model(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(model_config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
+            compiled = compile_and_init_graphs(session, specs)
             self._finish_weight_loads()
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
         models = {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
+            role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         _drop_checkpoint_page_cache(self.weights)

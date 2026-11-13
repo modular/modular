@@ -28,7 +28,6 @@ from max.nn.ep_config import (
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.architectures.llama3.model import LlamaModelBase
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
@@ -106,8 +105,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
         self.ep_comm_initializer = None
         if model_config.ep_config is None:
             return
-        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
+        )
         logger.info(
             f"EP initialized: node_id={model_config.ep_config.node_id}, "
             f"n_gpus={model_config.ep_config.n_gpus_per_node}, "

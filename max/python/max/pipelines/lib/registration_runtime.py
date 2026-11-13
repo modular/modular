@@ -31,7 +31,7 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import ClassVar, Protocol, TypeVar
+from typing import Any, ClassVar, Protocol, TypeVar
 
 from max import tree
 from max.driver import Buffer, is_virtual_device_mode
@@ -42,10 +42,11 @@ from max.graph.weights import WeightData
 from max.nn.ep_config import EPConfig
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.pipelines.context import TextContext
+from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import Self
 
-from .interfaces.pipeline_model import ModelLoadContext
+from .interfaces.pipeline_model import ModelLoadContext, init_ep_comm
 from .weight_transform import WeightEntry
 
 __all__ = [
@@ -159,7 +160,8 @@ class DeploymentConfig:
     """
 
     export_ep_init: ClassVar[bool] = False
-    """Whether artifacts include the exchange initialization graph."""
+    """Whether a build on virtual devices compiles the exchange initialization
+    graph too. A build on devices runs the graph, and always keeps it."""
 
     preserve_checkpoint_keys: ClassVar[bool] = False
     """Whether finalization reads raw keys before :meth:`prepare_weights`
@@ -296,7 +298,11 @@ def initialize_ep_comm_buffers(
     config: ExpertParallelDeploymentConfig,
     runtime: ModuleRuntime,
     session: InferenceSession,
-) -> tuple[ModuleRuntime, ExpertParallelExchange | None]:
+) -> tuple[
+    ModuleRuntime,
+    ExpertParallelExchange | None,
+    dict[str, CompiledCallable[..., Any]],
+]:
     """Sizes and initializes the expert-parallel communication buffers.
 
     It sizes the buffers from the config, then compiles and runs the
@@ -310,11 +316,12 @@ def initialize_ep_comm_buffers(
         session: The session that compiles the init graph.
 
     Returns:
-        ``runtime`` with :attr:`ModuleRuntime.ep` set, and the buffers the
+        ``runtime`` with :attr:`ModuleRuntime.ep` set, the buffers the
         decoder's graph takes, as the config's
         :attr:`~ExpertParallelDeploymentConfig.expert_parallel_inputs`
-        selects them. They are ``None`` on virtual devices, which can't run
-        the init graph.
+        selects them, and the init graph by role, for the pipeline's
+        ``compiled_modules``. The buffers are ``None`` and the graphs empty
+        on virtual devices, which can't run the init graph.
 
     Raises:
         ValueError: If the expert-parallel size isn't a multiple of the
@@ -328,12 +335,12 @@ def initialize_ep_comm_buffers(
         )
     ep = config.expert_parallel_config(runtime)
     exchange = None
+    modules: dict[str, CompiledCallable[..., Any]] = {}
     if not is_virtual_device_mode():
-        initializer = EPCommInitializer(ep)
-        initializer.ep_init(session)
+        initializer, modules = init_ep_comm(session, ep)
         ep.node_id = initializer.config.node_id
         exchange = config.expert_parallel_inputs.exchange(initializer)
-    return dataclasses.replace(runtime, ep=ep), exchange
+    return dataclasses.replace(runtime, ep=ep), exchange, modules
 
 
 def ep_input_tree(

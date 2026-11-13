@@ -615,8 +615,9 @@ class DeepseekV41Model(
             # the batch processor, so every forward's input tail carries
             # them. The export leaves them to the engine's handshake,
             # which owns the counters the compiled forward shares.
-            self.ep_comm_initializer = EPCommInitializer(ep_config)
-            self.ep_comm_initializer.ep_init(self.session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                self.session, ep_config
+            )
             # run_init already wrote node_id through the shared config;
             # restate it like the deepseekV3 pattern does.
             ep_config.node_id = self.ep_comm_initializer.config.node_id
@@ -636,7 +637,11 @@ class DeepseekV41Model(
         specs = super().graph_specs(model_config)
         ep_batch_manager = getattr(self, "_ep_batch_manager", None)
         ep_config = ep_batch_manager.config if ep_batch_manager else None
-        if ep_config is not None:
+        # A build on devices already keeps the init graph it ran.
+        if (
+            ep_config is not None
+            and GraphRole.EP_INIT not in self.compiled_modules
+        ):
             counter_shape = [
                 _ep_counter_words(
                     ep_config.n_experts,

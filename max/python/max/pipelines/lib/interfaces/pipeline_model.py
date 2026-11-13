@@ -42,6 +42,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
 )
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.layer import Module as LayerModule
 from max.nn.module import Module as _ModuleV3
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
@@ -137,6 +138,32 @@ def _cast_to_parameter_dtypes(
             casts[cast] = casts.get(cast, 0) + 1
     log_casts(casts)
     return adapted
+
+
+def init_ep_comm(
+    session: InferenceSession, ep_config: EPConfig
+) -> tuple[EPCommInitializer, dict[str, CompiledCallable[..., Any]]]:
+    """Runs the expert-parallel handshake as the ``ep_init`` graph role.
+
+    A pipeline keeps the returned graph in its ``compiled_modules``, so that
+    ``max export`` records the handshake its serving engine runs.
+
+    Args:
+        session: The session that compiles and runs the handshake graph.
+        ep_config: The EP configuration. The handshake sets its node ID.
+
+    Returns:
+        The initialized EP communication buffers, and the compiled handshake
+        graph keyed by :attr:`GraphRole.EP_INIT`.
+    """
+    initializer = EPCommInitializer(ep_config)
+    init = initializer.init_module()
+    modules = compile_and_init_graphs(
+        session,
+        {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
+    )
+    initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+    return initializer, modules
 
 
 ArchConfigT = TypeVar("ArchConfigT")
@@ -1203,9 +1230,10 @@ class PipelineModel(
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
         """Compiles and initializes the graphs :meth:`graph_specs` returns.
 
-        Keeps each role's compiled graph as :attr:`compiled_modules`. With
-        ``runtime.eager`` set, the decoder isn't compiled, and
-        :attr:`compiled_modules` holds an eager callable for it.
+        Adds each role's compiled graph to :attr:`compiled_modules`, which
+        keeps a role compiled before, such as the ``ep_init`` graph of
+        :meth:`_init_ep_comm`. With ``runtime.eager`` set, the decoder isn't
+        compiled, and :attr:`compiled_modules` holds an eager callable for it.
 
         Args:
             session: The session that compiles and initializes the graphs.
@@ -1224,12 +1252,35 @@ class PipelineModel(
                     specs.pop(GraphRole.DECODER)
                 )
             compiled = compile_and_init_graphs(session, specs)
-            self.compiled_modules = {**compiled, **eager}
+            self.compiled_modules = {
+                **self.compiled_modules,
+                **compiled,
+                **eager,
+            }
         models = {
             role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         return models
+
+    def _init_ep_comm(
+        self, session: InferenceSession, ep_config: EPConfig
+    ) -> EPCommInitializer:
+        """Runs the expert-parallel handshake as the ``ep_init`` graph role.
+
+        Keeps the graph in :attr:`compiled_modules`, so that an export
+        records the handshake its serving engine runs.
+
+        Args:
+            session: The session that compiles and runs the handshake graph.
+            ep_config: The EP configuration. The handshake sets its node ID.
+
+        Returns:
+            The initialized EP communication buffers.
+        """
+        initializer, modules = init_ep_comm(session, ep_config)
+        self.compiled_modules = {**self.compiled_modules, **modules}
+        return initializer
 
     def _wire_batch_processor(
         self, model: _CompiledModelT, model_config: _ModelConfigT

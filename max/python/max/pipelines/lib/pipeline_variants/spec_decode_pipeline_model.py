@@ -129,6 +129,7 @@ from ..interfaces.pipeline_model import (
     UnifiedSpecDecodeInputs,
     WeightLoad,
     _cast_to_parameter_dtypes,
+    init_ep_comm,
 )
 from ..memory_plan import MemoryPlan
 from ..module_registration import (
@@ -1676,9 +1677,10 @@ class SpecDecodePipelineModel(
         # A replay pairing's MEF holds two graphs, which no artifact role takes.
         if compiled is not None:
             self.compiled_modules = {
+                **self.compiled_modules,
                 GraphRole.SPEC_DECODER: _graph_callable(
                     spec.graph, compiled, model, spec.input_tree
-                )
+                ),
             }
         if spec.input_tree is not None:
             self._batching.bind_input_tree(spec.input_tree)
@@ -1821,6 +1823,7 @@ class SpecDecodePipelineModel(
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
         self.ep_comm_initializer = ep.initializer
+        self.compiled_modules = {**self.compiled_modules, **ep.modules}
         # Each module's entries go under its name in the fused graph. A module
         # whose naming isn't rules yet compiles with its checkpoint_weights,
         # and leaves the graph unnamed.
@@ -2657,7 +2660,10 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
         self.export_contract = call.export_contract
-        self.compiled_modules = {GraphRole.SPEC_DECODER: compiled}
+        self.compiled_modules = {
+            **self.compiled_modules,
+            GraphRole.SPEC_DECODER: compiled,
+        }
         model = compiled.engine_model
         self._wire_batch_processor(model, config)
         return model
@@ -2776,14 +2782,17 @@ class _EPRuntime:
 
     session: InferenceSession
     initializer: EPCommInitializer | None = None
+    modules: dict[str, CompiledCallable[..., Any]] = field(default_factory=dict)
+    """The init graph the runtime ran, by role, for ``compiled_modules``."""
 
     def start(self, ep_config: EPConfig) -> None:
         """Starts the runtime once, and gives ``ep_config`` its node ID."""
         if is_virtual_device_mode():
             return
         if self.initializer is None:
-            self.initializer = EPCommInitializer(ep_config)
-            self.initializer.ep_init(self.session)
+            self.initializer, self.modules = init_ep_comm(
+                self.session, ep_config
+            )
         ep_config.node_id = self.initializer.config.node_id
         if ep_config.node_id == -1:
             raise ValueError(

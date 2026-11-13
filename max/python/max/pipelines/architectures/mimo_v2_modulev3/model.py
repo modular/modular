@@ -595,8 +595,9 @@ class MiMoV2ModuleV3Model(
         self._ep_batch_manager = EPBatchManager(ep_config)
         self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
         if not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(ep_config)
-            self.ep_comm_initializer.ep_init(self.session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                self.session, ep_config
+            )
             ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     def _load_state_dict(self) -> dict[str, Any]:

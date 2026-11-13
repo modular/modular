@@ -25,7 +25,7 @@ from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
+from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -188,8 +188,9 @@ class DeepseekV3Model(DeepseekV2Model):
         self._ep_batch_manager = EPBatchManager(ep_config)
         self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
         if not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(ep_config)
-            self.ep_comm_initializer.ep_init(self.session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                self.session, ep_config
+            )
             ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override

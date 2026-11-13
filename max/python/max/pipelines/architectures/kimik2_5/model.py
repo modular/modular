@@ -612,11 +612,10 @@ class KimiK2_5Model(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
-        return {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
-        }
+            compiled = compile_and_init_graphs(session, specs)
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
+        return {role: module.engine_model for role, module in compiled.items()}
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the vision and language graphs.
@@ -660,8 +659,9 @@ class KimiK2_5Model(
         # since NVSHMEM functions cannot be linked without real GPU devices.
         # We still keep ep_config to generate the correct graph structure.
         if config.ep_config is not None and not is_virtual_device_mode():
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                session, config.ep_config
+            )
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."

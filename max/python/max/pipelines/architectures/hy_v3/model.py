@@ -142,8 +142,9 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         if model_config.ep_config is None or is_virtual_device_mode():
             return
 
-        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
+        )
         model_config.ep_config.node_id = self.ep_comm_initializer.config.node_id
         if model_config.ep_config.node_id == -1:
             raise ValueError(

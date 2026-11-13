@@ -740,9 +740,10 @@ class GraphApiDecoderPipelineModel(
                     f"{type(config).__qualname__} doesn't support expert "
                     "parallelism"
                 )
-            runtime, self.ep_comm_initializer = initialize_ep_comm_buffers(
-                config, runtime, self._session
+            runtime, self.ep_comm_initializer, ep_init = (
+                initialize_ep_comm_buffers(config, runtime, self._session)
             )
+            self.compiled_modules = {**self.compiled_modules, **ep_init}
         self._runtime = runtime
         if isinstance(config, DeploymentConfig):
             return config.apply_runtime(runtime)

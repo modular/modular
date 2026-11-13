@@ -25,7 +25,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.layer import Module
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
@@ -35,7 +34,6 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    compile_and_init_graphs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
@@ -332,31 +330,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."
             )
-
-    def _init_ep_comm(
-        self, session: InferenceSession, ep_config: EPConfig
-    ) -> EPCommInitializer:
-        """Sets up expert parallelism for ``ep_config``.
-
-        Compiles the one-time EP init graph under :attr:`GraphRole.EP_INIT`,
-        keeps it in :attr:`compiled_modules`, and runs it.
-
-        Args:
-            session: The session that compiles and runs the EP init graph.
-            ep_config: The EP configuration. EP init sets its node ID.
-
-        Returns:
-            The initialized EP communication buffers.
-        """
-        ep_comm_initializer = EPCommInitializer(ep_config)
-        init = ep_comm_initializer.init_module()
-        specs: dict[str, GraphSpec] = {
-            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
-        }
-        modules = compile_and_init_graphs(session, specs)
-        ep_comm_initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
-        self.compiled_modules = {**self.compiled_modules, **modules}
-        return ep_comm_initializer
 
     @override
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:

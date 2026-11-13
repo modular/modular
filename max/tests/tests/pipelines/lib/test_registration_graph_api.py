@@ -576,13 +576,13 @@ def test_deployment_is_completed_before_constructing_the_decoder(
 
     def initialize(
         config: _DeploymentConfig, runtime: ModuleRuntime, session: object
-    ) -> tuple[ModuleRuntime, object]:
+    ) -> tuple[ModuleRuntime, object, dict[str, object]]:
         assert config.finalized
         assert session is model._session
         ep = config.expert_parallel_config(runtime)
         config.events.append("initialize_exchange")
         ep.node_id = 7
-        return replace(runtime, ep=ep), exchange
+        return replace(runtime, ep=ep), exchange, {}
 
     monkeypatch.setattr(
         "max.pipelines.lib.registration_graph_api.initialize_ep_comm_buffers",
@@ -656,13 +656,14 @@ def test_virtual_ep_deployment_sizes_without_allocating_buffers(
         raise AssertionError("virtual deployment allocated an EP initializer")
 
     monkeypatch.setattr(
-        "max.pipelines.lib.registration_runtime.EPCommInitializer", unexpected
+        "max.pipelines.lib.registration_runtime.init_ep_comm", unexpected
     )
-    initialized, exchange = initialize_ep_comm_buffers(
+    initialized, exchange, ep_init = initialize_ep_comm_buffers(
         config, runtime, model._session
     )
     assert initialized.ep is not None
     assert exchange is None
+    assert ep_init == {}
     assert config.events == ["apply_runtime", "size_exchange"]
 
 

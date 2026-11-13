@@ -197,8 +197,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
             logger.info("Reusing target model's EP communication buffers.")
         else:
-            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                session, model_config.ep_config
+            )
         if model_config.ep_config.node_id == -1:
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."

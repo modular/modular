@@ -24,7 +24,6 @@ from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from typing_extensions import override
@@ -184,8 +183,9 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # graph, and execution never runs in virtual mode.
         if model_config.ep_config is None or is_virtual_device_mode():
             return
-        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
+        )
         attn_strategy = (
             "TP"
             if self.pipeline_config.model.data_parallel_degree == 1

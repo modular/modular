@@ -25,7 +25,6 @@ from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.comm.ep.ep_manager import EPBatchManager
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
@@ -191,8 +190,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         if is_virtual_device_mode():
             return
         # Create EP infrastructure
-        self.ep_comm_initializer = EPCommInitializer(ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(session, ep_config)
         ep_config.node_id = self.ep_comm_initializer.config.node_id
 
     @override

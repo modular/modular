@@ -282,10 +282,11 @@ class LlamaModelBase(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(model_config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
+            compiled = compile_and_init_graphs(session, specs)
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
         models = {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
+            role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         self._wire_batch_processor(models[GraphRole.DECODER], model_config)
