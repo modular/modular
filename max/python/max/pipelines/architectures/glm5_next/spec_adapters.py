@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.graph import BufferType, DimLike, TensorType, TensorValue
+from max.graph import DimLike, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
@@ -392,12 +392,12 @@ class Glm5NextMTPProposer(TensorAdapter):
         return h, selection, offsets
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the expert-parallel inputs of a built target module."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP inputs, if EP is on."""
     target = _language_model(target)
     if target.ep_batch_manager is None:
-        return ()
-    return target.ep_batch_manager.input_types()
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def batch_distributed_buffers(
@@ -417,7 +417,7 @@ def batch_distributed_buffers(
 ADAPTER = TargetAdapter(
     primary_kv=MLA_CACHE_KEY,
     verify=verify,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     batch_distributed_buffers=batch_distributed_buffers,
     check=check,
     sequential_proposer=sequential_proposer,

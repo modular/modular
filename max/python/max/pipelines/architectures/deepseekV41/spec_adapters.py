@@ -314,12 +314,12 @@ def replay_extra(
     }
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the routed experts' expert-parallel inputs, if any."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the routed experts' EP inputs, if any."""
     ep_config = target.config.ep_config
     if ep_config is None:
-        return ()
-    return EPBatchManager(ep_config).input_types()
+        return None
+    return EPBatchManager(ep_config).input_tree()
 
 
 def batch_distributed_buffers(
@@ -1100,7 +1100,7 @@ ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     batch_distributed_buffers=batch_distributed_buffers,
     # The graph takes no in-thinking input, as the fused graph didn't.
     relaxed_thinking_acceptance=False,

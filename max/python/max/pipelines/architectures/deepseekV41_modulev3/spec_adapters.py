@@ -759,12 +759,12 @@ def block_proposer(
     return DSparkDeepseekV41Proposer(draft, verify.target, draft_config)
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the routed experts' expert-parallel inputs, if any."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the routed experts' EP inputs, if any."""
     assert isinstance(target, DeepseekV41)
     if target.ep_batch_manager is None:
-        return ()
-    return target.ep_batch_manager.input_types()
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def trailing_input_types(
@@ -802,7 +802,7 @@ ADAPTER = TargetAdapter(
     primary_kv=WINDOW_LEAF,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # The graph takes no in-thinking input, as the fused graph the serving
     # engine binds doesn't.
     relaxed_thinking_acceptance=False,

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import BufferType, TensorType, TensorValue
+from max.graph import TensorValue
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import (
@@ -286,11 +286,11 @@ def verify(
     )
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the EP buffers, which the graph takes past its tail."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the EP buffers past the graph's tail."""
     assert isinstance(target, Beam)
     manager = target.ep_batch_manager
-    return () if manager is None else tuple(manager.input_types())
+    return None if manager is None else manager.input_tree()
 
 
 def block_proposer(
@@ -315,7 +315,7 @@ ADAPTER = TargetAdapter(
     primary_kv=FULL,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # Mach's block adapter binds no `in_thinking_phase`, and Beam serves with
     # a reasoning parser, which would otherwise declare it.
     relaxed_thinking_acceptance=False,

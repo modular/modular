@@ -2050,19 +2050,24 @@ class _DriverCall:
     replay_count: int = 0
     """How many of the trailing inputs are the replay graph's own, which come
     after everything else."""
+    ep_tree: object | None = None
+    """The group that names the target's expert-parallel inputs, if one
+    does."""
 
     @cached_property
     def input_tree(self) -> DecoderGraphInputs | None:
         """The graph's inputs named by group.
 
         Its leaves are :attr:`input_types`. It is ``None`` for a signature
-        with inputs no group names: penalties, a later stage's boundary and
-        the replay graph's own inputs among them.
+        with inputs no group names: penalties, a later stage's boundary, the
+        replay graph's own inputs, HiSparse inputs and expert-parallel inputs
+        without :attr:`ep_tree` among them.
         """
         if self.penalties or self.boundary_count or self.replay_count:
             return None
         return self.driver.input_tree(
             self.kv_params,
+            ep=self.ep_tree,
             trailing=spec_adapters.trailing_input_tree(
                 self.target_arch, self.method, self.target_config
             ),
@@ -2377,6 +2382,7 @@ def _driver_call(
     # place the built module is in hand, and the signature's EP tail is
     # exactly these inputs.
     ep_input_types = spec_adapters.ep_input_types(target_arch, target)
+    ep_tree = spec_adapters.ep_input_tree(target_arch, target)
     input_spec = _input_type_spec(
         pipeline_config,
         devices,
@@ -2469,6 +2475,7 @@ def _driver_call(
             structured_output,
         ),
         replay_count=len(replay_types),
+        ep_tree=ep_tree,
     )
 
 

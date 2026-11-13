@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import BufferType, TensorType, TensorValue
+from max.graph import TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
@@ -489,12 +489,12 @@ def verify(
     )
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the EP buffers a target built with expert parallelism takes."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP buffers, if EP is on."""
     assert isinstance(target, MistralLarge4)
     if target.ep_batch_manager is None:
-        return ()
-    return tuple(target.ep_batch_manager.input_types())
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def block_proposer(
@@ -547,7 +547,7 @@ ADAPTER = TargetAdapter(
     primary_kv=ROPE_MLA_GROUP,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # TP8 attention beside EP8 routed experts is one attention replica, so the
     # graph declares the EP collective buffers on an otherwise TP-only
     # signature: after the KV tree, with none of the data-parallel inputs.

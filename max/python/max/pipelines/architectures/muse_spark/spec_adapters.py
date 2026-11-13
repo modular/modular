@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
@@ -263,11 +263,11 @@ def verify(
     )
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the EP buffers, which the graph takes past its tail."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the EP buffers past the graph's tail."""
     assert isinstance(target, MuseSparkDecoder)
     manager = target.model.ep_batch_manager
-    return () if manager is None else tuple(manager.input_types())
+    return None if manager is None else manager.input_tree()
 
 
 def block_proposer(
@@ -287,7 +287,7 @@ def block_proposer(
 ADAPTER = TargetAdapter(
     primary_kv=FULL_KV,
     verify=verify,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # Mach's Muse Spark DSpark graph takes no ``in_thinking_phase``.
     relaxed_thinking_acceptance=False,
     block_proposer=block_proposer,

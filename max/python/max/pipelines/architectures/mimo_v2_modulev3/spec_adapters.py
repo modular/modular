@@ -26,11 +26,10 @@ one-device replicas, and each replica's full drafter drafts its own rows.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from max import functional as F
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
@@ -418,12 +417,12 @@ def verify(
     )
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the EP buffers a target built with expert parallelism takes."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP buffers, if EP is on."""
     assert isinstance(target, MiMoV2SpecTarget)
     if target.ep_batch_manager is None:
-        return ()
-    return tuple(target.ep_batch_manager.input_types())
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def block_proposer(
@@ -450,7 +449,7 @@ ADAPTER = TargetAdapter(
     primary_kv=FULL,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # Where Mach binds them for the graph-API pairing's export too.
     signal_buffer_index=_SIGNAL_BUFFER_INDEX,
     verify_takes_prefill_rows=always_takes_prefill_rows,

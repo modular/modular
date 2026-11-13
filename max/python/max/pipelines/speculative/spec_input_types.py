@@ -1058,10 +1058,13 @@ class SpecDecodeGraphSignature:
 
         Returns:
             The named inputs, or ``None`` for a signature with inputs no
-            group names: trailing or expert-parallel ones without their tree.
+            group names: trailing or expert-parallel ones without their
+            tree, and HiSparse ones.
         """
-        if (self.has_trailing_inputs and trailing is None) or (
-            self.ep_input_types() and ep is None
+        if (
+            (self.has_trailing_inputs and trailing is None)
+            or (self.ep_input_types() and ep is None)
+            or self.hisparse_input_types()
         ):
             return None
         declared = declared_spec_decode_inputs(

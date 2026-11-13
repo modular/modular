@@ -43,6 +43,12 @@ def _default_ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     return ()
 
 
+def _default_ep_input_tree(target: Any) -> object | None:
+    """Names no expert-parallel inputs."""
+    del target
+    return None
+
+
 def _default_ep_tail(target: Any) -> bool:
     """Returns whether the target declares its collective buffers undivided."""
     del target
@@ -254,10 +260,18 @@ class TargetAdapter:
     verify: Callable[[Module, Any, ReturnHiddenStates, Any], VerifyFn]
     """Returns how a built target module verifies under a driver."""
 
+    ep_input_tree: Callable[[Any], object | None] = _default_ep_input_tree
+    """Returns the group that names a built target module's expert-parallel
+    inputs, such as its ``EPBatchManager``'s ``input_tree()``, or ``None``
+    when expert parallelism is off. Its leaves are the inputs, and an export
+    names them by it."""
+
     ep_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_ep_input_types
     )
-    """Returns a built target module's expert-parallel inputs."""
+    """Returns a built target module's expert-parallel inputs when no group
+    names them, as for a target whose expert-parallel slot also carries
+    other state. Its fused graph's inputs then stay unnamed."""
 
     ep_tail: Callable[[Any], bool] = _default_ep_tail
     """Returns whether the target declares its expert-parallel buffers on a
@@ -267,8 +281,8 @@ class TargetAdapter:
     is where every pairing that runs EP today puts it. An EP target at one
     attention replica -- one expert rank per device, no replica axis -- has no
     data-parallel inputs to declare them beside, so it names the tail here
-    instead: :attr:`ep_input_types` are then declared after the KV tree and
-    nothing else of the distributed group is. ``False`` for every target that
+    instead: its expert-parallel inputs are then declared after the KV tree
+    and nothing else of the distributed group is. ``False`` for every target that
     keeps them on the distributed signature."""
 
     hisparse_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (

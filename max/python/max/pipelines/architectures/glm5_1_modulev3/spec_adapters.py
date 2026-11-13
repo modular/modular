@@ -533,12 +533,12 @@ def verify(
     return Glm5_1Target(target)
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the target's expert-parallel inputs, empty when EP is off."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP inputs, if EP is on."""
     assert isinstance(target, Glm5_1Decoder)
     if target.ep_batch_manager is None:
-        return ()
-    return target.ep_batch_manager.input_types()
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def hisparse_input_types(
@@ -584,7 +584,7 @@ def _takes_prefill_rows(target_config: Any) -> bool:
 ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     hisparse_input_types=hisparse_input_types,
     check=check,
     sequential_proposer=sequential_proposer,

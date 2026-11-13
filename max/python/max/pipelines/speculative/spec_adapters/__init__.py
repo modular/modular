@@ -33,6 +33,7 @@ import importlib
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TypeVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
 from max.nn.kv_cache import MultiKVCacheParams
@@ -63,6 +64,7 @@ __all__ = [
     "batch_trailing_buffers",
     "block_proposer",
     "check",
+    "ep_input_tree",
     "ep_input_types",
     "ep_tail",
     "export_contract",
@@ -191,10 +193,24 @@ def primary_kv(target_arch: str, method: str) -> str:
     return _adapter(target_arch, method).primary_kv
 
 
+def ep_input_tree(target_arch: str, target: Module) -> object | None:
+    """Returns the group that names a target's expert-parallel inputs.
+
+    It is ``None`` when no group names them.
+    """
+    return _adapter(target_arch).ep_input_tree(target)
+
+
 def ep_input_types(
     target_arch: str, target: Module
 ) -> Sequence[TensorType | BufferType]:
-    """Returns the expert-parallel inputs of a built target module."""
+    """Returns the expert-parallel inputs of a built target module.
+
+    They are the leaves of :func:`ep_input_tree` when a group names them.
+    """
+    named = ep_input_tree(target_arch, target)
+    if named is not None:
+        return tree.leaves(named)
     return _adapter(target_arch).ep_input_types(target)
 
 
