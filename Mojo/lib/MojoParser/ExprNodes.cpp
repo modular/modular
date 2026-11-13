@@ -5690,8 +5690,17 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
 
   assert(expectedType.getParamBindings().size() == 2 &&
          "Tuple has two parameter");
-  // This must be a fully resolved tuple type.
-  auto vaAttr = sugarCast<ParamListAttr>(expectedType.getParamBindings()[0]);
+  // Look through an upcast of the element pack. `Tuple[*Ts]` has no element
+  // list here: `*Ts` is a parameter pack whose size is known only when the
+  // code is instantiated.
+  auto vaAttr = sugarDynCast<ParamListAttr>(
+      UpcastAttr::strip(expectedType.getParamBindings()[0]));
+  if (!vaAttr) {
+    emitter.emitError(getLoc(), "cannot unpack value of parametric tuple type ")
+        << expectedType << " into " << exprs.size() << " value"
+        << plural(exprs.size()) << getRange();
+    return failure();
+  }
   if (vaAttr.getValues().size() == exprs.size()) {
     for (auto [i, typeElt] : llvm::enumerate(vaAttr.getValues())) {
       PValue eltPVal = getTupleItem(ASTType(typeElt), i);
