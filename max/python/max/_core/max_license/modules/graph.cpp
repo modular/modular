@@ -87,10 +87,9 @@ MlirOperation last_operation(MlirBlock block) {
 /// the given MLIR context so loadContext() succeeds for graph compilation and
 /// kernel analysis.
 ///
-/// Reuses the existing global M::Context when present (e.g. after
-/// InferenceSession) if Init::Options match; otherwise creates it via
-/// Init::getOrCreateContext with cpuDevice options aligned with
-/// Engine::Context::create's default session (see comments in-body).
+/// Graphs impose no runtime configuration requirements. Reuse the existing
+/// context (e.g. from InferenceSession); the options below apply only when
+/// creating the first context.
 static void _init_and_register_max_context(MlirContext mlirCtx) {
   M::Init::Options options;
   M::AsyncRT::CPUDeviceOptions rtOptions;
@@ -102,9 +101,10 @@ static void _init_and_register_max_context(MlirContext mlirCtx) {
   // Engine::Context::create passes withForceDisableCrashReporting(!that).
   options.withForceDisableCrashReporting(true);
 
-  auto ctxOr = M::Init::getOrCreateContext("max-graph", options);
-  if (ctxOr.isError())
+  auto ctxOr = M::Init::getOrCreateContextWithDefaults("max-graph", options);
+  if (ctxOr.isError()) {
     throw std::runtime_error(ctxOr.takeError().get());
+  }
   M::ContextRef maxContext = ctxOr.takeValue();
 
   M::registerContext(*unwrap(mlirCtx), maxContext);
@@ -342,9 +342,8 @@ void M::Graph::Python::bindGraphModule(nb::module_ m) {
         R"nbdoc(
       Initializes a process-wide M::Context when none exists, then registers it with the given MLIR context so compiler code can use loadContext.
 
-      Internal API; does not expose M::Context to Python. New contexts are
-      created via Init::getOrCreateContext (same Init path the Engine uses before
-      attaching devices).
+      Internal API; does not expose M::Context to Python. Reuses an existing
+      context and its runtime configuration, or creates one with default options.
   )nbdoc");
 
   //===----------------------------------------------------------------------===//

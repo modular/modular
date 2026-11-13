@@ -38,7 +38,7 @@ from max._core.mlrt import AsyncValue as _AsyncValue
 from max._core.profiler import (
     set_gpu_profiling_state,
 )
-from max.driver import CPU, Buffer, Device, DLPackArray, is_virtual_device_mode
+from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
@@ -671,8 +671,11 @@ class InferenceSession:
     Args:
         devices: A list of devices on which to run inference. The host CPU
             is always included automatically.
-        num_threads: The number of execution threads. Defaults to ``None``,
-            which lets the runtime choose automatically.
+        num_threads: The number of execution threads for the process-wide
+            runtime. Set this before another runtime user creates a CPU device.
+            Defaults to ``None``, which lets the runtime choose automatically.
+            Later sessions must request a compatible runtime configuration;
+            omitted settings use defaults rather than inheriting existing values.
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
@@ -740,10 +743,8 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        host_cpu = CPU()
-        if host_cpu not in seen_devices:
-            final_devices.append(host_cpu)
-            seen_devices.add(host_cpu)
+        # The native constructor adds the host CPU after configuring the
+        # process runtime, so CPU() cannot initialize it with defaults first.
 
         custom_extensions_final = []
 
