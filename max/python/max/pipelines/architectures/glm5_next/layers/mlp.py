@@ -28,7 +28,7 @@ from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.graph import StaticDim
 from max.nn import Module
-from max.nn._graph_ops import _router_gate_mixed_gemv
+from max.nn._graph_ops import _is_sm10x_gpu, _router_gate_mixed_gemv
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
@@ -62,7 +62,7 @@ _BF16_GEMV_K_TILE = 1024
 def _mixed_gemv_applies(hidden_states: Tensor, weight: Tensor) -> bool:
     """Returns whether the mixed bf16 router GEMV can produce the logits.
 
-    The op is GPU-only and its AMD launch table is tuned on gfx950, so a
+    The op is GPU-only and has launch tables for gfx950 and SM100, so a
     host-device graph, another accelerator, or a missing one keeps the
     float32 matmul. The placement comes from ``hidden_states.mesh`` because
     ``Tensor.device`` raises on the multi-device mesh a tensor-parallel
@@ -70,7 +70,9 @@ def _mixed_gemv_applies(hidden_states: Tensor, weight: Tensor) -> bool:
     """
     if any(device.is_host for device in hidden_states.mesh.devices):
         return False
-    if accelerator_count() == 0 or accelerator_architecture_name() != "gfx950":
+    if accelerator_count() == 0 or not (
+        accelerator_architecture_name() == "gfx950" or _is_sm10x_gpu()
+    ):
         return False
     k_dim = weight.shape[1]
     return (
@@ -122,7 +124,7 @@ class Glm5NextTopKRouter(MoEGate):
 
     Uses sigmoid scoring with a group-limited top-k router and a learned
     expert correction bias (``noaux_tc``). V3.2 computes the gate score and
-    the sigmoid in float32. On gfx950 the gate GEMV runs on the
+    the sigmoid in float32. On gfx950 and SM100 the gate GEMV runs on the
     checkpoint's bf16 operands in one launch (``moe.router.gate.mixed.gemv``)
     instead of casting both to float32 first, which costs two cast launches
     (the weight's every step, since the graph does not fold weight-only ops)

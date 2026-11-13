@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GLM-5.3-Flash's router gate takes the bf16 mixed GEMV on gfx950 only.
+"""GLM-5.3-Flash's router gate takes the bf16 mixed GEMV on gfx950 and SM100.
 
 The graphs are traced, not compiled. The GEMV's numerics are covered by
-``max/kernels/test/gpu/linalg/test_router_gate_mixed_gemv_amd.mojo``.
+``max/kernels/test/gpu/linalg/test_router_gate_mixed_gemv_amd.mojo`` and
+``test_router_gate_mixed_gemv_sm100.mojo``.
 """
 
 from __future__ import annotations
@@ -42,11 +43,17 @@ _ROUTER_MODULE = "max.pipelines.architectures.glm5_next.layers.mlp"
 
 @contextmanager
 def _arch(architecture: str) -> Iterator[MagicMock]:
-    """Answers the router's accelerator query as ``architecture`` would."""
-    with patch(
-        f"{_ROUTER_MODULE}.accelerator_architecture_name",
-        return_value=architecture,
-    ) as query:
+    """Answers the router's accelerator queries as ``architecture`` would."""
+    with (
+        patch(
+            f"{_ROUTER_MODULE}.accelerator_architecture_name",
+            return_value=architecture,
+        ) as query,
+        patch(
+            f"{_ROUTER_MODULE}._is_sm10x_gpu",
+            return_value=architecture.startswith("sm_10"),
+        ),
+    ):
         yield query
 
 
@@ -80,8 +87,9 @@ def _trace(
     return str(staged)
 
 
-def test_gfx950_router_runs_the_mixed_gemv_on_bf16_operands() -> None:
-    with _arch("gfx950"):
+@pytest.mark.parametrize("architecture", ["gfx950", "sm_100a"])
+def test_router_runs_the_mixed_gemv_on_bf16_operands(architecture: str) -> None:
+    with _arch(architecture):
         text = _trace(DType.bfloat16)
     assert _MIXED_GEMV_OP in text
     # Neither operand is widened: the gate GEMV reads both as bf16.
@@ -91,14 +99,14 @@ def test_gfx950_router_runs_the_mixed_gemv_on_bf16_operands() -> None:
 @pytest.mark.parametrize(
     ("architecture", "activation_dtype", "weight_dtype", "hidden"),
     [
-        ("sm_100a", DType.bfloat16, DType.bfloat16, _HIDDEN),
+        ("sm_90a", DType.bfloat16, DType.bfloat16, _HIDDEN),
         ("gfx942", DType.bfloat16, DType.bfloat16, _HIDDEN),
         ("gfx950", DType.float32, DType.bfloat16, _HIDDEN),
         ("gfx950", DType.bfloat16, DType.float32, _HIDDEN),
         ("gfx950", DType.bfloat16, DType.bfloat16, 1536),
     ],
     ids=[
-        "sm100",
+        "sm90",
         "gfx942",
         "fp32_activations",
         "fp32_weight",

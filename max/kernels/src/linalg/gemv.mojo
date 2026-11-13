@@ -1795,6 +1795,10 @@ def router_gate_use_mixed_gemv(m: Int, max_m: Int = 64) -> Bool:
 # covers 2 and 3 rows, where the `(8, 4)` fallback measured 6.0 and 6.7 us
 # against 3.5 and 3.8, and `(4, 1)` keeps the guard to 16 rows because it beats
 # that fallback there: 5.3 us against 9.1 at 6 rows, 5.6 against 11.3 at 9.
+# GLM-5.3-Flash's bf16 `[288, 4096]` gate takes the `True` rows as well:
+# against the `False` ones it runs 9% faster at 4 rows, 27% at 6, 40% at 24,
+# 25% at 64 and 10% at 96 and 128, and the same at 16 (each launch replayed
+# from a device graph over a cold ring of layer weights).
 # Counts from 17 to 63 that no row covering them divides take the guarded
 # `(8, 4)` fallback, which measured 11.2 us at 20 rows and 12.7 at 36, where
 # `(4, 2)` ran 6.0 and 8.6; `(4, 2)` has no row there because one would also
@@ -1833,9 +1837,8 @@ def _sm100_router_gate_has_guarded_band[wide: Bool]() -> Bool:
     asserts this, so a table edit cannot take its own fallback away.
 
     Parameters:
-        wide: Whether the gate is the `[256, 4096]` shape, which has its own
-            rows, rather than the `[128, 6144]` bands the launcher shipped
-            with.
+        wide: Whether the gate takes the `[256, 4096]` shape's own rows
+            rather than the `[128, 6144]` bands the launcher shipped with.
 
     Returns:
         True when the shape has at least one row that may run guarded.
@@ -1855,9 +1858,8 @@ def _sm100_router_gate_bands_distinct[wide: Bool]() -> Bool:
     unguarded launch.
 
     Parameters:
-        wide: Whether the gate is the `[256, 4096]` shape, which has its own
-            rows, rather than the `[128, 6144]` bands the launcher shipped
-            with.
+        wide: Whether the gate takes the `[256, 4096]` shape's own rows
+            rather than the `[128, 6144]` bands the launcher shipped with.
 
     Returns:
         True when no two rows of the shape share a band index.
@@ -1881,9 +1883,8 @@ def _sm100_router_gate_band[wide: Bool](m: Int) -> Int:
     required to keep, by the assert below.
 
     Parameters:
-        wide: Whether the gate is the `[256, 4096]` shape, which has its own
-            rows, rather than the `[128, 6144]` bands the launcher shipped
-            with.
+        wide: Whether the gate takes the `[256, 4096]` shape's own rows
+            rather than the `[128, 6144]` bands the launcher shipped with.
 
     Args:
         m: The runtime row count of the router-gate activation.
@@ -2352,7 +2353,11 @@ def router_gate_mixed_gemv[
         comptime assert (
             static_K == type_of(b).static_shape[1]
         ), "router gate: activation K and weight K disagree"
-        comptime wide = static_N == 256 and static_K == 4096
+        # GLM-5.3-Flash's bf16 `[288, 4096]` gate takes the `[256, 4096]`
+        # rows too (see `_SM100_ROUTER_GATE_ROWS`).
+        comptime wide = static_K == 4096 and (
+            static_N == 256 or static_N == 288
+        )
         var band = _sm100_router_gate_band[wide](m)
         comptime for i in range(len(_SM100_ROUTER_GATE_ROWS)):
             comptime row = _SM100_ROUTER_GATE_ROWS[i]

@@ -20,10 +20,13 @@ where that dispatch also runs `gemv_split_k`, the fused result must equal
 switches to TF32 tensor cores, so those rows are checked against an fp64 host
 reference instead.
 
-Shapes mirror both gates the `moe.router.gate.mixed.gemv` custom op serves:
-MiniMax-M3's (`N = 128`, `K = 6144`) and MiMo-V2.6-Flash's under four-way
-tensor parallelism (`N = 256`, `K = 4096`), each with runtime `M`. An odd
-`N` exercises the `check_bounds_n` guard.
+Shapes mirror the gates the `moe.router.gate.mixed.gemv` custom op serves:
+MiniMax-M3's (`N = 128`, `K = 6144`), MiMo-V2.6-Flash's under four-way
+tensor parallelism (`N = 256`, `K = 4096`), and GLM-5.3-Flash's
+(`N = 288`, `K = 4096`), which calls the op with a bf16 weight, each with
+runtime `M`. An odd `N` exercises the `check_bounds_n` guard. A bf16 weight
+has no cast-and-`matmul` twin, so those cases are held to the fp64 reference
+and the band replay only.
 
 Every case also pins the launcher's own band table: the same call is
 replayed through two bands the launcher takes at few row counts -- the
@@ -37,6 +40,7 @@ unchanged.
 
 from std.math import ceildiv
 from std.random import randn, random_float64, seed
+from std.sys import size_of
 from std.testing import assert_equal, assert_false, assert_true
 
 from internal_utils import assert_almost_equal
@@ -66,13 +70,17 @@ comptime GUARD_ELEMS = 8
 
 
 def _assert_band_identity[
-    static_N: Int, static_K: Int, ref_tile_m: Int, ref_tile_n: Int
+    static_N: Int,
+    static_K: Int,
+    ref_tile_m: Int,
+    ref_tile_n: Int,
+    b_type: DType = .float32,
 ](
     ctx: DeviceContext,
     m: Int,
     got: HostBuffer[DType.float32],
     a_dev: DeviceBuffer[DType.bfloat16],
-    b_dev: DeviceBuffer[DType.float32],
+    b_dev: DeviceBuffer[b_type],
 ) raises:
     """Runs one `gemv_split_k` band and asserts the launcher matches it.
 
@@ -89,13 +97,15 @@ def _assert_band_identity[
         static_K: Contraction dim.
         ref_tile_m: Rows per block of the reference band.
         ref_tile_n: Columns per block of the reference band.
+        b_type: Weight element type. The reference takes the launcher's
+            16-byte weight load: 4 lanes of an fp32 weight, 8 of a bf16 one.
 
     Args:
         ctx: The device context.
         m: Runtime row count.
         got: The launcher's logits, `[m, static_N]`.
         a_dev: The bf16 activation, `[m, static_K]`.
-        b_dev: The fp32 weight, `[static_N, static_K]`.
+        b_dev: The weight, `[static_N, static_K]`.
     """
     var c_dev = ctx.enqueue_create_buffer[.float32](m * static_N)
     var c_tt = TileTensor(c_dev.unsafe_ptr(), row_major(m, Idx[static_N]))
@@ -104,14 +114,14 @@ def _assert_band_identity[
     comptime kernel = gemv_split_k[
         DType.float32,
         DType.bfloat16,
-        DType.float32,
+        b_type,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
         type_of(c_tt).Engine,
         type_of(a_tt).Engine,
         type_of(b_tt).Engine,
-        simd_width=4,
+        simd_width=16 // size_of[b_type](),
         tile_m=ref_tile_m,
         tile_n=ref_tile_n,
         num_threads=256,
@@ -152,27 +162,36 @@ def _assert_band_identity[
 
 
 def _run_case[
-    static_N: Int, static_K: Int = ROUTER_K
+    static_N: Int, static_K: Int = ROUTER_K, b_type: DType = .float32
 ](ctx: DeviceContext, m: Int) raises:
     """Runs the launcher at `[m, static_K] x [static_N, static_K]^T`.
 
     Parameters:
         static_N: Output width.
         static_K: Contraction dim.
+        b_type: Weight element type, fp32 or bf16.
 
     Args:
         ctx: The device context.
         m: Runtime row count. `m == 0` exercises the empty-launch guard.
     """
     comptime K = static_K
-    print("== router_gate_mixed_gemv sm100 m=", m, "N=", static_N)
+    print(
+        "== router_gate_mixed_gemv sm100 m=",
+        m,
+        "N=",
+        static_N,
+        "K=",
+        K,
+        b_type,
+    )
 
     var rows = m if m > 0 else 1
     var c_elems = rows * static_N + GUARD_ELEMS
 
     var a_host = ctx.enqueue_create_host_buffer[.bfloat16](rows * K)
     var a_f32_host = ctx.enqueue_create_host_buffer[.float32](rows * K)
-    var b_host = ctx.enqueue_create_host_buffer[.float32](static_N * K)
+    var b_host = ctx.enqueue_create_host_buffer[b_type](static_N * K)
     var c_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
     var c_ref_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
     var c_expected = ctx.enqueue_create_host_buffer[.float32](c_elems)
@@ -180,14 +199,18 @@ def _run_case[
     for i in range(rows * K):
         a_host[i] = random_float64(min=-1.0, max=1.0).cast[.bfloat16]()
         a_f32_host[i] = a_host[i].cast[.float32]()
-    randn(b_host.unsafe_ptr(), static_N * K)
+    comptime if b_type == .float32:
+        randn(b_host.unsafe_ptr(), static_N * K)
+    else:
+        for i in range(static_N * K):
+            b_host[i] = random_float64(min=-1.0, max=1.0).cast[b_type]()
     for i in range(c_elems):
         c_host[i] = SENTINEL
         c_ref_host[i] = SENTINEL
 
     var a_dev = ctx.enqueue_create_buffer[.bfloat16](rows * K)
     var a_f32_dev = ctx.enqueue_create_buffer[.float32](rows * K)
-    var b_dev = ctx.enqueue_create_buffer[.float32](static_N * K)
+    var b_dev = ctx.enqueue_create_buffer[b_type](static_N * K)
     var c_dev = ctx.enqueue_create_buffer[.float32](c_elems)
     var c_ref_dev = ctx.enqueue_create_buffer[.float32](c_elems)
     ctx.enqueue_copy(a_dev, a_host)
@@ -200,20 +223,24 @@ def _run_case[
     var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, Idx[K]))
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
-    router_gate_mixed_gemv[.float32, static_N](
+    router_gate_mixed_gemv[b_type, static_N](
         c_tt, a_tt.as_imm(), b_tt.as_imm(), m, static_N, K, ctx
     )
 
-    # The standard path the fused launch replaces: fp32 activation, ordinary
-    # matmul dispatch. Skipped at m == 0, which the op never reaches it with.
-    if m > 0:
-        var c_ref_tt = TileTensor(
-            c_ref_dev.unsafe_ptr(), row_major(m, Idx[static_N])
-        )
-        var a_f32_tt = TileTensor(a_f32_dev.unsafe_ptr(), row_major(m, Idx[K]))
-        matmul[transpose_b=True](
-            c_ref_tt, a_f32_tt.as_imm(), b_tt.as_imm(), ctx
-        )
+    # The standard path the fused launch replaces for an fp32 weight: fp32
+    # activation, ordinary matmul dispatch. Skipped at m == 0, which the op
+    # never reaches it with.
+    comptime if b_type == .float32:
+        if m > 0:
+            var c_ref_tt = TileTensor(
+                c_ref_dev.unsafe_ptr(), row_major(m, Idx[static_N])
+            )
+            var a_f32_tt = TileTensor(
+                a_f32_dev.unsafe_ptr(), row_major(m, Idx[K])
+            )
+            matmul[transpose_b=True](
+                c_ref_tt, a_f32_tt.as_imm(), b_tt.as_imm(), ctx
+            )
 
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
@@ -222,10 +249,10 @@ def _run_case[
     if m > 0:
         # Bands the launcher takes at few row counts: the narrowest, and the
         # one it picked above 32 rows before the per-shape rows existed.
-        _assert_band_identity[static_N, static_K, 1, 1](
+        _assert_band_identity[static_N, static_K, 1, 1, b_type](
             ctx, m, c_host, a_dev, b_dev
         )
-        _assert_band_identity[static_N, static_K, 8, 2](
+        _assert_band_identity[static_N, static_K, 8, 2, b_type](
             ctx, m, c_host, a_dev, b_dev
         )
 
@@ -248,7 +275,7 @@ def _run_case[
                 )
             c_expected[row * static_N + col] = acc.cast[.float32]()
 
-    # fp32 accumulation over K = 6144 terms of magnitude ~1 against fp64.
+    # fp32 accumulation over K terms of magnitude ~1 against fp64.
     assert_almost_equal(
         c_host.unsafe_ptr(),
         c_expected.unsafe_ptr(),
@@ -274,14 +301,17 @@ def _run_case[
             "top-1 routing mismatch on row " + String(row),
         )
 
-    # Up to M = 64 the standard dispatch is the same gemv_split_k reduction.
-    if m > 0 and m <= 64:
-        for i in range(c_elems):
-            assert_equal(
-                c_host[i],
-                c_ref_host[i],
-                "not bit-identical to cast + matmul at element " + String(i),
-            )
+    # Up to M = 64 the standard dispatch of an fp32 weight is the same
+    # gemv_split_k reduction.
+    comptime if b_type == .float32:
+        if m > 0 and m <= 64:
+            for i in range(c_elems):
+                assert_equal(
+                    c_host[i],
+                    c_ref_host[i],
+                    "not bit-identical to cast + matmul at element "
+                    + String(i),
+                )
 
     print("PASS")
 
@@ -377,6 +407,10 @@ def main() raises:
         _run_case[256, MIMO_K](ctx, 64)
         _run_case[256, MIMO_K](ctx, 65)
         _run_case[256, MIMO_K](ctx, 128)
+        # GLM-5.3-Flash's bf16 gate on the shipped bands: each band's edges,
+        # guarded (9, 25, 33) and not (8, 24, 32, 128), and the window edge.
+        comptime for m in [1, 8, 9, 24, 25, 32, 33, 128]:
+            _run_case[288, 4096, .bfloat16](ctx, m)
         # Empty-launch guard: no launch, no fault, output untouched.
         _run_case[128](ctx, 0)
 
