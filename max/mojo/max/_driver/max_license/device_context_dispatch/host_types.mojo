@@ -26,10 +26,8 @@ from std.os import abort
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceBuffer,
     HALDeviceContext,
     HALDeviceStreamBase,
-    HALHostBuffer,
 )
 from max._driver.max_license.hal import Event
 from max._driver.max_license.hal.extensions.completion_flag import FlagCondition

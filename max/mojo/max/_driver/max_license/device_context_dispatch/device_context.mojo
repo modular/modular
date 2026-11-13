@@ -42,9 +42,7 @@ from max._driver.max_license.device_context_dispatch.function import (
     _DispatchEnqueuer,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceBuffer,
     HALDeviceContext,
-    HALHostBuffer,
     _HALDeviceContextScope,
     _GPU_DRIVER,
     _check_copy_src_size,
@@ -94,6 +92,7 @@ from .host_types import (
 )
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
+    _HALDeviceBuffer,
 )
 from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
@@ -171,6 +170,51 @@ def _init_peer_state() -> _PeerState:
 
 
 comptime _PEER_STATE = _Global["MODULAR_HAL_PEER_STATE", _init_peer_state]
+
+
+def _check_device_to_device_copy[
+    target: CompilationTarget, dtype: DType
+](
+    ctx: HALDeviceContext[target],
+    dst_buf: _HALDeviceBuffer[dtype],
+    src_buf: _HALDeviceBuffer[dtype],
+) raises:
+    # Runs before any cross-stream wait, which would hand this plugin
+    # another driver's event.
+    var dst_device = dst_buf._inner[]._context[].device_id()
+    if dst_device != ctx._device[].id:
+        raise Error(
+            String(
+                t"enqueue_copy destination is on device {dst_device}, not"
+                t" on this context's device {ctx._device[].id}"
+            )
+        )
+    var src_context = src_buf._inner[]._context
+    if src_context[].device_id() != ctx._device[].id and not (
+        src_context[]._raw is ctx._context[]._raw
+    ):
+        raise Error(
+            "enqueue_copy source is on another driver; cross-device"
+            " copies need both buffers on the same driver"
+        )
+
+
+def _enqueue_copy_device_to_device[
+    target: CompilationTarget, dtype: DType
+](
+    ctx: HALDeviceContext[target],
+    dst_buf: _HALDeviceBuffer[dtype],
+    src_buf: _HALDeviceBuffer[dtype],
+) raises:
+    var src_context = src_buf._inner[]._context
+    var dst_view = dst_buf._inner[]._buffer.view()
+    var src_view = src_buf._inner[]._buffer.view()
+    if src_context[].device_id() == ctx._device[].id:
+        ctx._stream[].copy_intra_device(dst_view, src_view)
+    else:
+        ctx._stream[].copy_inter_device(
+            dst_view, src_view, src_context[]._handle
+        )
 
 
 def use_legacy_backend() -> Bool:
@@ -1216,9 +1260,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # NOTE: The HAL supports doing this asynchronously, but to match
         # existing DeviceContext semantics we create a buffer immediately.
-        return DeviceBuffer[dtype](
-            _impl=HALDeviceBuffer[dtype](self._impl, size)
-        )
+        return DeviceBuffer[dtype](self, size)
 
     def create_buffer_sync[
         dtype: DType
@@ -1244,9 +1286,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        return DeviceBuffer[dtype](
-            _impl=HALDeviceBuffer[dtype](self._impl, size)
-        )
+        return DeviceBuffer[dtype](self, size)
 
     def enqueue_create_host_buffer[
         dtype: DType
@@ -1302,7 +1342,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        return HostBuffer[dtype](_impl=HALHostBuffer[dtype](self._impl, size))
+        return HostBuffer[dtype](self, size)
 
     def wrap_host_memory[
         origin: MutOrigin, //, dtype: DType
@@ -1374,16 +1414,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         self.enqueue_copy(
-            DeviceBuffer[dtype](
-                _impl=HALDeviceBuffer[dtype](
-                    self._impl, dst_ptr, size, owning=False
-                )
-            ),
-            DeviceBuffer[dtype](
-                _impl=HALDeviceBuffer[dtype](
-                    self._impl, src_ptr, size, owning=False
-                )
-            ),
+            DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
+            DeviceBuffer[dtype](self, src_ptr, size, owning=False),
         )
 
     def enqueue_copy[
@@ -1507,12 +1539,12 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
         # stream can't overwrite or free it until the copy has read it.
-        self._impl._check_device_to_device_copy(dst_buf._impl, src_buf._impl)
-        var src_ctx = src_buf._impl._ctx
+        _check_device_to_device_copy(self._impl, dst_buf._impl, src_buf._impl)
+        var src_ctx = src_buf._impl._ctx.unwrap_hal()
         var sync = not (src_ctx._hal_stream() is self._impl._hal_stream())
         if sync:
             self._impl.enqueue_wait_for(src_ctx)
-        self._impl._enqueue_copy_device_to_device(dst_buf._impl, src_buf._impl)
+        _enqueue_copy_device_to_device(self._impl, dst_buf._impl, src_buf._impl)
         if sync:
             src_ctx.enqueue_wait_for(self._impl)
 
@@ -1544,7 +1576,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         )
         self._impl._stream[].copy_to_device(
             dst_buf._impl._inner[]._buffer.view(),
-            src_buf._impl.unsafe_ptr().unsafe_bitcast[UInt8](),
+            src_buf.unsafe_ptr().unsafe_bitcast[UInt8](),
         )
 
     def enqueue_copy[
@@ -1576,7 +1608,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # `copy_from_device` copies the whole source view, so narrow it to the
         # destination's size.
         self._impl._stream[].copy_from_device(
-            dst_buf._impl.unsafe_ptr().unsafe_bitcast[UInt8](),
+            dst_buf.unsafe_ptr().unsafe_bitcast[UInt8](),
             src_mem.view(byte_offset=0, byte_size=dst_mem.byte_size),
         )
 
@@ -1672,7 +1704,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
-            len(src) >= len(dst_buf._impl),
+            len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
         )
         self.enqueue_copy(dst_buf, src.unsafe_ptr())
@@ -1705,7 +1737,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
-            len(src) >= len(dst_buf._impl),
+            len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
         )
         self.enqueue_copy(dst_buf, src.unsafe_ptr())
@@ -1741,7 +1773,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
-            len(dst) >= len(src_buf._impl),
+            len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",
         )
         self.enqueue_copy(dst.unsafe_ptr(), src_buf)
@@ -1775,7 +1807,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         debug_assert(
-            len(dst) >= len(src_buf._impl),
+            len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",
         )
         self.enqueue_copy(dst.unsafe_ptr(), src_buf)
@@ -1808,8 +1840,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        self._impl._check_device_to_device_copy(dst_buf._impl, src_buf._impl)
-        self._impl._enqueue_copy_device_to_device(dst_buf._impl, src_buf._impl)
+        _check_device_to_device_copy(self._impl, dst_buf._impl, src_buf._impl)
+        _enqueue_copy_device_to_device(self._impl, dst_buf._impl, src_buf._impl)
 
     def enqueue_memset[
         dtype: DType

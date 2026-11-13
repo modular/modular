@@ -16,10 +16,7 @@ from std.format import Writer
 from std.memory import ArcPointer, Pointer
 from std.sys import is_gpu, size_of
 
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALHostBuffer,
-    _HostBufferInner,
-)
+from max._driver.max_license.hal import Buffer, Context, get_device_spec
 from max.gpu.host._legacy.device_context import LegacyHostBuffer
 from .device_context import use_legacy_backend
 from max.gpu.host.info import default_accelerator
@@ -30,6 +27,46 @@ from max._driver.max_license.device_context_dispatch.device_context import (
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
 )
+
+
+@fieldwise_init
+struct _HostBufferInner(Movable):
+    """Refcountable wrapper around a pinned-host HAL `Buffer`.
+
+    Owns the pinned `Buffer` and the parent `Context` so destruction can
+    call `Context.free_host_pinned`. Caches the host pointer up front so
+    `unsafe_ptr` / `__getitem__` / `__setitem__` are non-raising.
+    """
+
+    var _buffer: Buffer[get_device_spec[0]()]
+    var _context: ArcPointer[Context[get_device_spec[0]()]]
+    var _host_ptr: Pointer[UInt8, MutUntrackedOrigin]
+    # For sub-buffer views: keeps the parent allocation alive for the view's
+    # lifetime. A view's `_buffer` is a non-owning wrapper over the parent's
+    # pinned memory, so it is released with `free_sync`, not freed.
+    var _parent: List[ArcPointer[_HostBufferInner]]
+
+    def __deinit__(deinit self):
+        if self._parent:
+            try:
+                self._context[].free_sync(self._buffer^)
+            except e:
+                print("warning: free_sync failed:", e)
+            # Release the parent only after the view's wrapper is freed.
+            _ = self._parent^
+            return
+        try:
+            self._context[].free_host_pinned(self._buffer^)
+        except e:
+            print("warning: free_host_pinned failed:", e)
+
+
+@fieldwise_init
+struct _HALHostBuffer[dtype: DType](ImplicitlyCopyable, Movable):
+    """The state of a `HostBuffer` on the HAL backend."""
+
+    var _ctx: DeviceContext.Unknown
+    var _inner: ArcPointer[_HostBufferInner]
 
 
 struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
@@ -49,7 +86,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     # ===-------------------------------------------------------------------===#
 
     comptime _Legacy = LegacyHostBuffer[Self.dtype]
-    comptime _HAL = HALHostBuffer[Self.dtype]
+    comptime _HAL = _HALHostBuffer[Self.dtype]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     # ===-------------------------------------------------------------------===#
@@ -67,16 +104,33 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(
                 ctx._impl,
                 size=size,
             )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        var buffer = ctx._impl._context[].alloc_host_pinned(byte_size)
+        var addr = UInt64(0)
+        var host_ptr: Pointer[UInt8, MutUntrackedOrigin]
+        if byte_size > 0:
+            host_ptr = ctx._impl._context[].memory_get_host_address[
+                MutUntrackedOrigin
+            ](buffer)
         else:
-            self._impl = Self._HAL(
-                ctx._impl,
-                size=size,
+            host_ptr = Pointer[UInt8, MutUntrackedOrigin](
+                unsafe_from_address=Int(addr)
             )
+        self._impl = Self._HAL(
+            ctx.into_unknown_target(),
+            ArcPointer(
+                _HostBufferInner(buffer^, ctx._impl._context, host_ptr, [])
+            ),
+        )
 
     @doc_hidden
     def __init__(
@@ -158,40 +212,58 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
         """Retrieves the element at the specified index from the host buffer.
 
+        This operator allows direct access to individual elements in the host
+        buffer using array indexing syntax.
+
         Args:
             idx: The index of the element to retrieve.
 
         Returns:
             The scalar value at the specified index.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl[idx]
-        else:
-            return self._impl[idx]
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self.unsafe_ptr()[unsafe_offset=idx]
 
     @inline(.always)
     def __setitem__(self, idx: Int, val: Scalar[Self.dtype]):
         """Sets the element at the specified index in the host buffer.
 
+        This operator allows direct modification of individual elements in the
+        host buffer using array indexing syntax.
+
         Args:
             idx: The index of the element to set.
-            val: The value to store.
+            val: The value to store at the specified index.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl[idx] = val
-        else:
-            self._impl[idx] = val
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        self.unsafe_ptr()[unsafe_offset=idx] = val
 
     def __len__(self) -> Int:
         """Returns the number of elements in this buffer.
 
+        This method calculates the number of elements by dividing the total
+        byte size of the buffer by the size of each element.
+
         Returns:
             The number of elements in the buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return len(self._impl)
-        else:
-            return len(self._impl)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return (
+            Int(self._impl._inner[]._buffer.byte_size) // size_of[Self.dtype]()
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -200,13 +272,20 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     def unsafe_ptr(self) -> Self._HostPtr:
         """Returns the raw host pointer without transferring ownership.
 
+        This method provides direct access to the underlying host pointer for
+        advanced use cases. The buffer retains ownership of the pointer.
+
         Returns:
             The raw host pointer owned by this buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return rebind[Self._HostPtr](self._impl.unsafe_ptr())
-        else:
-            return rebind[Self._HostPtr](self._impl.unsafe_ptr())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return self._impl._inner[]._host_ptr.unsafe_bitcast[
+            Scalar[Self.dtype]
+        ]()
 
     @__unsafe_nested_origins_read_only
     def as_span[
@@ -248,10 +327,12 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceContext[](_impl=self._impl.context())
-        else:
-            return DeviceContext[](_impl=self._impl.context())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return rebind_var[DeviceContext[]](self._impl._ctx)
 
     def create_sub_buffer[
         view_type: DType
@@ -303,7 +384,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             0
         ) if addr == 0 else context[].wrap_memory(addr, UInt64(byte_size))
         return HostBuffer[view_type](
-            _impl=HALHostBuffer[view_type](
+            _impl=_HALHostBuffer[view_type](
                 self._impl._ctx,
                 ArcPointer(
                     _HostBufferInner(

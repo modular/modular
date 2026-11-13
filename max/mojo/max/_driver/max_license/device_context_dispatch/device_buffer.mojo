@@ -17,13 +17,12 @@ from std.builtin.device_passable import (
     DeviceTypeEncoder,
 )
 from std.format import Writer
-from std.memory import Pointer
+from std.ffi import external_call
+from std.memory import ArcPointer, Pointer, alloc
 from std.os import abort
 from std.sys import is_gpu, size_of
 
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceBuffer,
-)
+from max._driver.max_license.hal import Buffer, Context, get_device_spec
 from max.gpu.host._driver_handles import (
     _DeviceBufferPtr as _HALDeviceBufferPtr,
 )
@@ -42,7 +41,52 @@ from max._driver.max_license.device_context_dispatch.device_context import (
 )
 from max._driver.max_license.device_context_dispatch.host_buffer import (
     HostBuffer,
+    _HostBufferInner,
 )
+
+
+@fieldwise_init
+struct _HALBufferInner(Movable):
+    """Owning wrapper around a non-owning HAL Buffers.
+
+    Owns the `Buffer` and holds a reference to the parent `Context` so
+    destruction can call `Context.free_sync`.
+    """
+
+    var _buffer: Buffer[get_device_spec[0]()]
+    var _context: ArcPointer[Context[get_device_spec[0]()]]
+    var _device_addr: UInt64
+    # For sub-buffer views: keeps the parent allocation alive for the view's
+    # lifetime (a view's own `_buffer` is a non-owning wrapper). A `List` (heap
+    # storage) rather than `Optional` so the struct does not embed itself.
+    var _parent: List[ArcPointer[_HALBufferInner]]
+    # Same, for `DeviceBuffer` views over a `HostBuffer`'s pinned allocation,
+    # which the HAL C exports create for the C++ `DeviceContext`.
+    var _parent_host: List[ArcPointer[_HostBufferInner]]
+
+    def __deinit__(deinit self):
+        try:
+            self._context[].free_sync(self._buffer^)
+        except e:
+            print("warning: free_sync failed:", e)
+        # Release the parent only after the view's wrapper is freed.
+        _ = self._parent^
+
+
+@fieldwise_init
+struct _HALDeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable):
+    """The state of a `DeviceBuffer` on the HAL backend."""
+
+    comptime _DevicePtr = Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
+
+    # `_device_ptr` must be the first member in the struct. Kernel dispatch code
+    # `rebind`s a `DeviceBuffer` directly to its `device_type` (an `Pointer`),
+    # which reinterprets the struct's initial data as the device address.
+    var _device_ptr: Self._DevicePtr
+    var _ctx: DeviceContext.Unknown
+    # Wrap the inner buffer in an ArcPointer so copies of this DeviceBuffer hold
+    # a reference to the same underlying buffer.
+    var _inner: ArcPointer[_HALBufferInner]
 
 
 struct DeviceBuffer[dtype: DType](
@@ -66,7 +110,7 @@ struct DeviceBuffer[dtype: DType](
     # `DeviceBuffer` carries no target, so it takes the default accelerator's
     # backend. A context that produces or consumes one asserts agreement.
     comptime _Legacy = LegacyDeviceBuffer[Self.dtype]
-    comptime _HAL = HALDeviceBuffer[Self.dtype]
+    comptime _HAL = _HALDeviceBuffer[Self.dtype]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     # ===-------------------------------------------------------------------===#
@@ -94,16 +138,28 @@ struct DeviceBuffer[dtype: DType](
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(
                 ctx._impl,
                 size=size,
             )
-        else:
-            self._impl = Self._HAL(
-                ctx._impl,
-                size=size,
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        # Cache the GPU address up front so `unsafe_ptr` is non-raising.
+        var buffer = ctx._impl._context[].alloc_sync(byte_size)
+        var addr = UInt64(0)
+        if byte_size > 0:
+            addr = ctx._impl._context[].memory_get_address(buffer)
+        self._impl = Self._HAL(
+            Self._DevicePtr(unsafe_from_address=Int(addr)),
+            ctx.into_unknown_target(),
+            ArcPointer(
+                _HALBufferInner(buffer^, ctx._impl._context, addr, [], [])
+            ),
+        )
 
     @doc_hidden
     def __init__(
@@ -117,26 +173,57 @@ struct DeviceBuffer[dtype: DType](
         """Constructs a `DeviceBuffer` that wraps an externally-managed device
         pointer.
 
+        When `owning` is True the wrapper takes ownership of the underlying
+        allocation and will free it when the last reference drops. When
+        `owning` is False the wrapper is non-owning; releasing it leaves the
+        underlying pointer to whoever allocated it.
+
+        This mirrors the non-raising legacy constructor; a wrap failure
+        aborts rather than raising.
+
         Args:
             ctx: The device context the pointer belongs to.
             ptr: The device pointer to wrap.
             size: Number of elements addressable through the pointer.
             owning: Whether releasing this buffer should free the pointer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(
                 ctx._impl,
                 rebind[Self._DevicePtr](ptr),
                 size,
                 owning=owning,
             )
-        else:
-            self._impl = Self._HAL(
-                ctx._impl,
-                ptr,
-                size,
-                owning=owning,
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        var addr = UInt64(Int(ptr))
+        try:
+            # The plugin rejects wrapping a null address; represent the empty
+            # buffer the way a zero-byte allocation does (null memory handle).
+            var buffer = ctx._impl._context[].alloc_sync(
+                0
+            ) if addr == 0 else ctx._impl._context[].wrap_memory(
+                addr, byte_size, owning=owning
             )
+            # The plugin may give the wrapped region an address of its own.
+            # If it can't report one, keep the address we were given.
+            if addr != 0:
+                try:
+                    addr = ctx._impl._context[].memory_get_address(buffer)
+                except:
+                    pass
+            self._impl = Self._HAL(
+                Self._DevicePtr(unsafe_from_address=Int(addr)),
+                ctx.into_unknown_target(),
+                ArcPointer(
+                    _HALBufferInner(buffer^, ctx._impl._context, addr, [], [])
+                ),
+            )
+        except e:
+            abort(String(t"DeviceBuffer: failed to wrap external memory: {e}"))
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend buffer.
@@ -158,14 +245,7 @@ struct DeviceBuffer[dtype: DType](
             return Self(_impl=Self._Legacy.empty(context._impl))
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        return Self(
-            _impl=Self._HAL(
-                context._impl,
-                Self._DevicePtr.unsafe_dangling(),
-                0,
-                owning=False,
-            )
-        )
+        return Self(context, Self._DevicePtr.unsafe_dangling(), 0, owning=False)
 
     # ===-------------------------------------------------------------------===#
     # Trait: DevicePassable
@@ -240,14 +320,6 @@ struct DeviceBuffer[dtype: DType](
             Pointer(to=self._impl)
         )[]
 
-    def _hal_buffer(ref self) -> ref[self] Self._HAL:
-        comptime assert (
-            not use_legacy_backend()
-        ), "_hal_buffer is only available in a HAL DeviceContext build"
-        return rebind[Pointer[Self._HAL, origin_of(self)]](
-            Pointer(to=self._impl)
-        )[]
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -261,10 +333,14 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The number of elements in the buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return len(self._impl)
-        else:
-            return len(self._impl)
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return (
+            Int(self._impl._inner[]._buffer.byte_size) // size_of[Self.dtype]()
+        )
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -305,8 +381,8 @@ struct DeviceBuffer[dtype: DType](
         var byte_size = UInt64(size * elem_size)
         if byte_offset + byte_size > self._impl._inner[]._buffer.byte_size:
             raise Error("create_sub_buffer: view is out of range")
-        var view = HALDeviceBuffer[view_type](
-            self._impl._ctx,
+        var view = DeviceBuffer[view_type](
+            self.context(),
             Pointer[Scalar[view_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(
                     self._impl._inner[]._device_addr + byte_offset
@@ -317,8 +393,8 @@ struct DeviceBuffer[dtype: DType](
         )
         # The view's wrapper is non-owning; retaining the parent's inner keeps
         # the shared allocation alive for the view's lifetime.
-        view._inner[]._parent = [self._impl._inner]
-        return DeviceBuffer[view_type](_impl=view^)
+        view._impl._inner[]._parent = [self._impl._inner]
+        return view^
 
     def unsafe_ptr[
         mut: Bool, //, origin: Origin[mut=mut]
@@ -335,16 +411,18 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return rebind[Pointer[Scalar[Self.dtype], origin]](
                 self._impl.unsafe_ptr()
             )
-        else:
-            # The HAL reports an untracked origin; rebuild it against the
-            # caller's borrow so the result behaves like the legacy pointer.
-            return Pointer[Scalar[Self.dtype], origin](
-                unsafe_from_address=Int(self._impl.unsafe_ptr())
-            )
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        # The HAL reports an untracked origin; rebuild it against the caller's
+        # borrow so the result behaves like the legacy pointer.
+        return Pointer[Scalar[Self.dtype], origin](
+            unsafe_from_address=Int(self._impl._device_ptr)
+        )
 
     def unsafe_host_ptr[
         mut: Bool, //, origin: Origin[mut=mut]
@@ -379,10 +457,12 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the query fails.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return DeviceContext[](_impl=self._impl.context())
-        else:
-            return DeviceContext[](_impl=self._impl.context())
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        return rebind_var[DeviceContext[]](self._impl._ctx)
 
     @inline(.always)
     def take_ptr(var self) -> Self._DevicePtr:
@@ -404,7 +484,7 @@ struct DeviceBuffer[dtype: DType](
         # wrapper handle (freed when the last reference drops) no longer frees
         # the memory.
         try:
-            _ = self._impl._ctx._context[].unwrap_memory(
+            _ = self._impl._ctx._impl._context[].unwrap_memory(
                 self._impl._inner[]._buffer
             )
         except e:
@@ -653,10 +733,18 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The native handle of the buffer.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return self._impl^.take_handle()
-        else:
-            return self._impl^.take_handle()
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        var ptr = self._impl._device_ptr
+        var byte_size = Int(self._impl._inner[]._buffer.byte_size)
+        var box = alloc[DeviceBuffer[Self.dtype]]({length = 1}).unsafe_leak()
+        box.unsafe_write(self^)
+        return external_call[
+            "AsyncRT_DeviceBuffer_adoptMojoBox", _HALDeviceBufferPtr[mut=True]
+        ](box, ptr, byte_size)
 
     def _tensor_map_encode_tiled(
         self,
@@ -696,7 +784,7 @@ struct DeviceBuffer[dtype: DType](
 
         # Same-width reinterpret of the callers' signed arrays to the C ABI's
         # unsigned element types.
-        self._impl._ctx._context[].tensor_map_encode_tiled(
+        self._impl._ctx._impl._context[].tensor_map_encode_tiled(
             tensor_map,
             data_type,
             rank,
@@ -753,7 +841,7 @@ struct DeviceBuffer[dtype: DType](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        self._impl._ctx._context[].tensor_map_encode_im2col(
+        self._impl._ctx._impl._context[].tensor_map_encode_im2col(
             tensor_map,
             data_type,
             rank,

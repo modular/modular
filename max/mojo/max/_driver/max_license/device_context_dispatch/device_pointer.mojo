@@ -28,9 +28,6 @@ from std.sys.info import CompilationTarget
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
 )
-from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceBuffer,
-)
 from .device_context import use_legacy_backend
 from max.gpu.host._legacy.device_context import LegacyDevicePointer
 from max.gpu.host.info import default_accelerator
@@ -52,7 +49,7 @@ struct _HALDevicePointer[
         origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    var _buffer: Pointer[HALDeviceBuffer[Self.dtype], Self.origin]
+    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
     var _offset: Int
     var _size: Int
 
@@ -133,11 +130,10 @@ struct DevicePointer[
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        ref hal_buffer = buffer._hal_buffer()
-        var size = len(hal_buffer)
+        var size = len(buffer)
         if size == 0:
             raise Error("DevicePointer: size of DeviceBuffer must not be 0")
-        self._impl = Self._HAL(Pointer(to=hal_buffer), 0, size)
+        self._impl = Self._HAL(Pointer(to=buffer), 0, size)
 
     def __init__(
         out self,
@@ -161,8 +157,7 @@ struct DevicePointer[
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        ref hal_buffer = buffer._hal_buffer()
-        var size = len(hal_buffer)
+        var size = len(buffer)
         if size == 0:
             raise Error("DevicePointer: invalid DeviceBuffer of size '0'")
         if offset < 0 or offset >= size:
@@ -170,7 +165,7 @@ struct DevicePointer[
                 t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
                 t" size '{size}'"
             )
-        self._impl = Self._HAL(Pointer(to=hal_buffer), offset, size)
+        self._impl = Self._HAL(Pointer(to=buffer), offset, size)
 
     @doc_hidden
     def __init__(out self, *, var _impl: Self._Impl):
@@ -201,9 +196,7 @@ struct DevicePointer[
             )[]
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        return rebind[Pointer[DeviceBuffer[Self.dtype], Self.origin]](
-            Pointer(to=self._impl._buffer[])
-        )[]
+        return self._impl._buffer[]
 
     def offset(self) -> Int:
         """Returns the element offset from the start of the owning buffer.
@@ -243,8 +236,7 @@ struct DevicePointer[
         # contract.
         return (
             self._impl._buffer[]
-            .unsafe_ptr()
-            .unsafe_offset(self._impl._offset)
+            ._impl._device_ptr.unsafe_offset(self._impl._offset)
             .as_unsafe_any_origin()
         )
 
@@ -454,8 +446,8 @@ struct DevicePointer[
         # Buffer identity = base device address (HAL buffers have no C++
         # handle).
         return (
-            self._impl._buffer[]._device_ptr
-            == other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            == other._impl._buffer[]._impl._device_ptr
             and self._impl._offset == other._impl._offset
         )
 
@@ -479,8 +471,8 @@ struct DevicePointer[
         # Buffer identity = base device address (HAL buffers have no C++
         # handle).
         return (
-            self._impl._buffer[]._device_ptr
-            == other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            == other._impl._buffer[]._impl._device_ptr
             and self._impl._offset == other._impl._offset
         )
 
@@ -529,8 +521,8 @@ struct DevicePointer[
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
-            self._impl._buffer[]._device_ptr
-            != other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            != other._impl._buffer[]._impl._device_ptr
         ):
             raise Error(
                 "DevicePointer: less than comparison not supported when the"
@@ -559,8 +551,8 @@ struct DevicePointer[
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
-            self._impl._buffer[]._device_ptr
-            != other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            != other._impl._buffer[]._impl._device_ptr
         ):
             raise Error(
                 "DevicePointer: less than or equal comparison not supported"
@@ -589,8 +581,8 @@ struct DevicePointer[
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
-            self._impl._buffer[]._device_ptr
-            != other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            != other._impl._buffer[]._impl._device_ptr
         ):
             raise Error(
                 "DevicePointer: greater than comparison not supported when the"
@@ -619,8 +611,8 @@ struct DevicePointer[
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
         if (
-            self._impl._buffer[]._device_ptr
-            != other._impl._buffer[]._device_ptr
+            self._impl._buffer[]._impl._device_ptr
+            != other._impl._buffer[]._impl._device_ptr
         ):
             raise Error(
                 "DevicePointer: greater than or equal comparison not supported"
