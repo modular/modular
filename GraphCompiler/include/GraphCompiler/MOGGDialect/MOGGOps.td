@@ -1422,7 +1422,7 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   let description = [{
     Runs the `mogg.call.execute_device`s in its body, in order, in one launch
     on their shared device context, on every core and thread of the device:
-    the `all_cores` of the first kernel's configuration type. Emit calls each
+    `max._graph_blob.launch_config` of the context. Emit calls each
     kernel's `execute_configuration` on the host, then compiles one kernel that
     runs each `execute_device` only on the threads
     `max._graph_blob.is_thread_active` accepts for its own grid, with

@@ -21,8 +21,7 @@
 // CHECK:   comptime [[OUT1_T:[A-Za-z0-9_]+]] = type_of([[OUT1]])
 // CHECK:   var [[CONFIG2:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT2:[A-Za-z0-9_]+]], [[IN]])
 // CHECK:   comptime [[OUT2_T:[A-Za-z0-9_]+]] = type_of([[OUT2]])
-// CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
-// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = [[CONFIG_T]].all_cores()
+// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
 // CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].device_type, [[A3:[A-Za-z0-9_]+]]: [[OUT2_T]].device_type, {{[A-Za-z0-9_]+}}: Int32, {{[A-Za-z0-9_]+}}: Int32, {{[A-Za-z0-9_]+}}: Int32):
 // CHECK:     {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN_T]]([[A1]]))
 // CHECK:     {{.*}}.MapLowerDeclarative.execute_device([[OUT1_T]]([[A2]]), [[IN_T]]([[A1]]))

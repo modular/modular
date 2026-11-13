@@ -989,15 +989,14 @@ LogicalResult CallExecuteDeviceOp::emitMojo(EmitMojoState &state) {
 }
 
 // Emits the body's declarative calls as one launch on every core and thread of
-// the device, the `all_cores` of the first call's configuration type. Each call
-// runs its `execute_device` only on the first blocks of the launch, as many as
-// its own grid has:
+// the device, which `_graph_blob.launch_config` gets from the device's target.
+// Each call runs its `execute_device` only on the first blocks of the launch,
+// as many as its own grid has:
 //
 //   var config0 = Kernel0[...].execute_configuration[...](operands0...)
 //   var config1 = Kernel1[...].execute_configuration[...](operands1...)
 //   comptime T0 = type_of(operand0)  # one per distinct operand
-//   comptime C = type_of(config0)
-//   var launch = C.all_cores()
+//   var launch = _graph_blob.launch_config(ctx)
 //   def execute_device_N(a0: T0.device_type, ..., a5: Int32, a6: Int32):
 //       if _graph_blob.is_thread_active(a5):
 //           Kernel0[...].execute_device[...](T0(a0), ...)
@@ -1026,10 +1025,9 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
 
   MojoBuilder &builder = *state.file;
   MojoValue graphBlob(kGraphBlobModuleAlias);
-  MojoValue configType =
-      builder.comptime(kFnTypeOf({blob.members.front().config}));
+  MojoValue ctx = state.getMojoValueFor(blob.ctx);
   MojoValue launch =
-      builder.var(configType.get("all_cores")(), /*cache=*/false);
+      builder.var(graphBlob.get("launch_config")({ctx}), /*cache=*/false);
 
   SmallVector<unsigned> active;
   for (const GraphBlobRegion::Member &member : blob.members) {
@@ -1054,7 +1052,7 @@ LogicalResult GraphBlobOp::emitMojo(EmitMojoState &state) {
           });
         }
       });
-  emitLaunch(state, state.getMojoValueFor(blob.ctx), kernel, blob.args, launch);
+  emitLaunch(state, ctx, kernel, blob.args, launch);
   return success();
 }
 

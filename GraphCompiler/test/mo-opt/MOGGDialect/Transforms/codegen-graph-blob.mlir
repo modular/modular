@@ -10,8 +10,8 @@
 // verification is disabled.
 
 // A `mogg.graph_blob` launches its declarative calls as one kernel: each
-// call's `execute_configuration` runs on the host, the blob launches on the
-// first configuration type's `all_cores`, and the kernel runs each
+// call's `execute_configuration` runs on the host, the blob launches on its
+// context's `_graph_blob.launch_config`, and the kernel runs each
 // `execute_device` only where `_graph_blob.is_thread_active` accepts that
 // call's grid, with a barrier between them. The intermediate `%b` crosses the launch once per use.
 
@@ -23,8 +23,7 @@
 // CHECK:   var [[CONFIG1:[A-Za-z0-9_]+]] = {{.*}}.MapLowerDeclarative.execute_configuration([[OUT1:[A-Za-z0-9_]+]], [[IN1:[A-Za-z0-9_]+]])
 // CHECK:   comptime [[OUT1_T:[A-Za-z0-9_]+]] = type_of([[OUT1]])
 // CHECK:   comptime [[IN1_T:[A-Za-z0-9_]+]] = type_of([[IN1]])
-// CHECK:   comptime [[CONFIG_T:[A-Za-z0-9_]+]] = type_of([[CONFIG0]])
-// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = [[CONFIG_T]].all_cores()
+// CHECK:   var [[LAUNCH:[A-Za-z0-9_]+]] = _graph_blob.launch_config([[CTX]])
 // CHECK:   def [[KERNEL:execute_device_[_0-9]+]]([[A0:[A-Za-z0-9_]+]]: [[OUT0_T]].device_type, [[A1:[A-Za-z0-9_]+]]: [[IN0_T]].device_type, [[A2:[A-Za-z0-9_]+]]: [[OUT1_T]].device_type, [[A3:[A-Za-z0-9_]+]]: [[IN1_T]].device_type, [[ACTIVE0:[A-Za-z0-9_]+]]: Int32, [[ACTIVE1:[A-Za-z0-9_]+]]: Int32):
 // CHECK-NEXT: if {{\(?}}_graph_blob.is_thread_active([[ACTIVE0]]){{\)?}}:
 // CHECK-NEXT: {{.*}}.MapLowerDeclarative.execute_device([[OUT0_T]]([[A0]]), [[IN0_T]]([[A1]]))

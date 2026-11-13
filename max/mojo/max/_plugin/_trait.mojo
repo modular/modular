@@ -33,6 +33,7 @@ from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceContext,
     Dim,
+    GridBlockLaunchConfig,
     LaunchAttribute,
 )
 
@@ -490,6 +491,21 @@ trait MaxPluginHooks:
 
     comptime _supports_external_function: Bool = True
     """Whether a `DeviceExternalFunction` can launch on this target."""
+
+    @staticmethod
+    def whole_device_launch_config() -> GridBlockLaunchConfig:
+        """Per-target plugin hook for `max._graph_blob.launch_config`.
+
+        It runs on the host, so `max._graph_blob` reaches it through the plugin
+        of the device context's target rather than `CurrentMaxPlugin`.
+
+        Returns:
+            A launch on every thread of every core of the device.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called.
+        """
+        return GridBlockLaunchConfig(grid_dim=Dim(1), block_dim=Dim(1))
 
     @staticmethod
     def graph_blob_is_thread_active(active: Int32) -> Bool:

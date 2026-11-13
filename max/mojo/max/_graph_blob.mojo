@@ -10,24 +10,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides the primitives a graph blob's kernel calls.
+"""Provides the primitives for a graph blob's launch and kernel calls.
 
 A graph blob runs the device code of several kernels in one launch, on every
-core and thread of the device. The graph compiler generates its kernel: each
-member runs only on the threads `is_thread_active` accepts for its
-`active_threads`, and every thread waits at a `barrier` over the whole launch
-between members. Each target implements the two device primitives through its
-MAX plugin. On a GPU that doesn't, using them is a compile-time error;
-elsewhere, such as in a kernel body elaborated for the host, they abort.
+core and thread of the device (`launch_config`). The graph compiler generates
+its kernel: each member runs only on the threads `is_thread_active` accepts for
+its `active_threads`, and every thread waits at a `barrier` over the whole
+launch between members. Each target implements them through its MAX plugin. On
+a target that doesn't, `launch_config` is a compile-time error, and so are the
+device primitives on a GPU; elsewhere, such as in a kernel body elaborated for
+the host, the device primitives abort.
 """
 
 from std.os import abort
 from std.sys.info import is_gpu
 
-from max._plugin import CurrentMaxPlugin
-from max.gpu.host import Dim
+from max._plugin import CurrentMaxPlugin, MaxPluginForTarget
+from max.gpu.host import DeviceContext, Dim, GridBlockLaunchConfig
 
 comptime _UNSUPPORTED = "graph blobs are not supported on this target"
+
+
+def launch_config(ctx: DeviceContext) -> GridBlockLaunchConfig:
+    """Returns the launch configuration for a graph blob on `ctx`'s device:
+    launch on every thread of every core.
+
+    Args:
+        ctx: The device context the blob launches on.
+
+    Returns:
+        The blob's launch configuration.
+    """
+    comptime plugin = MaxPluginForTarget[ctx.target]
+    comptime assert plugin._handles_graph_blobs, _UNSUPPORTED
+    return plugin.whole_device_launch_config()
 
 
 # TODO(GEX-4497): Once a member can run on blocks with gaps between them, or on
