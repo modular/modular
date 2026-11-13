@@ -34,6 +34,7 @@ __all__ = [
     "BlockDiffusionGraphInputs",
     "ConvStates",
     "DecoderGraphInputs",
+    "DecoderGraphScratch",
     "DecoderOutputs",
     "EPLBProfile",
     "EPPayload",
@@ -70,6 +71,7 @@ _MergeT = TypeVar(
     default=tuple[TensorType, ...] | tuple[tuple[TensorType, ...], ...],
 )
 _SignalsT = TypeVar("_SignalsT", default=tuple[BufferType, ...])
+_ScratchT = TypeVar("_ScratchT", default=tuple[BufferType, ...])
 _ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
 _SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
 _BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
@@ -240,9 +242,32 @@ class ItemPositions(GraphGroup[str, TensorValue]):
 
 
 class BatchContext(GraphGroup[str, _ContextT]):
-    """Per-device host scalars summarizing the batch's context lengths."""
+    """Host scalars summarizing the batch's context lengths.
+
+    Each field holds one scalar per replica or one per device.
+
+    ``length`` is an ``int32``: the replica's rows' cached and new tokens,
+    each row rounded up to a page, summed. MLA prefill sizes its buffers
+    from it.
+
+    ``total_length`` is a ``uint32`` bound on the KV positions the step
+    writes: at least the replica's rows' cached and new tokens, summed, plus
+    each decode row's drafts and later steps. A sparse-attention prefill plan
+    sizes its buffers from it with no bounds check.
+    """
 
     kind = "batch_context"
+
+
+class DecoderGraphScratch(GraphGroup[str, _ScratchT]):
+    """A decoder's workspace buffers, each at a static size.
+
+    Its one entry, ``buffers``, holds them in the order the decoder declares
+    them. The engine allocates each one once and passes it every step:
+    nothing in them outlives a step.
+    """
+
+    kind = "decoder_scratch"
 
 
 class EPPayload(GraphGroup[str, tuple[TensorType | BufferType, ...]]):

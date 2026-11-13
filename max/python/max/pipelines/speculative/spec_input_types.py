@@ -39,6 +39,7 @@ from max.nn.legacy.comm import Signals
 from max.nn.legacy.graph_groups import (
     BatchContext,
     DecoderGraphInputs,
+    DecoderGraphScratch,
     SpecDecode,
     SpecDecodeOutputs,
     TokenBitmask,
@@ -121,6 +122,12 @@ class SpecDecodeInputTypeSpec:
     each on the replica's leader device and holding that replica's rows, in
     place of the single device-0 tensor. Requires
     ``enable_sampled_draft_proposal`` and a distributed spec."""
+    total_context_length: bool = False
+    """Declare each device's context length as the ``uint32``
+    ``total_length`` of its :class:`~max.nn.legacy.graph_groups.BatchContext`
+    group, which counts the drafts the step verifies, in place of the
+    page-aligned ``int32`` ``length``. For a target whose sparse-attention
+    prefill plan sizes its buffers from it, such as MiniMax-M3."""
 
 
 def draft_probs_rows_name(replica: int) -> str:
@@ -215,9 +222,9 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     batch_context_lengths: list[_T] = field(default_factory=list)
     ep_inputs: list[_V] = field(default_factory=list)
 
-    leading: list[_V] = field(default_factory=list)
-    """Inputs ahead of ``tokens``, for a model that declares its own group
-    first. Empty unless the signature declared one."""
+    scratch: list[_B] = field(default_factory=list)
+    """The model's workspace buffers, which the graph takes first as a
+    ``decoder_scratch`` group. Empty unless the signature declared them."""
 
     trailing: list[_V] = field(default_factory=list)
     """Inputs past the canonical tail, for a model that appends its own
@@ -279,6 +286,7 @@ def declared_spec_decode_inputs(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
+    scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> SpecDecodeGraphInputs[TensorType, BufferType, TensorType | BufferType]:
     """Returns the types a graph built from ``spec`` declares, by field.
@@ -291,6 +299,7 @@ def declared_spec_decode_inputs(
             the target leaf's then the draft leaf's, carry both caches' blocks
             and dispatch metadata.
         ep_input_types: The target's expert-parallel inputs.
+        scratch_types: The model's workspace buffers.
         trailing_input_types: The inputs the target's call takes past the
             canonical tail.
 
@@ -367,7 +376,11 @@ def declared_spec_decode_inputs(
     # in-graph H2D moves 8x less data.
     structured = spec.enable_structured_output
     bitmask = ["batch_size", "num_bitmask_positions", "packed_vocab_size"]
-    batch_context_length = TensorType(DType.int32, shape=[1], device=cpu)
+    batch_context_length = TensorType(
+        DType.uint32 if spec.total_context_length else DType.int32,
+        shape=[1],
+        device=cpu,
+    )
 
     return SpecDecodeGraphInputs(
         tokens=TensorType(DType.int64, shape=["total_seq_len"], device=device),
@@ -444,6 +457,7 @@ def declared_spec_decode_inputs(
             [batch_context_length for _ in devices] if spec.distributed else []
         ),
         ep_inputs=list(ep_input_types),
+        scratch=list(scratch_types),
         trailing=list(trailing_input_types),
     )
 
@@ -578,13 +592,13 @@ def spec_decode_input_tree(
     The order lives here alone. A graph's signature is this tree's leaves over
     :func:`declared_spec_decode_inputs`, the decode unflattens the graph's
     inputs by its structure, and a pipeline packs a step's buffers as its
-    leaves. The groups are tokens, [vision], input_row_offsets,
+    leaves. The groups are [scratch], tokens, [vision], input_row_offsets,
     [host_input_row_offsets], return_n_logits, [data_parallel_splits],
     [signals], kv, [batch_context_lengths, ep], spec, [bitmask], [ep] and
-    [trailing], a bracketed group gated by ``spec``. The expert-parallel
-    inputs sit beside the distributed group, or after the tail for a target
-    whose attention isn't data-parallel. ``inputs.leading`` stays outside
-    the tree, ahead of it.
+    [trailing], a bracketed group gated by ``spec`` or, for ``scratch``,
+    by a model that declares workspace buffers. The expert-parallel inputs
+    sit beside the distributed group, or after the tail for a target whose
+    attention isn't data-parallel.
 
     The fields a decoder also takes keep a decoder's names and groups, so a
     serving engine feeds them as it feeds a decoder's; ``spec`` and
@@ -603,7 +617,10 @@ def spec_decode_input_tree(
         ValueError: If ``inputs`` lacks an input ``spec`` declares, or ``ep``
             or ``trailing`` names a different number of inputs.
     """
-    named = DecoderGraphInputs(tokens=inputs.tokens)
+    named = DecoderGraphInputs()
+    if inputs.scratch:
+        named["scratch"] = DecoderGraphScratch(buffers=tuple(inputs.scratch))
+    named["tokens"] = inputs.tokens
     if spec.enable_vision:
         named["vision"] = VisionMerge(
             image_embeddings=tuple(inputs.vision_embeddings),
@@ -619,8 +636,11 @@ def spec_decode_input_tree(
         named["signals"] = TPSignals(signal=tuple(inputs.signal_buffers))
     named["kv"] = inputs.kv_tree
     if spec.distributed:
-        named["batch_context_lengths"] = BatchContext(
-            length=tuple(inputs.batch_context_lengths)
+        lengths = tuple(inputs.batch_context_lengths)
+        named["batch_context_lengths"] = (
+            BatchContext(total_length=lengths)
+            if spec.total_context_length
+            else BatchContext(length=lengths)
         )
         if inputs.ep_inputs:
             named["ep"] = _laid_out(ep, inputs.ep_inputs)
@@ -647,30 +667,25 @@ def build_spec_decode_input_types(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
-    leading_input_types: Sequence[TensorType | BufferType] = (),
+    scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> tuple[TensorType | BufferType, ...]:
     """Builds the canonical unified spec-decode graph input signature.
 
     The leaves of :func:`spec_decode_input_tree` over
-    :func:`declared_spec_decode_inputs`, after ``leading_input_types``.
+    :func:`declared_spec_decode_inputs`.
 
-    ``leading_input_types`` sits ahead of ``tokens`` rather than past the
-    tail. A model needs it when a non-spec-decode graph for the same target
-    already declares that group first and the two signatures have to stay
-    interchangeable -- MiniMax-M3's indexer score scratch, which its base
-    backbone declares ahead of everything else.
+    ``scratch_types`` come first, as MiniMax-M3's base decoder declares its
+    indexer score scratch ahead of everything else.
     """
     declared = declared_spec_decode_inputs(
         spec,
         kv_params=kv_params,
         ep_input_types=ep_input_types,
+        scratch_types=scratch_types,
         trailing_input_types=trailing_input_types,
     )
-    return (
-        *leading_input_types,
-        *tree.leaves(spec_decode_input_tree(spec, declared)),
-    )
+    return tuple(tree.leaves(spec_decode_input_tree(spec, declared)))
 
 
 def _tensor(value: Value[Any] | None) -> TensorValue | None:
@@ -683,23 +698,21 @@ def decode_spec_decode_input_values(
     *,
     kv_params: KVCacheParamInterface,
     ep_input_types: Sequence[TensorType | BufferType] = (),
-    leading_input_types: Sequence[TensorType | BufferType] = (),
+    scratch_types: Sequence[BufferType] = (),
     trailing_input_types: Sequence[TensorType | BufferType] = (),
 ) -> SpecDecodeGraphInputs:
     """Decodes a unified spec-decode graph's positional inputs by name.
 
     The inverse of :func:`build_spec_decode_input_types`: it unflattens the
-    inputs past the leading ones by :func:`spec_decode_input_tree`'s
-    structure and reads each group back. Pass the arguments the signature was
-    built with.
+    inputs by :func:`spec_decode_input_tree`'s structure and reads each group
+    back. Pass the arguments the signature was built with.
 
     Args:
         graph_inputs: ``graph.inputs`` of a graph built from this signature.
         spec: The spec the signature was built from.
         kv_params: The unified ``{"target", "draft"}`` KV params.
         ep_input_types: The target's expert-parallel inputs.
-        leading_input_types: The inputs the signature takes ahead of
-            ``tokens``.
+        scratch_types: The model's workspace buffers.
         trailing_input_types: The inputs the signature takes past the
             canonical tail, returned as :attr:`SpecDecodeGraphInputs.trailing`.
 
@@ -714,18 +727,18 @@ def decode_spec_decode_input_values(
         spec,
         kv_params=kv_params,
         ep_input_types=ep_input_types,
+        scratch_types=scratch_types,
         trailing_input_types=trailing_input_types,
     )
     structure = tree.flatten(spec_decode_input_tree(spec, declared))[1]
     values = list(graph_inputs)
-    lead = len(leading_input_types)
-    if len(values) != lead + structure.num_leaves:
+    if len(values) != structure.num_leaves:
         raise ValueError(
             f"unified spec-decode graph has {len(values)} inputs where its"
-            f" signature declares {lead + structure.num_leaves}; the graph"
-            " and this spec disagree"
+            f" signature declares {structure.num_leaves}; the graph and this"
+            " spec disagree"
         )
-    named = tree.unflatten(structure, values[lead:])
+    named = tree.unflatten(structure, values)
     tail = named["spec"]
     bitmask = named.get("bitmask")
     vision = named.get("vision")
@@ -772,12 +785,13 @@ def decode_spec_decode_input_values(
         ],
         batch_context_lengths=[
             value.tensor
-            for value in named.get("batch_context_lengths", {}).get(
-                "length", ()
-            )
+            for value in tree.leaves(named.get("batch_context_lengths", ()))
         ],
         ep_inputs=tree.leaves(named.get("ep", ())),
-        leading=values[:lead],
+        scratch=[
+            value.buffer
+            for value in named.get("scratch", {}).get("buffers", ())
+        ],
         trailing=values[len(values) - len(trailing_input_types) :]
         if trailing_input_types
         else [],
@@ -785,8 +799,8 @@ def decode_spec_decode_input_values(
 
 
 def spec_decode_outputs(
-    outputs: Sequence[TensorValue],
-) -> OrderedDict[str, SpecDecodeOutputs[TensorValue]]:
+    outputs: Sequence[_T],
+) -> OrderedDict[str, SpecDecodeOutputs[_T]]:
     """Names a spec-decode driver's outputs, as a decoder names its groups.
 
     Args:
@@ -797,8 +811,9 @@ def spec_decode_outputs(
     Returns:
         The outputs in one ``spec`` group, in the same order.
     """
-    num_accepted, next_tokens, next_draft_tokens, *probs = outputs
-    named = SpecDecodeOutputs(
+    num_accepted, next_tokens, next_draft_tokens = outputs[:3]
+    probs = outputs[3:]
+    named: SpecDecodeOutputs[_T] = SpecDecodeOutputs(
         num_accepted=num_accepted,
         next_tokens=next_tokens,
         next_draft_tokens=next_draft_tokens,
@@ -887,11 +902,10 @@ class SpecDecodeGraphSignature:
         """The target's expert-parallel inputs; empty when EP is off."""
         return ()
 
-    def leading_input_types(self) -> Sequence[TensorType | BufferType]:
-        """This model's own group ahead of ``tokens``; empty for most models.
+    def scratch_types(self) -> Sequence[BufferType]:
+        """This model's workspace buffers; empty for most models.
 
-        Both directions read it, so the count the decode skips is always the
-        count the signature declared.
+        The graph takes them first, as a ``decoder_scratch`` group.
         """
         return ()
 
@@ -924,14 +938,14 @@ class SpecDecodeGraphSignature:
     ) -> tuple[TensorType | BufferType, ...]:
         """Builds the unified spec-decode graph signature.
 
-        The leaves of :meth:`input_tree`, after the leading inputs. See
-        :func:`spec_decode_input_tree` for the ordering.
+        The leaves of :meth:`input_tree`. See :func:`spec_decode_input_tree`
+        for the ordering.
         """
         return build_spec_decode_input_types(
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
-            leading_input_types=self.leading_input_types(),
+            scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )
 
@@ -967,7 +981,7 @@ class SpecDecodeGraphSignature:
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
-            leading_input_types=self.leading_input_types(),
+            scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )
         # The driver declares the draft row inputs from the config, so it
@@ -998,19 +1012,17 @@ class SpecDecodeGraphSignature:
 
         Returns:
             The named inputs, or ``None`` for a signature with inputs no
-            group names: leading ones, or trailing or expert-parallel ones
-            without their tree.
+            group names: trailing or expert-parallel ones without their tree.
         """
-        if (
-            self.leading_input_types()
-            or (self.has_trailing_inputs and trailing is None)
-            or (self.ep_input_types() and ep is None)
+        if (self.has_trailing_inputs and trailing is None) or (
+            self.ep_input_types() and ep is None
         ):
             return None
         declared = declared_spec_decode_inputs(
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             ep_input_types=self.ep_input_types(),
+            scratch_types=self.scratch_types(),
             trailing_input_types=self.trailing_input_types(),
         )
         return spec_decode_input_tree(

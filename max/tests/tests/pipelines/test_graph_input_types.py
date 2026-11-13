@@ -62,7 +62,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.legacy import graph_groups
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.graph_groups import RaggedBatch
+from max.nn.legacy.graph_groups import BatchContext, RaggedBatch
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
@@ -121,6 +121,7 @@ from max.pipelines.lib.module_registration import decoder_input_types
 from max.pipelines.lib.registration_graph_api import (
     graph_api_decoder_input_types,
 )
+from max.pipelines.lib.registration_runtime import batch_context_length_types
 from max.tensor.tensor_spec_serialization import (
     layout_to_json,
     layouts_from_json,
@@ -241,6 +242,37 @@ def _llama3(
 def _registered_decoder() -> tuple[_InputTree, _InputTypes]:
     """A decoder registered by role, whose graph takes its fields by name."""
     types = decoder_input_types(_kv_params(_gpus(1)), DeviceRef.GPU(0))
+    return types, tuple(tree.leaves(types))
+
+
+def _registered_decoder_scratch() -> tuple[_InputTree, _InputTypes]:
+    """A registered decoder with a workspace buffer on each device, as
+    MiniMax-M3's sparse indexer declares its score table."""
+    devices = _gpus(2)
+    types = decoder_input_types(
+        _kv_params(devices),
+        devices[0],
+        scratch=[
+            BufferType(DType.float32, [2, 8, 4], device=device)
+            for device in devices
+        ],
+    )
+    return types, tuple(tree.leaves(types))
+
+
+def _registered_decoder_total_context() -> tuple[_InputTree, _InputTypes]:
+    """A registered decoder that takes its replica's total context length on
+    each device, as MiniMax-M3's sparse attention does."""
+    devices = _gpus(2)
+    types = decoder_input_types(
+        _kv_params(devices),
+        devices[0],
+        batch_context_lengths=BatchContext(
+            total_length=batch_context_length_types(
+                1, devices_per_replica=len(devices), dtype=DType.uint32
+            )
+        ),
+    )
     return types, tuple(tree.leaves(types))
 
 
@@ -445,6 +477,8 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
     "registered_decoder": _registered_decoder,
+    "registered_decoder_scratch": _registered_decoder_scratch,
+    "registered_decoder_total_context": _registered_decoder_total_context,
     "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
     "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
 }

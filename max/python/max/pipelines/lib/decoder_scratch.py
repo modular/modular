@@ -19,8 +19,9 @@ a sparse attention indexer's score table, declares it with a
 
 - allocates each buffer once, at its declared size;
 - adds them to the graph's inputs as the
-  :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.scratch` field,
-  after the per-request state;
+  :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.scratch` field, a
+  :class:`~max.nn.legacy.graph_groups.DecoderGraphScratch` group, after the
+  per-request state;
 - passes the same buffers every step.
 
 Unlike per-request state, nothing in them outlives a step, so a request

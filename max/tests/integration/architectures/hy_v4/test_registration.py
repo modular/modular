@@ -20,6 +20,7 @@ import pytest
 from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.legacy.graph_groups import BatchContext
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.hy_v4.arch import hy_v4_arch
 from max.pipelines.architectures.hy_v4.decoder import HYV4Decoder
@@ -50,7 +51,9 @@ def test_the_registered_input_order_keeps_the_prefill_length_before_kv() -> (
     types = decoder_input_types(
         NonCallableMock(get_symbolic_inputs=lambda: (cache,)),
         DeviceRef.CPU(),
-        batch_context_lengths=batch_context_length_types(1),
+        batch_context_lengths=BatchContext(
+            length=batch_context_length_types(1)
+        ),
         input_layout=HYV4Decoder.input_layout,
     )
     leaves = tree.leaves(types)

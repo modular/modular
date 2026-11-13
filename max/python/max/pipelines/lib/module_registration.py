@@ -25,11 +25,12 @@ A registered module class can also set:
 - ``input_layout``, the role field names in a graph's existing input order.
   Naming ``signals`` places the allreduce signal buffers there, on one device
   too, as the graph-API graph that keeps the layout takes them;
-- ``device_context_length_dtype``, when its graph takes
+- ``takes_total_context_length``, when its graph takes
   :attr:`~max.pipelines.lib.role_contracts.DecoderInputs.batch_context_lengths`
-  as a graph-API graph does. Setting it changes both their count and their
-  dtype: one per device, each replica's on every device of the replica, of
-  that dtype, rather than one ``int32`` per replica;
+  as the ``total_length`` of a
+  :class:`~max.nn.legacy.graph_groups.BatchContext` group: one ``uint32``
+  per device, each replica's on every device of the replica, rather than one
+  page-aligned ``int32`` ``length`` per replica;
 - ``lora_targets``, the projections it serves LoRA adapters on
   (:func:`lora_targets`);
 - ``supports_data_parallel``, when it runs one replica per device
@@ -122,8 +123,10 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.legacy.comm.ep import EPInit
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.graph_groups import (
+    BatchContext,
     BlockDiffusionGraphInputs,
     DecoderGraphInputs,
+    DecoderGraphScratch,
     HiddenStates,
     Logits,
     VisionEmbeddings,
@@ -413,7 +416,7 @@ def decoder_input_types(
     data_parallel_degree: int = 1,
     vision: VisionInputs[TensorLayout] | VisionInputs[TensorType] | None = None,
     token_positions: TensorType | None = None,
-    batch_context_lengths: Sequence[TensorType] | None = None,
+    batch_context_lengths: BatchContext[tuple[TensorType, ...]] | None = None,
     ep: object | None = None,
     lora: Sequence[TensorType] = (),
     constants: object | None = None,
@@ -428,7 +431,8 @@ def decoder_input_types(
     inputs. The graph takes the tree as its one argument, so an exported
     graph names its inputs. It takes ``vision`` as a
     :class:`~max.nn.legacy.graph_groups.VisionMerge` group, the kind a
-    serving engine feeds image embeddings by.
+    serving engine feeds image embeddings by, and ``scratch`` as a
+    :class:`~max.nn.legacy.graph_groups.DecoderGraphScratch` group.
 
     Args:
         kv_params: The KV cache parameters that supply the ``kv`` subtree.
@@ -440,8 +444,8 @@ def decoder_input_types(
             with a ``VISION`` module. A graph built with them takes them on
             every batch, empty when the batch has no images.
         token_positions: The absolute position of each ragged token.
-        batch_context_lengths: Each replica's context-length input type,
-            when the decoder reads them.
+        batch_context_lengths: The context-length input types, when the
+            decoder reads them, under the field of the length it reads.
         ep: The expert-parallel input types, when serving with expert
             parallelism, in the layout of the config's
             :attr:`~max.pipelines.lib.registration_runtime.ExpertParallelDeploymentConfig.expert_parallel_inputs`.
@@ -476,7 +480,7 @@ def decoder_input_types(
             image_token_indices=vision.scatter_indices,
         )
     if batch_context_lengths is not None:
-        types["batch_context_lengths"] = tuple(batch_context_lengths)
+        types["batch_context_lengths"] = batch_context_lengths
     if ep is not None:
         types["ep"] = ep
     if lora:
@@ -486,7 +490,7 @@ def decoder_input_types(
     if state:
         types["state"] = tuple(state)
     if scratch:
-        types["scratch"] = tuple(scratch)
+        types["scratch"] = DecoderGraphScratch(buffers=tuple(scratch))
     order = _FIELD_ORDER if input_layout is None else tuple(input_layout)
     if input_layout is not None:
         duplicates = sorted({name for name in order if order.count(name) > 1})
@@ -507,6 +511,8 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
 
     The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
     reads as :class:`~max.pipelines.lib.role_contracts.VisionInputs`.
+    It takes ``batch_context_lengths`` and ``scratch`` as ``batch_context``
+    and ``decoder_scratch`` groups, which it reads as their tensors alone.
     """
     fields = OrderedDict(inputs)
     if (vision := fields.get("vision")) is not None:
@@ -514,6 +520,10 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
             embeddings=vision["image_embeddings"],
             scatter_indices=vision["image_token_indices"],
         )
+    if (lengths := fields.get("batch_context_lengths")) is not None:
+        fields["batch_context_lengths"] = tuple(tree.leaves(lengths))
+    if (scratch := fields.get("scratch")) is not None:
+        fields["scratch"] = tuple(scratch["buffers"])
     return fields
 
 
@@ -1279,14 +1289,14 @@ class ModuleV3DecoderPipelineModel(
 
     def _batch_context_length_types(
         self, model_config: Any
-    ) -> tuple[TensorType, ...] | None:
+    ) -> BatchContext[tuple[TensorType, ...]] | None:
         """Returns the decoder's ``batch_context_lengths`` input types.
 
-        One ``int32`` per replica, or for a decoder that sets
-        ``device_context_length_dtype``, one of that dtype per device. Replicas
-        that span several devices of a ``(dp, tp)`` mesh also take one
-        ``int32`` per device, each device its replica's.
-        ``None`` when its config doesn't take them.
+        One ``int32`` ``length`` per replica. Replicas that span several
+        devices of a ``(dp, tp)`` mesh take one per device, each device its
+        replica's. A decoder that sets ``takes_total_context_length`` takes
+        one ``uint32`` ``total_length`` per device instead. ``None`` when its
+        config doesn't take them.
         """
         if not (
             isinstance(model_config, DeploymentConfig)
@@ -1294,18 +1304,22 @@ class ModuleV3DecoderPipelineModel(
         ):
             return None
         replicas = self._data_parallel_degree
-        dtype = getattr(
-            type(self).decoder_cls, "device_context_length_dtype", None
-        )
-        if dtype is None:
-            mesh = self._device_mesh()
-            if not (DP in mesh.axis_names and TP in mesh.axis_names):
-                return batch_context_length_types(replicas)
-            dtype = DType.int32
-        return batch_context_length_types(
-            replicas,
-            devices_per_replica=len(self.devices) // max(1, replicas),
-            dtype=dtype,
+        devices_per_replica = len(self.devices) // max(1, replicas)
+        if getattr(type(self).decoder_cls, "takes_total_context_length", False):
+            return BatchContext(
+                total_length=batch_context_length_types(
+                    replicas,
+                    devices_per_replica=devices_per_replica,
+                    dtype=DType.uint32,
+                )
+            )
+        mesh = self._device_mesh()
+        if not (DP in mesh.axis_names and TP in mesh.axis_names):
+            devices_per_replica = 1
+        return BatchContext(
+            length=batch_context_length_types(
+                replicas, devices_per_replica=devices_per_replica
+            )
         )
 
     def _decoder_vision_inputs(

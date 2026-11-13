@@ -289,7 +289,7 @@ def graph_api_decoder_input_types(
     types["kv"] = kv_params.get_symbolic_inputs()
     if batch_context_lengths is not None:
         types["batch_context_lengths"] = BatchContext(
-            context_lengths=tuple(batch_context_lengths)
+            length=tuple(batch_context_lengths)
         )
     if ep is not None:
         types["ep"] = ep

@@ -33,7 +33,12 @@ from max.graph.weights import WeightData, WeightsFormat
 from max.nn import Module
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.graph_groups import DecoderGraphInputs, VisionMerge
+from max.nn.legacy.graph_groups import (
+    BatchContext,
+    DecoderGraphInputs,
+    DecoderGraphScratch,
+    VisionMerge,
+)
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -452,7 +457,7 @@ def test_optional_decoder_inputs_take_their_canonical_place() -> None:
         kv_params,
         DeviceRef.CPU(),
         vision=VisionInputs(embeddings=X, scatter_indices=X),
-        batch_context_lengths=(X,),
+        batch_context_lengths=BatchContext(length=(X,)),
         ep=NonCallableMock(),
         lora=(X,),
         state=(X,),
@@ -485,7 +490,7 @@ def test_a_decoder_keeps_its_existing_input_layout() -> None:
             )
         ),
         DeviceRef.CPU(),
-        batch_context_lengths=(X,),
+        batch_context_lengths=BatchContext(length=(X,)),
         input_layout=layout,
     )
     assert tuple(types) == layout
@@ -668,7 +673,7 @@ def test_the_batch_processor_fills_the_optional_inputs_its_graph_takes() -> (
             NonCallableMock(get_symbolic_inputs=lambda: (X,)),
             DeviceRef.CPU(),
             data_parallel_degree=2,
-            batch_context_lengths=(X, X),
+            batch_context_lengths=BatchContext(length=(X, X)),
             ep=NonCallableMock(),
         )
     )
@@ -699,7 +704,7 @@ def test_the_batch_processor_fills_each_devices_context_length() -> None:
             NonCallableMock(get_symbolic_inputs=lambda: (X,)),
             DeviceRef.CPU(),
             data_parallel_degree=2,
-            batch_context_lengths=lengths,
+            batch_context_lengths=BatchContext(total_length=lengths),
         )
     )
     inputs = processor.prepare_initial_token_inputs(
@@ -944,8 +949,8 @@ def test_multi_device_replicas_take_a_context_length_per_device() -> None:
         SharedReplicaDecoder, 2, 8
     )._batch_context_length_types(config)
     assert shared is not None
-    assert len(shared) == 8
-    assert {(t.dtype, t.device) for t in shared} == {
+    assert len(shared["length"]) == 8
+    assert {(t.dtype, t.device) for t in shared["length"]} == {
         (DType.int32, DeviceRef.CPU())
     }
     # One replica per device: one per replica.
@@ -953,7 +958,7 @@ def test_multi_device_replicas_take_a_context_length_per_device() -> None:
         SharedReplicaDecoder, 4, 4
     )._batch_context_length_types(config)
     assert per_replica is not None
-    assert len(per_replica) == 4
+    assert len(per_replica["length"]) == 4
 
 
 def test_graph_name_defaults_to_the_class_name() -> None:
@@ -1790,24 +1795,28 @@ class ContextLengthConfig(StagedConfig, DeploymentConfig):
     takes_batch_context_lengths: ClassVar[bool] = True
 
 
-class DeviceContextLengthDecoder(PlainDecoder):
-    device_context_length_dtype: ClassVar[DType] = DType.uint32
+class TotalContextLengthDecoder(PlainDecoder):
+    takes_total_context_length: ClassVar[bool] = True
 
 
-def test_a_decoder_can_take_a_context_length_per_device() -> None:
-    def lengths(decoder: type[Module[..., Any]]) -> list[object]:
+def test_a_decoder_can_take_the_total_context_length() -> None:
+    def lengths(decoder: type[Module[..., Any]]) -> dict[str, list[object]]:
         spec = _staged_model(decoder, None).graph_specs(ContextLengthConfig())[
             GraphRole.DECODER
         ]
         (inputs,) = spec.input_types
         assert isinstance(inputs, DecoderGraphInputs)
-        return list(inputs["batch_context_lengths"])
+        group = inputs["batch_context_lengths"]
+        assert isinstance(group, BatchContext)
+        return {field: list(types) for field, types in group.items()}
 
     cpu = DeviceRef.CPU()
-    assert lengths(PlainDecoder) == [TensorType(DType.int32, [1], device=cpu)]
-    assert lengths(DeviceContextLengthDecoder) == [
-        TensorType(DType.uint32, [1], device=cpu)
-    ]
+    assert lengths(PlainDecoder) == {
+        "length": [TensorType(DType.int32, [1], device=cpu)]
+    }
+    assert lengths(TotalContextLengthDecoder) == {
+        "total_length": [TensorType(DType.uint32, [1], device=cpu)]
+    }
 
 
 def test_a_decoder_without_stages_refuses_one() -> None:
@@ -1883,7 +1892,9 @@ def test_workspace_follows_the_state_inputs() -> None:
         kv_params, DeviceRef.CPU(), state=(X,), scratch=(_SCRATCH,)
     )
     assert list(types)[-2:] == ["state", "scratch"]
-    assert types["scratch"] == (_SCRATCH,)
+    scratch = types["scratch"]
+    assert isinstance(scratch, DecoderGraphScratch)
+    assert scratch == {"buffers": (_SCRATCH,)}
 
 
 def test_every_batch_passes_the_same_workspace_last() -> None:
@@ -1935,7 +1946,7 @@ class ScratchReader(Module[[DecoderInputs], DecoderOutputs]):
 
 def test_the_graph_hands_the_decoder_its_workspace() -> None:
     workspace = BufferType(DType.float32, [1, 2], device=DeviceRef.CPU())
-    types = _toy_input_types(scratch=(workspace,))
+    types = _toy_input_types(scratch=DecoderGraphScratch(buffers=(workspace,)))
     types["kv"] = (X,)
     run = _DecoderGraph(ScratchReader(ToyConfig())).compile(types)
     (logits,) = run.execute_raw(

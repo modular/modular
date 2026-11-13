@@ -4,6 +4,7 @@
   "conv_states",
   "decoder_inputs",
   "decoder_outputs",
+  "decoder_scratch",
   "ep_payload",
   "eplb_profile",
   "hidden_states",

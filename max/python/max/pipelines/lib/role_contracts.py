@@ -124,8 +124,11 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
 
     batch_context_lengths: tuple[TensorT, ...] | None = None
     """Each data-parallel replica's page-aligned KV context length, a CPU
-    ``int32`` tensor of shape ``[1]`` per replica, or one per device for a
-    decoder that sets ``device_context_length_dtype``.
+    ``int32`` tensor of shape ``[1]`` per replica. A decoder that sets
+    ``takes_total_context_length`` takes each replica's total context length
+    instead, a CPU ``uint32`` per device. The graph takes them as the
+    ``length`` or ``total_length`` of a
+    :class:`~max.nn.legacy.graph_groups.BatchContext` group.
 
     Set when the config sets
     :attr:`~max.pipelines.lib.registration_runtime.DeploymentConfig.takes_batch_context_lengths`,
