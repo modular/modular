@@ -45,6 +45,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     convert_kimi_k3_state_dict,
+    fuse_qkvgb_for_tp,
     interleave_for_tp,
     tp_degree,
 )
@@ -489,14 +490,21 @@ def test_fused_qkvg_proj_matches_model_py(
     """At the loader's own TP degree (1) the adapter's merged ``qkvg_proj``
     must agree with ``model.py``'s eager-loader helper."""
     attn_src = f"{_TEXT}.layers.0.self_attn"
-    q, k, v, g, b = (
-        _to_numpy(checkpoint[f"{attn_src}.{axis}_proj.weight"].data())
-        for axis in ("q", "k", "v", "g", "b")
+    q, k, v, g, b, f_a = (
+        _to_numpy(checkpoint[f"{attn_src}.{axis}.weight"].data())
+        for axis in (
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "g_proj",
+            "b_proj",
+            "f_a_proj",
+        )
     )
     expected = _to_numpy(
-        WeightData.from_numpy(km._fuse_qkvgb_proj(q, k, v, g, b), "ref").astype(
-            DType.bfloat16
-        )
+        WeightData.from_numpy(
+            km._fuse_qkvgb_proj(q, k, v, g, b, f_a), "ref"
+        ).astype(DType.bfloat16)
     )
     actual = _to_numpy(converted["layers.0.attention.qkvg_proj.weight"])
     np.testing.assert_array_equal(actual, expected)
@@ -1149,3 +1157,55 @@ def test_merged_exit_weights_shard_into_one_gemm_per_rank(tp_size: int) -> None:
         np.testing.assert_array_equal(
             got, want, err_msg=f"rank {rank}'s merged exit weight"
         )
+
+
+def test_fuse_qkvgb_for_tp_appends_the_gate_to_every_rank() -> None:
+    """The fused qkvg weight carries the gate's rows once, at load time.
+
+    The layer's input GEMM also produces the gate's down projection, so the
+    checkpoints' ``f_a_proj`` rides the fused weight instead of a launch of
+    its own. It is replicated -- each rank's ``f_b_proj`` slice needs all of
+    it -- so every rank's contiguous block ends with the whole ``f_a``, and
+    the stored weight is the only place those rows live.
+    """
+    tp_size = 4
+    rows, hidden = 8, 4
+    gate_down = _ramp(3, hidden, 900)
+    parts = [_ramp(rows, hidden, 100 * i) for i in range(5)]
+
+    got = fuse_qkvgb_for_tp(parts, gate_down, tp_size)
+    per_rank = rows // tp_size
+    want = np.concatenate(
+        [
+            np.concatenate(
+                [
+                    *(
+                        part[r * per_rank : (r + 1) * per_rank]
+                        for part in parts
+                    ),
+                    gate_down,
+                ],
+                axis=0,
+            )
+            for r in range(tp_size)
+        ],
+        axis=0,
+    )
+    np.testing.assert_array_equal(got, want, err_msg="the fused qkvg weight")
+    assert got.shape == (5 * rows + tp_size * 3, hidden)
+    # Each rank's shard is its own five blocks plus the whole gate row, so a
+    # plain row shard of this weight is what the layer's split expects.
+    shard = got.shape[0] // tp_size
+    for r in range(tp_size):
+        block = got[r * shard : (r + 1) * shard]
+        np.testing.assert_array_equal(block[-3:], gate_down)
+
+
+def test_fuse_qkvgb_for_tp_without_a_gate_is_the_plain_interleave() -> None:
+    """A checkpoint that does not fuse the gate keeps the five-block weight."""
+    tp_size = 2
+    parts = [_ramp(8, 4, 100 * i) for i in range(5)]
+    np.testing.assert_array_equal(
+        fuse_qkvgb_for_tp(parts, None, tp_size),
+        interleave_for_tp(parts, tp_size),
+    )

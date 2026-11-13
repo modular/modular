@@ -15475,6 +15475,7 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
     sf_vector_size: int = 32,
     topk: int,
     num_experts: int,
+    cols: int | None = None,
 ) -> tuple[TensorValue, ...]:
     """Fused MoE expert sort + fan-out gather + MXFP8 quantize (AMD CDNA4).
 
@@ -15497,13 +15498,20 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
 
     Args:
         input: The per-token activations to quantize. Shape:
-            ``[num_tokens, K]``, dtype ``bfloat16``.
+            ``[num_tokens, cols]``, dtype ``bfloat16`` -- or ``float32``,
+            which rounds through ``bfloat16`` inside the kernel.
         topk_ids: The flat expert assignments. Shape:
             ``[num_tokens * topk]``, dtype ``int32``.
         sf_vector_size: The block size for the scaling factors (32 for
             MXFP8).
         topk: Experts per token; must be positive.
         num_experts: The expert count.
+        cols: The quantized row width ``K``, when it is not ``input``'s own
+            width: a producer that writes the activations beside other
+            columns of the same row -- K3's merged MoE entry GEMM, whose
+            latent is the leading slice of one fp32 result -- is read in
+            place instead of being copied into a contiguous ``[T, K]``
+            tensor first. Defaults to ``input.shape[1]``.
 
     Returns:
         A tuple of seven tensors, in :func:`moe_create_indices`'s order
@@ -15512,14 +15520,18 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
         ``[num_experts + 1]`` uint32, ``restore_token_order``
         ``[num_tokens * topk]`` uint32, ``expert_ids`` ``[num_experts]``
         int32, ``expert_usage_stats`` ``[2]`` uint32, then the quantized
-        ``[num_tokens * topk, K]`` float8_e4m3fn activations and their
-        ``[num_tokens * topk, K // sf_vector_size]`` float8_e8m0fnu scales.
+        ``[num_tokens * topk, cols]`` float8_e4m3fn activations and their
+        ``[num_tokens * topk, cols // sf_vector_size]`` float8_e8m0fnu
+        scales.
     """
     if input.rank != 2:
         raise ValueError("input tensor must be rank 2 tensor")
 
-    if input.dtype != DType.bfloat16:
-        raise ValueError("input tensor dtype must be bfloat16")
+    # `float32` skips the separate `.cast(DType.bfloat16)` launch a split-K
+    # reduce's fp32 output otherwise needs: the op rounds each value through
+    # bfloat16 before quantizing, so the payload and scales are the same.
+    if input.dtype not in (DType.bfloat16, DType.float32):
+        raise ValueError("input tensor dtype must be bfloat16 or float32")
 
     if topk_ids.rank != 1:
         raise ValueError("topk_ids must be rank 1")
@@ -15536,16 +15548,21 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
     if num_experts < 1:
         raise ValueError(f"num_experts must be positive, got {num_experts}")
 
-    cols = input.shape[1]
-    if not isinstance(cols, StaticDim):
+    width = input.shape[1]
+    if cols is None:
+        if not isinstance(width, StaticDim):
+            raise ValueError(
+                "input.shape[1] must be a static multiple of 32 for the fused"
+                " MoE sort+gather+quantize"
+            )
+        cols = int(width)
+    elif not isinstance(width, StaticDim) or cols > int(width):
         raise ValueError(
-            "input.shape[1] must be a static multiple of 32 for the fused"
-            " MoE sort+gather+quantize"
+            f"cols ({cols}) must be at most input.shape[1], which must be"
+            " static"
         )
-    if int(cols) % sf_vector_size != 0:
-        raise ValueError(
-            f"input.shape[1] must be a multiple of {sf_vector_size}"
-        )
+    if cols % sf_vector_size != 0:
+        raise ValueError(f"cols must be a multiple of {sf_vector_size}")
 
     # Static shapes are checked here; the kernel's launcher re-checks the
     # slot count against the real sizes on every launch, which covers the
@@ -15588,7 +15605,7 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
             ),  # quantized
             TensorType(
                 dtype=DType.float8_e8m0fnu,
-                shape=[slots, ceildiv(cols, Dim(sf_vector_size))],
+                shape=[slots, ceildiv(Dim(cols), Dim(sf_vector_size))],
                 device=input.device,
             ),  # scales
         ],
@@ -15596,7 +15613,7 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
             "SF_VECTOR_SIZE": sf_vector_size,
             "TOPK": topk,
             "NUM_EXPERTS": num_experts,
-            "NUM_COLS": int(cols),
+            "NUM_COLS": cols,
         },
     )
     return tuple(t.tensor for t in result)

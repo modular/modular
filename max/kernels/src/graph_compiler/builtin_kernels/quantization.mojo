@@ -1355,7 +1355,9 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
             output: `[P, K]` float8_e4m3fn, one row per sorted slot.
             scales: `[P, K // SF_VECTOR_SIZE]` float8_e8m0fnu block scales,
                 row-major.
-            input: `[M, K]` bfloat16 activations, one row per token.
+            input: `[M, K]` bfloat16 activations -- or the `float32` they
+                were cast from, which rounds through bfloat16 inside the
+                kernel -- one row per token.
             topk_ids: `[P]` int32 flat expert ids, one per (token, pick)
                 pair, with ``P == M * TOPK``.
             context: The device context.

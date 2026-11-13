@@ -498,6 +498,7 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     conv_kernel_size=config.kda_conv_kernel_size,
                     gate_lower_bound=config.kda_gate_lower_bound,
                     pin_fma=self._pin_kda_fma,
+                    tp_size=tp_size,
                 )
             else:
                 attention = KimiK3MLAAttention(
@@ -872,14 +873,20 @@ def _fuse_qkvgb_proj(
     v: np.ndarray,
     g: np.ndarray,
     b: np.ndarray,
+    f_a: np.ndarray | None = None,
 ) -> np.ndarray:
     """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
     ``KimiK3KDAAttention.qkvg_proj`` takes the merged weight. This eager
     loader is single-device, so a plain row concat is the TP-degree-1 case
     of the weight adapter's per-rank interleave.
+
+    ``f_a`` -- the gate's down projection -- is appended the same way when
+    the checkpoint fuses it, so the eager loader produces the weight shape
+    the layer detects the fusion from (``_fuses_gate_down``).
     """
-    return np.ascontiguousarray(np.concatenate([q, k, v, g, b], axis=0))
+    parts = [q, k, v, g, b] if f_a is None else [q, k, v, g, b, f_a]
+    return np.ascontiguousarray(np.concatenate(parts, axis=0))
 
 
 def _fuse_qkv_a_g_proj(
@@ -987,6 +994,7 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
+            gate_down = get(f"{attn_src}.f_a_proj.weight")
             attn.qkvg_proj.weight = Tensor(
                 _fuse_qkvgb_proj(
                     get(f"{attn_src}.q_proj.weight"),
@@ -994,12 +1002,11 @@ def load_kimi_k3_weights(
                     get(f"{attn_src}.v_proj.weight"),
                     get(f"{attn_src}.g_proj.weight"),
                     get(f"{attn_src}.b_proj.weight"),
+                    gate_down,
                 ),
                 dtype=DType.float32,
             )
-            attn.f_a_proj.weight = Tensor(
-                get(f"{attn_src}.f_a_proj.weight"), dtype=DType.float32
-            )
+            attn.f_a_proj.weight = Tensor(gate_down, dtype=DType.float32)
             attn.f_b_proj.weight = Tensor(
                 get(f"{attn_src}.f_b_proj.weight"), dtype=DType.float32
             )

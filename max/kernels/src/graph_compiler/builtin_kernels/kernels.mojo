@@ -98,6 +98,7 @@ from nn.moe import (
     eplb_remap,
     moe_create_indices,
     moe_create_indices_with_slots,
+    moe_exit_act_concat,
     moe_finalize,
     moe_finalize_bounded,
     router_group_limited,
@@ -2407,6 +2408,116 @@ struct Struct_moe_finalize:
             down.to_tile_tensor[mut=False](),
             restore_token_order.to_tile_tensor[.uint32, mut=False](),
             router_weight.to_tile_tensor[mut=False](),
+            context,
+        )
+
+
+@extensibility.register("moe.exit.act.concat")
+struct Struct_moe_exit_act_concat:
+    """Registers the `moe.exit.act.concat` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        simd_width: Int,
+    ](
+        output: Some[Output & Tensor],
+        latent: Some[Input & Fused & LoadAccess],
+        gate_up: Some[Input & Fused & LoadAccess],
+        beta: Float32,
+        linear_beta: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Writes the normed latent and the shared SiTU-and-mul beside it.
+
+        Args:
+            output: `[T, latent_cols + half_cols]`, the exit GEMM's
+                activation.
+            latent: `[T, latent_cols]`, the normed latent; a column slice
+                of a wider tensor is read through its view.
+            gate_up: `[T, 2 * half_cols]`, the shared expert's fused
+                gate/up projection, gate half first.
+            beta: The SiTU gate's tanh scale.
+            linear_beta: The up half's soft saturation, or 0 for none.
+            context: The device context.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(latent), UnsafeFusedView)
+        comptime assert conforms_to(type_of(gate_up), UnsafeFusedView)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(latent).rank == 2
+        comptime assert type_of(gate_up).rank == 2
+        comptime assert type_of(latent).dtype == type_of(output).dtype
+        comptime assert type_of(gate_up).dtype == type_of(output).dtype
+        comptime dtype = type_of(output).dtype
+        var latent_cols = Int(latent.shape()[1])
+        var gate_cols = Int(gate_up.shape()[1])
+        if gate_cols % 2 != 0:
+            raise Error(
+                String(
+                    t"moe.exit.act.concat: the gate/up input's width must be"
+                    t" even"
+                )
+            )
+        var half_cols = gate_cols // 2
+        if Int(output.shape()[1]) != latent_cols + half_cols:
+            raise Error(
+                String(
+                    t"moe.exit.act.concat: the output is not latent_cols +"
+                    t" half_cols wide"
+                )
+            )
+        # The kernel branches on which side of `latent_cols` a vector sits,
+        # so both halves must be whole vectors; a width that is not would
+        # leave a vector straddling the boundary and silently overlap the
+        # halves.
+        if latent_cols % simd_width != 0:
+            raise Error(
+                String(
+                    t"moe.exit.act.concat: the latent's width {latent_cols}"
+                    t" is not a multiple of the SIMD width {simd_width}"
+                )
+            )
+        if half_cols % simd_width != 0:
+            raise Error(
+                String(
+                    t"moe.exit.act.concat: the shared half's width {half_cols}"
+                    t" is not a multiple of the SIMD width {simd_width}"
+                )
+            )
+
+        # Project each host proxy to its access-enabled view so the closure
+        # can load on the GPU lane; a column slice of a wider tensor stays a
+        # view, with no copy of its own.
+        var latent_view = unsafe_fused_view(latent)
+        var gate_up_view = unsafe_fused_view(gate_up)
+        comptime assert conforms_to(type_of(latent_view), Loadable)
+        comptime assert conforms_to(type_of(gate_up_view), Loadable)
+
+        @inline(.always)
+        def latent_fn[
+            width: Int
+        ](coords: Coord) {var latent_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                latent_view.load[width=width](coords)
+            )
+
+        @inline(.always)
+        def gate_up_fn[
+            width: Int
+        ](coords: Coord) {var gate_up_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                gate_up_view.load[width=width](coords)
+            )
+
+        moe_exit_act_concat[dtype=dtype, simd_width=simd_width](
+            output.to_tile_tensor(),
+            latent_fn,
+            gate_up_fn,
+            latent_cols,
+            half_cols,
+            beta,
+            linear_beta,
             context,
         )
 

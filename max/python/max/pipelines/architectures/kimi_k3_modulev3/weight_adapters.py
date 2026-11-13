@@ -208,6 +208,45 @@ def _fuse_gate_up(
     return _rewrap(fused, gate, name)
 
 
+def fuse_qkvgb_for_tp(
+    parts: Sequence[np.ndarray], f_a: np.ndarray | None, tp_size: int
+) -> np.ndarray:
+    """Row-fuses a KDA layer's q/k/v/g/beta blocks, plus the gate's rows.
+
+    Rank ``r``'s contiguous block is ``[q_r | k_r | v_r | g_r | b_r | f_a]``:
+    the split blocks that every rank shards, then the gate's down projection
+    whole, because ``f_a_proj`` stays replicated -- each rank's ``f_b_proj``
+    slice needs all ``head_dim`` of it. The result therefore holds ``tp_size``
+    copies of ``f_a``; that is the price of one GEMM producing it, and it is
+    the same block the layer used to build in the graph, now built once here
+    so no layer holds a second resident copy of its fused weight.
+
+    Args:
+        parts: The q, k, v, g and beta weights, in that order.
+        f_a: The ``[head_dim, hidden]`` gate down-projection, or ``None`` to
+            leave it out (a checkpoint whose gate never joined the GEMM).
+        tp_size: The TP degree the fused weight is sharded over.
+
+    Returns:
+        The ``[4 * inner + heads + tp_size * head_dim, hidden]`` weight.
+
+    Raises:
+        ValueError: If a split part's width does not divide over ``tp_size``.
+    """
+    moves = _interleaved_slices([p.shape[0] for p in parts], tp_size)
+    per_rank = len(parts)
+    blocks: list[np.ndarray] = []
+    for r in range(tp_size):
+        rank_block = [
+            parts[p][src]
+            for p, src, _ in moves[r * per_rank : (r + 1) * per_rank]
+        ]
+        if f_a is not None:
+            rank_block.append(f_a)
+        blocks.append(np.concatenate(rank_block, axis=0))
+    return np.concatenate(blocks, axis=0)
+
+
 def _fuse_qkvgb_proj(
     q: WeightData,
     k: WeightData,
@@ -217,6 +256,7 @@ def _fuse_qkvgb_proj(
     name: str,
     tp_size: int,
     dtype: DType | None = None,
+    f_a: WeightData | None = None,
 ) -> WeightData:
     """Merges q, k, v, g and beta into one ``[4 * inner + heads, hidden]`` weight.
 
@@ -227,10 +267,15 @@ def _fuse_qkvgb_proj(
     rounded once to the weight dtype; the layer widens it back to fp32 for
     the kda op.
 
+    When ``f_a`` is given, its rows are appended whole to every rank's block
+    (see :func:`fuse_qkvgb_for_tp`), so the same GEMM also produces the
+    gate's down projection and the layer needs no GEMV launch for it.
+
     Raises:
         ValueError: If q/k/v/g disagree in shape or dtype, if beta shares
-            neither the merged dtype nor the input width, or if a block's
-            width does not split over the TP degree.
+            neither the merged dtype nor the input width, if a block's
+            width does not split over the TP degree, or if ``f_a`` does not
+            match the merged dtype and input width.
     """
     parts = [q, k, v, g]
     if dtype is not None:
@@ -239,6 +284,8 @@ def _fuse_qkvgb_proj(
             for part in parts
         ]
         b = b.astype(dtype) if b.dtype in _CASTABLE_DTYPES else b
+        if f_a is not None:
+            f_a = f_a.astype(dtype) if f_a.dtype in _CASTABLE_DTYPES else f_a
     for axis, part in zip(("q", "k", "v", "g"), parts, strict=True):
         if part.dtype != parts[0].dtype or tuple(part.shape) != tuple(
             parts[0].shape
@@ -255,8 +302,18 @@ def _fuse_qkvgb_proj(
             f" input width of q_proj's {parts[0].dtype} and"
             f" {tuple(parts[0].shape)}."
         )
-    fused = interleave_for_tp(
+    if f_a is not None:
+        if f_a.dtype != parts[0].dtype or f_a.shape[1] != parts[0].shape[1]:
+            raise ValueError(
+                f"Kimi K3: f_a_proj has dtype {f_a.dtype} and shape"
+                f" {tuple(f_a.shape)}, but must share the weight dtype and"
+                f" the input width of q_proj's {parts[0].dtype} and"
+                f" {tuple(parts[0].shape)}. A gate the fused GEMM cannot"
+                f" carry would need its own projection."
+            )
+    fused = fuse_qkvgb_for_tp(
         [*(_elements(part) for part in parts), _elements(b)],
+        None if f_a is None else _elements(f_a),
         tp_size,
     )
     return _rewrap(fused, parts[0], name)
@@ -516,6 +573,7 @@ def convert_kimi_k3_state_dict(
                 f"{attn_dst}.qkvg_proj.weight",
                 tp_size,
                 dtype,
+                _wd(state_dict, f"{attn_src}.f_a_proj.weight"),
             )
             q_conv, k_conv, v_conv = (
                 _wd(state_dict, f"{attn_src}.{axis}_conv1d.weight")

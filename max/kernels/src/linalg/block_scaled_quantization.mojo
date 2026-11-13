@@ -4478,6 +4478,7 @@ def quantize_mx_amd[
 @__name(t"moe_gather_quantize_mx_amd_kernel_{out_dtype}")
 def _moe_gather_quantize_mx_amd_kernel[
     out_dtype: DType,
+    in_dtype: DType,
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
@@ -4498,12 +4499,13 @@ def _moe_gather_quantize_mx_amd_kernel[
         .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
     ],
     input: TileTensor[
-        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+        in_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
     ],
     token_expert_order: TileTensor[
         .uint32, order_layout, ImmutAnyOrigin, Engine=OrderEngine
     ],
     topk: Int32,
+    num_cols: Int32,
 ):
     """Fused MoE fan-out gather + MXFP8 quantization, AMD CDNA4 (MI355X).
 
@@ -4530,12 +4532,13 @@ def _moe_gather_quantize_mx_amd_kernel[
     )
     comptime assert OutputEngine.element_size == 1
     comptime assert ScalesEngine.element_size == 1
-    comptime assert InputEngine.element_size == 1
     comptime assert OrderEngine.element_size == 1
 
     var num_rows = Int(token_expert_order.dim(0))
     var num_tokens = Int(input.dim(0))
-    var num_col_threads = Int(input.dim(1)) // ELEMENTS_PER_THREAD
+    # The quantized row width, which may be a leading window of a wider
+    # `input` row (see `moe_gather_quantize_mx_amd`'s `num_cols`).
+    var num_col_threads = Int(num_cols) // ELEMENTS_PER_THREAD
 
     var topk_u32 = UInt32(topk)
 
@@ -4556,7 +4559,7 @@ def _moe_gather_quantize_mx_amd_kernel[
 
                 var input_vector = input.load[ELEMENTS_PER_THREAD](
                     (src_row, global_col_idx)
-                )
+                ).cast[.bfloat16]()
 
                 var quantized: SIMD[out_dtype, ELEMENTS_PER_THREAD]
                 var e8m0_scale: Float8_e8m0fnu
@@ -4623,7 +4626,10 @@ def moe_gather_quantize_mx_amd[
         scales_dtype: Element type of the block scale-factor tensor
             (`float8_e8m0fnu`, inferred).
         in_dtype: Element type of the input activation tensor
-            (`bfloat16`, inferred).
+            (`bfloat16`, inferred). A `float32` tensor -- the split-K
+            reduce's output, read without the separate bf16 cast -- rounds
+            through bfloat16 before the quantize, so it produces the same
+            payload and scales.
         OutputEngine: Engine policy of the `output_tile` tensor.
         ScalesEngine: Engine policy of the `scales_tile` tensor.
         InputEngine: Engine policy of the `input_tile` tensor.
@@ -4638,7 +4644,8 @@ def moe_gather_quantize_mx_amd[
         scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
             row-major (the `preshuffled_b=False` layout the CDNA4 grouped
             GEMM reads).
-        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        input_tile: Input `[M, K]` bfloat16 activations (or the `float32`
+            they were cast from), one row per token.
         order_tile: `moe_create_indices`'s `token_expert_order`, `[P]`
             uint32 with `P == M * topk`. Every entry must name a slot
             below `P`: `moe_create_indices` files each valid pair exactly
@@ -4654,7 +4661,10 @@ def moe_gather_quantize_mx_amd[
     comptime assert (
         scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+    comptime assert in_dtype in (
+        DType.bfloat16,
+        DType.float32,
+    ), "input must be bfloat16, or the float32 a split-K reduce writes"
     comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
     comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
     comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
@@ -4663,14 +4673,19 @@ def moe_gather_quantize_mx_amd[
     ), "token_expert_order must be rank 1"
 
     var num_tokens = Int(input_tile.dim[0]())
-    var num_cols = Int(input_tile.dim[1]())
+    var input_cols = Int(input_tile.dim[1]())
+    # The quantized width is the OUTPUT's, so no caller-supplied sentinel is
+    # needed: the output may be narrower than `input_tile`, whose rows the
+    # merged entry GEMM writes with other columns beside the latent.
+    var cols = Int(output_tile.dim[1]())
     var num_slots = Int(order_tile.dim[0]())
-    if num_tokens == 0 or num_cols == 0:
+    if num_tokens == 0 or cols == 0:
         return
     if topk < 1:
         raise Error(
-            "moe_gather_quantize_mx_amd: topk must be positive, got "
-            + String(topk)
+            String(
+                t"moe_gather_quantize_mx_amd: topk must be positive, got {topk}"
+            )
         )
     if num_slots != num_tokens * topk:
         raise Error(
@@ -4681,31 +4696,39 @@ def moe_gather_quantize_mx_amd[
             + " tokens at topk "
             + String(topk)
         )
-    if num_cols % MXFP8_SF_VECTOR_SIZE != 0:
+    if cols % MXFP8_SF_VECTOR_SIZE != 0:
         raise Error(
             "moe_gather_quantize_mx_amd: input columns must be a multiple"
             " of 32 (MXFP8_SF_VECTOR_SIZE)"
         )
+    if cols > input_cols:
+        raise Error(
+            String(
+                t"moe_gather_quantize_mx_amd: the quantized width {cols}"
+                t" columns exceeds the input's {input_cols}"
+            )
+        )
     if not (
         Int(output_tile.dim[0]()) == num_slots
-        and Int(output_tile.dim[1]()) == num_cols
+        and Int(output_tile.dim[1]()) == cols
         and Int(scales_tile.dim[0]()) == num_slots
-        and Int(scales_tile.dim[1]()) == num_cols // MXFP8_SF_VECTOR_SIZE
+        and Int(scales_tile.dim[1]()) == cols // MXFP8_SF_VECTOR_SIZE
     ):
         raise Error(
             "moe_gather_quantize_mx_amd: an output's shape disagrees with the"
             " gather+quantize contract"
         )
     # Contiguous tensors only -- the launch contract the kernel was measured
-    # under.
+    # under. `input` may be wider than `cols`: a producer that writes the
+    # activations beside other columns of the same row is read in place.
     if not (
         Int(output_tile.layout.stride[1]().value()) == 1
-        and Int(output_tile.layout.stride[0]().value()) == num_cols
+        and Int(output_tile.layout.stride[0]().value()) == cols
         and Int(scales_tile.layout.stride[1]().value()) == 1
         and Int(scales_tile.layout.stride[0]().value())
-        == num_cols // MXFP8_SF_VECTOR_SIZE
+        == cols // MXFP8_SF_VECTOR_SIZE
         and Int(input_tile.layout.stride[1]().value()) == 1
-        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(input_tile.layout.stride[0]().value()) == input_cols
         and Int(order_tile.layout.stride[0]().value()) == 1
     ):
         raise Error(
@@ -4713,7 +4736,7 @@ def moe_gather_quantize_mx_amd[
         )
 
     comptime ELEMENTS_PER_THREAD = 8
-    var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)
+    var num_col_threads = ceildiv(cols, ELEMENTS_PER_THREAD)
     var block_dim_val = (
         _mx_group_aligned_block_dim(num_col_threads, num_max_threads),
         1,
@@ -4725,6 +4748,7 @@ def moe_gather_quantize_mx_amd[
 
     comptime kernel = _moe_gather_quantize_mx_amd_kernel[
         out_dtype,
+        in_dtype,
         type_of(output_tile).LayoutType,
         type_of(scales_tile).LayoutType,
         type_of(input_tile).LayoutType,
@@ -4743,6 +4767,7 @@ def moe_gather_quantize_mx_amd[
         input_tile,
         order_tile,
         Int32(topk),
+        Int32(cols),
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
         attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -4851,6 +4876,7 @@ def moe_sort_gather_quantize_fused_supported(
 def _moe_sort_gather_quantize_mx_amd_kernel[
     num_experts: Int,
     num_cols: Int,
+    in_dtype: DType,
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
@@ -4877,7 +4903,7 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
         .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
     ],
     input: TileTensor[
-        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+        in_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
     ],
     order: TileTensor[.uint32, order_layout, MutAnyOrigin, Engine=OrderEngine],
     start: TileTensor[.uint32, start_layout, MutAnyOrigin, Engine=StartEngine],
@@ -4915,7 +4941,6 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
     """
     comptime assert OutputEngine.element_size == 1
     comptime assert ScalesEngine.element_size == 1
-    comptime assert InputEngine.element_size == 1
     comptime assert OrderEngine.element_size == 1
     comptime assert StartEngine.element_size == 1
     comptime assert RestoreEngine.element_size == 1
@@ -5092,9 +5117,18 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
         if valid_i:
             var src = i // Int(topk)
             var col = 8 * tid
-            comptime in_align = align_of[SIMD[.bfloat16, 8]]()
+            # A float32 source rounds through bfloat16 here, exactly as the
+            # graph's own `.cast` did when it read this kernel's input: the
+            # quantize and its block scale see the same values either way.
+            # Element alignment, not the 8-element vector's: the row stride
+            # is the INPUT's width, which a caller may leave a few columns
+            # wider than `num_cols`, so a row no longer starts on a 32-byte
+            # boundary.
+            comptime in_align = align_of[Scalar[in_dtype]]()
             comptime out_align = align_of[SIMD[.float8_e4m3fn, 8]]()
-            var vec = input.load[width=8, alignment=in_align]((src, col))
+            var vec = input.load[width=8, alignment=in_align]((src, col)).cast[
+                .bfloat16
+            ]()
             var quantized: SIMD[.float8_e4m3fn, 8]
             var e8m0_scale: Float8_e8m0fnu
             quantized, e8m0_scale = quantize_mxfp8_lane_group[
@@ -5177,7 +5211,10 @@ def moe_sort_gather_quantize_mx_amd[
         scales_dtype: Element type of the block scale-factor tensor
             (`float8_e8m0fnu`, inferred).
         in_dtype: Element type of the input activation tensor
-            (`bfloat16`, inferred).
+            (`bfloat16`, inferred). A `float32` tensor -- the split-K
+            reduce's output, read without the separate bf16 cast -- rounds
+            through bfloat16 before the quantize, so it produces the same
+            payload and scales.
         OutputEngine: Engine policy of the `output_tile` tensor.
         ScalesEngine: Engine policy of the `scales_tile` tensor.
         InputEngine: Engine policy of the `input_tile` tensor.
@@ -5194,7 +5231,8 @@ def moe_sort_gather_quantize_mx_amd[
         scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
             row-major (the `preshuffled_b=False` layout the CDNA4 grouped
             GEMM reads).
-        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        input_tile: Input `[M, K]` bfloat16 activations (or the `float32`
+            they were cast from), one row per token.
         order_tile: Output `[P]` uint32, the expert-sorted slot order.
         start_tile: Output `[E + 1]` uint32 CSR starts.
         restore_tile: Output `[P]` uint32, `order`'s inverse.
@@ -5228,7 +5266,10 @@ def moe_sort_gather_quantize_mx_amd[
     comptime assert (
         scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+    comptime assert in_dtype in (
+        DType.bfloat16,
+        DType.float32,
+    ), "input must be bfloat16, or the float32 a split-K reduce writes"
 
     var num_tokens = Int(input_tile.dim[0]())
     var num_slots = Int(topk_ids_tile.dim[0]())
@@ -5254,7 +5295,7 @@ def moe_sort_gather_quantize_mx_amd[
         and Int(stats_tile.dim[0]()) == 2
         and Int(order_tile.dim[0]()) == num_slots
         and Int(restore_tile.dim[0]()) == num_slots
-        and Int(input_tile.dim[1]()) == num_cols
+        and Int(input_tile.dim[1]()) >= num_cols
         and Int(output_tile.dim[0]()) == num_slots
         and Int(output_tile.dim[1]()) == num_cols
         and Int(scales_tile.dim[0]()) == num_slots
@@ -5277,7 +5318,8 @@ def moe_sort_gather_quantize_mx_amd[
             + " columns is outside the one-launch kernel's envelope"
         )
     # Contiguous tensors only -- the launch contract the kernel was measured
-    # under.
+    # under. `input` may be wider than `num_cols`: a producer that writes the
+    # activations beside other columns of the same row is read in place.
     if not (
         Int(output_tile.layout.stride[1]().value()) == 1
         and Int(output_tile.layout.stride[0]().value()) == num_cols
@@ -5285,7 +5327,8 @@ def moe_sort_gather_quantize_mx_amd[
         and Int(scales_tile.layout.stride[0]().value())
         == num_cols // MXFP8_SF_VECTOR_SIZE
         and Int(input_tile.layout.stride[1]().value()) == 1
-        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(input_tile.layout.stride[0]().value())
+        == Int(input_tile.dim[1]())
         and Int(order_tile.layout.stride[0]().value()) == 1
         and Int(start_tile.layout.stride[0]().value()) == 1
         and Int(restore_tile.layout.stride[0]().value()) == 1
@@ -5300,6 +5343,7 @@ def moe_sort_gather_quantize_mx_amd[
     comptime kernel = _moe_sort_gather_quantize_mx_amd_kernel[
         num_experts,
         num_cols,
+        in_dtype,
         type_of(output_tile).LayoutType,
         type_of(scales_tile).LayoutType,
         type_of(input_tile).LayoutType,
@@ -5369,6 +5413,7 @@ def moe_source_scatter_quantize_supported(num_cols: Int) -> Bool:
 @__name(t"moe_source_scatter_quantize_mx_amd_kernel")
 def _moe_source_scatter_quantize_mx_amd_kernel[
     num_cols: Int,
+    in_dtype: DType,
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
@@ -5385,7 +5430,7 @@ def _moe_source_scatter_quantize_mx_amd_kernel[
         .float8_e8m0fnu, scales_layout, MutAnyOrigin, Engine=ScalesEngine
     ],
     input: TileTensor[
-        .bfloat16, input_layout, ImmutAnyOrigin, Engine=InputEngine
+        in_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
     ],
     restore: TileTensor[
         .uint32, restore_layout, ImmutAnyOrigin, Engine=RestoreEngine
@@ -5408,19 +5453,24 @@ def _moe_source_scatter_quantize_mx_amd_kernel[
     """
     comptime assert OutputEngine.element_size == 1
     comptime assert ScalesEngine.element_size == 1
-    comptime assert InputEngine.element_size == 1
     comptime assert RestoreEngine.element_size == 1
 
     var t = block_idx.x
     var tid = thread_idx.x
     var col = 8 * tid
-    comptime in_align = align_of[SIMD[.bfloat16, 8]]()
+    # A float32 source rounds through bfloat16 here, exactly as the graph's
+    # own `.cast` did when it read this kernel's input.
+    # Element alignment: the row stride is the INPUT's width, which may be
+    # wider than `num_cols` and so not a multiple of the 8-element vector.
+    comptime in_align = align_of[Scalar[in_dtype]]()
     comptime out_align = align_of[SIMD[.float8_e4m3fn, 8]]()
 
     # Release right after the wait; dependents wait for this kernel to
     # finish before they read what it writes (see `PDL`).
     with PDL[overlap_at_beginning=True]():
-        var vec = input.load[width=8, alignment=in_align]((t, col))
+        var vec = input.load[width=8, alignment=in_align]((t, col)).cast[
+            .bfloat16
+        ]()
         var quantized: SIMD[.float8_e4m3fn, 8]
         var e8m0_scale: Float8_e8m0fnu
         quantized, e8m0_scale = quantize_mxfp8_lane_group[
@@ -5486,7 +5536,10 @@ def moe_source_scatter_quantize_mx_amd[
         scales_dtype: Element type of the block scale-factor tensor
             (`float8_e8m0fnu`, inferred).
         in_dtype: Element type of the input activation tensor
-            (`bfloat16`, inferred).
+            (`bfloat16`, inferred). A `float32` tensor -- the split-K
+            reduce's output, read without the separate bf16 cast -- rounds
+            through bfloat16 before the quantize, so it produces the same
+            payload and scales.
         OutputEngine: Engine policy of the `output_tile` tensor.
         ScalesEngine: Engine policy of the `scales_tile` tensor.
         InputEngine: Engine policy of the `input_tile` tensor.
@@ -5498,7 +5551,8 @@ def moe_source_scatter_quantize_mx_amd[
         scales_tile: Output `[P, K // 32]` float8_e8m0fnu block scales,
             row-major (the `preshuffled_b=False` layout the CDNA4 grouped
             GEMM reads).
-        input_tile: Input `[M, K]` bfloat16 activations, one row per token.
+        input_tile: Input `[M, K]` bfloat16 activations (or the `float32`
+            they were cast from), one row per token.
         restore_tile: `moe_create_indices`'s `restore_token_order`, `[P]`
             uint32 with `P == M * topk`. A pair whose expert id was out of
             range holds the `P` sentinel and is skipped.
@@ -5515,7 +5569,10 @@ def moe_source_scatter_quantize_mx_amd[
     comptime assert (
         scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
+    comptime assert in_dtype in (
+        DType.bfloat16,
+        DType.float32,
+    ), "input must be bfloat16, or the float32 a split-K reduce writes"
     comptime assert output_tile.flat_rank >= 2, "output must be rank 2"
     comptime assert scales_tile.flat_rank >= 2, "scales must be rank 2"
     comptime assert input_tile.flat_rank >= 2, "input must be rank 2"
@@ -5545,7 +5602,7 @@ def moe_source_scatter_quantize_mx_amd[
             + String(topk)
         )
     if not (
-        Int(input_tile.dim[1]()) == num_cols
+        Int(input_tile.dim[1]()) >= num_cols
         and Int(output_tile.dim[0]()) == num_slots
         and Int(output_tile.dim[1]()) == num_cols
         and Int(scales_tile.dim[0]()) == num_slots
@@ -5562,7 +5619,8 @@ def moe_source_scatter_quantize_mx_amd[
             + " columns are outside the source-major kernel's envelope"
         )
     # Contiguous tensors only -- the launch contract the kernel was measured
-    # under.
+    # under. `input` may be wider than `num_cols`: a producer that writes the
+    # activations beside other columns of the same row is read in place.
     if not (
         Int(output_tile.layout.stride[1]().value()) == 1
         and Int(output_tile.layout.stride[0]().value()) == num_cols
@@ -5570,7 +5628,8 @@ def moe_source_scatter_quantize_mx_amd[
         and Int(scales_tile.layout.stride[0]().value())
         == num_cols // MXFP8_SF_VECTOR_SIZE
         and Int(input_tile.layout.stride[1]().value()) == 1
-        and Int(input_tile.layout.stride[0]().value()) == num_cols
+        and Int(input_tile.layout.stride[0]().value())
+        == Int(input_tile.dim[1]())
         and Int(restore_tile.layout.stride[0]().value()) == 1
     ):
         raise Error(
@@ -5580,6 +5639,7 @@ def moe_source_scatter_quantize_mx_amd[
 
     comptime kernel = _moe_source_scatter_quantize_mx_amd_kernel[
         num_cols,
+        in_dtype,
         type_of(output_tile).LayoutType,
         type_of(scales_tile).LayoutType,
         type_of(input_tile).LayoutType,

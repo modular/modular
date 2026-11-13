@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements Mixture-of-Experts (MoE) routing, token dispatch, and expert computation kernels."""
 
-from std.math import align_up, ceildiv, exp, log1p
+from std.math import align_up, ceildiv, exp, log1p, tanh
 from std.math.uutils import udivmod, umod
 from std.memory import unsafe_stack_allocation
 
@@ -1341,6 +1341,81 @@ def _moe_finalize[
         elementwise[1, _trace_description="moe.finalize"](
             finalize, shape, context
         )
+
+
+def moe_exit_act_concat[
+    dtype: DType,
+    simd_width: Int,
+    //,
+    LatentFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+    GateUpFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+](
+    output: TileTensor[mut=True, dtype, ...],
+    latent_fn: LatentFnType,
+    gate_up_fn: GateUpFnType,
+    latent_cols: Int,
+    half_cols: Int,
+    beta: Float32,
+    linear_beta: Float32,
+    context: DeviceContext,
+) raises:
+    """Writes a normed latent and a SiTU-and-mul beside each other, one launch.
+
+    The MoE exit reads `[normed latent | shared activation]` as one K axis:
+    the routed experts' normed latent followed by the shared expert's
+    SiTU-and-mul of its fused `[gate ; up]` projection. Computing the
+    activation into its own buffer and concatenating afterwards is two
+    launches over tens of KB, so this writes both halves of the destination
+    directly -- the latent half as a copy, the shared half activated.
+
+    Parameters:
+        dtype: Element type of the destination and of both inputs.
+        simd_width: Elements per thread's vector; must divide the latent
+            width and the shared half so no vector straddles them.
+        LatentFnType: The latent input's load closure.
+        GateUpFnType: The `[gate ; up]` input's load closure.
+
+    Args:
+        output: `[num_tokens, latent_cols + half_cols]`, the exit GEMM's
+            activation.
+        latent_fn: Loads `[num_tokens, latent_cols]`, the normed latent.
+        gate_up_fn: Loads `[num_tokens, 2 * half_cols]`, the shared expert's
+            fused gate/up projection, gate half first.
+        latent_cols: Latent width, the output's leading columns.
+        half_cols: Shared FFN width, the gate/up input's half width.
+        beta: `config.activation_situ_beta`; the gate's tanh scale.
+        linear_beta: `config.activation_situ_linear_beta`, or 0 to pass the
+            up half through unchanged.
+        context: The device context.
+    """
+
+    @inline(.always)
+    def body[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var col = Int(idx[1])
+        if col < latent_cols:
+            output.store[width=width](idx, latent_fn[width](idx))
+            return
+        # The activation is elementwise over the output's trailing columns:
+        # gate at j, up at j + half_cols, both of this output element's row.
+        var row = Int(idx[0])
+        var j = col - latent_cols
+        var gate = gate_up_fn[width]((row, j)).cast[.float32]()
+        var up = gate_up_fn[width]((row, j + half_cols)).cast[.float32]()
+        # `beta * tanh(gate / beta) * sigmoid(gate) * up`, in the operation
+        # order of the graph's SiTU chain the exit used to run.
+        var situ = beta * tanh(gate / beta)
+        situ = situ * sigmoid(gate)
+        if linear_beta != 0.0:
+            up = linear_beta * tanh(up / linear_beta)
+        output.store[width=width](idx, (situ * up).cast[dtype]())
+
+    elementwise[simd_width, _trace_description="moe.exit.act.concat"](
+        body, output.layout.shape_coord(), context
+    )
 
 
 # Function to perform warp-level sorting

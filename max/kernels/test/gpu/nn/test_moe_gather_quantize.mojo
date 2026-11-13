@@ -956,6 +956,321 @@ def run_sort_case[
     _ = cand_s_h
 
 
+@inline(.always)
+def _bf16_rne(x: Float32) -> Scalar[.bfloat16]:
+    """Rounds an fp32 to bf16, nearest-even, as the graph's `.cast` does."""
+    var bits = UInt32(bitcast[.uint32](x))
+    var lsb = (bits >> 16) & UInt32(1)
+    var rounded = bits + UInt32(0x7FFF) + lsb
+    return bitcast[.bfloat16](UInt16(rounded >> 16))
+
+
+@inline(.always)
+def _bf16_neighbour(v: Scalar[.bfloat16], up: Bool) -> Scalar[.bfloat16]:
+    """The next bf16 value above (or below) `v`, in magnitude."""
+    var bits = UInt16(bitcast[.uint16](v))
+    var magnitude = bits & UInt16(0x7FFF)
+    if magnitude == UInt16(0x7FFF):
+        return v
+    if up:
+        return bitcast[.bfloat16](bits + UInt16(1))
+    return bitcast[.bfloat16](bits - UInt16(1))
+
+
+@inline(.always)
+def _rounding_probe(v: Scalar[.bfloat16], col: Int) -> Float32:
+    """An fp32 value that needs rounding to become a bf16, cycling the cases.
+
+    Every fourth column takes one of: the value itself (a control that must
+    round to itself), the exact midpoint to the neighbour above, the midpoint
+    to the neighbour below (both are round-to-nearest-EVEN ties, so they land
+    on whichever side has an even mantissa), and a quarter step, which is not
+    a tie and must round back to `v`. A kernel that truncates, or that rounds
+    half away from zero, gets one of these wrong.
+    """
+    var base = v.cast[.float32]()
+    if col % 4 == 0:
+        return base
+    var other = _bf16_neighbour(v, up=col % 4 == 1).cast[.float32]()
+    if col % 4 == 3:
+        return base + (other - base) / Float32(4.0)
+    return (base + other) / Float32(2.0)
+
+
+@inline(.always)
+def _nan() -> Float32:
+    """A quiet NaN: the poison the wide row's pad columns carry."""
+    return bitcast[.float32](UInt32(0x7FC00000))
+
+
+def run_sort_fp32_wide_case[
+    num_experts: Int = NUM_EXPERTS, num_cols: Int = LATENT, topk: Int = TOPK
+](num_tokens: Int, spread: String, ctx: DeviceContext) raises:
+    """The same rows read as `float32` out of a wider buffer.
+
+    The graph used to round the merged entry GEMM's fp32 latent to bfloat16
+    in its own launch. The kernel now rounds each value itself, so feeding
+    it those fp32 columns -- the latent leading a wider row, exactly as
+    that GEMM writes them -- must produce byte-identical payloads and
+    scales to the bf16 input.
+    """
+    comptime scale_cols = num_cols // SF
+    # The merged entry GEMM's shared gate/up and router columns follow the
+    # latent; the quantize must not read them, so they are poison: NaN turns
+    # any over-read into a NaN payload or block scale instead of a value that
+    # happens to match.
+    comptime pad_cols = 64
+    comptime wide_cols = num_cols + pad_cols
+    var slots = num_tokens * topk
+    var topk_h = gen_topk_ids[num_experts, topk](spread, num_tokens, 7)
+    var latent_h = gen_latent[num_cols](num_tokens, 11)
+    # The wide row carries fp32 values that NEED the in-kernel rounding,
+    # including round-to-nearest-even ties, and `expect_h` is what the graph's
+    # own `.cast(DType.bfloat16)` would write for them -- the reference reads
+    # that, so a kernel that truncates or rounds ties the wrong way fails.
+    var expect_h = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * num_cols
+    )
+    var wide_h = List[Scalar[.float32]]()
+    for row in range(num_tokens):
+        for col in range(wide_cols):
+            if col < num_cols:
+                var probe = _rounding_probe(latent_h[row * num_cols + col], col)
+                wide_h.append(probe)
+                expect_h[row * num_cols + col] = _bf16_rne(probe)
+            else:
+                wide_h.append(_nan())
+
+    var topk_d = ctx.enqueue_create_buffer[.int32](slots)
+    var expect_d = ctx.enqueue_create_buffer[.bfloat16](num_tokens * num_cols)
+    var wide_d = ctx.enqueue_create_buffer[.float32](num_tokens * wide_cols)
+    var ref_order_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var ref_start_d = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var ref_restore_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var ref_ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var ref_stats_d = ctx.enqueue_create_buffer[.uint32](2)
+    var ref_q_d = ctx.enqueue_create_buffer[.float8_e4m3fn](slots * num_cols)
+    var ref_s_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slots * scale_cols)
+    var cand_order_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var cand_start_d = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var cand_restore_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var cand_ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var cand_stats_d = ctx.enqueue_create_buffer[.uint32](2)
+    var cand_q_d = ctx.enqueue_create_buffer[.float8_e4m3fn](slots * num_cols)
+    var cand_s_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+
+    ctx.enqueue_copy(topk_d, topk_h)
+    ctx.enqueue_copy(expect_d, expect_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+
+    var topk_tt = TileTensor(topk_d, row_major(slots))
+    var expect_tt = TileTensor(expect_d, row_major(num_tokens, num_cols))
+    var wide_tt = TileTensor(wide_d, row_major(num_tokens, wide_cols))
+    var ref_order_tt = TileTensor(ref_order_d, row_major(slots))
+    var ref_start_tt = TileTensor(ref_start_d, row_major(num_experts + 1))
+    var ref_restore_tt = TileTensor(ref_restore_d, row_major(slots))
+    var ref_ids_tt = TileTensor(ref_ids_d, row_major(num_experts))
+    var ref_stats_tt = TileTensor(ref_stats_d, row_major(2))
+    var ref_q_tt = TileTensor(ref_q_d, row_major(slots, num_cols))
+    var ref_s_tt = TileTensor(ref_s_d, row_major(slots, scale_cols))
+    var cand_order_tt = TileTensor(cand_order_d, row_major(slots))
+    var cand_start_tt = TileTensor(cand_start_d, row_major(num_experts + 1))
+    var cand_restore_tt = TileTensor(cand_restore_d, row_major(slots))
+    var cand_ids_tt = TileTensor(cand_ids_d, row_major(num_experts))
+    var cand_stats_tt = TileTensor(cand_stats_d, row_major(2))
+    var cand_q_tt = TileTensor(cand_q_d, row_major(slots, num_cols))
+    var cand_s_tt = TileTensor(cand_s_d, row_major(slots, scale_cols))
+
+    # The reference reads the bf16 rows the graph's cast writes.
+    moe_sort_gather_quantize_mx_amd[num_experts=num_experts, num_cols=num_cols](
+        ctx,
+        ref_q_tt,
+        ref_s_tt,
+        expect_tt,
+        ref_order_tt,
+        ref_start_tt,
+        ref_restore_tt,
+        ref_ids_tt,
+        ref_stats_tt,
+        topk_tt,
+        topk,
+    )
+    # The candidate reads the wide fp32 columns and rounds them itself.
+    moe_sort_gather_quantize_mx_amd[num_experts=num_experts, num_cols=num_cols](
+        ctx,
+        cand_q_tt,
+        cand_s_tt,
+        wide_tt,
+        cand_order_tt,
+        cand_start_tt,
+        cand_restore_tt,
+        cand_ids_tt,
+        cand_stats_tt,
+        topk_tt,
+        topk,
+    )
+
+    var ref_order_h = ctx.enqueue_create_host_buffer[.uint32](slots)
+    var ref_q_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var ref_s_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    var cand_order_h = ctx.enqueue_create_host_buffer[.uint32](slots)
+    var cand_q_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var cand_s_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    ctx.enqueue_copy(ref_order_h, ref_order_d)
+    ctx.enqueue_copy(ref_q_h, ref_q_d)
+    ctx.enqueue_copy(ref_s_h, ref_s_d)
+    ctx.enqueue_copy(cand_order_h, cand_order_d)
+    ctx.enqueue_copy(cand_q_h, cand_q_d)
+    ctx.enqueue_copy(cand_s_h, cand_s_d)
+    ctx.synchronize()
+
+    check_sort_bytes_per_source[topk, num_cols](
+        ref_order_h, ref_q_h, ref_s_h, cand_order_h, cand_q_h, cand_s_h, slots
+    )
+    print(
+        "ok sortfused fp32-wide M=",
+        num_tokens,
+        " K=",
+        wide_cols,
+        " spread=",
+        spread,
+        sep="",
+    )
+
+    # The other two arms that take the same `num_cols` window -- the
+    # fan-out gather+quantize and the source-major scatter+quantize, both
+    # prefill-sized -- must round the wide fp32 columns the same way. They
+    # read `token_expert_order` / `restore_token_order`, so the sort above
+    # supplies the two orders and both arms are run twice: once over the
+    # bf16 rows the graph's cast writes, once over the fp32 window.
+    var gather_ref_q = ctx.enqueue_create_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var gather_ref_s = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    var gather_cand_q = ctx.enqueue_create_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var gather_cand_s = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    var scatter_ref_q = ctx.enqueue_create_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var scatter_ref_s = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    var scatter_cand_q = ctx.enqueue_create_buffer[.float8_e4m3fn](
+        slots * num_cols
+    )
+    var scatter_cand_s = ctx.enqueue_create_buffer[.float8_e8m0fnu](
+        slots * scale_cols
+    )
+    moe_gather_quantize_mx_amd(
+        ctx,
+        TileTensor(gather_ref_q, row_major(slots, num_cols)),
+        TileTensor(gather_ref_s, row_major(slots, scale_cols)),
+        expect_tt,
+        ref_order_tt,
+        topk,
+    )
+    moe_gather_quantize_mx_amd(
+        ctx,
+        TileTensor(gather_cand_q, row_major(slots, num_cols)),
+        TileTensor(gather_cand_s, row_major(slots, scale_cols)),
+        wide_tt,
+        ref_order_tt,
+        topk,
+    )
+    moe_source_scatter_quantize_mx_amd[num_cols=num_cols](
+        ctx,
+        TileTensor(scatter_ref_q, row_major(slots, num_cols)),
+        TileTensor(scatter_ref_s, row_major(slots, scale_cols)),
+        expect_tt,
+        ref_restore_tt,
+        topk,
+    )
+    moe_source_scatter_quantize_mx_amd[num_cols=num_cols](
+        ctx,
+        TileTensor(scatter_cand_q, row_major(slots, num_cols)),
+        TileTensor(scatter_cand_s, row_major(slots, scale_cols)),
+        wide_tt,
+        ref_restore_tt,
+        topk,
+    )
+    for arm in range(2):
+        var ref_q_buf = gather_ref_q if arm == 0 else scatter_ref_q
+        var ref_s_buf = gather_ref_s if arm == 0 else scatter_ref_s
+        var cand_q_buf = gather_cand_q if arm == 0 else scatter_cand_q
+        var cand_s_buf = gather_cand_s if arm == 0 else scatter_cand_s
+        var ref_q_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
+            slots * num_cols
+        )
+        var ref_s_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+            slots * scale_cols
+        )
+        var cand_q_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
+            slots * num_cols
+        )
+        var cand_s_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
+            slots * scale_cols
+        )
+        ctx.enqueue_copy(ref_q_h, ref_q_buf)
+        ctx.enqueue_copy(ref_s_h, ref_s_buf)
+        ctx.enqueue_copy(cand_q_h, cand_q_buf)
+        ctx.enqueue_copy(cand_s_h, cand_s_buf)
+        ctx.synchronize()
+        for p in range(slots * num_cols):
+            # Compare the stored bytes: the fp8 scalars do not lower to a
+            # float compare.
+            assert_equal(
+                bitcast[.uint8](cand_q_h[p]),
+                bitcast[.uint8](ref_q_h[p]),
+                String(
+                    t"the fp32 window's payload differs from the graph cast's"
+                    t" in arm {arm} at {p}"
+                ),
+            )
+        for p in range(slots * scale_cols):
+            assert_equal(
+                bitcast[.uint8](cand_s_h[p]),
+                bitcast[.uint8](ref_s_h[p]),
+                String(
+                    t"the fp32 window's scales differ from the graph cast's"
+                    t" in arm {arm} at {p}"
+                ),
+            )
+    print(
+        "ok fp32-wide arms M=",
+        num_tokens,
+        " K=",
+        wide_cols,
+        " spread=",
+        spread,
+        sep="",
+    )
+
+    _ = ref_start_d
+    _ = ref_restore_d
+    _ = ref_ids_d
+    _ = ref_stats_d
+    _ = cand_start_d
+    _ = cand_restore_d
+    _ = cand_ids_d
+    _ = cand_stats_d
+
+
 def run_sort_out_of_range_case[
     num_experts: Int = NUM_EXPERTS, num_cols: Int = LATENT, topk: Int = TOPK
 ](num_tokens: Int, ctx: DeviceContext) raises:
@@ -2323,6 +2638,13 @@ def main() raises:
         for m in [1, 8, 16, 32, 64]:
             for spread in ["u", "s", "p"]:
                 run_sort_case(m, spread, ctx)
+
+        # The same rows as the merged entry GEMM writes them: fp32, the
+        # latent leading a wider row, so the kernel rounds each value and
+        # the separate bf16 cast launch is gone.
+        for m in [1, 16, 64]:
+            for spread in ["u", "s", "p"]:
+                run_sort_fp32_wide_case(m, spread, ctx)
 
         # A small latent width shrinks the CTA below one warp, taking the
         # kernel's LDS-atomic fold instead of the warp-shuffle reduce.

@@ -75,7 +75,15 @@ from __future__ import annotations
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, Graph, TensorValue, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
+from max.graph.dim import StaticDim
 from max.nn import Linear, Module
 from max.nn._graph_ops import (
     amd_mega_ffn_workspace_words,
@@ -206,7 +214,11 @@ quantize_mxfp8 = F.functional(_quantize_mxfp8)
 
 
 def _moe_sort_gather_quantize_mxfp8(
-    latent: Tensor, flat_idx: Tensor, topk: int, num_experts: int
+    activations: Tensor,
+    flat_idx: Tensor,
+    topk: int,
+    num_experts: int,
+    cols: int,
 ) -> tuple[TensorValue, ...]:
     """The fused expert sort + fan-out gather + MXFP8 quantize.
 
@@ -219,17 +231,101 @@ def _moe_sort_gather_quantize_mxfp8(
     ``expert_ids`` and the usage stats stay byte-identical to
     ``moe_create_indices``'s; the order is a valid grouping whose
     intra-expert positions were never load-bearing.
+
+    ``activations`` may be wider than ``cols``: the merged entry GEMM writes
+    the latent as the leading columns of one fp32 result, so the op reads
+    that window in place rather than a contiguous copy of it, and it rounds
+    through bfloat16 itself -- the separate ``.cast`` launch is gone.
     """
     return moe_sort_gather_quantize_dynamic_block_scaled(
-        TensorValue(latent),
+        TensorValue(activations),
         TensorValue(flat_idx),
         sf_vector_size=_SF_VECTOR_SIZE,
         topk=topk,
         num_experts=num_experts,
+        cols=cols,
     )
 
 
 moe_sort_gather_quantize_mxfp8 = F.functional(_moe_sort_gather_quantize_mxfp8)
+
+
+def _moe_exit_act_concat(
+    latent: TensorValue,
+    gate_up: TensorValue,
+    *,
+    beta: float,
+    linear_beta: float | None,
+) -> TensorValue:
+    """The exit GEMM's ``[normed latent | shared SiTU-and-mul]``, one launch.
+
+    Runs the shared expert's SiTU-and-mul straight into the concatenation's
+    own destination beside the normed latent, so the elementwise and the
+    concat that produced this activation as two launches are one kernel.
+
+    Args:
+        latent: ``[T, latent_cols]`` normed latent, this device's slice.
+        gate_up: ``[T, 2 * half_cols]`` shared gate/up projection, gate
+            half first.
+        beta: ``config.activation_situ_beta``.
+        linear_beta: ``config.activation_situ_linear_beta``, or ``None`` for
+            no up-half saturation.
+
+    Returns:
+        ``[T, latent_cols + half_cols]`` in ``latent``'s dtype.
+    """
+    if latent.rank != 2 or gate_up.rank != 2:
+        raise ValueError("the exit activation's inputs must be rank 2")
+    if latent.dtype != gate_up.dtype:
+        raise ValueError("the exit activation's inputs must share a dtype")
+    latent_dim, gate_dim = latent.shape[1], gate_up.shape[1]
+    if not isinstance(latent_dim, StaticDim) or not isinstance(
+        gate_dim, StaticDim
+    ):
+        raise ValueError(
+            "the exit activation needs static latent and gate/up widths"
+        )
+    # `Dim` is not an `int`: narrow each to one before the arithmetic.
+    latent_cols = int(latent_dim)
+    gate_cols = int(gate_dim)
+    if gate_cols % 2 != 0:
+        raise ValueError("the exit activation's gate/up width must be even")
+    half_cols = gate_cols // 2
+    # One thread per 8-element vector, packed: the kernel branches on which
+    # side of `latent_cols` a vector sits, so the boundary and both halves
+    # are whole vectors.
+    vector_width = 8
+    simd_width = (
+        vector_width
+        if latent_cols % vector_width == 0 and half_cols % vector_width == 0
+        else 1
+    )
+    result = ops.custom(
+        "moe.exit.act.concat",
+        device=latent.device,
+        values=[
+            latent,
+            gate_up,
+            ops.constant(beta, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(
+                linear_beta if linear_beta is not None else 0.0,
+                DType.float32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=latent.dtype,
+                shape=[latent.shape[0], latent_cols + half_cols],
+                device=latent.device,
+            )
+        ],
+        parameters={"simd_width": simd_width},
+    )
+    return result[0].tensor
+
+
+moe_exit_act_concat = F.functional(_moe_exit_act_concat)
 
 
 def _amd_w4a8_grouped_matmul(
@@ -617,7 +713,13 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         mesh = self.routed_expert_down_proj.weight.mesh
         sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         if sharded:
-            shared_gate_up, latent, logits = self._merged_entry(hidden_states)
+            # `latent` comes back in the merged GEMM's own dtype, which is
+            # fp32 when the router rode it (its logits keep their fp32
+            # accumulation). The W4A8 quantize below rounds it through
+            # bfloat16 itself, so only the ragged path pays that cast.
+            entry, shared_gate_up, latent, logits = self._merged_entry(
+                hidden_states
+            )
             topk_idx, topk_weight = (
                 self.gate(hidden_states)
                 if logits is None
@@ -626,6 +728,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         else:
             topk_idx, topk_weight = self.gate(hidden_states)
             latent = self.routed_expert_down_proj(hidden_states)
+            # At TP=1 nothing merges: the entry projection is its own GEMM
+            # and the latent is all of its result.
+            entry = latent
 
         flat_idx = F.cast(F.reshape(topk_idx, [-1]), DType.int32)
 
@@ -654,10 +759,11 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 quantized,
                 act_scales,
             ) = moe_sort_gather_quantize_mxfp8(
-                latent,
+                entry,
                 flat_idx,
                 self.num_experts_per_token,
                 self.num_experts,
+                cols=int(latent.shape[1]),
             )
             usage_stats = amd_moe_usage_stats(
                 expert_ids, latent, self.max_tokens_per_expert
@@ -738,6 +844,11 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 DeviceMapping(mesh, (Partial(),))
             )
         else:
+            # The ragged grouped GEMM reads bfloat16 expert inputs, so the
+            # fp32 latent the merged entry GEMM hands back needs the cast the
+            # W4A8 quantize does itself.
+            if latent.dtype != self.routed_expert_down_proj.weight.dtype:
+                latent = latent.cast(self.routed_expert_down_proj.weight.dtype)
             (
                 token_expert_order,
                 expert_start_indices,
@@ -775,9 +886,17 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             )
 
         # The weight multiply and the unpermute both happen here, IN THE
-        # LATENT, before the norm and before the exit projection.
+        # LATENT, before the norm and before the exit projection. The model
+        # dtype, not `latent.dtype`: the merged entry GEMM writes float32
+        # whenever the router rides it, and `combined` must stay bfloat16 so
+        # the exit matches every other path byte for byte and
+        # `allreduce_rms_norm` keeps its fused one-launch kernel (it is
+        # bfloat16-only).
         combined = moe_finalize(
-            expert_out, restore_token_order, topk_weight, latent.dtype
+            expert_out,
+            restore_token_order,
+            topk_weight,
+            self.routed_expert_down_proj.weight.dtype,
         )
         if sharded:
             # The norm rides the allreduce in one collective launch. The
@@ -815,48 +934,69 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             axis=-1,
         )
         dtype = weight.dtype
-        act = F.concat(
-            [
-                normed.to(NamedMapping(mesh, (None, TP))).cast(dtype),
-                self.shared_experts.situ_and_mul(shared_gate_up).cast(dtype),
-            ],
-            axis=-1,
-        )
+        latent_slice = normed.to(NamedMapping(mesh, (None, TP))).cast(dtype)
+        if self.amd_tp_w4a8:
+            # AMD W4A8 runs the shared activation and the concat as one
+            # kernel: the elementwise writes its SiTU-and-mul straight into
+            # the concatenation's destination beside the normed latent.
+            act = moe_exit_act_concat(
+                latent_slice,
+                shared_gate_up,
+                beta=self.beta,
+                linear_beta=self.linear_beta,
+            ).rebind_mapping(NamedMapping(mesh, (None, TP)))
+        else:
+            act = F.concat(
+                [
+                    latent_slice,
+                    self.shared_experts.situ_and_mul(shared_gate_up).cast(
+                        dtype
+                    ),
+                ],
+                axis=-1,
+            )
         return F.allreduce_sum(act @ weight.T, mesh_axis=TP)
 
     def _merged_entry(
         self, hidden_states: Tensor
-    ) -> tuple[Tensor, Tensor, Tensor | None]:
-        """Runs the shared gate/up, the routed entry and the router as ONE GEMM.
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor | None]:
+        """Runs the routed entry, the shared gate/up and the router as ONE GEMM.
 
         All three read the same ``hidden_states``, and at decode row counts
         each GEMM alone is too narrow to fill the GPU. Every device's merged
-        weight is its own gate/up rows followed by the whole replicated
-        entry and router weights, so the merged weight is TP-sharded with
-        those two repeated in every shard, and the split below acts per
-        device too. The concat reads parameters only, so it runs once at
-        model initialization.
+        weight is the whole replicated entry's rows, then its own gate/up
+        rows, then the whole replicated router's, so the merged weight is
+        TP-sharded with the two replicated parts repeated in every shard, and
+        the split below acts per device too. The concat reads parameters
+        only, so it runs once at model initialization.
+
+        The latent leads the merged result, so a consumer that quantizes it
+        reads the leading columns of the one GEMM output in place instead of
+        a contiguous copy of them.
 
         The router joins only when its weight has the others' dtype, as a
         checkpoint loads it. The GEMM then writes fp32, so the router logits
-        keep their fp32 accumulation, and the gate/up and latent round to the
-        weight dtype once, as their own GEMMs would.
+        keep their fp32 accumulation, and the gate/up rounds to the weight
+        dtype once, as its own GEMM would. The latent comes back in the
+        GEMM's dtype, un-rounded: a caller that needs bfloat16 rounds it
+        (the W4A8 quantize does that itself, inside its gather kernel).
 
         Returns:
-            The shared expert's ``gate_up_proj`` output, sharded as
-            ``gate_up_proj`` itself returns it, the replicated latent, and the
-            replicated fp32 router logits, or ``None`` when the router did not
-            join.
+            The one GEMM's output, the shared expert's ``gate_up_proj``
+            output, sharded as ``gate_up_proj`` itself returns it, the
+            replicated latent in the GEMM's output dtype (the leading
+            slice of that output), and the replicated fp32 router logits,
+            or ``None`` when the router did not join.
         """
         entry = self.routed_expert_down_proj.weight
         router = self.gate.gate_score.weight
         mesh = entry.mesh
         dtype = entry.dtype
         tp_size = mesh.axis_size(TP)
-        weights = [self.shared_experts.gate_up_proj.weight, entry]
+        weights = [entry, self.shared_experts.gate_up_proj.weight]
         widths = [
-            2 * self.shared_experts.intermediate_size,
             tp_size * self.latent_size,
+            2 * self.shared_experts.intermediate_size,
         ]
         if router.dtype == dtype:
             weights.append(router)
@@ -871,11 +1011,12 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             weight.T,
             out_dtype=DType.float32 if len(weights) == 3 else dtype,
         )
-        shared_gate_up, latent, *logits = out.split(widths, axis=-1)
+        latent, shared_gate_up, *logits = out.split(widths, axis=-1)
         replicated = NamedMapping(mesh, (None, None))
         return (
+            out,
             shared_gate_up.cast(dtype),
-            latent.cast(dtype).rebind_mapping(replicated),
+            latent.rebind_mapping(replicated),
             logits[0].rebind_mapping(replicated) if logits else None,
         )
 
