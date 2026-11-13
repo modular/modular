@@ -1421,6 +1421,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             self._impl.enqueue_memset(dst._impl, val)
 
+    # The enqueued task holds a pointer to `func`.
+    @inline(.always)
     def enqueue_cpu_range[
         FuncType: def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
@@ -1441,6 +1443,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             self._impl.enqueue_cpu_range(func, count)
 
+    # The enqueued task holds a pointer to `func`.
+    @inline(.always)
     def enqueue_cpu_function[
         FuncType: def() -> None,
     ](self, func: FuncType) raises:
