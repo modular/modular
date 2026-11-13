@@ -177,5 +177,13 @@ ErrorOrSuccess M::parseTargetOptions(const TargetArgs &targetArgs,
     return targetOr.takeError();
   target = targetOr.takeValue();
 
+  // The target machine is built from `compilationOptions`, not `target`.
+  if (hasGccStyleOptions) {
+    compilationOptions.targetTriple = target.getTripleStr();
+    compilationOptions.targetCpu = target.getArch();
+    compilationOptions.targetFeatures = target.getFeatures();
+    compilationOptions.targetAbi = target.getAbi();
+  }
+
   return success();
 }
