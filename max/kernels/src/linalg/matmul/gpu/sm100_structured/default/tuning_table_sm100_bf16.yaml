@@ -828,3 +828,61 @@ params:
   K_GROUP_SIZE: 2
   NUM_ACCUM_PIPELINE_STAGES: 2
   NUM_CLC_PIPELINE_STAGES: 2
+
+# MiniMax-H3 DiT linears, the packed-row band of a 4-15 s clip
+# (M = 33152..111680; the band below covers it with headroom). Measured on
+# B200 against the heuristic config these shapes used to take
+# (256x256, cl 2x1, swizzle 8, rst 1, auto 6 stages, no swapAB) over eight M
+# points of the band; each row wins at every M in its band:
+#   qkv     N21504 K5376  swapAB         -2.6% sum, -1.3..-3.2% per M
+#   gate_up N28672 K5376  swapAB         -1.7% sum, -0.4..-2.7% per M
+#   out     N5376  K7168  256x224        -6.9% sum, -4.7..-7.8% per M
+#   down    N5376  K14336 256x224        -4.9% sum, -4.2..-5.5% per M
+# Together -1.91 ms per block at M=109632 (-95 ms per 50-block forward) and
+# -0.40 ms per block at M=33152.
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 21504
+  K: 5376
+  MMA_M: 256
+  MMA_N: 256
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 28672
+  K: 5376
+  MMA_M: 256
+  MMA_N: 256
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 5376
+  K: 7168
+  MMA_M: 256
+  MMA_N: 224
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
+- <<: *defaults
+  M: 32768
+  M_END: 131072
+  N: 5376
+  K: 14336
+  MMA_M: 256
+  MMA_N: 224
+  CLUSTER_X: 2
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 8
+  RASTERIZE_ORDER: 1
