@@ -42,17 +42,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.legacy.comm import Signals
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
-    mrope_pos_ids_3d,
-)
-from max.pipelines.architectures.qwen3vl_moe.model_config import VisionConfig
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
+from max.pipelines.architectures.qwen3_5.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
     get_seqlens,
+    mrope_pos_ids_3d,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
-    VisionTransformer,
+from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
+    Qwen3_5VisionTransformer,
 )
+from max.pipelines.architectures.qwen3_5.model_config import VisionConfig
 
 # Small but structurally faithful: merge_size and temporal_patch_size are the
 # checkpoint's, and hidden_size stays divisible by the head count.
@@ -91,7 +89,7 @@ def _config(
 
 
 def _random_weights(
-    encoder: VisionTransformer, seed: int
+    encoder: Qwen3_5VisionTransformer, seed: int
 ) -> dict[str, npt.NDArray[np.float32]]:
     """Small random values for every declared weight, in float32."""
     rng = np.random.default_rng(seed)
@@ -124,7 +122,7 @@ def compiled(request: pytest.FixtureRequest):  # noqa: ANN201
     device = DeviceRef.GPU(0)
     accelerator = Accelerator(0)
     session = InferenceSession(devices=[accelerator])
-    encoder = VisionTransformer(_config(device, request.param))
+    encoder = Qwen3_5VisionTransformer(_config(device, request.param))
     # `load_state_dict` is what gives every weight its fully-qualified name;
     # without it several submodules present an unprefixed `weight` and the
     # graph rejects the second one.

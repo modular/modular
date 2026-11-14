@@ -36,7 +36,10 @@ from max.driver import CPU, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.legacy.image_preprocess import image_preprocess_input_types
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+from max.pipelines.architectures.qwen3_5.data_processing import (
+    QWEN3_5_MAX_PIXELS,
+    get_bilinear_interpolation_weights_and_indices,
+    get_rope_index,
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen3_5.layers.visual_transformer import (
@@ -46,20 +49,15 @@ from max.pipelines.architectures.qwen3_5.model import Qwen3_5Model
 from max.pipelines.architectures.qwen3_5.preprocess_graph import (
     Qwen3_5ImagePreprocess,
 )
-from max.pipelines.architectures.qwen3_5.vision_packing import (
-    pack_uncached_images,
+from max.pipelines.architectures.qwen3_5.tokenizer import (
+    Qwen3_5ImageProcessor,
 )
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    QWEN3VL_MAX_PIXELS,
-    get_bilinear_interpolation_weights_and_indices,
-    get_rope_index,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
+from max.pipelines.architectures.qwen3_5.video_processing import (
     clip_grid,
     patchify_clip,
 )
-from max.pipelines.architectures.qwen3vl_moe.tokenizer import (
-    Qwen3VLImageProcessor,
+from max.pipelines.architectures.qwen3_5.vision_packing import (
+    pack_uncached_images,
 )
 from max.pipelines.lib.graph_specs import (
     GraphRole,
@@ -131,7 +129,7 @@ _CASES: dict[str, Callable[[], Image.Image]] = {
     "palette_transparency": palette_with_transparency,
 }
 
-# An image shrinks only past QWEN3VL_MAX_PIXELS, so the chart clip, which
+# An image shrinks only past QWEN3_5_MAX_PIXELS, so the chart clip, which
 # the clip budget shrinks, covers downscaling.
 _CHARTS: dict[str, Callable[[], Image.Image]] = {
     "round_501x333": lambda: chart(333, 501),
@@ -146,12 +144,12 @@ def _processed(
     tokenizer computes them."""
     # The tokenizer's image loader converts every image to RGB.
     rgb = image if image.mode == "RGB" else image.convert("RGB")
-    processor = Qwen3VLImageProcessor(
+    processor = Qwen3_5ImageProcessor(
         patch_size=_PATCH,
         temporal_patch_size=_TEMPORAL_PATCH,
         merge_size=_MERGE,
         min_pixels=65536,
-        max_pixels=QWEN3VL_MAX_PIXELS,
+        max_pixels=QWEN3_5_MAX_PIXELS,
     )
     _, grid_thw, (pixel_values,) = processor([rgb])
     _, grid_h, grid_w = (int(n) for n in grid_thw[0])

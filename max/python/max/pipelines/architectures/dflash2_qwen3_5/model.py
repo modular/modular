@@ -35,11 +35,11 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
-from ..llama3.model_config import Llama3Config
 from .dflash2_qwen3_5 import DFlash2Qwen3_5
 from .model_config import (
     DRAFT_SLIDING_WINDOW,
     DFlash2Qwen3_5Config,
+    Llama3Config,
     parse_dflash2_draft_hf_config,
 )
 

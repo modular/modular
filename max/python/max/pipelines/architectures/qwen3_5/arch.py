@@ -16,13 +16,11 @@ import dataclasses
 from pathlib import Path
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Qwen3_5BatchProcessor
+from .context import Qwen3_5TextAndVisionContext
 from .model import Qwen3_5Model
 from .model_config import Qwen3_5Config
 from .reasoning import Qwen3_5ReasoningParser  # noqa: F401  registers "qwen3_5"
@@ -39,7 +37,7 @@ qwen3_5_arch = SupportedArchitecture(
     supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
     pipeline_model=Qwen3_5Model,
     tokenizer=Qwen3_5Tokenizer,
-    context_type=Qwen3VLTextAndVisionContext,
+    context_type=Qwen3_5TextAndVisionContext,
     input_modalities={
         InputModality.TEXT,
         InputModality.IMAGE,

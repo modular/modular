@@ -18,6 +18,10 @@ Each kernel from :mod:`max.nn._graph_ops` is wrapped with
 runs on sharded inputs. :mod:`max.nn.common_layers.quant_ops` dispatches onto these, and the
 on-the-fly quantizers in :mod:`max.nn.common_layers.quant_tensor` call them directly; this module
 imports neither, so both can depend on it.
+
+``quantize_static_scaled_float8`` and ``quantized_matmul`` carry no rule:
+call them on single-device tensors, such as inside
+:func:`~max.functional.call_on_mesh`.
 """
 
 from __future__ import annotations
@@ -78,11 +82,15 @@ from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn._graph_ops import (
+    quantize_static_scaled_float8 as _quantize_static_scaled_float8,
+)
+from max.nn._graph_ops import (
     rms_norm_quantize_dynamic_scaled_float8 as _rms_norm_quantize_dynamic_scaled_float8,
 )
 from max.nn._graph_ops import (
     rms_norm_quantize_dynamic_scaled_float8_dual as _rms_norm_quantize_dynamic_scaled_float8_dual,
 )
+from max.nn._graph_ops.quant import quantized_matmul as _quantized_matmul
 from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
@@ -593,6 +601,8 @@ def _mx_dequant_rule(
 
 
 nvfp4_dequant = F.functional(_nvfp4_dequant, rule=_nvfp4_dequant_rule)
+quantize_static_scaled_float8 = F.functional(_quantize_static_scaled_float8)
+quantized_matmul = F.functional(_quantized_matmul)
 mxfp4_dequant = F.functional(_mxfp4_dequant, rule=_mx_dequant_rule)
 mxfp8_dequant = F.functional(_mxfp8_dequant, rule=_mx_dequant_rule)
 
@@ -614,6 +624,8 @@ __all__ = [
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",
     "quantize_dynamic_scaled_float8",
+    "quantize_static_scaled_float8",
+    "quantized_matmul",
     "rms_norm_quantize_dynamic_scaled_float8",
     "silu_quantize_fp8",
     "stack_blockwise_mega_ffn_b",

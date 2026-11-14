@@ -91,7 +91,6 @@ def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
         vocab_size=VOCAB,
         dtype=DType.float32,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=MHAKVCacheParams(
             dtype=DType.float32,
             devices=[device],
@@ -103,10 +102,7 @@ def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
         norm_dtype=DType.float32,
         rms_norm_eps=1e-6,
         attention_multiplier=16**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=list(LAYER_TYPES),
         linear_key_head_dim=LINEAR_KEY_DIM,
         linear_value_head_dim=LINEAR_VALUE_DIM,

@@ -67,16 +67,18 @@ its ``forward``, or, so that an exported graph names its inputs and outputs
 for a serving engine, a named tree of vision groups (such as
 :class:`~max.nn.legacy.graph_groups.VisionRows`) whose fields are those
 arguments' names. It can also have the classmethods
-``vision_metadata(pipeline_config, config)`` and
-``vision_preprocess_spec(pipeline_config, config)``, which take the config
-the module is constructed with. The pipeline model's ``vision_metadata_for``
-and ``vision_preprocess_spec_for`` return them, so that ``max export``
-records the media layout and the image preprocessing graph a serving engine
-needs, both for the registration alone and for a fused speculative-decoding
-graph whose target it is. Registration checks the combination up front: a
-``VISION`` module needs a decoder that consumes the embeddings and a batch
-processor that prepares them, and a decoder that consumes them needs a
-``VISION`` module.
+``vision_metadata(pipeline_config, config)``,
+``vision_preprocess_spec(pipeline_config, config)`` and
+``vision_preprocess_video_spec(pipeline_config, config)``, which take the
+config the module is constructed with. The pipeline model's
+``vision_metadata_for``, ``vision_preprocess_spec_for`` and
+``vision_preprocess_video_spec_for`` return them, so that ``max export``
+records the media layout and the image and video preprocessing graphs a
+serving engine needs, both for the registration alone and for a fused
+speculative-decoding graph whose target it is. Registration checks the
+combination up front: a ``VISION`` module needs a decoder that consumes the
+embeddings and a batch processor that prepares them, and a decoder that
+consumes them needs a ``VISION`` module.
 
 A registration can also add a ``BLOCK_DIFFUSION`` module, one denoise step
 over a canvas, beside the ``DECODER``, which then commits tokens into the KV
@@ -109,6 +111,7 @@ from typing import (
 )
 
 import numpy as np
+import numpy.typing as npt
 from max import functional as F
 from max import tree
 from max._artifact.vision import VisionMetadata
@@ -235,6 +238,7 @@ __all__ = [
     "graph_name",
     "module_pipeline_model",
     "supports_pipeline_stages",
+    "token_position_type",
 ]
 
 # Roles that the framework builds, never an architecture.
@@ -330,6 +334,26 @@ def supports_multi_device_replicas(module_cls: type[Module[..., Any]]) -> bool:
     an equal share of them: it is constructed on a ``dp`` by ``tp`` mesh.
     """
     return bool(getattr(module_cls, "supports_multi_device_replicas", False))
+
+
+def token_position_type(
+    module_cls: type[Module[..., Any]], config: object, device_ref: DeviceRef
+) -> TensorType | None:
+    """Returns a registered decoder's ``token_positions`` input type.
+
+    A decoder that sets ``token_position_dtype`` takes each ragged token's
+    absolute position, ``[total_seq_len]``. One with a
+    ``token_position_type(config, device_ref)`` classmethod declares its
+    own, such as M-RoPE's ``[3, total_seq_len]`` positions, or ``None`` for
+    a config that takes none. Its batch processor fills them.
+    """
+    declared = getattr(module_cls, "token_position_type", None)
+    if declared is not None:
+        return declared(config, device_ref)
+    dtype = getattr(module_cls, "token_position_dtype", None)
+    if dtype is None:
+        return None
+    return TensorType(dtype, ["total_seq_len"], device=device_ref)
 
 
 def consumes_vision(module_cls: type[Module[..., Any]]) -> bool:
@@ -828,24 +852,9 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         if self.input_tree is not None and "token_positions" in self.input_tree:
             position_type = self.input_tree["token_positions"]
             assert isinstance(position_type, TensorType)
-            positions = (
-                np.concatenate(
-                    [
-                        np.arange(
-                            ctx.tokens.current_position
-                            - ctx.tokens.active_length,
-                            ctx.tokens.current_position,
-                            dtype=position_type.dtype.to_numpy(),
-                        )
-                        for ctx in context_batch
-                    ]
-                )
-                if context_batch
-                else np.empty(0, dtype=position_type.dtype.to_numpy())
-            )
-            inputs.token_positions = Buffer.from_numpy(positions).to(
-                position_type.device.to_device()
-            )
+            inputs.token_positions = Buffer.from_numpy(
+                self.token_positions(context_batch, position_type)
+            ).to(position_type.device.to_device())
         if data_parallel_degree > 1:
             inputs.host_input_row_offsets = Buffer.from_numpy(input_row_offsets)
             inputs.data_parallel_splits = Buffer.from_numpy(
@@ -869,6 +878,28 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
         if self.scratch is not None:
             inputs.scratch = self.scratch.buffers
         return inputs
+
+    def token_positions(
+        self, context_batch: Sequence[TextContext], position_type: TensorType
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Returns each ragged token's absolute position in its sequence.
+
+        A decoder that declares positions of another shape overrides this
+        in its batch processor.
+        """
+        dtype = position_type.dtype.to_numpy()
+        if not context_batch:
+            return np.empty(0, dtype=dtype)
+        return np.concatenate(
+            [
+                np.arange(
+                    ctx.tokens.current_position - ctx.tokens.active_length,
+                    ctx.tokens.current_position,
+                    dtype=dtype,
+                )
+                for ctx in context_batch
+            ]
+        )
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
@@ -1411,6 +1442,19 @@ class ModuleV3DecoderPipelineModel(
             self.pipeline_config, self._vision_config
         )
 
+    def vision_preprocess_video_spec(self) -> GraphSpec | None:
+        """Returns the built ``VISION`` module's video preprocessing graph.
+
+        It reads :meth:`vision_preprocess_video_spec_for` with the config
+        the module is built with. ``None`` before the module is built, or
+        when it isn't.
+        """
+        if self._vision_config is None:
+            return None
+        return self.vision_preprocess_video_spec_for(
+            self.pipeline_config, self._vision_config
+        )
+
     @classmethod
     def vision_metadata_for(
         cls, pipeline_config: PipelineConfig, config: object
@@ -1447,6 +1491,24 @@ class ModuleV3DecoderPipelineModel(
             ``vision_preprocess_spec``.
         """
         hook = cls._vision_hook("vision_preprocess_spec", config)
+        return None if hook is None else hook(pipeline_config, config)
+
+    @classmethod
+    def vision_preprocess_video_spec_for(
+        cls, pipeline_config: PipelineConfig, config: object
+    ) -> GraphSpec | None:
+        """Returns the ``VISION`` module's ``vision_preprocess_video_spec``.
+
+        Args:
+            pipeline_config: The pipeline's configuration.
+            config: The finalized config the ``VISION`` module is built with.
+
+        Returns:
+            The graph that preprocesses one segment of a video clip, or
+            ``None`` when no ``VISION`` module serves ``config`` or it
+            declares no ``vision_preprocess_video_spec``.
+        """
+        hook = cls._vision_hook("vision_preprocess_video_spec", config)
         return None if hook is None else hook(pipeline_config, config)
 
     @classmethod
@@ -1545,14 +1607,8 @@ class ModuleV3DecoderPipelineModel(
             self.device_refs[0],
             data_parallel_degree=self._data_parallel_degree,
             vision=self._decoder_vision_inputs(model_config),
-            token_positions=(
-                TensorType(
-                    decoder_cls.token_position_dtype,
-                    ["total_seq_len"],
-                    device=self.device_refs[0],
-                )
-                if hasattr(decoder_cls, "token_position_dtype")
-                else None
+            token_positions=token_position_type(
+                decoder_cls, model_config, self.device_refs[0]
             ),
             batch_context_lengths=self._batch_context_length_types(
                 model_config

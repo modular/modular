@@ -126,7 +126,11 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "NemotronHForCausalLM_ModuleV3": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
+    "Qwen3_5ForCausalLM_ModuleV3": ".qwen3_5_modulev3.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
+    "Qwen3_5ForConditionalGeneration_ModuleV3": (
+        ".qwen3_5_modulev3.spec_adapters"
+    ),
     "Qwen4ExpForConditionalGeneration": "qwen4_exp_spec",
 }
 

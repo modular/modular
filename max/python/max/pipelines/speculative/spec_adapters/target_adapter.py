@@ -329,8 +329,10 @@ class TargetAdapter:
 
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
-    every device count, for an engine that binds them there. ``None``
-    takes them after every other input, and none on one device."""
+    every device count, for an engine that binds them there. It counts the
+    inputs of an undistributed, text-only signature; the distributed inputs
+    and the image rows come ahead of it. ``None`` takes them after every
+    other input, and none on one device."""
 
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types

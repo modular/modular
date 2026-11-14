@@ -132,6 +132,11 @@ def register_all_models() -> None:
             "DFlash2DraftModel", ".dflash2_qwen3_5", "dflash2_qwen3_5_arch"
         ),
         _LazyArch(
+            "DFlash2DraftModel_ModuleV3",
+            ".dflash2_qwen3_5_modulev3",
+            "dflash2_qwen3_5_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DFlashKimiK25DraftModel",
             ".dflash_kimi_k25",
             "dflash_kimi_k25_draft_arch",
@@ -368,6 +373,11 @@ def register_all_models() -> None:
             "MTPQwen3_5DraftModel", ".mtp_qwen3_5", "mtp_qwen3_5_draft_arch"
         ),
         _LazyArch(
+            "MTPQwen3_5DraftModel_ModuleV3",
+            ".mtp_qwen3_5_modulev3",
+            "mtp_qwen3_5_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "MiMoV2ForCausalLM",
             ".mimo_v2_modulev3",
             "mimo_v2_modulev3_arch",
@@ -452,6 +462,16 @@ def register_all_models() -> None:
             "Qwen3_5ForConditionalGeneration", ".qwen3_5", "qwen3_5_arch"
         ),
         _LazyArch("Qwen3_5ForCausalLM", ".qwen3_5", "qwen3_5_text_arch"),
+        _LazyArch(
+            "Qwen3_5ForConditionalGeneration_ModuleV3",
+            ".qwen3_5_modulev3",
+            "qwen3_5_modulev3_arch",
+        ),
+        _LazyArch(
+            "Qwen3_5ForCausalLM_ModuleV3",
+            ".qwen3_5_modulev3",
+            "qwen3_5_text_modulev3_arch",
+        ),
         _LazyArch(
             "Qwen3ForCausalLM", ".qwen3_embedding", "qwen3_embedding_arch"
         ),

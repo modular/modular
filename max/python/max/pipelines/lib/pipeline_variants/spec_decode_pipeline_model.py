@@ -2280,11 +2280,14 @@ def _input_type_spec(
     Returns:
         The spec the signature is declared from.
     """
-    if distributed and signal_buffer_index is not None:
-        # An adapter names the slot in the undistributed signature; the
-        # distributed one declares the host offsets and the batch splits
-        # ahead of it.
-        signal_buffer_index += 2
+    if signal_buffer_index is not None:
+        # An adapter names the slot in an undistributed, text-only signature.
+        # A distributed one declares the host offsets and the batch splits
+        # ahead of it, and one that takes images each device's image rows.
+        if distributed:
+            signal_buffer_index += 2
+        if vision:
+            signal_buffer_index += 2 * len(devices)
     # The target's own collective tail, for an expert-parallel target at one
     # attention replica: it declares the buffers its forward reads without any
     # of the data-parallel scaffolding.

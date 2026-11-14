@@ -541,17 +541,28 @@ def _select_encoding_and_dtype_cast(
     return encoding, cast_from, cast_to
 
 
-def _select_quantization_encoding(
+def select_quantization_encoding(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding,
 ) -> SupportedEncoding:
     """Resolves the encoding a model will run with, against its architecture.
 
-    The consumer (an ``ArchConfig``) calls this with the architecture's
-    ``default_encoding`` to obtain the effective ``quantization_encoding``.
-    Read-only -- does not mutate *config*.
+    An ``ArchConfig`` calls this with its architecture's ``default_encoding``
+    to get the effective ``quantization_encoding``. It doesn't change
+    ``config``.
+
+    Args:
+        config: The model's config.
+        default_encoding: The encoding to use when neither ``config`` nor
+            the checkpoint names one.
+
+    Returns:
+        The encoding the model runs with.
     """
     return _select_encoding_and_dtype_cast(config, default_encoding)[0]
+
+
+_select_quantization_encoding = select_quantization_encoding
 
 
 def _select_dtype_cast(

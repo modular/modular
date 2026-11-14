@@ -21,14 +21,11 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    get_seqlens,
-)
 from max.pipelines.context import ImageMetadata
 from max.profiler import traced
+
+from .context import Qwen3_5TextAndVisionContext
+from .data_processing import get_seqlens
 
 
 @dataclass
@@ -83,7 +80,7 @@ class _ImagePiece:
 
 
 def _split_vision_data(
-    ctx: Qwen3VLTextAndVisionContext,
+    ctx: Qwen3_5TextAndVisionContext,
 ) -> list[_ImagePiece]:
     """Cut a context's per-image vision arrays back out of their concatenation.
 
@@ -125,7 +122,7 @@ def _split_vision_data(
 @traced
 def pack_uncached_images(
     selection: Sequence[
-        tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        tuple[Qwen3_5TextAndVisionContext, Sequence[ImageMetadata]]
     ],
     devices: list[Device],
 ) -> Qwen3_5VisionInputs | None:

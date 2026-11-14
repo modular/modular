@@ -40,9 +40,9 @@ import av
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.pipelines.architectures.qwen3vl_moe.nn.video_processing import (
-    QWEN3VL_DEFAULT_CONTAINER_FPS,
-    QWEN3VL_VIDEO_MAX_PIXELS,
+from max.pipelines.architectures.qwen3_5.video_processing import (
+    QWEN3_5_DEFAULT_CONTAINER_FPS,
+    QWEN3_5_VIDEO_MAX_PIXELS,
     clip_grid,
     clip_timestamps,
     decode_clip,
@@ -109,7 +109,7 @@ def test_clip_budget_binds_on_the_whole_clip(golden: tuple[int, ...]) -> None:
     """The ceiling applies to ``t_bar * h_bar * w_bar``, never to one frame."""
     grid_t, h_bar, w_bar = golden[5], golden[3], golden[4]
     assert (
-        grid_t * TEMPORAL_PATCH_SIZE * h_bar * w_bar <= QWEN3VL_VIDEO_MAX_PIXELS
+        grid_t * TEMPORAL_PATCH_SIZE * h_bar * w_bar <= QWEN3_5_VIDEO_MAX_PIXELS
     )
 
 
@@ -169,7 +169,7 @@ def test_sampling_bounds() -> None:
     assert np.array_equal(
         sample_frame_indices(240, None), sample_frame_indices(240, 24.0)
     )
-    assert QWEN3VL_DEFAULT_CONTAINER_FPS == 24.0
+    assert QWEN3_5_DEFAULT_CONTAINER_FPS == 24.0
 
     with pytest.raises(ValueError, match="no decodable frames"):
         sample_frame_indices(0, 30.0)

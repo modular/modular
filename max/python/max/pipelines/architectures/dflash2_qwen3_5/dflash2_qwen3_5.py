@@ -38,8 +38,8 @@ from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import MLP, Linear
 from max.nn.legacy.norm import RMSNorm
 
-from ..llama3.model_config import Llama3Config, create_rope_embedding
 from .layers import DFlash2CandidateSelector, DFlash2GroupedConv
+from .model_config import Llama3Config, create_rope_embedding
 
 
 class DFlash2TransformerBlock(Module):

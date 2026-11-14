@@ -57,18 +57,18 @@ from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
     context_position_rows,
 )
+from max.pipelines.architectures.qwen3_5.context import (
+    Qwen3_5TextAndVisionContext,
+    VisionEncodingData,
+)
+from max.pipelines.architectures.qwen3_5.data_processing import (
+    get_rope_index,
+)
 from max.pipelines.architectures.qwen3_5.layers.attention import (
     Qwen3_5Attention,
 )
 from max.pipelines.architectures.qwen3_5.layers.text_rotary import (
     Qwen3_5TextRotaryEmbedding,
-)
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-    VisionEncodingData,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    get_rope_index,
 )
 from max.pipelines.context import (
     ImageMetadata,
@@ -278,7 +278,7 @@ def _hf_decode_positions(
 
 def _image_context(
     grid: tuple[int, int, int],
-) -> tuple[Qwen3VLTextAndVisionContext, npt.NDArray[np.int64]]:
+) -> tuple[Qwen3_5TextAndVisionContext, npt.NDArray[np.int64]]:
     """Builds the context an image request reaches the batcher with."""
     input_ids, mm_token_type_ids = _prompt_with_image(grid)
     positions, deltas = _hf_rope_index(
@@ -290,7 +290,7 @@ def _image_context(
     tokens = input_ids[0]
     image_token_indices = np.where(tokens == IMAGE_TOKEN_ID)[0]
     prefill_positions = positions.squeeze(1).numpy()
-    context = Qwen3VLTextAndVisionContext(
+    context = Qwen3_5TextAndVisionContext(
         max_length=len(tokens) + DECODE_STEPS,
         tokens=TokenBuffer(tokens.copy()),
         images=[

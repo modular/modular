@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# Folds in what Qwen3.5 used of Llama3BatchProcessorBase, from
+# max/python/max/pipelines/architectures/llama3/batch_processor.py at main
+# 4df8111afba.
 """Input batching for Qwen3.5 pipeline models."""
 
 from __future__ import annotations
@@ -27,16 +30,18 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_tensors_to
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.pipelines.architectures.llama3.batch_processor import (
-    Llama3BatchProcessor,
-)
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-)
 from max.pipelines.context import ImageMetadata, TextContext
-from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
+from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
+    BatchProcessorRuntime,
+    RaggedBatchProcessor,
+    process_ragged_kv_outputs,
+)
+from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 
+from .context import Qwen3_5TextAndVisionContext
 from .model_config import Qwen3_5Config
 from .vision_packing import Qwen3_5VisionInputs, pack_uncached_images
 
@@ -64,7 +69,7 @@ def context_position_rows(
     if length is None:
         length = ctx.tokens.active_length
     rope_delta = 0
-    if isinstance(ctx, Qwen3VLTextAndVisionContext):
+    if isinstance(ctx, Qwen3_5TextAndVisionContext):
         precomputed = ctx.decoder_position_ids
         if ctx.needs_vision_encoding and precomputed.shape[1] == len(
             ctx.tokens
@@ -75,7 +80,7 @@ def context_position_rows(
     return np.tile(flat, (_MROPE_AXES, 1))
 
 
-class Qwen3_5BatchProcessor(Llama3BatchProcessor):
+class Qwen3_5BatchProcessor(RaggedBatchProcessor[TextContext, "Qwen3_5Inputs"]):
     """Ragged batching with linear-attention state pools and optional vision inputs.
 
     It encodes each batch's new images with the vision graph its model, or a
@@ -118,7 +123,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     def pack_vision_inputs(
         self,
         selection: Sequence[
-            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+            tuple[Qwen3_5TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
     ) -> Qwen3_5VisionInputs | None:
@@ -132,7 +137,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     def vision_execute(
         self,
         selection: Sequence[
-            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+            tuple[Qwen3_5TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
         packed: Qwen3_5VisionInputs | None,
@@ -195,6 +200,36 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         assert self.input_tree is not None, "the model binds its inputs first"
         return tree.leaves(self.input_tree)
 
+    def _stage_ragged_token_inputs(
+        self, context_batch: Sequence[TextContext]
+    ) -> tuple[Buffer, Buffer]:
+        """Stages this batch's ragged tokens and row offsets.
+
+        Returns:
+            ``(device_tokens, device_row_offsets)``.
+        """
+        batch_size = len(context_batch)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
+            )
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=host_row_offsets.to_numpy(),
+            )
+            if context_batch:
+                np.concatenate(
+                    [ctx.tokens.active for ctx in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
+        return device_tokens, device_row_offsets
+
     def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
         """Returns this step's ``[3, total_seq_len]`` M-RoPE positions."""
         rows = [context_position_rows(ctx) for ctx in contexts]
@@ -223,7 +258,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         # (`SchedulerResult.failed`) to cover batch preparation, not only
         # batch construction.
         if not self.mrope_enabled and any(
-            isinstance(ctx, Qwen3VLTextAndVisionContext)
+            isinstance(ctx, Qwen3_5TextAndVisionContext)
             and ctx.needs_vision_encoding
             for ctx in all_contexts
         ):
@@ -234,19 +269,24 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                 "and every token after an image would get a flat position."
             )
 
-        base_inputs = super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
+        dp = self.runtime.pipeline_config.model.data_parallel_degree
+        if len(replica_batches) != dp:
+            raise ValueError(
+                "Number of replica batches must match data parallel degree"
+            )
+        device_tokens, device_row_offsets = self._stage_ragged_token_inputs(
+            all_contexts
         )
         request_ids = [ctx.request_id for ctx in all_contexts]
 
         return Qwen3_5Inputs(
-            tokens=base_inputs.tokens,
-            input_row_offsets=base_inputs.input_row_offsets,
-            signal_buffers=base_inputs.signal_buffers,
-            kv_cache_inputs=base_inputs.kv_cache_inputs,
-            return_n_logits=base_inputs.return_n_logits,
+            tokens=device_tokens,
+            input_row_offsets=device_row_offsets,
+            signal_buffers=list(self.runtime.signal_buffers),
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ),
             request_ids=request_ids,
             vision_inputs_in_graph=self.vision_enabled,
             decoder_position_ids=(
@@ -254,4 +294,14 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                 if self.mrope_enabled
                 else None
             ),
+        )
+
+    def process_outputs(
+        self, outputs: Sequence[Buffer | object]
+    ) -> ModelOutputs:
+        """Turns the graph outputs into the batch's results."""
+        return process_ragged_kv_outputs(
+            outputs,
+            return_logits=self.runtime.return_logits,
+            return_hidden_states=self.runtime.return_hidden_states,
         )

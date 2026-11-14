@@ -178,7 +178,6 @@ def _max_config(
         vocab_size=VOCAB,
         dtype=DType.float32,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=MHAKVCacheParams(
             dtype=DType.float32,
             devices=[device],
@@ -190,10 +189,7 @@ def _max_config(
         norm_dtype=DType.float32,
         rms_norm_eps=RMS_EPS,
         attention_multiplier=HEAD_DIM**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=list(LAYER_TYPES),
         linear_key_head_dim=LINEAR_KEY_DIM,
         linear_value_head_dim=LINEAR_VALUE_DIM,

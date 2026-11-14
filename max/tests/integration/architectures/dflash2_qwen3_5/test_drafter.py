@@ -25,7 +25,9 @@ from max.pipelines.architectures.dflash2_qwen3_5 import (
     DFlash2Qwen3_5,
     DFlash2TransformerBlock,
 )
-from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
+    Llama3Config,
+)
 
 HIDDEN = 64
 HEAD_DIM = 16

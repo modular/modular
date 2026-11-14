@@ -44,8 +44,8 @@ from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,
     Dflash2DraftHFConfig,
     DFlash2Qwen3_5Config,
+    Llama3Config,
 )
-from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -130,15 +130,11 @@ def target_config(geometry: Geometry) -> Qwen3_5Config:
         vocab_size=g.vocab,
         dtype=g.dtype,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=attn,
         norm_dtype=g.dtype,
         rms_norm_eps=1e-6,
         attention_multiplier=KV_HEAD_DIM**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[g.device],
-        clip_qkv=None,
         layer_types=list(g.layer_types),
         # The recurrence kernel is only compiled for 128 x 128 heads.
         linear_key_head_dim=128,
