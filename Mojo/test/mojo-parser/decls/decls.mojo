@@ -603,7 +603,7 @@ def test_typed_raises_fn3() raises Float32:
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
     # CHECK-NEXT: lit.try %__call_error_tmp__
     # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
-    # CHECK-NEXT: lit.try.yield
+    # CHECK: lit.try.yield
     # CHECK-NEXT: } except {
     # CHECK-NEXT:    [[ERB:%.*]] = kgen.rebind %__call_error_tmp__
     # CHECK-NEXT:    = lit.ref.load [[ERB]]

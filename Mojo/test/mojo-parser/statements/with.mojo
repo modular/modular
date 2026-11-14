@@ -144,7 +144,7 @@ def testWithRaising(a: ExampleCM) raises:
 
         # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
         raise_error()
-        # CHECK-NEXT: lit.try.yield
+        # CHECK: lit.try.yield
     # CHECK-NEXT: } except {
     # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT:   lit.ref.store [[TRUE]], %__with_exc__

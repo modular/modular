@@ -751,8 +751,8 @@ def use_before_noreturn_in_if(cond: Bool):
         # CHECK: hlcf.unreachable
         use(mem)
         abort()
-    # CHECK-NEXT: } else {
-    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+    # CHECK: } else {
+    # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
     # CHECK-NEXT: lifetime.end %mem
 
 

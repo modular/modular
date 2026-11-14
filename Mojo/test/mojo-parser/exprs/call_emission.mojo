@@ -532,7 +532,7 @@ struct Value(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String) raises:
     # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
-    # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
+    # CHECK: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
     # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 12})>
     # CHECK-NEXT: lit.ref.store [[V3]], [[V2]]

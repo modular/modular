@@ -660,6 +660,10 @@ public:
   /// In case customOpName is provided, emit a custom MLIR operation instead
   /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, CallOperands &&operands);
+
+  /// Emit the control flow following a call that throws or never returns.
+  void emitCallControlFlow(Operation &call, ASTType resultType, bool isThrows,
+                           ASTType thrownType, ValueRange operands);
 };
 
 //===----------------------------------------------------------------------===//

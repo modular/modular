@@ -462,7 +462,7 @@ def for_range_loop():
         # CHECK-NEXT:   %__call_error_tmp__ = lit.var.decl
         # CHECK-NEXT:   lit.try %__call_error_tmp__
         # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
-        # CHECK-NEXT:    lit.try.yield
+        # CHECK:    lit.try.yield
         # CHECK-NEXT:        } except {
         # CHECK-NEXT:  lit.loop.break.else
         # CHECK: } <suppressWarnings = true>

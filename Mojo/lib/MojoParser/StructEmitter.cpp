@@ -474,9 +474,13 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
       implicitOrigins.push_back(cast<LIT::RefType>(val.getType()).getOrigin());
   }
 
-  ArrayRef<Type> resultTypes = specializedGenerator.getBody().getResults();
+  FuncType specializedFnType = cast<FuncType>(specializedGenerator.getBody());
+  ArrayRef<Type> resultTypes = specializedFnType.getResults();
   auto callOp = LIT::CallOp::create(builder, fn.getLoc(), resultTypes,
                                     typedSymbol, implicitOrigins, operands);
+  emitter.emitCallControlFlow(*callOp, specializedFnType.getUserResultType(),
+                              specializedFnType.isThrows(),
+                              specializedFnType.getUserThrownType(), operands);
 
   emitter.emitNormalReturn(fn.getLoc(), callOp->getResult(0));
 

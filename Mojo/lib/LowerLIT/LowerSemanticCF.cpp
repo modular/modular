@@ -88,6 +88,7 @@ private:
     bool doesRaise = false;
     bool doesBreak = false;
     bool doesFallThrough = false;
+    bool isAfterUnreachableCall = false;
     /// True when this region executes `hlcf.match.next` on some path. For a
     /// match case, that means a later case (or the else) may run. For a match
     /// else, the next targets an enclosing match.
@@ -101,6 +102,7 @@ private:
     void mergeControlEffects(const CodeEffects &other) {
       doesRaise |= other.doesRaise;
       doesBreak |= other.doesBreak;
+      isAfterUnreachableCall |= other.isAfterUnreachableCall;
       hasMatchNext |= other.hasMatchNext;
       hasMatchComplete |= other.hasMatchComplete;
     }
@@ -614,35 +616,6 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
   }
 }
 
-/// This function adds the error branch regions to a call operation to a
-/// throwing function. These are required by CheckLifetimes to understand
-/// conditional initialization of the 'mut' results.
-///
-/// This returns the operation if nothing was added or returns the 'if' that is
-/// left after the call if something was.
-static Operation *addErrorRegions(Operation &op, FuncType sig,
-                                  ValueRange operands) {
-  // If the function throws Never, ignore the throwability entirely.
-  if (sugarIsa<NeverType>(sig.getUserThrownType()))
-    return &op;
-
-  // Clone the op and add the error regions.
-  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
-  b.setInsertionPointAfter(&op);
-  auto ifOp = HLCF::IfOp::create(b, op.getResult(0));
-
-  // In the error region, mark the result has known consumed, then raise.
-  b.createBlock(&ifOp.getThenRegion());
-  LIT::OwnershipMarkConsumedOp::create(b, operands.back());
-  emitRaise(b);
-
-  // In the result region, mark the error as known consumed.
-  b.createBlock(&ifOp.getElseRegion());
-  LIT::OwnershipMarkConsumedOp::create(b, operands[operands.size() - 2]);
-  HLCF::YieldOp::create(b);
-  return ifOp;
-}
-
 /// This recursive function transforms the specified block:
 ///   1) It transforms any semantic CF ops like lit.break into terminators like
 ///      hlcf.break.
@@ -758,30 +731,6 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     // Notice self-recursive calls so we can check them out later.
     if (auto call = dyn_cast<LIT::CallOp>(op))
       hasRecursiveCalls |= call.getDirectCallee() == theFuncSymbol;
-
-    // Add error branches to calls to throwing functions.
-    if (isa<LIT::CallOp, LIT::CallIndirectOp>(op)) {
-      LIT::FnTypeGeneratorType calleeType = LIT::getFnTypeFromCall(op);
-      assert(calleeType);
-      Operation *opAfterCall = &op;
-      if (calleeType.isThrows()) {
-        opAfterCall = addErrorRegions(op, calleeType.getBody(),
-                                      LIT::getCalleeArguments(&op));
-        effects.doesRaise |= (opAfterCall != &op);
-      }
-
-      // If the function returns NeverType, then it can never return.
-      // treat it like a semantic terminator.
-      if (sugarIsa<NeverType>(calleeType.getUserResultType())) {
-        auto b = handleSemanticTerminatorOp(*opAfterCall,
-                                            "function that never returns");
-        UnreachableOp::create(b, op.getLoc(),
-                              /*isAfterUnreachableCall=*/true);
-        return;
-      }
-
-      continue;
-    }
 
     // A kgen.param.assert with a statically false condition means the
     // assertion will fail at elaboration time; all code after it is dead.
@@ -931,11 +880,17 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     // Process a HLCF::IfOp with a known-constant condition: mark the
     // unreachable arm(s) so we don't consider them live.
     if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
+      bool hadUnreachableCall = effects.isAfterUnreachableCall;
       if (lowerIfOp(ifOp, effects)) {
         // If the elif does not fall through, cut off the code after it.
         auto b = handleSemanticTerminatorOp(
-            op, "if statement with then/else that do not fall through");
-        UnreachableOp::create(b, op.getLoc());
+            op, effects.isAfterUnreachableCall && !hadUnreachableCall
+                    ? "function that never returns"
+                    : "if statement with then/else that do not fall through");
+        UnreachableOp::create(
+            b, op.getLoc(),
+            /*isAfterUnreachableCall=*/effects.isAfterUnreachableCall &&
+                !hadUnreachableCall);
         return;
       }
       continue;
@@ -1001,8 +956,12 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
   }
 
   // These are not fallthroughs.
+  if (auto unreachable = dyn_cast<HLCF::UnreachableOp>(terminator)) {
+    effects.isAfterUnreachableCall |= unreachable.getIsAfterUnreachableCall();
+    return;
+  }
   if (isa<HLCF::ReturnOp, HLCF::ContinueOp, HLCF::ComptimeForContinueOp,
-          HLCF::UnreachableOp, LIT::ErrorReturnOp>(terminator))
+          LIT::ErrorReturnOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.

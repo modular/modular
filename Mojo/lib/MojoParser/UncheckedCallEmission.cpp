@@ -18,6 +18,7 @@
 
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -2238,6 +2239,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
          "All mojo functions return one value");
   Type resultType = expectedCalleeType.getResults()[0];
   CValue callResult;
+  Operation *callOp = nullptr;
   if (auto target = callee.getIfPValue()) {
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
@@ -2253,6 +2255,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     } else {
       auto call = CallOp::create(*builder, loc, resultType, target.get(),
                                  implicitOrigins, callArgs);
+      callOp = call;
       callResult = SRValue(call.getResult(0));
 
       // Set the LLVM "tail" marker if the call may not access the caller's
@@ -2278,11 +2281,17 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     assert(calleeVal && "don't have a callee of expected type");
     auto call = CallIndirectOp::create(*builder, loc, resultType, calleeVal,
                                        implicitOrigins, callArgs);
+    callOp = call;
     callResult = SRValue(call.getResult(0));
 
     if (!exclusivityChecker.mayAccessCallerStack())
       call.setTailKind(TailKind::Tail);
   }
+
+  if (callOp)
+    emitCallControlFlow(*callOp, calleeSig.getUserResultType(),
+                        calleeSig.isThrows(), calleeSig.getUserThrownType(),
+                        callArgs);
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.

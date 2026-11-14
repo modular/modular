@@ -224,7 +224,7 @@ def use_ref_result() raises:
 
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}decls::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
-    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[REF]])
     def_ref_result(a) = MemoryOnly()
 

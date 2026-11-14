@@ -44,6 +44,60 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Emit the control flow for a call's status result and non-returning success
+/// path.
+///
+/// The callee writes an error to its by-reference error argument and returns
+/// true when it throws. Consume the initialized value on either path so
+/// CheckLifetimes sees that it is conditionally initialized. Semantic control
+/// flow lowering turns the `lit.raise` into the terminator for the enclosing
+/// raising function or try region.
+void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
+                                    bool isThrows, ASTType thrownType,
+                                    ValueRange operands) {
+  assert(builder && "runtime call emission requires a builder");
+  OpBuilder &builder = *this->builder;
+  Location loc = call.getLoc();
+
+  bool neverReturns = sugarIsa<NeverType>(resultType);
+  if (!isThrows || sugarIsa<NeverType>(thrownType)) {
+    if (!neverReturns)
+      return;
+
+    // Model the non-returning call as a conditionally terminated region. This
+    // leaves a well-formed parent block for code the parser emits later; the
+    // semantic control-flow pass diagnoses and removes that unreachable code.
+    Value trueValue = ParamConstantOp::create(
+        builder, loc, SIMDAttr::getScalarBool(builder.getContext(), true));
+    auto ifOp = HLCF::IfOp::create(builder, loc, TypeRange{}, trueValue);
+    builder.createBlock(&ifOp.getThenRegion());
+    HLCF::UnreachableOp::create(builder, loc,
+                                /*isAfterUnreachableCall=*/true);
+    builder.createBlock(&ifOp.getElseRegion());
+    HLCF::YieldOp::create(builder, loc);
+    builder.setInsertionPointAfter(ifOp);
+    return;
+  }
+
+  auto ifOp = HLCF::IfOp::create(builder, loc, TypeRange{}, call.getResult(0));
+
+  builder.createBlock(&ifOp.getThenRegion());
+  LIT::OwnershipMarkConsumedOp::create(builder, loc, operands.back());
+  LIT::RaiseOp::create(builder, loc);
+  HLCF::YieldOp::create(builder, loc);
+
+  builder.createBlock(&ifOp.getElseRegion());
+  LIT::OwnershipMarkConsumedOp::create(builder, loc,
+                                       operands[operands.size() - 2]);
+  if (neverReturns)
+    HLCF::UnreachableOp::create(builder, loc,
+                                /*isAfterUnreachableCall=*/true);
+  else
+    HLCF::YieldOp::create(builder, loc);
+
+  builder.setInsertionPointAfter(ifOp);
+}
+
 //===----------------------------------------------------------------------===//
 // Store-Time Type Refinement
 //===----------------------------------------------------------------------===//

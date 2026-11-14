@@ -146,8 +146,9 @@ def propagateErrorInTry():
     # CHECK: lit.try
     try:
         # CHECK-NEXT: lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %a)
+        # CHECK-NEXT: hlcf.if
         a = maybeRaises()
-        # CHECK-NEXT: lit.try.yield
+        # CHECK: lit.try.yield
     except:
         pass
 
@@ -223,7 +224,7 @@ def call_raising():
         # CHECK: %y = lit.var.decl "y"
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%e, %y)
         var y = S()
-        # CHECK-NEXT: lit.try.yield
+        # CHECK: lit.try.yield
     except e:
         pass
 
@@ -239,6 +240,6 @@ def fail_register() raises -> Int:
 # CHECK-LABEL: lit.fn @"fail_register_raises
 def fail_register_raises() raises -> Int:
     # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
-    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
+    # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()
