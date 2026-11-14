@@ -44,7 +44,10 @@ from max.gpu.host._legacy._nvidia_cuda import (
     CUDA as _legacy_CUDA,
     CUDA_MODULE as _legacy_CUDA_MODULE,
 )
+from std.memory.pointer import unsafe_cast
 from max.gpu.host._vendor_handles import (
+    _CUstream_st,
+    _ihipStream_t,
     CUcontext,
     CUmodule,
     CUstream,
@@ -87,7 +90,9 @@ def CUDA(stream: DeviceStreamBase) raises -> CUstream:
     comptime if use_legacy_backend():
         return rebind_var[CUstream](_legacy_CUDA(stream.unwrap_legacy()))
     else:
-        return rebind_var[CUstream](_hal_CUDA(stream.unwrap_hal()))
+        return unsafe_cast[Type=_CUstream_st, origin=UntrackedOrigin[mut=True]](
+            stream._native_stream()
+        )
 
 
 def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
@@ -141,7 +146,9 @@ def HIP(stream: DeviceStreamBase) raises -> hipStream_t:
     comptime if use_legacy_backend():
         return rebind_var[hipStream_t](_legacy_HIP(stream.unwrap_legacy()))
     else:
-        return rebind_var[hipStream_t](_hal_HIP(stream.unwrap_hal()))
+        return unsafe_cast[
+            Type=_ihipStream_t, origin=UntrackedOrigin[mut=True]
+        ](stream._native_stream())
 
 
 def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:

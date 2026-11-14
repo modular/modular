@@ -15,13 +15,9 @@
 from .device_context_hal import (
     HALDeviceContext,
     HALDeviceFunction,
-    HALDeviceStreamBase,
 )
-from std.memory.pointer import unsafe_cast
 from max.gpu.host._vendor_handles import (
-    _CUstream_st,
     CUcontext,
-    CUstream,
     CUmodule,
 )
 
@@ -31,29 +27,6 @@ def CUDA(ctx: HALDeviceContext) raises -> CUcontext:
     raise Error(
         "CUcontext access is not wired for the HAL DeviceContext; the plugin"
         " exposes it via M_driver_context_get_current_driver_context"
-    )
-
-
-@inline(.always)
-def CUDA(stream: HALDeviceStreamBase) raises -> CUstream:
-    """Returns the `CUstream` backing a HAL stream.
-
-    The HAL queue reports its backend stream through the `"native_handle"`
-    property, which the CUDA plugin answers with the raw `CUstream`
-    (`Target/lib/CUDA/M_driver_queue.cpp`).
-
-    Args:
-        stream: The HAL-backed stream to read the native handle from.
-
-    Returns:
-        The underlying `CUstream`.
-
-    Raises:
-        If the queue backing `stream` reports no native handle, which is the
-        case for a device with no OS-level stream object.
-    """
-    return unsafe_cast[Type=_CUstream_st, origin=UntrackedOrigin[mut=True]](
-        stream._native_stream()
     )
 
 

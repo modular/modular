@@ -43,6 +43,7 @@ from max._driver.max_license.device_context_dispatch.host_buffer import (
 from max._driver.max_license.device_context_dispatch.host_types import (
     DeviceEvent,
     DeviceStream,
+    _HALDeviceStream,
 )
 from max._driver.max_license.device_context_dispatch.host_types import (
     _CompletionFlagBox,
@@ -756,7 +757,8 @@ def MojoHAL_DeviceContext_stream(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     comptime assert not use_legacy_backend(), "HAL backend only"
-    var stream = DeviceStream(_impl=ctx[].unwrap_hal().stream())
+    var hal_ctx = ctx[].unwrap_hal()
+    var stream = DeviceStream(_impl=_HALDeviceStream(hal_ctx, hal_ctx._stream))
     var boxed = alloc(Layout[DeviceStream].single())
     boxed.unsafe_ptr().unsafe_write(stream^)
     out_stream[] = boxed^.unsafe_leak()
@@ -789,7 +791,7 @@ def MojoHAL_DeviceContext_withStream(
     # `DeviceContext::selectStream` view on the C++ side.
     var hal_view = ctx[].unwrap_hal()
     comptime assert not use_legacy_backend(), "HAL backend only"
-    hal_view._stream = stream[].unwrap_hal()._hal_stream()
+    hal_view._stream = stream[].unwrap_hal()._stream
     var boxed = alloc(Layout[DeviceContext[]].single())
     boxed.unsafe_ptr().unsafe_write(DeviceContext[](_impl=hal_view^))
     out_ctx[] = boxed^.unsafe_leak()
@@ -836,9 +838,9 @@ def MojoHAL_DeviceStream_nativeHandle(
     stream: _DeviceStreamBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        var hal_stream = stream[].unwrap_hal()
         out_handle[] = (
-            hal_stream._native_stream()
+            stream[]
+            ._native_stream()
             .unsafe_bitcast[Byte]()
             .unsafe_mut_cast[True]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
@@ -1000,7 +1002,6 @@ def MojoHAL_DeviceContext_getDLPackStream(
         # wrapper keeps the stream alive.
         out_stream[] = (
             ctx[]
-            .unwrap_hal()
             .stream()
             ._native_stream()
             .unsafe_bitcast[Byte]()

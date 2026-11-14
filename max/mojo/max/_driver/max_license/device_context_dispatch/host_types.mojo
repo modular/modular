@@ -29,7 +29,6 @@ from std.sys.info import CompilationTarget
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
     HALDeviceFunction,
-    HALDeviceStreamBase,
     _check_config_dims,
 )
 from max._driver.max_license.hal import Event, Stream, get_device_spec
@@ -92,10 +91,44 @@ comptime _Event = DeviceEvent
 comptime _Flag = CompletionFlag
 
 
+@fieldwise_init
+struct _HALDeviceStream[target: CompilationTarget = default_accelerator()](
+    ImplicitlyCopyable, Movable
+):
+    """The state of a `DeviceStream` on the HAL backend: the context that owns
+    the stream, and the HAL stream, which all copies share."""
+
+    var _ctx: HALDeviceContext[Self.target]
+    var _stream: ArcPointer[Stream[get_device_spec[0]()]]
+
+
 struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     ImplicitlyCopyable, _DispatchEnqueuer
 ):
-    """A single stream of execution within a `DeviceContext`.
+    """A single stream of execution within a `DeviceContext`, for asynchronous
+    GPU operations.
+
+    A `DeviceStream` provides a queue for GPU operations that can execute
+    concurrently with operations in other streams. Operations within a single
+    stream execute in the order they are issued, but operations in different
+    streams may execute in any relative order or concurrently.
+
+    This abstraction allows for better utilization of GPU resources by enabling
+    overlapping of computation and data transfers.
+
+    Example:
+
+    ```mojo
+    from max.gpu.host import DeviceContext, DeviceStream
+    var ctx = DeviceContext(0)  # Select first GPU
+    var stream = DeviceStream(ctx)
+
+    # Launch operations on the stream
+    # ...
+
+    # Wait for all operations in the stream to complete
+    stream.synchronize()
+    ```
 
     Parameters:
         target: The accelerator targeted by this stream.
@@ -106,7 +139,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     comptime _Legacy = LegacyDeviceStream
-    comptime _HAL = HALDeviceStreamBase[Self.target]
+    comptime _HAL = _HALDeviceStream[Self.target]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
     comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
@@ -133,7 +166,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = Self._HAL(ctx._impl)
+            self._impl = Self._HAL(ctx._impl, ctx._impl._stream)
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend stream.
@@ -185,7 +218,32 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "this stream is not on the HAL backend"
-        return self._impl._hal_stream()
+        return self._impl._stream
+
+    def _native_stream[
+        origin: Origin, //
+    ](ref[origin] self) raises -> OpaquePointer[origin]:
+        """Returns this stream's native driver-level handle (for example a
+        `CUstream`), tied to this borrow of `self` so the owning queue stays
+        alive while the handle is in use.
+
+        The HAL queue reports its backend stream through the `"native_handle"`
+        property, which the CUDA plugin answers with the raw `CUstream`
+        (`Target/lib/CUDA/M_driver_queue.cpp`).
+
+        Returns:
+            The native stream handle.
+
+        Raises:
+            If the queue backing this stream reports no native handle, which is
+            the case for a device with no OS-level stream object.
+        """
+        comptime assert (
+            not use_legacy_backend()
+        ), "this stream is not on the HAL backend"
+        if case .Some(handle) = self._impl._stream[].native_handle():
+            return OpaquePointer[origin](unsafe_from_address=Int(handle))
+        raise Error("this device's stream has no native driver handle")
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -872,7 +930,7 @@ struct _CompletionFlagBox(Movable):
 
     def wait[
         target: CompilationTarget
-    ](self, stream: HALDeviceStreamBase[target], value: UInt64) raises:
+    ](self, stream: _HALDeviceStream[target], value: UInt64) raises:
         # The stream's plugin would get a flag handle it didn't create.
         if stream._ctx.api() != self.ctx.api():
             raise Error(

@@ -95,6 +95,7 @@ from .host_types import (
     Device,
     DeviceEvent,
     DeviceStream,
+    _HALDeviceStream,
 )
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
@@ -989,14 +990,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return DeviceStream(_impl=self._impl.stream())
         else:
             return DeviceStream(
-                _impl=rebind_var[DeviceStream._Impl](self._impl.stream())
+                _impl=rebind_var[DeviceStream._Impl](
+                    _HALDeviceStream(self._impl, self._impl._stream)
+                )
             )
 
     def create_stream(self, *, priority: Int = 0) raises -> DeviceStream:
         """Creates a new stream on this context's device.
 
         Args:
-            priority: Requested stream priority.
+            priority: Requested stream priority. The HAL queue API has no
+                priority support, so the HAL backend accepts it for parity with
+                the legacy backend and ignores it.
 
         Returns:
             The new `DeviceStream`.
@@ -1011,7 +1016,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return DeviceStream(
                 _impl=rebind_var[DeviceStream._Impl](
-                    self._impl.create_stream(priority=priority)
+                    _HALDeviceStream(
+                        self._impl, self._impl._context[].create_stream()
+                    )
                 )
             )
 

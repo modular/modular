@@ -113,7 +113,6 @@ from ._device_context_hal_extras import *
 from max.gpu.host._driver_handles import (
     _DeviceContextPtr,
     _DeviceFunctionPtr,
-    _DeviceStreamPtr,
 )
 from max.gpu.host._vendor_handles import CUstream
 from max.gpu.host._driver_common import (
@@ -309,13 +308,6 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         Int64(device_id)
     )
     return (api, device[].arch())
-
-
-comptime HALDeviceStream = HALDeviceStreamBase[]
-"""A `DeviceStream` on the default accelerator.
-
-See `HALDeviceStreamBase` for additional documentation.
-"""
 
 
 struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
@@ -739,10 +731,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         """
         return _HALDeviceContextScope(self)
 
-    @doc_hidden
-    def stream(self) -> HALDeviceStreamBase[Self.target]:
-        return HALDeviceStreamBase[Self.target](self)
-
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports completion flags.
 
@@ -768,25 +756,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         self,
     ) -> ArcPointer[Stream[get_device_spec[0]()]]:
         return self._stream
-
-    def create_stream(
-        self, *, priority: Int = 0
-    ) raises -> HALDeviceStreamBase[Self.target]:
-        """Creates a new stream associated with the given device context.
-
-        Args:
-            priority: Scheduling priority for the stream. The HAL queue API
-                has no priority support, so this is accepted for parity with
-                the legacy backend and ignored.
-
-        Returns:
-            The newly created device stream.
-
-        Raises:
-            If stream creation fails.
-        """
-        var hal_stream = self._context[].create_stream()
-        return HALDeviceStreamBase[Self.target](self, hal_stream^)
 
     @inline(.always)
     def compile_function[
@@ -1465,106 +1434,6 @@ struct HALDeviceFunction[
         _ = attributes^
         _ = translated_args^
         _ = dense_args^
-
-
-# ===-----------------------------------------------------------------------===#
-# DeviceStream
-# ===-----------------------------------------------------------------------===#
-
-
-struct HALDeviceStreamBase[target: CompilationTarget = default_accelerator()](
-    ImplicitlyCopyable, Movable
-):
-    """Represents a CUDA/HIP stream for asynchronous GPU operations.
-    A DeviceStream provides a queue for GPU operations that can execute concurrently
-    with operations in other streams. Operations within a single stream execute in
-    the order they are issued, but operations in different streams may execute in
-    any relative order or concurrently.
-
-    This abstraction allows for better utilization of GPU resources by enabling
-    overlapping of computation and data transfers.
-
-    Example:
-
-    ```mojo
-    from max.gpu.host import DeviceContext, DeviceStream
-    var ctx = DeviceContext(0)  # Select first GPU
-    var stream = DeviceStream(ctx)
-
-    # Launch operations on the stream
-    # ...
-
-    # Wait for all operations in the stream to complete
-    stream.synchronize()
-    ```
-    """
-
-    comptime ExecutionConfigType: ExecutionConfig = (
-        HALDeviceContext[Self.target].ExecutionConfigType
-    )
-    """The launch configuration type of the stream's device context."""
-
-    comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    var _ctx: HALDeviceContext[Self.target]
-    var _stream: ArcPointer[Stream[get_device_spec[0]()]]
-    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
-    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
-    var _handle: _DeviceStreamPtr[mut=True]
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    def __init__(out self, ctx: HALDeviceContext[Self.target]):
-        """Retrieves the stream associated with the given device context.
-
-        Args:
-            ctx: The device context to retrieve the stream from.
-        """
-        self._ctx = ctx
-        self._stream = ctx._stream
-        self._handle = None
-
-    @doc_hidden
-    def __init__(
-        out self,
-        ctx: HALDeviceContext[Self.target],
-        var hal_stream: ArcPointer[Stream[get_device_spec[0]()]],
-    ):
-        """Initializes a new DeviceStream with the given stream handle.
-
-        Args:
-            ctx: The device context that owns the stream.
-            hal_stream: The stream handle to initialize the DeviceStream with.
-        """
-        self._ctx = ctx
-        self._stream = hal_stream^
-        self._handle = None
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    def _native_stream[
-        origin: Origin, //
-    ](ref[origin] self) raises -> OpaquePointer[origin]:
-        """Returns this stream's native driver-level handle (for example a
-        `CUstream`), tied to this borrow of `self` so the owning queue stays
-        alive while the handle is in use."""
-        if case .Some(handle) = self._stream[].native_handle():
-            return OpaquePointer[origin](unsafe_from_address=Int(handle))
-        raise Error("this device's stream has no native driver handle")
-
-    def _hal_stream(
-        self,
-    ) -> ArcPointer[Stream[get_device_spec[0]()]]:
-        return self._stream
 
 
 def _check_copy_src_size(

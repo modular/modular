@@ -15,13 +15,9 @@
 from .device_context_hal import (
     HALDeviceContext,
     HALDeviceFunction,
-    HALDeviceStreamBase,
 )
-from std.memory.pointer import unsafe_cast
 from max.gpu.host._vendor_handles import (
-    _ihipStream_t,
     hipDevice_t,
-    hipStream_t,
     hipModule_t,
 )
 
@@ -29,24 +25,6 @@ from max.gpu.host._vendor_handles import (
 @inline(.always)
 def HIP(ctx: HALDeviceContext) raises -> hipDevice_t:
     raise Error("hipDevice_t access is not wired for the HAL DeviceContext")
-
-
-@inline(.always)
-def HIP(stream: HALDeviceStreamBase[_]) raises -> hipStream_t:
-    """Returns the `hipStream_t` backing a HAL stream.
-
-    Args:
-        stream: The stream to read the handle from.
-
-    Returns:
-        The underlying `hipStream_t`.
-
-    Raises:
-        If the stream has no native handle.
-    """
-    return unsafe_cast[Type=_ihipStream_t, origin=UntrackedOrigin[mut=True]](
-        stream._native_stream()
-    )
 
 
 @inline(.always)
