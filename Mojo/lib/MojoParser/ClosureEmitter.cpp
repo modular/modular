@@ -107,11 +107,14 @@ static VarDeclOp emitInitializerCall(ASTDecl &declScope,
 }
 
 static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
-                                        ASTDecl &declScope, TypedAttr callee,
+                                        FnOp wrapperFn, ASTDecl &declScope,
+                                        TypedAttr callee,
                                         FnTypeGeneratorType calleeSig,
                                         Type resultType,
                                         ArrayRef<Value> arguments) {
-  IREmitter emitter(declScope, builder);
+  RaiseContext raiseContext(wrapperFn);
+  IREmitter emitter(declScope, builder,
+                    wrapperFn.isThrows() ? &raiseContext : nullptr);
   // We are forwarding the call in a synthetic function, pushing the debug
   // scope with the synthetic function scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -539,8 +542,8 @@ emitCallForwarderBody(SharedState &shared, FnOp wrapperFn, ASTDecl &wrapperDecl,
                            ? Value(RebindOp::create(bodyBuilder, ty, arg))
                            : Value(arg));
 
-  return emitForwardingCall(bodyBuilder, wrapperDecl, callee, calleeSig,
-                            resultType, operands);
+  return emitForwardingCall(bodyBuilder, wrapperFn, wrapperDecl, callee,
+                            calleeSig, resultType, operands);
 }
 
 /// Synthesize the trait-shaped always-inline `__call__$trait` forwarder and
@@ -2705,7 +2708,9 @@ static void populateDevicePassableTypeName(FnOp implementation,
   Block &block = implementation.getBodyRegion().front();
   ImplicitLocOpBuilder b(implementation.getLoc(), implementation);
   b.setInsertionPointToStart(&block);
-  IREmitter emitter(structDecl, b);
+  RaiseContext raiseContext(implementation);
+  IREmitter emitter(structDecl, b,
+                    implementation.isThrows() ? &raiseContext : nullptr);
   SyntheticNode loc(structDecl.getLoc());
 
   ASTType strLitType = structDecl.getShared().lookupBuiltinType(
@@ -2910,7 +2915,9 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
     Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
 
-    IREmitter emitter(structDecl, b);
+    RaiseContext raiseContext(toDevice);
+    IREmitter emitter(structDecl, b,
+                      toDevice.isThrows() ? &raiseContext : nullptr);
     SyntheticNode syntheticNode(structDecl.getLoc());
     ExprDest dest(EC_ReturnValue);
     CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,

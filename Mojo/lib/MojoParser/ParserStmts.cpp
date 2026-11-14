@@ -265,16 +265,19 @@ struct ConditionalClause {
 };
 
 struct StmtParser : public ParserBase {
-  StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
+  StmtParser(Lexer &lexer, ASTDecl &curDeclScope,
+             RaiseContext *raiseContext = nullptr)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
-        curDeclScope(&curDeclScope), builder(getScopeEndBuilder(curDeclScope)) {
+        curDeclScope(&curDeclScope), builder(getScopeEndBuilder(curDeclScope)),
+        curRaiseContext(raiseContext) {
     initializeBuilderForFunctions(curDeclScope, builder);
   }
   StmtParser(Lexer &lexer, IREmitter &emitter)
       : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
         curDeclScope(&emitter.getDeclScope()),
         builder(emitter.builder ? emitter.builder.value()
-                                : getScopeEndBuilder(*curDeclScope)) {
+                                : getScopeEndBuilder(*curDeclScope)),
+        curRaiseContext(emitter.getRaiseContext()) {
     if (!emitter.builder)
       initializeBuilderForFunctions(emitter.getDeclScope(), builder);
   }
@@ -289,11 +292,15 @@ struct StmtParser : public ParserBase {
 
   // Expression emission.
 
-  IREmitter getEmitter() { return IREmitter(*curDeclScope, builder); }
+  RaiseContext *getRaiseContext() { return curRaiseContext; }
+
+  IREmitter getEmitter() {
+    return IREmitter(*curDeclScope, builder, getRaiseContext());
+  }
 
   /// Get an expression emitter for a parameter expression.
   IREmitter getParamEmitter(ExprContext context) {
-    return IREmitter(*curDeclScope, context);
+    return IREmitter(*curDeclScope, context, nullptr, getRaiseContext());
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -448,6 +455,10 @@ private:
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
+
+  /// The innermost source-level construct accepting raised errors, or null if
+  /// in a non-raising context.
+  RaiseContext *curRaiseContext = nullptr;
 };
 } // namespace
 
@@ -1581,13 +1592,16 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
 
   // Find the nearest error slot if the parser is in a context that can raise.
   auto emitter = getEmitter();
-  MLValue errSlot = emitter.findNearestErrorSlot();
-  if (!errSlot) {
+  auto *raiseContext = emitter.getRaiseContext();
+  if (!raiseContext) {
     emitError(loc.Start, "'raise' requires a surrounding 'try' block or the "
                          "enclosing function to declare 'raises'")
         << loc;
     return success();
   }
+
+  MLValue errSlot = raiseContext->getOrCreateErrorSlot(
+      emitter, UnresolvedType::get(getContext()), translateLocation(loc.Start));
 
   ExprDest dest(errSlot, EC_RaiseValue);
   // If the contextual caught type is unresolved, then we're the first raise
@@ -1834,9 +1848,10 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
       return failure();
 
     Location guardLocation = translateLocation(guardLoc);
-    PatternEmitState emissionState{*curDeclScope, subject, rootPath,
-                                   guardLocation,
-                                   DenseMap<const PatternPath *, CValue>()};
+    PatternEmitState emissionState{
+        *curDeclScope, getRaiseContext(),
+        subject,       rootPath,
+        guardLocation, DenseMap<const PatternPath *, CValue>()};
     SmallVector<PatternBoundName, 4> bindings;
     FailureOr<TypedAttr> condition =
         emissionState.emitComptimeCondition(commands, bindings);
@@ -1910,9 +1925,10 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
     return failure();
 
   Location guardLocation = translateLocation(guardLoc);
-  PatternEmitState emissionState{*curDeclScope, subject, rootPath,
-                                 guardLocation,
-                                 DenseMap<const PatternPath *, CValue>()};
+  PatternEmitState emissionState{
+      *curDeclScope, getRaiseContext(),
+      subject,       rootPath,
+      guardLocation, DenseMap<const PatternPath *, CValue>()};
   auto matchOp = HLCF::MatchOp::create(builder, guardLocation, TypeRange(),
                                        /*caseRegionsCount=*/1);
   Block &caseBlock = matchOp.getCaseRegions().front().emplaceBlock();
@@ -2097,8 +2113,10 @@ ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
                                            commands)))
       return failure();
 
-    PatternEmitState emissionState{*curDeclScope, subject, rootPath, whileLoc,
-                                   DenseMap<const PatternPath *, CValue>()};
+    PatternEmitState emissionState{
+        *curDeclScope, getRaiseContext(),
+        subject,       rootPath,
+        whileLoc,      DenseMap<const PatternPath *, CValue>()};
     auto matchOp = HLCF::MatchOp::create(builder, whileLoc, TypeRange(),
                                          /*caseRegionsCount=*/1);
     Block &caseBlock = matchOp.getCaseRegions().front().emplaceBlock();
@@ -2367,9 +2385,10 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
   // Given we have the pile of patterns collected together as command lists, we
   // can add emission optimizations to improve the order various sub-patterns
   // are emitted.  For now, we simply emit each linearly.
-  PatternEmitState emissionState{*curDeclScope, subject, rootPath,
-                                 matchLocation,
-                                 DenseMap<const PatternPath *, CValue>()};
+  PatternEmitState emissionState{
+      *curDeclScope, getRaiseContext(),
+      subject,       rootPath,
+      matchLocation, DenseMap<const PatternPath *, CValue>()};
   if (isComptime)
     emitComptimeCases(caseEntries, emissionState, curIndent);
   else
@@ -2772,7 +2791,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   // This is either an enum tag test or a literal equality test.  Either way,
   // materialize the subject expression, and if this is an enum test,
   // materialize the tag value.
-  IREmitter testEmitter(*curDeclScope, builder);
+  IREmitter testEmitter(*curDeclScope, builder, getRaiseContext());
   const PatternCommand *command = testedEntries.front().commandList.front();
   auto value = emissionState.emitTestableValue(testEmitter, command);
   if (!value)
@@ -2810,7 +2829,7 @@ void StmtParser::emitCaseCluster(ArrayRef<MatchCaseEntry> caseEntries,
   // `__eq__` of the shared subject or discriminant against this case's expected
   // value, as an i1 for `hlcf.if`.
   auto emitEqCond = [&](const PatternCommand *command) -> SRValue {
-    IREmitter emitter(*curDeclScope, builder);
+    IREmitter emitter(*curDeclScope, builder, getRaiseContext());
     RValue matchesR = emissionState.emitTestForValue(emitter, command, value);
     SRValue matches = emitter.emitSRValue({AnyValue(matchesR), command->expr},
                                           EC_BoolCondition);
@@ -3656,7 +3675,11 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   if (tryOp.hasTrivialFinally())
     return success();
 
-  MLValue errSlot = getEmitter().findNearestErrorSlot();
+  auto emitter = getEmitter();
+  RaiseContext *raiseContext = emitter.getRaiseContext();
+  if (!raiseContext)
+    return populateFinallyBody();
+  MLValue errSlot = raiseContext->getErrorSlot();
   if (!errSlot)
     return populateFinallyBody();
   bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
@@ -3674,8 +3697,12 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   TryYieldOp::create(builder, tryOp.getLoc());
 
   Block *tryBlock = builder.createBlock(&nestedTry.getTryRegion());
-  if (populateFinallyBody())
-    return failure();
+  RaiseContext nestedRaiseContext(nestedTry);
+  {
+    llvm::SaveAndRestore contextSaver(curRaiseContext, &nestedRaiseContext);
+    if (populateFinallyBody())
+      return failure();
+  }
   builder.setInsertionPointToEnd(tryBlock);
   TryYieldOp::create(builder, tryOp.getLoc());
 
@@ -3715,7 +3742,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   // If we see a 'try' block in a context that cannot raise, we need to check if
   // the user explicitly provided an 'except' region, otherwise this is a
   // try-finally block where the try block cannot raise.
-  bool inExceptRegion = !!getEmitter().findNearestErrorSlot();
+  bool inExceptRegion = getRaiseContext();
   if (!inExceptRegion) {
     Lexer subLexer(shared.diags, lexer.getCursor());
     ParserBase subParser(shared, subLexer);
@@ -3726,31 +3753,41 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
 
-  // We start the caught exception type as 'UnresolvedType' to allow throws
-  // within the try body to infer this.  If there are no throwing operations
-  // in the body, this will be left as-is, but won't be used.
-  VarDeclOp errDecl = getEmitter().emitVarDecl(
-      "__try_error__", UnresolvedType::get(getContext()), loc,
-      VarDeclKind::Synthesized);
-  auto tryOp = TryOp::create(builder, loc, errDecl);
+  // Raised calls create their error slot lazily.
+  auto tryOp = TryOp::create(builder, loc, Value());
   if (!inExceptRegion) {
     builder.createBlock(&tryOp.getExceptRegion());
     UnreachableOp::create(builder, loc);
   }
 
   // Parse the try suite.
+  RaiseContext tryContext(tryOp);
   builder.createBlock(&tryOp.getTryRegion());
-  if (parseLocalScopeSuite(curIndent))
-    return failure();
+  {
+    llvm::SaveAndRestore contextSaver(
+        curRaiseContext, inExceptRegion ? &tryContext : curRaiseContext);
+    if (parseLocalScopeSuite(curIndent))
+      return failure();
+  }
   TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
   // If nothing in the try body raised, the error vardecl may still be
   // unresolved.  Force it to Error type if so, so any uses of it complain about
   // Error.
-  if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
-    if (auto errorType =
-            shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
-      errDecl.changeElementType(errorType);
+  VarDeclOp errDecl;
+  if (inExceptRegion) {
+    MLValue errSlot = tryContext.getErrorSlot();
+    if (!errSlot) {
+      auto emitter = getEmitter();
+      errSlot = tryContext.getOrCreateErrorSlot(
+          emitter, UnresolvedType::get(getContext()), loc);
+    }
+    errDecl = cast<VarDeclOp>(errSlot.getDefiningOp());
+    if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+      if (auto errorType =
+              shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
+        errDecl.changeElementType(errorType);
+    }
   }
 
   bool hasFinally = false;
@@ -3824,7 +3861,12 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     // In a raising context, the default 'except' block just forwards the error.
     if (inExceptRegion) {
       builder.createBlock(&tryOp.getExceptRegion());
-      MLValue errSlot = getEmitter().findNearestErrorSlot();
+      auto emitter = getEmitter();
+      MLValue errSlot =
+          emitter.getRaiseContext()
+              ? emitter.getRaiseContext()->getOrCreateErrorSlot(
+                    emitter, ASTType(errDecl.getType().getElementType()), loc)
+              : MLValue();
       ExprDest dest(errSlot, EC_RaiseValue);
 
       // If the contextual caught type is unresolved, then we're the first raise
@@ -3966,8 +4008,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Determine whether we're in a region that is allowed to raise.  If so,
   // generate logic to deal with it.
-  MLValue errSlot = getEmitter().findNearestErrorSlot();
-  bool inExceptRegion = !!errSlot;
+  bool inExceptRegion = getRaiseContext();
 
   // If this has a 'as TARGET' specifier, parse the name into targetName,
   // otherwise targetName will be null.
@@ -4154,29 +4195,36 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
   }
 
-  if (consumeIf(Token::comma)) {
-    // We get here if the `with` statement had multiple clauses, like:
-    //     with MyClass() as a, MyClass() as b:
-    //         ...
-    // so recurse to handle them and interpret it as:
-    //     with MyClass() as a:
-    //         with MyClass() as b:
-    //             ...
-    // The base case of this recursion call will also handle parsing the body
-    // suite for us, so our current call doesn't have to worry about that.
-    if (parseSingleWithStmt(curIndent, smLoc, loc))
-      return success();
-    TryYieldOp::create(builder, loc);
-  } else if (consumeIf(Token::colon)) {
-    if (parseLocalScopeSuite(curIndent))
+  // A `with` in a non-raising scope uses its try only for cleanup. Its
+  // unreachable except region must not make `raise` valid in the body.
+  RaiseContext withRaiseContext(nestedTryOp ? nestedTryOp : tryOp);
+  {
+    llvm::SaveAndRestore contextSaver(
+        curRaiseContext, inExceptRegion ? &withRaiseContext : curRaiseContext);
+    if (consumeIf(Token::comma)) {
+      // We get here if the `with` statement had multiple clauses, like:
+      //     with MyClass() as a, MyClass() as b:
+      //         ...
+      // so recurse to handle them and interpret it as:
+      //     with MyClass() as a:
+      //         with MyClass() as b:
+      //             ...
+      // The base case of this recursion call will also handle parsing the body
+      // suite for us, so our current call doesn't have to worry about that.
+      if (parseSingleWithStmt(curIndent, smLoc, loc))
+        return success();
+      TryYieldOp::create(builder, loc);
+    } else if (consumeIf(Token::colon)) {
+      if (parseLocalScopeSuite(curIndent))
+        return failure();
+      TryYieldOp::create(builder, loc);
+    } else {
+      auto message = "expected ':' or ',' after 'with' expression";
+      auto diagLoc = getTokenLocOrEndOfPreviousLineIfOnNewLine();
+      // Report the error.
+      auto diag = emitError(diagLoc, message);
       return failure();
-    TryYieldOp::create(builder, loc);
-  } else {
-    auto message = "expected ':' or ',' after 'with' expression";
-    auto diagLoc = getTokenLocOrEndOfPreviousLineIfOnNewLine();
-    // Report the error.
-    auto diag = emitError(diagLoc, message);
-    return failure();
+    }
   }
 
   // Now that we emitted the body, we can have inferred the error type. If
@@ -4254,6 +4302,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
         UnreachableOp::create(builder, loc);
       } else {
+        auto emitter = getEmitter();
+        MLValue errSlot = emitter.getRaiseContext()->getOrCreateErrorSlot(
+            emitter, ASTType(errDecl.getType().getElementType()), loc);
         ExprDest dest(errSlot, EC_RaiseValue);
         // If the contextual caught type is unresolved, then we're the first
         // raise in a try block.  Resolve the error type to whatever we are
@@ -4350,14 +4401,18 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           // On false, we re-raise the error. Sync the statement builder so
           // getEmitter() emits into this else region.
           builder = *emitter.builder;
-          MLValue raiseSlot = getEmitter().findNearestErrorSlot();
+          auto raiseEmitter = getEmitter();
+          MLValue raiseSlot =
+              raiseEmitter.getRaiseContext()->getOrCreateErrorSlot(
+                  raiseEmitter,
+                  ASTType(excValueDecl.getType().getElementType()), loc);
           ExprDest dest(raiseSlot, EC_RaiseValue);
           // If the error type is unresolved, resolve it to whatever we
           // propagate.
           if (isa<UnresolvedType>(raiseSlot.getRValueType()))
             dest = ExprDest(cast<VarDeclOp>(raiseSlot.getDefiningOp()),
                             EC_RaiseValue);
-          getEmitter().emitResult(MRValue(excValueDecl), contextExp, dest);
+          raiseEmitter.emitResult(MRValue(excValueDecl), contextExp, dest);
           LIT::RaiseOp::create(builder, loc);
           HLCF::YieldOp::create(builder, loc);
           return success();
@@ -4488,9 +4543,10 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
                                                           rootPath, commands)))
           return failure();
 
-        PatternEmitState emissionState{*curDeclScope, subject, rootPath,
-                                       arm.keywordLoc,
-                                       DenseMap<const PatternPath *, CValue>()};
+        PatternEmitState emissionState{
+            *curDeclScope,  getRaiseContext(),
+            subject,        rootPath,
+            arm.keywordLoc, DenseMap<const PatternPath *, CValue>()};
         return emissionState.emitComptimeCondition(commands,
                                                    arm.patternBindings);
       }();
@@ -4673,9 +4729,10 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
                                                         rootPath, commands)))
         return failure();
 
-      PatternEmitState emissionState{*curDeclScope, subject, rootPath,
-                                     arm.keywordLoc,
-                                     DenseMap<const PatternPath *, CValue>()};
+      PatternEmitState emissionState{
+          *curDeclScope,  getRaiseContext(),
+          subject,        rootPath,
+          arm.keywordLoc, DenseMap<const PatternPath *, CValue>()};
       auto matchOp = HLCF::MatchOp::create(builder, arm.keywordLoc, TypeRange(),
                                            /*caseRegionsCount=*/1);
       Region &caseRegion = matchOp.getCaseRegions().front();
@@ -6028,7 +6085,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
   if (parseToken(Token::colon, "expected ':' after region argument list"))
     return failure();
-  StmtParser parser(lexer, decl);
+  StmtParser parser(lexer, decl, getRaiseContext());
   return parser.parseLocalScopeSuite(curIndent);
 }
 
@@ -6136,7 +6193,8 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
   // temporary operation so we can find it later.
   auto cursor = LIT::ReturnOp::create(stmtEmitter.getBuilder(), location,
                                       ArrayRef<Value>());
-  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
+  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor),
+                          emitter.getRaiseContext());
   DebugInfo::DIBuilder cursorDIBuilder(emitter.getContext());
   if (shared.diBuilder)
     cursorDIBuilder = shared.diBuilder->copy();
@@ -6274,7 +6332,12 @@ AnyValue ComprehensionNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 /// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
 ParseResult ParserBase::parseSuite(ASTDecl &containingDecl) {
-  StmtParser parser(lexer, containingDecl);
+  // If the context is a raising function, then use it as the raiseContext for
+  // the StmtParser.
+  auto fn = dyn_cast<DefASTDecl>(&containingDecl);
+  RaiseContext raiseContext(fn ? fn->getOp().getOperation() : nullptr);
+  StmtParser parser(lexer, containingDecl,
+                    fn && fn->getOp().isThrows() ? &raiseContext : nullptr);
 
   // Parse the docstring if present.
   parser.parseDocString(containingDecl);

@@ -967,13 +967,10 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
                                  emitter.declScope)) {
       // If we're the top level, then nothing can use the result, so we can
       // microoptimize this case.
-      Operation *opForRaise = nullptr;
-      if (emitter.builder)
-        opForRaise =
-            findOpProcessingRaise(emitter.builder->getInsertionBlock());
-
       bool isOk = false;
-      if (opForRaise) {
+      if (RaiseContext *raiseContext = emitter.getRaiseContext()) {
+        Operation *opForRaise = raiseContext->getOperation();
+
         // If we're exiting the entire function, we are ok.
         if (isa<FnOp>(opForRaise))
           isOk = true;
@@ -1161,8 +1158,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // If the callee throws and is not async, we pass the contextual error
     // slot.
-    MLValue errSlot = emitter.findNearestErrorSlot();
-    if (!errSlot) {
+    auto *raiseContext = emitter.getRaiseContext();
+    if (!raiseContext) {
       auto diag = emitter.emitError(callExpr->getLoc())
                   << "cannot call function that may raise in a context that "
                      "cannot raise"
@@ -1176,6 +1173,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       return {};
     }
+    bool createdErrorSlot = !raiseContext->getErrorSlot();
+    MLValue errSlot = raiseContext->getOrCreateErrorSlot(
+        emitter, errorType, argValAndExpr.expr->getLocation(emitter));
     // Make sure the raised error type matches the contextual error type. We
     // don't support throwing an Int in a context that catches a Float for
     // example.
@@ -1188,6 +1188,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
       errorVar.changeElementType(errorType);
       emitter.checkInferredErrorType(errorType, callExpr->getLoc());
+    } else if (createdErrorSlot) {
+      emitter.checkInferredErrorType(errSlot.getRValueType(),
+                                     callExpr->getLoc());
     } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
       emitter.emitError(callExpr->getLoc())
           << "cannot call function that may raise " << errorType
@@ -1989,8 +1992,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   //       raise err
   // This is safe because the thrown type is implicitly convertible to Float32,
   // and the exception will be implicitly converted when rethrown.
-  if (calleeSig.isThrows() && builder) {
-    MLValue errSlot = findNearestErrorSlot();
+  if (calleeSig.isThrows() && builder && getRaiseContext()) {
+    MLValue errSlot = getRaiseContext()->getErrorSlot();
     ASTType thrownType = calleeSig.getUserThrownType();
 
     auto isErrorTypeConvertible = [&]() -> bool {

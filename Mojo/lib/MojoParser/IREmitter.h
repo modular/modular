@@ -40,6 +40,25 @@ class IREmitter;
 class CallOperands;
 class TraitType;
 
+/// Tracks the error storage associated with a source-level try body or raising
+/// function while it is emitted. The opForRaise is a FnOp when the context is a
+/// throwing function, or a TryOp when within one of those.
+struct RaiseContext {
+  explicit RaiseContext(Operation *opForRaise) : opForRaise(opForRaise) {}
+
+  /// Returns the existing error slot, or null when this try has not yet needed
+  /// one.
+  MLValue getErrorSlot() const;
+
+  /// Returns the error slot, creating typed storage before a try when needed.
+  MLValue getOrCreateErrorSlot(IREmitter &emitter, ASTType errorType,
+                               Location loc);
+  Operation *getOperation() const { return opForRaise; }
+
+private:
+  Operation *opForRaise;
+};
+
 //===--------------------------------------------------------------------===//
 // TypeStrictness
 //===--------------------------------------------------------------------===//
@@ -121,15 +140,18 @@ private:
 class IREmitter : public SharedStateUser {
 public:
   /// Create an IREmitter for a dynamic context with a builder.
-  IREmitter(ASTDecl &declScope, OpBuilder builder);
+  IREmitter(ASTDecl &declScope, OpBuilder builder,
+            RaiseContext *raiseContext = nullptr);
   /// Create an IREmitter for a parameter context.
   IREmitter(ASTDecl &declScope, ExprContext paramContext,
-            DeferredTypingContext *deferredTypingContext = nullptr);
+            DeferredTypingContext *deferredTypingContext = nullptr,
+            RaiseContext *raiseContext = nullptr);
 
   /// Get an emitter set up for parameter expressions only with the specified
   /// context.
   IREmitter getParamEmitter(ExprContext context) {
-    return IREmitter(declScope, context, deferredTypingContext);
+    return IREmitter(declScope, context, deferredTypingContext,
+                     getRaiseContext());
   }
 
   //===--------------------------------------------------------------------===//
@@ -154,6 +176,12 @@ public:
   /// discharge later. Per-parameter-constraint inconclusiveness is *not*
   /// affected by this context: those remain hard errors.
   DeferredTypingContext *deferredTypingContext = nullptr;
+
+  /// The parser-owned context accepting errors from the expression currently
+  /// being emitted. Null when the surrounding scope cannot raise.
+  RaiseContext *raiseContext = nullptr;
+
+  RaiseContext *getRaiseContext() { return raiseContext; }
 
   /// Return information about the scope we're looking into.
   ASTDecl &getDeclScope() const { return declScope; }
@@ -623,10 +651,6 @@ public:
 
   //===--------------------------------------------------------------------===//
   // Statement emission helpers.
-
-  /// Find the nearest error slot to use if the emitter is currently within a
-  /// context that can raise. Otherwise, return null.
-  MLValue findNearestErrorSlot();
 
   /// Verify inferred error types for escaping origins.
   void checkInferredErrorType(ASTType rvalueType, SMLoc loc);

@@ -376,7 +376,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  IREmitter emitter(*thunkDecl, b);
+  RaiseContext raiseContext(thunk);
+  IREmitter emitter(*thunkDecl, b,
+                    thunkSignature.isThrows() ? &raiseContext : nullptr);
 
   // Construct the call operands from the function block arguments.
   SyntheticNode node(useLoc);

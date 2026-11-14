@@ -1599,7 +1599,7 @@ LogicalResult
 PatternEmitState::emitCommands(OpBuilder &builder,
                                ArrayRef<const PatternCommand *> commands,
                                SmallVectorImpl<PatternBoundName> &bindings) {
-  IREmitter emitter(curDeclScope, builder);
+  IREmitter emitter(curDeclScope, builder, raiseContext);
   for (const PatternCommand *cmd : commands) {
     assert(cmd && "null pattern command");
     switch (cmd->kind) {
@@ -1731,14 +1731,14 @@ static LogicalResult
 initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
                SmallVectorImpl<PatternBoundName> &aggregateBindings,
                ArrayRef<OrCaseBindings> alternativeBindings,
-               ASTDecl &curDeclScope) {
+               ASTDecl &curDeclScope, RaiseContext *raiseContext) {
   if (alternativeBindings.empty() || alternativeBindings.front().empty())
     return success();
 
   // Create one VarDecl per binding before the nested or-match so each
   // alternative can store into the same slots and the result dominates the
   // enclosing case.
-  IREmitter emitter(curDeclScope, builder);
+  IREmitter emitter(curDeclScope, builder, raiseContext);
   emitter.builder->setInsertionPoint(matchOp);
   Location mlirLoc = emitter.shared.translateLocation(loc);
 
@@ -1812,9 +1812,11 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
 
 /// Verify each alternative binds the same names/kinds/types as the aggregate
 /// slots, and copy each case binding into its aggregate VarDecl.
-static LogicalResult checkOrBindings(
-    OpBuilder &builder, SMLoc loc, ArrayRef<PatternBoundName> aggregateBindings,
-    ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope) {
+static LogicalResult
+checkOrBindings(OpBuilder &builder, SMLoc loc,
+                ArrayRef<PatternBoundName> aggregateBindings,
+                ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope,
+                RaiseContext *raiseContext) {
   if (aggregateBindings.empty() && caseBindings.empty())
     return success();
 
@@ -1866,7 +1868,7 @@ static LogicalResult checkOrBindings(
     }
     ExprDest storeDest(destLV, EC_VarInitMatchBinding);
     SyntheticNode locExpr(loc);
-    IREmitter emitter(curDeclScope, builder);
+    IREmitter emitter(curDeclScope, builder, raiseContext);
     CValue caseValue = caseBN.value;
     ASTType aggregateValueType = bn.value.getRValueType();
     if (caseValue.isMValue() && sugarIsa<RefType>(aggregateValueType)) {
@@ -1913,8 +1915,8 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
     alternativeBlocks.push_back(&block);
 
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
-    PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
-                              pathValues};
+    PatternEmitState altState{scope,    raiseContext,  rootSubject,
+                              rootPath, matchLocation, pathValues};
     OrCaseBindings caseBindings;
     if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();
@@ -1932,14 +1934,14 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
   SmallVector<PatternBoundName, 4> aggregateBindings;
   if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
                             aggregateBindings, alternativeBindings,
-                            curDeclScope)))
+                            curDeclScope, raiseContext)))
     return failure();
 
   for (auto [block, caseBindings] :
        llvm::zip_equal(alternativeBlocks, alternativeBindings)) {
     builder.setInsertionPointToEnd(block);
     if (failed(checkOrBindings(builder, cmd.expr->getLoc(), aggregateBindings,
-                               caseBindings, curDeclScope)))
+                               caseBindings, curDeclScope, raiseContext)))
       return failure();
     HLCF::MatchCompleteOp::create(builder, loc);
   }

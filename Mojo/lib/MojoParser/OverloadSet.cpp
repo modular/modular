@@ -1570,6 +1570,11 @@ CValue IREmitter::emitCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
+  // Calls in this temporary try must use its error slot rather than the
+  // surrounding source-level try. The catch callback below restores the
+  // surrounding context before it converts and rethrows the error.
+  RaiseContext nestedRaiseContext(tryOp);
+  llvm::SaveAndRestore raiseContextSaver(raiseContext, &nestedRaiseContext);
   CValue result = emitCall(std::move(operands));
   if (!result)
     finalDest.resetForError(*this);

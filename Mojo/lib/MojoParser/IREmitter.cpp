@@ -189,16 +189,20 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 /// Create an IREmitter for a dynamic context with a builder.
-IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder)
+IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
+                     RaiseContext *raiseContext)
     : SharedStateUser(declScope.getShared()), builder(builder),
-      paramContext(EC_InvalidContext), declScope(declScope) {}
+      paramContext(EC_InvalidContext), declScope(declScope),
+      raiseContext(raiseContext) {}
 
 /// Create an IREmitter for a parameter context.
 IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
-                     DeferredTypingContext *deferredTypingContext)
+                     DeferredTypingContext *deferredTypingContext,
+                     RaiseContext *raiseContext)
     : SharedStateUser(declScope.getShared()), builder({}),
       paramContext(paramContext), declScope(declScope),
-      deferredTypingContext(deferredTypingContext) {}
+      deferredTypingContext(deferredTypingContext), raiseContext(raiseContext) {
+}
 
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
@@ -1398,6 +1402,8 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
   auto tryOp = TryOp::create(*tmpEmitter.builder, location, errDecl);
 
   // Parse the expression into the try block.
+  RaiseContext temporaryRaiseContext(tryOp);
+  tmpEmitter.raiseContext = &temporaryRaiseContext;
   tmpEmitter.builder->createBlock(&tryOp.getTryRegion());
 
   // Emit the expression and invoke the callback on success.
@@ -1943,19 +1949,41 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Error handling helpers.
 
-MLValue IREmitter::findNearestErrorSlot() {
-  assert(builder && "cannot raise in a context without a builder");
-  Operation *opForRaise = findOpProcessingRaise(builder->getInsertionBlock());
-  // Return null to indicate that the current context cannot raise.
-  if (!opForRaise)
-    return {};
+/// Gets the by-reference argument of a raising function or the lazily-created
+/// error slot of a try.
+MLValue RaiseContext::getErrorSlot() const {
+  if (auto func = dyn_cast<FnOp>(opForRaise)) {
+    size_t errorArgIndex = func.getNumArguments() - 2;
+    assert(func.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
+           ArgConvention::ByRefError);
+    return func.getArgument(errorArgIndex);
+  }
 
-  // In a raising function, the error slot is always the second last argument.
-  if (auto func = dyn_cast<FnOp>(opForRaise))
-    return func.getArgument(func.getNumArguments() - 2);
+  // If the try block already has an error slot, use it, otherwise return null.
+  Value err = cast<LIT::TryOp>(opForRaise).getErr();
+  return err ? MLValue(err) : MLValue();
+}
 
-  // Otherwise, the error slot is carried by the surrounding try op.
-  return cast<LIT::TryOp>(opForRaise).getErr();
+/// Creates a try's error slot immediately before the try so it dominates every
+/// region that can propagate an error.
+MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
+                                           ASTType errorType, Location loc) {
+  // If we already have an error slot, use it.
+  if (MLValue errSlot = getErrorSlot())
+    return errSlot;
+
+  // Otherwise, we must be in a try block creating the first one lazily.  Emit
+  // the VarDecl ahead of the try with the specified errorType.
+  auto tryOp = cast<LIT::TryOp>(opForRaise);
+  OpBuilder errorDeclBuilder = *emitter.builder;
+  errorDeclBuilder.setInsertionPoint(tryOp);
+  OpBuilder savedBuilder = *emitter.builder;
+  emitter.builder = errorDeclBuilder;
+  auto errDecl = emitter.emitVarDecl("__try_error__", errorType, loc,
+                                     VarDeclKind::Synthesized);
+  tryOp.getErrMutable().assign(errDecl.getResult());
+  emitter.builder = savedBuilder;
+  return MLValue(errDecl.getResult());
 }
 
 /// The declaration `origin` is ultimately rooted at, null when it is rooted at
@@ -1991,11 +2019,11 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
   if (origins.empty())
     return;
 
-  // Ok, find the try block that we're inferring for.  We must be in a 'try'
-  // because that is the only thing that can infer an error type.
-  assert(builder && "cannot raise in a context without a builder");
-  auto tryOp =
-      dyn_cast<LIT::TryOp>(findOpProcessingRaise(builder->getInsertionBlock()));
+  // Only source-level try blocks infer their error type; a raising function
+  // receives its slot from the signature.
+  RaiseContext *raiseContext = getRaiseContext();
+  assert(raiseContext && "must be in a try block");
+  auto tryOp = dyn_cast<LIT::TryOp>(raiseContext->getOperation());
   if (!tryOp)
     return; // Functions don't infer their error type.
 

@@ -77,14 +77,14 @@ def tryFinally():
     finally:
         # CHECK: lit.return
         return
-    # CHECK: lit.try %__try_error___0
+    # CHECK: lit.try %__try_error__ :
     try:
-        # CHECK: lit.try
+        # CHECK: lit.try %__try_error___0 :
         try:
             # CHECK-NEXT: lit.try.yield
             pass
         # CHECK-NEXT: except
-        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error___1, %__try_error___0){{.*}}*, "move"
+        # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error___0, %__try_error__){{.*}}*, "move"
         # CHECK-NEXT: lit.raise
         finally:
             pass
@@ -94,9 +94,9 @@ def tryFinally():
 
 # CHECK-LABEL: lit.fn @"tryExceptInTryFinally
 def tryExceptInTryFinally():
-    # CHECK: lit.try %__try_error__
+    # CHECK: lit.try {
     try:
-        # CHECK: lit.try %__try_error___0
+        # CHECK: lit.try %__try_error__ :
         try:
             # CHECK-NEXT: lit.try.yield
             pass

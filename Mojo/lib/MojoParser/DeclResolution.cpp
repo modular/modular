@@ -1909,7 +1909,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   //    captures, and record the default-all convention so free variables in
   //    the body are captured rather than seen as unknown declarations.
   for (auto [name, capture, location] : node->captures) {
-    IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp));
+    IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp),
+                         emitter.getRaiseContext());
     if (!ClosureEmitter::addCaptureValue(decl, location, name, capture,
                                          capEmitter, &sigDecl))
       return {};
@@ -1978,7 +1979,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     }
     endFn.setUnresolved(false);
 
-    IREmitter bodyEmitter(decl, OpBuilder(&body.front()));
+    RaiseContext raiseContext(funcOp);
+    IREmitter bodyEmitter(decl, OpBuilder(&body.front()),
+                          funcOp.isThrows() ? &raiseContext : nullptr);
     ASTType userResultType = funcOp.getUserResultType();
     ExprDest resultDest(userResultType, EC_ReturnValue);
     if (signature.hasMemoryOnlyResult())

@@ -4634,14 +4634,16 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
         &emitter.declScope);
     branchScope.insertKnownAssumptions(assumption);
     if (emitter.builder) {
-      IREmitter branchEmitter(branchScope, *emitter.builder);
+      IREmitter branchEmitter(branchScope, *emitter.builder,
+                              emitter.getRaiseContext());
       AnyValue result = branchEmitter.emitExpr(branchExpr, EC_CondExpr);
       // Propagate the advanced insertion point back to the parent emitter.
       emitter.builder = branchEmitter.builder;
       return result;
     }
     IREmitter branchEmitter(branchScope, emitter.paramContext,
-                            emitter.deferredTypingContext);
+                            emitter.deferredTypingContext,
+                            emitter.getRaiseContext());
     return branchEmitter.emitExpr(branchExpr, EC_CondExpr);
   };
 

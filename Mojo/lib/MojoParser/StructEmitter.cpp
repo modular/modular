@@ -392,7 +392,9 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   auto &structDecl = cast<StructASTDecl>(*fnDecl.getParentDecl());
   ASTType structSelfType = structDecl.getSelfType();
 
-  IREmitter emitter(fnDecl, EC_Trait);
+  RaiseContext raiseContext(fn);
+  IREmitter emitter(fnDecl, EC_Trait, nullptr,
+                    fn.isThrows() ? &raiseContext : nullptr);
   fn.getBody()->clear(); // Remove the lit.end_fn
 
   emitter.builder = OpBuilder::atBlockBegin(fn.getBody());
