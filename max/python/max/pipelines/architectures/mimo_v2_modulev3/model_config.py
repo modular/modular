@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for MiMo-V2.6-Flash on ModuleV3 (``MiMoV2ForCausalLM_ModuleV3``).
+"""Config for MiMo-V2.6-Flash on ModuleV3 (``MiMoV2ForCausalLM``).
 
 The model runs FP8 W8A8 dense linears and W4A8 MXFP4 experts. Both KV cache
 groups hold K (192) and V (128) unpadded, packed into one row per head.
@@ -18,17 +18,20 @@ groups hold K (192) and V (128) unpadded, packed into one row per head.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
+from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.ep_config import EPConfig
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    spec_decode_cache_slack,
 )
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -39,28 +42,179 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
+)
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
-from ..mimo_v2.model_config import (
-    FULL,
-    SLIDING,
-    _validate,
-    layer_types,
-    qkv_chunk_layout,
-    validate_devices,
-)
 from .hybrid_kv_params import hybrid_swa_full_kv_params
 from .layers.attention import QkvChunkLayout
-from .quant import MiMoV2QuantScheme, moe_layers, parse_quant_scheme
+from .quant import (
+    MXFP8_DISPATCH_QUANT_CONFIG,
+    MiMoV2QuantScheme,
+    moe_layers,
+    parse_quant_scheme,
+)
 
-# The config helpers and constants above are the graph-API architecture's;
-# the checkpoint's schema does not differ between the ports. The KV cache and
-# the config class below differ: this port caches attention unpadded, and its
-# config has no ``use_subgraphs`` switch and validates the dense-MLP
-# scale-granule split the ModuleV3 build needs at plan time.
+SLIDING = "sliding_attention"
+FULL = "full_attention"
+
+
+def layer_types(huggingface_config: AutoConfig) -> list[str]:
+    """Returns each decoder layer's KV group, from ``hybrid_layer_pattern``."""
+    pattern = huggingface_config.hybrid_layer_pattern
+    return [
+        SLIDING if pattern[i] == 1 else FULL
+        for i in range(huggingface_config.num_hidden_layers)
+    ]
+
+
+def qkv_chunk_layout(config: AutoConfig, sliding: bool) -> QkvChunkLayout:
+    """Returns the chunk layout of ``qkv_proj`` for one attention type.
+
+    The chunk count is the tensor-parallel degree the checkpoint was saved
+    at, which is the full-attention KV head count, ``num_key_value_heads``
+    (4). A different count misreads the full-attention scale grids, which
+    then fail the load on their shape.
+
+    Args:
+        config: The checkpoint's top-level Hugging Face config.
+        sliding: Whether the layer is sliding-window.
+
+    Returns:
+        The layout.
+    """
+
+    def attn(key: str) -> int:
+        # As in the reference: sliding layers read ``swa_<key>`` if present.
+        value = getattr(config, f"swa_{key}", None) if sliding else None
+        return int(getattr(config, key) if value is None else value)
+
+    heads, kv_heads = attn("num_attention_heads"), attn("num_key_value_heads")
+    head_dim, v_head_dim = attn("head_dim"), attn("v_head_dim")
+    chunks = config.num_key_value_heads
+    if heads % chunks or kv_heads % chunks:
+        raise ValueError(
+            f"MiMo-V2: {heads} query and {kv_heads} KV heads do not split "
+            f"into {chunks} qkv_proj chunks."
+        )
+    return QkvChunkLayout(
+        chunks=chunks,
+        q_rows=heads * head_dim // chunks,
+        k_rows=kv_heads * head_dim // chunks,
+        v_rows=kv_heads * v_head_dim // chunks,
+    )
+
+
+def validate_devices(device_specs: Sequence[DeviceSpec]) -> None:
+    """Raises unless every device is an NVIDIA SM100 (B200-class) GPU.
+
+    The W4A8 experts' grouped MXFP8 quantize and MXFP4 matmul are SM100 kernels;
+    elsewhere the graph fails late, with an error that does not name the
+    cause.
+
+    Args:
+        device_specs: The devices to run on.
+
+    Raises:
+        ValueError: If a device is not an SM100 GPU.
+    """
+    for device in load_devices(device_specs):
+        arch = device.architecture_name if device.api == "cuda" else device.api
+        if not arch.startswith("sm_10"):
+            raise ValueError(
+                "MiMo-V2 runs only on NVIDIA SM100 (B200-class) GPUs, whose "
+                f"kernels its W4A8 experts use; {device.label}:{device.id} "
+                f"is {arch!r}."
+            )
+
+
+def _validate(config: AutoConfig) -> None:
+    """Raises on any config value this implementation does not handle."""
+    expected = {
+        "scoring_func": "sigmoid",
+        "topk_method": "noaux_tc",
+        "hidden_act": "silu",
+        "attention_bias": False,
+        "tie_word_embeddings": False,
+        "attention_projection_layout": "fused_qkv",
+    }
+    for key, value in expected.items():
+        if getattr(config, key, None) != value:
+            raise ValueError(
+                f"MiMo-V2: {key} is {getattr(config, key, None)!r}; only "
+                f"{value!r} is implemented."
+            )
+    if (config.n_group or 1, config.topk_group or 1) != (1, 1):
+        raise ValueError(
+            f"MiMo-V2: n_group {config.n_group} and topk_group "
+            f"{config.topk_group} are not the single-group router."
+        )
+    if getattr(config, "n_shared_experts", None):
+        raise ValueError("MiMo-V2: shared experts are not implemented.")
+    if config.routed_scaling_factor not in (None, 1.0):
+        raise ValueError(
+            f"MiMo-V2: routed_scaling_factor {config.routed_scaling_factor}"
+            " is not implemented."
+        )
+    # The reference reads the RoPE type from either key and would apply
+    # YaRN or any other scaling named there.
+    for key in ("rope_parameters", "rope_scaling"):
+        rope = getattr(config, key, None) or {}
+        rope_type = rope.get("rope_type", rope.get("type", "default"))
+        if rope_type != "default":
+            raise ValueError(
+                f"MiMo-V2: {key} has rope_type {rope_type!r}; only default "
+                "RoPE is implemented."
+            )
+    # Sliding and full layers share every width except their KV head count.
+    for key in ("num_attention_heads", "head_dim", "v_head_dim"):
+        if getattr(config, f"swa_{key}") != getattr(config, key):
+            raise ValueError(
+                f"MiMo-V2: swa_{key} differs from {key}; only the KV head "
+                "count may differ between sliding and full layers."
+            )
+
+
+def ep_dispatch_row_budget(pipeline_config: PipelineConfig) -> int:
+    """Returns the rows one forward step carries; sizes the EP buffers.
+
+    The scheduler's ``max_batch_input_tokens`` bounds a step's active rows
+    -- chunked prefill makes it hard -- so a forward's dispatch buffers fit
+    it. A speculative verify merges ``draft_width`` draft rows beside each
+    request's active token through every MoE layer, rows the budget never
+    charges, so it counts them too, as DeepSeek-V4.1's DSpark EP config
+    does: the dispatch buffers are fixed at build and the dispatch kernel
+    rejects a wider shard.
+
+    Args:
+        pipeline_config: The pipeline whose scheduler budget and verify
+            width bound the step's rows.
+
+    Raises:
+        ValueError: Speculating without ``max_batch_size``, which bounds the
+            requests a verify step carries and so the draft rows too.
+    """
+    runtime = pipeline_config.runtime
+    speculative = pipeline_config.speculative
+    if speculative is None:
+        return runtime.max_batch_input_tokens
+    if runtime.max_batch_size is None:
+        raise ValueError(
+            "MiMo-V2 speculative decoding under expert parallelism needs"
+            " max_batch_size, which bounds the draft rows a verify step"
+            " adds to max_batch_input_tokens"
+        )
+    return (
+        runtime.max_batch_input_tokens
+        + runtime.max_batch_size * speculative.draft_width
+    )
 
 
 SPLIT_KV_MAX_QUERY_ROWS = 128
@@ -109,7 +263,11 @@ def check_split_verify_rows(
 
 
 @dataclass(kw_only=True)
-class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
+class MiMoV2Config(
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+    ExpertParallelDeploymentConfig,
+):
     """Model configuration for MiMo-V2.6-Flash.
 
     ``attention_chunk_size`` in the checkpoint config is a leftover key and is
@@ -180,6 +338,112 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     data_parallel_degree: int = 1
     """Attention data-parallel replicas. Reserved for the DP coupling; a
     degree above 1 is refused until the DP-attn mode is built."""
+
+    ep_dispatch_token_layout: ClassVar[str] = "dp_replicated"
+    ep_row_budget: int = 0
+    """The rows one EP forward step carries, from the scheduler's budget;
+    0 reads ``runtime.max_batch_input_tokens``."""
+
+    chunked_prefill: bool = True
+    """Whether chunked prefill is on, which the EP dispatch buffers need."""
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Completes the output policy without changing checkpoint weights."""
+        del huggingface_config, state_dict
+        return replace(
+            self,
+            return_logits=outputs.return_logits,
+            return_hidden_states=outputs.return_hidden_states,
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the exchange while preserving MiMo's supported EP modes."""
+        n_devices = len(runtime.mesh.devices)
+        dp_degree = runtime.data_parallel_degree
+        use_allreduce = dp_degree <= 1
+        if dp_degree > 1 and dp_degree != n_devices:
+            raise ValueError(
+                "MiMo-V2 data-parallel attention requires one replica per"
+                " device"
+            )
+        if runtime.ep_size != n_devices:
+            raise ValueError(
+                "MiMo-V2 serves expert parallelism on one node only: "
+                "ep_size must equal the device count"
+            )
+        if runtime.ep_use_allreduce != use_allreduce:
+            raise NotImplementedError(
+                "MiMo-V2 requires allreduce EP with TP attention and "
+                "P2P EP with DP attention"
+            )
+        if not self.chunked_prefill:
+            raise ValueError(
+                "MiMo-V2 expert parallelism requires chunked prefill"
+            )
+        if self.n_routed_experts % runtime.ep_size:
+            raise ValueError("MiMo-V2 devices must divide the routed experts")
+        return EPConfig(
+            dispatch_dtype=DType.float8_e4m3fn,
+            dispatch_quant_config=MXFP8_DISPATCH_QUANT_CONFIG,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.hidden_size,
+            top_k=self.num_experts_per_tok,
+            n_experts=self.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=self.ep_row_budget
+                or runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=dp_degree,
+                use_allreduce=use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=1,
+            use_allreduce=use_allreduce,
+        )
+
+    def apply_model_load_context(self, context: ModelLoadContext) -> Self:
+        """Applies the speculative target's KV limits and selected-layer taps."""
+        assert context.kv_params is not None
+        assert isinstance(context.kv_params, KVCacheParamInterface)
+        check_split_verify_rows(
+            context.huggingface_config.num_attention_heads, context.kv_params
+        )
+        if (
+            context.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS
+            and context.pipeline_config.runtime.ep_size > 1
+            and context.pipeline_config.model.data_parallel_degree <= 1
+        ):
+            raise NotImplementedError(
+                "MiMo-V2 speculative expert parallelism requires DP attention"
+            )
+        return replace(
+            self,
+            max_seq_len=self.max_seq_len
+            + spec_decode_cache_slack(context.kv_params),
+            target_layer_ids=list(context.target_layer_ids) or None,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Completes placement and rejects unsupported attention replicas."""
+        n_devices = len(runtime.mesh.devices)
+        if runtime.data_parallel_degree > 1 and (
+            runtime.ep_size != n_devices
+            or runtime.data_parallel_degree != n_devices
+        ):
+            raise ValueError(
+                "MiMo-V2 data-parallel attention requires one replica per"
+                " device and expert parallelism over every device"
+            )
+        return replace(
+            self,
+            ep_config=runtime.ep,
+            data_parallel_degree=runtime.data_parallel_degree,
+        )
 
     @property
     def attention_scale(self) -> float:
@@ -277,6 +541,12 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             data_parallel_degree=model_config.data_parallel_degree,
         )
+        config.ep_row_budget = (
+            ep_dispatch_row_budget(pipeline_config)
+            if pipeline_config.runtime.ep_size > 1
+            else 0
+        )
+        config.chunked_prefill = pipeline_config.runtime.enable_chunked_prefill
         return config
 
     @classmethod

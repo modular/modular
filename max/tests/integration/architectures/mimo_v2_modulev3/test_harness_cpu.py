@@ -42,19 +42,22 @@ from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import _graph_ops as kernels
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
-)
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     FULL,
     SLIDING,
     MiMoV2Config,
 )
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
+)
 from max.pipelines.kv_cache import KVCacheConfig
-from max.pipelines.lib import WeightTransform
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
+)
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.pipelines.speculative import SpeculativeConfig, SpeculativeMethod
 from max.tensor import default_device, default_dtype
@@ -136,7 +139,7 @@ def test_a_cache_wider_than_the_heads_is_refused(checkpoint: Path) -> None:
         default_dtype(config.dtype),
         pytest.raises(ValueError, match=r"\(256, 256\) are not the heads'"),
     ):
-        MiMoV2(config)
+        MiMoV2Decoder(config)
 
 
 @pytest.mark.parametrize(
@@ -210,10 +213,7 @@ def adapted(
 ) -> dict[str, WeightData]:
     """The adapter's output for the tiny checkpoint, on a 2-CPU mesh."""
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    hf = PretrainedConfig(
-        **json.loads((checkpoint / "config.json").read_text())
-    )
-    return WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
+    return convert_safetensor_state_dict(dict(weights.items()))
 
 
 def _mesh() -> DeviceMesh:
@@ -231,7 +231,7 @@ def test_adapter_names_match_module_parameters(
     config = _config(checkpoint)
     mesh = _mesh()
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
+        model = MiMoV2Decoder(config)
         names = {name for name, _ in model.parameters}
         assert names == set(adapted), (
             f"module lacks {sorted(set(adapted) - names)[:8]}; no parameter "
@@ -255,10 +255,11 @@ def test_staged_trace_has_one_shared_moe_subgraph(
     config = _config(checkpoint)
     mesh = _mesh()
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
-        inputs = modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params,
-            device_refs=[DeviceRef.CPU() for _ in range(N_DEVICES)],
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            DeviceRef.CPU(),
+            input_layout=MiMoV2Decoder.input_layout,
         )
     # A fresh lazy context for the stage: sharing the build's leaves the
     # module's pending weight-prep tensors in the context, and realizing
@@ -266,7 +267,11 @@ def test_staged_trace_has_one_shared_moe_subgraph(
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
         # Unpack before printing: rendering the registry's tensors would
         # realize them, which a lazy context refuses.
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
         text = str(staged)
     assert text.count("mo.graph @mimo_v2_moe") == 1
     assert text.count("mo.call @mimo_v2_moe") == len(config.moe_layers)
@@ -288,13 +293,18 @@ def test_every_layer_runs_on_the_split_cache(
     config = _config(checkpoint)
     mesh = _mesh()
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
-        inputs = modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params,
-            device_refs=[DeviceRef.CPU() for _ in range(N_DEVICES)],
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            DeviceRef.CPU(),
+            input_layout=MiMoV2Decoder.input_layout,
         )
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
         text = str(staged)
     layers = len(config.layer_types)
     assert text.count("v_head_dim = 128") == 4 * layers * N_DEVICES

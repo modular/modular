@@ -41,7 +41,7 @@ from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
-    MiMoV2,
+    MiMoV2Decoder,
     MiMoV2DecoderLayer,
     MiMoV2MoE,
 )
@@ -296,7 +296,7 @@ class MiMoReplicaTrace(Module[..., list[Tensor]]):
     every device's residual after the MLP or MoE output's reduction.
     """
 
-    def __init__(self, model: MiMoV2) -> None:
+    def __init__(self, model: MiMoV2Decoder) -> None:
         self.layers = model.layers
         self.ropes = model.ropes
         self.kv_params = model.kv_params

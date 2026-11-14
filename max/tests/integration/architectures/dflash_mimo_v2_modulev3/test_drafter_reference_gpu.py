@@ -92,12 +92,14 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.module import InputType
-from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
-from max.pipelines.architectures.dflash_mimo_v2.weight_adapters import (
+from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.model_config import (
+    DFlashMiMoV2Config,
+)
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     MASK_EMBEDDING,
     drafter_tensor_shapes,
 )
-from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.tensor import (
     Tensor,
     compilation,

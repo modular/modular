@@ -17,8 +17,10 @@ from __future__ import annotations
 import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from typing import ClassVar
 
 from max import functional as F
+from max import tree
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import (
@@ -40,6 +42,7 @@ from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import rms_norm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
@@ -195,7 +198,7 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
         return h + mlp_out.to(h.mapping)
 
 
-class MiMoV2(Module[..., ModuleV3Outputs]):
+class _MiMoV2(Module[..., ModuleV3Outputs]):
     """MiMo-V2.6-Flash: 48 hybrid SWA/full decoder layers and an untied head.
 
     Weight names are the checkpoint's without ``model.``, as the weight
@@ -518,7 +521,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         )
         return rows.rebind_mapping(h.mapping)
 
-    def forward(
+    def _forward(
         self,
         tokens: Tensor,
         return_n_logits: Tensor,
@@ -621,7 +624,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         )
 
 
-class MiMoV2SpecTarget(MiMoV2):
+class _MiMoV2SpecTarget(_MiMoV2):
     """MiMo-V2 as a speculative target: a verify pass, not a forward.
 
     The base module returns neither variable logits nor hidden states: its
@@ -761,3 +764,56 @@ class MiMoV2SpecTarget(MiMoV2):
         """
         logits = self.lm_head(h)
         return F.allgather(logits, tensor_axis=-1).cast(DType.float32)
+
+
+class MiMoV2Decoder(_MiMoV2SpecTarget):
+    """MiMo-V2 registered through the shared decoder role.
+
+    The registered graph keeps the name the precompiled MEFs and Mach's
+    registry use, and the input order the existing graph declares: the
+    DP batch-split tensors between the batch inputs and the KV leaves,
+    with the EP tail last.
+    """
+
+    graph_name: ClassVar[str] = "MiMoV2"
+    supports_data_parallel: ClassVar[bool] = True
+    input_layout: ClassVar[tuple[str, ...]] = (
+        "tokens",
+        "return_n_logits",
+        "input_row_offsets",
+        "data_parallel_splits",
+        "host_input_row_offsets",
+        "kv",
+        "ep",
+    )
+
+    def __init__(self, config: MiMoV2Config) -> None:
+        manager = (
+            EPBatchManager(config.ep_config)
+            if config.ep_config is not None
+            else None
+        )
+        if config.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
+            super().__init__(config, manager)
+        else:
+            _MiMoV2.__init__(self, config, manager)
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the shared semantic batch in the existing physical order."""
+        ep_inputs = tree.leaves(inputs.ep) if inputs.ep is not None else ()
+        split_inputs: tuple[Tensor, ...] = ()
+        if self.dp_attention:
+            assert inputs.data_parallel_splits is not None
+            assert inputs.host_input_row_offsets is not None
+            split_inputs = (
+                inputs.data_parallel_splits,
+                inputs.host_input_row_offsets,
+            )
+        return self._forward(
+            inputs.tokens,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
+            *split_inputs,
+            *tree.leaves(inputs.kv),
+            *ep_inputs,
+        )

@@ -1,4 +1,4 @@
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,11 +9,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
-"""MiMo-V2.6-Flash (``MiMoV2ForCausalLM``)."""
+##===----------------------------------------------------------------------===##
+model:
+  model_path: XiaomiMiMo/MiMo-V2.6-Flash-RL
+  # The checkpoint's 1M context plans a KV pool far past 2x B200's
+  # budget; the smoke eval needs a fraction of it.
+  max_length: 16384
 
-from .arch import mimo_v2_arch
-from .model import MiMoV2Model
-from .model_config import MiMoV2Config
-
-__all__ = ["MiMoV2Config", "MiMoV2Model", "mimo_v2_arch"]

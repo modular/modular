@@ -29,7 +29,6 @@ family.
    pipelines.architectures.dflash2_qwen3_5
    pipelines.architectures.dflash_kimi_k25
    pipelines.architectures.dflash_llama3
-   pipelines.architectures.dflash_mimo_v2
    pipelines.architectures.diffusion_gemma
    pipelines.architectures.dspark_deepseekV4
    pipelines.architectures.dspark_deepseekV41
@@ -64,7 +63,6 @@ family.
    pipelines.architectures.llama3
    pipelines.architectures.llama4
    pipelines.architectures.mamba
-   pipelines.architectures.mimo_v2
    pipelines.architectures.minimax_m2
    pipelines.architectures.minimax_music3
    pipelines.architectures.mistral
@@ -109,7 +107,6 @@ Text generation
    ~max.pipelines.architectures.dflash2_qwen3_5
    ~max.pipelines.architectures.dflash_kimi_k25
    ~max.pipelines.architectures.dflash_llama3
-   ~max.pipelines.architectures.dflash_mimo_v2
    ~max.pipelines.architectures.diffusion_gemma
    ~max.pipelines.architectures.dspark_deepseekV4
    ~max.pipelines.architectures.dspark_deepseekV41
@@ -142,7 +139,6 @@ Text generation
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
-   ~max.pipelines.architectures.mimo_v2
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3

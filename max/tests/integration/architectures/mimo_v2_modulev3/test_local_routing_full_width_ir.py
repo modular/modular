@@ -46,12 +46,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.nn import _graph_ops as kernels
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.executor import CompilingExecutor, set_default_executor
@@ -81,7 +82,7 @@ def _device_mesh() -> DeviceMesh:
 
 def _full_width_model(
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[MiMoV2, MiMoV2Config]:
+) -> tuple[MiMoV2Decoder, MiMoV2Config]:
     monkeypatch.setattr(kernels, "_is_sm10x_gpu", lambda: True)
     hf = first_four_layer_config()
     # Production shards the vocabulary, which a one-row table cannot split.
@@ -94,7 +95,7 @@ def _full_width_model(
         max_seq_len=256,
     )
     with F.lazy(), default_device(_device_mesh()), default_dtype(config.dtype):
-        model = MiMoV2(config)
+        model = MiMoV2Decoder(config)
     assert model.route_on_every_device
     assert config.hidden_size == 4096
     return model, config
@@ -153,11 +154,14 @@ def test_full_width_production_fuses_every_attention_allreduce(
                 parameter.dtype, list(shape)
             )
         weights[name] = zeros[key]
-    staged, registry = model.stage(
-        *modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=list(config.devices)
+    staged, registry = _DecoderGraph(model).stage(
+        decoder_input_types(
+            config.kv_params,
+            config.devices[0],
+            input_layout=MiMoV2Decoder.input_layout,
         ),
         weights=weights,
+        name=MiMoV2Decoder.graph_name,
     )
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
     assert fused_allreduces(ir) == _attention_allreduces(config)
@@ -227,7 +231,7 @@ def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 def _tiny_fixture_model(
     hf: PretrainedConfig, monkeypatch: pytest.MonkeyPatch
-) -> tuple[MiMoV2, MiMoV2Config]:
+) -> tuple[MiMoV2Decoder, MiMoV2Config]:
     """``hf``'s four layers on this module's mesh, without compiling."""
     monkeypatch.setattr(kernels, "_is_sm10x_gpu", lambda: True)
     refs = [DeviceRef.GPU(i) for i in range(NUM_DEVICES)]
@@ -238,7 +242,7 @@ def _tiny_fixture_model(
         max_seq_len=256,
     )
     with F.lazy(), default_device(_device_mesh()), default_dtype(config.dtype):
-        model = MiMoV2(config)
+        model = MiMoV2Decoder(config)
     assert model.route_on_every_device
     return model, config
 

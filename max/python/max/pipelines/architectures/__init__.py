@@ -143,11 +143,6 @@ def register_all_models() -> None:
         ),
         _LazyArch(
             "DFlashMiMoV2DraftModel",
-            ".dflash_mimo_v2",
-            "dflash_mimo_v2_draft_arch",
-        ),
-        _LazyArch(
-            "DFlashMiMoV2DraftModel_ModuleV3",
             ".dflash_mimo_v2_modulev3",
             "dflash_mimo_v2_modulev3_draft_arch",
         ),
@@ -372,9 +367,8 @@ def register_all_models() -> None:
         _LazyArch(
             "MTPQwen3_5DraftModel", ".mtp_qwen3_5", "mtp_qwen3_5_draft_arch"
         ),
-        _LazyArch("MiMoV2ForCausalLM", ".mimo_v2", "mimo_v2_arch"),
         _LazyArch(
-            "MiMoV2ForCausalLM_ModuleV3",
+            "MiMoV2ForCausalLM",
             ".mimo_v2_modulev3",
             "mimo_v2_modulev3_arch",
         ),

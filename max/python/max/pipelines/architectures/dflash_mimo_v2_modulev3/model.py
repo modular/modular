@@ -23,12 +23,12 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 
-from ..dflash_mimo_v2.drafter import (
+from .dflash_mimo_v2 import DFlashMiMoV2
+from .drafter import (
     DFlashMiMoV2DraftArchConfigBase,
     DFlashMiMoV2DraftConfig,
     load_drafter,
 )
-from .dflash_mimo_v2 import DFlashMiMoV2
 
 __all__ = ["DFlashMiMoV2ModuleV3DraftArchConfig"]
 

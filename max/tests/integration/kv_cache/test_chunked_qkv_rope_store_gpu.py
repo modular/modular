@@ -14,7 +14,10 @@
 
 MiMo's unfused preparation helper supplies the production reference sequence;
 its chunk/head dimensions are explicit, so the same reference covers the
-operator's layouts beyond the published checkpoint.
+operator's layouts beyond the published checkpoint. The helper is the
+ModuleV3 one: the cache holds K and V unpadded -- packed into one row per
+head when their widths differ -- and the queries come back at the Q/K head
+width, so the V2 build's pad-column checks become unpadded-width checks.
 """
 
 from __future__ import annotations
@@ -28,13 +31,15 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn._graph_ops import fused_chunked_qkv_rope_store_ragged
 from max.nn.kv_cache import MHAKVCacheParams
-from max.pipelines.architectures.mimo_v2.layers.attention import (
+from max.pipelines.architectures.mimo_v2_modulev3.layers.attention import (
     QkvChunkLayout,
     prepare_qkv_unfused,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
@@ -47,9 +52,13 @@ class _Layout:
     num_kv_heads: int
     qk_head_dim: int = 192
     v_head_dim: int = 128
-    cache_head_dim: int = 256
     rotary_dim: int = 64
     chunk_padding: int = 0
+
+    @property
+    def split(self) -> bool:
+        """Whether the cache packs K and V into one row per head."""
+        return self.v_head_dim != self.qk_head_dim
 
     @property
     def q_rows(self) -> int:
@@ -69,7 +78,7 @@ _LAYOUTS = [
     _Layout("published-tp2", 2, 32, 4),
     _Layout("published-tp4-one-chunk", 1, 16, 2),
     _Layout("published-tp1-four-chunks", 4, 64, 8),
-    _Layout("no-padding-full-rotary", 2, 8, 4, 128, 128, 128, 128),
+    _Layout("no-padding-full-rotary", 2, 8, 4, 128, 128, 128),
     _Layout("full-published-tp2", 2, 32, 2, chunk_padding=64),
     _Layout("full-published-tp4", 1, 16, 1, chunk_padding=64),
     _Layout("full-published-tp1", 4, 64, 4, chunk_padding=64),
@@ -160,18 +169,26 @@ def _graph(
                 chunk_padding=layout.chunk_padding,
             )
         else:
-            q = prepare_qkv_unfused(
-                qkv,
-                offsets,
-                freqs,
-                cache,
-                layer,
-                scale,
-                kv_params=params,
-                layout=QkvChunkLayout(layout.chunks, q_rows, k_rows, v_rows),
-                head_dim=layout.qk_head_dim,
-                v_head_dim=layout.v_head_dim,
-            )
+            # The ModuleV3 helper takes Tensors; the functional kernels it
+            # calls convert them back to graph values at the op boundary,
+            # and the upstream cache record rides through unchanged.
+            with ensure_context():
+                q = TensorValue(
+                    prepare_qkv_unfused(
+                        Tensor.from_graph_value(qkv),
+                        Tensor.from_graph_value(offsets),
+                        Tensor.from_graph_value(freqs),
+                        cache,
+                        Tensor.from_graph_value(layer),
+                        scale,
+                        kv_params=params,
+                        layout=QkvChunkLayout(
+                            layout.chunks, q_rows, k_rows, v_rows
+                        ),
+                        head_dim=layout.qk_head_dim,
+                        v_head_dim=layout.v_head_dim,
+                    )
+                )
         # This is a graph consumer of the mutated cache, not a host readback
         # after execution. buffer_load reads the device's mutation chain.
         if observe_cache:
@@ -216,7 +233,10 @@ def compiled_models(request: pytest.FixtureRequest) -> _CompiledFixture:
     params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=layout.num_kv_heads,
-        head_dim=layout.cache_head_dim,
+        # The ModuleV3 cache geometry: K and V at their own widths. A
+        # value width matching the key's collapses to the unsplit cache.
+        head_dim=layout.qk_head_dim,
+        v_head_dim=layout.v_head_dim,
         num_layers=2,
         page_size=128,
         devices=[DeviceRef.GPU()],
@@ -260,6 +280,15 @@ def test_registered_chunked_qkv_rope_store(
         for _ in models
     ]
     shape = tuple(caches[0].kv_blocks.shape)
+    # The ModuleV3 cache stores K and V unpadded: packed into one row per
+    # head when the widths differ, else two planes at the shared width.
+    # The V2 build padded both to one cache head dim; that padding is gone.
+    assert shape[1] == (1 if layout.split else 2)
+    assert shape[-1] == (
+        layout.qk_head_dim + layout.v_head_dim
+        if layout.split
+        else layout.qk_head_dim
+    )
     initial = torch.arange(int(np.prod(shape)), dtype=torch.float32).reshape(
         shape
     )
@@ -349,25 +378,17 @@ def test_registered_chunked_qkv_rope_store(
             )
             actual = [_bits(cache.kv_blocks) for cache in caches]
             assert torch.equal(actual[0], actual[1])
-            q_bits = _bits(outputs[1][0])
-            assert torch.count_nonzero(q_bits[..., layout.qk_head_dim :]) == 0
-            lut = caches[1].lookup_table.to_numpy()
-            for batch, length in enumerate(prompt_lens):
-                for local in range(length):
-                    pos = cache_lens[batch] + epoch + local
-                    page = int(lut[batch, pos // 128])
-                    for plane, real_depth in (
-                        (0, layout.qk_head_dim),
-                        (1, layout.v_head_dim),
-                    ):
-                        assert (
-                            torch.count_nonzero(
-                                actual[1][
-                                    page, plane, 1, pos % 128, :, real_depth:
-                                ]
-                            )
-                            == 0
-                        )
+            # The queries come back unpadded, at the Q/K head width; the
+            # V2 build padded them to the cache width and zeroed the pad.
+            assert tuple(outputs[1][0].shape) == (
+                tokens,
+                layout.num_q_heads,
+                layout.qk_head_dim,
+            )
+            # V2 also zero-filled each plane's pad columns past the real
+            # head width; the unpadded V3 rows have no pad columns to
+            # check, and the arms' bitwise agreement above carries the
+            # per-slot verification.
             # The in-graph consumer must see the final writes, including the
             # FP32 value scale supplied as a CPU operand.
             for consumed, cache in zip(observed, caches, strict=True):
@@ -386,11 +407,6 @@ def test_registered_chunked_qkv_rope_store(
                 actual[1][~touched], initial.view(torch.int16)[~touched]
             )
             if tokens == 0:
-                assert tuple(outputs[1][0].shape) == (
-                    0,
-                    layout.num_q_heads,
-                    layout.cache_head_dim,
-                )
                 assert torch.equal(actual[1], initial.view(torch.int16))
     finally:
         for model in models:

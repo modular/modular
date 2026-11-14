@@ -635,7 +635,7 @@ def test_architecture_names_the_checkpoints_tokenizer_family(
         "inkling",
         "laguna",
         "lfm3",
-        "mimo_v2",
+        "mimo_v2_modulev3",
         "muse_glimmer",
         "nemotron_h_modulev3",
         "qwen3_5",

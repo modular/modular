@@ -25,10 +25,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -42,35 +39,23 @@ from expert_stacks import (
 from max import functional as F
 from max.driver import (
     CPU,
-    Buffer,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import _graph_ops as kernels
 from max.nn.ep_config import EPConfig
 from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import (
     MiMoV2ExpertParallelMoE,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
-    MiMoV2,
+    MiMoV2Decoder,
     ParallelismMode,
-    select_parallelism_mode,
-)
-from max.pipelines.architectures.mimo_v2_modulev3.model import (
-    MiMoV2Inputs,
-    MiMoV2ModuleV3BatchProcessor,
-    MiMoV2ModuleV3Model,
-    _validate_data_parallel_attention,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -78,14 +63,13 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.architectures.mimo_v2_modulev3.quant import (
     MXFP8_DISPATCH_QUANT_CONFIG,
 )
-from max.pipelines.context import TextContext
-from max.pipelines.context.tokens import TokenBuffer
-from max.pipelines.lib import WeightTransform
-from max.pipelines.lib.interfaces.batch_processor import (
-    BatchProcessorRuntime,
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
 )
-from max.pipelines.request.base import RequestID
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
+)
 from max.tensor import (
     Tensor,
     default_device,
@@ -125,195 +109,6 @@ def _ep_config(num_devices: int, use_allreduce: bool = True) -> EPConfig:
 def _mxfp4_experts_config() -> QuantConfig:
     """The routed experts' MXFP4 config, as ``parse_quant_scheme`` builds."""
     return QuantConfig.mxfp4(mlp_quantized_layers={1, 2, 3})
-
-
-# --------------------------------------------------------------------------- #
-# Mode selection
-# --------------------------------------------------------------------------- #
-
-
-def _dp_runtime_batch_processor(
-    dp: int,
-) -> MiMoV2ModuleV3BatchProcessor:
-    """The batch processor on a real CPU device, for runtime input packing."""
-    runtime = BatchProcessorRuntime(
-        pipeline_config=cast(Any, SimpleNamespace()),
-        devices=[CPU()],
-        return_logits=ReturnLogits.LAST_TOKEN,
-        max_batch_size=4,
-        max_seq_len=256,
-        max_batch_input_tokens=256,
-        data_parallel_degree=dp,
-    )
-    return MiMoV2ModuleV3BatchProcessor(
-        cast(MiMoV2Config, SimpleNamespace()), runtime
-    )
-
-
-def _context(prompt: Sequence[int]) -> TextContext:
-    return TextContext(
-        request_id=RequestID(),
-        max_length=1000,
-        tokens=TokenBuffer(np.asarray(prompt, dtype=np.int64)),
-    )
-
-
-def test_dp_initial_inputs_carry_the_split_tensors() -> None:
-    """The runtime produces the DP tensors the forward splits by.
-
-    `prepare_initial_token_inputs` concatenates every replica's requests
-    into one device-0 ragged batch and fills the CPU `data_parallel_splits`
-    boundaries and host row offsets beside it -- without them the graph's
-    KV leaves would land in the DP slots (the runtime half the staging
-    tests cannot see).
-    """
-    processor = _dp_runtime_batch_processor(2)
-    inputs = processor.prepare_initial_token_inputs(
-        [[_context([1, 2, 3]), _context([4])], [_context([5, 6])]],
-        kv_cache_inputs=cast(Any, ()),
-    )
-    # [0, requests on replica 0, requests on replica 1]: two replicas,
-    # each owning whole requests.
-    assert inputs.data_parallel_splits is not None
-    np.testing.assert_array_equal(
-        inputs.data_parallel_splits.to_numpy(), [0, 2, 3]
-    )
-    # The host row offsets mirror the concatenated batch's offsets.
-    assert inputs.host_input_row_offsets is not None
-    np.testing.assert_array_equal(
-        inputs.host_input_row_offsets.to_numpy(), [0, 3, 4, 6]
-    )
-    # One device-0 batch over both replicas, in the declared buffer order.
-    np.testing.assert_array_equal(inputs.tokens.to_numpy(), [1, 2, 3, 4, 5, 6])
-    assert isinstance(inputs.input_row_offsets, Buffer)
-    np.testing.assert_array_equal(
-        inputs.input_row_offsets.to_numpy(), [0, 3, 4, 6]
-    )
-    buffers = inputs.buffers
-    assert buffers[3] is inputs.data_parallel_splits
-    assert buffers[4] is inputs.host_input_row_offsets
-    # Without DP the inherited single-replica path leaves the pair unset.
-    plain = _dp_runtime_batch_processor(1).prepare_initial_token_inputs(
-        [[_context([9])]], kv_cache_inputs=cast(Any, ())
-    )
-    assert plain.data_parallel_splits is None
-    assert plain.host_input_row_offsets is None
-
-
-def test_select_parallelism_mode() -> None:
-    ep = _ep_config(N_DEVICES)
-    assert select_parallelism_mode(1, 1, None) is ParallelismMode.TP_TP
-    assert select_parallelism_mode(2, 1, None) is ParallelismMode.TP_TP
-    assert select_parallelism_mode(2, 1, ep) is ParallelismMode.TP_EP
-    assert select_parallelism_mode(8, 1, ep) is ParallelismMode.TP_EP
-    assert select_parallelism_mode(8, 4, ep) is ParallelismMode.DP_EP
-    # The selector is a pure mapping; the pipeline model refuses DP without
-    # EP (see test_dp_attention_refusals) before the module is built.
-    assert select_parallelism_mode(2, 2, None) is ParallelismMode.DP_EP
-
-
-# --------------------------------------------------------------------------- #
-# DP-attention settings and input declarations
-# --------------------------------------------------------------------------- #
-
-
-def test_dp_attention_refusals() -> None:
-    """The pipeline refuses DP settings the module build cannot serve.
-
-    DP attention serves one-device replicas only, so the degree must equal
-    the device count -- the same constraint `MiMoV2.__init__` enforces,
-    checked before the EP config and its buffers exist.
-    """
-    # DP without EP: attention has nothing to shard its batch with.
-    with pytest.raises(ValueError, match="requires expert parallelism"):
-        _validate_data_parallel_attention(dp_degree=2, ep_size=1, n_devices=2)
-    # dp < n is a dp x tp mesh the module build refuses.
-    with pytest.raises(ValueError, match="must equal the device count"):
-        _validate_data_parallel_attention(dp_degree=2, ep_size=4, n_devices=4)
-    # dp > n cannot fit a replica per device.
-    with pytest.raises(ValueError, match="must equal the device count"):
-        _validate_data_parallel_attention(dp_degree=4, ep_size=2, n_devices=2)
-    # One device per replica over every device passes; EP runs without DP.
-    _validate_data_parallel_attention(dp_degree=2, ep_size=2, n_devices=2)
-    _validate_data_parallel_attention(dp_degree=1, ep_size=1, n_devices=2)
-
-
-def _dp_batch_processor(dp: int) -> MiMoV2ModuleV3BatchProcessor:
-    """The MiMo batch processor at the given DP degree.
-
-    Only the runtime is read before batching starts, so the config is a
-    placeholder.
-    """
-    runtime = BatchProcessorRuntime(
-        pipeline_config=cast(Any, SimpleNamespace()),
-        devices=[],
-        return_logits=ReturnLogits.LAST_TOKEN,
-        max_batch_size=1,
-        max_seq_len=256,
-        max_batch_input_tokens=256,
-        data_parallel_degree=dp,
-    )
-    return MiMoV2ModuleV3BatchProcessor(
-        cast(MiMoV2Config, SimpleNamespace()), runtime
-    )
-
-
-def test_dp_inputs_declared_between_batch_and_kv(checkpoint: Path) -> None:
-    """The DP batch-split tensors sit right after the batch inputs.
-
-    MiniMax-M2's placement: after the per-batch tensors, before the KV
-    leaves (and before the EP tail that follows them). Both are
-    host-resident; the splits are sized dp+1 and the host row offsets
-    mirror the device row offsets' shape.
-    """
-    hf = _hf(checkpoint)
-    refs = [DeviceRef.GPU(i) for i in range(N_DEVICES)]
-    kv = kv_params(hf, refs, 128)
-    base = modulev3_ragged_kv_symbolic_inputs(kv_params=kv, device_refs=refs)
-    declared = _dp_batch_processor(N_DEVICES).get_symbolic_inputs(
-        kv_params=kv, device_refs=refs
-    )
-    assert declared[3] == TensorType(
-        DType.int64, shape=[N_DEVICES + 1], device=DeviceRef.CPU()
-    )
-    assert declared[4] == TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=DeviceRef.CPU()
-    )
-    assert declared[:3] == base[:3]
-    assert declared[5:] == base[3:]
-    # Without DP the tree is exactly the shared ModuleV3 one.
-    assert (
-        _dp_batch_processor(1).get_symbolic_inputs(
-            kv_params=kv, device_refs=refs
-        )
-        == base
-    )
-
-
-def test_dp_inputs_occupy_the_runtime_slots() -> None:
-    """``MiMoV2Inputs.buffers`` keeps the declared slot order.
-
-    The runtime ABI mirrors the symbolic tree: tokens, the logit count, the
-    row offsets, then the DP pair, then the KV leaves and the EP tail.
-    """
-    tokens = Buffer.from_numpy(np.array([1], dtype=np.int64)).to(CPU())
-    row_offsets = Buffer.from_numpy(np.array([0, 1], dtype=np.uint32)).to(CPU())
-    return_n_logits = Buffer.from_numpy(np.array([1], dtype=np.int64))
-    splits = Buffer.from_numpy(np.array([0, 1, 1], dtype=np.int64))
-    inputs = MiMoV2Inputs(
-        tokens=tokens,
-        input_row_offsets=row_offsets,
-        return_n_logits=return_n_logits,
-        data_parallel_splits=splits,
-        host_input_row_offsets=row_offsets,
-    )
-    buffers = inputs.buffers
-    assert len(buffers) == 5
-    assert buffers[0] is tokens
-    assert buffers[1] is return_n_logits
-    assert buffers[2] is row_offsets
-    assert buffers[3] is splits
-    assert buffers[4] is row_offsets
 
 
 # --------------------------------------------------------------------------- #
@@ -459,27 +254,6 @@ def _ep_config_model(
     return config
 
 
-def test_no_ep_init_leaves_the_extra_input_tail_defaulted() -> None:
-    """The no-EP path keeps the compile input tail's default.
-
-    ``graph_specs`` reads ``_modulev3_extra_input_types`` on every load,
-    and the plain (no-EP) build is the default serve path: the override
-    must leave the base's empty-tail default in place when it returns
-    early, or every non-EP load fails with an AttributeError.
-    """
-    model = cast(MiMoV2ModuleV3Model, object.__new__(MiMoV2ModuleV3Model))
-    model.pipeline_config = cast(
-        Any,
-        SimpleNamespace(
-            model=SimpleNamespace(data_parallel_degree=1),
-            runtime=SimpleNamespace(ep_size=1),
-        ),
-    )
-    model.devices = []
-    model._init_distributed_runtime(cast(Any, None))
-    assert model._modulev3_extra_input_types == []
-
-
 def test_mimo_v2_ep2_stages_with_the_ep_tail(
     monkeypatch: pytest.MonkeyPatch, checkpoint: Path
 ) -> None:
@@ -500,21 +274,25 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
     devices = [ref.to_device() for ref in config.devices]
     mesh = DeviceMesh(tuple(devices), (N_DEVICES,), ("tp",))
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    transform = WeightTransform(mimo_v2_weight_rules(_hf(checkpoint)))
-    adapted: dict[str, WeightData] = transform(dict(weights.items()))
+    adapted: dict[str, WeightData] = convert_safetensor_state_dict(
+        dict(weights.items())
+    )
 
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config, ep_batch_manager)
-        inputs = [
-            *modulev3_ragged_kv_symbolic_inputs(
-                kv_params=config.kv_params,
-                device_refs=config.devices,
-            ),
-            *ep_batch_manager.input_types(),
-        ]
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            config.devices[0],
+            ep=ep_batch_manager.input_tree(),
+            input_layout=MiMoV2Decoder.input_layout,
+        )
         assert model.mode is ParallelismMode.TP_EP
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
         text = str(staged)
 
     # The EP tail is declared: the atomic counters plus the three pointer
@@ -555,27 +333,28 @@ def test_mimo_v2_dp2_stages_with_the_batch_split(
     # the split placement keys on it.
     mesh = DeviceMesh(tuple(devices), (N_DEVICES,), ("dp",))
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-    transform = WeightTransform(mimo_v2_weight_rules(_hf(checkpoint)))
-    adapted: dict[str, WeightData] = transform(dict(weights.items()))
+    adapted: dict[str, WeightData] = convert_safetensor_state_dict(
+        dict(weights.items())
+    )
 
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config, ep_batch_manager)
+        model = MiMoV2Decoder(config)
         assert model.mode is ParallelismMode.DP_EP
-        inputs = [
-            *modulev3_ragged_kv_symbolic_inputs(
-                kv_params=config.kv_params,
-                device_refs=config.devices,
-            ),
-            *ep_batch_manager.input_types(),
-        ]
-        # The DP batch-split tensors, where the batch processor declares
-        # them: after the batch inputs, before the KV leaves.
-        dp_inputs = _dp_batch_processor(N_DEVICES).get_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=config.devices
-        )[3:5]
-        inputs = [*inputs[:3], *dp_inputs, *inputs[3:]]
+        # The registered decoder's tree: the DP batch-split tensors
+        # between the batch inputs and the KV leaves, the EP tail last.
+        inputs = decoder_input_types(
+            config.kv_params,
+            config.devices[0],
+            data_parallel_degree=N_DEVICES,
+            ep=ep_batch_manager.input_tree(),
+            input_layout=MiMoV2Decoder.input_layout,
+        )
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
         text = str(staged)
 
     # The split carves each replica's rows from the replicated batch: the
@@ -588,18 +367,25 @@ def test_mimo_v2_dp2_stages_with_the_batch_split(
     assert text.count("mo.call @mimo_v2_moe") == len(config.moe_layers)
 
 
-def test_mimo_v2_refuses_dp_and_orphan_ep_managers(
+def test_mimo_v2_refuses_dp_without_an_ep_config(
     checkpoint: Path,
 ) -> None:
-    """DP attention without an EP batch manager is a wiring error, not a
-    silent tensor-parallel build, and an EP batch manager without an EP
-    config is the same."""
+    """DP attention without an EP config is a wiring error, not a silent
+    tensor-parallel build: the registered decoder builds its batch manager
+    from ``config.ep_config`` alone, so a DP build with no EP config reaches
+    the module with no manager and is refused there.
+
+    The reverse wiring -- a batch manager without an EP mode -- has no
+    caller since the shims were deleted: the registered decoder derives its
+    manager from the config, so no construction can pair the two.
+    """
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_100a")
     set_virtual_device_count(N_DEVICES)
 
     config = _ep_config_model(checkpoint)
     config.data_parallel_degree = N_DEVICES
+    config.ep_config = None
     mesh = DeviceMesh(
         tuple(ref.to_device() for ref in config.devices), (N_DEVICES,), ("tp",)
     )
@@ -609,17 +395,7 @@ def test_mimo_v2_refuses_dp_and_orphan_ep_managers(
         default_device(mesh),
         default_dtype(config.dtype),
     ):
-        MiMoV2(config, None)
-
-    config.data_parallel_degree = 1
-    config.ep_config = None
-    with (
-        pytest.raises(ValueError, match="batch manager"),
-        F.lazy(),
-        default_device(mesh),
-        default_dtype(config.dtype),
-    ):
-        MiMoV2(config, EPBatchManager(_ep_config(N_DEVICES)))
+        MiMoV2Decoder(config)
 
 
 @pytest.mark.parametrize(
@@ -650,10 +426,8 @@ def test_mimo_v2_refuses_fused_qkv_under_dp_attention(
         default_device(mesh),
         default_dtype(config.dtype),
     ):
-        MiMoV2(config, EPBatchManager(config.ep_config))
+        MiMoV2Decoder(config)
 
     config.data_parallel_degree = 1
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        assert MiMoV2(config, EPBatchManager(config.ep_config)).mode is (
-            ParallelismMode.TP_EP
-        )
+        assert MiMoV2Decoder(config).mode is (ParallelismMode.TP_EP)

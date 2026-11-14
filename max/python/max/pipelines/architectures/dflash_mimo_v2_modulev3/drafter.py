@@ -29,7 +29,7 @@ import huggingface_hub
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, load_weights
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
     HuggingFaceRepo,
     KVCacheConfig,
@@ -46,7 +46,6 @@ from max.pipelines.speculative._dflash import parse_dflash_draft_hf_config
 from transformers import AutoConfig
 from typing_extensions import Self
 
-from .dflash_mimo_v2 import DFlashMiMoV2
 from .model_config import DFlashMiMoV2Config
 from .weight_adapters import (
     DRAFT_WEIGHTS_FILE,
@@ -223,10 +222,11 @@ class DFlashMiMoV2DraftConfig:
 
 @dataclass
 class DFlashMiMoV2DraftArchConfigBase(ArchConfigWithBoundedMaxSeqLen):
-    """The draft architecture's config: its sequence bound and KV leaf.
+    """The base config for the DFlash drafter served beside a MiMo-V2 target.
 
-    The drafter is served only beside a MiMo-V2 target, so nothing else of
-    it is read from here. Each API's subclass builds its module.
+    It carries only the sequence bound and the KV cache leaf name, because
+    the drafter is served only beside a MiMo-V2 target and each API's
+    subclass builds its module from those.
     """
 
     max_seq_len: int
@@ -320,54 +320,3 @@ class DFlashMiMoV2DraftArchConfigBase(ArchConfigWithBoundedMaxSeqLen):
                 ),
             ),
         )
-
-
-class DFlashMiMoV2DraftArchConfig(DFlashMiMoV2DraftArchConfigBase):
-    """The graph API drafter's config, which builds its module."""
-
-    @classmethod
-    def construct_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Returns the drafter's context cache, from its raw config.
-
-        Raises:
-            ValueError: If the cache is configured for dKV.
-        """
-        # The connector itself serves this tree per leaf; the graph-API
-        # build keeps the refusal by policy (all model work is
-        # ModuleV3-only).
-        if kv_cache_config.kv_connector_config.type == KVConnectorType.dkv:
-            raise ValueError(
-                "MiMo-V2 DFlash supports the dKV connector only on its "
-                "ModuleV3 build. Pass --prefer-module-v3 to use it."
-            )
-        return super().construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
-
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[DFlashMiMoV2, DFlashMiMoV2DraftConfig]:
-        """Builds the drafter from the draft checkpoint ``context`` names.
-
-        It embeds and projects through its target's embedding and head, so
-        spec decoding shares those onto it.
-
-        Raises:
-            ValueError: If the method isn't ``dflash``.
-        """
-        config, state, mask_embedding, draft_config = cls.read_drafter(context)
-        draft = DFlashMiMoV2(config, mask_embedding=mask_embedding)
-        draft.load_state_dict(state, weight_alignment=1, strict=True)
-        return draft, draft_config

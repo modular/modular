@@ -27,14 +27,11 @@ modular_py_library(
         "//max/python/max/graph",
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
-        "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
-        requirement("transformers"),
     ],
 )
 
@@ -51,7 +48,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
     ],
 )
@@ -71,7 +68,7 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
     ],
     imports = ["."],
     target_compatible_with = select({
@@ -91,7 +88,6 @@ modular_py_test(
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
     ],
@@ -111,7 +107,7 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -132,7 +128,6 @@ modular_py_test(
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/kv_cache/connectors/dkv",
@@ -188,7 +183,6 @@ modular_py_test(
         # `nn` target owns; `:core` holds only the graph-free configs.
         "//max/python/max/nn",
         "//max/python/max/nn/kv_cache",
-        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
@@ -206,7 +200,7 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -221,6 +215,6 @@ modular_py_test(
         "//max/python/max/graph",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
     ],
 )

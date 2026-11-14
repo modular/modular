@@ -10,16 +10,18 @@ filegroup(
 modular_py_library(
     name = "mimo_v2_modulev3",
     srcs = glob(["**/*.py"]),
-    data = [":recipe_configs"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     deps = [
-        requirement("numpy"),
+        requirement("huggingface-hub"),
         requirement("transformers"),
         requirement("typing-extensions"),
         "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/kv_cache",
@@ -27,9 +29,6 @@ modular_py_library(
         "//max/python/max/graph",
         # KV cache parameter types stay in max.nn.legacy; the module itself is V3.
         "//max/python/max/nn/legacy",
-        # Config, quantization scheme and checkpoint naming are shared with
-        # the graph-API architecture.
-        "//max/python/max/pipelines/architectures/mimo_v2",
         # Its spec adapters run the DFlash drafter, which embeds and projects
         # through this target.
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
@@ -39,4 +38,9 @@ modular_py_library(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

@@ -44,13 +44,19 @@ from typing import Any, cast
 import pytest
 from max import functional as F
 from max import mlir
-from max.driver import CPU
+from max.driver import (
+    CPU,
+    DeviceSpec,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn import _graph_ops as kernels
 from max.nn.kv_cache import KVCacheParams, KVConnectorType, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.outputs import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
     dflash_mimo_v2_modulev3_draft_arch,
 )
@@ -60,9 +66,6 @@ from max.pipelines.architectures.dflash_mimo_v2_modulev3.model import (
 from max.pipelines.architectures.mimo_v2_modulev3.arch import (
     mimo_v2_modulev3_arch,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.model import (
-    MiMoV2ModuleV3Model,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
@@ -71,6 +74,7 @@ from max.pipelines.kv_cache.connectors.dkv.connector import (
     _validate_dkv_leaves,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.module_registration import RegisteredDecoderBuilder
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _kv_tree,
     _Pairing,
@@ -217,16 +221,25 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
 
     At 7 speculative tokens the base tree's own check counts 7 x 16 = 112
     query rows on the full group (64 Q heads over 4 KV heads). The pairing
-    stamps the block on the tree it hands the target's build: 8 x 16 = 128
-    keeps the split cache's decode route, and 9 x 16 = 144 leaves it, so
-    the build refuses it.
+    stamps the block on the tree it hands the registered builder: 8 x 16 =
+    128 keeps the split cache's decode route, and 9 x 16 = 144 leaves it,
+    so the build refuses it.
     """
+    # The builder resolves the KV tree's devices; the virtual devices
+    # stand in without a GPU, as the staging gates' builds do.
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(1)
     draft_dir = tmp_path / "dflash"
     draft_dir.mkdir()
     (draft_dir / "config.json").write_text(
         json.dumps({**DFLASH_CONFIG, "block_size": block})
     )
     kv_cache_config = KVCacheConfig(kv_cache_page_size=128)
+    # A checkpoint file, so the requested encoding resolves as it does
+    # against a real repo: the file name carries no encoding hint, and the
+    # file exists, so the requested encoding stands.
+    (tmp_path / "model.safetensors").write_bytes(b"")
     pipeline_config = cast(
         Any,
         SimpleNamespace(
@@ -236,11 +249,21 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
             ),
             model=SimpleNamespace(
                 data_parallel_degree=1,
-                device_specs=[None],
+                device_specs=[DeviceSpec.accelerator(0)],
                 huggingface_config=_FakeAttrConfig(),
                 kv_cache=kv_cache_config,
+                # The encoding the config resolves: the checkpoint's own.
+                quantization_encoding="float4_e2m1fnx2",
+                weight_path=[tmp_path / "model.safetensors"],
+                huggingface_weight_repo=None,
+                default_device_spec=DeviceSpec.accelerator(0),
             ),
-            runtime=SimpleNamespace(ep_size=1),
+            runtime=SimpleNamespace(
+                ep_size=1,
+                ep_use_allreduce=True,
+                enable_chunked_prefill=True,
+                max_batch_input_tokens=256,
+            ),
             speculative=SpeculativeConfig(
                 speculative_method="dflash", num_speculative_tokens=7
             ),
@@ -266,22 +289,43 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
         ModelLoadContext,
         SimpleNamespace(
             pipeline_config=pipeline_config,
+            weights=object(),
+            adapter=None,
+            memory_plan=SimpleNamespace(planned_max_batch_size=5),
+            return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
-            max_seq_len=1024,
+            target_layer_ids=(1, 3),
             kv_params=tree.children["target"],
+            max_seq_len=1024,
+            max_batch_total_tokens=512,
+            huggingface_config=_FakeAttrConfig(),
+            start_ep=lambda ep: None,
         ),
     )
 
-    def initialize(*args: object, **kwargs: object) -> MiMoV2Config:
-        raise _PastTheCheck
-
-    monkeypatch.setattr(MiMoV2Config, "initialize", initialize)
+    # The builder reads the checkpoint only to name the decoder's weights,
+    # which this refusal check never loads; an empty state dict keeps the
+    # build about the config, not the tensors.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args: cast(dict[str, Any], {}),
+    )
+    # The registered builder applies the load context -- whose KV check is
+    # the refusal under test -- before it constructs the decoder; the
+    # patch marks where the check has passed for the accepted block.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.construct_module",
+        lambda *args: (_ for _ in ()).throw(_PastTheCheck()),
+    )
+    builder = RegisteredDecoderBuilder(
+        cast(Any, mimo_v2_modulev3_arch.pipeline_model)
+    )
     if refused:
         with pytest.raises(ValueError, match="144 query rows"):
-            MiMoV2ModuleV3Model.build_module(context)
+            builder.build_module(context)
     else:
         with pytest.raises(_PastTheCheck):
-            MiMoV2ModuleV3Model.build_module(context)
+            builder.build_module(context)
 
 
 @pytest.fixture(scope="module")

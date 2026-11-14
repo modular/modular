@@ -2641,6 +2641,11 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
     checkpoints.
     """
 
+    module_impl: ClassVar[str] = "modulev3"
+    """What an exporter records as having built the graph. The pairing
+    exists only when the target builds a ModuleV3 module, so the fused
+    model is ModuleV3 by construction."""
+
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Builds the draft and the target, then compiles the fused module."""

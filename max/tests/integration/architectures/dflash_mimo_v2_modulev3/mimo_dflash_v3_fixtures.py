@@ -37,13 +37,18 @@ from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.dflash_mimo_v2 import (
-    DFlashMiMoV2Config,
+
+# The pairing resolves its target and drafter by name through the
+# registry, which this import populates.
+from max.pipelines import PIPELINE_REGISTRY  # noqa: F401
+from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.drafter import (
     DFlashMiMoV2DraftConfig,
 )
-from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.model_config import (
+    DFlashMiMoV2Config,
+)
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     MASK_EMBEDDING,
     drafter_tensor_shapes,
@@ -51,18 +56,18 @@ from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import 
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict as draft_convert,
 )
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
-    MiMoV2SpecTarget,
+    MiMoV2Decoder,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     FULL,
     SLIDING,
     MiMoV2Config,
 )
-from max.pipelines.lib import PipelineConfig, WeightTransform
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
+)
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _driver_call,
     _graph_name,
@@ -76,7 +81,6 @@ from max.pipelines.speculative import (
 )
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
-from transformers import PretrainedConfig
 
 BLOCK = 8
 DRAFTS = 7
@@ -341,11 +345,7 @@ def target_checkpoint(config: MiMoV2Config) -> OrderedDict[str, _FakeWeight]:
 
 
 def adapted_target(config: MiMoV2Config) -> dict[str, WeightData]:
-    """The target checkpoint through the MiMo-V2 rules, by MAX name."""
-    transform = WeightTransform(
-        mimo_v2_weight_rules(cast(PretrainedConfig, _FakeAttrConfig()))
-    )
-    return transform(_as_weights(target_checkpoint(config)))
+    return convert_safetensor_state_dict(_as_weights(target_checkpoint(config)))
 
 
 def draft_checkpoint(
@@ -494,7 +494,6 @@ def build_module(
     kv_tree: MultiKVCacheParams,
     *,
     structured_output: bool,
-    ep_batch_manager: EPBatchManager | None = None,
 ) -> _SpecDecodeModule:
     """The fused module the pairing compiles, traced on ``config``'s devices.
 
@@ -509,7 +508,7 @@ def build_module(
     axis_name = "dp" if dp_degree > 1 else "tp"
     mesh = DeviceMesh(tuple(devices), (len(devices),), (axis_name,))
     with default_device(mesh), default_dtype(DType.bfloat16), F.lazy():
-        target = MiMoV2SpecTarget(config, ep_batch_manager)
+        target = MiMoV2Decoder(config)
         drafter = DFlashMiMoV2(draft, mask_embedding())
     draft_config = DFlashMiMoV2DraftConfig(
         module=draft,
@@ -541,9 +540,7 @@ def build_module(
             signal_buffer_index=(
                 None
                 if declared
-                else spec_adapters.signal_buffer_index(
-                    "MiMoV2ForCausalLM_ModuleV3"
-                )
+                else spec_adapters.signal_buffer_index("MiMoV2ForCausalLM")
             ),
         ),
     )

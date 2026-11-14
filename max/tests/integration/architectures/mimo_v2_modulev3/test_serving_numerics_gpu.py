@@ -43,12 +43,10 @@ import tiny_fixture
 from max.driver import accelerator_count
 from mimo_v3_runner import SCHEDULES, Runner
 
-GOLDENS = (
-    Path(__file__).parent.parent / "mimo_v2" / "testdata" / "tiny_goldens.npz"
-)
-"""The V2 harness's goldens: HF float32 logits of the same tiny checkpoint,
-computed by ``make_random_fixture.py --tiny-goldens``. Reused, not copied —
-the fixture checkpoint and goldens are arch-agnostic."""
+GOLDENS = Path(__file__).parent / "testdata" / "tiny_goldens.npz"
+"""The HF float32 goldens of the same tiny checkpoint, computed by
+``make_random_fixture.py --tiny-goldens``. Reused, not copied — the fixture
+checkpoint and goldens are arch-agnostic."""
 
 FUSED_MODES = [(True, False), (False, True), (True, True)]
 """(fused sliding, fused full) QKV preparation."""

@@ -12,9 +12,14 @@
 ##===----------------------------------------------------------------------===##
 model:
   model_path: XiaomiMiMo/MiMo-V2.6-Flash-RL
-  # The checkpoint's 1M context plans a KV pool far past 2x B200's
-  # budget; the smoke eval needs a fraction of it.
+  # The checkpoint's 1M context plans a KV pool far past 2x B200's budget;
+  # the smoke eval needs a fraction of it.
   max_length: 16384
-
-runtime:
-  prefer_module_v3: true
+draft_model:
+  # The DFlash drafter ships in the target checkpoint's dflash/ folder.
+  model_path: XiaomiMiMo/MiMo-V2.6-Flash-RL
+  subfolder: dflash
+  quantization_encoding: bfloat16
+speculative:
+  speculative_method: dflash
+  num_speculative_tokens: 7

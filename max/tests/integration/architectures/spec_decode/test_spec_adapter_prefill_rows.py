@@ -42,7 +42,6 @@ PREFILL_ROW_PAIRS = {
     ("GlmMoeDsaForCausalLM_ModuleV3", "mtp"),
     ("NemotronHForCausalLM_ModuleV3", "dspark"),
     ("MiMoV2ForCausalLM", "dflash"),
-    ("MiMoV2ForCausalLM_ModuleV3", "dflash"),
     ("LagunaForCausalLM_ModuleV3", "dflash"),
 }
 

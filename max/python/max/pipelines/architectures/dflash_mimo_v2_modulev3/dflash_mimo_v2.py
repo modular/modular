@@ -57,8 +57,8 @@ from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 from max.tensor.sharding.action import PerShard
 
-from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard
+from .model_config import DFlashMiMoV2Config
 
 __all__ = [
     "DFlashMiMoV2",

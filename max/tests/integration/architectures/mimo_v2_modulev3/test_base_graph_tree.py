@@ -47,16 +47,16 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, StaticDim, TensorType
 from max.graph.weights import SafetensorWeights
 from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
-)
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
-from max.pipelines.lib import WeightTransform
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
+)
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
@@ -98,19 +98,25 @@ def staged(
     config.return_logits = ReturnLogits.ALL
 
     weights = SafetensorWeights(sorted(path.glob("*.safetensors")))
-    adapted = WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
+    adapted = convert_safetensor_state_dict(dict(weights.items()))
 
     mesh = DeviceMesh(tuple(devices), (n_devices,), ("tp",))
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
-        inputs = modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=refs
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            refs[0],
+            input_layout=MiMoV2Decoder.input_layout,
         )
     # A fresh lazy context for the stage, as the CPU harness does: sharing
     # the build's would leave the module's pending weight-prep tensors in
     # the context, which a lazy context refuses to realize.
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
     return (
         tuple(
             value.type

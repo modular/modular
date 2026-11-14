@@ -161,7 +161,8 @@ def test_a_modulev3_block_target_pairs_with_its_modulev3_drafter() -> None:
         "MiMoV2ForCausalLM", "dflash", "DFlashDraftModel", prefer_module_v3=True
     )
     assert arch is not None
-    assert arch.name == "MiMoV2ForCausalLM_ModuleV3+dflash"
+    # The plain name: the ModuleV3 registration is the only MiMo-V2 variant.
+    assert arch.name == "MiMoV2ForCausalLM+dflash"
     assert arch.pipeline_model is _SpecDecodeModuleV3PipelineModel
     assert arch.multi_gpu_supported
     assert arch.supports_spec_decode_mixed_batches

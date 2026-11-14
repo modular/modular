@@ -75,7 +75,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
@@ -193,7 +193,7 @@ def _assert_replicas_equal(
 
 
 def _compile_trace(
-    model: MiMoV2,
+    model: MiMoV2Decoder,
     refs: list[DeviceRef],
     session: InferenceSession,
 ) -> compilation.CompiledCallable[..., list[Tensor]]:
@@ -260,7 +260,7 @@ def run_replica_check() -> None:
     )
     session = InferenceSession(devices=[CPU(), *devices])
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
+        model = MiMoV2Decoder(config)
     # Both arms route on every device: the gate follows the mode, not the
     # device count.
     assert model.route_on_every_device

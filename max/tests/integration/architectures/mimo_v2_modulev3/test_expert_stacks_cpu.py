@@ -49,17 +49,17 @@ from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn import _graph_ops as kernels
 from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import MiMoV2MoE
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
-from max.pipelines.lib import WeightTransform
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
+)
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
@@ -140,17 +140,23 @@ def test_tp4_staged_graph_holds_only_final_expert_stacks(
         kv_params=kv_params(hf, refs, 128),
         max_seq_len=256,
     )
-    inputs = modulev3_ragged_kv_symbolic_inputs(
-        kv_params=config.kv_params, device_refs=refs
-    )
     weights = SafetensorWeights(sorted(tmp_path.glob("*.safetensors")))
-    adapted = WeightTransform(mimo_v2_weight_rules(hf))(dict(weights.items()))
+    adapted = convert_safetensor_state_dict(dict(weights.items()))
     devices = [Accelerator(i) for i in range(n_devices)]
     mesh = DeviceMesh(tuple(devices), (n_devices,), ("tp",))
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config, None)
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            refs[0],
+            input_layout=MiMoV2Decoder.input_layout,
+        )
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
         text = str(staged)
     assert "mo.call @mimo_v2_moe" in text
     check_staged_expert_stacks(text, n_devices, expert_parallel=False)

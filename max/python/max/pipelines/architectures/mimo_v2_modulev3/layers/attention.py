@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from max import functional as F
@@ -49,11 +50,36 @@ from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
-from ...mimo_v2.layers.attention import QkvChunkLayout
 from ..quant import FP8_BLOCK
 
 if TYPE_CHECKING:
     from ..mimo_v2 import MiMoV2RMSNorm
+
+
+@dataclass(frozen=True)
+class QkvChunkLayout:
+    """Row layout of one layer's fused ``qkv_proj`` in Xiaomi's chunk order.
+
+    The weight is ``chunks`` repeats of ``[q | k | v]``: chunk ``r`` holds the
+    ``r``-th equal slice of the query heads and of the KV heads, the rows one
+    rank of the tensor-parallel run that saved the checkpoint held. Each
+    chunk's FP8 block scales cover it padded to a whole 128-row block.
+    """
+
+    chunks: int
+    q_rows: int
+    k_rows: int
+    v_rows: int
+
+    @property
+    def rows(self) -> int:
+        """Rows of real weights per chunk."""
+        return self.q_rows + self.k_rows + self.v_rows
+
+    @property
+    def padded_rows(self) -> int:
+        """Rows per chunk on the FP8 block-scale grid."""
+        return -(-self.rows // FP8_BLOCK) * FP8_BLOCK
 
 
 class ChunkedQkvProj(Module[[], None]):

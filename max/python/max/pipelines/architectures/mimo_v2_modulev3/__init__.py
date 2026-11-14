@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiMo-V2.6-Flash on ModuleV3 (``MiMoV2ForCausalLM_ModuleV3``)."""
+"""MiMo-V2.6-Flash on ModuleV3 (``MiMoV2ForCausalLM``)."""
 
 from .arch import mimo_v2_modulev3_arch
 

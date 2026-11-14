@@ -43,7 +43,7 @@ from max.nn.common_layers.rotary_embedding import (
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 
-from ..dflash_mimo_v2 import DFlashMiMoV2Config
+from .model_config import DFlashMiMoV2Config
 
 __all__ = ["DFlashContextWriter", "_heads_per_shard"]
 

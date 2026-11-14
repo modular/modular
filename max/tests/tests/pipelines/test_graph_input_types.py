@@ -86,7 +86,6 @@ from max.pipelines.architectures.llama3.distributed_llama import (
     DistributedLlama3,
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
-from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.muse_glimmer.model_config import (
     MuseGlimmerVisionConfig,
 )
@@ -388,22 +387,6 @@ def _text_model(cls: Any, **attrs: object) -> tuple[_InputTree, _InputTypes]:
     return input_tree, tuple(tree.leaves(input_tree))
 
 
-def _per_device_offsets(
-    cls: Any, *, nested: bool = False, two_caches: bool = False
-) -> tuple[_InputTree, _InputTypes]:
-    """A text model whose devices each take their own row offsets.
-
-    ``nested`` places the devices and KV parameters on a ``language_model``,
-    and ``two_caches`` gives it a sliding and a full attention cache.
-    """
-    devices = _gpus(2)
-    kv_params = (_gemma4_kv_params if two_caches else _kv_params)(devices)
-    attrs = {"devices": devices, "kv_params": kv_params}
-    if nested:
-        return _text_model(cls, language_model=_fake(**attrs))
-    return _text_model(cls, **attrs)
-
-
 def _graph_api_decoder() -> tuple[_InputTree, _InputTypes]:
     """A registered graph-API decoder with signals, as Gemma 3 registers."""
     devices = _gpus(2)
@@ -477,7 +460,6 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     ),
     "gemma3": _graph_api_decoder,
     "gpt_oss": _graph_api_decoder,
-    "mimo_v2": lambda: _per_device_offsets(MiMoV2, two_caches=True),
     "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
     "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
     "registered_decoder": _registered_decoder,

@@ -32,6 +32,7 @@ import json
 import time
 from contextlib import ExitStack
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -43,13 +44,18 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
-from max.nn.outputs import ReturnLogits
-from max.pipelines.architectures.mimo_v2.weight_adapters import (
-    mimo_v2_weight_rules,
+from max.nn.legacy.graph_groups import (
+    DecoderGraphInputs,
+    DecoderOutputs,
+    Logits,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import KVCacheConfig
@@ -60,14 +66,14 @@ from max.pipelines.lib import (
     MAXModelConfig,
     ModelManifest,
     PipelineConfig,
-    WeightTransform,
 )
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative import SpeculativeConfig
-from max.tensor import compilation, default_device, default_dtype
+from max.tensor import Tensor, compilation, default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from transformers.configuration_utils import PretrainedConfig
 
@@ -161,9 +167,7 @@ class Runner:
 
         t0 = time.time()
         weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
-        state = WeightTransform(mimo_v2_weight_rules(self.hf))(
-            dict(weights.items())
-        )
+        state = convert_safetensor_state_dict(dict(weights.items()))
         print(f"adapted {len(state)} tensors in {time.time() - t0:.0f} s")
 
         mesh = DeviceMesh(tuple(self.devices), (num_devices,), ("tp",))
@@ -171,7 +175,7 @@ class Runner:
         # ``graph_specs`` gives it; ``compile`` runs outside them, as it does
         # there.
         with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-            model = MiMoV2(config)
+            model = MiMoV2Decoder(config)
             # ``Module.compile`` silently ignores a checkpoint entry no
             # parameter matches, so pin the name contract the way the
             # graph-API runner's strict load does.
@@ -181,17 +185,21 @@ class Runner:
                 f"matches {sorted(names - set(state))[:8]}"
             )
 
-        input_types = modulev3_ragged_kv_symbolic_inputs(
-            kv_params=self.kv_params, device_refs=refs
+        inputs = decoder_input_types(
+            self.kv_params,
+            refs[0],
+            input_layout=MiMoV2Decoder.input_layout,
         )
         t0 = time.time()
         session = InferenceSession(devices=self.devices)
         # ``Module.compile`` split in two, to count the fused QKV op sites in
-        # the staged graph before it compiles.
-        staged, registry = model.stage(
-            *input_types,
+        # the staged graph before it compiles. The registered graph is the
+        # role's: staged through ``_DecoderGraph``, under the name the
+        # precompiled MEFs and Mach's registry keep.
+        staged, registry = _DecoderGraph(model).stage(
+            inputs,
             weights=state,
-            name="mimo_v2_modulev3_fixture_check",
+            name=MiMoV2Decoder.graph_name,
         )
         self.fused_qkv_count = str(staged).count(
             "kv_cache.chunked_qkv_rope_store.ragged.paged"
@@ -230,10 +238,21 @@ class Runner:
         # The graph deletes this input; ALL logits are always returned.
         return_n_logits = Buffer.from_numpy(np.array([1], dtype=np.int64))
         outputs = self.model(
-            tokens, return_n_logits, offsets, *tree.leaves(kv_inputs)
+            DecoderGraphInputs(
+                tokens=tokens,
+                return_n_logits=return_n_logits,
+                input_row_offsets=offsets,
+                kv=kv_inputs,
+            )
         )
-        assert outputs.logits is not None
-        return outputs.logits.driver_tensor.to(CPU()).to_numpy().copy()
+        # The role's grouped outputs: every row's logits under ``logits``.
+        # ``_DecoderGraph`` groups the decoder's outputs (``last_stage`` is
+        # its default True), so the compiled graph returns the group; its
+        # leaves are the driver buffers the graph wrote.
+        assert isinstance(outputs, DecoderOutputs), type(outputs)
+        logits = outputs.group("logits", Logits)
+        row_logits = cast(Tensor, logits["logits"])
+        return row_logits.driver_tensor.to(CPU()).to_numpy().copy()
 
     def teacher_forced(
         self,
