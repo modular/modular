@@ -1094,11 +1094,10 @@ Type StructASTDecl::computeSelfType() const {
 
   // Methods on structs (but not classes) take the struct implicitly by
   // pointer so they can use and mutate it.
-  return structOp.legacyBindReference(parameters);
-
-  // FIXME: seems not working due to some auto parameterization issue.
-  // return structOp.bindReference(getShared().getEvaluationContext(),
-  // parameters);
+  //
+  // Build the type directly instead of through `bindReference`, we don't want
+  // to evaluate the constraints on the self type.
+  return LIT::StructType::get(getFullyResolvedSymbolRef(structOp), parameters);
 }
 
 Type TraitASTDecl::computeSelfType(TraitDeclOp traitOp) {

@@ -1534,9 +1534,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               assert(targetStruct && "extension doesn't have target");
               // TODO(MOCO-522): Look into storing the type in the extension
               // rather than a SymbolRefAttr.
-              auto structType = LIT::StructType::get(
-                  targetStruct, {},
-                  TypeSignatureType::get(targetStruct.getContext()));
+              auto structType = LIT::StructType::get(targetStruct);
               refWalker.walk(StructMetaType::get(structType));
               ASTDecl &structAstDecl =
                   declResolver->getDeclForTypeSymbol(targetStruct);

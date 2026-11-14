@@ -1445,20 +1445,6 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
     return {};
   }
 
-  if (llvm::any_of(type.getParamBindings(),
-                   [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
-    auto diag = emitError(value.expr->getLoc())
-                << type
-                << " is not concrete, use '[]' to bind missing parameters";
-    // The type printer hides infer-only parameters, so name the missing ones.
-    // A bound signature keeps only its unbound parameters.
-    if (TypeSignatureType sig = type.getSignature())
-      for (size_t idx = 0, e = sig.getNumParams(); idx != e; ++idx)
-        diag.attachNote(value.expr->getLoc())
-            << "missing parameter '" << sig.getParamName(idx).getValue() << "'";
-    return {};
-  }
-
   // Reject generator types (e.g. comptime aliases with unbound parameters)
   // where a concrete type is required. Generators appear as ParamType whose
   // metatype (after stripping sugar) is a GeneratorType.
@@ -1471,6 +1457,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
     }
   }
 
+  assert(llvm::none_of(type.getParamBindings(), llvm::IsaPred<UnboundAttr>));
   return type;
 }
 
@@ -1883,9 +1870,11 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
 
-  // Check the bindings.
-  TypeSignatureType sig = cast<StructASTDecl>(typeDecl)->getOp().getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+  // Check the bindings. `Tuple` is parametric, so the lookup gives a generator
+  // over its parameters.
+  GeneratorType tupleGenType = StructTypeGenerator::cast(tupleType).getType();
+  ParamInf inference(bindings, tupleGenType.getInputParamTypes(),
+                     tupleGenType.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
                      /*discardError=*/false,
                      /*deferredTypingContext=*/deferredTypingContext);

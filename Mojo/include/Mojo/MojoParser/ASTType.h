@@ -86,10 +86,9 @@ public:
   ASTDecl *getDecl(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all parameter bindings
-  /// on this reference to the type.  Note that this is potentially a partial
-  /// binding set - incomplete bindings (missing bindings) are valid.
+  /// on this reference to the type. For a struct type generator, a binding can
+  /// refer to an input of the generator.
   ArrayRef<TypedAttr> getParamBindings() const;
-  TypeSignatureType getSignature() const;
 
   /// Returns true if the parameter binding at `idx` is unresolved, i.e., the
   /// param value depends on sibling parameters that are unbound.

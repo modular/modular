@@ -1052,28 +1052,10 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // the just-declared parameters) so they are still checked once the
   // generator's parameters are inferred; must be called after those parameters
   // are declared.
-  //
-  // If `onlyOverNewParams` is set, constraints that don't mention any of the
-  // just-declared parameters are skipped: they constrain parameters the user
-  // bound explicitly, so the user must write the trailing `where` clause
-  // explicitly.
-  auto propagateBodyConstraints = [&](PogListAttr srcParamList,
-                                      bool onlyOverNewParams = false) {
-    auto mentionsNewParam = [&](TypedAttr prop) {
-      bool found = false;
-      prop.walk([&](ParamDeclRefAttr ref) {
-        if (llvm::any_of(paramValues, [&](TypedAttr value) {
-              return cast<ParamDeclRefAttr>(value).getName() == ref.getName();
-            }))
-          found = true;
-      });
-      return found;
-    };
+  auto propagateBodyConstraints = [&](PogListAttr srcParamList) {
     for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
       TypedAttr remappedProp =
           evaluator.getReboundAttribute(bodyConstraint.getProposition());
-      if (onlyOverNewParams && !mentionsNewParam(remappedProp))
-        continue;
       auto remapped = ConstraintAttr::get(remappedProp, bodyConstraint.getLoc(),
                                           bodyConstraint.getMessage());
       paramList.emittedBodyConstraints.push_back(remapped);
@@ -1121,29 +1103,17 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     }
   }
 
-  // Check for a struct type or a struct metatype.
-  auto getBoundStructMetaType = [&](StructMetaType metatype) -> StructMetaType {
-    // The unbound parameters will be on the struct type's signature.
-    TypeSignatureType sig = metatype.getSignature();
-    PogListAttr paramList = sig.getParamListAttrs();
-    ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
-    for (auto [idx, type] : llvm::enumerate(sig.getParamTypes()))
-      declareAndAddParam(type, pogs[idx].getName());
-    propagateBodyConstraints(paramList, /*onlyOverNewParams=*/true);
-    return metatype.bindUnbound(paramValues);
-  };
-
+  // A struct type or struct metatype has all of its parameters bound, so no
+  // parameter is added. Drop the sugar it is spelled with, except an alias that
+  // signatures keep.
   if (auto metatype =
           sugarDynCastIfPresent<StructMetaType>(type.extractMetaType())) {
-    // Binding nothing would only drop the alias the type is spelled with.
-    if (metatype.getSignature().getParamTypes().empty() &&
-        isKeptAlias(type, metatype.getType()))
+    if (isKeptAlias(type, metatype.getType()))
       return type;
-    auto mt = getBoundStructMetaType(metatype);
-    return mt ? mt.getType() : ASTType();
+    return metatype.getType();
   }
   if (auto metatype = sugarDynCast<StructMetaType>(type))
-    return getBoundStructMetaType(metatype);
+    return metatype;
 
   if (auto gen = sugarDynCast<GeneratorType>(type)) {
     // Always auto-param a `type_of(ParamStruct[_])` expression, this is to

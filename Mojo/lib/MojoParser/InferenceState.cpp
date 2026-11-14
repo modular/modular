@@ -230,15 +230,6 @@ VerifiedParamBindings::specializeStructType(StructDeclOp structOp) const {
 TypedAttr
 VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   assert(*this && "specializing with failed inference bindings");
-  // Special case for structs types: If the generator is a struct meta type,
-  // bind the corresponding struct type directly.
-  if (auto structMetaType = sugarDynCast<StructMetaType>(generator.getType())) {
-    LIT::StructType boundType =
-        structMetaType.getType().bindUnbound(getValues());
-    return TypeParamAttr::get(boundType, StructMetaType::get(boundType));
-  }
-
-  // Otherwise, the type of the generator must be a GeneratorType.
   assert(sugarIsa<GeneratorType>(generator.getType()) &&
          "generator type expected");
   Type specializedType =

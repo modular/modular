@@ -38,7 +38,7 @@ def GoodUseOfThing(a: Thing[4, 5]):
     pass
 
 
-# expected-error @below {{unexpected parameter}}
+# expected-error @below {{Thing[Int(1), Int(2)]' has no free parameters; remove the extra binding}}
 def MultipleThingMetaparams(a: Thing[1, 2][1]):
     pass
 

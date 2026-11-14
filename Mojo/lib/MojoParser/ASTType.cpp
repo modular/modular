@@ -584,21 +584,6 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   return {};
 }
 
-TypeSignatureType ASTType::getSignature() const {
-  Type metatype = SugarAttr::strip(extractMetaType());
-  if (auto metaType = dyn_cast_or_null<StructMetaType>(metatype))
-    return metaType.getSignature();
-  if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
-    return mmType.getSignature();
-
-  // FIXME: this is wrong, remove the following branch
-  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
-      genAttr && LIT::isTypeExpr(genAttr.getBody()))
-    return ASTType(genAttr.getBody()).getSignature();
-
-  return {};
-}
-
 bool ASTType::isUnresolvedParam(size_t idx) const {
   TypedAttr param = getParamBindings()[idx];
   if (!LIT::StructTypeGenerator::dynCast(*this))

@@ -1273,28 +1273,6 @@ bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
-LIT::StructType
-StructDeclOp::legacyBindReference(ArrayRef<TypedAttr> paramValues) {
-  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
-  TypeSignatureType sig = getSignature();
-
-  if (paramValues.empty()) {
-    // Create a fully unbound reference to the type.
-    SmallVector<TypedAttr> unbound;
-    ParameterEvaluator evaluator;
-    for (Type type : sig.getParamTypes()) {
-      auto canonical = getCanonicalType(type);
-      unbound.push_back(UnboundAttr::get(evaluator.getReboundType(canonical)));
-      evaluator.appendIndexBinding(unbound.back());
-    }
-    return LIT::StructType::get(symbol, unbound, sig);
-  }
-
-  // Compute the resultant signature.
-  auto newSig = sig.bind(paramValues);
-  return LIT::StructType::get(symbol, paramValues, newSig);
-}
-
 TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
                                       ArrayRef<TypedAttr> paramValues) {
   TypeSignatureType sig = getSignature();
@@ -1303,13 +1281,8 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
   for (auto [idx, t] : llvm::enumerate(sig.getParamTypes()))
     forwardParams.push_back(ParamIndexRefAttr::get(0, idx, t));
 
-  // TODO: we don't need sig in struct type under the generator representation.
-  // Remove it after fully migration.
-  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
-  SmallVector<TypedAttr> sigForwardParams = llvm::map_to_vector(
-      forwardParams, [&](TypedAttr p) { return plusOneAdjuster.replace(p); });
-  auto st = LIT::StructType::get(getFullyResolvedSymbolRef(*this),
-                                 forwardParams, sig.bind(sigForwardParams));
+  auto st =
+      LIT::StructType::get(getFullyResolvedSymbolRef(*this), forwardParams);
 
   auto genBody = TypeParamAttr::get(st, StructMetaType::get(st));
   // A simple type without parameters.

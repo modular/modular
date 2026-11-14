@@ -464,7 +464,7 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       //        use(X.a2) # Error: 'a' needs to be bound
       // To check whether the value (incl. its type) of this alias depends on
       // unbound parameters, walk the attribute and check for ParamDeclRefAttrs
-      // to values that are UnboundAttrs.
+      // to parameters that the type leaves unbound.
       TypedAttr aliasValue = decl.getValueAttr();
       WalkResult findUnboundParams = aliasValue.walk([&](ParamDeclRefAttr attr)
                                                          -> WalkResult {
@@ -1857,42 +1857,6 @@ static LogicalResult parseParameterBindings(
   return success();
 }
 
-/// Given a value of type type, substitute parameters into the type, producing
-/// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
-static PValue substituteParametersIntoUserDefinedType(
-    PValue typeValue, const ExprNode *expr, ArrayRef<Operand> operands,
-    SMLoc lhsLoc, SMLoc rhsLoc, IREmitter &emitter,
-    ParamBindings::BindingKind initialBindingKind) {
-  auto metaType = sugarCast<StructMetaType>(typeValue.getType());
-  ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
-
-  // Notify the listener on the parameter binding.
-  emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
-
-  // Build up a ParamBindings set to validate and check the bindings.
-  TypeSignatureType sig = metaType.getSignature();
-
-  ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  if (failed(parseParameterBindings(operands, emitter, paramBindings,
-                                    initialBindingKind)))
-    return {};
-
-  // Check the bindings.
-  // Now we see a `[]`, it must be a concrete binding.
-  ParamInf inference(paramBindings, sig.getParamTypes(),
-                     sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, typeDecl,
-                     /*discardError=*/false,
-                     /*deferredTypingContext=*/emitter.deferredTypingContext);
-
-  VerifiedParamBindings bindings = inference.inferForStruct();
-  if (!bindings)
-    return {};
-
-  // Ok, we succeeded at reparameterizing the type.
-  return bindings.specializeGenerator(typeValue);
-}
-
 /// Bind parameter operands to a callable parameter.
 static PValue
 bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
@@ -1921,9 +1885,7 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
                      /*allowImplicitConversions=*/true,
                      /*declIfDirect=*/typeDecl,
                      /*discardError=*/false,
-                     /*deferredTypingContext=*/emitter.deferredTypingContext,
-                     /*additionalAssumptions=*/sig.getBodyConstraints(),
-                     /*withinParameterScope=*/true);
+                     /*deferredTypingContext=*/emitter.deferredTypingContext);
   VerifiedParamBindings newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};
@@ -3465,25 +3427,20 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       return !ov.isNull();
     };
 
-    if (auto structTy = dyn_cast<StructMetaType>(ty);
-        (structTy && structTy.getSignature().getInputParamTypes().empty()) ||
-        !structTy) {
-      if (!hasMethod("__getitem__") && !hasMethod("__setitem__") &&
-          !hasMethod("__getattr__")) {
+    if (!hasMethod("__getitem__") && !hasMethod("__setitem__") &&
+        !hasMethod("__getattr__")) {
 
-        auto callOv =
-            OverloadSet::lookup(emitter.getDeclScope(), ty, "__call__", base,
-                                CallSyntax::kMethodCallSynthetic);
+      auto callOv = OverloadSet::lookup(emitter.getDeclScope(), ty, "__call__",
+                                        base, CallSyntax::kMethodCallSynthetic);
 
-        if (!callOv.isNull()) {
-          assert(callOv.explicitParamBindings.empty() &&
-                 "parameter bindings should be empty at this point");
-          callOv.explicitParamBindings =
-              ParamBindings(emitter.getDeclScope(), this);
-          auto callValue = OverloadSetUValue::create(std::move(callOv));
-          callValue->baseValue = {baseAnyValue, base};
-          overloads = std::move(callValue);
-        }
+      if (!callOv.isNull()) {
+        assert(callOv.explicitParamBindings.empty() &&
+               "parameter bindings should be empty at this point");
+        callOv.explicitParamBindings =
+            ParamBindings(emitter.getDeclScope(), this);
+        auto callValue = OverloadSetUValue::create(std::move(callOv));
+        callValue->baseValue = {baseAnyValue, base};
+        overloads = std::move(callValue);
       }
     }
   }
@@ -3518,27 +3475,31 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     }
 
     // If this is a parametric PValue, this is binding parameter values to the
-    // generator value. Or if the sub-value is an unbound Type, try binding
-    // parameters to it! Handle user-defined types and custom MLIR types.
-    if (sugarIsa<GeneratorType>(baseType) ||
-        (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType))) {
+    // generator value.
+    if (auto sig = sugarDynCast<GeneratorType>(baseType)) {
       ParamBindings::BindingKind bindingKind = ParamBindings::kStandard;
       // In the form of S[xxx]() or S[xxx].field, we make it more admissible.
       if (dest.getContext() == ExprContext::EC_CallCalleeValue ||
           dest.getContext() == ExprContext::EC_AttributeRefBase)
         bindingKind = ParamBindings::kContextual;
 
-      PValue result = [&]() -> PValue {
-        if (auto sig = sugarDynCast<GeneratorType>(baseType)) {
-          return bindToGeneratorValue(value, sig, this, operands, emitter,
-                                      rsquareLoc, bindingKind);
-        }
-        return substituteParametersIntoUserDefinedType(value, this, operands,
-                                                       lsquareLoc, rsquareLoc,
-                                                       emitter, bindingKind);
-      }();
-
+      PValue result = bindToGeneratorValue(value, sig, this, operands, emitter,
+                                           rsquareLoc, bindingKind);
       return emitter.emitResult(result, this, dest);
+    }
+
+    // A struct type has all of its parameters bound. A struct with parameters
+    // left to bind is a generator instead.
+    if (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType)) {
+      assert(llvm::none_of(baseType.getParamBindings(),
+                           llvm::IsaPred<UnboundAttr>));
+      // Print the struct type itself rather than an alias it is spelled with,
+      // but keep the spelling of its parameter values.
+      emitter.emitError(lsquareLoc)
+          << ASTType(baseValue.getIfPValue())
+          << " has no free parameters; remove the extra binding"
+          << getIndexRange();
+      return {};
     }
   }
 

@@ -358,18 +358,7 @@ public:
   StructMetaType(Base base) : Base(base) {}
 
   SymbolRefAttr getSymbol() const;
-  TypeSignatureType getSignature() const;
   ArrayRef<TypedAttr> getParamValues() const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of param values. Only
-  /// positions that are currently unbound can be updated.
-  StructMetaType bindAll(ArrayRef<TypedAttr> values) const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of unbound parameters
-  /// in the current param values list.
-  StructMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
 class StructMetaMetaType : public MetaTypeOf<StructMetaType> {
@@ -383,18 +372,7 @@ public:
 
   StructMetaMetaType(Base base) : Base(base) {}
   SymbolRefAttr getSymbol() const;
-  TypeSignatureType getSignature() const;
   ArrayRef<TypedAttr> getParamValues() const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of param values. Only
-  /// positions that are currently unbound can be updated.
-  StructMetaMetaType bindAll(ArrayRef<TypedAttr> values) const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of unbound parameters
-  /// in the current param values list.
-  StructMetaMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
 class AnyTraitType : public MetaTypeOf<TraitType> {

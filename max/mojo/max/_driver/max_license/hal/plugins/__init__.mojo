@@ -355,7 +355,7 @@ struct RawPlugin(Movable):
     var so_path: String
 
     var base: RawPluginBase[]
-    var graph_capture: Optional[RawPluginGraphCapture[]]
+    var graph_capture: Optional[RawPluginGraphCapture]
 
     @staticmethod
     def _try_init_optional_component[
@@ -384,7 +384,7 @@ struct RawPlugin(Movable):
 
         self.base = type_of(self.base)(handle, so_path)
         self.graph_capture = Self._try_init_optional_component[
-            RawPluginGraphCapture[]
+            RawPluginGraphCapture
         ](handle, so_path)
 
     def _create_init_driver(mut self) raises HALError -> DriverHandle:

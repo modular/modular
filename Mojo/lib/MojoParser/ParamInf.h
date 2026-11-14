@@ -40,10 +40,7 @@ public:
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError,
            DeferredTypingContext *deferredTypingContext = nullptr,
-           ArrayRef<ConstraintAttr> additionalAssumptions = {},
-           // Whether the inference result will be used within a parameter
-           // scope. This will be true unconditionally after the migration.
-           bool withinParameterScope = false);
+           ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding. On success, returns the verified bindings (which can be
@@ -159,7 +156,6 @@ private:
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
   bool isInferForStruct = false;
-  const bool withinParameterScope;
 
   friend class ParamMatcher;
   friend class ParamBindings;

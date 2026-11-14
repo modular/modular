@@ -350,11 +350,10 @@ OverloadFitness OverloadFitness::evaluateDirectCall(
         return true;
 
       // A generator's body refers to its own unbound inputs through depth-0
-      // index refs, so those match anything just like `UnboundAttr`.
+      // index refs, so those match anything.
       bool ctxIsGenerator = sugarIsa<GeneratorAttr>(PValue(ctxType));
       auto isUnbound = [&](TypedAttr param) {
-        if (isa<UnboundAttr>(param))
-          return true;
+        assert(!llvm::isa<UnboundAttr>(param));
         auto indexRef = dyn_cast<ParamIndexRefAttr>(param);
         return ctxIsGenerator && indexRef && indexRef.getDepth() == 0;
       };

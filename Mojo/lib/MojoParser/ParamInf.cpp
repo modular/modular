@@ -107,16 +107,14 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
                    DeferredTypingContext *deferredTypingContext,
-                   ArrayRef<ConstraintAttr> additionalAssumptions,
-                   bool withinParameterScope)
+                   ArrayRef<ConstraintAttr> additionalAssumptions)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
                      deferredTypingContext, additionalAssumptions),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
-      allowImplicitConversions(allowImplicitConversions),
-      withinParameterScope(withinParameterScope) {}
+      allowImplicitConversions(allowImplicitConversions) {}
 
 // TODO: Reconsolidate this.
 namespace M::KGEN::LIT {
@@ -438,9 +436,9 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     //
     // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
     // argument is an Int8, then we need the implicit conversion to infer the
-    // base element.  Our solution to this is to rip and replace parameters that
-    // contain unbound parameters, replacing them with UnboundAttr so inference
-    // can find them.
+    // base element.  Our solution to this is to turn the parameters that
+    // contain unbound parameters into inputs of a generator, so inference can
+    // find them.
     auto getImplicitConvertTarget =
         [&](CValue argVal, OperandsNeedingOriginsList *needingOrigins) -> Type {
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
@@ -1017,17 +1015,10 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     value = evaluator.getReboundAttribute(value);
 
-    // Don't try to infer from default values that have unresolved references
-    // to other parameters, unless the result is used within a parameter scope
-    // where those references stay meaningful.
-
-    if (hasReferences(value)) {
-      if (!withinParameterScope)
-        return success();
-      // The default expression are within the current parameter scope, quote it
-      // before pulling it out.
+    // A default value can refer to other parameters of the current parameter
+    // scope; quote it before pulling it out.
+    if (hasReferences(value))
       value = QuoteAttr::get(value);
-    }
 
     ASTType argType = evaluator.getReboundType(declaredParamTypes[idx]);
     FailureOr<TypedAttr> paramVal = inferAndEmitOneParam(
