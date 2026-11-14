@@ -716,6 +716,13 @@ tsan_variant(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+tsan_variant(
+    name = "Driver/CompilationTSan.stripped",
+    src = ":Driver/Compilation.stripped",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
 modular_shared_library(
     name = "Driver/DeviceContext",
     srcs = [],
