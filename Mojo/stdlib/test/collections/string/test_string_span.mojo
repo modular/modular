@@ -1061,6 +1061,10 @@ def test_lower() raises:
     assert_equal(EVERY_CODEPOINT_LENGTH_STR.lower(), "߷കൈ🔄!")
     # U+023A lowercases to U+2C65, one byte longer than the input.
     assert_equal(StringSpan("Ⱥ").lower(), "ⱥ")
+    # U+0130 lowercases to "i" followed by U+0307 COMBINING DOT ABOVE.
+    var lower_0130 = String(Codepoint("i"), Codepoint.from_u32(0x0307).value())
+    assert_equal(StringSpan("İ").lower(), lower_0130)
+    assert_equal(StringSpan("Aİb").lower(), String("a", lower_0130, "b"))
 
 
 def test_upper() raises:
@@ -1087,6 +1091,22 @@ def test_upper() raises:
         Codepoint.from_u32(0x0301).value(),
     )
     assert_equal(StringSpan("ΐ").upper(), upper_0390)
+
+    # Greek letters with an iota subscript uppercase to the letter followed
+    # by a capital iota, U+0399, and so do their titlecase forms.
+    var capital_iota = Codepoint.from_u32(0x0399).value()
+    var upper_1f80 = String(Codepoint.from_u32(0x1F08).value(), capital_iota)
+    assert_equal(StringSpan("ᾀ").upper(), upper_1f80)
+    assert_equal(StringSpan("ᾈ").upper(), upper_1f80)
+    var upper_1fb3 = String(Codepoint.from_u32(0x0391).value(), capital_iota)
+    assert_equal(StringSpan("ᾳ").upper(), upper_1fb3)
+    assert_equal(StringSpan("ᾼ").upper(), upper_1fb3)
+    var upper_1fb7 = String(
+        Codepoint.from_u32(0x0391).value(),
+        Codepoint.from_u32(0x0342).value(),
+        capital_iota,
+    )
+    assert_equal(StringSpan("ᾷ").upper(), upper_1fb7)
 
     # `ΐ` is 2 bytes but uppercases to 6, so a run of them outgrows the
     # capacity `to_uppercase` estimates from the input length.
@@ -1347,6 +1367,25 @@ def test_string_literal_equality_against_non_static_string_span() raises:
     assert_true(span == "a,b")
     assert_false("a,b" != span)
     assert_true("a,b" == span)
+
+
+def test_islower_isupper_special_casing() raises:
+    # Lowercase letters whose uppercase form has several codepoints.
+    assert_true(StringSpan("ᾀ").islower())
+    assert_true(StringSpan("ᾳ").islower())
+    assert_true(StringSpan("ß").islower())
+    # Titlecase letters change when lowercased and when uppercased, so they
+    # are neither lowercase nor uppercase.
+    assert_false(StringSpan("ᾈ").islower())
+    assert_false(StringSpan("ᾼ").islower())
+    assert_false(StringSpan("ǅ").islower())
+    assert_false(StringSpan("ᾈ").isupper())
+    assert_false(StringSpan("ᾼ").isupper())
+    assert_false(StringSpan("ǅ").isupper())
+    assert_false(StringSpan("AǅB").isupper())
+    # U+0130 lowercases to two codepoints.
+    assert_true(StringSpan("İ").isupper())
+    assert_false(StringSpan("İ").islower())
 
 
 def main() raises:

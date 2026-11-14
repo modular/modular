@@ -20,6 +20,8 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping2,
     has_uppercase_mapping3,
     uppercase_mapping3,
+    has_lowercase_mapping2,
+    lowercase_mapping2,
 )
 
 from std.builtin.globals import global_constant
@@ -48,6 +50,12 @@ def _lowercase_mapping_index(rune: Codepoint) -> Int:
     return _to_index(Span(global_constant[has_lowercase_mapping]()), rune)
 
 
+def _lowercase_mapping2_index(rune: Codepoint) -> Int:
+    """Return index for lower case mapping converting the rune to 2 runes, or -1 if no mapping is given.
+    """
+    return _to_index(Span(global_constant[has_lowercase_mapping2]()), rune)
+
+
 def _to_index(lookup: Span[UInt32, ImmStaticOrigin], rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
@@ -60,53 +68,91 @@ def _to_index(lookup: Span[UInt32, ImmStaticOrigin], rune: Codepoint) -> Int:
         return -1
 
 
-# TODO:
-#   Refactor this to return a Span[Codepoint, ImmStaticOrigin], so that the
-#   return `Int` count and fixed-size `Array` are not necessary.
-def _get_uppercase_mapping(
-    char: Codepoint,
-) -> Optional[Tuple[Int, Array[Codepoint, 3]]]:
-    """Returns the 1, 2, or 3 character sequence that is the uppercase form of
-    `char`.
+__enum _CaseMapping(Copyable, Equatable, Writable):
+    """The full case mapping of a codepoint, which is 1 to 3 codepoints."""
 
-    Returns None if `char` does not have an uppercase equivalent.
+    case single(Array[Codepoint, 1])
+    case pair(Array[Codepoint, 2])
+    case triple(Array[Codepoint, 3])
+
+    def codepoints(self) -> Span[Codepoint, origin_of(self)]:
+        match self:
+            case .single(array):
+                return array
+            case .pair(array):
+                return array
+            case .triple(array):
+                return array
+
+
+def _get_uppercase_mapping(char: Codepoint) -> Optional[_CaseMapping]:
+    """Returns the uppercase form of `char`, or None if `char` does not have an
+    uppercase equivalent.
     """
-    var array = Array[Codepoint, 3](fill=Codepoint(0))
-
     var index1 = _uppercase_mapping_index(char)
     if index1 != -1:
         var rune = global_constant[uppercase_mapping]()[index1]
-        array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
-        return Tuple(Int(1), array^)
+        return _CaseMapping.single([Codepoint(unsafe_unchecked_codepoint=rune)])
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
         var runes = global_constant[uppercase_mapping2]()[index2]
-        array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
-        array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
-        return Tuple(Int(2), array^)
+        return _CaseMapping.pair(
+            [
+                Codepoint(unsafe_unchecked_codepoint=runes[0]),
+                Codepoint(unsafe_unchecked_codepoint=runes[1]),
+            ]
+        )
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
         var runes = global_constant[uppercase_mapping3]()[index3]
-        array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
-        array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
-        array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
-        return Tuple(Int(3), array^)
+        return _CaseMapping.triple(
+            [
+                Codepoint(unsafe_unchecked_codepoint=runes[0]),
+                Codepoint(unsafe_unchecked_codepoint=runes[1]),
+                Codepoint(unsafe_unchecked_codepoint=runes[2]),
+            ]
+        )
 
     return None
 
 
-def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
-    var table = Span(global_constant[has_lowercase_mapping]())
-    __guard case .Some(index) = table._binary_search_index(char.to_u32()) else:
-        return None
-    var codepoint = global_constant[lowercase_mapping]()[index]
+def _get_lowercase_mapping(char: Codepoint) -> Optional[_CaseMapping]:
+    """Returns the lowercase form of `char`, or None if `char` does not have a
+    lowercase equivalent.
+    """
+    var index1 = _lowercase_mapping_index(char)
+    if index1 != -1:
+        var rune = global_constant[lowercase_mapping]()[index1]
+        return _CaseMapping.single([Codepoint(unsafe_unchecked_codepoint=rune)])
 
-    # SAFETY:
-    #   We know this is a valid `Codepoint` because the mapping data tables
-    #   contain only valid codepoints.
-    return Codepoint(unsafe_unchecked_codepoint=codepoint)
+    var index2 = _lowercase_mapping2_index(char)
+    if index2 != -1:
+        var runes = global_constant[lowercase_mapping2]()[index2]
+        return _CaseMapping.pair(
+            [
+                Codepoint(unsafe_unchecked_codepoint=runes[0]),
+                Codepoint(unsafe_unchecked_codepoint=runes[1]),
+            ]
+        )
+
+    return None
+
+
+def _changes_when_uppercased(char: Codepoint) -> Bool:
+    return (
+        _uppercase_mapping_index(char) != -1
+        or _uppercase_mapping2_index(char) != -1
+        or _uppercase_mapping3_index(char) != -1
+    )
+
+
+def _changes_when_lowercased(char: Codepoint) -> Bool:
+    return (
+        _lowercase_mapping_index(char) != -1
+        or _lowercase_mapping2_index(char) != -1
+    )
 
 
 def is_uppercase(s: StringSpan[_]) -> Bool:
@@ -117,24 +163,16 @@ def is_uppercase(s: StringSpan[_]) -> Bool:
         s: The string to examine.
 
     Returns:
-        True if all characters in the string are uppercaseand
+        True if all characters in the string are uppercase and
         there is at least one cased character, False otherwise.
     """
     var found = False
     for char in s.codepoints():
-        var index = _lowercase_mapping_index(char)
-        if index != -1:
+        # A rune that changes when uppercased is lowercase or titlecase.
+        if _changes_when_uppercased(char):
+            return False
+        if _changes_when_lowercased(char):
             found = True
-            continue
-        index = _uppercase_mapping_index(char)
-        if index != -1:
-            return False
-        index = _uppercase_mapping2_index(char)
-        if index != -1:
-            return False
-        index = _uppercase_mapping3_index(char)
-        if index != -1:
-            return False
     return found
 
 
@@ -151,21 +189,11 @@ def is_lowercase(s: StringSpan[_]) -> Bool:
     """
     var found = False
     for char in s.codepoints():
-        var index = _uppercase_mapping_index(char)
-        if index != -1:
-            found = True
-            continue
-        index = _uppercase_mapping2_index(char)
-        if index != -1:
-            found = True
-            continue
-        index = _uppercase_mapping3_index(char)
-        if index != -1:
-            found = True
-            continue
-        index = _lowercase_mapping_index(char)
-        if index != -1:
+        # A rune that changes when lowercased is uppercase or titlecase.
+        if _changes_when_lowercased(char):
             return False
+        if _changes_when_uppercased(char):
+            found = True
     return found
 
 
@@ -185,7 +213,9 @@ def to_lowercase(s: StringSpan[_]) -> String:
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
             input[input_offset:]
         )
-        result.append(_get_lowercase_mapping(char).or_else(char))
+        var mapping = _get_lowercase_mapping(char).or_else(.single([char]))
+        for c in mapping.codepoints():
+            result.append(c)
         input_offset += num_bytes
 
     return result^
@@ -207,20 +237,9 @@ def to_uppercase(s: StringSpan[_]) -> String:
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
             input[input_offset:]
         )
-        var uppercase_replacement_opt = _get_uppercase_mapping(char)
-
-        if case .Some(uppercase_replacement) = uppercase_replacement_opt:
-            var count: Int
-            # A given character can be replaced with a sequence of characters
-            # up to 3 characters in length. A fixed size `Codepoint` array is
-            # returned, along with a `count` (1, 2, or 3) of how many
-            # replacement characters are in the uppercase replacement sequence.
-            count, ref uppercase_replacement_chars = uppercase_replacement
-            for char_idx in range(count):
-                result.append(uppercase_replacement_chars[char_idx])
-        else:
-            result.append(char)
-
+        var mapping = _get_uppercase_mapping(char).or_else(.single([char]))
+        for c in mapping.codepoints():
+            result.append(c)
         input_offset += num_bytes
 
     return result^
