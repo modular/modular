@@ -40,9 +40,10 @@ llama_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    weight_rules=weight_adapters.llama3_weight_rules,
+    use_weight_rules=True,
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3DecoderConfig,
     supports_overlap_scheduler=False,

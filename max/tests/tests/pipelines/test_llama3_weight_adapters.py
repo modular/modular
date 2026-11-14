@@ -16,10 +16,33 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from unittest.mock import NonCallableMock
 
+from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.llama3.weight_adapters import (
     convert_gguf_state_dict,
 )
+from max.pipelines.architectures.llama3_modulev3 import llama_modulev3_arch
+from max.pipelines.architectures.llama3_modulev3 import (
+    weight_adapters as modulev3_weight_adapters,
+)
+from max.pipelines.lib import WeightTransform
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import LlamaConfig
+
+# Every tensor name of meta-llama/Llama-3.1-8B-Instruct, with one layer.
+_CHECKPOINT_NAMES = (
+    "model.embed_tokens.weight",
+    "model.layers.0.input_layernorm.weight",
+    "model.layers.0.post_attention_layernorm.weight",
+    "model.layers.0.self_attn.q_proj.weight",
+    "model.layers.0.self_attn.k_proj.weight",
+    "model.layers.0.self_attn.v_proj.weight",
+    "model.layers.0.self_attn.o_proj.weight",
+    "model.layers.0.mlp.gate_proj.weight",
+    "model.layers.0.mlp.up_proj.weight",
+    "model.layers.0.mlp.down_proj.weight",
+    "model.norm.weight",
+    "lm_head.weight",
+)
 
 
 @dataclass
@@ -94,3 +117,26 @@ def test_convert_gguf_state_dict_quantized_keeps_legacy_qkv_keys() -> None:
     assert "layers.0.self_attn.q_proj.weight" in converted
     assert "layers.0.self_attn.k_proj.weight" in converted
     assert "layers.0.self_attn.v_proj.weight" in converted
+
+
+def test_modulev3_rules_name_what_the_converter_did() -> None:
+    state_dict = {name: _weight_mock() for name in _CHECKPOINT_NAMES}
+    adapter = llama_modulev3_arch.checkpoint_adapters(LlamaConfig())[
+        WeightsFormat.safetensors
+    ]
+    assert isinstance(adapter, WeightTransform)
+
+    converted = modulev3_weight_adapters.convert_safetensor_state_dict(
+        state_dict  # type: ignore[arg-type]
+    )
+
+    assert adapter(state_dict).keys() == converted.keys()
+
+
+def test_gguf_checkpoint_keeps_its_converter() -> None:
+    adapters = llama_modulev3_arch.checkpoint_adapters(LlamaConfig())
+
+    assert (
+        adapters[WeightsFormat.gguf]
+        is llama_modulev3_arch.weight_adapters[WeightsFormat.gguf]
+    )

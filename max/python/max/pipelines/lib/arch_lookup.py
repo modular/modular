@@ -248,6 +248,7 @@ class SupportedArchitecture:
 
     The pipeline builds one :class:`~max.pipelines.lib.WeightTransform` from the
     rules, loads the checkpoint through it, and exports it with the pipeline.
+    Checkpoints in other formats keep their :attr:`weight_adapters`.
     """
 
     tokenizer_artifacts: Callable[[], tuple[str, str | None]] | None = None
@@ -658,7 +659,8 @@ class SupportedArchitecture:
                 f"{self.name} sets use_weight_rules but has no weight_rules"
             )
         transform = WeightTransform(self.weight_rules(huggingface_config))
-        return {self.default_weights_format: transform}
+        # Checkpoints in other formats, such as GGUF, keep their adapters.
+        return {**self.weight_adapters, self.default_weights_format: transform}
 
     def draft_architecture(self, method: str, checkpoint_name: str) -> str:
         """Returns the registered draft architecture of a draft checkpoint.
