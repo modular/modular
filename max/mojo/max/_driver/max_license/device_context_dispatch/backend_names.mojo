@@ -21,9 +21,6 @@ imports it from `max.gpu.host` never names a backend.
 
 from max.gpu.host._vendor_handles import CUcontext
 
-from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
-    CUDA_get_current_context as _hal_CUDA_get_current_context,
-)
 from max._driver.max_license.device_context_hal.device_context_hal import (
     DefaultDeviceTypeEncoder as _HALDefaultDeviceTypeEncoder,
 )
@@ -53,4 +50,8 @@ def CUDA_get_current_context() raises -> CUcontext:
     comptime if not HAL_DEVICE_CONTEXT:
         return _legacy_CUDA_get_current_context()
     else:
-        return _hal_CUDA_get_current_context()
+        raise Error(
+            "current-CUcontext access is not wired for the HAL DeviceContext;"
+            " the plugin exposes it via"
+            " M_driver_context_get_current_driver_context"
+        )

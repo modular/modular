@@ -28,14 +28,6 @@ from max._driver.max_license.device_context_dispatch.host_types import (
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
 )
-from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
-    HIP as _hal_HIP,
-    HIP_MODULE as _hal_HIP_MODULE,
-)
-from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
-    CUDA as _hal_CUDA,
-    CUDA_MODULE as _hal_CUDA_MODULE,
-)
 from max.gpu.host._legacy._amdgpu_hip import (
     HIP as _legacy_HIP,
     HIP_MODULE as _legacy_HIP_MODULE,
@@ -72,7 +64,10 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
     comptime if use_legacy_backend():
         return rebind_var[CUcontext](_legacy_CUDA(ctx.unwrap_legacy()))
     else:
-        return rebind_var[CUcontext](_hal_CUDA(ctx.unwrap_hal()))
+        raise Error(
+            "CUcontext access is not wired for the HAL DeviceContext; the"
+            " plugin exposes it via M_driver_context_get_current_driver_context"
+        )
 
 
 def CUDA(stream: DeviceStreamBase) raises -> CUstream:
@@ -110,7 +105,10 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     comptime if use_legacy_backend():
         return rebind_var[CUmodule](_legacy_CUDA_MODULE(func.unwrap_legacy()))
     else:
-        return rebind_var[CUmodule](_hal_CUDA_MODULE(func.unwrap_hal()))
+        raise Error(
+            "CUmodule access is not wired for the HAL DeviceContext; the plugin"
+            " exposes it via M_DRIVER_FUNCTION_PROPERTY_NATIVE_HANDLE"
+        )
 
 
 def HIP(ctx: DeviceContext) raises -> hipDevice_t:
@@ -128,7 +126,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
     comptime if use_legacy_backend():
         return rebind_var[hipDevice_t](_legacy_HIP(ctx.unwrap_legacy()))
     else:
-        return rebind_var[hipDevice_t](_hal_HIP(ctx.unwrap_hal()))
+        raise Error("hipDevice_t access is not wired for the HAL DeviceContext")
 
 
 def HIP(stream: DeviceStreamBase) raises -> hipStream_t:
@@ -166,4 +164,7 @@ def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
     comptime if use_legacy_backend():
         return rebind_var[hipModule_t](_legacy_HIP_MODULE(func.unwrap_legacy()))
     else:
-        return rebind_var[hipModule_t](_hal_HIP_MODULE(func.unwrap_hal()))
+        raise Error(
+            "hipModule_t access is not wired for the HAL DeviceContext; the HIP"
+            " plugin does not answer M_DRIVER_FUNCTION_PROPERTY_NATIVE_HANDLE"
+        )
