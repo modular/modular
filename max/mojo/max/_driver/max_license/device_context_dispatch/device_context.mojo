@@ -1913,10 +1913,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             UInt64(size_of[dtype]()),
         )
 
-    # The enqueued task holds a pointer to `func`.
     @inline(.always)
     def enqueue_cpu_range[
-        FuncType: def(Int) -> None,
+        FuncType: ImplicitlyCopyable & Deinitable & def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
         """Runs a function closure over a 1D range on a CPU `DeviceContext`.
 
@@ -1967,10 +1966,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             group._create_task(run(i), desired_worker_id=i % num_workers)
         group.wait[origin_of(func)._mlir_origin]()
 
-    # The enqueued task holds a pointer to `func`.
     @inline(.always)
     def enqueue_cpu_function[
-        FuncType: def() -> None,
+        FuncType: ImplicitlyCopyable & Deinitable & def() -> None,
     ](self, func: FuncType) raises:
         """Enqueues a function for execution on CPU.
 

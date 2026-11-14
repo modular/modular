@@ -59,9 +59,10 @@ from std.builtin.device_passable import (
     DevicePointerLike,
     DeviceTypeEncoder,
 )
+from std.atomic import Atomic
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import reflect, reflect_fn
-from std.memory import Pointer, unsafe_stack_allocation
+from std.memory import OwnedPointer, Pointer, unsafe_stack_allocation
 from std.memory import alloc, dealloc, ThinAllocation, Layout, MaybeUninit
 from std.memory.unsafe import bitcast
 
@@ -140,16 +141,48 @@ from max.gpu.host._driver_common import (
 )
 
 
-# The host task runs after `enqueue_cpu_*` returns, so it holds a pointer to the
-# caller's function rather than a closure local to the enqueue call.
-__async def _run_cpu_function[F: def() -> None](func: Pointer[F, _]):
+# Host tasks run after `enqueue_cpu_*` returns, when the caller's closure can
+# be gone, so they run a heap copy of it. The copy goes through an untracked
+# pointer: passing the closure to the coroutine as an owned argument does not
+# compile, because the coroutine keeps the origin of the consumed argument.
+def _heap_move[T: Movable](var value: T) -> Pointer[T, MutUntrackedOrigin]:
+    return OwnedPointer(value^).unsafe_take_allocation().unsafe_leak()
+
+
+def _heap_free[T: Deinitable](ptr: Pointer[T, MutUntrackedOrigin]):
+    _ = OwnedPointer(unsafe_from_raw_pointer=ptr)
+
+
+__async def _run_cpu_function[
+    F: ImplicitlyCopyable & Deinitable & def() -> None
+](func: Pointer[F, MutUntrackedOrigin]):
     func[]()
+    _heap_free(func)
+
+
+# All instances of one `enqueue_cpu_range` call share a single copy, because an
+# allocation per instance, freed on a worker thread, measurably slows
+# `parallelize`.
+@fieldwise_init
+struct _CpuRangeFunc[F: ImplicitlyCopyable & Deinitable & def(Int) -> None](
+    Deinitable, Movable
+):
+    var func: Self.F
+    var pending: Int64
 
 
 __async def _run_cpu_range_function[
-    F: def(Int) -> None
-](func: Pointer[F, _], idx: Int):
-    func[](idx)
+    F: ImplicitlyCopyable & Deinitable & def(Int) -> None
+](shared: Pointer[_CpuRangeFunc[F], MutUntrackedOrigin], idx: Int):
+    shared[].func(idx)
+    # Acquire-release orders every instance's use of `func` before the last
+    # instance destroys it. ThreadSanitizer does not model a release
+    # decrement followed by an acquire fence, so it would report a race.
+    var pending = Atomic[Int64].fetch_add[ordering=.ACQUIRE_RELEASE](
+        Pointer(to=shared[].pending), -1
+    )
+    if pending == 1:
+        _heap_free(shared)
 
 
 # Define helper methods to call AsyncRT bindings.
@@ -5762,7 +5795,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_cpu_function[
-        FuncType: def() -> None,
+        FuncType: ImplicitlyCopyable & Deinitable & def() -> None,
     ](self, func: FuncType) raises:
         """Enqueues a function for execution on CPU.
 
@@ -5770,7 +5803,9 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             FuncType: The function type.
 
         Args:
-            func: The function to execute.
+            func: The function to execute. The enqueued task holds its own
+                copy, but values that `func` captures by reference must stay
+                alive until the task runs.
 
         Raises:
             If the operation fails.
@@ -5781,7 +5816,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
                 "enqueue_cpu_function is only supported on CPU DeviceContexts"
             )
 
-        var coro = _run_cpu_function(Pointer(to=func))
+        var coro = _run_cpu_function(_heap_move(func))
         coro._set_noop_callback()
         _checked(
             external_call[
@@ -5797,7 +5832,7 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue_cpu_range[
-        FuncType: def(Int) -> None,
+        FuncType: ImplicitlyCopyable & Deinitable & def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
         """Enqueues a function to be executed in parallel over a 1D range.
 
@@ -5810,7 +5845,9 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             FuncType: The type of function to execute.
 
         Args:
-            func: The function closure to execute.
+            func: The function closure to execute. The enqueued instances
+                share one copy of it, but values that `func` captures by
+                reference must stay alive until every instance runs.
             count: The number of parallel instances of the function to enqueue.
 
         Raises:
@@ -5824,10 +5861,12 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
 
         var handles = List[AnyCoroutine](capacity=count)
 
-        for j in range(count):
-            var coro = _run_cpu_range_function(Pointer(to=func), j)
-            coro._set_noop_callback()
-            handles.append(coro^._take_handle())
+        if count > 0:
+            var shared = _heap_move(_CpuRangeFunc(func, Int64(count)))
+            for j in range(count):
+                var coro = _run_cpu_range_function(shared, j)
+                coro._set_noop_callback()
+                handles.append(coro^._take_handle())
 
         _checked(
             external_call[

@@ -12,7 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext, DeviceContextArray
-from std.memory import alloc
+from std.atomic import Atomic
+from std.benchmark import keep
+from std.memory import OwnedPointer, alloc
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal, assert_false, assert_true
 
@@ -87,6 +89,72 @@ def test_func_accumulates(ctx: DeviceContext) raises:
     ctx.synchronize()
     assert_equal(ptr[], 3)
     ptr.unsafe_free()
+
+
+@inline(.never)
+def _enqueue_increment(ctx: DeviceContext, counter: MutPointer[Int, _]) raises:
+    def increment() {var counter} -> None:
+        counter[] += 1
+
+    ctx.enqueue_cpu_function(increment)
+
+
+# Runs at the same stack depth as the `_enqueue_*` helpers, so its 4 KiB of
+# scratch covers their dead frames, which hold little more than the closure.
+@inline(.never)
+def _overwrite_stack():
+    var scratch = Array[Int, 512](fill=-1)
+    keep(scratch)
+
+
+def test_func_outlives_enqueuing_frame(ctx: DeviceContext) raises:
+    # The task must not read the closure from `_enqueue_increment`'s frame,
+    # which is gone and overwritten before the gate lets the task run.
+    var gate = OwnedPointer(init_with=lambda () -> Atomic[Int64]: {0})
+    var counter = OwnedPointer[Int](0)
+
+    def wait_for_gate() {imm} -> None:
+        while gate[].load() == 0:
+            pass
+
+    ctx.enqueue_cpu_function(wait_for_gate)
+    _enqueue_increment(ctx, counter.ptr())
+    _overwrite_stack()
+    gate[].store(1)
+    ctx.synchronize()
+    assert_equal(counter[], 1)
+    # The task reads `gate` until `synchronize` returns.
+    _ = gate
+
+
+@inline(.never)
+def _enqueue_marks(
+    ctx: DeviceContext, marks: MutPointer[Int, _], count: Int
+) raises:
+    def mark(i: Int) {var marks} -> None:
+        marks[unsafe_offset=i] = 1
+
+    ctx.enqueue_cpu_range(mark, count=count)
+
+
+def test_range_outlives_enqueuing_frame(ctx: DeviceContext) raises:
+    comptime count = 8
+    var gate = OwnedPointer(init_with=lambda () -> Atomic[Int64]: {0})
+    var marks = List[Int](length=count, fill=0)
+
+    def wait_for_gate() {imm} -> None:
+        while gate[].load() == 0:
+            pass
+
+    ctx.enqueue_cpu_function(wait_for_gate)
+    _enqueue_marks(ctx, marks.unsafe_ptr(), count)
+    _overwrite_stack()
+    gate[].store(1)
+    ctx.synchronize()
+    for mark in marks:
+        assert_equal(mark, 1)
+    # The task reads `gate` until `synchronize` returns.
+    _ = gate
 
 
 def test_range_writes_indices(ctx: DeviceContext) raises:
@@ -206,6 +274,8 @@ def main() raises:
         test_func_closure_writes_to_memory(ctx)
         test_multiple_funcs_execute_in_order(ctx)
         test_func_accumulates(ctx)
+        test_func_outlives_enqueuing_frame(ctx)
+        test_range_outlives_enqueuing_frame(ctx)
         test_range_writes_indices(ctx)
         test_range_large(ctx)
         test_func_then_range(ctx)
