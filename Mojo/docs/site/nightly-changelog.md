@@ -189,6 +189,8 @@ This version is still a work in progress.
   immutable pointer, as `Pointer` does.
 
 - Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+  Contributed by [@BlueDestination](https://github.com/BlueDestination) in
+  [#7342](https://github.com/modular/modular/pull/7342).
 
 - Added a builtin `filter()`, which takes an iterable and a predicate closure
   and yields the elements the predicate accepts:
@@ -214,7 +216,9 @@ This version is still a work in progress.
   silently returned the first codepoint unless assertions were enabled.
   Callers must now handle the error with `try` or a `raises` function. On a
   string literal, both never raise, and a literal that isn't exactly one
-  codepoint is a compile-time error.
+  codepoint is a compile-time error. Contributed by
+  [@Tharun-Kumar-McW](https://github.com/Tharun-Kumar-McW) in
+  [#7444](https://github.com/modular/modular/pull/7444).
 
   ```mojo
   var text = String("🔥")
@@ -379,7 +383,9 @@ This version is still a work in progress.
   `Error`. This is a breaking change. If a conversion is non-raising, the
   `raises` effect can be removed from the `ConvertibleToPython` constructor.
   If a conversion is raising, an error type must be assigned to
-  `ConversionToPythonErrorType`.
+  `ConversionToPythonErrorType`. Contributed by
+  [@christoph-schlumpf](https://github.com/christoph-schlumpf) in
+  [#6547](https://github.com/modular/modular/pull/6547).
 
 ## Tooling changes
 
@@ -509,7 +515,8 @@ This version is still a work in progress.
   `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
-  patterns.
+  patterns. Contributed by [@a-tarasyuk](https://github.com/a-tarasyuk) in
+  [#7316](https://github.com/modular/modular/pull/7316).
 
 - A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
   and deinits it after its last use.
