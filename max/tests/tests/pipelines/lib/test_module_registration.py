@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import pickle
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -37,6 +37,7 @@ from max.nn.legacy.graph_groups import (
     BatchContext,
     DecoderGraphInputs,
     DecoderGraphScratch,
+    MRoPEPositions,
     VisionMerge,
 )
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
@@ -60,6 +61,7 @@ from max.pipelines.lib.module_registration import (
     ModuleV3DecoderPipelineModel,
     RegisteredDecoderBuilder,
     _block_diffusion_input_types,
+    _decoder_fields,
     _DecoderGraph,
     _max_canvas_batch,
     _registered_weight_naming,
@@ -599,11 +601,13 @@ def _context(*tokens: int, position: int = 0) -> TextContext:
 
 
 def _batch_processor(
-    data_parallel_degree: int, page_size: int = 128
+    data_parallel_degree: int,
+    page_size: int = 128,
+    cls: type[DecoderBatchProcessor] = DecoderBatchProcessor,
 ) -> DecoderBatchProcessor:
     pipeline_config = NonCallableMock()
     pipeline_config.model.kv_cache.kv_cache_page_size = page_size
-    return DecoderBatchProcessor(
+    return cls(
         ToyConfig(),
         BatchProcessorRuntime(
             pipeline_config=pipeline_config,
@@ -2028,6 +2032,46 @@ def test_bound_token_positions_follow_each_context() -> None:
     )
     assert inputs.token_positions is not None
     np.testing.assert_array_equal(inputs.token_positions.to_numpy(), [3, 4, 8])
+    assert inputs.input_fields().token_positions is inputs.token_positions
+
+
+class _MRoPEBatchProcessor(DecoderBatchProcessor):
+    """Fills each token's three axes with its absolute position."""
+
+    def token_positions(
+        self, context_batch: Sequence[TextContext], position_type: TensorType
+    ) -> np.ndarray:
+        flat = super().token_positions(context_batch, position_type)
+        return np.stack([flat, flat + 10, flat + 20])
+
+
+def test_multi_axis_token_positions_are_an_mrope_positions_group() -> None:
+    position_type = TensorType(
+        DType.int64, [3, "total_seq_len"], device=DeviceRef.CPU()
+    )
+    types = decoder_input_types(
+        NonCallableMock(get_symbolic_inputs=lambda: (X,)),
+        DeviceRef.CPU(),
+        token_positions=position_type,
+    )
+    # A serving engine feeds M-RoPE positions by the group's kind.
+    group = types["token_positions"]
+    assert isinstance(group, MRoPEPositions)
+    assert dict(group) == {"position_ids": position_type}
+
+    processor = _batch_processor(1, cls=_MRoPEBatchProcessor)
+    processor.bind_input_tree(types)
+    inputs = processor.prepare_initial_token_inputs(
+        [[_context(1, 2, position=5), _context(3, position=9)]],
+        kv_cache_inputs=NonCallableMock(spec=KVCacheInputsPerDevice),
+    )
+    assert inputs.token_positions is not None
+    np.testing.assert_array_equal(
+        inputs.token_positions.to_numpy(),
+        [[3, 4, 8], [13, 14, 18], [23, 24, 28]],
+    )
+    # The decoder reads them as one tensor.
+    assert _decoder_fields(types)["token_positions"] is position_type
     assert inputs.input_fields().token_positions is inputs.token_positions
 
 

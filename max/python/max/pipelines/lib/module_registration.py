@@ -130,6 +130,7 @@ from max.nn.legacy.graph_groups import (
     DecoderGraphScratch,
     HiddenStates,
     Logits,
+    MRoPEPositions,
     VisionEmbeddings,
     VisionMerge,
     group_fields,
@@ -455,8 +456,11 @@ def decoder_input_types(
     inputs. The graph takes the tree as its one argument, so an exported
     graph names its inputs. It takes ``vision`` as a
     :class:`~max.nn.legacy.graph_groups.VisionMerge` group, the kind a
-    serving engine feeds image embeddings by, and ``scratch`` as a
-    :class:`~max.nn.legacy.graph_groups.DecoderGraphScratch` group.
+    serving engine feeds image embeddings by, ``scratch`` as a
+    :class:`~max.nn.legacy.graph_groups.DecoderGraphScratch` group, and
+    ``token_positions`` of more than one axis, M-RoPE's
+    ``[3, total_seq_len]``, as a
+    :class:`~max.nn.legacy.graph_groups.MRoPEPositions` group.
 
     Args:
         kv_params: The KV cache parameters that supply the ``kv`` subtree.
@@ -499,7 +503,11 @@ def decoder_input_types(
     )
     types["kv"] = kv_params.get_symbolic_inputs()
     if token_positions is not None:
-        types["token_positions"] = token_positions
+        types["token_positions"] = (
+            MRoPEPositions(position_ids=token_positions)
+            if token_positions.rank > 1
+            else token_positions
+        )
     if vision is not None:
         types["vision"] = VisionMerge(
             image_embeddings=vision.embeddings,
@@ -539,10 +547,13 @@ def _decoder_fields(inputs: Mapping[str, Any]) -> OrderedDict[str, Any]:
 
     The graph takes ``vision`` as a ``vision_merge`` group, which the decoder
     reads as :class:`~max.pipelines.lib.role_contracts.VisionInputs`.
-    It takes ``batch_context_lengths`` and ``scratch`` as ``batch_context``
-    and ``decoder_scratch`` groups, which it reads as their tensors alone.
+    It takes ``batch_context_lengths``, ``scratch`` and multi-axis
+    ``token_positions`` as ``batch_context``, ``decoder_scratch`` and
+    ``mrope_positions`` groups, which it reads as their tensors alone.
     """
     fields = OrderedDict(inputs)
+    if isinstance(positions := fields.get("token_positions"), MRoPEPositions):
+        fields["token_positions"] = positions["position_ids"]
     if (vision := fields.get("vision")) is not None:
         fields["vision"] = VisionInputs(
             embeddings=vision["image_embeddings"],
@@ -850,7 +861,7 @@ class DecoderBatchProcessor(BatchProcessor[TextContext, DecoderModelInputs]):
             input_tree_def=self._input_tree_def,
         )
         if self.input_tree is not None and "token_positions" in self.input_tree:
-            position_type = self.input_tree["token_positions"]
+            position_type = _decoder_fields(self.input_tree)["token_positions"]
             assert isinstance(position_type, TensorType)
             inputs.token_positions = Buffer.from_numpy(
                 self.token_positions(context_batch, position_type)
