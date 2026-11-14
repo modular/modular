@@ -29,8 +29,6 @@ from extensibility import (
     TileTensorable,
     _LegacyComputeOutput,
 )
-from extensibility import InputTensor, OutputTensor
-from extensibility import _FusedOutputTensor as FusedOutputTensor
 
 comptime SM100 = (
     extensibility.ACCELERATOR
@@ -160,16 +158,4 @@ struct UnfusedInvalidParams:
     ](z: Some[Output & Tensor], x: Some[Input & Tensor]) where not conforms_to(
         type_of(z), Fused
     ):
-        pass
-
-
-# Legacy `ManagedTensorSlice` argument types.
-@extensibility.register("unfused_invalid_legacy")
-struct UnfusedInvalidLegacy:
-    @staticmethod
-    def execute(z: FusedOutputTensor, x: InputTensor):
-        pass
-
-    @staticmethod
-    def execute(z: OutputTensor, x: InputTensor):
         pass

@@ -193,8 +193,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
   }
 
   // A `TensorTuple` may bind no operands; `ConformCallOperands` hands it an
-  // empty tuple. The legacy `VariadicTensors` infers its dtype and rank from
-  // its elements, so it still needs one.
+  // empty tuple.
   auto skipLaunchArgumentAndEmptyTensorTuple =
       [&](uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
     while (true) {

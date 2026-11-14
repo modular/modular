@@ -1070,91 +1070,7 @@ LogicalResult ScalarCreateOp::emitMojo(EmitMojoState &state) {
   state.setMojoValueFor(getScalar(), state.file->var(scalarValue));
   return success();
 }
-namespace {
-
-/// The aggregate a variadic run of tensor operands packs into.
-enum class VariadicPackKind { Plain, FusedInput, FusedOutput };
-
-/// Emits the aggregate for a variadic run of tensor values. `fusionValues` /
-/// `fusionTypeParams` are consumed only by the fused kinds (one functor and its
-/// type per element).
-MojoValue emitVariadicTensorPack(EmitMojoState &state,
-                                 ArrayRef<MojoValue> inputValues,
-                                 VariadicPackKind kind,
-                                 ArrayRef<MojoValue> fusionValues,
-                                 ArrayRef<MojoValue> fusionTypeParams) {
-  SmallVector<MojoValue> runtimeStorage =
-      llvm::map_to_vector(inputValues, [&](const MojoValue &val) {
-        return ManagedTensorSliceRef(val).rawPtr();
-      });
-  SmallVector<MojoValue> runtimeShapes =
-      llvm::map_to_vector(inputValues, [&](const MojoValue &val) {
-        return ManagedTensorSliceRef(val).shape();
-      });
-
-  MojoValue inputTupleConstructor = kStructStaticTuple[{
-      kParameterSize.equal(std::to_string(inputValues.size()))}];
-  MojoValue runtimeStorageTuple =
-      state.file->var(inputTupleConstructor(runtimeStorage));
-  MojoValue runtimeShapesTuple =
-      state.file->var(inputTupleConstructor(runtimeShapes));
-
-  // Create the StaticTensorSpecList from per-element internals, shapes, and
-  // strides. Each spec is split into its homogeneous runtime part
-  // (StaticTensorSpecInternal) and its compile-time shape/strides so that
-  // heterogeneous specs can be stored in a single list. `shape_tuple` /
-  // `strides_tuple` are comptime members of the `StaticTensorSpec` itself,
-  // distinct from its `get_internals()` result.
-  auto staticSpecOf = [&](const MojoValue &val) {
-    return StaticTensorSpecRef(ManagedTensorSliceRef(val).staticSpec());
-  };
-  MojoValue rank = staticSpecOf(inputValues.front()).rank();
-  SmallVector<MojoValue> staticSpecInternals;
-  SmallVector<MojoValue> staticSpecShapes;
-  SmallVector<MojoValue> staticSpecStrides;
-  for (const auto &reboundInput : inputValues) {
-    StaticTensorSpecRef spec = staticSpecOf(reboundInput);
-    staticSpecInternals.push_back(spec.getInternals());
-    staticSpecShapes.push_back(coordToIndexList(spec.shapeTuple()));
-    staticSpecStrides.push_back(coordToIndexList(spec.stridesTuple()));
-  }
-  MojoValue inputSpecsInternalsComptime =
-      state.file->comptime(ParameterListRef::of(staticSpecInternals));
-  MojoValue inputSpecsShapesComptime =
-      state.file->comptime(ParameterListRef::of(staticSpecShapes));
-  MojoValue inputSpecsStridesComptime =
-      state.file->comptime(ParameterListRef::of(staticSpecStrides));
-  MojoValue inputSpecsComptime =
-      state.file->comptime(kStructStaticTensorSpecList[{
-          inputSpecsInternalsComptime, inputSpecsShapesComptime,
-          inputSpecsStridesComptime}]());
-  MojoValue staticSpecsParam = kParameterStaticSpecs.equal(inputSpecsComptime);
-
-  if (kind == VariadicPackKind::Plain) {
-    MojoValue ioSpec = ManagedTensorSliceRef(inputValues[0]).ioSpec();
-    MojoValue ctor = kStructVariadicTensors[{kParameterIOSpec.equal(ioSpec),
-                                             staticSpecsParam}];
-    return state.file->var(ctor({runtimeStorageTuple, runtimeShapesTuple}));
-  }
-
-  // Fused: the functors and their types become a `_FusionPack` +
-  // `*FusionTypes`; `static_specs` is keyword-only after the pack.
-  MojoValue fusionsTuple = state.file->var(kStructMsFusionPack(fusionValues));
-  SmallVector<MojoValue> typeParams(fusionTypeParams);
-  typeParams.push_back(staticSpecsParam);
-  StringRef structName = kind == VariadicPackKind::FusedInput
-                             ? kStructMsFusedInputVariadicTensors
-                             : kStructMsFusedOutputVariadicTensors;
-  return state.file->var(MojoValue(structName)[typeParams](
-      {runtimeStorageTuple, runtimeShapesTuple, fusionsTuple}));
-}
-} // namespace
-
 LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
-  // `$variadic_abi` (set by `ConformCallOperands`) selects `VariadicTensors`,
-  // `_FusedInputVariadicTensors`, `_FusedOutputVariadicTensors`, or a
-  // `TensorTuple` of trait arguments, so this never inspects the producing
-  // ops.
   SmallVector<MojoValue> inputValues = state.getMojoValuesFor(getElements());
 
   // A `TensorTuple`'s elements are already trait arguments; the tuple holds
@@ -1187,34 +1103,8 @@ LogicalResult TupleCreateOp::emitMojo(EmitMojoState &state) {
     return success();
   }
 
-  // Plain: a `VariadicTensors` over the raw pointers/shapes.
-  if (getVariadicAbi() == VariadicABI::Plain) {
-    state.setMojoValueFor(getTuple(),
-                          emitVariadicTensorPack(state, inputValues,
-                                                 VariadicPackKind::Plain,
-                                                 /*fusionValues=*/{},
-                                                 /*fusionTypeParams=*/{}));
-    return success();
-  }
-
-  // Fused: gather each element's fusion functor and its type. The functor
-  // lives on the element slice itself (`in_fusion` / `out_fusion`), so nothing
-  // here reaches back into the producing op.
-  bool isInput = getVariadicAbi() == VariadicABI::FusedInput;
-  SmallVector<MojoValue> fusionValues;
-  SmallVector<MojoValue> typeParams;
-  for (const MojoValue &el : inputValues) {
-    ManagedTensorSliceRef slice(el);
-    fusionValues.push_back(isInput ? slice.inFusion() : slice.outFusion());
-    typeParams.push_back(isInput ? slice.inFusionType()
-                                 : slice.outFusionType());
-  }
-  state.setMojoValueFor(getTuple(), emitVariadicTensorPack(
-                                        state, inputValues,
-                                        isInput ? VariadicPackKind::FusedInput
-                                                : VariadicPackKind::FusedOutput,
-                                        fusionValues, typeParams));
-  return success();
+  return emitOpError("expected a TensorTuple of trait arguments or a run of "
+                     "device contexts");
 }
 
 // Loads `width` elements of `arg` at `coord`, a `Coord`.
@@ -1355,22 +1245,6 @@ static MojoValue emitBaseSliceFromPtr(EmitMojoState &state, MojoValue dtype,
       {OpaquePointerRef(ptr).bitcast(kComptimeDTypeNoneType)(), layout}));
 }
 
-/// A dangling `ManagedTensorSlice` that only carries a type; every access goes
-/// through the fusion functor bound onto it. A dtype-changing epilogue needs
-/// it: the kernel gets a slice of its compute dtype (f32), while the real
-/// output (si32) reaches the functor as capture 0, since
-/// `_bind_to_fused_output` preserves its receiver's dtype.
-static MojoValue emitDanglingBaseSlice(EmitMojoState &state, MojoValue dtype,
-                                       unsigned rank, MojoValue layout,
-                                       MojoValue alignment) {
-  MojoValue danglingPtr =
-      kStructPointer[{scalarOfDType(kStructDType.get(kEnumDTypeInt8)),
-                      kComptimeMutAnyOrigin}]
-          .get(OpaquePointerRef::kUnsafeDangling)();
-  return emitBaseSliceFromPtr(state, dtype, rank, layout, alignment,
-                              danglingPtr);
-}
-
 LogicalResult TensorGetPtrOp::emitMojo(EmitMojoState &state) {
   // Read the raw base pointer of the input slice. This op lives in the kernel
   // body (outside any fusion lambda), so `state.file->` is the right scope.
@@ -1424,18 +1298,9 @@ struct FusionLambdaInfo {
   llvm::StringRef structName;
   MojoValue traitName;
   MojoValue methodName;
-  /// `OutputFusion` spells the width parameter `SIMDLength`; `InputFusion`
-  /// spells it `Int`. The two correlate with `takesValue` across today's
-  /// traits, but that is a coincidence of those three, not a rule.
-  MojoValue widthParamType;
   /// The store lane is handed the kernel's value; the load lane manufactures
   /// one.
   bool takesValue = false;
-  /// The MTS-bind traits (`managed_tensor_slice.InputFusion`/`OutputFusion`)
-  /// spell the index `IndexList[rank]`; the trait-wrapper traits
-  /// (`InputLoadFusion`/`OutputStoreFusion`/`TransformFusion`) spell it `Coord`
-  /// and name the method `__call__`, which then takes `idx: Coord` directly.
-  bool coordIndex = false;
 };
 } // namespace
 
@@ -1508,10 +1373,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
             shapeCaptureFields[k] =
                 state.file.declarations().varDecl(shapeCaptureTypes[k]);
 
-          // The method must match the conformed trait
-          // (managed_tensor_slice.mojo) for `_bind_to_fused_*` to accept it.
-          // Parameters match positionally; names follow the trait for
-          // readability.
+          // The method must match the conformed trait. Parameters match
+          // positionally; names follow the trait for readability.
           //
           // A `mogg.yield`-terminated body returns that value; a store-lane
           // body returns nothing. Read it off the region so it can't disagree
@@ -1522,17 +1385,13 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
           SmallVector<NamedMojoDef> methodParameters = {
               NamedMojoDef::asVerbatim(kParameterDType, kStructDType),
               NamedMojoDef::asVerbatim(kParameterRank, kStructInt),
-              NamedMojoDef::asVerbatim(kParameterSimdWidth,
-                                       lane.widthParamType),
+              NamedMojoDef::asVerbatim(kParameterSimdWidth, kStructInt),
               NamedMojoDef::asVerbatim(kParameterElementAlignment, kStructInt,
                                        1),
           };
           SmallVector<NamedMojoDef> methodArgs = {
               NamedMojoDef::asVerbatim(kParameterSelf),
-              NamedMojoDef::asVerbatim(kParameterIdx,
-                                       lane.coordIndex
-                                           ? kStructCoord
-                                           : kStructIndexList[kParameterRank]),
+              NamedMojoDef::asVerbatim(kParameterIdx, kStructCoord),
           };
           if (lane.takesValue)
             methodArgs.push_back(NamedMojoDef::asVerbatim("value", simdType));
@@ -1549,17 +1408,7 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                         /*alignment=*/functionBody.parameter(
                             kParameterElementAlignment));
 
-                // The stride-aware primitive takes a `Coord`, so convert `idx`
-                // once via `Coord`'s `IndexList` constructor (coord.mojo). Not
-                // `_index_list_to_static_coord`, which ignores the input at
-                // statically shaped positions: right for a shape, wrong for a
-                // varying loop index. The trait-wrapper lane already has a
-                // `Coord`.
-                MojoValue coordIdx =
-                    lane.coordIndex
-                        ? functionBody.arguments[1].resolvedName
-                        : state.file.declarations().var(kStructCoord(
-                              {functionBody.arguments[1].resolvedName}));
+                MojoValue coordIdx = functionBody.arguments[1].resolvedName;
 
                 // The store lanes' body leads with [value, index]; the load
                 // lane's leads with [index] alone. Captures follow either way.
@@ -2628,26 +2477,10 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   // `compute` is `store` plus a return.
   bool isCompute = isa<YieldOp>(getBody().front().back());
 
-  const FusionLambdaInfo storeLane = {
-      /*structName=*/"EpilogueStoreFunctor",
-      /*traitName=*/kTraitOutputFusion,
-      /*methodName=*/"store",
-      /*widthParamType=*/kStructSIMDLength,
-      /*takesValue=*/true,
-  };
-  const FusionLambdaInfo computeLane = {
-      /*structName=*/"EpilogueComputeFunctor",
-      /*traitName=*/kTraitComputeOutputFusion,
-      /*methodName=*/"compute",
-      /*widthParamType=*/kStructSIMDLength,
-      /*takesValue=*/true,
-  };
-
   // A `_LegacyComputeOutput` slot (`Some[Output & Fused &
   // _LegacyComputeOutput]`) gets a compute lambda only when `MAPToMOGG` could
   // build one, which it marks by yielding. Otherwise (a cast, reshape, or
-  // multi-store epilogue) the slot is downgraded to a store fusion, like a
-  // legacy `FusedComputeOutput`.
+  // multi-store epilogue) the slot is downgraded to a store fusion.
   bool isComputeOutputSlot =
       getContract() && bitEnumContainsAny(getContract()->getAccess(),
                                           MOGG::TensorArgAccessKind::transform);
@@ -2655,8 +2488,7 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   // A trait-ABI fused output (`Some[Output & Fused & StoreAccess]`, `$contract`
   // stamped at MAP lowering), or a downgraded compute-output slot, wants the
   // inline `OutputStoreFusion` functor shape (Coord `__call__`, `width: Int`)
-  // in `_MoggOutputStoreFusionTensor`; the MTS API binds the
-  // `managed_tensor_slice.OutputFusion` shape onto a base slice.
+  // in `_MoggOutputStoreFusionTensor`.
   bool wrapStore =
       (getContract() && bitEnumContainsAny(getContract()->getAccess(),
                                            MOGG::TensorArgAccessKind::store)) ||
@@ -2665,9 +2497,7 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
       /*structName=*/"OutputStoreFunctor",
       /*traitName=*/"OutputStoreFusion",
       /*methodName=*/"__call__",
-      /*widthParamType=*/kStructInt,
       /*takesValue=*/true,
-      /*coordIndex=*/true,
   };
 
   // A compute-output slot that got a compute lambda wants the functor in the
@@ -2675,13 +2505,13 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
   // value) wrapped in `_MoggTransformFusionTensor`, which also holds the real
   // output buffer for the kernel's own store.
   bool wrapTransform = isComputeOutputSlot && isCompute;
+  if (!wrapStore && !wrapTransform)
+    return emitOpError("expected a fused trait argument contract");
   const FusionLambdaInfo traitTransformLane = {
       /*structName=*/"TransformFunctor",
       /*traitName=*/"TransformFusion",
       /*methodName=*/"__call__",
-      /*widthParamType=*/kStructInt,
       /*takesValue=*/true,
-      /*coordIndex=*/true,
   };
   if (wrapTransform)
     state.declare(kTransformFusionDefinitions);
@@ -2701,10 +2531,8 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
       state, getBody(), captureInfos,
-      wrapTransform ? traitTransformLane
-      : wrapStore   ? traitStoreLane
-                    : (isCompute ? computeLane : storeLane),
-      inputDtypeParam, shapeCaptureTypes, shapeCaptureArgs);
+      wrapTransform ? traitTransformLane : traitStoreLane, inputDtypeParam,
+      shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
@@ -2739,58 +2567,21 @@ LogicalResult TensorCreateEpilogueOp::emitMojo(EmitMojoState &state) {
     return success();
   }
 
-  if (wrapStore) {
-    // The functor owns its store to the captured target, so no base slice or
-    // `_bind_to_fused_output` is needed.
-    StringRef deviceLabel = getDevice();
-    bool devicePassable = deviceLabel != kCPULabel;
-    MojoValue alignmentParam(static_cast<uint64_t>(
-        M::Driver::getPreferredAlignment(deviceLabel.str())));
-    MojoValue layoutVar =
-        state.file->var(rowMajorLayout(state.getMojoValueFor(getShape())));
-    // The wrapper's dtype is what the KERNEL stores (the value it hands to
-    // `store`), i.e. the computed dtype -- a dtype-changing epilogue casts to
-    // the real output dtype inside the functor's own store to its capture.
-    MojoValue wrapper = kStructMoggOutputStoreFusionTensor[{
-        inputDtypeParam, kFnTypeOf({layoutVar}), alignmentParam,
-        kFnTypeOf({functorInstance}), devicePassable, !devicePassable,
-        isComputeOutputSlot}]({functorInstance, layoutVar});
-    state.setMojoValueFor(getTensor(), state.file->var(wrapper));
-    return success();
-  }
-
-  // Bind the functor onto the store target's ManagedTensorSlice via
-  // `_bind_to_fused_output`, giving a ManagedTensorSlice with a resolvable
-  // `static_spec` that converts to the kernel's `FusedOutputTensor`. A
-  // dtype-changing epilogue binds onto a slice of the computed dtype and
-  // reaches the real output through capture 0.
-  ASSERT_STREAM(!isCompute || inputDtypeParam.text == dtypeParam.text,
-                "a compute lambda cannot change dtype; `MAPToMOGG` classifies "
-                "a dtype-changing epilogue as a store lambda");
-  // The base slice is over `$outputPtr` (the store target, or a pre-cast
-  // accumulation buffer for a mixed-precision accumulating kernel): real
-  // storage of the compute dtype, so an accumulating kernel accumulates
-  // through it; otherwise the lambda does the store.
-  FailureOr<unsigned> baseRank = fusedRegionRank(*this, getShape());
-  if (failed(baseRank))
-    return failure();
-  MojoValue baseLayout =
+  // The functor owns its store to the captured target.
+  StringRef deviceLabel = getDevice();
+  bool devicePassable = deviceLabel != kCPULabel;
+  MojoValue alignmentParam(static_cast<uint64_t>(
+      M::Driver::getPreferredAlignment(deviceLabel.str())));
+  MojoValue layoutVar =
       state.file->var(rowMajorLayout(state.getMojoValueFor(getShape())));
-  MojoValue baseSlice = emitBaseSliceFromPtr(
-      state, inputDtypeParam, *baseRank, baseLayout,
-      MojoValue(static_cast<uint64_t>(
-          M::Driver::getPreferredAlignment(getDevice().str()))),
-      state.getMojoValueFor(getOutputPtr()));
-  // Which entry point to bind through follows the kernel's declared argument
-  // type, not the lane: a `_FusedComputeOutputTensor` argument binds with
-  // `_bind_to_fused_compute_output` even when a dtype change or the
-  // `enable-compute-lambdas` opt-out kept the store lane above.
-  ManagedTensorSliceRef bindTarget(baseSlice);
-  MojoValue bindMethod = getComputeOutputArg()
-                             ? bindTarget.bindToFusedComputeOutput()
-                             : bindTarget.bindToFusedOutput();
-  MojoValue fusedTensor = bindMethod({functorInstance});
-  state.setMojoValueFor(getTensor(), state.file->var(fusedTensor));
+  // The wrapper's dtype is what the KERNEL stores (the value it hands to
+  // `store`), i.e. the computed dtype -- a dtype-changing epilogue casts to
+  // the real output dtype inside the functor's own store to its capture.
+  MojoValue wrapper = kStructMoggOutputStoreFusionTensor[{
+      inputDtypeParam, kFnTypeOf({layoutVar}), alignmentParam,
+      kFnTypeOf({functorInstance}), devicePassable, !devicePassable,
+      isComputeOutputSlot}]({functorInstance, layoutVar});
+  state.setMojoValueFor(getTensor(), state.file->var(wrapper));
   return success();
 }
 
@@ -2800,12 +2591,9 @@ LogicalResult TensorCreatePrologueOp::emitMojo(EmitMojoState &state) {
   // functor returns the loaded value, rebound to the method's generic dtype.
   // Captures are optional; a fused constant producer has none.
   //
-  // `$contract` (stamped at MAP lowering) selects the consumer ABI:
-  //   - trait (`Some[Input & Fused & LoadAccess]`): the inline
-  //     `InputLoadFusion` shape (Coord `__call__`), wrapped in
-  //     `_MoggInputLoadFusionTensor`.
-  //   - MTS API (`FusedInputTensor`): the `managed_tensor_slice.InputFusion`
-  //     shape (IndexList `load`), bound onto a type-only dangling base slice.
+  // The consumer (`Some[Input & Fused & LoadAccess]`, `$contract` stamped at
+  // MAP lowering) takes the inline `InputLoadFusion` shape (Coord `__call__`),
+  // wrapped in `_MoggInputLoadFusionTensor`.
 
   // The dtype the kernel reads; capture dtypes come from their defining ops.
   ErrorOr<DType> dtypeOr = M::MO::fromMLIRType(getElementType());
@@ -2821,31 +2609,19 @@ LogicalResult TensorCreatePrologueOp::emitMojo(EmitMojoState &state) {
     return failure();
   SmallVector<FusedCaptureInfo> captureInfos = *captureInfosOr;
 
-  bool traitFused = static_cast<bool>(getContract());
+  if (!getContract())
+    return emitOpError("expected a fused trait argument contract");
 
-  // Both lanes manufacture the loaded value (width param `Int`); they differ in
-  // the trait/method/index shape the consumer accepts.
-  const FusionLambdaInfo bindLoadLane = {
-      /*structName=*/"PrologueLoadFunctor",
-      /*traitName=*/kTraitInputFusion,
-      /*methodName=*/"load",
-      /*widthParamType=*/kStructInt,
-      /*takesValue=*/false,
-      /*coordIndex=*/false,
-  };
   const FusionLambdaInfo traitLoadLane = {
       /*structName=*/"InputLoadFunctor",
       /*traitName=*/"InputLoadFusion",
       /*methodName=*/"__call__",
-      /*widthParamType=*/kStructInt,
       /*takesValue=*/false,
-      /*coordIndex=*/true,
   };
 
   // The wrapper's inline `InputLoadFusion` trait must be defined before the
   // functor that conforms to it.
-  if (traitFused)
-    state.declare(kInputLoadFusionDefinitions);
+  state.declare(kInputLoadFusionDefinitions);
 
   // Inner-dynamic load-index reshapes carry runtime shapes as trailing shape
   // captures, as in the epilogue: each `!mogg.shape` Coord is passed whole.
@@ -2860,41 +2636,26 @@ LogicalResult TensorCreatePrologueOp::emitMojo(EmitMojoState &state) {
   }
 
   FailureOr<MojoValue> functorOr = emitMapFusionFunctor(
-      state, getBody(), captureInfos, traitFused ? traitLoadLane : bindLoadLane,
+      state, getBody(), captureInfos, traitLoadLane,
       /*valueDtype=*/dtypeParam, shapeCaptureTypes, shapeCaptureArgs);
   if (failed(functorOr))
     return failure();
   MojoValue functorInstance = *functorOr;
 
-  FailureOr<unsigned> rank = fusedRegionRank(*this, getShape());
-  if (failed(rank))
-    return failure();
   MojoValue layoutVar =
       state.file->var(rowMajorLayout(state.getMojoValueFor(getShape())));
   MojoValue alignmentParam(static_cast<uint64_t>(
       M::Driver::getPreferredAlignment(getDevice().str())));
 
-  if (traitFused) {
-    // On CPU the host proxy runs the load (`_access_enabled`); on GPU the
-    // projected `device_type` does, so the host proxy disables it.
-    StringRef deviceLabel = getDevice();
-    bool devicePassable = deviceLabel != kCPULabel;
-    MojoValue wrapper = kStructMoggInputLoadFusionTensor[{
-        dtypeParam, kFnTypeOf({layoutVar}), alignmentParam,
-        kFnTypeOf({functorInstance}), devicePassable, !devicePassable}](
-        {functorInstance, layoutVar});
-    state.setMojoValueFor(getTensor(), state.file->var(wrapper));
-    return success();
-  }
-
-  // Bind the functor onto a type-only dangling base slice: the tensor the
-  // kernel READS has no slice to bind onto (fusion replaced it), so every load
-  // goes through the functor.
-  MojoValue baseSlice = emitDanglingBaseSlice(state, dtypeParam, *rank,
-                                              layoutVar, alignmentParam);
-  MojoValue fusedTensor = baseSlice.get(
-      ManagedTensorSliceRef::kBindToFusedInput)({functorInstance});
-  state.setMojoValueFor(getTensor(), state.file->var(fusedTensor));
+  // On CPU the host proxy runs the load (`_access_enabled`); on GPU the
+  // projected `device_type` does, so the host proxy disables it.
+  StringRef deviceLabel = getDevice();
+  bool devicePassable = deviceLabel != kCPULabel;
+  MojoValue wrapper = kStructMoggInputLoadFusionTensor[{
+      dtypeParam, kFnTypeOf({layoutVar}), alignmentParam,
+      kFnTypeOf({functorInstance}), devicePassable, !devicePassable}](
+      {functorInstance, layoutVar});
+  state.setMojoValueFor(getTensor(), state.file->var(wrapper));
   return success();
 }
 

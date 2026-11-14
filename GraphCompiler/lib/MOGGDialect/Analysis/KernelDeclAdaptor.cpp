@@ -85,100 +85,6 @@ static KGEN::LIT::StructType getAsStructType(mlir::Type t) {
   return KGEN::sugarDynCast<KGEN::LIT::StructType>(t);
 }
 
-/// Extract the IOSpec encoded in the mut/input parameter values of a
-/// ManagedTensorSlice or VariadicTensors struct type.  Returns std::nullopt
-/// when the parameters are not yet bound.
-static std::optional<IOSpec>
-getIOSpecFromStructType(KGEN::LIT::StructType structType) {
-  // Fused variadic types carry their IOSpec in the symbol name alone.
-  if (symbolMatches(structType.getSymbol(), kMaxFusedInputVariadicTensors))
-    return IOSpec::FusedInputTensor;
-  if (symbolMatches(structType.getSymbol(), kMaxFusedOutputVariadicTensors))
-    return IOSpec::FusedOutputTensor;
-
-  // All other tensors encode mut and input as the first two param values.
-  auto sym = structType.getSymbol();
-  bool isTensorStruct = symbolMatches(sym, kMaxManagedTensorSlice) ||
-                        symbolMatches(sym, kMaxVariadicTensors);
-  if (!isTensorStruct)
-    return std::nullopt;
-
-  auto params = structType.getParamValues();
-  if (params.size() < 2)
-    return std::nullopt;
-
-  mlir::TypedAttr mutAttr =
-      KGEN::getCanonicalAttr(mlir::cast<mlir::TypedAttr>(params[0]));
-  mlir::TypedAttr rawInputAttr = mlir::cast<mlir::TypedAttr>(params[1]);
-
-  // mut is a Bool struct: { value: scalar<bool> }.
-  auto mutStruct = KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(mutAttr);
-  if (!mutStruct || mutStruct.getValues().empty())
-    return std::nullopt;
-  auto [_1, mutValueAttr] = mutStruct.getValues().front();
-  auto mutBoolAttr = KGEN::sugarDynCast<KGEN::SIMDAttr>(mutValueAttr);
-  if (!mutBoolAttr)
-    return std::nullopt;
-  bool mut = mutBoolAttr.getAsBool();
-
-  int64_t input = kIOSpecIOUnknown;
-
-  // In the primary module (no dep elaboration) the IO param is a
-  // SugarAttr(MemberAlias) whose member name encodes the IO variant. Check it
-  // before canonicalisation, which yields a ParamOperatorAttr like IO(3).
-  if (auto ioSugar = mlir::dyn_cast<KGEN::SugarAttr>(rawInputAttr)) {
-    if (ioSugar.getKind() == KGEN::SugarKind::MemberAlias) {
-      llvm::StringRef name = ioSugar.getMemberName().strref();
-      if (name == kIoOutput)
-        input = kIOSpecIOOutput;
-      else if (name == kIoInput)
-        input = kIOSpecIOInput;
-      else if (name == kIoFusedInput)
-        input = kIOSpecIOFusedInput;
-      else if (name == kIoFusedOutput)
-        input = kIOSpecIOFusedOutput;
-      else if (name == kIoFusedComputeOutput)
-        input = kIOSpecIOFusedComputeOutput;
-    }
-  }
-
-  // Fallback path: in elaborated bytecode the IO param is a fully-resolved
-  // LITStructAttr { value: SIMDLength { value: i64 } } (two levels of nesting).
-  if (input == kIOSpecIOUnknown) {
-    mlir::TypedAttr inputAttr = KGEN::getCanonicalAttr(rawInputAttr);
-    auto inputStruct = KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(inputAttr);
-    if (inputStruct && !inputStruct.getValues().empty()) {
-      auto [_2, inputValueAttr] = inputStruct.getValues().front();
-      auto innerStruct =
-          KGEN::sugarDynCast<KGEN::LIT::LITStructAttr>(inputValueAttr);
-      if (innerStruct && !innerStruct.getValues().empty()) {
-        auto [_3, inputIntValueAttr] = innerStruct.getValues().front();
-        auto inputIntAttr =
-            KGEN::sugarDynCast<mlir::IntegerAttr>(inputIntValueAttr);
-        if (inputIntAttr)
-          input = inputIntAttr.getValue().getSExtValue();
-      }
-    }
-  }
-
-  if (input == kIOSpecIOUnknown)
-    return std::nullopt;
-
-  if (mut == kIOSpecMutable && input == kIOSpecIOOutput)
-    return IOSpec::OutputTensor;
-  if (mut == kIOSpecImmutable && input == kIOSpecIOInput)
-    return IOSpec::InputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOInput)
-    return IOSpec::MutableInputTensor;
-  if (mut == kIOSpecImmutable && input == kIOSpecIOFusedInput)
-    return IOSpec::FusedInputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedOutput)
-    return IOSpec::FusedOutputTensor;
-  if (mut == kIOSpecMutable && input == kIOSpecIOFusedComputeOutput)
-    return IOSpec::FusedComputeOutputTensor;
-  return std::nullopt;
-}
-
 /// If `argType` is a trait-bound tensor argument, re-derive its
 /// `TensorArgContract` from the written trait composition, as
 /// `distillTensorArgContract` does at import (errors are swallowed: import
@@ -286,27 +192,6 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
 
   auto sym = structType.getSymbol();
 
-  // --- Tensors ---
-  if (symbolMatches(sym, kMaxManagedTensorSlice)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    return KernelDeclTensorAdaptor{*ioSpec};
-  }
-
-  if (symbolMatches(sym, kMaxVariadicTensors)) {
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec)
-      return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
-    return KernelDeclVariadicTensorAdaptor{*ioSpec};
-  }
-
-  if (symbolMatches(sym, kMaxFusedInputVariadicTensors))
-    return KernelDeclVariadicTensorAdaptor{IOSpec::FusedInputTensor};
-
-  if (symbolMatches(sym, kMaxFusedOutputVariadicTensors))
-    return KernelDeclVariadicTensorAdaptor{IOSpec::FusedOutputTensor};
-
   // --- Scalar ---
   // SIMD may be re-exported at different depths (e.g. @std::@builtin::@SIMD vs
   // @std::@SIMD).
@@ -337,8 +222,8 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   return KernelDeclOpaqueAdaptor{buildOpaqueSymbol(ctx, sym)};
 }
 
-/// Count the number of leading DPS output arguments (output-IOSpec tensors
-/// that come before any input or non-tensor argument).
+/// Count the number of leading DPS output arguments: trait-bound tensors with
+/// the `output` role that come before any other argument.
 ///
 /// `tensorArgContracts` is the function's baked array (signature-arg order),
 /// or null/empty if none; it drives trait args' role via
@@ -351,24 +236,12 @@ static size_t countDPSOutputs(KGEN::LIT::FnTypeGeneratorType sig,
     if (sig.getArgConvention(i) == KGEN::ArgConvention::ByRefResult)
       break;
     mlir::Type argType = sig.getArgument(i);
-    KGEN::LIT::StructType structType = getAsStructType(argType);
-    if (!structType || getTensorArgTensorTupleTraitType(argType)) {
-      // A trait-bound tensor arg is non-struct and a trait variadic is a
-      // `TensorTuple`: an `output` contract role continues the count; any other
-      // role, or a non-trait non-struct arg, stops it.
-      mlir::Attribute bakedEntry =
-          (hasBakedArray && i < tensorArgContracts.size())
-              ? tensorArgContracts[i]
-              : mlir::Attribute();
-      std::optional<TensorArgContract> contract =
-          resolveTraitContract(argType, bakedEntry, hasBakedArray);
-      if (!contract || contract->role != TensorArgRole::output)
-        break;
-      ++count;
-      continue;
-    }
-    auto ioSpec = getIOSpecFromStructType(structType);
-    if (!ioSpec || !isOutputIOSpec(*ioSpec))
+    mlir::Attribute bakedEntry =
+        (hasBakedArray && i < tensorArgContracts.size()) ? tensorArgContracts[i]
+                                                         : mlir::Attribute();
+    std::optional<TensorArgContract> contract =
+        resolveTraitContract(argType, bakedEntry, hasBakedArray);
+    if (!contract || contract->role != TensorArgRole::output)
       break;
     ++count;
   }
@@ -850,64 +723,15 @@ StringRef toString(IOSpec spec) {
     return kFusedInputTensor;
   case IOSpec::FusedOutputTensor:
     return kFusedOutputTensor;
-  case IOSpec::FusedComputeOutputTensor:
-    return kFusedComputeOutputTensor;
-  }
-}
-
-std::optional<IOSpec> toIOSpec(StringRef str) {
-  if (str == kInputTensor)
-    return IOSpec::InputTensor;
-  if (str == kOutputTensor)
-    return IOSpec::OutputTensor;
-  if (str == kMutableInputTensor)
-    return IOSpec::MutableInputTensor;
-  if (str == kFusedInputTensor)
-    return IOSpec::FusedInputTensor;
-  if (str == kFusedOutputTensor)
-    return IOSpec::FusedOutputTensor;
-  if (str == kFusedComputeOutputTensor)
-    return IOSpec::FusedComputeOutputTensor;
-  return std::nullopt;
-}
-
-std::pair<TypedAttr, TypedAttr> getParams(IOSpec ioSpec, Builder &builder) {
-  switch (ioSpec) {
-  case IOSpec::InputTensor:
-    return {builder.getBoolAttr(kIOSpecImmutable),
-            builder.getIndexAttr(kIOSpecIOInput)};
-
-  case IOSpec::OutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOOutput)};
-
-  case IOSpec::MutableInputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOInput)};
-
-  case IOSpec::FusedInputTensor:
-    return {builder.getBoolAttr(kIOSpecImmutable),
-            builder.getIndexAttr(kIOSpecIOFusedInput)};
-
-  case IOSpec::FusedOutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedOutput)};
-
-  case IOSpec::FusedComputeOutputTensor:
-    return {builder.getBoolAttr(kIOSpecMutable),
-            builder.getIndexAttr(kIOSpecIOFusedComputeOutput)};
   }
 }
 
 bool isOutputIOSpec(IOSpec spec) {
-  return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor;
+  return spec == IOSpec::OutputTensor || spec == IOSpec::FusedOutputTensor;
 }
 
 bool isFusableIOSpec(IOSpec spec) {
-  return spec == IOSpec::FusedInputTensor ||
-         spec == IOSpec::FusedOutputTensor ||
-         spec == IOSpec::FusedComputeOutputTensor;
+  return spec == IOSpec::FusedInputTensor || spec == IOSpec::FusedOutputTensor;
 }
 
 bool isMutableIOSpec(IOSpec spec) { return spec == IOSpec::MutableInputTensor; }

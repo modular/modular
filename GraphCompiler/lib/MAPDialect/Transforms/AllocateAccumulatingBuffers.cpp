@@ -13,7 +13,7 @@
 //
 // Gives every fused-output `map.iter.epilogue` a real store-target tensor via
 // its `$intermediateTensor` operand, so `MAPToMOGG` never builds the
-// kernel-facing `ManagedTensorSlice` over a null pointer.
+// kernel-facing tensor over a null pointer.
 //
 // Normally the source is the tensor the epilogue stores into. A mixed-precision
 // accumulating kernel (`containsMatmulOrConvOrConcat` whose epilogue changes

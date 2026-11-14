@@ -485,15 +485,12 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
       return *lane == MOGG::LegacyTileLane::compute ? Kind::ComputeTile
                                                     : Kind::OutputTile;
 
-  // A trait-lane `_LegacyComputeOutput` slot (contract access `transform`)
-  // follows the same rules as a legacy `FusedComputeOutputTensor`. Its
-  // `ioSpec` is the plain `OutputTensor` the contract maps to, so check the
-  // contract.
+  // Only a `_LegacyComputeOutput` slot (contract access `transform`) may take
+  // a compute lambda.
   bool isComputeOutputSlot =
       tensorArg->traitContract &&
       tensorArg->traitContract->hasAccess(MOGG::TensorArgAccess::transform);
-  if (tensorArg->ioSpec != MOGG::IOSpec::FusedComputeOutputTensor &&
-      !isComputeOutputSlot)
+  if (!isComputeOutputSlot)
     return Kind::Output;
 
   // A compute lambda returns one value the kernel stores at one destination,
@@ -522,11 +519,9 @@ classifyEpilogueLambdaKind(IterEpilogueOp epilogueOp, MAPToMOGGState &state) {
 }
 
 // The trait contract the consuming `map.call.opaque` declares for the fused
-// operand `mapResult` feeds. Present only for a trait-ABI fused argument
-// (`Fused & ... & Access`), whose functor emit wraps in a conforming trait
-// tensor; null for the legacy `FusedInput/OutputTensor` (MTS-API) lane, which
-// binds the functor onto a `ManagedTensorSlice`. Resolved at MAP level,
-// like `classifyEpilogueLambdaKind`.
+// operand `mapResult` feeds (`Fused & ... & Access`), whose functor emit wraps
+// in a conforming trait tensor. Resolved at MAP level, like
+// `classifyEpilogueLambdaKind`.
 static MOGG::TensorArgContractAttr
 consumingFusedContract(Value mapResult, bool isOutput, MAPToMOGGState &state) {
   std::optional<MOGG::KernelDeclOperandAdaptor> arg =
@@ -717,7 +712,7 @@ LogicalResult IterEpilogueOp::lowerToMOGG(MAPToMOGGState &state) {
       return emitOpError("a compute tile epilogue must store exactly once");
   }
 
-  // A trait-ABI fused output's contract (null for the legacy MTS API).
+  // The consuming kernel argument's trait contract.
   MOGG::TensorArgContractAttr contractAttr =
       consumingFusedContract(getResult(), /*isOutput=*/true, state);
   bool computeOutputArg = kind != MOGG::KernelOutputFusionLambdaType::Output;

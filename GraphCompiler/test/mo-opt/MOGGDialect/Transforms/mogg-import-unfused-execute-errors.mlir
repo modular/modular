@@ -12,6 +12,5 @@
 // CHECK-DAG: error: unfused `execute` overload takes 1 output(s) but the fused overload takes 2
 // CHECK-DAG: error: unfused `execute` overload must raise iff the fused overload does
 // CHECK-DAG: error: unfused `execute` overload must declare the same parameters as the fused overload, in the same order
-// CHECK-DAG: error: an `execute` overload pair must bind every tensor argument by tensor traits (argument at position 1)
 
 module {}

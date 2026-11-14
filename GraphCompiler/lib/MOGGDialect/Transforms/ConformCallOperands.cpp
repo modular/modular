@@ -39,11 +39,10 @@ namespace M::MOGG {
 namespace {
 
 // Packs one operand list (a call's inputs or outputs) per `mapping`: a scalar
-// kernel argument's `!mogg.tensor` is wrapped in `mogg.scalar.create`; a legacy
-// variadic argument's consecutive `!mogg.tensor` operands go into one
-// `mogg.tuple.create`; a trait argument, including each element of a
-// `TensorTuple`, gets a `mogg.trait.create`, and a `TensorTuple`'s run is then
-// packed as well. Sets `changed` on any rewrite.
+// kernel argument's `!mogg.tensor` is wrapped in `mogg.scalar.create`; a trait
+// argument, including each element of a `TensorTuple`, gets a
+// `mogg.trait.create`, and a `TensorTuple`'s run is then packed into one
+// `mogg.tuple.create`. Sets `changed` on any rewrite.
 SmallVector<Value>
 packOperands(OpBuilder &builder, Location loc, ValueRange operands,
              const KernelDeclIndexToOperandAdaptorMapping &mapping,
@@ -127,24 +126,13 @@ packOperands(OpBuilder &builder, Location loc, ValueRange operands,
         run.push_back(operands[i]);
         ++i;
       }
-      // Record the ABI the callee's variadic parameter wants, so emit picks the
-      // aggregate without inspecting the run's producing ops. For the legacy
-      // lane, the variant's own IOSpec (not store mutability -- a fused output
-      // is not a `MutableInputTensor`) distinguishes the fused cases.
-      VariadicABI abi = VariadicABI::Plain;
-      if (arg.isTraitTensorTupleType()) {
-        abi = VariadicABI::TensorTuple;
-        for (Value &element : run)
-          element = asTraitArg(element, *arg.getTraitContract());
-      } else if (const auto *v = std::get_if<KernelDeclVariadicTensorAdaptor>(
-                     &arg.underlyingType)) {
-        if (v->ioSpec == IOSpec::FusedInputTensor)
-          abi = VariadicABI::FusedInput;
-        else if (v->ioSpec == IOSpec::FusedOutputTensor)
-          abi = VariadicABI::FusedOutput;
-      }
-      packed.push_back(
-          TupleCreateOp::create(builder, loc, TupleType::get(ctx), run, abi));
+      // Variadic tensor parameters are `TensorTuple`s of trait arguments.
+      assert(arg.isTraitTensorTupleType() &&
+             "expected a TensorTuple variadic parameter");
+      for (Value &element : run)
+        element = asTraitArg(element, *arg.getTraitContract());
+      packed.push_back(TupleCreateOp::create(builder, loc, TupleType::get(ctx),
+                                             run, VariadicABI::TensorTuple));
       changed = true;
       continue;
     }
@@ -233,10 +221,7 @@ static M::DeviceRefAttr enclosingKernelDevice(Operation *call) {
 // Strips the fusion off a fused output's contract: the plain `Tensor` output
 // the kernel's unfused `execute` overload takes in that position.
 static void stripOutputFusion(KernelDeclOperandAdaptor &arg) {
-  // The contract is the source of truth for a trait argument; the adaptor's
-  // own `fused` bit is only set for the legacy lane.
   auto strip = [](auto &tensor) {
-    tensor.fused = false;
     if (tensor.traitContract) {
       tensor.traitContract->fused = false;
       tensor.traitContract->accessMask = 0;

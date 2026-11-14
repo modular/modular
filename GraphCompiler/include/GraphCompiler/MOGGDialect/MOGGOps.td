@@ -1169,12 +1169,10 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
 
     A store body ends with `mogg.tensor.store` into the store-target capture.
     A compute body ends with `mogg.yield` of the value to store, leaving the
-    store to the kernel; the store-target capture stays so emit has a slice to
-    bind onto.
+    store to the kernel.
 
     `$computeOutputArg` records whether the kernel declares this output as a
-    `_FusedComputeOutputTensor`, choosing `_bind_to_fused_compute_output` over
-    `_bind_to_fused_output`. It is independent of the body shape: a
+    `_LegacyComputeOutput` slot. It is independent of the body shape: a
     dtype-changing epilogue or `enable-compute-lambdas=false` keeps a store
     body against a compute-capable argument.
   }];
@@ -1188,9 +1186,9 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
     BoolAttr:$mut,
     MO_IOKind:$io,
     DefaultValuedAttr<BoolAttr, "false">:$computeOutputArg,
-    // Present iff the kernel declares this output against a trait bound, so
-    // emit wraps the functor in the trait tensor instead of a
-    // `ManagedTensorSlice`. Set at MAP lowering, where the call edge is known.
+    // The trait bound the kernel declares this output against; emit wraps the
+    // functor in the matching trait tensor. Set at MAP lowering, where the
+    // call edge is known.
     OptionalAttr<MOGG_TensorArgContractAttr>:$contract
   );
   let results = (outs MOGG_Tensor:$tensor);

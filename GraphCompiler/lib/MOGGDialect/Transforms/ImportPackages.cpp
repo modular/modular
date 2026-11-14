@@ -409,7 +409,6 @@ static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
     {"unfused_invalid_output_count"},
     {"unfused_invalid_raises"},
     {"unfused_invalid_params"},
-    {"unfused_invalid_legacy"},
 };
 
 /// Checks that the unfused `execute` overload is the fused one with every
@@ -445,15 +444,6 @@ static mlir::LogicalResult verifyUnfusedExecuteAligns(
   auto position = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
     return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
   };
-  auto requireTraitTensor = [&](const KernelDeclOperandAdaptor &arg,
-                                KGEN::LIT::FnOp fn) -> mlir::LogicalResult {
-    if (arg.isTensorType() && !arg.isTraitTensorType())
-      return mlir::emitError(fn.getLoc())
-             << "an `execute` overload pair must bind every tensor argument "
-                "by tensor traits (argument at position "
-             << position(arg) << ")";
-    return mlir::success();
-  };
 
   if (fused.inputArguments.size() != unfused.inputArguments.size())
     return error() << "takes " << unfused.inputArguments.size()
@@ -461,9 +451,6 @@ static mlir::LogicalResult verifyUnfusedExecuteAligns(
                    << fused.inputArguments.size();
   for (auto [a, b] :
        llvm::zip_equal(fused.inputArguments, unfused.inputArguments)) {
-    if (failed(requireTraitTensor(a, fusedFn)) ||
-        failed(requireTraitTensor(b, unfusedFn)))
-      return mlir::failure();
     bool same = a.isTraitTensorType()
                     ? b.isTraitTensorType() &&
                           *a.getTraitContract() == *b.getTraitContract()
@@ -479,9 +466,6 @@ static mlir::LogicalResult verifyUnfusedExecuteAligns(
                    << fused.outputArguments.size();
   for (auto [a, b] :
        llvm::zip_equal(fused.outputArguments, unfused.outputArguments)) {
-    if (failed(requireTraitTensor(a, fusedFn)) ||
-        failed(requireTraitTensor(b, unfusedFn)))
-      return mlir::failure();
     if (!a.isTraitTensorType() || !b.isTraitTensorType()) {
       if (!(a == b))
         return error() << "output at position " << position(b)

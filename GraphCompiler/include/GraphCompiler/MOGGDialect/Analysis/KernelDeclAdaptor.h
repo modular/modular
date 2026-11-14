@@ -48,7 +48,6 @@ enum class IOSpec {
   MutableInputTensor,
   FusedInputTensor,
   FusedOutputTensor,
-  FusedComputeOutputTensor,
 };
 
 //===----------------------------------------------------------------------===//
@@ -241,9 +240,6 @@ inline bool symbolMatchesBackendLeaf(mlir::SymbolRefAttr symbol,
 }
 
 llvm::StringRef toString(IOSpec spec);
-std::optional<IOSpec> toIOSpec(llvm::StringRef str);
-std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,
-                                                      mlir::Builder &builder);
 
 bool isOutputIOSpec(IOSpec spec);
 bool isFusableIOSpec(IOSpec spec);
@@ -276,9 +272,8 @@ struct KernelDeclVariadicTensorAdaptor {
   bool fused = false;
   bool stable = false;
   IOSpec ioSpec = {};
-  /// Present only for a trait-lane variadic (`xs: TensorTuple[*Ts]`): the
-  /// contract shared by every element. Empty for the legacy `VariadicTensors`
-  /// lane.
+  /// Present for a trait-lane variadic (`xs: TensorTuple[*Ts]`): the
+  /// contract shared by every element.
   std::optional<TensorArgContract> traitContract;
   KernelDeclVariadicTensorAdaptor() = default;
   explicit KernelDeclVariadicTensorAdaptor(IOSpec ioSpec)
@@ -391,7 +386,7 @@ struct KernelDeclOperandAdaptor {
     return false;
   }
 
-  /// nullopt for a `ManagedTensorSlice` or non-tensor argument.
+  /// nullopt for a non-trait argument.
   std::optional<TensorArgContract> getTraitContract() const {
     if (const auto *t = std::get_if<KernelDeclTensorAdaptor>(&underlyingType))
       return t->traitContract;

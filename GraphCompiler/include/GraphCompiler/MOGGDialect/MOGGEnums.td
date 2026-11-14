@@ -28,20 +28,16 @@ def MOGG_BindLambdaKind : I32EnumAttr<"BindLambdaKind", "lambda kind", [
   let cppNamespace = "::M::MOGG";
 }
 
-// How a run of variadic tensor operands packed into a `mogg.tuple.create`
-// must be materialized in Mojo. `ConformCallOperands` sets this from the
-// callee's variadic parameter type, so `emitMojo` chooses the aggregate
-// (`VariadicTensors` / `_FusedInputVariadicTensors` /
-// `_FusedOutputVariadicTensors`, or a `TensorTuple` of trait arguments)
-// without inspecting the producing ops.
+// How a run of operands packed into a `mogg.tuple.create` must be materialized
+// in Mojo. `ConformCallOperands` sets `TensorTuple` for a kernel's variadic
+// tensor parameter, so `emitMojo` chooses the aggregate without inspecting the
+// producing ops.
 def MOGG_VariadicABI
     : I32EnumAttr<"VariadicABI", "variadic tensor packing ABI", [
   I32EnumAttrCase<"Plain", 0, "plain">,
-  I32EnumAttrCase<"FusedInput", 1, "fused_input">,
-  I32EnumAttrCase<"FusedOutput", 2, "fused_output">,
   // A `TensorTuple` (`xs: TensorTuple[*Ts]`): the elements are already trait
   // arguments, and emit builds a `TensorTuple` holding them.
-  I32EnumAttrCase<"TensorTuple", 3, "tensor_tuple">,
+  I32EnumAttrCase<"TensorTuple", 1, "tensor_tuple">,
 ]> {
   let cppNamespace = "::M::MOGG";
   // Use `MOGG_VariadicABIAttr` (MOGGAttrs.td) rather than a bare `i32`.

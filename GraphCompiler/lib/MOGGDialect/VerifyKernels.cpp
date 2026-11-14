@@ -550,20 +550,6 @@ LogicalResult declVerifyOpaqueArgumentsArePassedByReference(
                "in kernels";
         return failure();
       }
-      // Tensors must be passed by const reference (`read`/`read_mem`):
-      // their mutability is in the IOSpec type, not the calling convention.
-      // Trait-bound tensors are left to `declVerifyTensorArgsAreBorrowed` and
-      // its trait-specific diagnostic.
-      if (arg.isTensorType() && !arg.isTraitTensorType() &&
-          convention != KGEN::ArgConvention::ImmMem &&
-          convention != KGEN::ArgConvention::ImmReg) {
-        decl->emitError()
-            << "Only the borrowed argument (read) convention is supported "
-               "for tensor arguments (argument at position "
-            << arg.sourceDescriptor->position << " uses '"
-            << KGEN::stringifyArgConvention(convention) << "')";
-        return failure();
-      }
     }
     return success();
   };
@@ -937,8 +923,20 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
     if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
       continue;
     ++operandsCount;
-    if (!elemwiseFn.inputArguments[i].isScalarType())
+    const KernelDeclOperandAdaptor &arg = elemwiseFn.inputArguments[i];
+    if (!arg.isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";
+    // Fused consumers of a load share its value, so an operand must not be
+    // written in place.
+    uint64_t position = arg.sourceDescriptor->position;
+    KGEN::ArgConvention convention = sig.getArgConvention(position);
+    if (convention != KGEN::ArgConvention::ImmMem &&
+        convention != KGEN::ArgConvention::ImmReg)
+      return decl->emitError()
+             << "Elementwise kernels take SIMD operands by the borrowed (read) "
+                "convention (argument at position "
+             << position << " uses '"
+             << KGEN::stringifyArgConvention(convention) << "')";
   }
 
   if (!operandsCount)

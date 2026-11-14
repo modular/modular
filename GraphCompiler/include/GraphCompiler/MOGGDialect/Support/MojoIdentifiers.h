@@ -156,9 +156,6 @@ constexpr MojoStaticValue kMoggPrimitiveFormatRegionError =
 // Mojo type symbol names (as stored in MLIR by the Mojo compiler)
 //===----------------------------------------------------------------------===//
 
-constexpr MojoStaticValue kMojoDpsTensorTypeName =
-    "extensibility::managed_tensor_slice::ManagedTensorSlice";
-
 constexpr MojoStaticValue kMojoInternalDpsSimdTypeName = "std::SIMD";
 constexpr MojoStaticValue kMojoInternalDpsIntTypeName = "std::Int";
 constexpr MojoStaticValue kMojoInternalDpsUintTypeName = "std::UInt";
@@ -168,15 +165,6 @@ constexpr MojoStaticValue kMojoInternalDpsIndexListTypeName = "std::IndexList";
 /// In `buildOpaqueSymbol`'s dotted form, for `isOpaqueWithTypeName`.
 constexpr MojoStaticValue kMojoInternalDpsIndexListTypeQualifiedName =
     "std.utils.index.IndexList";
-
-/// The fused variants carry per-element fusion structs in a heterogeneous
-/// Tuple.
-constexpr MojoStaticValue kMojoVariadicTensorsName =
-    "extensibility::managed_tensor_slice::VariadicTensors";
-constexpr MojoStaticValue kMojoFusedInputVariadicTensorsName =
-    "extensibility::managed_tensor_slice::_FusedInputVariadicTensors";
-constexpr MojoStaticValue kMojoFusedOutputVariadicTensorsName =
-    "extensibility::managed_tensor_slice::_FusedOutputVariadicTensors";
 
 constexpr MojoStaticValue kMojoExtensibilityApiDeviceContextTypeName =
     "max::DeviceContext";
@@ -269,18 +257,8 @@ constexpr MojoStaticValue kStructVariadic = "Variadic";
 constexpr MojoStaticValue kStructParameterList = "ParameterList";
 constexpr MojoStaticValue kStructStaticTensorSpec =
     "managed_tensor_slice.StaticTensorSpec";
-constexpr MojoStaticValue kStructStaticTensorSpecList =
-    "extensibility.StaticTensorSpecList";
-constexpr MojoStaticValue kStructVariadicTensors =
-    "extensibility.VariadicTensors";
 constexpr MojoStaticValue kStructTensorTuple = "extensibility.TensorTuple";
 constexpr MojoStaticValue kStructStaticString = "StaticString";
-constexpr MojoStaticValue kStructMsFusionPack =
-    "managed_tensor_slice._FusionPack";
-constexpr MojoStaticValue kStructMsFusedInputVariadicTensors =
-    "managed_tensor_slice._FusedInputVariadicTensors";
-constexpr MojoStaticValue kStructMsFusedOutputVariadicTensors =
-    "managed_tensor_slice._FusedOutputVariadicTensors";
 constexpr MojoStaticValue kStructTrace = "max.runtime.tracing.Trace";
 constexpr MojoStaticValue kStructAnyAsyncValueRef =
     "max.runtime.async_value.AnyAsyncValueRef";
@@ -315,12 +293,8 @@ constexpr MojoStaticValue kFnStackAllocation = "std.memory.stack_allocation";
 /// For special float values with no Mojo literal spelling.
 constexpr MojoStaticValue kFnNumericsNan = "std.utils.numerics.nan";
 constexpr MojoStaticValue kFnNumericsInf = "std.utils.numerics.inf";
-constexpr MojoStaticValue kFnSimdLoadFromManagedTensorSlice =
-    "managed_tensor_slice.simd_load_from_managed_tensor_slice";
 constexpr MojoStaticValue kFnSimdLoadFromTensorPointer =
     "managed_tensor_slice.simd_load_from_tensor_pointer";
-constexpr MojoStaticValue kFnSimdStoreIntoManagedTensorSlice =
-    "managed_tensor_slice.simd_store_into_managed_tensor_slice";
 constexpr MojoStaticValue kFnSimdStoreIntoTensorPointer =
     "managed_tensor_slice.simd_store_into_tensor_pointer";
 constexpr MojoStaticValue kFnUnpackTensorSpec =
@@ -390,18 +364,10 @@ constexpr MojoStaticValue kFnPrint = "print";
 // Trait names (used in struct conformance declarations)
 //===----------------------------------------------------------------------===//
 
-constexpr MojoStaticValue kTraitInputFusion =
-    "managed_tensor_slice.InputFusion";
-constexpr MojoStaticValue kTraitOutputFusion =
-    "managed_tensor_slice.OutputFusion";
-constexpr MojoStaticValue kTraitComputeOutputFusion =
-    "managed_tensor_slice.ComputeOutputFusion";
 constexpr MojoStaticValue kTraitComputeOutputFusionTile =
     "managed_tensor_slice.ComputeOutputFusionTile";
 constexpr MojoStaticValue kTraitOutputFusionTile =
     "managed_tensor_slice.OutputFusionTile";
-constexpr MojoStaticValue kTraitElementwiseFusion =
-    "managed_tensor_slice.ElementwiseFusion";
 constexpr MojoStaticValue kTraitElementwiseFusionTile =
     "managed_tensor_slice.ElementwiseFusionTile";
 
@@ -448,11 +414,9 @@ constexpr MojoStaticValue kParameterInput = "input";
 constexpr MojoStaticValue kParameterDType = "dtype";
 constexpr MojoStaticValue kParameterRank = "rank";
 constexpr MojoStaticValue kParameterWidth = "width";
-constexpr MojoStaticValue kParameterIOSpec = "io_spec";
 constexpr MojoStaticValue kParameterStaticSpec = "static_spec";
 constexpr MojoStaticValue kParameterSize = "size";
 constexpr MojoStaticValue kParameterLength = "length";
-constexpr MojoStaticValue kParameterStaticSpecs = "static_specs";
 constexpr MojoStaticValue kParameterSimdWidth = "simd_width";
 constexpr MojoStaticValue kParameterPreferredSimdWidth = "simd_width";
 constexpr MojoStaticValue kArgMaxSimdWidth = "max_simd_width";
@@ -539,34 +503,14 @@ inline bool isMojoIOSpecTypeName(llvm::ArrayRef<mlir::FlatSymbolRefAttr> refs) {
 }
 
 //===----------------------------------------------------------------------===//
-// IOSpec encoding constants and Mojo enum names
+// IOSpec names
 //===----------------------------------------------------------------------===//
-
-constexpr bool kIOSpecImmutable = false;
-constexpr bool kIOSpecMutable = true;
-
-constexpr int64_t kIOSpecIOOutput = 0;
-constexpr int64_t kIOSpecIOInput = 1;
-constexpr int64_t kIOSpecIOFusedInput = 2;
-constexpr int64_t kIOSpecIOFusedOutput = 3;
-constexpr int64_t kIOSpecIOFusedComputeOutput = 31;
-constexpr int64_t kIOSpecIOUnknown = -1;
 
 constexpr MojoStaticValue kInputTensor = "InputTensor";
 constexpr MojoStaticValue kOutputTensor = "OutputTensor";
 constexpr MojoStaticValue kMutableInputTensor = "MutableInputTensor";
 constexpr MojoStaticValue kFusedInputTensor = "FusedInputTensor";
 constexpr MojoStaticValue kFusedOutputTensor = "FusedOutputTensor";
-constexpr MojoStaticValue kFusedComputeOutputTensor =
-    "FusedComputeOutputTensor";
-
-/// Mojo `IO` member names, as they appear in `KGEN::SugarKind::MemberAlias`
-/// attributes of a stored `IOSpec` parameter.
-constexpr MojoStaticValue kIoInput = "Input";
-constexpr MojoStaticValue kIoOutput = "Output";
-constexpr MojoStaticValue kIoFusedInput = "FusedInput";
-constexpr MojoStaticValue kIoFusedOutput = "FusedOutput";
-constexpr MojoStaticValue kIoFusedComputeOutput = "FusedComputeOutput";
 
 //===----------------------------------------------------------------------===//
 // Wrapper classes for high-traffic Mojo types
@@ -590,20 +534,8 @@ public:
   static constexpr MojoStaticValue kStaticStridesTuple =
       "_static_strides_tuple";
   static constexpr MojoStaticValue kAlignment = "alignment";
-  /// Storage pointer of VariadicTensors elements.
+  /// The raw storage pointer.
   static constexpr MojoStaticValue kPtr = "_ptr";
-  static constexpr MojoStaticValue kIoSpec = "io_spec";
-  /// Bind methods for fusion lambdas.
-  static constexpr MojoStaticValue kBindToFusedInput = "_bind_to_fused_input";
-  static constexpr MojoStaticValue kBindToFusedOutput = "_bind_to_fused_output";
-  static constexpr MojoStaticValue kBindToFusedComputeOutput =
-      "_bind_to_fused_compute_output";
-
-  /// Fusion functor fields and the matching type parameters.
-  static constexpr MojoStaticValue kInFusion = "in_fusion";
-  static constexpr MojoStaticValue kOutFusion = "out_fusion";
-  static constexpr MojoStaticValue kInFusionParam = "InFusion";
-  static constexpr MojoStaticValue kOutFusionParam = "OutFusion";
 
   MojoValue staticSpec() const { return value.get(kStaticSpec); }
   MojoValue staticShapeTuple() const { return value.get(kStaticShapeTuple); }
@@ -611,52 +543,12 @@ public:
     return value.get(kStaticStridesTuple);
   }
   MojoValue alignment() const { return value.get(kAlignment); }
-  MojoValue ioSpec() const { return value.get(kIoSpec); }
   MojoValue rawPtr() const { return value.get(kPtr); }
-  MojoValue inFusion() const { return value.get(kInFusion); }
-  MojoValue outFusion() const { return value.get(kOutFusion); }
-  MojoValue inFusionType() const {
-    return kFnTypeOf({value}).get(kInFusionParam);
-  }
-  MojoValue outFusionType() const {
-    return kFnTypeOf({value}).get(kOutFusionParam);
-  }
 
   MojoValue unsafePtr() const { return value.get(kUnsafePtr)(); }
   MojoValue shape() const { return value.get(kShape)(); }
   MojoValue strides() const { return value.get(kStrides)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
-
-  /// Return the uncalled method handle.
-  MojoValue bindToFusedInput() const { return value.get(kBindToFusedInput); }
-  MojoValue bindToFusedOutput() const { return value.get(kBindToFusedOutput); }
-  MojoValue bindToFusedComputeOutput() const {
-    return value.get(kBindToFusedComputeOutput);
-  }
-
-  MojoValue value;
-};
-
-class StaticTensorSpecRef {
-public:
-  explicit StaticTensorSpecRef(MojoValue v) : value(std::move(v)) {}
-
-  static constexpr MojoStaticValue kStaticLayout = "static_layout";
-  static constexpr MojoStaticValue kAlignment = "alignment";
-  static constexpr MojoStaticValue kRank = "rank";
-  static constexpr MojoStaticValue kGetInternals = "get_internals";
-  /// Comptime members of `StaticTensorSpec`, not of `get_internals()`.
-  static constexpr MojoStaticValue kShapeTuple = "shape_tuple";
-  static constexpr MojoStaticValue kStridesTuple = "strides_tuple";
-
-  MojoValue staticLayout() const { return value.get(kStaticLayout); }
-  MojoValue alignment() const { return value.get(kAlignment); }
-  MojoValue rank() const { return value.get(kRank); }
-  MojoValue shapeTuple() const { return value.get(kShapeTuple); }
-  MojoValue stridesTuple() const { return value.get(kStridesTuple); }
-
-  /// Carries the runtime `alignment` / `address_space`.
-  MojoValue getInternals() const { return value.get(kGetInternals)(); }
 
   MojoValue value;
 };
@@ -939,17 +831,6 @@ public:
   }
 
   MojoValue value;
-};
-
-/// Packs heterogeneous comptime values into a `ParameterList`. Holds no
-/// instance, since `of` is invoked on the type.
-class ParameterListRef {
-public:
-  static constexpr MojoStaticValue kOf = "of";
-
-  static MojoValue of(llvm::ArrayRef<MojoValue> elements) {
-    return kStructParameterList.get(kOf)[elements]();
-  }
 };
 
 /// `layout.row_major(<shape>)`: the row-major layout of a shape.
