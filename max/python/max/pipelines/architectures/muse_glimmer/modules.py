@@ -14,9 +14,20 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from max import tree
-from max.graph import TensorType
+from max._artifact.vision import (
+    ModalityLayout,
+    MuseSmartResize,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
 from max.nn import Module
+from max.nn.legacy.image_preprocess import image_preprocess_input_types
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.pipelines.lib.module_registration import decoder_vision_input_types
 from max.pipelines.lib.role_contracts import (
     DecoderInputs,
@@ -25,10 +36,14 @@ from max.pipelines.lib.role_contracts import (
 )
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import DeviceMesh, TensorLayout
+from transformers import AutoTokenizer
 
+from .image_processor import MuseGlimmerImageProcessor
 from .model_config import MuseGlimmerConfig
 from .muse_glimmer import MuseGlimmer
-from .vision import MuseGlimmerVisionModel, vision_input_types
+from .preprocess_graph import MuseGlimmerImagePreprocess
+from .tokenizer import load_processor_config
+from .vision import MuseGlimmerVisionModel, vision_input_tree
 
 
 class MuseGlimmerDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
@@ -99,9 +114,93 @@ class MuseGlimmerVision(MuseGlimmerVisionModel):
         self.embedding_dtype = config.dtype
         self.embedding_dim = config.text_config.hidden_size
 
-    def input_types(self) -> tuple[TensorType, ...]:
-        """Returns the existing packed image graph's input signature."""
+    def input_types(self) -> OrderedDict[str, object]:
+        """Groups the tower's inputs as a serving engine packs them."""
         assert self.config.vision_config is not None
-        return vision_input_types(
+        return vision_input_tree(
             self.config.vision_config, self.config.devices[0], self.config.dtype
         )
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: PipelineConfig, config: MuseGlimmerConfig
+    ) -> VisionMetadata:
+        """Returns the image layout the tokenizer sizes and splices images by."""
+        assert config.vision_config is not None
+        model = pipeline_config.model
+        tokenizer = AutoTokenizer.from_pretrained(
+            model.model_path,
+            revision=model.huggingface_model_revision,
+            trust_remote_code=model.trust_remote_code,
+        )
+        begin, end = tokenizer.convert_tokens_to_ids(
+            ["<|image_start|>", "<|image_end|>"]
+        )
+        huggingface_config = model.huggingface_config
+        assert huggingface_config is not None
+        return muse_glimmer_vision_metadata(
+            _image_processor(pipeline_config),
+            huggingface_config.image_token_id,
+            begin,
+            end,
+        )
+
+    @classmethod
+    def vision_preprocess_spec(
+        cls, pipeline_config: PipelineConfig, config: MuseGlimmerConfig
+    ) -> GraphSpec:
+        """Returns the graph that preprocesses one image for the tower."""
+        assert config.vision_config is not None
+        return GraphSpec(
+            MuseGlimmerImagePreprocess(
+                _image_processor(pipeline_config),
+                config.vision_config,
+                config.dtype,
+            ),
+            "muse_glimmer_vision_preprocess",
+            image_preprocess_input_types(),
+            weights={},
+        )
+
+
+def muse_glimmer_vision_metadata(
+    processor: MuseGlimmerImageProcessor,
+    image_token_id: int,
+    image_start_id: int,
+    image_end_id: int,
+) -> VisionMetadata:
+    """Returns the image layout a Muse Glimmer checkpoint is served with.
+
+    Each image's run is ``<|image_start|>``, a ``<|patch|>`` per merged
+    patch, and ``<|image_end|>``, as :class:`MuseGlimmerProcessor` expands
+    the chat template's placeholder. The model serves no video.
+
+    Args:
+        processor: The processor the tokenizer sizes images with.
+        image_token_id: The id of ``<|patch|>``.
+        image_start_id: The id of ``<|image_start|>``.
+        image_end_id: The id of ``<|image_end|>``.
+    """
+    return VisionMetadata.from_layouts(
+        image=ModalityLayout(
+            patch_size=processor.patch_size,
+            merge_size=processor.merge_size,
+            strategy=MuseSmartResize(processor.max_image_tokens),
+            span=Span(image_token_id, image_start_id, image_end_id),
+        ),
+        video=None,
+        max_image_bytes=0,
+        max_video_bytes=0,
+        prompt=PromptText(),
+    )
+
+
+def _image_processor(
+    pipeline_config: PipelineConfig,
+) -> MuseGlimmerImageProcessor:
+    """Returns the processor the checkpoint's tokenizer sizes images with."""
+    model = pipeline_config.model
+    config = load_processor_config(
+        model.model_path, model.huggingface_model_revision
+    )
+    return MuseGlimmerImageProcessor(config["image_processor"])

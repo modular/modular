@@ -16,8 +16,10 @@
 from .arch import gemma4_modulev3_arch, gemma4_unified_modulev3_arch
 from .inputs import Gemma4Inputs
 from .model import Gemma4Model
+from .model_config import Gemma4Config
 
 __all__ = [
+    "Gemma4Config",
     "Gemma4Inputs",
     "Gemma4Model",
     "gemma4_modulev3_arch",

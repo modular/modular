@@ -84,6 +84,69 @@
       ]
     }
   },
+  "muse_glimmer": {
+    "in_layouts": [
+      {"buffer": false, "dtype": "bfloat16", "shape": ["total_patches", 1176], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int32", "shape": ["total_patches", 4], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": ["total_patches", 4], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["total_patches"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["total_patches"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "int64", "shape": ["total_patches"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": ["total_patches", 96], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "float32", "shape": ["total_patches", 96], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_images_plus_1"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": ["num_windows_plus_1"], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},
+      {"buffer": false, "dtype": "uint32", "shape": [], "mesh": {"devices": [{"type": "cpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]}
+    ],
+    "in_tree": {
+      "kind": "tuple",
+      "children": [
+        {
+          "kind": "tuple",
+          "children": [
+            {
+              "kind": "ordered_dict",
+              "keys": ["patches", "window_order", "rotary", "segments", "segment_bound"],
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["pixel_values", "interp_idx", "interp_w"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}, {"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_row_index",
+                  "keys": ["window_index", "reverse_index", "pixel_shuffle_index"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}, {"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_rows",
+                  "keys": ["rot_cos", "rot_sin"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_segments",
+                  "keys": ["cu_seqlens", "cu_window_seqlens"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}]
+                },
+                {
+                  "kind": "node",
+                  "type": "vision_host_max",
+                  "keys": ["max_seqlen", "max_window_seqlen"],
+                  "children": [{"kind": "leaf"}, {"kind": "leaf"}]
+                }
+              ]
+            }
+          ]
+        },
+        {"kind": "dict", "keys": [], "children": []}
+      ]
+    }
+  },
   "qwen3_5": {
     "in_layouts": [
       {"buffer": false, "dtype": "float32", "shape": ["vision_seq_len", 1536], "mesh": {"devices": [{"type": "gpu", "id": 0}], "shape": [1], "axis_names": ["_"]}, "placements": [{"type": "replicated"}]},

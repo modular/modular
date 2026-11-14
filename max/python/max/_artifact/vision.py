@@ -108,8 +108,29 @@ class InklingPatchRows:
     upscale_long_edge: int = 2048
 
 
+@dataclass(frozen=True)
+class MuseSmartResize:
+    """Picks the merged-patch grid nearest the aspect ratio within a token cap.
+
+    The ideal grid, in merged patches, shrinks to the cap, and of the floor
+    and ceiling of each side the grid whose aspect ratio is nearest the
+    item's wins. Unlike :class:`SmartResize`, it bounds merged tokens, not
+    pixels.
+
+    Args:
+        max_tokens: The most merged tokens an item may have.
+    """
+
+    rule: ClassVar[str] = "muse_smart_resize"
+    max_tokens: int
+
+
 ResizeStrategy: TypeAlias = (
-    SmartResize | AspectRatioPreserving | VideoSmartResize | InklingPatchRows
+    SmartResize
+    | AspectRatioPreserving
+    | VideoSmartResize
+    | InklingPatchRows
+    | MuseSmartResize
 )
 
 

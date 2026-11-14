@@ -83,7 +83,9 @@ class MuseGlimmerBatchProcessor(DecoderBatchProcessor):
             "This checkpoint has no vision tower; image inputs are not"
             " supported."
         )
-        embeddings = self._vision_model(*packed).local_shards[0].driver_tensor
+        # The graph takes its named tree's leaves, which the packing lists in
+        # order, and returns the embeddings on its one device.
+        embeddings = self._vision_model.execute_raw(*packed)[0]
         return VisionEncodeResult(embeddings=embeddings.to(devices))
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:

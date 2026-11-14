@@ -43,6 +43,12 @@ from max.pipelines.architectures.gemma4.video_processor import (
 from max.pipelines.architectures.gemma4.vision_model.vision_spec import (
     gemma4_vision_metadata,
 )
+from max.pipelines.architectures.muse_glimmer.image_processor import (
+    MuseGlimmerImageProcessor,
+)
+from max.pipelines.architectures.muse_glimmer.modules import (
+    muse_glimmer_vision_metadata,
+)
 from max.pipelines.architectures.qwen3_5.model import qwen3_5_vision_metadata
 
 _SNAPSHOT = Path(__file__).parent / "testdata" / "vision_metadata.json"
@@ -87,8 +93,29 @@ def _qwen3_5() -> VisionMetadata | None:
     )
 
 
+def _muse_glimmer() -> VisionMetadata | None:
+    """The ids and processor block `meta-models/Muse-Glimmer-30B` states."""
+    return muse_glimmer_vision_metadata(
+        MuseGlimmerImageProcessor(
+            {
+                "patch_size": 14,
+                "merge_size": 2,
+                "temporal_patch_size": 2,
+                "max_image_tokens": 4096,
+                "rescale_factor": 0.00392156862745098,
+                "image_mean": [0.5, 0.5, 0.5],
+                "image_std": [0.5, 0.5, 0.5],
+            }
+        ),
+        image_token_id=200_092,
+        image_start_id=200_080,
+        image_end_id=200_081,
+    )
+
+
 _CASES: dict[str, Callable[[], VisionMetadata | None]] = {
     "gemma4": _gemma4_31b,
+    "muse_glimmer": _muse_glimmer,
     "qwen3_5": _qwen3_5,
 }
 

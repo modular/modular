@@ -48,6 +48,37 @@
       "text_part_separator": ""
     }
   },
+  "muse_glimmer": {
+    "image": {
+      "patch_size": 14,
+      "merge_size": 2,
+      "strategy": {
+        "rule": "muse_smart_resize",
+        "max_tokens": 4096
+      },
+      "span": {
+        "static": {
+          "image_token_id": 200092,
+          "begin_marker": 200080,
+          "end_marker": 200081
+        }
+      },
+      "template_markers": null,
+      "video_layout": {
+        "mode": "per_frame"
+      }
+    },
+    "video": null,
+    "max_image_bytes": 0,
+    "max_video_bytes": 0,
+    "prompt": {
+      "video_unit_separator": "",
+      "video_label_suffix": "",
+      "video_clip_open": "",
+      "video_clip_close": "",
+      "text_part_separator": ""
+    }
+  },
   "qwen3_5": {
     "image": {
       "patch_size": 16,

@@ -87,6 +87,10 @@ from max.pipelines.architectures.llama3.distributed_llama import (
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
+from max.pipelines.architectures.muse_glimmer.model_config import (
+    MuseGlimmerVisionConfig,
+)
+from max.pipelines.architectures.muse_glimmer.vision import vision_input_tree
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     CONV_LEAF_ID,
     SSM_LEAF_ID,
@@ -509,9 +513,30 @@ def _inkling_vision() -> _InputTree:
     return InklingVisionModel.input_tree(model)
 
 
+def _muse_glimmer_vision() -> _InputTree:
+    config = MuseGlimmerVisionConfig(
+        hidden_size=1536,
+        intermediate_size=8960,
+        num_hidden_layers=1,
+        num_attention_heads=16,
+        hidden_act="gelu",
+        layer_norm_eps=1e-5,
+        layer_types=["full_attention"],
+        patch_size=14,
+        patch_temporal=2,
+        merge_size=2,
+        pos_emb_height=32,
+        pos_emb_width=32,
+        rope_theta=10000.0,
+        projector_hidden_size=4096,
+    )
+    return vision_input_tree(config, DeviceRef.GPU(0), DType.bfloat16)
+
+
 _VISION_CASES: dict[str, Callable[[], _InputTree]] = {
     "inkling": _inkling_vision,
     "gemma4": _gemma4_vision,
+    "muse_glimmer": _muse_glimmer_vision,
     "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),
     "qwen2_5vl": lambda: _qwen_vl_vision(Qwen2_5VLVisionTransformer, 1176),
 }
