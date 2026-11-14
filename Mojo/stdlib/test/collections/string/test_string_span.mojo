@@ -1338,5 +1338,18 @@ def test_string_span_niche() raises:
     assert_false(none)
 
 
+def test_ne_string_literal_non_static_origin() raises:
+    var text = String("a,b")
+    var span = StringSpan(text)
+    assert_true(span != "a")
+    assert_true("a" != span)
+    assert_false(span != "a,b")
+    assert_true(span == "a,b")
+    assert_false("a,b" != span)
+    assert_true("a,b" == span)
+    for s in text.codepoint_slices():
+        assert_true(s != ";")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
