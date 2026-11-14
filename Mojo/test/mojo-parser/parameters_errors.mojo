@@ -739,3 +739,29 @@ def helper[
 def call_helper():
     # expected-error @below {{invalid call to 'helper': value passed to 'bag' cannot be converted from 'Bag[Leaf, tail=Int(1)]' to 'Bag[Leaf]'}}
     helper(Bag[Leaf, tail=1]())
+
+
+##===----------------------------------------------------------------------===##
+# modular/modular#6845: an empty parameter list must diagnose instead of
+# crashing when an inferred leading parameter is referenced by an inferred
+# variadic parameter.
+##===----------------------------------------------------------------------===##
+
+comptime myof[T: AnyType, //, *values: T] = 42
+
+# The variadic itself is what cannot be inferred: its element type still
+# refers to the uninferred leading parameter, so we do not synthesize an
+# empty list for it.
+# expected-error @below {{failed to infer parameter 'values', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime empty_myof = myof[]
+
+# expected-error @below {{failed to infer parameter 'values', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime empty_type_list = TypeList.of[]
+
+# expected-error @below {{failed to infer parameter 'values', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
+comptime empty_param_list = ParameterList.of[]
+
+# An explicitly unbound parameter list keeps working.
+comptime unbound_myof = myof[...]
+comptime unbound_type_list = TypeList.of[...]
+comptime unbound_param_list = ParameterList.of[...]
