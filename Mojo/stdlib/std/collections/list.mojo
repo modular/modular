@@ -909,6 +909,7 @@ struct List[T: AnyType, /](
         self._storage.storage()._unchecked_get(self._len).unsafe_write(value^)
         self._len += 1
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     @stable(since="1.2")
     def insert(

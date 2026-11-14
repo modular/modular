@@ -1435,5 +1435,15 @@ def test_deque_move_only() raises:
 # ===-------------------------------------------------------------------===#
 
 
+def test_insert_pointer_with_mutable_origin() raises:
+    var o = 1
+    var q = Deque[Pointer[Int, origin_of(o)]]()
+    q.append(Pointer(to=o))
+    q.appendleft(Pointer(to=o))
+    q.insert(1, Pointer(to=o))
+    assert_equal(len(q), 3)
+    assert_equal(q[1][], 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

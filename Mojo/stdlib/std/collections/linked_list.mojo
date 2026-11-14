@@ -367,6 +367,7 @@ struct LinkedList[ElementType: Movable](
         """
         self._delete_list_elements(deinit_func)
 
+    @__unsafe_nested_origins_read_only
     def append(mut self, var value: Self.ElementType):
         """Add an element to the end of the list.
 
@@ -390,6 +391,7 @@ struct LinkedList[ElementType: Movable](
         self._tail = addr
         self._size += 1
 
+    @__unsafe_nested_origins_read_only
     def prepend(mut self, var value: Self.ElementType):
         """Add an element to the beginning of the list.
 
@@ -581,6 +583,7 @@ struct LinkedList[ElementType: Movable](
         self._tail = Self._NodePointer()
         self._size = 0
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType):
         """Insert an element `elem` into the list at index `idx`.

@@ -666,7 +666,6 @@ struct Optional[T: AnyType](
 
         return self._unsafe_unchecked_value()
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def _unsafe_unchecked_value(
         ref self,

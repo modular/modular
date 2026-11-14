@@ -1965,5 +1965,23 @@ def test_owned_kwargs_dict_linear() raises:
     _test_taking_owned_kwargs_dict_linear_insert_pop(**kw2^)
 
 
+def test_insert_pointer_with_mutable_origin() raises:
+    # The value's type names a mutable origin, but inserting it borrows
+    # nothing, so it does not alias `self`.
+    var o = 1
+    var d = Dict[Int, Pointer[Int, origin_of(o)]]()
+    d[0] = Pointer(to=o)
+    _ = d.insert(1, Pointer(to=o))
+    _ = d.setdefault(2, Pointer(to=o))
+    assert_equal(len(d), 3)
+    assert_equal(d[2][], 1)
+
+    var sd = StringDict[Pointer[Int, origin_of(o)]]()
+    sd["a"] = Pointer(to=o)
+    _ = sd.insert("b", Pointer(to=o))
+    assert_equal(len(sd), 2)
+    assert_equal(sd["b"][], 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

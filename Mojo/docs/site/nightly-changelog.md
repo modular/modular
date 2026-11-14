@@ -562,6 +562,7 @@ This version is still a work in progress.
   value (for example, `33560532.0` printed as `33560530.0`), and values
   exactly halfway between two shortest decimals, such as `3.37890625`, rounded
   up instead of to even.
+
 - `atol()` now rejects a number that ends in an underscore when whitespace
   follows it, as it already did without the whitespace. Previously
   `atol("9_ ")` returned `90`.
@@ -581,3 +582,8 @@ This version is still a work in progress.
   MAX, the `mojo` CLI and projects on different Mojo versions can now share one
   cache directory. A process can still lose its cache if its Mojo install is
   replaced while it runs.
+
+- `Dict`, `StringDict`, `Deque`, `LinkedList` and `List.insert()` now accept
+  elements whose type names a mutable origin, such as
+  `Pointer[Int, origin_of(x)]`, as `List.append()` already did. Inserting one
+  was rejected as aliasing the collection.
