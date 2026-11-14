@@ -1,0 +1,172 @@
+---
+title: Generate tokens offline
+sidebar_label: Offline quickstart
+description: Run inference on a model from a Python script with MAX's AutoModel, with direct access to tokens, logits, and batches and no server to start.
+---
+
+import InstallMAX from '../_includes/install-modular.mdx';
+
+With MAX's [`AutoModel`](/api/python/generated/max.pipelines.AutoModel/), you
+run inference on a model from a Python script, with no server to start and no
+HTTP requests to send. We call this offline generation. `AutoModel` builds the
+pipeline that [`max serve`](/cli/serve/) runs, with serving features such as
+the overlap scheduler and prefix caching turned off, so your script calls the
+same model and sampling code as a served endpoint, with no request scheduler
+between your code and the model.
+
+Because the model runs in your script, you work with it directly:
+
+- You pass token IDs in and get token IDs back. Pass `output_logits=True` to
+  `generate()` to also get the model's logits for every token it generates.
+- You decide which prompts run together, down to a single forward pass. Call
+  [`generate_iter()`][generate-iter] to get a
+  [`GenerateIterator`][generate-iterator]: each `step()` runs one pass, and
+  `remove()` drops a row from later passes.
+- With `eager=True`, a breakpoint in the model's `forward()` stops on every
+  step with real tensor values.
+
+The API follows Hugging Face Transformers:
+[`AutoTokenizer`](/api/python/generated/max.pipelines.AutoTokenizer/) encodes
+prompts, `AutoModel` generates from them as Transformers'
+`AutoModelForCausalLM` does, and the tokenizer decodes the result.
+[`AutoPipeline`](/api/python/generated/max.pipelines.AutoPipeline/) wraps
+`AutoTokenizer` and `AutoModel`, so it takes prompt strings and returns text in
+one call.
+
+On this page, you'll install MAX and generate text with LFM3, a
+1.7-billion-parameter model from Liquid AI. The first run downloads the
+checkpoint to your Hugging Face cache, and later runs load it from there.
+
+## Set up your environment
+
+LFM3 runs only on a GPU, so check that yours is on the
+[GPU compatibility](/system-requirements/#gpu-compatibility) list. Then create
+a Python project and install MAX:
+
+<InstallMAX folder="offline-quickstart" />
+
+## Generate text
+
+With the environment active, generate text from the
+[`LiquidAI/LFM3-1.7B-Base`](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)
+model:
+
+1. Save this script as `generate.py`:
+
+   ```python title="generate.py"
+   from max.pipelines import AutoModel, AutoTokenizer
+
+   model_id = "LiquidAI/LFM3-1.7B-Base"
+   tokenizer = AutoTokenizer(model_id)
+   inputs = tokenizer(["The capital of France is"])
+
+   with AutoModel(model_id, max_length=4096) as model:
+       result = model.generate(**inputs, max_new_tokens=8, top_k=1)
+
+   print(tokenizer.decode(result.sequences[0], skip_special_tokens=True))
+   ```
+
+   Calling `tokenizer()` returns the `input_ids` and `attention_mask` that
+   [`generate()`](/api/python/generated/max.pipelines.AutoModel/#max.pipelines.AutoModel.generate)
+   takes. Setting `top_k=1` makes generation greedy, so each step picks the
+   most likely token. When the `with` block exits, `AutoModel` calls
+   `close()`, which frees the memory the model uses.
+
+   `max_length` caps the number of tokens in a sequence. If you leave it out,
+   MAX plans for the model's full context length, 262,144 tokens for LFM3,
+   which reserves much more GPU memory for the KV cache.
+
+2. Run the script:
+
+   ```bash
+   python generate.py
+   ```
+
+   `AutoModel` downloads the 3.46 GB checkpoint, compiles the model, and
+   generates eight tokens on the first GPU it finds.
+
+   The script prints the prompt followed by the new tokens:
+
+   ```output
+   The capital of France is Paris. The population of Paris is
+   ```
+
+To run another model, replace `model_id` with a Hugging Face repository ID
+from [Supported models](/models/).
+
+## Generate for several prompts
+
+The script passed one prompt to `tokenizer()`. Pass a list of prompts to run
+them as one batch, and set `max_batch_size` to at least the number of prompts,
+because `AutoModel` loads with room for one prompt by default:
+
+```python title="batch.py"
+from max.pipelines import AutoModel, AutoTokenizer
+
+model_id = "LiquidAI/LFM3-1.7B-Base"
+prompts = ["The capital of France is", "The capital of Japan is"]
+tokenizer = AutoTokenizer(model_id)
+inputs = tokenizer(prompts)
+
+with AutoModel(model_id, max_length=4096, max_batch_size=len(prompts)) as model:
+    result = model.generate(**inputs, max_new_tokens=8, top_k=1)
+
+for text in tokenizer.batch_decode(result.sequences, skip_special_tokens=True):
+    print(text)
+```
+
+`result.sequences` holds one row per prompt, in the order you passed them:
+
+```output
+The capital of France is Paris. The population of Paris is
+The capital of Japan is Tokyo, and the capital of the United
+```
+
+## Chat with an instruct model
+
+The base model continues raw text. An instruct model, such as
+[`LiquidAI/LFM3-1.7B`](https://huggingface.co/LiquidAI/LFM3-1.7B), expects a
+conversation in its chat template. Pass the conversation to `generate()` as
+`messages`, and MAX applies the template for you:
+
+```python title="chat.py"
+from max.pipelines import AutoModel, AutoTokenizer
+
+model_id = "LiquidAI/LFM3-1.7B"
+tokenizer = AutoTokenizer(model_id)
+messages = [[{"role": "user", "content": "What is the capital of France?"}]]
+
+with AutoModel(model_id, max_length=4096) as model:
+    result = model.generate(
+        messages=messages,
+        chat_template_kwargs={"enable_thinking": False},
+        max_new_tokens=32,
+        top_k=1,
+    )
+
+reply = result.sequences[0][result.prompt_lengths[0] :]
+print(tokenizer.decode(reply, skip_special_tokens=True))
+```
+
+Each row in `result.sequences` starts with the prompt after MAX applies the
+template, and `result.prompt_lengths` gives that prompt's length, so the slice
+keeps only the reply. LFM3 writes its reasoning before it answers, and
+`{"enable_thinking": False}` turns that off in the chat template. The script
+prints up to 32 tokens of the reply:
+
+```output
+The capital of France is **Paris**. It is known for its art, fashion, gastronomy, and culture. Paris is located in the north-central
+```
+
+## Next steps
+
+- [Step through a model with pdb](/develop/debugging/#step-through-a-model-with-pdb):
+  pass `eager=True` to `AutoModel` to stop on every step with real tensor
+  values.
+- [Model bring-up workflow](/develop/model-bringup-workflow/): implement an
+  architecture that `AutoModel` and `max serve` can load.
+- [Quickstart for serving](/get-started/): start a local endpoint and send it
+  requests.
+
+[generate-iter]: /api/python/generated/max.pipelines.AutoModel/#max.pipelines.AutoModel.generate_iter
+[generate-iterator]: /api/python/generated/max.pipelines.lib.generate.GenerateIterator/

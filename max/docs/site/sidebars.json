@@ -113,6 +113,7 @@
           "id": "develop/index",
           "label": "Overview"
         },
+        "develop/generate-tokens-offline",
         "develop/model-bringup-skills",
         {
           "label": "Fundamentals",

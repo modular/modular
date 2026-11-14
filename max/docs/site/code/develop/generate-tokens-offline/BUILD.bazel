@@ -1,0 +1,56 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+EXAMPLES = [
+    "batch",
+    "chat",
+    "generate",
+]
+
+# Transformers renders a chat template with jinja2.
+_EXTRA_DEPS = {
+    "chat": [requirement("jinja2")],
+}
+
+[
+    modular_py_binary(
+        name = example,
+        srcs = [example + ".py"],
+        # The registry imports the architecture registered as
+        # Lfm3ForCausalLM when it resolves the model by name.
+        ignore_extra_deps = [
+            "//max/python/max/pipelines/architectures/lfm3",
+        ] + _EXTRA_DEPS.get(example, []),
+        imports = ["."],
+        deps = [
+            "//max/python/max/pipelines",
+            "//max/python/max/pipelines/architectures/lfm3",
+        ] + _EXTRA_DEPS.get(example, []),
+    )
+    for example in EXAMPLES
+]
+
+[
+    modular_run_binary_test(
+        name = example + "_test",
+        size = "large",
+        binary = example,
+        exec_properties = {
+            "test.resources:gpu-memory": "8",
+        },
+        # These tests download checkpoints from Hugging Face. Run them
+        # manually on a GPU system.
+        tags = [
+            "gpu",
+            "manual",
+            "no-sandbox",
+            "requires-network",
+        ],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for example in EXAMPLES
+]
