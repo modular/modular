@@ -32,14 +32,17 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KimiDeltaAttention,
     layer_rows,
 )
 from max.pipelines.architectures.glm5_next.model_config import Glm5NextConfig
 from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.realization_context import ensure_context
 from max.tensor.sharding import DeviceMesh
 
 HIDDEN = 32
@@ -125,16 +128,45 @@ def test_conv_shards_split_heads_within_each_projection(
     assert disagreeing >= num_devices - 1
 
 
-def test_static_layer_rows_match_the_dynamic_slice() -> None:
-    """Each KDA layer's static row is the row its dynamic slice takes."""
-    num_layers, batch = 5, 3
-    table = np.arange(num_layers * batch, dtype=np.int32).reshape(
-        num_layers, batch
-    )
-    rows = Tensor.constant(table, device=CPU())
-    for position in range(num_layers):
-        layer = Tensor.constant(position, dtype=DType.int64, device=CPU())
-        dynamic = layer_rows(rows, layer).to_numpy()
-        static = layer_rows(rows, layer, position).to_numpy()
-        np.testing.assert_array_equal(dynamic, table[position])
-        np.testing.assert_array_equal(static, dynamic)
+NUM_LAYERS = 5
+_RESULT = "-> !mo.tensor<[batch], si32>"
+
+
+def _layer_rows_mlir(position: int | None) -> str:
+    """``layer_rows`` of a ``[NUM_LAYERS, batch]`` table, traced, not compiled."""
+    with (
+        Graph(
+            "layer_rows",
+            input_types=[
+                TensorType(
+                    DType.int32, [NUM_LAYERS, "batch"], device=DeviceRef.CPU()
+                )
+            ],
+        ) as graph,
+        ensure_context(),
+    ):
+        rows = Tensor.from_graph_value(graph.inputs[0].tensor)
+        layer = F.constant(
+            NUM_LAYERS - 1 if position is None else position,
+            DType.int64,
+            device=CPU(),
+        )
+        graph.output(TensorValue(layer_rows(rows, layer, position)))
+    return str(graph)
+
+
+@pytest.mark.parametrize("position", [0, NUM_LAYERS - 1])
+def test_static_layer_rows_take_a_static_slice(position: int) -> None:
+    """A static position takes its row by a static slice, which the compiler
+    passes as a view, and has the dynamic slice's ``[batch]`` result."""
+    static = _layer_rows_mlir(position)
+    assert (
+        f"starts = #mosh<ape[{position}, 0]>" in static
+        and f"stops = #mosh<ape[{position + 1}, batch]>" in static
+    ), static
+    assert "mo.slice(" not in static.replace("rmo.slice(", ""), static
+    assert _RESULT in static
+
+    dynamic = _layer_rows_mlir(None)
+    assert "mo.slice(%arg0" in dynamic, dynamic
+    assert _RESULT in dynamic
