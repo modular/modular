@@ -29,6 +29,16 @@ def guard_binding(x: Int):
     value += 1
 
 
+# Boolean guards retain the normal path in the `then` region.
+# CHECK-LABEL: lit.fn @"guard_condition
+# CHECK: hlcf.if
+# CHECK: lit.return
+def guard_condition(condition: Bool) -> Int:
+    __guard condition else:
+        return 0
+    return 1
+
+
 # The failed guard path cannot fall through into the continuation.
 # CHECK-LABEL: lit.fn @"guard_no_fallthrough
 # CHECK: hlcf.match
@@ -50,3 +60,11 @@ def comptime_guard_binding[pair: Tuple[Int, Int]]() -> Int:
     comptime __guard case (0, value) = pair else:
         return -1
     return value
+
+
+# CHECK-LABEL: lit.fn @"comptime_guard_condition
+# CHECK: hlcf.comptime.if
+def comptime_guard_condition[condition: Bool]() -> Int:
+    comptime __guard condition else:
+        return 0
+    return 1

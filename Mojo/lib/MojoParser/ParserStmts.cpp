@@ -1699,8 +1699,8 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
-/// guard_stmt ::= "__guard" "case" pattern "=" assignment_expression
-///                  "else" ":" suite
+/// guard_stmt ::= "__guard" ("case" pattern "=" assignment_expression |
+///                           assignment_expression) "else" ":" suite
 ///
 /// Pattern declarations are emitted before the match so successful bindings
 /// remain visible in the continuation. The failure path ends in a fallthrough
@@ -1710,18 +1710,90 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
 
   ExprNode *patternExpr = nullptr;
   ExprNode *subjectExpr = nullptr;
-  if (parseToken(Token::kw_case, "expected 'case' after '__guard'") ||
-      parseExpressionList(patternExpr, curIndent,
-                          /*terminators=*/{Token::equal}, Precedence::kAsPat) ||
-      parseToken(Token::equal, "expected '=' after guard pattern") ||
-      parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr) ||
-      parseToken(Token::kw_else, "expected 'else' after guard subject") ||
+  if (consumeIf(Token::kw_case)) {
+    if (parseExpressionList(patternExpr, curIndent,
+                            /*terminators=*/{Token::equal},
+                            Precedence::kAsPat) ||
+        parseToken(Token::equal, "expected '=' after guard pattern") ||
+        parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr))
+      return failure();
+  } else if (parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr)) {
+    return failure();
+  }
+  if (parseToken(Token::kw_else, "expected 'else' after guard condition") ||
       parseToken(Token::colon, "expected ':' after guard else"))
     return failure();
 
   LexerCursor elseCursor = getLexer().getCursor();
   skipUntilIndentation(curIndent);
   LexerCursor afterCursor = getLexer().getCursor();
+
+  if (!patternExpr) {
+    Location guardLocation = translateLocation(guardLoc);
+    if (isComptime) {
+      RValue condition =
+          getParamEmitter(EC_ComptimeIfCondition)
+              .emitExprScalarBool(subjectExpr, EC_ComptimeIfCondition);
+      if (!condition)
+        return success();
+      PValue conditionValue = condition.getIfPValue();
+      if (!conditionValue) {
+        emitError(subjectExpr->getLoc(),
+                  "'comptime guard' condition must be evaluable at "
+                  "compile-time")
+            << subjectExpr->getRange();
+        return failure();
+      }
+
+      auto comptimeIfOp = HLCF::ComptimeIfOp::create(
+          builder, guardLocation, TypeRange{}, conditionValue.get());
+      Block *thenBlock = builder.createBlock(&comptimeIfOp.getThenRegion());
+      Block *elseBlock = builder.createBlock(&comptimeIfOp.getElseRegion());
+      builder.setInsertionPointToStart(elseBlock);
+      elseCursor.restore(getLexer());
+      if (failed(parseLocalScopeSuite(curIndent)))
+        return failure();
+      if (!builder.getInsertionBlock()->mightHaveTerminator()) {
+        auto unreachable = HLCF::UnreachableOp::create(builder, guardLocation);
+        unreachable.setFallthroughErrorAttr(
+            builder.getStringAttr("guard 'else' block must not fall through"));
+      }
+
+      builder.setInsertionPointToStart(thenBlock);
+      openComptimeGuards.push_back(comptimeIfOp);
+      afterCursor.restore(getLexer());
+      return success();
+    }
+
+    RValue condition =
+        getEmitter().emitExprScalarBool(subjectExpr, EC_BoolCondition);
+    if (!condition)
+      return success();
+    SRValue conditionValue =
+        getEmitter().emitSRValue({condition, subjectExpr}, EC_BoolCondition);
+    if (!conditionValue)
+      return success();
+
+    auto ifOp = HLCF::IfOp::create(builder, guardLocation, TypeRange{},
+                                   Value(conditionValue));
+    Block *thenBlock = builder.createBlock(&ifOp.getThenRegion());
+    Block *elseBlock = builder.createBlock(&ifOp.getElseRegion());
+    builder.setInsertionPointToStart(thenBlock);
+    HLCF::YieldOp::create(builder, guardLocation);
+    builder.setInsertionPointToStart(elseBlock);
+    elseCursor.restore(getLexer());
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+    if (!builder.getInsertionBlock()->mightHaveTerminator()) {
+      auto unreachable = HLCF::UnreachableOp::create(builder, guardLocation);
+      unreachable.setFallthroughErrorAttr(
+          builder.getStringAttr("guard 'else' block must not fall through"));
+    }
+
+    builder.setInsertionPointAfter(ifOp);
+    afterCursor.restore(getLexer());
+    return success();
+  }
 
   if (isComptime) {
     PValue subject = getParamEmitter(EC_MatchSubject)
