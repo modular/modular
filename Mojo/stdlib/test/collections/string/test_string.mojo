@@ -765,6 +765,10 @@ def test_find() raises:
 
     assert_equal(-1, String("abc").find("abcd"))
 
+    var abc = "abc"
+    assert_equal(abc.find("", 2), 2)
+    assert_equal(abc.find("", -1), 2)
+    assert_equal(abc.find("", 4), -1)
 
 def test_replace() raises:
     # Replace empty
@@ -807,6 +811,13 @@ def test_rfind() raises:
     assert_equal(s1.rfind("w", -5), 6)
 
     assert_equal(-1, String("abc").rfind("abcd"))
+
+    var abc = "abc"
+    assert_equal(abc.rfind("", 3), 3)
+    assert_equal(abc.rfind("", 2), 3)
+    assert_equal(abc.rfind("", -1), 3)
+    assert_equal(abc.rfind("", 1), 3)
+    assert_equal(abc.rfind("", 4), -1)
 
     # Special characters.
     # TODO(#26444): Support unicode strings.
