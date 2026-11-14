@@ -252,6 +252,18 @@ static OpBuilder getScopeEndBuilder(ASTDecl &decl) {
   return cast<OpASTDecl>(decl).getDeclEndBuilder();
 }
 
+/// A condition that is either a Boolean expression or a pattern tested against
+/// a subject expression.
+///
+/// This represents one clause only. Future comma-separated conditions can use
+/// a list of these clauses without changing the individual clause grammar.
+struct ConditionalClause {
+  ExprNode *conditionExpr = nullptr;
+  ExprNode *patternExpr = nullptr;
+
+  bool isPatternMatch() const { return patternExpr != nullptr; }
+};
+
 struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
@@ -297,6 +309,8 @@ struct StmtParser : public ParserBase {
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseIf(Location ifLoc, LexerCursor startCursor, size_t curIndent,
                       bool isComptime);
+  ParseResult parseConditionalClause(ConditionalClause &clause,
+                                     size_t curIndent);
   ParseResult parseGuardStmt(size_t curIndent, bool isComptime = false);
   ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseMatchStmt(size_t curIndent, bool isComptime);
@@ -1699,6 +1713,25 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
+/// conditional_clause ::= "case" pattern "=" assignment_expression |
+///                        assignment_expression
+ParseResult StmtParser::parseConditionalClause(ConditionalClause &clause,
+                                               size_t curIndent) {
+  if (consumeIf(Token::kw_case)) {
+    if (parseExpressionList(clause.patternExpr, curIndent,
+                            /*terminators=*/{Token::equal},
+                            Precedence::kAsPat) ||
+        parseToken(Token::equal, "expected '=' after conditional pattern") ||
+        parseExpression(clause.conditionExpr, curIndent,
+                        Precedence::kAssignExpr))
+      return failure();
+    return success();
+  }
+
+  return parseExpression(clause.conditionExpr, curIndent,
+                         Precedence::kAssignExpr);
+}
+
 /// guard_stmt ::= "__guard" ("case" pattern "=" assignment_expression |
 ///                           assignment_expression) "else" ":" suite
 ///
@@ -1708,18 +1741,9 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
   SMLoc guardLoc = consumeToken(Token::kw___guard).getLoc();
 
-  ExprNode *patternExpr = nullptr;
-  ExprNode *subjectExpr = nullptr;
-  if (consumeIf(Token::kw_case)) {
-    if (parseExpressionList(patternExpr, curIndent,
-                            /*terminators=*/{Token::equal},
-                            Precedence::kAsPat) ||
-        parseToken(Token::equal, "expected '=' after guard pattern") ||
-        parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr))
-      return failure();
-  } else if (parseExpression(subjectExpr, curIndent, Precedence::kAssignExpr)) {
+  ConditionalClause clause;
+  if (failed(parseConditionalClause(clause, curIndent)))
     return failure();
-  }
   if (parseToken(Token::kw_else, "expected 'else' after guard condition") ||
       parseToken(Token::colon, "expected ':' after guard else"))
     return failure();
@@ -1728,20 +1752,20 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
   skipUntilIndentation(curIndent);
   LexerCursor afterCursor = getLexer().getCursor();
 
-  if (!patternExpr) {
+  if (!clause.isPatternMatch()) {
     Location guardLocation = translateLocation(guardLoc);
     if (isComptime) {
       RValue condition =
           getParamEmitter(EC_ComptimeIfCondition)
-              .emitExprScalarBool(subjectExpr, EC_ComptimeIfCondition);
+              .emitExprScalarBool(clause.conditionExpr, EC_ComptimeIfCondition);
       if (!condition)
         return success();
       PValue conditionValue = condition.getIfPValue();
       if (!conditionValue) {
-        emitError(subjectExpr->getLoc(),
+        emitError(clause.conditionExpr->getLoc(),
                   "'comptime guard' condition must be evaluable at "
                   "compile-time")
-            << subjectExpr->getRange();
+            << clause.conditionExpr->getRange();
         return failure();
       }
 
@@ -1766,11 +1790,11 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
     }
 
     RValue condition =
-        getEmitter().emitExprScalarBool(subjectExpr, EC_BoolCondition);
+        getEmitter().emitExprScalarBool(clause.conditionExpr, EC_BoolCondition);
     if (!condition)
       return success();
-    SRValue conditionValue =
-        getEmitter().emitSRValue({condition, subjectExpr}, EC_BoolCondition);
+    SRValue conditionValue = getEmitter().emitSRValue(
+        {condition, clause.conditionExpr}, EC_BoolCondition);
     if (!conditionValue)
       return success();
 
@@ -1797,7 +1821,7 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
 
   if (isComptime) {
     PValue subject = getParamEmitter(EC_MatchSubject)
-                         .emitExprPValue(subjectExpr, EC_MatchSubject);
+                         .emitExprPValue(clause.conditionExpr, EC_MatchSubject);
     if (!subject)
       return success();
 
@@ -1805,8 +1829,8 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
     const PatternPath *rootPath =
         matchBuilder.getRootPath(subject.getRValueType());
     SmallVector<const PatternCommand *, 8> commands;
-    if (failed(patternExpr->buildCheckList(matchBuilder, subject, rootPath,
-                                           commands)))
+    if (failed(clause.patternExpr->buildCheckList(matchBuilder, subject,
+                                                  rootPath, commands)))
       return failure();
 
     Location guardLocation = translateLocation(guardLoc);
@@ -1857,20 +1881,21 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
     return success();
   }
 
-  CValue subject = getEmitter().emitExprCValue(subjectExpr, EC_MatchSubject);
+  CValue subject =
+      getEmitter().emitExprCValue(clause.conditionExpr, EC_MatchSubject);
   if (!subject)
     return success();
   // Promote a DLValue and SRValue so matching against it will be simplified.
   if (subject.getIfDLValue()) {
-    BValue subjectBValue =
-        getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    BValue subjectBValue = getEmitter().emitBValue(
+        {subject, clause.conditionExpr}, EC_MatchSubject);
     if (!subjectBValue)
       return success();
     subject = subjectBValue;
   }
   if (subject.getIfSRValue()) {
-    MRValue subjectMRValue =
-        getEmitter().emitMRValue({subject, subjectExpr}, EC_MatchSubject);
+    MRValue subjectMRValue = getEmitter().emitMRValue(
+        {subject, clause.conditionExpr}, EC_MatchSubject);
     if (!subjectMRValue)
       return success();
     subject = subjectMRValue;
@@ -1880,8 +1905,8 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
   const PatternPath *rootPath =
       matchBuilder.getRootPath(subject.getRValueType());
   SmallVector<const PatternCommand *, 8> commands;
-  if (failed(patternExpr->buildCheckList(matchBuilder, subject, rootPath,
-                                         commands)))
+  if (failed(clause.patternExpr->buildCheckList(matchBuilder, subject, rootPath,
+                                                commands)))
     return failure();
 
   Location guardLocation = translateLocation(guardLoc);
@@ -4384,8 +4409,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   struct ArmEntry {
-    ExprNode *condExpr;
-    ExprNode *patternExpr;
+    ConditionalClause clause;
     LexerCursor bodyCursor;
     Location keywordLoc;
     SmallVector<PatternBoundName, 4> patternBindings;
@@ -4394,25 +4418,14 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
   SmallVector<ArmEntry, 4> arms;
 
   auto parseArm = [&](Location keywordLoc, StringRef keyword) -> ParseResult {
-    ExprNode *condExpr = nullptr;
-    ExprNode *patternExpr = nullptr;
-    if (consumeIf(Token::kw_case)) {
-      if (parseExpressionList(patternExpr, curIndent,
-                              /*terminators=*/{Token::equal},
-                              Precedence::kAsPat))
-        return failure();
-      if (parseToken(Token::equal, "expected '=' after conditional pattern") ||
-          parseExpression(condExpr, curIndent, Precedence::kAssignExpr))
-        return failure();
-    } else if (parseExpression(condExpr, curIndent, Precedence::kAssignExpr)) {
+    ConditionalClause clause;
+    if (failed(parseConditionalClause(clause, curIndent)))
       return failure();
-    }
 
     if (parseToken(Token::colon,
                    "expected ':' after '" + keyword + "' condition"))
       return failure();
-    arms.push_back(
-        {condExpr, patternExpr, getLexer().getCursor(), keywordLoc, {}});
+    arms.push_back({clause, getLexer().getCursor(), keywordLoc, {}});
     skipUntilIndentation(curIndent);
     return success();
   };
@@ -4458,11 +4471,12 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
     conds.reserve(arms.size());
     for (ArmEntry &arm : arms) {
       FailureOr<TypedAttr> attr = [&]() -> FailureOr<TypedAttr> {
-        if (!arm.patternExpr)
-          return emitComptimeCondAttr(arm.condExpr);
+        if (!arm.clause.isPatternMatch())
+          return emitComptimeCondAttr(arm.clause.conditionExpr);
 
-        PValue subject = getParamEmitter(EC_MatchSubject)
-                             .emitExprPValue(arm.condExpr, EC_MatchSubject);
+        PValue subject =
+            getParamEmitter(EC_MatchSubject)
+                .emitExprPValue(arm.clause.conditionExpr, EC_MatchSubject);
         if (!subject)
           return failure();
 
@@ -4470,8 +4484,8 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         const PatternPath *rootPath =
             matchBuilder.getRootPath(subject.getRValueType());
         SmallVector<const PatternCommand *, 8> commands;
-        if (failed(arm.patternExpr->buildCheckList(matchBuilder, subject,
-                                                   rootPath, commands)))
+        if (failed(arm.clause.patternExpr->buildCheckList(matchBuilder, subject,
+                                                          rootPath, commands)))
           return failure();
 
         PatternEmitState emissionState{*curDeclScope, subject, rootPath,
@@ -4517,8 +4531,9 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
             ArrayRef<ConstraintAttr> assumptions) -> ParseResult {
       builder.createBlock(&thenRegion);
       entry.bodyCursor.restore(getLexer());
-      SMLoc bindingLoc = entry.patternExpr ? entry.patternExpr->getLoc()
-                                           : entry.condExpr->getLoc();
+      SMLoc bindingLoc = entry.clause.isPatternMatch()
+                             ? entry.clause.patternExpr->getLoc()
+                             : entry.clause.conditionExpr->getLoc();
       if (failed(parseComptimeIfRegion(assumptions, entry.patternBindings,
                                        bindingLoc)))
         return failure();
@@ -4552,7 +4567,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
   }
 
   bool hasPatternCondition = llvm::any_of(
-      arms, [](const ArmEntry &arm) { return arm.patternExpr != nullptr; });
+      arms, [](const ArmEntry &arm) { return arm.clause.isPatternMatch(); });
   if (hasPatternCondition) {
     auto materializeBindings =
         [&](PatternEmitState &emissionState,
@@ -4597,15 +4612,15 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
       }
 
       const ArmEntry &arm = arms[armIndex];
-      if (!arm.patternExpr) {
+      if (!arm.clause.isPatternMatch()) {
         FailureOr<Value> condition = [&]() -> FailureOr<Value> {
           auto emitter = getEmitter();
-          RValue conditionRValue =
-              emitter.emitExprScalarBool(arm.condExpr, EC_BoolCondition);
+          RValue conditionRValue = emitter.emitExprScalarBool(
+              arm.clause.conditionExpr, EC_BoolCondition);
           if (!conditionRValue)
             return failure();
           SRValue conditionValue = emitter.emitSRValue(
-              {conditionRValue, arm.condExpr}, EC_BoolCondition);
+              {conditionRValue, arm.clause.conditionExpr}, EC_BoolCondition);
           if (!conditionValue)
             return failure();
           return Value(conditionValue);
@@ -4631,20 +4646,20 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
         return success();
       }
 
-      CValue subject =
-          getEmitter().emitExprCValue(arm.condExpr, EC_MatchSubject);
+      CValue subject = getEmitter().emitExprCValue(arm.clause.conditionExpr,
+                                                   EC_MatchSubject);
       if (!subject)
         return failure();
       if (subject.getIfDLValue()) {
-        BValue subjectBValue =
-            getEmitter().emitBValue({subject, arm.condExpr}, EC_MatchSubject);
+        BValue subjectBValue = getEmitter().emitBValue(
+            {subject, arm.clause.conditionExpr}, EC_MatchSubject);
         if (!subjectBValue)
           return failure();
         subject = subjectBValue;
       }
       if (subject.getIfSRValue()) {
-        MRValue subjectMRValue =
-            getEmitter().emitMRValue({subject, arm.condExpr}, EC_MatchSubject);
+        MRValue subjectMRValue = getEmitter().emitMRValue(
+            {subject, arm.clause.conditionExpr}, EC_MatchSubject);
         if (!subjectMRValue)
           return failure();
         subject = subjectMRValue;
@@ -4654,8 +4669,8 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
       const PatternPath *rootPath =
           matchBuilder.getRootPath(subject.getRValueType());
       SmallVector<const PatternCommand *, 8> commands;
-      if (failed(arm.patternExpr->buildCheckList(matchBuilder, subject,
-                                                 rootPath, commands)))
+      if (failed(arm.clause.patternExpr->buildCheckList(matchBuilder, subject,
+                                                        rootPath, commands)))
         return failure();
 
       PatternEmitState emissionState{*curDeclScope, subject, rootPath,
@@ -4746,7 +4761,8 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
 
   // First condition is evaluated in the parent and becomes the elif operand.
   FailureOr<Value> firstCond =
-      emitConditionExpr(arms.front().condExpr, /*elifCondIndex=*/~0u);
+      emitConditionExpr(arms.front().clause.conditionExpr,
+                        /*elifCondIndex=*/~0u);
   if (failed(firstCond))
     return failure();
 
@@ -4769,7 +4785,7 @@ ParseResult StmtParser::parseIf(Location ifLoc, LexerCursor startCursor,
     builder.setInsertionPointToStart(
         &ifOp.getElifRegions()[condRegionIndex].front());
     FailureOr<Value> elifCond =
-        emitConditionExpr(entry.condExpr, condRegionIndex);
+        emitConditionExpr(entry.clause.conditionExpr, condRegionIndex);
     if (failed(elifCond))
       return failure();
     HLCF::IfElifCondYieldOp::create(builder, entry.keywordLoc, *elifCond,
