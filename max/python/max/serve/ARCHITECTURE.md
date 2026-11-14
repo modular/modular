@@ -4,11 +4,12 @@ This document describes the architecture of the server. The server accepts HTTP
 requests via endpoints and returns a model's response.
 
 - `mocks`: Mock requests used in testing.
-- `pipelines`: The logic glue between serving and the underlying queues.
+- `pipelines`: The logic glue between serving and the model worker.
 - `router`: The server's HTTP routes.
-- `scheduler`: The queues used to manage requests.
+- `scheduler`: The schedulers that batch requests in the model worker.
 - `telemetry`
-- `wheel`
+- `worker_interface`: The ZeroMQ queues between the API process and the model
+  worker.
 - `api_server.py`: The entrypoint to the server.
 
 ## Lifecycle of a Request
@@ -28,16 +29,19 @@ JSON), depending on the endpoint requested. This wraps a
 
 ### 2. pipelines/llm.py
 
-The response generator then requests either one or all tokens from its pipeline.
+The response generator then requests either one chunk of tokens at a time or
+all tokens from its pipeline.
 
 #### TokenGeneratorPipeline
 
 The base class for all LLM pipelines which provides an interface for retrieving
-tokens either through `next_token` or `all_tokens`. This contains the queues
-used for context encoding and token generation. Each pipeline can be configured
-(via a **TokenGeneratorPipelineConfig**) as to how it utilizes its queues.
+tokens either through `next_token_chunk` or `all_tokens`. It tokenizes the
+request and sends it to the model worker through a **ModelWorkerProxy**.
 
-### 3. scheduler/queues.py
+### 3. worker_interface/
 
-The pipeline then acts as a producer to the queues, while the workers act as
-consumers offloading to the underlying LLM model.
+The pipeline then acts as a producer to the model worker's request queue, while
+the model worker acts as a consumer, offloading to the underlying LLM model.
+Requests, responses, and cancellations travel over ZeroMQ queues
+(`worker_interface/_zmq_queue.py`). In the model worker, a scheduler from
+`scheduler/` builds each batch.
