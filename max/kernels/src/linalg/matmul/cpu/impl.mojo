@@ -948,9 +948,7 @@ def _matmul_cpu_dispatch[
                 length=scratch_m * scratch_n
             )
         ).into_managed()
-        var scratch_ptr: MutPointer[
-            Scalar[scratch_type], origin_of(scratch_alloc)
-        ] = scratch_alloc.unsafe_ptr()
+        var scratch_ptr = scratch_alloc.unsafe_ptr()
         var scratch = TileTensor(scratch_ptr, row_major(scratch_m, scratch_n))
 
         @inline(.always)

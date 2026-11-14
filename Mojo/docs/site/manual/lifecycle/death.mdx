@@ -208,8 +208,8 @@ def main():
 ```
 
 The compiler pushes you toward origins. It rejects `AnyOrigin` in a struct
-field outright, and it refuses to widen `Pointer[Int, origin_of(a._alloc)]`
-to `Pointer[Int, MutAnyOrigin]` implicitly.
+field outright, and it refuses to widen `Pointer[Int, origin_of(b.v)]` to
+`Pointer[Int, MutAnyOrigin]` implicitly.
 
 When working with foreign function interfaces (FFIs), prefer an origin tied
 to the owner of the value you pull a pointer from. For worked examples of C

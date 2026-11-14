@@ -300,9 +300,11 @@ def _quantize_a_Q8_K[
             length=M * (K // quantized_k)
         )
     )
-    var packed_ptr: MutPointer[
-        _block_Q8_K_packed[group_size], origin_of(packed_base_alloc._alloc)
-    ] = packed_base_alloc.unsafe_ptr()
+    # TODO: Keep the interior origin once a closure can derive a reference
+    # from a captured interior-origin pointer.
+    var packed_ptr = packed_base_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(packed_base_alloc)
+    ]()
 
     for ko in range(0, K, quantized_k):
 
@@ -1502,9 +1504,12 @@ def _matmul_Qb_K[
     var a_packed_base_alloc = _quantize_a_Q8_K[
         group_size, interleave_group_sums=interleave_group_sums
     ](a)
-    var a_packed_base_ptr: MutPointer[
-        _block_Q8_K_packed[group_size], origin_of(a_packed_base_alloc._alloc)
-    ] = a_packed_base_alloc.unsafe_ptr()
+    # TODO(https://github.com/modular/modular/issues/7552): Keep the interior
+    # origin once a closure can pass a captured interior-origin pointer to a
+    # generic function.
+    var a_packed_base_ptr = a_packed_base_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(a_packed_base_alloc)
+    ]()
 
     comptime grain_size = simd_width * 2
 

@@ -354,6 +354,19 @@ This version is still a work in progress.
   Mutating or reassigning a string while an iterator from one of these is still
   in use is now a compile-time error instead of a read of freed memory.
 
+- The pointers and spans that `Allocation`, `ManagedAllocation`, and
+  `ThinAllocation` return now carry an interior origin of the allocation.
+
+  ```mojo
+  var a = alloc(Layout[Int].single())
+  ref first = a.storage()[0]
+  first.write(42)
+  dealloc(a^)
+  a = alloc(Layout[Int].single())
+  # error: use of invalidated interior reference 'a["element"]'
+  print(first.unsafe_assume_init())
+  ```
+
 - `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
   and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
   instead of a `RawFileDescriptor`. You can pass a `FileHandle` or

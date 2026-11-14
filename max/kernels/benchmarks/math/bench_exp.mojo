@@ -81,11 +81,18 @@ def bench_unary[
     var input_ptr_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
-    var input_ptr = input_ptr_alloc.unsafe_ptr()
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
+    var input_ptr = input_ptr_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(input_ptr_alloc)
+    ]()
     var output_ptr_alloc = alloc(
         AllocLayout[Scalar[dtype], alignment=alignment](length=size)
     ).into_managed()
-    var output_ptr = output_ptr_alloc.unsafe_ptr()
+    var output_ptr = output_ptr_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(output_ptr_alloc)
+    ]()
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):

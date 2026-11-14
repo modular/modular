@@ -71,8 +71,14 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     rand(v_alloc.unsafe_span())
     rand(mask_alloc.unsafe_span())
 
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
     var q = (
-        TileTensor(q_alloc.unsafe_span(), row_major(len(q_alloc)))
+        TileTensor(
+            q_alloc.unsafe_ptr().unsafe_origin_cast[origin_of(q_alloc)](),
+            row_major(len(q_alloc)),
+        )
         .reshape(Coord(q_shape))
         .as_imm()
     )
@@ -95,7 +101,8 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         .as_unsafe_any_origin()
     )
     var output = TileTensor(
-        output_alloc.unsafe_span(), row_major(len(output_alloc))
+        output_alloc.unsafe_ptr().unsafe_origin_cast[origin_of(output_alloc)](),
+        row_major(len(output_alloc)),
     ).reshape(Coord(q_shape))
 
     @inline(.always)

@@ -241,6 +241,10 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     ```
     """
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "element"
+    ]
+
     var _alloc: ThinAllocation[Self.T]
     """The owning pointer to the allocated storage."""
     var _layout: Layout[Self.T, alignment=Self.alignment]
@@ -317,7 +321,12 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         return self._alloc^.unsafe_leak()
 
-    def unsafe_ptr(ref self) -> Pointer[Self.T, origin_of(self._alloc)]:
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
+    def unsafe_ptr(
+        ref self,
+    ) -> Pointer[Self.T, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `Allocation` retains
@@ -332,9 +341,18 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         to uninitialized memory. Initialize an element (for example with
         `unsafe_write`) before reading it.
         """
-        return self._alloc.unsafe_ptr()
+        return Pointer(
+            to=self._alloc.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                "element", origin_of(self)
+            ]()
+        )
 
-    def unsafe_span(ref self) -> Span[Self.T, origin_of(self._alloc)]:
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
+    def unsafe_span(
+        ref self,
+    ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `Allocation` retains
@@ -370,9 +388,12 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         return len(self._layout)
 
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
     def storage(
         ref self,
-    ) -> Span[MaybeUninit[Self.T], origin_of(self._alloc)]:
+    ) -> Span[MaybeUninit[Self.T], Self._InteriorOrigin[origin_of(self)]]:
         """Returns a span over the allocated storage as possibly uninitialized
         elements.
 
@@ -520,6 +541,10 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     ```
     """
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "element"
+    ]
+
     var _alloc: Allocation[Self.T, alignment=Self.alignment]
     """The wrapped `Allocation` that owns the storage."""
 
@@ -567,9 +592,12 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """Return the underlying `Allocation`."""
         return self._alloc^
 
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
     def unsafe_ptr(
         ref self,
-    ) -> Pointer[Self.T, origin_of(self)]:
+    ) -> Pointer[Self.T, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
         The returned pointer borrows from `self`, so the `ManagedAllocation`
@@ -585,9 +613,18 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         to uninitialized memory. Initialize an element (for example with
         `unsafe_write`) before reading it.
         """
-        return self._alloc.unsafe_ptr().unsafe_origin_cast[origin_of(self)]()
+        return Pointer(
+            to=self._alloc.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                "element", origin_of(self)
+            ]()
+        )
 
-    def unsafe_span(ref self) -> Span[Self.T, origin_of(self._alloc._alloc)]:
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
+    def unsafe_span(
+        ref self,
+    ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
         """Returns a span over the allocated storage without consuming `self`.
 
         The returned span borrows from `self`, so the `ManagedAllocation`
@@ -601,7 +638,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         `alloc` returns uninitialized storage, so the returned span may cover
         uninitialized memory. Initialize the elements before reading them.
         """
-        return self._alloc.unsafe_span()
+        return {unsafe_ptr = self.unsafe_ptr(), length = len(self)}
 
     def layout(self) -> Layout[Self.T, alignment=Self.alignment]:
         """Returns the `Layout` the storage was allocated with.
@@ -658,6 +695,10 @@ struct ThinAllocation[T: AnyType](
     Parameters:
         T: The type of the elements stored in the allocation.
     """
+
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "element"
+    ]
 
     var _ptr: Pointer[Self.T, MutUntrackedOrigin]
     """The owning pointer to the allocated storage."""
@@ -731,31 +772,35 @@ struct ThinAllocation[T: AnyType](
         """
         return self._ptr
 
+    # Forming a view does not change the allocation, so a call through a
+    # mutable `ref self` must not invalidate views that already exist.
+    @__unsafe_nested_origins_read_only
     def unsafe_ptr[
         origin: Origin,
         address_space: AddressSpace,
         //,
     ](ref[origin, address_space] self) -> Pointer[
-        Self.T, origin, address_space=address_space
+        Self.T, Self._InteriorOrigin[origin], address_space=address_space
     ]:
         """Returns a pointer to the allocated storage without consuming `self`.
 
-        The returned pointer borrows from `self` with the same origin and
-        address space, so the `ThinAllocation` retains ownership of the storage.
+        The returned pointer borrows from `self` and is in the same address
+        space as `self`, so the `ThinAllocation` retains ownership of the
+        storage.
 
         Parameters:
-            origin: The origin of `self`, propagated to the returned pointer.
+            origin: The origin of `self`. The returned pointer carries an
+                interior origin derived from it.
             address_space: The address space of `self`, propagated to the
                 returned pointer.
 
         Returns:
-            A pointer to the allocated storage in the given origin and address
-            space.
+            A pointer to the allocated storage in the given address space.
         """
-        return (
-            self._ptr.unsafe_mut_cast[origin.mut]()
-            .unsafe_origin_cast[origin]()
-            .unsafe_address_space_cast[address_space]()
+        return Pointer(
+            to=self._ptr.unsafe_address_space_cast[
+                address_space
+            ]()._get_ref_with_unsafe_interior_origin["element", origin]()
         )
 
     def write_to(self, mut writer: Some[Writer]):

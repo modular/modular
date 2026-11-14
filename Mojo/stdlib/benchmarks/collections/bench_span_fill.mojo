@@ -21,9 +21,9 @@
 # `keep` stops the stores from being dead-code eliminated.
 #
 # Each closure captures the `Allocation` and derives its view inside the body
-# rather than capturing a `Span`/`Pointer` from the enclosing scope: a capture
-# whose type names an interior origin (`origin_of(allocation._alloc)`) fails to
-# type check (MOCO-4433).
+# rather than capturing a `Span`/`Pointer` from the enclosing scope: a closure
+# can't pass a captured view with an interior origin to a generic function such
+# as `keep` (https://github.com/modular/modular/issues/7552).
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 from std.memory import Layout, alloc, dealloc, unsafe_memset

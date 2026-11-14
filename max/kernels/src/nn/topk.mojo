@@ -645,9 +645,7 @@ def fused_token_sampling_cpu[
         var out_vals_alloc = alloc(
             AllocLayout[Scalar[dtype]](length=out_vals_shape.product())
         ).into_managed()
-        var out_vals_ptr: MutPointer[
-            Scalar[dtype], origin_of(out_vals_alloc)
-        ] = out_vals_alloc.unsafe_ptr()
+        var out_vals_ptr = out_vals_alloc.unsafe_ptr()
         var out_vals = TileTensor(
             out_vals_ptr,
             row_major(out_vals_shape),
@@ -813,9 +811,7 @@ def _top_k_sampling[
     var out_idxs_tmp_alloc = alloc(
         AllocLayout[Int64](length=out_vals.num_elements())
     )
-    var out_idxs_tmp_ptr: MutPointer[
-        Int64, origin_of(out_idxs_tmp_alloc._alloc)
-    ] = out_idxs_tmp_alloc.unsafe_ptr()
+    var out_idxs_tmp_ptr = out_idxs_tmp_alloc.unsafe_ptr()
     var out_idxs_tmp = TileTensor(
         out_idxs_tmp_ptr,
         row_major(internal_out_shape),  # topk returns K as last dim
@@ -852,9 +848,7 @@ def _top_k_sampling[
         var max_val = reshaped_out_vals[batch, 0][0]
         var sum_exp = Scalar[dtype](0)
         var exp_vals = alloc(AllocLayout[Scalar[dtype]](length=k_val))
-        var exp_vals_ptr: MutPointer[
-            Scalar[dtype], origin_of(exp_vals._alloc)
-        ] = exp_vals.unsafe_ptr()
+        var exp_vals_ptr = exp_vals.unsafe_ptr()
         var temp_val = temperature_val.cast[dtype]()
         for i in range(k_val):
             var val = reshaped_out_vals[batch, i][0]

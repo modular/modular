@@ -341,9 +341,7 @@ def _matmul_common[
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](length=BS * SEQ_LEN * N)
         ).into_managed()
-        var c_ptr: MutPointer[
-            Scalar[dtype], origin_of(c_alloc)
-        ] = c_alloc.unsafe_ptr()
+        var c_ptr = c_alloc.unsafe_ptr()
         var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
 
         matmul[transpose_b=True](
