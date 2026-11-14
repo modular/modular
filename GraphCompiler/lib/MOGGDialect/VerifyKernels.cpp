@@ -350,28 +350,37 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
                       KernelFunctionKind::ExecuteConfiguration);
 }
 
-/// `build_graph` is the device-graph entry point, and the graph compiler only
-/// routes operands through stable address slots for tensor trait arguments,
-/// so its tensors must be trait-bound rather than the legacy tensor structs.
-LogicalResult
-declVerifyBuildGraphTakesTraitArguments(KernelDeclOp decl,
-                                        const KernelDeclAdaptor &adaptor) {
-  if (!adaptor.buildGraphFunction.has_value())
-    return success();
-  auto sig = adaptor.buildGraphFunction->attr.getSignature();
+/// `execute` and `build_graph` take tensor trait arguments;
+/// `ManagedTensorSlice` and its variadic forms are no longer accepted. Shape
+/// functions reject them at import, and `declVerifyDeclarative` covers
+/// `execute_device`.
+LogicalResult declVerifyTakesTraitArguments(KernelDeclOp decl,
+                                            const KernelDeclAdaptor &adaptor) {
   bool ok = true;
-  for (size_t i = 0, n = sig.getNumArguments(); i < n; ++i) {
-    KGEN::LIT::StructType legacyType =
-        getLegacyTensorArgType(sig.getArgument(i));
-    if (!legacyType)
+  for (KernelFunctionKind kind :
+       {KernelFunctionKind::Execute, KernelFunctionKind::BuildGraph}) {
+    // Without a written `execute`, `executeFunction` is a declarative kernel's
+    // `execute_device` or an elementwise kernel's synthesized entry point.
+    if (kind == KernelFunctionKind::Execute && !decl.getExecute())
       continue;
-    mlir::emitError(decl.getMojoArgLocation(KernelFunctionKind::BuildGraph, i))
-        << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
-        << " functions take tensor trait arguments; argument at position " << i
-        << " is a '" << legacyType.getSymbol().getLeafReference().getValue()
-        << "'; use a trait bound such as 'Some[Input & Tensor]', or "
-           "'TensorTuple' for variadic operands";
-    ok = false;
+    const KernelDeclFunctionAdaptor *function = adaptor.getFunction(kind);
+    if (!function)
+      continue;
+    auto sig = function->attr.getSignature();
+    for (size_t i = 0, n = sig.getNumArguments(); i < n; ++i) {
+      KGEN::LIT::StructType legacyType =
+          getLegacyTensorArgType(sig.getArgument(i));
+      if (!legacyType)
+        continue;
+      mlir::emitError(decl.getMojoArgLocation(kind, i))
+          << stringifyKernelFunctionKind(kind)
+          << " functions take tensor trait arguments; argument at position "
+          << i << " is a '"
+          << legacyType.getSymbol().getLeafReference().getValue()
+          << "'; use a trait bound such as 'Some[Input & Tensor]', or "
+             "'TensorTuple' for variadic operands";
+      ok = false;
+    }
   }
   return success(ok);
 }
@@ -1263,8 +1272,7 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
         continue;
       }
 
-      if (setFlagIfFailed(failed, declVerifyBuildGraphTakesTraitArguments, decl,
-                          adaptor)
+      if (setFlagIfFailed(failed, declVerifyTakesTraitArguments, decl, adaptor)
               .failed())
         continue;
 

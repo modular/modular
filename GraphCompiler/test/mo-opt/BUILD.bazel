@@ -12,6 +12,7 @@ lit_tests(
     custom_substitutions = {
         "%declarative_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/declarative_invalid_stubs:DeclarativeInvalidStubs)",
         "%device_graph_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/device_graph_invalid_stubs:DeviceGraphInvalidStubs)",
+        "%mts_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/mts_invalid_stubs:MtsInvalidStubs)",
         "%platform_duplicate_pkg": "$(rlocationpath //GraphCompiler/test/kernels/platform_duplicate_stubs:PlatformDuplicateStubs)",
         "%platform_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/platform_invalid_stubs:PlatformInvalidStubs)",
         "%platform_pkg": "$(rlocationpath //GraphCompiler/test/kernels/platform_stubs:PlatformStubs)",
@@ -30,6 +31,7 @@ lit_tests(
         "//GraphCompiler/test/kernels/declarative_invalid_stubs:DeclarativeInvalidStubs",
         "//GraphCompiler/test/kernels/device_graph_invalid_stubs:DeviceGraphInvalidStubs",
         "//GraphCompiler/test/kernels/legacy_tile_invalid_stubs:LegacyTileInvalidStubs",
+        "//GraphCompiler/test/kernels/mts_invalid_stubs:MtsInvalidStubs",
         "//GraphCompiler/test/kernels/platform_duplicate_stubs:PlatformDuplicateStubs",
         "//GraphCompiler/test/kernels/platform_invalid_stubs:PlatformInvalidStubs",
         "//GraphCompiler/test/kernels/platform_stubs:PlatformStubs",

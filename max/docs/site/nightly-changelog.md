@@ -365,6 +365,13 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- A custom op's `execute` method no longer accepts `ManagedTensorSlice`
+  arguments (`InputTensor`, `OutputTensor` and their fused, mutable and
+  variadic variants). Loading a kernel package that uses them fails with an
+  error at the offending argument. Declare the arguments with tensor traits
+  instead, for example `Some[Input & Tensor]`, `Some[Output & Tensor]`, or
+  `TensorTuple` for variadic operands.
+
 - `DeviceStream.wait_for_host_value()` in `max.gpu.host` is deprecated; use
   `DeviceStream.wait_for_flag()` instead.
 

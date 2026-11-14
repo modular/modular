@@ -27,12 +27,10 @@ import extensibility
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
     LoadAccess,
     Loadable,
     MutableInput,
     Output,
-    OutputTensor,
     Stable,
     StoreAccess,
     Storable,
@@ -40,7 +38,6 @@ from extensibility import (
     TensorTuple,
     TileTensorable,
     _LegacyComputeOutput,
-    _MutableInputTensor as MutableInputTensor,
 )
 
 
@@ -92,24 +89,6 @@ struct TraitBadConvention:
     def execute[
         Z: Output & TileTensorable,
     ](mut z: Z, ctx: DeviceContext) raises:
-        pass
-
-
-# Negative fixture (off-by-one guard for the trait exclusion in the legacy
-# borrow-check): a signature with a trait arg at position 0 (borrowed, fine) AND
-# a legacy `ManagedTensorSlice` (`OutputTensor`) at position 1 passed with a
-# non-borrowed (`mut`) convention. The legacy borrow-check must STILL fire for
-# the legacy arg at position 1; the `!getTensorArgTraitType(...)` exclusion must
-# skip ONLY the trait arg at position 0. An off-by-one there would silently
-# suppress the legacy diagnostic.
-@extensibility.register("trait_legacy_bad_convention")
-struct TraitLegacyBadConvention:
-    @staticmethod
-    def execute(
-        x: Some[Input & TileTensorable],
-        mut z: OutputTensor,
-        ctx: DeviceContext,
-    ) raises:
         pass
 
 
@@ -174,36 +153,6 @@ struct TraitTensorTupleFused:
     ](
         z: Some[Output & TileTensorable],
         inputs: TensorTuple[*Ins],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mixed lane: a trait-bound dense output alongside legacy `ManagedTensorSlice`
-# (`InputTensor`) inputs. The trait output and the legacy inputs must classify
-# independently and coexist -- the legacy lane is unchanged.
-@extensibility.register("trait_mixed_legacy")
-struct TraitMixedLegacy:
-    @staticmethod
-    def execute(
-        z: Some[Output & TileTensorable],
-        x: InputTensor,
-        y: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mirror of `trait_mixed_legacy` with a legacy `OutputTensor` and trait inputs:
-# the legacy output classifies as the DPS output, the trait inputs as borrowed
-# inputs.
-@extensibility.register("trait_mixed_legacy_out")
-struct TraitMixedLegacyOut:
-    @staticmethod
-    def execute(
-        z: OutputTensor,
-        x: Some[Input & TileTensorable],
-        y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
         pass
@@ -287,48 +236,6 @@ struct TraitNonLeadingOutput:
         pass
 
 
-# Mixed lane with a legacy MUTABLE arg: a legacy `MutableInputTensor`
-# (`mut=true`, non-DPS-output input) coexists with a trait output. The legacy
-# mutable arg must still render `[in] mut=true` and the trait output `[out]`.
-@extensibility.register("trait_mixed_legacy_mut")
-struct TraitMixedLegacyMut:
-    @staticmethod
-    def execute(
-        z: Some[Output & TileTensorable],
-        x: MutableInputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Mixed lane with a FUSED trait arg: a legacy `InputTensor` coexists with a
-# trait `Input & Fused & Loadable`. Confirms the two lanes coexist when a fused
-# trait arg (not just a dense one) is present.
-@extensibility.register("trait_mixed_legacy_fused")
-struct TraitMixedLegacyFused:
-    @staticmethod
-    def execute(
-        z: Some[Output & TileTensorable],
-        x: InputTensor,
-        y: Some[Input & Fused & Loadable],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# A trait-bound fused output with a legacy input. This combination exercises
-# contract conflicts when epilogue fusion captures the input.
-@extensibility.register("trait_fused_store_legacy_input")
-struct TraitFusedStoreLegacyInput:
-    @staticmethod
-    def execute(
-        z: Some[Output & Fused & StoreAccess],
-        x: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
 @extensibility.register("trait_dense_and_fused_inputs")
 struct TraitDenseAndFusedInputs:
     @staticmethod
@@ -336,21 +243,6 @@ struct TraitDenseAndFusedInputs:
         z: Some[Output & TileTensorable],
         x: Some[Input & TileTensorable],
         y: Some[Input & Fused & Loadable],
-        ctx: DeviceContext,
-    ) raises:
-        pass
-
-
-# Pure-legacy control: no trait args at all. A regression guard that this change
-# leaves the legacy `[out]`/`[in]`/`mut` split byte-for-byte unchanged. The
-# `MutableInputTensor` here pins `mut=true` on the legacy lane too.
-@extensibility.register("legacy_only_control")
-struct LegacyOnlyControl:
-    @staticmethod
-    def execute(
-        z: OutputTensor,
-        x: InputTensor,
-        w: MutableInputTensor,
         ctx: DeviceContext,
     ) raises:
         pass

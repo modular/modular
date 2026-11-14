@@ -39,9 +39,8 @@ from linalg.utils import TileConsumer
 from extensibility import (
     Fused,
     Input,
-    InputTensor,
     Output,
-    OutputTensor,
+    Tensor,
     TileTensorable,
     _LegacyTileStorable,
     _LegacyTileStoreAccess,
@@ -148,13 +147,10 @@ struct _NaiveRMSNormTileAdapter[
 @extensibility.register("tile_rms_norm")
 struct RMSNormTileFallback:
     @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         raise Error("tile_rms_norm runs only with tile_based_fusion")

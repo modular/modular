@@ -33,18 +33,9 @@ from max.gpu.host import (
 )
 from max.gpu.host import DeviceGraphBuilder
 from extensibility import (
-    InputTensor,
-    InputVariadicTensors,
-    OutputTensor,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
-)
-from extensibility import (
-    _FusedInputTensor as FusedInputTensor,
-)
-from extensibility import (
-    _FusedOutputTensor as FusedOutputTensor,
 )
 from extensibility import (
     _TileProjection as TileProjection,
@@ -3552,79 +3543,31 @@ struct AddOneGPU:
         elementwise[1](func, outp.shape(), ctx)
 
 
-# Mixed-lane e2e proof: a trait-bound dense output alongside two legacy
-# `InputTensor` operands in the same `execute` signature, computing
-# `z[i] = x[i] + y[i]`. Confirms the trait-lane and legacy-lane capture
-# assembly compose in the same `CallExecuteOp::emitMojo` call.
-@extensibility.register("trait_mixed_legacy_add")
-struct TraitMixedLegacyAdd:
+# A trait-bound dense output and two trait-bound dense inputs, computing
+# `z[i] = x[i] + y[i]`.
+@extensibility.register("trait_dense_add")
+struct TraitDenseAdd:
     @staticmethod
     def execute(
         z: Some[Output & TileTensorable],
-        x: InputTensor,
-        y: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert conforms_to(type_of(z), TileTensorable)
-        var zt = z.to_tile_tensor()
-        var n = x.size()
-        var zf = zt.reshape(row_major(n))
-        for i in range(n):
-            var xv = x[i]
-            var yv = rebind[Scalar[type_of(x).dtype]](y[i])
-            zf.store((i,), rebind[SIMD[type_of(zt).dtype, 1]](xv + yv))
-
-
-# Mirror of `trait_mixed_legacy_add` with the lanes swapped: a legacy
-# `OutputTensor` alongside two trait-bound dense inputs, so the legacy write
-# path (`OutputTensor.__setitem__`) and the trait read path
-# (`.to_tile_tensor().load`) both fire in the same emitted kernel.
-@extensibility.register("trait_mixed_legacy_out_add")
-struct TraitMixedLegacyOutAdd:
-    @staticmethod
-    def execute(
-        z: OutputTensor,
         x: Some[Input & TileTensorable],
         y: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(z), TileTensorable)
         comptime assert conforms_to(type_of(x), TileTensorable)
         comptime assert conforms_to(type_of(y), TileTensorable)
+        var zt = z.to_tile_tensor()
         var xt = x.to_tile_tensor()
         var yt = y.to_tile_tensor[type_of(x).dtype]()
         var n = Int(x.shape().product())
+        var zf = zt.reshape(row_major(n))
         var xf = xt.reshape(row_major(n))
         var yf = yt.reshape(row_major(n))
         for i in range(n):
             var xv = xf.load[width=1]((i,))
             var yv = yf.load[width=1]((i,))
-            z[i] = rebind[Scalar[z.dtype]](xv + yv)
-
-
-# One-value-two-lanes proof: a trait-bound dense input NEXT TO a legacy
-# `InputTensor` input, computing `z[i] = x[i] + y[i]`. Called with the same
-# graph value on both input positions, `SimplifyKernelOperands` merges the
-# duplicates into one exec-body argument that must then materialize one
-# representation per lane (the GEX-4071 per-use init split) — one
-# `mogg.tensor_arg.__init__` for the trait position and one
-# `mogg.tensor.__init__` for the legacy position, over the same buffer.
-@extensibility.register("trait_dual_lane_add")
-struct TraitDualLaneAdd:
-    @staticmethod
-    def execute(
-        z: OutputTensor,
-        x: Some[Input & TileTensorable],
-        y: InputTensor,
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert conforms_to(type_of(x), TileTensorable)
-        var xt = x.to_tile_tensor()
-        var n = y.size()
-        var xf = xt.reshape(row_major(n))
-        for i in range(n):
-            var xv = xf.load[width=1]((i,))
-            var yv = rebind[SIMD[type_of(xt).dtype, 1]](y[i])
-            z[i] = rebind[Scalar[z.dtype]](xv + yv)
+            zf.store((i,), rebind[SIMD[type_of(zt).dtype, 1]](xv + yv))
 
 
 # ===----------------------------------------------------------------------=== #
