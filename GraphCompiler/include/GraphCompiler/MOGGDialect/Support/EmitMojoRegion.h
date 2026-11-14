@@ -69,7 +69,14 @@ using EmitMojoRegionStack =
 class EmitMojoRegionScope {
 public:
   EmitMojoRegionScope(EmitMojoRegionStack &regions, size_t regionCount)
-      : regions(regions), regionCount(regionCount) {}
+      : regions(regions)
+#ifndef NDEBUG
+        ,
+        regionCount(regionCount)
+#endif
+
+  {
+  }
   EmitMojoRegionScope(const EmitMojoRegionScope &) = delete;
   EmitMojoRegionScope &operator=(const EmitMojoRegionScope &) = delete;
   ~EmitMojoRegionScope() {
@@ -81,7 +88,9 @@ public:
 
 private:
   EmitMojoRegionStack &regions;
+#ifndef NDEBUG
   size_t regionCount;
+#endif
 };
 
 /// The width and alignment of a lambda that runs one SIMD operation per element
