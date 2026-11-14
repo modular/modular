@@ -37,6 +37,9 @@ from .value_types import (
 AcceptanceMode: TypeAlias = Literal["greedy", "stochastic"]
 """How a fused speculative graph accepts drafts."""
 
+DraftProposal: TypeAlias = Literal["argmax", "sampled"]
+"""How a speculative draft proposes its tokens."""
+
 
 @dataclass(frozen=True)
 class EngineSamplingConfig:
@@ -79,7 +82,7 @@ class EngineSpeculativeConfig:
 
     speculative_method: str
     num_speculative_tokens: int
-    draft_proposal: str
+    draft_proposal: DraftProposal
     acceptance_mode: AcceptanceMode | None
     reasoning_parser: str | None
     verify_takes_prefill_rows: bool = False
@@ -259,12 +262,22 @@ def _acceptance_mode(value: ArtifactType) -> AcceptanceMode:
             raise ValueError(f"unknown acceptance mode {other!r}")
 
 
+def _draft_proposal(value: ArtifactType) -> DraftProposal:
+    match expect(value, str):
+        case "argmax":
+            return "argmax"
+        case "sampled":
+            return "sampled"
+        case other:
+            raise ValueError(f"unknown draft proposal {other!r}")
+
+
 def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
     obj = decode_object(value, EngineSpeculativeConfig)
     return EngineSpeculativeConfig(
         speculative_method=expect(obj["speculative_method"], str),
         num_speculative_tokens=expect(obj["num_speculative_tokens"], int),
-        draft_proposal=expect(obj["draft_proposal"], str),
+        draft_proposal=_draft_proposal(obj["draft_proposal"]),
         acceptance_mode=decode_optional(_acceptance_mode)(
             obj.get("acceptance_mode")
         ),

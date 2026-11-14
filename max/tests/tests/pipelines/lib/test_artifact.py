@@ -702,6 +702,7 @@ def test_engine_config_reads_an_artifact_exported_before_the_mode(
         lambda section: section["speculative"].update(
             acceptance_mode="sampled"
         ),
+        lambda section: section["speculative"].update(draft_proposal="greedy"),
     ],
 )
 def test_malformed_engine_config_rejected(
