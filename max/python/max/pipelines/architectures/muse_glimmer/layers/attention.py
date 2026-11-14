@@ -28,10 +28,9 @@ from max.nn.common_layers.linear import (
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kernels import flash_attention_ragged, rope_split_store_ragged
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
-    Gemma4RMSNorm,
-)
 from max.tensor import Tensor
+
+from .rms_norm import Gemma4RMSNorm
 
 
 class MuseGlimmerAttention(Module[..., Tensor]):

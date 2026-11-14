@@ -29,14 +29,12 @@ from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
-    Gemma4RMSNorm,
-)
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.attention import MuseGlimmerAttention
+from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import NoPERotaryEmbedding
 from .layers.transformer_block import MuseGlimmerTransformerBlock
 from .model_config import MuseGlimmerConfig

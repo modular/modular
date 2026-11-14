@@ -32,11 +32,9 @@ from max.nn.legacy.graph_groups import (
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
-    Gemma4RMSNorm,
-)
 from max.tensor import Tensor
 
+from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import MuseGlimmerVisionConfig
 
 

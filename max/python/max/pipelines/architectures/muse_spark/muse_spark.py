@@ -28,7 +28,7 @@ from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.sequential import ModuleList
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
+from max.pipelines.architectures.muse_glimmer.layers.rms_norm import (
     Gemma4RMSNorm,
 )
 from max.pipelines.architectures.muse_glimmer.muse_glimmer import (

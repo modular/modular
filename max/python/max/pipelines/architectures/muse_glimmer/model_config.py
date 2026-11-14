@@ -22,9 +22,6 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
-    hybrid_swa_full_kv_params,
-)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -46,6 +43,8 @@ from max.pipelines.modeling.config_enums import (
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
+
+from .hybrid_kv_params import hybrid_swa_full_kv_params
 
 
 def _rope_theta(hf_config: AutoConfig) -> float:
