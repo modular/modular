@@ -702,6 +702,20 @@ def test_quantized[
     _ = b_tensor
 
 
+def _find_required(text: StringSpan, needle: StaticString) raises -> Int:
+    """Returns where `needle` first occurs in `text`."""
+    __guard case .Some(index) = text.find(needle) else:
+        raise Error(t"expected to find {needle}")
+    return index
+
+
+def _rfind_required(text: StringSpan, needle: StaticString) raises -> Int:
+    """Returns where `needle` last occurs in `text`."""
+    __guard case .Some(index) = text.rfind(needle) else:
+        raise Error(t"expected to find {needle}")
+    return index
+
+
 def test_pdl_release_sites() raises:
     """The GEMM releases a PDL dependent at the site its level names.
 
@@ -802,15 +816,17 @@ def test_pdl_release_sites() raises:
         assert_true(release in end_asm)
         # After the MMA loop: nothing in the loop reads an input from below the
         # release, so the release cannot be hoisted above every `mma.sync`.
-        assert_true(end_asm.rfind(mma) < end_asm.find(release))
+        assert_true(
+            _rfind_required(end_asm, mma) < _find_required(end_asm, release)
+        )
 
         assert_true(wait in beginning_asm)
         assert_true(release in beginning_asm)
-        var wait_at = beginning_asm.find(wait)
-        var release_at = beginning_asm.find(release)
+        var wait_at = _find_required(beginning_asm, wait)
+        var release_at = _find_required(beginning_asm, release)
         assert_true(wait_at < release_at)
         # On entry, before the MMA loop starts.
-        assert_true(release_at < beginning_asm.find(mma))
+        assert_true(release_at < _find_required(beginning_asm, mma))
     else:
         # Below SM90 the levels change nothing in the emitted code, so neither
         # instruction may appear at any level. `mma.sync` above still has to be

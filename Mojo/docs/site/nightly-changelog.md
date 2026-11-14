@@ -365,6 +365,28 @@ This version is still a work in progress.
   var lanes = SIMD[.int32, 4](1, 2, 3, 300).try_cast[.uint8]()  # raises
   ```
 
+- `find()` and `rfind()` on `String`, `StringSpan`, and `StringLiteral` now
+  return `Optional[Int]`, holding `None` when the substring isn't found,
+  instead of `-1`. Use `x in s` to test for a substring, or bind the offset
+  with a pattern:
+
+  ```mojo
+  var line = String("key=value")
+  if case .Some(eq) = line.find("="):
+      print(line[byte=:eq])  # key
+  print("!" in line)  # False
+  ```
+
+  Ordered checks such as `s.find(x) >= 0` and arithmetic on the result no
+  longer compile. Two old patterns still compile but now give the wrong
+  answer, with no error or warning, so search your code for them:
+
+  - `s.find(x) == -1` is always `False` and `s.find(x) != -1` is always
+    `True`, because `-1` converts implicitly to `Optional[Int]`. This also
+    applies when you store the result in a variable and compare it later.
+  - `if s.find(x):` is now `True` only when `x` is found. Before, it was
+    `True` when `x` was missing and `False` when `x` was at offset 0.
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and

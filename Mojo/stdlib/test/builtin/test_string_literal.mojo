@@ -71,44 +71,44 @@ def test_bool() raises:
 
 
 def test_find() raises:
-    assert_equal(0, "Hello world".find(""))
-    assert_equal(0, "Hello world".find("Hello"))
-    assert_equal(2, "Hello world".find("llo"))
-    assert_equal(6, "Hello world".find("world"))
-    assert_equal(-1, "Hello world".find("universe"))
+    assert_equal("Hello world".find(""), 0)
+    assert_equal("Hello world".find("Hello"), 0)
+    assert_equal("Hello world".find("llo"), 2)
+    assert_equal("Hello world".find("world"), 6)
+    assert_false("Hello world".find("universe"))
 
-    assert_equal(3, "...a".find("a", 0))
-    assert_equal(3, "...a".find("a", 1))
-    assert_equal(3, "...a".find("a", 2))
-    assert_equal(3, "...a".find("a", 3))
+    assert_equal("...a".find("a", 0), 3)
+    assert_equal("...a".find("a", 1), 3)
+    assert_equal("...a".find("a", 2), 3)
+    assert_equal("...a".find("a", 3), 3)
 
     # Test find() support for negative start positions
-    assert_equal(4, "Hello world".find("o", -10))
-    assert_equal(7, "Hello world".find("o", -5))
+    assert_equal("Hello world".find("o", -10), 4)
+    assert_equal("Hello world".find("o", -5), 7)
 
-    assert_equal(-1, "abc".find("abcd"))
+    assert_false("abc".find("abcd"))
 
 
 def test_rfind() raises:
     # Basic usage.
     assert_equal("hello world".rfind("world"), 6)
-    assert_equal("hello world".rfind("bye"), -1)
+    assert_false("hello world".rfind("bye"))
 
     # Repeated substrings.
     assert_equal("ababab".rfind("ab"), 4)
 
     # Empty string and substring.
-    assert_equal("".rfind("ab"), -1)
+    assert_false("".rfind("ab"))
     assert_equal("foo".rfind(""), 3)
 
     # Test that rfind(start) returned pos is absolute, not relative to specified
     # start. Also tests positive and negative start offsets.
     assert_equal("hello world".rfind("l", 5), 9)
     assert_equal("hello world".rfind("l", -5), 9)
-    assert_equal("hello world".rfind("w", -3), -1)
+    assert_false("hello world".rfind("w", -3))
     assert_equal("hello world".rfind("w", -5), 6)
 
-    assert_equal(-1, "abc".rfind("abcd"))
+    assert_false("abc".rfind("abcd"))
 
 
 def test_startswith() raises:

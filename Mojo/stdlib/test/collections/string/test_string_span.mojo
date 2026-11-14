@@ -472,18 +472,18 @@ def test_find() raises:
     assert_equal(haystack.find(StringSpan("de")), 3)
     assert_equal(haystack.find(StringSpan("fg")), 5)
     assert_equal(haystack.find(StringSpan("g")), 6)
-    assert_equal(haystack.find(StringSpan("z")), -1)
-    assert_equal(haystack.find(StringSpan("zzz")), -1)
+    assert_false(haystack.find(StringSpan("z")))
+    assert_false(haystack.find(StringSpan("zzz")))
 
-    assert_equal(haystack.find(StringSpan("@#$")), -1)
+    assert_false(haystack.find(StringSpan("@#$")))
     assert_equal(haystack_with_special_chars.find(StringSpan("@#$")), 7)
 
     assert_equal(haystack_repeated_chars.find(StringSpan("aaa")), 0)
-    assert_equal(haystack_repeated_chars.find(StringSpan("AAa")), -1)
+    assert_false(haystack_repeated_chars.find(StringSpan("AAa")))
 
-    assert_equal(haystack.find(StringSpan("hijklmnopqrstuvwxyz")), -1)
+    assert_false(haystack.find(StringSpan("hijklmnopqrstuvwxyz")))
 
-    assert_equal(StringSpan(String()).find(StringSpan("abc")), -1)
+    assert_false(StringSpan(String()).find(StringSpan("abc")))
 
 
 def test_find_compile_time() raises:
@@ -514,14 +514,14 @@ def test_find_compile_time() raises:
     assert_equal(c5, 3)
     assert_equal(c6, 5)
     assert_equal(c7, 6)
-    assert_equal(c8, -1)
-    assert_equal(c9, -1)
-    assert_equal(c10, -1)
+    assert_false(c8)
+    assert_false(c9)
+    assert_false(c10)
     assert_equal(c11, 7)
     assert_equal(c12, 0)
-    assert_equal(c13, -1)
-    assert_equal(c14, -1)
-    assert_equal(c15, -1)
+    assert_false(c13)
+    assert_false(c14)
+    assert_false(c15)
 
 
 def test_find_mstdl_2258() raises:
