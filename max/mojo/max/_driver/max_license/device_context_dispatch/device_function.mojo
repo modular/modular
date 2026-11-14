@@ -26,16 +26,32 @@ enqueuer implements.
 from std.builtin.device_passable import DevicePassable
 from std.collections.optional import OptionalReg
 from std.compile.compile import CompiledFunctionInfo
-from std.memory import ArcPointer
-from std.reflection import SourceLocation
-from std.sys import size_of
+from std.memory import ArcPointer, Pointer
+from std.builtin.rebind import downcast
+from std.math import align_up
+from std.reflection import SourceLocation, reflect
+from std.sys import get_defined_bool, size_of
 from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
+    DefaultDeviceTypeEncoder,
     HALDeviceFunction,
     _check_exec_config_launch_support,
     _launch_attributes_ptr,
 )
+from max._driver.max_license.hal.execution_config import (
+    GPUExecutionConfiguration,
+)
+from max._plugin import MaxPluginForTarget
+from max.gpu.host import (
+    ClusterExecutionConfig,
+    ExecutionConfig,
+    LaunchAttributeID,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+    _launch_args,
+)
+from max.gpu.host.compile import _compile_code
+from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from max._driver.max_license.hal import FunctionHandle, Stream, get_device_spec
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -215,10 +231,134 @@ struct DeviceFunction[
                 location=location,
             )
         else:
-            self._impl._call_with_pack_checked(
+            # Launch `attributes` (e.g. PDL / programmatic stream
+            # serialization, cluster dimensions) are forwarded to the plugin
+            # via the attribute array assembled below. `constant_memory`
+            # mappings DO change semantics and are not yet plumbed through, so
+            # refuse them rather than silently dropping them.
+            if case .Some(cluster_dim) = cluster_dim:
+                attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
+            if constant_memory:
+                raise Error(
+                    "HAL DeviceContext.enqueue_function does not support"
+                    " `constant_memory` mappings."
+                )
+            debug_assert(
+                shared_mem_bytes.or_else(0) >= 0,
+                "shared_mem_bytes must be non-negative",
+            )
+            var config = GPUExecutionConfiguration(grid_dim, block_dim)
+            config.set_near_compute_scratchpad_usage(
+                shared_mem_bytes.or_else(0)
+            )
+
+            comptime for idx in range(HostArgs.length):
+                Self._check_trailing_host[HostArgs[idx], Ts.length + idx]()
+
+            self._do_call_with_pack_checked[*Ts](
                 ctx._hal_stream(),
+                config,
                 *args,
                 host_args=host_args,
+                attributes=attributes^,
+                location=location,
+            )
+
+    # ===-------------------------------------------------------------------===#
+    # HAL launch
+    # ===-------------------------------------------------------------------===#
+
+    @inline(.always)
+    @staticmethod
+    def _check_trailing_host[Host: RegisterPassable, index: Int]():
+        """Require `Host` to be the declared kernel argument at `index`."""
+        comptime declared_host_type = Self.declared_arg_types[index]
+        comptime assert Host == declared_host_type, String(
+            "host argument of type '",
+            reflect[Host].name(),
+            "' does not match the declared function argument type '",
+            reflect[declared_host_type].name(),
+            "'",
+        )
+
+    @inline(.always)
+    def _check_pdl_wait[
+        o: ImmOrigin
+    ](
+        self, attributes: Span[LaunchAttribute, o]
+    ) raises where not use_legacy_backend():
+        """Rejects a PDL launch of a kernel that never waits on its predecessor.
+
+        This is the HAL copy of the legacy `DeviceFunction._check_pdl_wait`,
+        which documents what the check covers and what it misses. It is off
+        unless the build passes `-D MAX_CHECK_PDL_WAIT=True`.
+
+        Parameters:
+            o: The origin of `attributes`.
+
+        Args:
+            attributes: The launch attributes of the enqueue being checked.
+
+        Raises:
+            If a PDL launch targets a kernel whose PTX has no
+            `griddepcontrol.wait`.
+        """
+        comptime if (
+            get_defined_bool["MAX_CHECK_PDL_WAIT", False]()
+            and Self._HAL._target.is_nvidia_gpu()
+        ):
+            for ref attribute in attributes:
+                # The value is a Boolean in the first word; a caller can pass
+                # the attribute with `False` to switch PDL off for the launch.
+                if (
+                    attribute.id
+                    == LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION
+                    and attribute.value._storage[0] != 0
+                ):
+                    # The loaded function is an object file, so compile the
+                    # kernel to PTX to look for the wait.
+                    var ptx = _compile_code[
+                        Self._HAL._wrapped_func,
+                        emission_kind="asm",
+                        target=Self._HAL._target,
+                    ]().asm
+                    if "griddepcontrol.wait" not in ptx:
+                        raise Error(
+                            "kernel '",
+                            self._impl._func_info.function_name,
+                            (
+                                "' is launched with the PDL attribute but its"
+                                " PTX has no `griddepcontrol.wait`; bind a"
+                                " non-OFF `pdl_level` in the kernel's"
+                                " instantiation, or call"
+                                " `wait_on_dependent_grids()` before its first"
+                                " read of predecessor output"
+                            ),
+                        )
+                    return
+
+    @inline(.always)
+    def _call_closure_checked[
+        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
+        ContextT: _DispatchEnqueuer,
+    ](
+        self,
+        ctx: ContextT,
+        closure: FuncType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim],
+        shared_mem_bytes: OptionalReg[Int],
+        var attributes: List[LaunchAttribute],
+        var constant_memory: List[ConstantMemoryMapping],
+        location: Optional[SourceLocation],
+    ) raises where not use_legacy_backend():
+        # Encoding makes a captured `DevicePointer` a device address.
+        comptime if conforms_to(FuncType, DevicePassable):
+            self._call_with_pack_checked(
+                ctx,
+                rebind[downcast[FuncType, DevicePassable]](closure),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 cluster_dim=cluster_dim,
@@ -227,6 +367,260 @@ struct DeviceFunction[
                 constant_memory=constant_memory^,
                 location=location,
             )
+        else:
+            self._call_with_pack_checked(
+                ctx,
+                host_args=(closure,),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+
+    @inline(.always)
+    def _do_call_closure_checked[
+        ExecutionConfigType: ExecutionConfig,
+        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
+    ](
+        self,
+        stream: ArcPointer[Stream[get_device_spec[0]()]],
+        execution_config: ExecutionConfigType,
+        closure: FuncType,
+        location: Optional[SourceLocation],
+    ) raises where not use_legacy_backend():
+        # Encoding makes a captured `DevicePointer` a device address.
+        comptime if conforms_to(FuncType, DevicePassable):
+            self._do_call_with_pack_checked(
+                stream,
+                execution_config,
+                rebind[downcast[FuncType, DevicePassable]](closure),
+                location=location,
+            )
+        else:
+            self._do_call_with_pack_checked(
+                stream,
+                execution_config,
+                host_args=(closure,),
+                location=location,
+            )
+
+    @inline(.always)
+    def _do_call_with_pack_checked[
+        ExecutionConfigType: ExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        stream: ArcPointer[Stream[get_device_spec[0]()]],
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+        var attributes: List[LaunchAttribute] = [],
+        location: Optional[SourceLocation] = None,
+    ) raises where not use_legacy_backend():
+        # Every launch, from a DeviceContext or a DeviceStream, ends up here,
+        # so this is the one place the plugin's launcher has to be honored.
+        comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
+        _check_exec_config_launch_support[ExecutionConfigType, Self.target]()
+        comptime is_grid_block = conforms_to(
+            ExecutionConfigType, GridBlockExecutionConfig
+        )
+        comptime launcher_takes_config = (
+            not is_grid_block and _HALHooks.Launcher.launches_config
+        )
+        comptime launcher_takes_grid_block = (
+            is_grid_block and _HALHooks.Launcher.overrides_grid_block
+        )
+        comptime if launcher_takes_config or launcher_takes_grid_block:
+            comptime if HostArgs.length != 0:
+                raise Error(
+                    "the active HAL plugin's launcher doesn't take host-only"
+                    " arguments"
+                )
+            # It only gets its own config or the grid and block, so refuse
+            # anything else rather than drop it.
+            var num_attributes = len(attributes)
+            comptime if conforms_to(
+                ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+            ):
+                num_attributes += len(execution_config.get_launch_attributes())
+            var clustered = False
+            comptime if conforms_to(
+                ExecutionConfigType, ClusterExecutionConfig
+            ):
+                var cluster_dim = execution_config.get_cluster_dim()
+                clustered = (
+                    cluster_dim.x() != 1
+                    or cluster_dim.y() != 1
+                    or cluster_dim.z() != 1
+                )
+            if num_attributes != 0 or clustered:
+                raise Error(
+                    "the active HAL plugin's launcher doesn't take cluster"
+                    " dims or launch attributes"
+                )
+            stream[]._launch[
+                Self.Wrapper,
+                Self.declared_arg_types,
+                "HAL DeviceContext.enqueue_function",
+            ](self._impl._inner[]._func_handle, execution_config, *args)
+        elif is_grid_block:
+            self._do_call_grid_block_with_pack_checked(
+                stream,
+                rebind[downcast[ExecutionConfigType, GridBlockExecutionConfig]](
+                    execution_config
+                ),
+                *args,
+                host_args=host_args,
+                attributes=attributes^,
+                location=location,
+            )
+        else:
+            comptime assert False, (
+                "the active HAL plugin's launcher doesn't take this execution"
+                " config"
+            )
+
+    @inline(.always)
+    def _do_call_grid_block_with_pack_checked[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        stream: ArcPointer[Stream[get_device_spec[0]()]],
+        execution_config: ExecutionConfigType,
+        *args: *Ts,
+        host_args: Tuple[*HostArgs],
+        var attributes: List[LaunchAttribute],
+        location: Optional[SourceLocation],
+    ) raises where not use_legacy_backend():
+        comptime extra_host_count = HostArgs.length
+
+        self._check_pdl_wait(Span(attributes))
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ):
+            self._check_pdl_wait(execution_config.get_launch_attributes())
+
+        var shared_mem_bytes: Int = 0
+
+        comptime if conforms_to(
+            ExecutionConfigType,
+            NearComputeGeneralPurposeScratchpadExecutionConfig,
+        ):
+            shared_mem_bytes = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
+
+        debug_assert(
+            shared_mem_bytes >= 0,
+            "shared_mem_bytes must be non-negative",
+        )
+
+        comptime num_encoded = Ts.length
+        comptime num_passed_args = num_encoded + extra_host_count
+        var validated_args = _launch_args._validate_encodable_arguments[
+            Self._HAL._target,
+            DeclaredArgTypes=Self.declared_arg_types,
+            ActualArgTypes=Ts,
+            host_args_count=extra_host_count,
+        ]()
+
+        var num_translated_args = validated_args[0]
+        comptime for i in range(extra_host_count):
+            comptime size = size_of[HostArgs[i]]()
+            # Skip zero-sized types (ZSTs).
+            comptime if size != 0:
+                num_translated_args += 1
+
+        var translated_arg_offsets = validated_args[1].copy()
+
+        def calculate_args_size() -> Int:
+            var tmp_args_size = 8  # reserve 8 extra bytes for alignment
+            comptime for i in range(num_encoded):
+                comptime actual_arg_type = Ts[i]
+                tmp_args_size += align_up(
+                    size_of[actual_arg_type.device_type](), 8
+                )
+            return tmp_args_size
+
+        comptime args_size = calculate_args_size()
+
+        var translated_args = Array[Byte, args_size](uninitialized=True)
+        var start_addr = Int(translated_args.unsafe_ptr())
+        var extra_align = align_up(start_addr, 8) - start_addr
+
+        # Allocation made at function scope to outlive the enqueue, otherwise
+        # the stack bytes are free to be reused immediately. A kernel may take
+        # no arguments; keep the arrays non-empty.
+        var dense_args = DenseArgs[ImmutAnyOrigin, max(num_passed_args, 1)]()
+
+        var translated_arg_idx = 0
+
+        var device_type_encoder = DefaultDeviceTypeEncoder()
+
+        comptime for i in range(num_encoded):
+            var translated_arg_offset = translated_arg_offsets[i]
+            if translated_arg_offset >= 0:
+                comptime actual_arg_type = Ts[i]
+                var first_word_addr = Pointer(
+                    to=translated_args.unsafe_ptr()[
+                        unsafe_offset=translated_arg_offset + extra_align
+                    ]
+                ).unsafe_bitcast[NoneType]()
+                args[i]._to_device_type(device_type_encoder, first_word_addr)
+                dense_args.addrs.unsafe_get(
+                    translated_arg_idx
+                ) = first_word_addr.as_unsafe_any_origin()
+                dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(
+                    size_of[
+                        actual_arg_type.device_type,
+                        target=device_type_encoder.target(),
+                    ]()
+                )
+                translated_arg_idx += 1
+
+        comptime for i in range(extra_host_count):
+            comptime size = size_of[HostArgs[i]]()
+            # Skip zero-sized types (ZSTs).
+            if size == 0:
+                continue
+
+            var addr = (
+                Pointer(to=host_args[i])
+                .unsafe_bitcast[NoneType]()
+                .as_unsafe_any_origin()
+            )
+
+            dense_args.addrs.unsafe_get(translated_arg_idx) = addr
+            dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(size)
+            translated_arg_idx += 1
+
+        # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
+        # require the launch to be configured with the matching attribute;
+        # dropping it faults the launch.
+        var attr_ptr = _launch_attributes_ptr(attributes)
+
+        stream[].execute(
+            self._impl._inner[]._func_handle,
+            execution_config,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
+            num_args=UInt32(num_translated_args),
+            attributes=attr_ptr,
+            num_attributes=UInt32(len(attributes)),
+        )
+
+        # Keep these alive until the plugin has read them.
+        _ = attributes^
+        _ = translated_args^
+        _ = dense_args^
 
     # ===-------------------------------------------------------------------===#
     # Escape hatches

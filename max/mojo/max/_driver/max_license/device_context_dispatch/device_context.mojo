@@ -2351,8 +2351,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceContext.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            hal_f._call_with_pack_checked(
-                self._hal_stream(),
+            f._call_with_pack_checked(
+                self,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2505,11 +2505,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceContext.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            var gpu_kernel = self._impl.compile_function[func](
+            var gpu_kernel = self.compile_function[func](
                 func_attribute=func_attribute
             )
             gpu_kernel._call_with_pack_checked(
-                self._hal_stream(),
+                self,
                 *encoded_args,
                 host_args=host_args,
                 grid_dim=grid_dim,
@@ -2720,11 +2720,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceContext.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            var gpu_kernel = HALDeviceFunction[
+            var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target
-            ](self._impl, func_attribute=func_attribute)
+            ](self, func_attribute=func_attribute)
             gpu_kernel._call_closure_checked(
-                self._hal_stream(),
+                self,
                 func,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2812,7 +2812,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 host_args=host_args,
             )
         else:
-            var gpu_kernel = self._impl.compile_function[func]()
+            var gpu_kernel = self.compile_function[func]()
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
                 _check_config_dims["DeviceContext.enqueue_function"](
                     config, location=call_location()
@@ -2876,6 +2876,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
+        comptime assert not use_legacy_backend(), (
+            "enqueue_function with an execution config is only available on a"
+            " HAL DeviceContext"
+        )
         var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
@@ -2891,7 +2895,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _check_config_dims["DeviceContext.enqueue_function"](
                     execution_config, location=call_location()
                 )
-            hal_f._do_call_with_pack_checked(
+            f._do_call_with_pack_checked(
                 self._hal_stream(),
                 execution_config,
                 *args,
@@ -2942,9 +2946,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     execution_config, location=call_location()
                 )
 
-            var gpu_kernel = HALDeviceFunction[
+            var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target
-            ](self._impl)
+            ](self)
 
             gpu_kernel._do_call_closure_checked(
                 self._hal_stream(),

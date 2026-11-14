@@ -492,8 +492,8 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 _check_dim_in_range[
                     "DeviceStream.enqueue_function", "block_dim"
                 ](block_dim, location=call_location())
-            hal_f._call_with_pack_checked(
-                self._hal_stream(),
+            f._call_with_pack_checked(
+                self,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -543,15 +543,17 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, *args, host_args=()
             )
         else:
-            var hal_f: HALDeviceFunction[
-                ...
-            ] = self._impl._ctx.compile_function[func]()
+            var gpu_f = DeviceFunction[func, target=Self.target](
+                _impl=rebind_var[DeviceFunction[func, target=Self.target]._HAL](
+                    self._impl._ctx.compile_function[func]()
+                )
+            )
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
                 _check_config_dims["DeviceStream.enqueue_function"](
                     execution_config, location=call_location()
                 )
 
-            hal_f._do_call_with_pack_checked(
+            gpu_f._do_call_with_pack_checked(
                 self._hal_stream(),
                 execution_config,
                 *args,
@@ -587,6 +589,10 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
+        comptime assert not use_legacy_backend(), (
+            "enqueue_function with an execution config is only available on a"
+            " HAL DeviceStream"
+        )
         var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
@@ -603,7 +609,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                     execution_config, location=call_location()
                 )
 
-            hal_f._do_call_with_pack_checked(
+            f._do_call_with_pack_checked(
                 self._hal_stream(),
                 execution_config,
                 *args,
