@@ -2047,6 +2047,25 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    # transformers cannot load ML4's consolidated NVFP4 checkpoint, so the
+    # reference has to be a vLLM golden. ep_size stays at its default
+    # (TP-sharded routed experts), the layout Mach serves by default
+    # (mach/docs/models/mistral-large-4.md).
+    # TODO(CENG-1443): that golden also needs the Mistral-format load arguments
+    # (`config_format`, `load_format` and `tokenizer_mode` set to "mistral") and
+    # a tokenizer from the base repo. `GenericOracle.create_vllm_pipeline` does
+    # not pass `extra_kwargs`; `_KimiK2_5BaseOracle.create_vllm_pipeline` shows
+    # the pattern.
+    "mistralai/Mistral-Large-4-1T-A52B-NVFP4": GenericOracle(
+        model_path="mistralai/Mistral-Large-4-1T-A52B-NVFP4",
+        config_params={
+            "max_length": 4096,
+            "max_batch_input_tokens": 4096,
+            "kv_cache_format": "float8_e4m3fn",
+            "prefer_module_v3": True,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     # Beam first shipped in transformers 5.20.1, newer than MAX's pin, so the
     # reference is a vLLM golden. Beam runs its experts expert parallel over
     # every device, so ep_size is the device count: this entry runs on 4 GPUs.

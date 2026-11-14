@@ -864,6 +864,22 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.7e-03
     kl_div_threshold: 1.1e-2
 
+  # Stays `manual` until a golden exists: `transformers` cannot load ML4's
+  # consolidated NVFP4 checkpoint, and the locked pip vLLM has no ML4 model,
+  # so the reference must come from a vLLM build that has one.
+  # TODO(CENG-1443): collect that reference with `run_models.run_vllm_model`
+  # (which drives `vllm_utils.run_text_generation`) inside
+  # `vllm/vllm-openai:mistral-large-4`, then add
+  # `pregenerated_torch_goldens` and the tolerances `--find-tolerances`
+  # suggests, and drop `manual`.
+  mistralai/Mistral-Large-4-1T-A52B-NVFP4:
+    pre_submit_agents: []
+    pipeline: "mistralai/Mistral-Large-4-1T-A52B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [manual, nvidia-multi, 8xb200]
+    timeout: 3600
+
   nvidia/Kimi-K2.7-Code-NVFP4:
     config_params_override: {"prefer_module_v3": false}
     pre_submit_agents: []
