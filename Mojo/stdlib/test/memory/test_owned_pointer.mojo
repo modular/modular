@@ -120,6 +120,14 @@ def test_multiple_refs() raises:
     assert_equal(2, borrow1 + borrow2)
 
 
+def test_ptr_pointers_coexist() raises:
+    var b = OwnedPointer(1)
+    var p1 = b.ptr()
+    var p2 = b.ptr()
+    ref r = b[]
+    assert_equal(3, p1[] + p2[] + r)
+
+
 def test_basic_del() raises:
     var deleted = False
     var b = OwnedPointer(ObservableDel(Pointer(to=deleted)))

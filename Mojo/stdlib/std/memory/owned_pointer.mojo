@@ -62,6 +62,10 @@ struct OwnedPointer[T: AnyType](
 
     var _inner: ThinAllocation[Self.T]
 
+    comptime _InteriorOrigin[origin: Origin] = origin._get_owned_interior[
+        "value"
+    ]
+
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
@@ -240,7 +244,7 @@ struct OwnedPointer[T: AnyType](
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
     ) -> ref[
-        origin_of(self)._get_owned_interior["value"], AddressSpace.GENERIC
+        Self._InteriorOrigin[origin_of(self)], AddressSpace.GENERIC
     ] Self.T:
         """Returns a reference to the pointers's underlying data with parametric mutability.
 
@@ -255,16 +259,24 @@ struct OwnedPointer[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def ptr[origin: Origin, //](ref[origin] self) -> Pointer[Self.T, origin]:
+    @__unsafe_nested_origins_read_only
+    def ptr[
+        origin: Origin, //
+    ](ref[origin] self) -> Pointer[Self.T, Self._InteriorOrigin[origin]]:
         """Returns a pointer to the `OwnedPointer`'s contents.
 
         Parameters:
-            origin: The origin of the pointer.
+            origin: The origin of `self`. The returned pointer carries an
+                interior origin derived from it.
 
         Returns:
             A pointer to the `OwnedPointer`'s contents.
         """
-        return self._inner.unsafe_ptr().unsafe_origin_cast[origin]()
+        return Pointer(
+            to=self._inner.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                "value", origin
+            ]()
+        )
 
     def into_inner(deinit self) -> Self.T where conforms_to(Self.T, Movable):
         """Move the value within the `OwnedPointer` out of it, consuming the

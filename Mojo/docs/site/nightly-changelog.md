@@ -354,6 +354,10 @@ This version is still a work in progress.
   Mutating or reassigning a string while an iterator from one of these is still
   in use is now a compile-time error instead of a read of freed memory.
 
+- `OwnedPointer.ptr()` and `Variant.unsafe_get()` now carry an interior
+  origin. Using the result after reassignment or mutation is now a
+  compile-time error.
+
 - The pointers and spans that `Allocation`, `ManagedAllocation`, and
   `ThinAllocation` return now carry an interior origin of the allocation.
 
