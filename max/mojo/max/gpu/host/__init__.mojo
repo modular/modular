@@ -29,7 +29,7 @@ from max._driver.max_license.device_context_dispatch.host_buffer import (
 from max._driver.max_license.device_context_dispatch.device_pointer import (
     DevicePointer,
 )
-from max._driver.max_license.device_context_dispatch.function import (
+from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
 )

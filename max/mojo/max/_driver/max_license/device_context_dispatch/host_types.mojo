@@ -69,7 +69,7 @@ from max.gpu.host.launch_config import (
     ExecutionConfig,
     GridBlockExecutionConfig,
 )
-from max._driver.max_license.device_context_dispatch.function import (
+from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,

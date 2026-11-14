@@ -36,7 +36,7 @@ from std.reflection import (
 from std.sys import size_of
 from std.sys.info import CompilationTarget
 
-from max._driver.max_license.device_context_dispatch.function import (
+from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,

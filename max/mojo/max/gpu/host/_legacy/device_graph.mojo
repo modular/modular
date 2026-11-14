@@ -41,7 +41,7 @@ from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceContext,
     HostBuffer,
 )
-from max._driver.max_license.device_context_dispatch.function import (
+from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
 )

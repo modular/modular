@@ -19,7 +19,7 @@ overlay, which names the linked backend's.
 """
 
 from .device_context import use_legacy_backend
-from max._driver.max_license.device_context_dispatch.function import (
+from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceFunction,
 )
 from max._driver.max_license.device_context_dispatch.host_types import (
