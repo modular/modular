@@ -1066,7 +1066,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
     # TODO: should be "builtin" when constrained is replaced with 'requires'.
     @inline(.nodebug)
     @implicit
-    def __init__(out self, value: FloatLiteral, /):
+    def __init__(out self, value: FloatLiteral, /) where True:
         """Initializes the SIMD vector with a float.
 
         The value is splatted across all the elements of the SIMD
@@ -1075,6 +1075,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Args:
             value: The input value.
         """
+        # NOTE: the trivially true `where` clause only serves to distinguish
+        # this implicit overload from the explicit `FloatLiteral`
+        # constructor below; without it the two would have identical
+        # signatures. It does not constrain anything.
         _simd_construction_checks[Self.dtype, Self.length]()
         comptime assert (
             Self.dtype.is_floating_point()
@@ -1083,6 +1087,49 @@ struct SIMD[dtype: DType, length: SIMDLength](
             `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
         self = Self(mlir_value=res)
+
+    @inline(.nodebug)
+    def __init__(out self, value: FloatLiteral, /):
+        """Initializes the SIMD vector with a float literal.
+
+        The value is splatted across all the elements of the SIMD vector.
+
+        For floating point dtypes this behaves the same as the implicit
+        constructor. For integral dtypes the literal is converted at compile
+        time. Finite values truncate toward zero and then wrap to the target
+        dtype. NaN and positive or negative infinity convert to zero. These
+        compile-time rules differ from runtime floating-point-to-integer casts
+        for non-finite and out-of-range values.
+
+        This constructor is intentionally explicit for integral dtypes: float
+        literals do not implicitly convert to integral SIMD types.
+
+        Args:
+            value: The input value.
+
+        Constraints:
+            The SIMD dtype must be floating point or integral.
+
+        Examples:
+
+        ```mojo
+        var value = Int8(-7.9)  # -7
+        ```
+        """
+        _simd_construction_checks[Self.dtype, Self.length]()
+        comptime if Self.dtype.is_floating_point():
+            var res = __mlir_attr[
+                `#pop<float_literal_convert<`,
+                value.value,
+                `>> : `,
+                Self._mlir_type,
+            ]
+            self = Self(mlir_value=res)
+        else:
+            comptime assert (
+                Self.dtype.is_integral()
+            ), "the SIMD type must be floating point or integral"
+            self = Self(value.__int_literal__())
 
     @staticmethod
     def __init__[
