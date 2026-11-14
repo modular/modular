@@ -302,6 +302,10 @@ struct Span[
         self._data = unsafe_ptr
         self._len = length
 
+    # Without this, building a mutable span counts as a write to the list and
+    # invalidates its existing pointers and views. This is safe because
+    # forming a span does not change the list or its elements.
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     @stable(since="1.3")
     @implicit
@@ -317,7 +321,7 @@ struct Span[
         """
         # TODO: This should carry the List's interior origin and should not
         # need a rebind.
-        self._data = rebind[type_of(self._data)](list.unsafe_ptr())
+        self._data = rebind[type_of(self._data)](list._storage_ptr())
         self._len = len(list)
 
     @inline(.always)

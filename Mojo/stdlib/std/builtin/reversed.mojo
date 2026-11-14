@@ -82,6 +82,10 @@ def reversed[T: ReversibleRange](value: T) -> T.ReversedType:
     return value.__reversed__()
 
 
+# Without this, a call with a mutable list counts as a write to the list and
+# invalidates its existing pointers and views. This is safe because creating
+# a reverse iterator does not change the list or its elements.
+@__unsafe_nested_origins_read_only
 def reversed[T: Copyable](ref value: List[T]) -> type_of(value.__reversed__()):
     """Returns an iterator over the list's elements in reverse order.
 

@@ -132,9 +132,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
     var res_device = ctx.enqueue_create_buffer[.float32](16)
     res_device.enqueue_fill(0)
 
-    var constant_memory_ptr: Pointer[
-        constant_memory.T, origin_of(constant_memory)
-    ] = constant_memory.unsafe_ptr()
+    var constant_memory_ptr = constant_memory.unsafe_ptr()
 
     comptime kernel = static_constant_kernel[origin_of(res_device)]
     ctx.enqueue_function[kernel](

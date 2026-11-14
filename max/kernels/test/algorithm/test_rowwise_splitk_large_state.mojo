@@ -63,8 +63,11 @@ def _row_sums(rows: Int, cols: Int) raises -> List[Scalar[dtype]]:
     for i in range(rows * cols):
         x[i] = Scalar[dtype](i % 3)
     var out = List[Scalar[dtype]](length=rows, fill=-1)
-    var x_ptr = x.unsafe_ptr()
-    var out_ptr = out.unsafe_ptr()
+    # Take the pointers through spans: a closure cannot capture an interior
+    # pointer into a list that a nested closure passed to a generic function
+    # also uses (https://github.com/modular/modular/issues/7552).
+    var x_ptr = Span(x).unsafe_ptr()
+    var out_ptr = Span(out).unsafe_ptr()
     var shape = Coord(Index(rows, cols))
 
     @inline(.always)

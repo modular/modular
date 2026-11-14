@@ -367,6 +367,8 @@ This version is still a work in progress.
   print(first.unsafe_assume_init())
   ```
 
+- `List.unsafe_ptr()` now returns a pointer with the list's interior origin.
+
 - `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
   and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
   instead of a `RawFileDescriptor`. You can pass a `FileHandle` or

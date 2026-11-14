@@ -667,9 +667,11 @@ def resize_linear[
         in_shape = out_shape
         in_ptr = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 
-        out_ptr = (
-            tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
-        ).as_unsafe_any_origin()
+        # Form both pointers before the ternary: CheckLifetimes rejects an
+        # interior origin that only one arm of a branch defines.
+        var tmp1_ptr = tmp_buffer1.unsafe_ptr()
+        var tmp2_ptr = tmp_buffer2.unsafe_ptr()
+        out_ptr = (tmp2_ptr if using_tmp1 else tmp1_ptr).as_unsafe_any_origin()
         using_tmp1 = not using_tmp1
 
     _ = tmp_buffer1^

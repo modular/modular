@@ -722,6 +722,10 @@ struct List[T: AnyType, /](
         """
         return {self^, 0}
 
+    # Without this, a call through a mutable `ref self` counts as a write to
+    # the list and invalidates its existing pointers and views. This is safe
+    # because creating an iterator does not change the list or its elements.
+    @__unsafe_nested_origins_read_only
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
@@ -732,8 +736,13 @@ struct List[T: AnyType, /](
         comptime assert conforms_to(
             Self.T, Copyable
         ), "List iteration requires the element to be `Copyable`."
-        return _ListIter(0, self.unsafe_ptr(), self._len)
+        return _ListIter(0, self._storage_ptr(), self._len)
 
+    # Without this, a call through a mutable `ref self` counts as a write to
+    # the list and invalidates its existing pointers and views. This is safe
+    # because creating a reverse iterator does not change the list or its
+    # elements.
+    @__unsafe_nested_origins_read_only
     def __reversed__(
         ref self,
     ) -> _ListIter[Self.T, origin_of(self), False] where conforms_to(
@@ -744,7 +753,9 @@ struct List[T: AnyType, /](
         Returns:
             A reversed iterator of immutable references to the list elements.
         """
-        return _ListIter[forward=False](len(self), self.unsafe_ptr(), self._len)
+        return _ListIter[forward=False](
+            len(self), self._storage_ptr(), self._len
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -1279,6 +1290,10 @@ struct List[T: AnyType, /](
             earlier_idx += 1
             later_idx -= 1
 
+    # Without this, a call through a mutable `ref self` counts as a write to
+    # the list and invalidates its existing pointers and views. This is safe
+    # because the search only reads the list and compares its elements.
+    @__unsafe_nested_origins_read_only
     def try_index(
         ref self,
         value: Self.T,
@@ -1327,6 +1342,10 @@ struct List[T: AnyType, /](
                 return i
         return None
 
+    # Without this, a call through a mutable `ref self` counts as a write to
+    # the list and invalidates its existing pointers and views. This is safe
+    # because the search only reads the list and compares its elements.
+    @__unsafe_nested_origins_read_only
     def index(
         ref self,
         value: Self.T,
@@ -1497,7 +1516,7 @@ struct List[T: AnyType, /](
         """
         var start, end = check_slice_bounds(slice, len(self))
         return {
-            unsafe_ptr = self._unsafe_interior_ptr().unsafe_offset(start),
+            unsafe_ptr = self.unsafe_ptr().unsafe_offset(start),
             length = end - start,
         }
 
@@ -1593,7 +1612,7 @@ struct List[T: AnyType, /](
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
         check_bounds[cpu_default=False](idx, length=len(self))
-        return self._unsafe_interior_ptr().unsafe_offset(idx)[]
+        return self.unsafe_ptr().unsafe_offset(idx)[]
 
     @inline(.always)
     def unsafe_set(
@@ -1667,26 +1686,32 @@ struct List[T: AnyType, /](
         )
         Span(self).unsafe_swap_elements(elt_idx_1, elt_idx_2)
 
+    # TODO: Give list iterators and `Span(List)` the interior origin, then
+    # remove this.
     @inline(.always)
-    def _unsafe_interior_ptr[
-        origin: Origin,
-        //,
-    ](ref[origin] self) -> Pointer[Self.T, Self._InteriorOrigin[origin]]:
-        return Pointer(
-            to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
-                "element", origin
-            ]()
-        )
-
-    def unsafe_ptr[
+    def _storage_ptr[
         origin: Origin,
         //,
     ](ref[origin] self) -> Pointer[Self.T, origin]:
+        return self._storage.unsafe_ptr().unsafe_origin_cast[origin]()
+
+    # Without this, a call through a mutable `ref self` counts as a write to
+    # the list and invalidates its existing pointers and views. This is safe
+    # because forming a pointer does not change the list or its elements.
+    @__unsafe_nested_origins_read_only
+    def unsafe_ptr[
+        origin: Origin,
+        //,
+    ](ref[origin] self) -> Pointer[Self.T, Self._InteriorOrigin[origin]]:
         """Retrieves a pointer to the underlying memory, or a dangling pointer
         if the `List` has not yet allocated.
 
         You should use the `len` of this `List` to determine if the pointer
         is valid for reads and writes.
+
+        The pointer carries the list's interior origin. Reassigning the list
+        or calling a `mut self` method on it, such as `append()`, can move its
+        storage, so the compiler rejects any use of the pointer after that.
 
         Parameters:
             origin: The origin of the `List`.
@@ -1694,12 +1719,16 @@ struct List[T: AnyType, /](
         Returns:
             The pointer to the underlying memory.
         """
-        return self._storage.unsafe_ptr().unsafe_origin_cast[origin]()
+        return Pointer(
+            to=self._storage.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                "element", origin
+            ]()
+        )
 
     @inline(.always)
     def _unsafe_next_uninit_ptr(
         ref self,
-    ) -> Pointer[Self.T, origin_of(self)]:
+    ) -> Pointer[Self.T, Self._InteriorOrigin[origin_of(self)]]:
         """Retrieves a pointer to the next uninitialized element position.
 
         Safety:
