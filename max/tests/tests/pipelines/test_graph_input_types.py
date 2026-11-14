@@ -86,6 +86,7 @@ from max.pipelines.architectures.llama3.distributed_llama import (
     DistributedLlama3,
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.muse_glimmer.model_config import (
     MuseGlimmerVisionConfig,
 )
@@ -312,6 +313,32 @@ def _nemotron_h(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
     return types, tuple(tree.leaves(types))
 
 
+def _mimo_v2() -> tuple[_InputTree, _InputTypes]:
+    """MiMo-V2 registered by role at TP2: a windowed and a full attention
+    cache whose keys are wider than their values.
+
+    The graph keeps the input order its pre-registration MEFs take.
+    """
+    devices = _gpus(2)
+    sliding = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=8,
+        head_dim=24,
+        v_head_dim=16,
+        num_layers=2,
+        devices=tuple(devices),
+        window_size=8,
+    )
+    full = replace(sliding, n_kv_heads=4, num_layers=1, window_size=None)
+    kv_params = MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding, "full_attention": full}
+    )
+    types = decoder_input_types(
+        kv_params, devices[0], input_layout=MiMoV2Decoder.input_layout
+    )
+    return types, tuple(tree.leaves(types))
+
+
 def _distributed_llama3() -> tuple[_InputTree, _InputTypes]:
     devices = _gpus(2)
     model = _model(DistributedLlama3, config=_fake(devices=devices))
@@ -467,6 +494,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "registered_decoder_total_context": _registered_decoder_total_context,
     "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
     "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
+    "mimo_v2": _mimo_v2,
 }
 
 

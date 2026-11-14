@@ -19,6 +19,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .drafter import mimo_dflash_draft_width
 from .model import DFlashMiMoV2ModuleV3DraftArchConfig
+from .weight_rules import dflash_mimo_v2_weight_rules
 
 __all__ = ["dflash_mimo_v2_modulev3_draft_arch"]
 
@@ -37,6 +38,8 @@ dflash_mimo_v2_modulev3_draft_arch = SupportedArchitecture(
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_rules=dflash_mimo_v2_weight_rules,
+    use_weight_rules=True,
     # Sharded over the target's devices, which every leaf of the KV tree
     # must name.
     multi_gpu_supported=True,

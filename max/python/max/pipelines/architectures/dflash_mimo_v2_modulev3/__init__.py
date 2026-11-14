@@ -18,6 +18,7 @@ The checkpoint names it ``dflash/``.
 from .arch import dflash_mimo_v2_modulev3_draft_arch
 from .context_writer import DFlashContextWriter
 from .dflash_mimo_v2 import DFlashMiMoV2
+from .model import DFlashMiMoV2ModuleV3DraftArchConfig
 from .model_config import DFlashMiMoV2Config
 from .weight_adapters import (
     convert_safetensor_state_dict,
@@ -28,6 +29,7 @@ __all__ = [
     "DFlashContextWriter",
     "DFlashMiMoV2",
     "DFlashMiMoV2Config",
+    "DFlashMiMoV2ModuleV3DraftArchConfig",
     "convert_safetensor_state_dict",
     "dflash_mimo_v2_modulev3_draft_arch",
     "load_mask_embedding",

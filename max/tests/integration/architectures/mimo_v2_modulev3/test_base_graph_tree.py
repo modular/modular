@@ -10,24 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The base (spec-off) graph's input tree, as Mach's registry binds it.
+"""The base (spec-off) graph's input tree, slot for slot.
 
-Mach wires the base MEF by position through the registry entry's slot map,
-and the ModuleV3 base graph does not keep the graph-API build's tree: it
-takes the ModuleV3 ragged ABI — one shared row-offsets input, no signal
-buffer in the template — and a multi-device trace appends one signal buffer
-per device past every other input, where the graph-API base declares
-per-device row offsets with its signal buffers between them and the KV
-tree. The ``-modulev3`` registry entry therefore carries its own slot map
-rather than the V2 entry's, and this test pins the tree that map describes,
-slot for slot, so the two cannot drift apart silently (DISTINF-791).
+The ModuleV3 base graph does not keep the graph-API build's tree: it takes
+the ModuleV3 ragged ABI — one shared row-offsets input, no signal buffer in
+the template — and a multi-device trace appends one signal buffer per device
+past every other input, where the graph-API base declares per-device row
+offsets with its signal buffers between them and the KV tree. This test
+pins that tree, so a change to it is deliberate (DISTINF-791).
 
 The graph is staged on virtual B200s over the tiny fixture and never
-compiled, so the test needs no GPU — the same no-GPU lane the DFlash spec
-graph's signature test
-(``mach/tools/gen-mef/test_mimo_dflash_graph_signature.py``) uses, whose
-inserted signal buffers match a real TP2 export's sidecar slot for slot
-and so prove the trace mirrors what an export records.
+compiled, so the test needs no GPU.
 """
 
 from __future__ import annotations
@@ -139,7 +132,7 @@ def _kv_block(
     ``[pages, arity, layers, page_size, heads, head_dim]``; the tiny
     fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads. Each
     head packs its 192-wide key and 128-wide value into one 320-wide plane,
-    the geometry the registry entry's groups declare.
+    the geometry the export's KV groups record.
     """
     block = types[slot]
     assert isinstance(block, BufferType), f"slot {slot} is not a cache pool"
@@ -158,8 +151,7 @@ def test_the_tree_is_the_modulev3_abi(
     """Pins the tokens, logit count and ONE shared row-offsets input, then the
     two KV groups, each record ending with its split record — 19 inputs at
     one device. No per-device row offsets and
-    no signal buffers: the graph-API base tree's extras are absent, which is
-    why the ``-modulev3`` registry entry binds its own slot map."""
+    no signal buffers: the graph-API base tree's extras are absent."""
     types, n_devices = staged
     tokens, return_n_logits, row_offsets = types[:3]
     assert isinstance(tokens, TensorType)

@@ -22,15 +22,12 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .mimo_v2 import MiMoV2Decoder
 from .model_config import MiMoV2Config
-from .weight_adapters import registered_state_dict
+from .weight_rules import mimo_v2_weight_rules
 
 # The tokenizer, parsers and context match the checkpoint's. The registered
 # decoder uses the shared batch processor and declares the existing
-# positional input layout. The adapter is this package's own: the
-# checkpoint's dflash/ and audio_tokenizer/ files hold tensors whose bare
-# names collide with the decoder's, so the text model's safetensors index
-# filters them before the rules rename anything -- a filter the registered
-# path's adapter applies.
+# positional input layout. The checkpoint loads through rules, which drop the
+# tensors of the drafter and audio tokenizer the repo ships in subfolders.
 mimo_v2_modulev3_arch = SupportedArchitecture(
     name="MiMoV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
@@ -46,10 +43,8 @@ mimo_v2_modulev3_arch = SupportedArchitecture(
     modules={GraphRole.DECODER: MiMoV2Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    use_weight_rules=False,
-    weight_adapters={
-        WeightsFormat.safetensors: registered_state_dict,
-    },
+    weight_rules=mimo_v2_weight_rules,
+    use_weight_rules=True,
     config=MiMoV2Config,
     batching=None,
     multi_gpu_supported=True,

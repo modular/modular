@@ -414,3 +414,20 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+# The weight rules against the published checkpoint's tensor names.
+modular_py_test(
+    name = "test_weight_rules",
+    size = "medium",
+    srcs = ["test_weight_rules.py"],
+    # Import-bound: pulling the pipelines stack outruns the 300s budget on the
+    # shared BuildBuddy macOS workers.
+    tags = ["skip-ci-macos"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
