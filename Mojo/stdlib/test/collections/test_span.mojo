@@ -29,7 +29,7 @@ from std.hash import Hasher
 
 def test_span_list_int() raises:
     var l: List = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(list=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -76,7 +76,7 @@ def test_span_list_str() raises:
 
 def test_span_array_int() raises:
     var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -99,7 +99,7 @@ def test_span_array_int() raises:
 
 def test_span_array_str() raises:
     var l: Array[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -122,7 +122,7 @@ def test_span_array_str() raises:
 
 def test_indexing() raises:
     var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
 
@@ -241,7 +241,7 @@ def test_fill_bytes() raises:
     # Exercises the single-byte `memset` fast path in `Span.fill`: a non-zero
     # pattern, a length past the SIMD width (tail handling), and zeroing.
     var a = Array[Byte, 37](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
 
     s.fill(0xAB)
     for i in range(len(s)):
@@ -254,7 +254,7 @@ def test_fill_bytes() raises:
 
 def test_fill_empty() raises:
     var a = Array[Byte, 4](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
     var empty = s[0:0]
     # Filling a zero-length span is a no-op and must not touch memory.
     empty.fill(0xFF)
@@ -266,7 +266,7 @@ def test_fill_empty() raises:
 def test_fill_multibyte() raises:
     # Exercises the element-wise (non-`memset`) branch for a wider element type.
     var a = Array[Int32, 5](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
 
     s.fill(-1)
     for i in range(len(s)):
@@ -275,7 +275,7 @@ def test_fill_multibyte() raises:
 
 def test_ref() raises:
     var l: Array[Int, 3] = [1, 2, 3]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 

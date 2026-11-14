@@ -153,8 +153,15 @@ This version is still a work in progress.
 
 ## Library stabilizations
 
+<!-- rumdl-disable MD013 -->
+- `ImmSpan` alias
+- `MutSpan` alias
 - `List.insert`
 - `List.clear`
+- `Span.__getitem__(self, slice: ContiguousSlice) -> Self:`
+- `Span.__init__(out self, ref[Self.origin] list: List[Self.T]):`
+- `Span.__init__(out self, ref[Self.origin, Self.address_space] array: Array[Self.T, _]):`
+- `Span.__len__(self) -> Int:`
 - `Hashable`
   - `Hashable.__hash__`
 - `Hasher`
@@ -164,6 +171,7 @@ This version is still a work in progress.
 - `Pointer.__eq__`
 - `Pointer.__ne__`
 - `Pointer.unsafe_bitcast`
+<!-- rumdl-enable MD013 -->
 
 ## Library performance improvements
 

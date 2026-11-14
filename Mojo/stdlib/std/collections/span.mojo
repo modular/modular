@@ -48,6 +48,7 @@ import std.format._utils as fmt
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.3")
 comptime MutSpan[
     T: AnyType,
     origin: MutOrigin,
@@ -62,6 +63,8 @@ Parameters:
     address_space: The address space of the span.
 """
 
+
+@stable(since="1.3")
 comptime ImmSpan[
     T: AnyType,
     origin: ImmOrigin,
@@ -300,10 +303,12 @@ struct Span[
         self._len = length
 
     @inline(.always)
+    @stable(since="1.3")
     @implicit
     def __init__(
         out self,
         ref[Self.origin] list: List[Self.T],
+        /,
     ):
         """Construct a `Span` from a `List`.
 
@@ -316,10 +321,12 @@ struct Span[
         self._len = len(list)
 
     @inline(.always)
+    @stable(since="1.3")
     @implicit
     def __init__(
         out self,
         ref[Self.origin, Self.address_space] array: Array[Self.T, _],
+        /,
     ):
         """Construct a `Span` from an `Array`.
 
@@ -403,20 +410,21 @@ struct Span[
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
-    def __getitem__(self, slc: ContiguousSlice) -> Self:
+    @stable(since="1.3")
+    def __getitem__(self, slice: ContiguousSlice) -> Self:
         """Get a new span from a slice of the current span.
 
-        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        Aborts if `slice`'s start or end index is out of bounds (valid range is
         `0` to `len(self)`, inclusive), or if start is greater than end.
         Negative indices are not supported and always abort.
 
         Args:
-            slc: The slice specifying the range of the new subslice.
+            slice: The slice specifying the range of the new subslice.
 
         Returns:
             A new span that points to the same data as the current span.
         """
-        var start, end = check_slice_bounds(slc, len(self))
+        var start, end = check_slice_bounds(slice, len(self))
         return self._unchecked_subspan(start=start, end=end)
 
     @inline(.always)
@@ -473,6 +481,7 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
+    @stable(since="1.3")
     def __len__(self) -> Int:
         """Returns the length of the span. This is a known constant value.
 
