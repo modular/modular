@@ -743,9 +743,9 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(*args: *declared_arg_types) thin -> None,
-        # Ignored; accepted for API parity with the legacy backend.
-        compile_options: StaticString = "",
+        compile_options: StaticString = (Self.target.default_compile_options()),
         link_options: StaticString = "",
+        # Ignored; accepted for API parity with the legacy backend.
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
@@ -756,6 +756,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         func,
         MaxPluginForTarget[Self.target].FunctionWrapper,
         target=Self.target,
+        compile_options=compile_options,
+        link_options=link_options,
     ]:
         """Compiles the provided `capturing` function for execution on this
         device.
@@ -791,6 +793,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
             func,
             MaxPluginForTarget[Self.target].FunctionWrapper,
             target=Self.target,
+            compile_options=compile_options,
+            link_options=link_options,
         ](self, func_attribute=func_attribute)
 
     # ===-------------------------------------------------------------------===#
@@ -904,6 +908,8 @@ struct HALDeviceFunction[
     Wrapper: DeviceFunctionWrapper = _IdentityWrapper,
     *,
     target: CompilationTarget = default_accelerator(),
+    compile_options: StaticString = (target.default_compile_options()),
+    link_options: StaticString = "",
 ](ImplicitlyCopyable, Movable):
     """Represents a compiled device function ready for execution on a GPU.
 
@@ -940,6 +946,8 @@ struct HALDeviceFunction[
             such as a generated entry point. Defaults to compiling `func` as
             written.
         target: The accelerator the function is compiled for.
+        compile_options: The compilation options used.
+        link_options: The linker options used.
     """
 
     comptime _target = DeviceSpec.target[get_device_spec[0]()]()
@@ -998,7 +1006,10 @@ struct HALDeviceFunction[
                     "' is not currently supported",
                 )
         var info = ctx._context[]._compile_inner[
-            type_of(Self._wrapped_func), Self._wrapped_func
+            type_of(Self._wrapped_func),
+            Self._wrapped_func,
+            compile_options=Self.compile_options,
+            link_options=Self.link_options,
         ]()
         # The context's function cache owns the loaded module: repeated
         # constructions of the same kernel reuse the cached module.

@@ -322,6 +322,11 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
+        *,
+        compile_options: StaticString = (
+            Self._device_spec_target.default_compile_options()
+        ),
+        link_options: StaticString = "",
     ](self) -> CompiledFunctionInfo[fn_type, func, Self._device_spec_target,]:
         comptime target = Self._device_spec_target
         comptime emission_kind_id = _get_emission_kind_id[
@@ -331,10 +336,8 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         var offload = __mlir_op.`kgen.compile_offload`[
             target_type=target._mlir_value,
             emission_kind=emission_kind_id,
-            emission_option=_get_kgen_string[
-                target.default_compile_options()
-            ](),
-            emission_link_option=_get_kgen_string[""](),
+            emission_option=_get_kgen_string[compile_options](),
+            emission_link_option=_get_kgen_string[link_options](),
             func=func,
             _type=_Info,
         ]()

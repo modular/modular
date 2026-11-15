@@ -133,7 +133,11 @@ struct DeviceFunction[
         _ptxas_info_verbose=Self._ptxas_info_verbose,
     ]
     comptime _HAL = HALDeviceFunction[
-        Self.func, Self.Wrapper, target=Self.target
+        Self.func,
+        Self.Wrapper,
+        target=Self.target,
+        compile_options=Self.compile_options,
+        link_options=Self.link_options,
     ]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
