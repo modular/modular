@@ -245,3 +245,27 @@ def fail_register_raises() raises -> Int:
     # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()
+
+
+def raise_float32() raises Float32:
+    raise 1.0
+
+
+def raise_int() raises Int:
+    raise 1
+
+
+# CHECK-LABEL: lit.fn @"heterogeneous_try
+def heterogeneous_try():
+    # CHECK: %err = lit.var.decl {{.*}}Float32
+    # CHECK-NEXT: %__try_error_tmp__ = lit.var.decl {{.*}}Int
+    try:
+        # CHECK: lit.call {{.*}}raise_float32{{.*}}(%err,
+        raise_float32()
+        # CHECK: lit.call {{.*}}raise_int{{.*}}(%__try_error_tmp__,
+        # CHECK: lit.call {{.*}}SIMD::@"__init__{{.*}}
+        # CHECK: lit.ref.store {{.*}}, %err
+        # CHECK-NEXT: lit.raise
+        raise_int()
+    except err:
+        var converted: Float32 = err

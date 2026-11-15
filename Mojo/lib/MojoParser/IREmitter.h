@@ -40,24 +40,42 @@ class IREmitter;
 class CallOperands;
 class TraitType;
 
-/// Tracks the error storage and propagation behavior associated with a
-/// source-level try body or raising function while it is emitted. The
-/// opForRaise is a FnOp when the context is a throwing function, or a TryOp
-/// when within one of those.
+/// Tracks error storage and propagation behavior while emitting a raising
+/// function, source-level try body, or loop iterator call. The opForRaise is a
+/// FnOp for a throwing function and a TryOp for a try body.
 struct RaiseContext {
   explicit RaiseContext(Operation *opForRaise,
                         bool breakLoopElseOnRaise = false);
 
-  /// Returns the existing error slot, or null when this try has not yet needed
-  /// one.
+  /// Returns the primary error slot, or null when none has been needed.
   MLValue getErrorSlot() const;
 
-  /// Installs an error slot created before this try.
+  /// Installs the fixed error slot used by a synthetic raising context.
   void setErrorSlot(VarDeclOp errorDecl);
 
-  /// Returns the error slot, creating typed storage before a try when needed.
+  /// Returns storage for `errorType`, creating it before a try when needed.
   MLValue getOrCreateErrorSlot(IREmitter &emitter, ASTType errorType,
                                Location loc);
+
+  /// Reuses an earlier slot if an inferred slot resolved to the same type.
+  MLValue coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
+                            const ExprNode *sourceExpr);
+
+  /// Records an error propagation terminator for deferred try type unification.
+  void recordRaiseSite(MLValue errorSlot, Operation *terminator,
+                       Operation *sourceOperation, SMLoc sourceLoc);
+
+  /// Converts every deferred error to the first error slot's type.
+  MLValue finalizeErrorSlots(IREmitter &emitter);
+
+  /// Try blocks support heterogenous raises within their body - each raising
+  /// operation is collected and processed when the 'except' clauses are
+  /// encountered.  Functions have a declared result slot with a specific type
+  /// that we can emit directly into.
+  bool isDeferringErrorConversions() const {
+    return isa<LIT::TryOp>(opForRaise);
+  }
+  size_t getNumErrorSlots() const { return errorSlots.size(); }
   Operation *getOperation() const { return opForRaise; }
 
   // When emitting for-each loops, the `__next__()` function will throw on loop
@@ -66,8 +84,16 @@ struct RaiseContext {
   bool shouldBreakLoopElseOnRaise() const { return breakLoopElseOnRaise; }
 
 private:
+  struct RaiseSite {
+    MLValue errorSlot;
+    Operation *terminator;
+    Operation *sourceOperation;
+    SMLoc sourceLoc;
+  };
+
   Operation *opForRaise;
-  MLValue errorSlot;
+  SmallVector<MLValue, 2> errorSlots;
+  SmallVector<RaiseSite, 4> raiseSites;
   bool breakLoopElseOnRaise;
 };
 
@@ -681,9 +707,8 @@ public:
   CValue emitCallUnchecked(RValue callee, CallOperands &&operands);
 
   /// Emit the control flow following a call that throws or never returns.
-  void emitCallControlFlow(Operation &call, ASTType resultType, bool isThrows,
-                           ASTType thrownType, Value callErrorSlot,
-                           ValueRange operands, const ExprNode *callExpr);
+  void emitCallControlFlow(Operation &call, FuncType signature,
+                           const ExprNode *callExpr);
 };
 
 //===----------------------------------------------------------------------===//

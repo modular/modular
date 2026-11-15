@@ -52,16 +52,17 @@ using namespace M::KGEN::LIT;
 /// CheckLifetimes sees that it is conditionally initialized. Semantic control
 /// flow lowering turns the `lit.raise` into the terminator for the enclosing
 /// raising function or try region.
-void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
-                                    bool isThrows, ASTType thrownType,
-                                    Value callErrorSlot, ValueRange operands,
+void IREmitter::emitCallControlFlow(Operation &call, FuncType signature,
                                     const ExprNode *callExpr) {
   assert(builder && "runtime call emission requires a builder");
   OpBuilder &builder = *this->builder;
   Location loc = call.getLoc();
 
-  bool neverReturns = sugarIsa<NeverType>(resultType);
-  if (!isThrows || sugarIsa<NeverType>(thrownType)) {
+  // If the call is not throwing or returning, then we don't need to emit any
+  // special control flow.
+  bool neverReturns = sugarIsa<NeverType>(signature.getUserResultType());
+  if (!signature.isThrows() ||
+      sugarIsa<NeverType>(signature.getUserThrownType())) {
     if (!neverReturns)
       return;
 
@@ -80,11 +81,22 @@ void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
     return;
   }
 
+  // Create the if/else block, branching on the boolean "did throw" result.
+  //    if (callee(...)) {
+  //       lit.raise  // Exit to the enclosing scope.
+  //    } else {
+  //       lit.yield
+  //    }
   auto ifOp = HLCF::IfOp::create(builder, loc, TypeRange{}, call.getResult(0));
-
+  // We support both direct and indirect calls - indirect calls have an extra
+  // operand for the callee, but we index from the end.
+  ValueRange operands = call.getOperands();
   builder.createBlock(&ifOp.getThenRegion());
   LIT::OwnershipMarkConsumedOp::create(builder, loc, operands.back());
   RaiseContext *raiseContext = getRaiseContext();
+  assert(raiseContext && operands.size() >= 2 &&
+         "throwing calls require an error context and result slot");
+  Value callErrorSlot = operands[operands.size() - 2];
   MLValue contextualErrorSlot = raiseContext->getErrorSlot();
   assert(contextualErrorSlot && callErrorSlot &&
          "throwing calls require error slots");
@@ -99,15 +111,16 @@ void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
     return;
   }
 
-  // If we created a temporary result slot for the call, move the error value
-  // from our temporary into the expected error slot.  This can perform an
-  // implicit conversion when the types don't match, e.g. when calling a
-  // function that raises "specificError" in a function that raises "Error".
-  if (callErrorSlot != contextualErrorSlot) {
+  // If we are throwing out of the function, then move the error value into the
+  // __error__ slot, performing implicit conversions if needed.
+  if (!raiseContext->isDeferringErrorConversions() &&
+      callErrorSlot != contextualErrorSlot) {
     ExprDest moveDest(contextualErrorSlot, EC_RaiseValue);
     (void)emitResult(MRValue(callErrorSlot), callExpr, moveDest);
   }
-  LIT::RaiseOp::create(builder, loc);
+  auto raiseOp = LIT::RaiseOp::create(builder, loc);
+  raiseContext->recordRaiseSite(MLValue(callErrorSlot), raiseOp, &call,
+                                callExpr ? callExpr->getLoc() : SMLoc());
   HLCF::YieldOp::create(builder, loc);
 
   builder.createBlock(&ifOp.getElseRegion());
@@ -217,7 +230,14 @@ IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
                      RaiseContext *raiseContext)
     : SharedStateUser(declScope.getShared()), builder(builder),
       paramContext(EC_InvalidContext), declScope(declScope),
-      raiseContext(raiseContext) {}
+      raiseContext(raiseContext) {
+
+  // If the raise context is not associated with an operation, then it is not
+  // valid.  We allow this so callers can construct one from a function without
+  // having to worry about its throwability.
+  if (raiseContext && raiseContext->getOperation() == nullptr)
+    raiseContext = nullptr;
+}
 
 /// Create an IREmitter for a parameter context.
 IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
@@ -226,6 +246,11 @@ IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
     : SharedStateUser(declScope.getShared()), builder({}),
       paramContext(paramContext), declScope(declScope),
       deferredTypingContext(deferredTypingContext), raiseContext(raiseContext) {
+  // If the raise context is not associated with an operation, then it is not
+  // valid.  We allow this so callers can construct one from a function without
+  // having to worry about its throwability.
+  if (raiseContext && raiseContext->getOperation() == nullptr)
+    raiseContext = nullptr;
 }
 
 /// Emit an error about use of a dynamic value (the expression) in a context
@@ -1972,48 +1997,122 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 
 RaiseContext::RaiseContext(Operation *opForRaise, bool breakLoopElseOnRaise)
     : opForRaise(opForRaise), breakLoopElseOnRaise(breakLoopElseOnRaise) {
-  if (auto func = dyn_cast_or_null<FnOp>(opForRaise)) {
+  if (!opForRaise) // We accept null as a convenience.
+    return;
+
+  // Otherwise we have a try or a function.  If the function doesn't throw,
+  // treat it like null so we know it isn't valid.
+  if (auto func = dyn_cast<FnOp>(opForRaise)) {
     if (!func.isThrows()) {
       this->opForRaise = nullptr;
       return;
     }
+    // Otherwise, notice the prepopulated return slot.
     size_t errorArgIndex = func.getNumArguments() - 2;
     assert(func.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
            ArgConvention::ByRefError);
-    errorSlot = MLValue(func.getArgument(errorArgIndex));
+    errorSlots.push_back(MLValue(func.getArgument(errorArgIndex)));
   }
 }
 
-/// Gets the error slot of a raising function or a try.
-MLValue RaiseContext::getErrorSlot() const { return errorSlot; }
-
-/// Records storage created before a try so it is available while emitting its
-/// regions.
-void RaiseContext::setErrorSlot(VarDeclOp errorDecl) {
-  assert(errorDecl && !errorSlot && "error slot must be installed once");
-  errorSlot = MLValue(errorDecl.getResult());
+/// Gets the primary error slot of a raising function or try.
+MLValue RaiseContext::getErrorSlot() const {
+  return errorSlots.empty() ? MLValue() : errorSlots.front();
 }
 
-/// Creates a try's error slot immediately before the try so it dominates every
-/// region that can propagate an error.
+/// Records fixed storage created before a synthetic raising context.
+void RaiseContext::setErrorSlot(VarDeclOp errorDecl) {
+  assert(errorDecl && errorSlots.empty() &&
+         "error slot must be installed once");
+  errorSlots.push_back(MLValue(errorDecl.getResult()));
+}
+
+/// Returns a slot for an error type, creating it before a try when needed.
 MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
                                            ASTType errorType, Location loc) {
-  // If we already have an error slot, use it.
-  if (MLValue errSlot = getErrorSlot())
-    return errSlot;
+  if (!isDeferringErrorConversions()) {
+    MLValue errorSlot = getErrorSlot();
+    if (!isa<UnresolvedType>(errorType) &&
+        isa<UnresolvedType>(errorSlot.getRValueType())) {
+      cast<VarDeclOp>(errorSlot.getDefiningOp()).changeElementType(errorType);
+    }
+    return errorSlot;
+  }
 
-  // Otherwise, we must be in a try block creating the first one lazily.  Emit
-  // the VarDecl ahead of the try with the specified errorType.
+  // An unresolved slot is inferred independently by the expression stored
+  // into it. Concrete types reuse storage for previous raises of that type.
+  if (!isa<UnresolvedType>(errorType)) {
+    for (MLValue errorSlot : errorSlots) {
+      if (!isa<UnresolvedType>(errorSlot.getRValueType()) &&
+          errorType.isEqualCanon(errorSlot.getRValueType()))
+        return errorSlot;
+    }
+  }
+
+  // Emit every try error slot ahead of the try so it dominates the try and
+  // except regions.
   auto tryOp = cast<LIT::TryOp>(opForRaise);
   OpBuilder errorDeclBuilder = *emitter.builder;
   errorDeclBuilder.setInsertionPoint(tryOp);
   OpBuilder savedBuilder = *emitter.builder;
   emitter.builder = errorDeclBuilder;
-  auto errDecl = emitter.emitVarDecl("__try_error__", errorType, loc,
-                                     VarDeclKind::Synthesized);
-  setErrorSlot(errDecl);
+  auto errDecl = emitter.emitVarDecl(errorSlots.empty() ? "__try_error__"
+                                                        : "__try_error_tmp__",
+                                     errorType, loc, VarDeclKind::Synthesized);
+  errorSlots.push_back(MLValue(errDecl.getResult()));
   emitter.builder = savedBuilder;
   return MLValue(errDecl.getResult());
+}
+
+/// Coalesces an inferred slot with earlier storage of the same concrete type.
+MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
+                                        const ExprNode *sourceExpr) {
+  if (!isDeferringErrorConversions() ||
+      isa<UnresolvedType>(errorSlot.getRValueType()))
+    return errorSlot;
+
+  auto slotIter = llvm::find(errorSlots, errorSlot);
+  assert(slotIter != errorSlots.end() && "unknown error slot");
+  for (auto iter = errorSlots.begin(); iter != slotIter; ++iter) {
+    if (!isa<UnresolvedType>(iter->getRValueType()) &&
+        errorSlot.getRValueType().isEqualCanon(iter->getRValueType())) {
+      ExprDest destination(*iter, EC_RaiseValue);
+      (void)emitter.emitResult(MRValue(errorSlot), sourceExpr, destination);
+      errorSlots.erase(slotIter);
+      return *iter;
+    }
+  }
+  return errorSlot;
+}
+
+/// Records where a typed error leaves a source-level try body.
+void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
+                                   Operation *sourceOperation,
+                                   SMLoc sourceLoc) {
+  if (!isDeferringErrorConversions())
+    return;
+  assert(errorSlot && terminator && "raise site must be fully specified");
+  raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
+}
+
+/// Converts all errors leaving a try to the type of its first error slot.
+MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter) {
+  MLValue primaryErrorSlot = getErrorSlot();
+  if (!isDeferringErrorConversions() || !primaryErrorSlot)
+    return primaryErrorSlot;
+
+  for (const RaiseSite &site : raiseSites) {
+    if (site.errorSlot == primaryErrorSlot)
+      continue;
+
+    OpBuilder savedBuilder = *emitter.builder;
+    emitter.builder->setInsertionPoint(site.terminator);
+    ExprDest destination(primaryErrorSlot, EC_RaiseValue);
+    SyntheticNode source(site.sourceLoc);
+    (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
+    emitter.builder = savedBuilder;
+  }
+  return primaryErrorSlot;
 }
 
 /// The declaration `origin` is ultimately rooted at, null when it is rooted at

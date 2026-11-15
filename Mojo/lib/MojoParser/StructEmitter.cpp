@@ -393,8 +393,7 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   ASTType structSelfType = structDecl.getSelfType();
 
   RaiseContext raiseContext(fn);
-  IREmitter emitter(fnDecl, EC_Trait, nullptr,
-                    fn.isThrows() ? &raiseContext : nullptr);
+  IREmitter emitter(fnDecl, EC_Trait, nullptr, &raiseContext);
   fn.getBody()->clear(); // Remove the lit.end_fn
 
   emitter.builder = OpBuilder::atBlockBegin(fn.getBody());
@@ -480,18 +479,7 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   ArrayRef<Type> resultTypes = specializedFnType.getResults();
   auto callOp = LIT::CallOp::create(builder, fn.getLoc(), resultTypes,
                                     typedSymbol, implicitOrigins, operands);
-  Value callErrorSlot;
-  if (specializedFnType.isThrows() &&
-      !sugarIsa<NeverType>(specializedFnType.getUserThrownType())) {
-    size_t errorArgIndex = specializedFnType.getNumArguments() - 2;
-    assert(specializedFnType.getArgConvention(errorArgIndex) ==
-           ArgConvention::ByRefError);
-    callErrorSlot = operands[errorArgIndex];
-  }
-  emitter.emitCallControlFlow(*callOp, specializedFnType.getUserResultType(),
-                              specializedFnType.isThrows(),
-                              specializedFnType.getUserThrownType(),
-                              callErrorSlot, operands, nullptr);
+  emitter.emitCallControlFlow(*callOp, specializedFnType, nullptr);
 
   emitter.emitNormalReturn(fn.getLoc(), callOp->getResult(0));
 

@@ -113,8 +113,7 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
                                         Type resultType,
                                         ArrayRef<Value> arguments) {
   RaiseContext raiseContext(wrapperFn);
-  IREmitter emitter(declScope, builder,
-                    wrapperFn.isThrows() ? &raiseContext : nullptr);
+  IREmitter emitter(declScope, builder, &raiseContext);
   // We are forwarding the call in a synthetic function, pushing the debug
   // scope with the synthetic function scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -2709,8 +2708,7 @@ static void populateDevicePassableTypeName(FnOp implementation,
   ImplicitLocOpBuilder b(implementation.getLoc(), implementation);
   b.setInsertionPointToStart(&block);
   RaiseContext raiseContext(implementation);
-  IREmitter emitter(structDecl, b,
-                    implementation.isThrows() ? &raiseContext : nullptr);
+  IREmitter emitter(structDecl, b, &raiseContext);
   SyntheticNode loc(structDecl.getLoc());
 
   ASTType strLitType = structDecl.getShared().lookupBuiltinType(
@@ -2916,8 +2914,7 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
 
     RaiseContext raiseContext(toDevice);
-    IREmitter emitter(structDecl, b,
-                      toDevice.isThrows() ? &raiseContext : nullptr);
+    IREmitter emitter(structDecl, b, &raiseContext);
     SyntheticNode syntheticNode(structDecl.getLoc());
     ExprDest dest(EC_ReturnValue);
     CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,

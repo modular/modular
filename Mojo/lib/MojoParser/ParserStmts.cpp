@@ -1550,10 +1550,12 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   // TODO: Support "from" exception chaining.
 
   // Ok, we are syntactically sound.  Check to see if we're in a try block, and
-  // (if so) whether we are in.  Python's notion of a current exception is fully
-  // dynamic, which we don't support yet.  For now, we only support 'raise' with
-  // no expression in the 'except' block of a 'try'.
+  // (if so) whether we are in the 'except' portion to allow "raise;" to
+  // re-raise the current exception.  Python's notion of a current exception is
+  // fully dynamic, but Mojo only supports 'raise' with no expression in
+  // the 'except' block of a 'try'.
   //
+  //    # This is valid Python but not Mojo.
   //    def foo(): raise   # Rethrow any currently-being-handled exception
   //    try:
   //      print(1/0)
@@ -1584,6 +1586,8 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     dest = ExprDest(errorVar, EC_RaiseValue);
   }
 
+  SyntheticNode synthNode(loc.Start);
+  const ExprNode *sourceExpr = errorExpr ? errorExpr : &synthNode;
   if (errorExpr) {
     // If we had an error, emit it.
     emitter.emitExpr(errorExpr, dest);
@@ -1599,9 +1603,10 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     }
 
     // Re-raise the contextual exception.
-    SyntheticNode synthNode(loc.Start);
     emitter.emitResult(MRValue(caughtErrorVarDecl), &synthNode, dest);
   }
+
+  errSlot = raiseContext->coalesceErrorSlot(emitter, errSlot, sourceExpr);
 
   // If we are in a debug build, we inject a call to a stop hook for the
   // debugger right before a RaiseOp.
@@ -1615,7 +1620,9 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   if (inferringErrorType)
     emitter.checkInferredErrorType(errSlot.getRValueType(), loc.Start);
 
-  LIT::RaiseOp::create(builder, translateLocation(loc.Start));
+  auto raiseOp = LIT::RaiseOp::create(builder, translateLocation(loc.Start));
+  raiseContext->recordRaiseSite(errSlot, raiseOp, /*sourceOperation=*/nullptr,
+                                loc.Start);
   return success();
 }
 
@@ -3675,6 +3682,11 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   builder.setInsertionPointToEnd(tryBlock);
   TryYieldOp::create(builder, tryOp.getLoc());
 
+  {
+    auto nestedEmitter = getEmitter();
+    nestedRaiseContext.finalizeErrorSlots(nestedEmitter);
+  }
+
   // Move the error into the overall error slot.
   builder.createBlock(&nestedTry.getExceptRegion());
 
@@ -3684,16 +3696,17 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
     UnreachableOp::create(builder, tryOp.getLoc());
   } else {
     auto errDecl = cast<VarDeclOp>(nestedErrSlot.getDefiningOp());
-    ExprDest moveDest(errSlot, EC_RaiseValue);
-    if (isa<UnresolvedType>(errSlot.getRValueType())) {
-      auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-      moveDest = ExprDest(errorVar, EC_RaiseValue);
-    }
+    auto outerEmitter = getEmitter();
+    MLValue outerErrSlot = raiseContext->getOrCreateErrorSlot(
+        outerEmitter, nestedErrSlot.getRValueType(), tryOp.getLoc());
+    ExprDest moveDest(outerErrSlot, EC_RaiseValue);
     SyntheticNode synthNode(loc);
     getEmitter().emitResult(MRValue(errDecl), &synthNode, moveDest);
     if (inferringErrorType)
-      getEmitter().checkInferredErrorType(errSlot.getRValueType(), loc);
-    RaiseOp::create(builder, tryOp.getLoc());
+      getEmitter().checkInferredErrorType(outerErrSlot.getRValueType(), loc);
+    auto raiseOp = RaiseOp::create(builder, tryOp.getLoc());
+    raiseContext->recordRaiseSite(outerErrSlot, raiseOp,
+                                  /*sourceOperation=*/nestedTry, loc);
     TryYieldOp::create(builder, tryOp.getLoc());
   }
 
@@ -3741,6 +3754,11 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       return failure();
   }
   TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
+
+  if (inExceptRegion) {
+    auto emitter = getEmitter();
+    tryContext.finalizeErrorSlots(emitter);
+  }
 
   // If nothing in the try body raised, the error vardecl may still be
   // unresolved.  Force it to Error type if so, so any uses of it complain about
@@ -3836,24 +3854,14 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     if (inExceptRegion) {
       builder.createBlock(&tryOp.getExceptRegion());
       auto emitter = getEmitter();
-      MLValue errSlot =
-          emitter.getRaiseContext()
-              ? emitter.getRaiseContext()->getOrCreateErrorSlot(
-                    emitter, ASTType(errDecl.getType().getElementType()), loc)
-              : MLValue();
+      MLValue errSlot = emitter.getRaiseContext()->getOrCreateErrorSlot(
+          emitter, ASTType(errDecl.getType().getElementType()), loc);
       ExprDest dest(errSlot, EC_RaiseValue);
-
-      // If the contextual caught type is unresolved, then we're the first raise
-      // in a try block.  Resolve the error type to whatever we are raising.
-      if (isa<UnresolvedType>(errSlot.getRValueType())) {
-        auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-        dest = ExprDest(errorVar, EC_RaiseValue);
-        getEmitter().checkInferredErrorType(errDecl.getType().getElementType(),
-                                            finallyLoc);
-      }
       SyntheticNode node(smLoc);
       getEmitter().emitResult(MRValue(errDecl), &node, dest);
-      LIT::RaiseOp::create(builder, loc);
+      auto raiseOp = LIT::RaiseOp::create(builder, loc);
+      emitter.getRaiseContext()->recordRaiseSite(
+          errSlot, raiseOp, /*sourceOperation=*/tryOp, finallyLoc);
       TryYieldOp::create(builder, loc);
     }
 
@@ -4170,8 +4178,11 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // A `with` in a non-raising scope uses its try only for cleanup. Its
   // unreachable except region must not make `raise` valid in the body.
-  RaiseContext withRaiseContext(nestedTryOp ? nestedTryOp : tryOp);
-  withRaiseContext.setErrorSlot(nestedTryOp ? nestedErrDecl : errDecl);
+  auto withErrorDecl = nestedTryOp ? nestedErrDecl : errDecl;
+  // The with statement's synthetic try forwards errors through this fixed
+  // slot; it is not a source-level try that collects heterogeneous errors.
+  RaiseContext withRaiseContext(withErrorDecl);
+  withRaiseContext.setErrorSlot(withErrorDecl);
   {
     llvm::SaveAndRestore contextSaver(
         curRaiseContext, inExceptRegion ? &withRaiseContext : curRaiseContext);
@@ -4280,18 +4291,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         MLValue errSlot = emitter.getRaiseContext()->getOrCreateErrorSlot(
             emitter, ASTType(errDecl.getType().getElementType()), loc);
         ExprDest dest(errSlot, EC_RaiseValue);
-        // If the contextual caught type is unresolved, then we're the first
-        // raise in a try block.  Resolve the error type to whatever we are
-        // raising.
-        if (isa<UnresolvedType>(errSlot.getRValueType())) {
-          auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-          dest = ExprDest(errorVar, EC_RaiseValue);
-          getEmitter().checkInferredErrorType(
-              errDecl.getType().getElementType(), smLoc);
-        }
-
         getEmitter().emitResult(MRValue(errDecl), contextExp, dest);
-        LIT::RaiseOp::create(builder, loc);
+        auto raiseOp = LIT::RaiseOp::create(builder, loc);
+        emitter.getRaiseContext()->recordRaiseSite(
+            errSlot, raiseOp, /*sourceOperation=*/tryOp, smLoc);
         TryYieldOp::create(builder, loc);
       }
     } else {
@@ -4381,13 +4384,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
                   raiseEmitter,
                   ASTType(excValueDecl.getType().getElementType()), loc);
           ExprDest dest(raiseSlot, EC_RaiseValue);
-          // If the error type is unresolved, resolve it to whatever we
-          // propagate.
-          if (isa<UnresolvedType>(raiseSlot.getRValueType()))
-            dest = ExprDest(cast<VarDeclOp>(raiseSlot.getDefiningOp()),
-                            EC_RaiseValue);
           raiseEmitter.emitResult(MRValue(excValueDecl), contextExp, dest);
-          LIT::RaiseOp::create(builder, loc);
+          auto raiseOp = LIT::RaiseOp::create(builder, loc);
+          raiseEmitter.getRaiseContext()->recordRaiseSite(
+              raiseSlot, raiseOp, /*sourceOperation=*/nullptr, smLoc);
           HLCF::YieldOp::create(builder, loc);
           return success();
         });

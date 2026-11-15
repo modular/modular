@@ -1980,8 +1980,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     endFn.setUnresolved(false);
 
     RaiseContext raiseContext(funcOp);
-    IREmitter bodyEmitter(decl, OpBuilder(&body.front()),
-                          funcOp.isThrows() ? &raiseContext : nullptr);
+    IREmitter bodyEmitter(decl, OpBuilder(&body.front()), &raiseContext);
     ASTType userResultType = funcOp.getUserResultType();
     ExprDest resultDest(userResultType, EC_ReturnValue);
     if (signature.hasMemoryOnlyResult())

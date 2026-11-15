@@ -1173,22 +1173,17 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       return {};
     }
-    bool createdErrorSlot = !raiseContext->getErrorSlot();
+    size_t oldNumErrorSlots = raiseContext->getNumErrorSlots();
     MLValue errSlot = raiseContext->getOrCreateErrorSlot(
         emitter, errorType, argValAndExpr.expr->getLocation(emitter));
-    // A mismatched type needs distinct storage for the call's byref error
-    // result. emitCallControlFlow converts it into the contextual slot on the
-    // error path.
-    if (isa<UnresolvedType>(errSlot.getRValueType())) {
-      // If the contextual caught type is unresolved, then we're the first call
-      // in a try block.  Resolve the error type to whatever type we raise.
-      auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-      errorVar.changeElementType(errorType);
-      emitter.checkInferredErrorType(errorType, callExpr->getLoc());
-    } else if (createdErrorSlot) {
+    bool createdErrorSlot =
+        raiseContext->getNumErrorSlots() != oldNumErrorSlots;
+
+    if (createdErrorSlot) {
       emitter.checkInferredErrorType(errSlot.getRValueType(),
                                      callExpr->getLoc());
-    } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
+    } else if (!raiseContext->isDeferringErrorConversions() &&
+               !errorType.isEqualCanon(errSlot.getRValueType())) {
       auto loc = argValAndExpr.expr->getLocation(emitter);
       auto tmp = emitter.emitVarDecl("__call_error_tmp__", errorType, loc,
                                      VarDeclKind::Synthesized);
@@ -2218,19 +2213,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       call.setTailKind(TailKind::Tail);
   }
 
-  if (callOp) {
-    Value callErrorSlot;
-    if (calleeSig.isThrows() &&
-        !sugarIsa<NeverType>(calleeSig.getUserThrownType())) {
-      size_t errorArgIndex = calleeSig.getNumArguments() - 2;
-      assert(calleeSig.getArgConvention(errorArgIndex) ==
-             ArgConvention::ByRefError);
-      callErrorSlot = callArgs[errorArgIndex];
-    }
-    emitCallControlFlow(*callOp, calleeSig.getUserResultType(),
-                        calleeSig.isThrows(), calleeSig.getUserThrownType(),
-                        callErrorSlot, callArgs, callExpr);
-  }
+  if (callOp)
+    emitCallControlFlow(*callOp, calleeSig.getBodyFnType(), callExpr);
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
