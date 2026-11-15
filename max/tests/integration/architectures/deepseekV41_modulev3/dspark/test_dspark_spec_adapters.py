@@ -72,6 +72,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.spec_adapters import (
     DSparkDeepseekV41Proposer,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.speculative._tensor_compat import as_tensors
 from max.pipelines.speculative.block_driver import (
     ArgmaxDraftSampler,
@@ -79,7 +80,7 @@ from max.pipelines.speculative.block_driver import (
 )
 from max.tensor import Tensor, default_device
 from max.tensor.realization_context import ensure_context
-from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated, Sharded
 
 HIDDEN = 128
 HEADS = 2
@@ -374,6 +375,7 @@ def _batch(
     *,
     lengths: list[int],
     extra: Mapping[str, Tensor | Buffer] | None = None,
+    vision: tuple[Tensor, Tensor] | None = None,
 ) -> BlockBatch:
     """A single-device BlockBatch over requests of the given lengths.
 
@@ -414,8 +416,10 @@ def _batch(
         data_parallel_splits=None,
         data_parallel_degree=1,
         batch_context_lengths=[],
-        vision_embeddings=[],
-        vision_scatter_indices=[],
+        vision_embeddings=[] if vision is None else [_graph_typed(vision[0])],
+        vision_scatter_indices=(
+            [] if vision is None else [_graph_typed(vision[1])]
+        ),
         extra=extra,
         num_accepted=None,
         draft_slot_ids=None,
@@ -446,6 +450,7 @@ class _RecordingTarget:
         self.positions = _to_max(torch.arange(total, dtype=torch.int32) + 100)
         self.assembled: tuple[Any, ...] | None = None
         self.draft_width: Tensor | None = None
+        self.vision: VisionInputs[Tensor] | None = None
 
     def batch_from_parts(
         self,
@@ -458,9 +463,11 @@ class _RecordingTarget:
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: Any = None,
         draft_width: Tensor | None = None,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> Any:
         self.assembled = (tokens, input_row_offsets, kv, extras)
         self.draft_width = draft_width
+        self.vision = vision
         return SimpleNamespace(
             row_offsets=input_row_offsets, positions=self.positions
         )
@@ -567,6 +574,31 @@ def test_verify_hands_the_batch_its_draft_width() -> None:
         adapter(_batch(lengths=[3, 3]))
     assert target.draft_width is not None
     assert int(_torch(target.draft_width)) == BLOCK
+
+
+def test_verify_hands_the_trunk_the_steps_image_rows() -> None:
+    """The verify merges a step's image span rows, as the trunk alone does.
+
+    The rows reach the trunk replicated over its mesh. A step without image
+    inputs hands none, so the trunk skips the merge. Built lazily: nothing
+    is realized.
+    """
+    lengths = [3, 3]
+    target = _RecordingTarget(sum(lengths))
+    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    with F.lazy():
+        rows = Tensor.zeros([2, HIDDEN], dtype=DType.bfloat16, device=CPU())
+        indices = Tensor.zeros([2], dtype=DType.int32, device=CPU())
+        adapter(_batch(lengths=lengths, vision=(rows, indices)))
+        vision = target.vision
+        adapter(_batch(lengths=lengths))
+    assert vision is not None
+    assert [int(d) for d in vision.embeddings.shape] == [2, HIDDEN]
+    assert [int(d) for d in vision.scatter_indices.shape] == [2]
+    for value in (vision.embeddings, vision.scatter_indices):
+        assert value.mesh.devices == _MESH.devices
+        assert list(value.mapping.placements) == [Replicated()]
+    assert target.vision is None
 
 
 def test_verify_fails_loud_on_a_missing_extra() -> None:

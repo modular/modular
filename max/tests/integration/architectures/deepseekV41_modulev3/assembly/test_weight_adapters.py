@@ -225,10 +225,9 @@ _TOWER = {"num_hidden_layers": 1, "hidden_size": 64}
     [
         (None, {}),
         ({}, {}),
-        (_TOWER, {"speculative": object()}),
         (_TOWER, {"overrides": {"max_images_per_request": 0}}),
     ],
-    ids=["absent", "empty", "speculative", "images_capped_at_0"],
+    ids=["absent", "empty", "images_capped_at_0"],
 )
 def test_pipeline_adapter_filters_vision_before_materialization(
     vision: dict[str, int] | None, pipeline: dict[str, Any]
@@ -237,9 +236,9 @@ def test_pipeline_adapter_filters_vision_before_materialization(
 
     The ``deepseek_v41`` config shim gives a checkpoint without
     ``vision_config`` an empty one. A deployment that builds no encoder,
-    under speculative decoding or with ``max_images_per_request`` 0, still
-    reads the routers' ``gate.bias_vl`` of a checkpoint with a tower: the
-    leaf contract follows the checkpoint.
+    with ``max_images_per_request`` 0, still reads the routers'
+    ``gate.bias_vl`` of a checkpoint with a tower: the leaf contract follows
+    the checkpoint.
     """
     hf = PretrainedConfig(
         text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
@@ -269,14 +268,29 @@ def test_pipeline_adapter_filters_vision_before_materialization(
         source.data.assert_called_once_with()
 
 
-def test_pipeline_adapter_passes_the_vision_encoder_weights_through() -> None:
+@pytest.mark.parametrize("dspark", [False, True], ids=["alone", "dspark"])
+def test_pipeline_adapter_passes_the_vision_encoder_weights_through(
+    dspark: bool,
+) -> None:
     """With ``vision_config`` the encoder's tensors keep their names.
 
-    The routers keep their vision bias, and the drafter stays unread.
+    The routers keep their vision bias, and the drafter stays unread. The
+    DSpark pairing builds the encoder too, so it reads the same tensors.
     """
     hf = PretrainedConfig(
-        text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
-        vision_config=PretrainedConfig(num_hidden_layers=1, hidden_size=64),
+        text_config=PretrainedConfig(
+            num_hidden_layers=1, engram_layer_ids=[], hidden_size=8
+        ),
+        vision_config=PretrainedConfig(
+            num_hidden_layers=1,
+            hidden_size=64,
+            num_attention_heads=1,
+            intermediate_size=8,
+            patch_size=14,
+            rope_theta=10000.0,
+            downsample_ratio=3,
+            max_image_tokens=1024,
+        ),
     )
     names = (
         "layers.0.attn_norm.weight",
@@ -291,7 +305,9 @@ def test_pipeline_adapter_passes_the_vision_encoder_weights_through() -> None:
     skip.data.side_effect = AssertionError("unsupported tensor materialized")
     sources = {name: _weight_source(name) for name in names}
     adapted = convert_safetensor_state_dict(
-        {**sources, "mtp.0.head.weight": skip}, hf
+        {**sources, "mtp.0.head.weight": skip},
+        hf,
+        _deployment(hf, speculative=object()) if dspark else None,
     )
     assert set(adapted) == set(names)
     for name in names:

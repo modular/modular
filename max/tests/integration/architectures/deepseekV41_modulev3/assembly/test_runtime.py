@@ -469,13 +469,16 @@ def test_the_config_shim_marks_a_vision_tower_only_when_present(
     assert (DeepseekV41Config.get_vision_cache_row_spec(hf) is not None) is (
         with_vision
     )
-    pipeline = SimpleNamespace(
-        model=SimpleNamespace(
-            huggingface_config=hf, vision_config_overrides={}
-        ),
-        speculative=None,
-    )
-    assert (vision_config(cast(Any, pipeline)) is not None) is with_vision
+    # A DSpark pairing loads the encoder too, so it fills the cache the
+    # hooks size.
+    for speculative in (None, SimpleNamespace(speculative_method="dspark")):
+        pipeline = SimpleNamespace(
+            model=SimpleNamespace(
+                huggingface_config=hf, vision_config_overrides={}
+            ),
+            speculative=speculative,
+        )
+        assert (vision_config(cast(Any, pipeline)) is not None) is with_vision
 
 
 def test_tokenizer_rejects_video_before_context_creation() -> None:

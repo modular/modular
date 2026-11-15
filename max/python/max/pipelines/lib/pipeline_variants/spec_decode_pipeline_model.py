@@ -328,11 +328,11 @@ def _takes_images(target: SupportedArchitecture) -> bool:
 
     It does when the target takes images and can encode them for the
     pairing: it builds its vision graph, as its registration's ``VISION``
-    module or through its own pipeline model's vision hooks, its batching
-    binds the compiled graph, and its verify merges the image rows. A hook
-    the pipeline model inherits doesn't count, as for :func:`_builds_module`.
-    A ModuleV3 target encodes only through the vision cache. The draft has no
-    say: the fused graph passes the image rows to the target alone.
+    module or through its own pipeline model's vision hooks, and its
+    batching binds the compiled graph. A hook the pipeline model inherits
+    doesn't count, as for :func:`_builds_module`. A ModuleV3 target encodes
+    only through the vision cache. The draft has no say: the fused graph
+    passes the image rows to the target alone.
     """
     model = target.pipeline_model
     if model is None:
@@ -351,9 +351,7 @@ def _takes_images(target: SupportedArchitecture) -> bool:
         batching, SupportsVisionEncoding
     ):
         return False
-    return hasattr(
-        batching, "bind_vision_encoder"
-    ) and spec_adapters.verify_merges_images(target.name)
+    return hasattr(batching, "bind_vision_encoder")
 
 
 def _batching(arch: SupportedArchitecture) -> type[Any]:

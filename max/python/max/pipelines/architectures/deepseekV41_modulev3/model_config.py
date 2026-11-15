@@ -110,14 +110,12 @@ def vision_config(
 ) -> DeepseekV41VisionConfig | None:
     """Returns the config of the vision encoder the deployment builds.
 
-    Returns ``None`` without a tower or with images capped at 0. Speculative
-    decoding serves text only, so it builds no encoder either.
+    Returns ``None`` without a tower or with images capped at 0.
     """
     huggingface_config = pipeline_config.model.huggingface_config
     if (
         not interface.has_vision_tower(huggingface_config)
         or max_images_per_request(pipeline_config) == 0
-        or pipeline_config.speculative is not None
     ):
         return None
     return DeepseekV41VisionConfig.from_hf(

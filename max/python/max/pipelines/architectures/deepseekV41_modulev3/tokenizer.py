@@ -414,7 +414,7 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextTokenizer):
         if images and self.image_processor is None:
             raise InputError(
                 "This DeepSeek-V4.1 deployment serves text only: it has no "
-                "vision encoder, caps images at 0, or decodes speculatively."
+                "vision encoder, or caps images at 0."
             )
         image_positions: list[int] = []
         if request.prompt is not None:

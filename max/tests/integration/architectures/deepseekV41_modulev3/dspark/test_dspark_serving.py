@@ -299,15 +299,14 @@ def test_dspark_pairs_the_modulev3_trunk_with_its_modulev3_draft() -> None:
 
 
 def test_the_pairing_reserves_vision_cache_only_with_its_encoder() -> None:
-    """The pairing of a vision checkpoint serves text only: its verify step
-    merges no image rows, so it loads no encoder, reserves no vision cache
-    and refuses images at admission."""
+    """The pairing of a vision checkpoint loads the trunk's encoder and takes
+    images, so it fills the vision cache it reserves."""
     register_all_models()
     paired = spec_decode_architecture(
         "DeepseekV41ForCausalLM", "dspark", None, prefer_module_v3=True
     )
     assert paired is not None
-    assert validate_no_images in paired.context_validators
+    assert validate_no_images not in paired.context_validators
     model = SimpleNamespace(
         huggingface_config=hf_config_shims.DeepseekV41HFConfig(**_hf_dict()),
         vision_config_overrides={},
@@ -323,8 +322,9 @@ def test_the_pairing_reserves_vision_cache_only_with_its_encoder() -> None:
         1 << 34,
         1,
     )
-    assert vision_config(cast(Any, pipeline)) is None
-    assert (reserved, plan) == (0, None)
+    assert vision_config(cast(Any, pipeline)) is not None
+    assert reserved > 0
+    assert plan is not None
 
 
 def test_the_modulev3_stages_are_a_registered_block_draft(

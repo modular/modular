@@ -86,7 +86,6 @@ __all__ = [
     "trailing_input_types",
     "verify_commits_long_rows",
     "verify_for",
-    "verify_merges_images",
     "verify_takes_prefill_rows",
 ]
 
@@ -300,11 +299,6 @@ def prepares_every_batch(target_arch: str) -> bool:
     The inputs past the canonical tail count.
     """
     return _adapter(target_arch).prepares_every_batch
-
-
-def verify_merges_images(target_arch: str) -> bool:
-    """Returns whether the target's verify merges a batch's image rows."""
-    return _adapter(target_arch).verify_merges_images
 
 
 def verify_commits_long_rows(target_arch: str, method: str) -> bool:

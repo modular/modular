@@ -36,7 +36,8 @@ each rank argmaxes its own vocab shard of every row and only the per-row
 winners cross the mesh.
 
 The graph takes the trunk's own extras past the canonical tail, which the
-trunk's batch processor prepares for every batch.
+trunk's batch processor prepares for every batch, and a step's image span
+rows, which the verify merges as the trunk does.
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
     record_engram_lookback,
 )
+from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -142,6 +144,28 @@ def _extras(
             f"the DSpark verify batch is missing graph inputs: {missing}"
         )
     return {name: as_tensors(batch.extra[name]) for name in names}
+
+
+def _vision(batch: BlockBatch, mesh: DeviceMesh) -> VisionInputs[Tensor] | None:
+    """The step's image span rows, replicated over the mesh.
+
+    A step that encodes images verifies no drafts, so the scatter indices,
+    which address the prompt rows, address the merged window too.
+
+    Returns:
+        ``None`` when the graph takes no image rows.
+    """
+    if not batch.vision_embeddings:
+        return None
+    replicated = DeviceMapping.replicated(mesh)
+    return VisionInputs(
+        embeddings=Tensor.from_shard_values(
+            batch.vision_embeddings, replicated
+        ),
+        scatter_indices=Tensor.from_shard_values(
+            batch.vision_scatter_indices, replicated
+        ),
+    )
 
 
 def _leaf_kv(
@@ -411,6 +435,7 @@ class DeepseekV41BlockTarget:
             draft_width=as_tensors(
                 ops.shape_to_tensor([batch.num_draft_tokens])[0]
             ),
+            vision=_vision(batch, target.mesh),
         )
         stream, pre = target.embed_stream(b)
         stream, pre, taps = target.run_trunk_with_taps(b, stream, pre)
@@ -807,9 +832,6 @@ ADAPTER = TargetAdapter(
     # engine binds doesn't.
     relaxed_thinking_acceptance=False,
     prepares_every_batch=True,
-    # The DSpark graph takes no image rows yet, so the pairing serves text
-    # only.
-    verify_merges_images=False,
     trailing_input_types=trailing_input_types,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
