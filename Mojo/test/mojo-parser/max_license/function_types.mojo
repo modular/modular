@@ -192,7 +192,8 @@ def test_conversion[p: Int](x: Int):
 
 # CHECK: lit.fn @"def(::SIMD[DType.int, 1]) raises thin -> None|def(x: ::SIMD[DType.int, 1]) raises thin -> None
 # CHECK: [[TMP:%.*]] = lit.ref.immut
-# CHECK: call{{.*}}([[TMP]], %1, %2)
+# CHECK: [[RESULT_TMP:%.*]] = lit.var.decl "__call_result_tmp__"
+# CHECK: call{{.*}}([[TMP]], %1, [[RESULT_TMP]])
 
 
 # // -----

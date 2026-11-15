@@ -128,7 +128,8 @@ def maybeRaises() raises -> Int:
 # CHECK-LABEL: lit.fn @"propagateErrorInDef
 def propagateErrorInDef() raises:
     # CHECK: %a = lit.var.decl "a"
-    # CHECK: lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
+    # CHECK: %__call_result_tmp__ = lit.var.decl
+    # CHECK: lit.call {{.*}}maybeRaises{{.*}}(%__error__, %__call_result_tmp__)
     var a = maybeRaises()
 
 
@@ -136,7 +137,8 @@ def propagateErrorInDef() raises:
 def propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<:meta<!Int> #alias_Int,
     var a: Int
-    # CHECK:  lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
+    # CHECK:  %__call_result_tmp__ = lit.var.decl
+    # CHECK:  lit.call {{.*}}maybeRaises{{.*}}(%__error__, %__call_result_tmp__)
     a = maybeRaises()
 
 
@@ -145,7 +147,8 @@ def propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK-NEXT: lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %a)
+        # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+        # CHECK-NEXT: lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %__call_result_tmp__)
         # CHECK-NEXT: hlcf.if
         a = maybeRaises()
         # CHECK: lit.try.yield
@@ -221,10 +224,12 @@ def fail() raises -> S:
 def call_raising():
     # CHECK: lit.try {
     try:
-        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %x)
+        # CHECK: %__call_result_tmp__ = lit.var.decl
+        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %__call_result_tmp__)
         var x = fail()
         # CHECK: %y = lit.var.decl "y"
-        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%e, %y)
+        # CHECK-NEXT: %__call_result_tmp___0 = lit.var.decl
+        # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%e, %__call_result_tmp___0)
         var y = S()
         # CHECK: lit.try.yield
     except e:
@@ -241,7 +246,8 @@ def fail_register() raises -> Int:
 
 # CHECK-LABEL: lit.fn @"fail_register_raises
 def fail_register_raises() raises -> Int:
-    # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__result__)
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%__error__, %__call_result_tmp__)
     # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()

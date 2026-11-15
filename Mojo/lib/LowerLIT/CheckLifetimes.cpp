@@ -3533,6 +3533,10 @@ public:
     (void)result;
   }
 
+  /// Tries to forward a move from a call-result temporary into its final
+  /// destination.
+  bool optimizeMove(LIT::CallOp moveCall);
+
   LLVM_DUMP_METHOD void dump() const;
 
   /// This is the builder used to insert any destructor calls.
@@ -4047,6 +4051,125 @@ static bool mightPointTo(Value p1, Value p2) {
   return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
 }
 
+/// Fold a move from a synthetic call-result temporary into its final
+/// destination. This handles the shape emitted for a potentially throwing
+/// call:
+///
+///   call(..., byref_result = tmp)
+///   <error propagation>
+///   move(tmp, final)
+///
+/// The final destination must be untouched from its declaration through the
+/// move. This ensures that writing the call result directly into it does not
+/// make an old value observable or require destruction on the error path.
+bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
+  FnOp moveFn =
+      valueSet.getTypeDeclInfo().getFuncForSymbol(moveCall.getDirectCallee());
+  if (!moveFn ||
+      moveFn.getSpecialFunctionKind() != SpecialFunctionKind::kMoveCtor ||
+      moveCall.getNumOperands() != 2)
+    return false;
+
+  Value moveSource = moveCall.getOperand(0);
+  Value moveDest = moveCall.getOperand(1);
+  auto tmpDecl = moveSource.getDefiningOp<VarDeclOp>();
+  auto destDecl = moveDest.getDefiningOp<VarDeclOp>();
+  if (!tmpDecl || !destDecl || tmpDecl.getKind() != VarDeclKind::Synthesized ||
+      tmpDecl->getBlock() != moveCall->getBlock() ||
+      destDecl->getBlock() != moveCall->getBlock() ||
+      !destDecl->isBeforeInBlock(moveCall))
+    return false;
+
+  LIT::CallOp initializer;
+  size_t initializerResultIndex = 0;
+  SmallVector<Operation *> errorPathConsumes;
+  for (OpOperand &use : tmpDecl.getResult().getUses()) {
+    Operation *user = use.getOwner();
+    if (user == moveCall && use.getOperandNumber() == 0)
+      continue;
+    if (isa<LIT::OwnershipMarkConsumedOp>(user)) {
+      errorPathConsumes.push_back(user);
+      continue;
+    }
+
+    auto call = dyn_cast<LIT::CallOp>(user);
+    if (!call || initializer || !call.getDirectCallee())
+      return false;
+    FuncType signature = call.getCalleeType().getBody();
+    size_t operandIndex = use.getOperandNumber();
+    if (operandIndex >= signature.getNumArguments() ||
+        signature.getArgConvention(operandIndex) != ArgConvention::ByRefResult)
+      return false;
+    initializer = call;
+    initializerResultIndex = operandIndex;
+  }
+  if (!initializer || initializer->getBlock() != moveCall->getBlock() ||
+      !tmpDecl->isBeforeInBlock(initializer) ||
+      !destDecl->isBeforeInBlock(initializer) ||
+      !initializer->isBeforeInBlock(moveCall))
+    return false;
+
+  // There is no benefit in forwarding a dead assignment, and retaining its
+  // move preserves the existing unused-assignment diagnostic.
+  bool hasUseAfterMove = llvm::any_of(moveDest.getUses(), [&](OpOperand &use) {
+    Operation *user = use.getOwner();
+    return user->getBlock() == moveCall->getBlock() &&
+           moveCall->isBeforeInBlock(user);
+  });
+  if (!hasUseAfterMove)
+    return false;
+
+  // Every other consume of the temporary must be in control flow between its
+  // initialization and the final move.
+  for (Operation *consume : errorPathConsumes) {
+    Operation *containingOp = consume;
+    while (containingOp->getBlock() != moveCall->getBlock()) {
+      containingOp = containingOp->getParentOp();
+      if (!containingOp)
+        return false;
+    }
+    if (!initializer->isBeforeInBlock(containingOp) ||
+        !containingOp->isBeforeInBlock(moveCall))
+      return false;
+  }
+
+  // Reject any access to the destination before the move, including accesses
+  // nested in the error-propagation control flow.
+  for (auto iter = std::next(Block::iterator(destDecl)),
+            end = Block::iterator(moveCall);
+       iter != end; ++iter) {
+    WalkResult result = iter->walk([&](Operation *nested) {
+      if (llvm::any_of(nested->getOperands(), [&](Value operand) {
+            return mightPointTo(operand, moveDest);
+          }))
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted())
+      return false;
+  }
+
+  auto tmpRefType = cast<RefType>(tmpDecl.getType());
+  auto destRefType = cast<RefType>(moveDest.getType());
+  TypedAttr tmpOrigin = tmpRefType.getOrigin();
+  TypedAttr destOrigin = destRefType.getOrigin();
+  SmallVector<TypedAttr> implicitOrigins(initializer.getImplicitOrigins());
+  bool replacedOrigin = false;
+  for (TypedAttr &origin : implicitOrigins)
+    if (origin == tmpOrigin) {
+      origin = destOrigin;
+      replacedOrigin = true;
+    }
+  if (!replacedOrigin)
+    return false;
+  initializer.setImplicitOrigins(implicitOrigins);
+  initializer.setOperand(initializerResultIndex, moveDest);
+  for (Operation *consume : errorPathConsumes)
+    consume->setOperand(0, moveDest);
+  moveCall->dropAllReferences();
+  return true;
+}
+
 // Check to see if we can eliminate a temporary being passed as an owned
 // argument to a call.
 //
@@ -4526,6 +4649,11 @@ void DestructorInsertion::scanBlock(Block &block) {
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(),
                                  std::next(Block::iterator(&op)));
     DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+    if (auto call = dyn_cast<LIT::CallOp>(op);
+        call && dtorInserter.optimizeMove(call)) {
+      opsToRemove.push_back(&op);
+      continue;
+    }
 
     assert((opEffects.results.size() == op.getNumResults() ||
             overall == OverallOpValueEffect::ifLikeOp ||

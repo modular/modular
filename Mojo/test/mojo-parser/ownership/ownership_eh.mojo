@@ -309,8 +309,9 @@ def testErrorReturn() raises:
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
         var x = (
+            # expected-warning @+1 {{assignment to 'x' was never used}}
             ctx.read()
-        )  # expected-warning {{assignment to 'x' was never used}}
+        )
         input = "hello"
     # CHECK: except
     use(input)
@@ -483,3 +484,27 @@ def doesnt_actually_raise() raises Never:
 def test_doesnt_actually_raise() -> Int:
     doesnt_actually_raise()
     return 42
+
+
+def make_string() raises Int -> String:
+    return ""
+
+
+# CHECK-LABEL: lit.fn @"raising_result_temporary
+# CHECK: [[VALUE:%.*]] = lit.var.decl "value" var : !lit.ref<!String
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__call_error_tmp__, [[VALUE]])
+# CHECK-NOT: @"__init__(move
+# CHECK: lit.call {{.*}}String::@"__len__
+def raising_result_temporary() raises Float32:
+    var value = make_string()
+    _ = value.__len__()
+
+
+# CHECK-LABEL: lit.fn @"live_destination_keeps_raising_result_temporary
+# CHECK: %__call_result_tmp__ = lit.var.decl
+def live_destination_keeps_raising_result_temporary() raises Float32:
+    # expected-warning @+1 {{assignment to 'value' was never used}}
+    var value = String("old value")
+    value = make_string()
+    _ = value.__len__()

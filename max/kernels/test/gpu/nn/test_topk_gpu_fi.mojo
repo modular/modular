@@ -509,6 +509,7 @@ def test_topk_sampling[
     """
 
     var m = Bench()
+    _ = m
     var batch_size = test_case.batch_size
     var N = test_case.N
     var K = test_case.K

@@ -951,7 +951,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     if (trackable.endInitState == OriginTrackable::ExitInitState::EndsInit)
       return false;
 
-    // If the type is movable, then ~always use a temporary result.  The reason
+    // If the type is movable, then always use a temporary result.  The reason
     // is that we need to support things like:
     // def func():
     //     val1 = 0
@@ -962,37 +962,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     //     use(val1) # Should work!
     //
     // If we don't do this end up with an uninitialized value on the error
-    // return path.  Movable types are supposed to be efficiently movable.
+    // return path.  Movable types are supposed to be efficiently movable and
+    // CheckLifetimes will eliminate the temporary when possible.
     if (destRValueType.isMovable(callExpr->getLoc(), emitter.shared,
-                                 emitter.declScope)) {
-      // If we're the top level, then nothing can use the result, so we can
-      // microoptimize this case.
-      bool isOk = false;
-      if (RaiseContext *raiseContext = emitter.getRaiseContext()) {
-        Operation *opForRaise = raiseContext->getOperation();
-
-        // If we're exiting the entire function, we are ok.
-        if (isa<FnOp>(opForRaise))
-          isOk = true;
-
-        // If that didn't work, see if we're initializing a vardecl within the
-        // current exception region.  If so, we know that the exception couldn't
-        // use the old value because it won't be live outside.
-        else if (VarDeclOp varDeclOp =
-                     underlyingDest.getDefiningOp<VarDeclOp>()) {
-          if (underlyingDest.use_empty()) {
-            // If there are no assignments into this so far, then it must be
-            // uninit.
-            isOk = true;
-          } else if (opForRaise->isAncestor(varDeclOp)) {
-            isOk = true;
-          }
-        }
-      }
-
-      if (!isOk)
-        return false;
-    }
+                                 emitter.declScope))
+      return false;
   }
 
   // Collect all of the types of all the arguments so we can collect the

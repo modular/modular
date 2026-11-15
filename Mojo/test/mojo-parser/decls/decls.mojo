@@ -612,7 +612,8 @@ def test_typed_raises_fn3() raises Float32:
 def test_typed_raises_fn4() raises Float32:
     # CHECK: %__call_error_tmp__ = lit.var.decl
     # CHECK-NEXT: %str = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %str)
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %__call_result_tmp__)
 
     var str = test_typed_raises_fn2()
     _ = str.__len__()

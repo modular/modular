@@ -460,9 +460,10 @@ def for_range_loop():
         # CHECK: %__try_error__ = lit.var.decl
         # CHECK-NEXT: lit.loop {
         # CHECK-NEXT:  %item = lit.var.decl
-        # CHECK-NEXT:  lit.call {{.*}}__next__{{.*}}(%$ITER, %__try_error__, %item)
+        # CHECK-NEXT:  %__call_result_tmp__ = lit.var.decl
+        # CHECK-NEXT:  lit.call {{.*}}__next__{{.*}}(%$ITER, %__try_error__, %__call_result_tmp__)
         # CHECK-NEXT:  hlcf.if
-        # CHECK-NEXT:  lit.ownership.mark_consumed %item
+        # CHECK-NEXT:  lit.ownership.mark_consumed %__call_result_tmp__
         # CHECK-NEXT:  lit.loop.break.else
         # CHECK: [[TMPR:%.*]] = kgen.rebind %item
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[TMPR]]

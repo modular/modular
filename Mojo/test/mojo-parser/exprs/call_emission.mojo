@@ -328,10 +328,11 @@ def test_matrix_equal[
 # CHECK-LABEL: lit.fn @"partialBind
 def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
-    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"__call_result_tmp__`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, ".rows`2x": !Int, ".cols`2x1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "C.rows`": !Int, "C.cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
-    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int *(0,0), :!Int *(0,1)>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %exp)
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int *(0,0), :!Int *(0,1)>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %__call_result_tmp__)
     var exp = test_matrix_equal[matmul_unrolled[0]](C)
 
 

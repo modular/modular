@@ -139,7 +139,8 @@ def test_list_comprehension():
     # CHECK: %__try_error__{{.*}} = lit.var.decl
     # CHECK-NEXT: lit.loop {
     # CHECK: %i1 = lit.var.decl "i1"
-    # CHECK: lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__try_error__, %i1)
+    # CHECK: %__call_result_tmp__ = lit.var.decl
+    # CHECK: lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__try_error__, %__call_result_tmp__)
     # CHECK: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__
     # CHECK:      lit.call {{.*}}@List::@"append
     # CHECK-NEXT: lit.loop.continue
@@ -264,9 +265,9 @@ def test_dict_comprehension():
     # CHECK-NEXT: lit.loop {
     # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK:      %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
-    # CHECK:      lit.call {{.*}}String::@"__init__(){{.*}}(%__call_result_tmp__)
-    # CHECK:      [[TMP:%.*]] = lit.ref.immut %__call_result_tmp__
+    # CHECK:      [[STRING_TMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!String
+    # CHECK:      lit.call {{.*}}String::@"__init__(){{.*}}([[STRING_TMP]])
+    # CHECK:      [[TMP:%.*]] = lit.ref.immut [[STRING_TMP]]
     # CHECK:      lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%a_collection, {{.*}}, [[TMP]])
     # CHECK-NEXT: lit.loop.continue
     # CHECK: }

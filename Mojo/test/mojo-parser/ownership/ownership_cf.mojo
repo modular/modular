@@ -121,7 +121,6 @@ def if_examples(cond: __mlir_type.`!kgen.scalar<bool>`):
 
     # CHECK: [[ONE:%.+]] = kgen.param.constant: scalar<bool> = <true>
     # CHECK-NEXT: hlcf.if [[ONE]] {
-    # expected-warning @below {{'if' condition always evaluates to 'True'; 'else' branch is unreachable}}
     if True:
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
         # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
@@ -470,6 +469,7 @@ def testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__deinit__
+        # expected-warning @+1 {{assignment to 'x' was never used}}
         var x = ctx.read()
         input = "hello"
     # CHECK: except
