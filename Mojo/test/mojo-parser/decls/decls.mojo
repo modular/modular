@@ -599,30 +599,21 @@ def test_typed_raises_fn3() raises Float32:
     # This tests calling a function that raises Int in context that requires
     # raising Float32.  We need a temporary for the implicit conversion.
 
-    # CHECK-NEXT: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try {
-    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
-    # CHECK: lit.try.yield
-    # CHECK-NEXT: } except {
-    # CHECK-NEXT:    [[ERB:%.*]] = kgen.rebind %__call_error_tmp__
-    # CHECK-NEXT:    = lit.ref.load [[ERB]]
-    # CHECK-NEXT:    lit.call {{.*}}SIMD::@"__init__
-    # CHECK-NEXT:    = kgen.rebind
-    # CHECK-NEXT:    lit.ref.store {{.*}}, %__error__
-    # CHECK-NEXT:    lit.raise
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %__call_result_tmp__)
+    # CHECK-NEXT: hlcf.if
+    # CHECK: lit.ref.load {{.*}}__call_error_tmp__
+    # CHECK: lit.ref.store {{.*}}, %__error__
+    # CHECK-NEXT: lit.raise
     _ = test_typed_raises_fn2()
 
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn4
 def test_typed_raises_fn4() raises Float32:
-    # CHECK: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.try {
-    # CHECK-NEXT:   lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %anonymous2A)
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %str = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %str)
 
-    # Make sure to emit ExprDest outside the try block.
-    # CHECK: %str = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "move"
     var str = test_typed_raises_fn2()
     _ = str.__len__()
 
@@ -630,9 +621,8 @@ def test_typed_raises_fn4() raises Float32:
 def test_typed_raises_fn5() raises Float32:
 
     # Make sure to emit ExprDest outside the try block.
-    # CHECK: %anonymous2A = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__
-    # CHECK-NEXT: lit.try
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     _ = test_typed_raises_fn2().__len__()
 
 def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
@@ -643,9 +633,8 @@ def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
 def test_typed_raises_fn6(x: String) raises Float32:
 
     # Make sure to emit ExprDest outside the try block.
-    # CHECK: %__ref_result_tmp__ = lit.var.decl
-    # CHECK-NEXT: %__call_error_tmp__
-    # CHECK-NEXT: lit.try
+    # CHECK: %__call_error_tmp__ = lit.var.decl
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     _ = test_typed_raises_fn3(x).__len__()
 
 # https://github.com/modular/modular/issues/5845
@@ -664,7 +653,7 @@ struct TypedRaisesInit[n: Int]:
 # CHECK-LABEL: lit.fn @"test_typed_raises_init
 def test_typed_raises_init() raises Float32:
     # CHECK: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try {
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}TypedRaisesInit{{.*}}__init__{{.*}}(%__call_error_tmp__,
     _ = TypedRaisesInit[1]()
 

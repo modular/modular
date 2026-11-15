@@ -1365,7 +1365,7 @@ def raises_int() raises Int:
   raise Error()
 
 def bad_raises_fn2() raises:
-  # expected-error @+1 {{cannot call function that may raise 'Int' in context that supports an error type of 'Error'}}
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Error'}}
   raises_int()
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Error'}}

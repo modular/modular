@@ -40,11 +40,13 @@ class IREmitter;
 class CallOperands;
 class TraitType;
 
-/// Tracks the error storage associated with a source-level try body or raising
-/// function while it is emitted. The opForRaise is a FnOp when the context is a
-/// throwing function, or a TryOp when within one of those.
+/// Tracks the error storage and propagation behavior associated with a
+/// source-level try body or raising function while it is emitted. The
+/// opForRaise is a FnOp when the context is a throwing function, or a TryOp
+/// when within one of those.
 struct RaiseContext {
-  explicit RaiseContext(Operation *opForRaise);
+  explicit RaiseContext(Operation *opForRaise,
+                        bool breakLoopElseOnRaise = false);
 
   /// Returns the existing error slot, or null when this try has not yet needed
   /// one.
@@ -58,9 +60,15 @@ struct RaiseContext {
                                Location loc);
   Operation *getOperation() const { return opForRaise; }
 
+  // When emitting for-each loops, the `__next__()` function will throw on loop
+  // termination.  This flag indicates whether we are in a context like this, it
+  // changes generation on the error path to exit the loop instead of raising.
+  bool shouldBreakLoopElseOnRaise() const { return breakLoopElseOnRaise; }
+
 private:
   Operation *opForRaise;
   MLValue errorSlot;
+  bool breakLoopElseOnRaise;
 };
 
 //===--------------------------------------------------------------------===//
@@ -393,23 +401,6 @@ public:
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands);
 
-  /// Emit a call to `callee` in a try block, invoking a callback to generate
-  /// logic in the 'catch' block that is wrapped around the call. This ensures
-  /// that the ExprDest is updated and live after the try block, which only
-  /// works if the "catch" logic doesn't fall through.
-  ///
-  /// This emits an error and returns null on failure.
-  CValue
-  emitCallInTryBlock(CValue callee, CallOperands &&operands,
-                     function_ref<CValue(CallOperands &&)> emitCall,
-                     std::function<void(VarDeclOp errDecl)> emitCatchLogic);
-
-  /// Emit an indirect call to a resolved value in a try block. See
-  /// `emitCallInTryBlock`.
-  CValue emitIndirectCallInTryBlock(
-      CValue callee, CallOperands &&operands,
-      std::function<void(VarDeclOp errDecl)> emitCatchLogic);
-
   /// This helper emits a named method call with the provided `operands`,
   /// where the first positional operand is the receiver of the call. This emits
   /// an error if the call is invalid and returns null. The `operands` must
@@ -691,7 +682,8 @@ public:
 
   /// Emit the control flow following a call that throws or never returns.
   void emitCallControlFlow(Operation &call, ASTType resultType, bool isThrows,
-                           ASTType thrownType, ValueRange operands);
+                           ASTType thrownType, Value callErrorSlot,
+                           ValueRange operands, const ExprNode *callExpr);
 };
 
 //===----------------------------------------------------------------------===//

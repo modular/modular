@@ -458,19 +458,15 @@ def for_range_loop():
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
         # CHECK: lit.loop {
-        # CHECK-NEXT:  [[ANON:%.*]] = lit.var.decl "anonymous*"
-        # CHECK-NEXT:   %__call_error_tmp__ = lit.var.decl
-        # CHECK-NEXT:   lit.try {
-        # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
-        # CHECK:    lit.try.yield
-        # CHECK-NEXT:        } except {
-        # CHECK-NEXT:  lit.loop.break.else
-        # CHECK: } <suppressWarnings = true>
+        # CHECK-NEXT:  %__for_error__ = lit.var.decl
         # CHECK-NEXT:  %item = lit.var.decl
-        # CHECK: [[TMP:%.*]] = lit.ref.load %item
-        # CHECK-NEXT: [[TMPR:%.*]] = kgen.rebind [[TMP]]
-        # CHECK-NEXT: [[TMPREF:%.*]] = lit.ref.load [[TMPR]]
-        # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMPREF]])
+        # CHECK-NEXT:  lit.call {{.*}}__next__{{.*}}(%$ITER, %__for_error__, %item)
+        # CHECK-NEXT:  hlcf.if
+        # CHECK-NEXT:  lit.ownership.mark_consumed %item
+        # CHECK-NEXT:  lit.loop.break.else
+        # CHECK: [[TMPR:%.*]] = kgen.rebind %item
+        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[TMPR]]
+        # CHECK-NEXT: lit.call{{.*}}use{{.*}}([[TMP]])
         # CHECK-NEXT: lit.loop.continue
         use(item)
     else:
@@ -500,9 +496,9 @@ def for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
         # CHECK: lit.loop {
-        # CHECK-NEXT: %__ref_result_tmp__ = lit.var.decl
-        # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
-        # CHECK:   lit.call {{.*}}RefIter::@"__next__{{.*}}(%$ITER, %__call_error_tmp__, %__ref_result_tmp__)
+        # CHECK-NEXT: %__for_error__ = lit.var.decl
+        # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+        # CHECK:   lit.call {{.*}}RefIter::@"__next__{{.*}}(%$ITER, %__for_error__, %__call_result_tmp__)
 
         # CHECK:   %item = lit.var.decl "item" ref
 
@@ -544,16 +540,16 @@ struct IterRange(Iterator, ImplicitlyCopyable):
 def induction_var_scope():
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: __next__
         # CHECK: %item = lit.var.decl "item"
+        # CHECK: __next__
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for (var item) in IterRange(0):
-        # CHECK: __next__
         # CHECK: %item = lit.var.decl "item"
+        # CHECK: __next__
         # CHECK: lit.ref.load %item
         var g = item
 
@@ -561,16 +557,16 @@ def induction_var_scope():
 def induction_var_scope_def() raises:
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: __next__
         # CHECK: %item = lit.var.decl "item"
+        # CHECK: __next__
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
     # CHECK: lit.loop {
     for item in IterRange(0):
-        # CHECK: __next__
         # CHECK: %item = lit.var.decl "item"
+        # CHECK: __next__
         # CHECK: lit.ref.load %item
         var g = item
 

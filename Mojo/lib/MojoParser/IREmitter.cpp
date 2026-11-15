@@ -54,7 +54,8 @@ using namespace M::KGEN::LIT;
 /// raising function or try region.
 void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
                                     bool isThrows, ASTType thrownType,
-                                    ValueRange operands) {
+                                    Value callErrorSlot, ValueRange operands,
+                                    const ExprNode *callExpr) {
   assert(builder && "runtime call emission requires a builder");
   OpBuilder &builder = *this->builder;
   Location loc = call.getLoc();
@@ -83,6 +84,29 @@ void IREmitter::emitCallControlFlow(Operation &call, ASTType resultType,
 
   builder.createBlock(&ifOp.getThenRegion());
   LIT::OwnershipMarkConsumedOp::create(builder, loc, operands.back());
+  RaiseContext *raiseContext = getRaiseContext();
+  MLValue contextualErrorSlot = raiseContext->getErrorSlot();
+  assert(contextualErrorSlot && callErrorSlot &&
+         "throwing calls require error slots");
+
+  // If we're emitting a call to "iter.__next__()" in a foreach block, we want
+  // the error to stop the iteration, not to actually raise.
+  if (raiseContext->shouldBreakLoopElseOnRaise()) {
+    LIT::LoopBreakElseOp::create(builder, loc);
+    builder.createBlock(&ifOp.getElseRegion());
+    HLCF::YieldOp::create(builder, loc);
+    builder.setInsertionPointAfter(ifOp);
+    return;
+  }
+
+  // If we created a temporary result slot for the call, move the error value
+  // from our temporary into the expected error slot.  This can perform an
+  // implicit conversion when the types don't match, e.g. when calling a
+  // function that raises "specificError" in a function that raises "Error".
+  if (callErrorSlot != contextualErrorSlot) {
+    ExprDest moveDest(contextualErrorSlot, EC_RaiseValue);
+    (void)emitResult(MRValue(callErrorSlot), callExpr, moveDest);
+  }
   LIT::RaiseOp::create(builder, loc);
   HLCF::YieldOp::create(builder, loc);
 
@@ -1946,7 +1970,8 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Error handling helpers.
 
-RaiseContext::RaiseContext(Operation *opForRaise) : opForRaise(opForRaise) {
+RaiseContext::RaiseContext(Operation *opForRaise, bool breakLoopElseOnRaise)
+    : opForRaise(opForRaise), breakLoopElseOnRaise(breakLoopElseOnRaise) {
   if (auto func = dyn_cast_or_null<FnOp>(opForRaise)) {
     if (!func.isThrows()) {
       this->opForRaise = nullptr;

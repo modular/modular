@@ -717,9 +717,8 @@ def nested_for_reassign_nontrivial():
         for _ in TrivialRange():
             # The old value dies on the non-raising arm, i.e. only once
             # __next__ says the body runs.
-            # CHECK: lit.try.raise "try1"
-            # CHECK-NEXT: } else {
-            # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
+            # CHECK: hlcf.if
+            # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%mem)
             # CHECK-NEXT: lifetime.end %mem
 
             # CHECK: lifetime.start %mem

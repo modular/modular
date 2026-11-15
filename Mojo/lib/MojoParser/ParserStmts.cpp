@@ -3332,8 +3332,8 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   }
 
   // Determine if we're modern or legacy structure.
-  bool isThrowsCase =
-      FnOrFnLiteralTypeGeneratorType::get(nextFn.getType()).isThrows();
+  auto nextFnType = FnOrFnLiteralTypeGeneratorType::get(nextFn.getType());
+  bool isThrowsCase = nextFnType.isThrows();
 
   // Create the LoopOp
   auto loopOp = LIT::LoopOp::create(builder, forLocation);
@@ -3356,14 +3356,18 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 
   if (isThrowsCase) {
     // Call __next__.  If it throws then break to the else block.
-    if (!emitter.emitIndirectCallInTryBlock(
-            nextFn, std::move(nextOperands), [&](VarDeclOp errDecl) {
-              // Just break on error.  We ignore the actual error value.
-              LoopBreakElseOp::create(*emitter.builder, loopOp.getLoc());
-            })) {
-      indvarDest.resetForError(emitter);
+    RaiseContext loopRaiseContext(loopOp, /*breakLoopElseOnRaise=*/true);
+    llvm::SaveAndRestore raiseContextSaver(curRaiseContext, &loopRaiseContext);
+    auto loopEmitter = getEmitter();
+    auto errorDecl =
+        loopEmitter.emitVarDecl("__for_error__", nextFnType.getUserThrownType(),
+                                forLocation, VarDeclKind::Synthesized);
+    loopRaiseContext.setErrorSlot(errorDecl);
+    if (!loopEmitter.emitIndirectCall(nextFn, std::move(nextOperands))) {
+      indvarDest.resetForError(loopEmitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
+    builder = *loopEmitter.builder;
   } else {
     CValue hasNextBool = emitter.emitNamedMethodCall(
         "__has_next__",

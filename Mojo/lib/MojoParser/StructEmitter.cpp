@@ -480,9 +480,18 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   ArrayRef<Type> resultTypes = specializedFnType.getResults();
   auto callOp = LIT::CallOp::create(builder, fn.getLoc(), resultTypes,
                                     typedSymbol, implicitOrigins, operands);
+  Value callErrorSlot;
+  if (specializedFnType.isThrows() &&
+      !sugarIsa<NeverType>(specializedFnType.getUserThrownType())) {
+    size_t errorArgIndex = specializedFnType.getNumArguments() - 2;
+    assert(specializedFnType.getArgConvention(errorArgIndex) ==
+           ArgConvention::ByRefError);
+    callErrorSlot = operands[errorArgIndex];
+  }
   emitter.emitCallControlFlow(*callOp, specializedFnType.getUserResultType(),
                               specializedFnType.isThrows(),
-                              specializedFnType.getUserThrownType(), operands);
+                              specializedFnType.getUserThrownType(),
+                              callErrorSlot, operands, nullptr);
 
   emitter.emitNormalReturn(fn.getLoc(), callOp->getResult(0));
 

@@ -1176,12 +1176,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     bool createdErrorSlot = !raiseContext->getErrorSlot();
     MLValue errSlot = raiseContext->getOrCreateErrorSlot(
         emitter, errorType, argValAndExpr.expr->getLocation(emitter));
-    // Make sure the raised error type matches the contextual error type. We
-    // don't support throwing an Int in a context that catches a Float for
-    // example.
-    // TODO: we can add support for implicit conversions in the future.  We can
-    // make many types implicitly convert to Error by stringizing.  Until then,
-    // people can do this manually by catching and rethrowing.
+    // A mismatched type needs distinct storage for the call's byref error
+    // result. emitCallControlFlow converts it into the contextual slot on the
+    // error path.
     if (isa<UnresolvedType>(errSlot.getRValueType())) {
       // If the contextual caught type is unresolved, then we're the first call
       // in a try block.  Resolve the error type to whatever type we raise.
@@ -1192,11 +1189,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       emitter.checkInferredErrorType(errSlot.getRValueType(),
                                      callExpr->getLoc());
     } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
-      emitter.emitError(callExpr->getLoc())
-          << "cannot call function that may raise " << errorType
-          << " in context that supports an error type of "
-          << errSlot.getRValueType() << callExpr->getRange();
-      return {};
+      auto loc = argValAndExpr.expr->getLocation(emitter);
+      auto tmp = emitter.emitVarDecl("__call_error_tmp__", errorType, loc,
+                                     VarDeclKind::Synthesized);
+      return MLValue(tmp);
     }
     return errSlot;
   }
@@ -1980,75 +1976,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // Function literals might have been converted.
   callee = callEmitter.callee;
 
-  // Check to see if the callee is a throwing function whose thrown type
-  // mismatches any fixed contextual error type, but which is implicitly
-  // convertible.  In this case, we want to compile something like:
-  //   def test() raises Float32: throws_int()
-  // into:
-  //   def test() raises Float32:
-  //     try:
-  //       throws_int()
-  //     except err:
-  //       raise err
-  // This is safe because the thrown type is implicitly convertible to Float32,
-  // and the exception will be implicitly converted when rethrown.
-  if (calleeSig.isThrows() && builder && getRaiseContext()) {
-    MLValue errSlot = getRaiseContext()->getErrorSlot();
-    ASTType thrownType = calleeSig.getUserThrownType();
-
-    auto isErrorTypeConvertible = [&]() -> bool {
-      // FIXME: ImplicitOrigins aren't bound here, but implicit origins may
-      // be in the error type of callee_sig, which will break implicit
-      // conversion checking below.  Implicit origins need to go away!
-      // Example:
-      //  def callee(a: String) raises Pointer[String, origin_of(a)]: ...
-      //  def caller(a: String) raises Pointer[String, origin_of(a)]:
-      //      callee(a)  # calee.error type is a pointer referring to a's
-      //      origin.
-      mlir::AttrTypeWalker walker;
-      // This is overly conservative because it isn't tracking depths.
-      walker.addWalk(
-          [](ImplicitOriginRefAttr sig) { return WalkResult::interrupt(); });
-      if (walker.walk(thrownType).wasInterrupted())
-        return false;
-
-      return canImplicitlyConvertToType(
-          {UnboundAttr::get(thrownType), callExpr}, errSlot.getRValueType(),
-          getDeclScope());
-    };
-
-    if (errSlot &&
-        // We don't need a temp if the types line up, which is common.
-        !isEqualCanon(thrownType, errSlot.getRValueType()) &&
-        // Inferred contextual types will be resolved correctly
-        !sugarIsa<UnresolvedType>(errSlot.getRValueType()) &&
-        // Throw NeverType isn't actually thrown.
-        !sugarIsa<NeverType>(thrownType) &&
-        // Thrown type must be implicitly convertible to the error slot type.
-        isErrorTypeConvertible()) {
-
-      // The callee is already resolved, so emit it unchecked in the try
-      // region rather than re-resolving it as an indirect call.
-      return emitCallInTryBlock(
-          callee, std::move(callOperands),
-          [&](CallOperands &&operands) {
-            return emitCallUnchecked(callee, std::move(operands));
-          },
-          [&](VarDeclOp errDecl) {
-            // Move the error out of the temporary and into the overall error
-            // slot, performing the implicit conversion.
-            ExprDest moveDest(errSlot, EC_RaiseValue);
-            (void)emitResult(MRValue(errDecl), callExpr, moveDest);
-            auto loc = translateLocation(callExpr->getLoc());
-            RaiseOp::create(*builder, loc);
-            TryYieldOp::create(*builder, loc);
-            // Check for invalid origin references.
-            checkInferredErrorType(errDecl.getType().getElementType(),
-                                   callExpr->getLoc());
-          });
-    }
-  }
-
   // Capture the types of any "fully sugared" arguments that are passed in so
   // we can propagate them to the result type.  We capture the sugared forms of
   // things so we compile generic calls (e.g. SIMD.add(someInt8, 42)) into a
@@ -2291,10 +2218,19 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       call.setTailKind(TailKind::Tail);
   }
 
-  if (callOp)
+  if (callOp) {
+    Value callErrorSlot;
+    if (calleeSig.isThrows() &&
+        !sugarIsa<NeverType>(calleeSig.getUserThrownType())) {
+      size_t errorArgIndex = calleeSig.getNumArguments() - 2;
+      assert(calleeSig.getArgConvention(errorArgIndex) ==
+             ArgConvention::ByRefError);
+      callErrorSlot = callArgs[errorArgIndex];
+    }
     emitCallControlFlow(*callOp, calleeSig.getUserResultType(),
                         calleeSig.isThrows(), calleeSig.getUserThrownType(),
-                        callArgs);
+                        callErrorSlot, callArgs, callExpr);
+  }
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
