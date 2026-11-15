@@ -1182,7 +1182,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     if (createdErrorSlot) {
       emitter.checkInferredErrorType(errSlot.getRValueType(),
                                      callExpr->getLoc());
-    } else if (!raiseContext->isDeferringErrorConversions() &&
+    } else if (raiseContext->isEagerlyEmitted() &&
                !errorType.isEqualCanon(errSlot.getRValueType())) {
       auto loc = argValAndExpr.expr->getLocation(emitter);
       auto tmp = emitter.emitVarDecl("__call_error_tmp__", errorType, loc,

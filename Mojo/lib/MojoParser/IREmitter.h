@@ -46,12 +46,16 @@ class TraitType;
 struct RaiseContext {
   explicit RaiseContext(Operation *opForRaise,
                         bool breakLoopElseOnRaise = false);
+  // Create a RaiseContext for a try block that requires a specific error decl.
+  // Raises within its body will be eagerly resolved instead of collected
+  // lazily.  The benefit of this is that contextual member resolution will see
+  // the concrete type of the VarDecl, allowing "raise .enumElt" to work in
+  // with blocks that require a specific error type.
+  RaiseContext(Operation *opForRaise, VarDeclOp errorDecl,
+               bool breakLoopElseOnRaise = false);
 
   /// Returns the primary error slot, or null when none has been needed.
   MLValue getErrorSlot() const;
-
-  /// Installs the fixed error slot used by a synthetic raising context.
-  void setErrorSlot(VarDeclOp errorDecl);
 
   /// Returns storage for `errorType`, creating it before a try when needed.
   MLValue getOrCreateErrorSlot(IREmitter &emitter, ASTType errorType,
@@ -65,16 +69,16 @@ struct RaiseContext {
   void recordRaiseSite(MLValue errorSlot, Operation *terminator,
                        Operation *sourceOperation, SMLoc sourceLoc);
 
-  /// Converts every deferred error to the first error slot's type.
-  MLValue finalizeErrorSlots(IREmitter &emitter);
+  /// Converts deferred errors to a common slot, optionally constrained to
+  /// `requiredErrorType`. When `isSlotRequired`, creates an `Error` slot if
+  /// no error was raised and no type was specified.
+  MLValue finalizeErrorSlots(IREmitter &emitter, ASTType requiredErrorType = {},
+                             bool isSlotRequired = false);
 
-  /// Try blocks support heterogenous raises within their body - each raising
-  /// operation is collected and processed when the 'except' clauses are
-  /// encountered.  Functions have a declared result slot with a specific type
-  /// that we can emit directly into.
-  bool isDeferringErrorConversions() const {
-    return isa<LIT::TryOp>(opForRaise);
-  }
+  /// Returns whether this context writes directly to a fixed error slot or
+  /// collects all the raised temporaries and processes them at finalization
+  /// time.
+  bool isEagerlyEmitted() const { return eagerlyEmitted; }
   size_t getNumErrorSlots() const { return errorSlots.size(); }
   Operation *getOperation() const { return opForRaise; }
 
@@ -95,6 +99,7 @@ private:
   SmallVector<MLValue, 2> errorSlots;
   SmallVector<RaiseSite, 4> raiseSites;
   bool breakLoopElseOnRaise;
+  bool eagerlyEmitted = false;
 };
 
 //===--------------------------------------------------------------------===//

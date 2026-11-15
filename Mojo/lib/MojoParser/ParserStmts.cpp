@@ -3366,10 +3366,6 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     RaiseContext loopRaiseContext(loopOp, /*breakLoopElseOnRaise=*/true);
     llvm::SaveAndRestore raiseContextSaver(curRaiseContext, &loopRaiseContext);
     auto loopEmitter = getEmitter();
-    auto errorDecl =
-        loopEmitter.emitVarDecl("__for_error__", nextFnType.getUserThrownType(),
-                                forLocation, VarDeclKind::Synthesized);
-    loopRaiseContext.setErrorSlot(errorDecl);
     if (!loopEmitter.emitIndirectCall(nextFn, std::move(nextOperands))) {
       indvarDest.resetForError(loopEmitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
@@ -4061,11 +4057,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   CValue enterResult =
       getEmitter().emitNamedMethodCall("__enter__", std::move(enterOperands));
 
-  // Create the temporary error decl for any value thrown out of this scope.
-  VarDeclOp errDecl = getEmitter().emitVarDecl(
-      "__with_error__", UnresolvedType::get(shared.getContext()), loc,
-      VarDeclKind::Synthesized);
-
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
   auto tryOp = TryOp::create(builder, loc, /*suppressWarnings=*/true);
@@ -4108,6 +4099,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
   PValue conditionalExit;
+  ASTType exitErrorType;
   if (inExceptRegion && hasExitMethod) {
     CallOperands exitCallOperands(CallSyntax::kMethodCall, contextExp,
                                   EC_WithExitResult);
@@ -4125,23 +4117,18 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
         contextRVType, "__exit__", exitCallOperands, exitEmitter);
 
     if (conditionalExit) {
-      // If the __exit__ method accepts a concrete error type, impose that on
-      // the error VarDecl so that throws within the region will conform to it.
-      // If it is something generic, then allow the try to resolve it, and the
-      // exit call can conform to it.
-      ASTType errorType = UnresolvedType::get(shared.getContext());
       auto sigType =
           FnOrFnLiteralTypeGeneratorType::get(conditionalExit.getType());
       assert(sigType.getNumArguments() >= 2 &&
              "expected a receiver and an error");
       auto argType = RefType::stripRefConvention(sigType.getArgument(1),
                                                  sigType.getArgConvention(1));
-      // If the method was generic over argument type, then it will get inferred
-      // to the wildcard type.  Just leave it as Unresolved if so.
+      // A concrete parameter constrains the error passed to __exit__. A
+      // wildcard parameter is inferred from the errors in the body.
       if (!sugarIsa<NameLookupArgWildcardType>(argType))
-        errorType = argType;
+        exitErrorType = argType;
 
-      // Insert the flag and the caught error stash ahead of our try.
+      // Insert the flag ahead of our try.
       OpBuilder::InsertPoint ip = builder.saveInsertionPoint();
       builder.setInsertionPoint(tryOp);
 
@@ -4153,36 +4140,30 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       auto falseParam = ParamConstantOp::create(builder, loc, falseValue);
       RefStoreOp::create(builder, loc, falseParam, excVar);
 
-      // The finally region is cloned onto every exit of the try, so we must
-      // manually mark the error value initialized/consumed for CheckLifetimes
-      // not to error.
-      excValueDecl = getEmitter().emitVarDecl("__with_exc_value__", errorType,
-                                              loc, VarDeclKind::Synthesized);
-      OwnershipMarkInitializedOp::create(builder, loc, excValueDecl);
       builder.restoreInsertionPoint(ip);
 
+      if (exitErrorType)
+        nestedErrDecl = getEmitter().emitVarDecl(
+            "__inner_error__", exitErrorType, loc, VarDeclKind::Synthesized);
+
       // Generate the nested try. Stub the 'else' and 'finally' regions.
-      nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType,
-                                               loc, VarDeclKind::Synthesized);
       nestedTryOp = TryOp::create(builder, loc, /*suppressWarnings=*/true);
       TryYieldOp::create(builder, loc);
       builder.createBlock(&nestedTryOp.getElseRegion());
       TryYieldOp::create(builder, loc);
       builder.createBlock(&nestedTryOp.getFinallyRegion());
       TryYieldOp::create(builder, loc);
-
-      // Parse the body into the try region.
       builder.createBlock(&nestedTryOp.getTryRegion());
     }
   }
 
   // A `with` in a non-raising scope uses its try only for cleanup. Its
   // unreachable except region must not make `raise` valid in the body.
-  auto withErrorDecl = nestedTryOp ? nestedErrDecl : errDecl;
-  // The with statement's synthetic try forwards errors through this fixed
-  // slot; it is not a source-level try that collects heterogeneous errors.
-  RaiseContext withRaiseContext(withErrorDecl);
-  withRaiseContext.setErrorSlot(withErrorDecl);
+  Operation *withRaiseOp =
+      nestedTryOp ? nestedTryOp.getOperation() : tryOp.getOperation();
+  RaiseContext withRaiseContext = nestedErrDecl
+                                      ? RaiseContext(withRaiseOp, nestedErrDecl)
+                                      : RaiseContext(withRaiseOp);
   {
     llvm::SaveAndRestore contextSaver(
         curRaiseContext, inExceptRegion ? &withRaiseContext : curRaiseContext);
@@ -4212,18 +4193,27 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
   }
 
-  // Now that we emitted the body, we can have inferred the error type. If
-  // nothing threw, then infer to Error.  It won't get used and this will avoid
-  // possibly confusing diagnostics downstream.
-  auto errorVarDecl = nestedErrDecl ? nestedErrDecl : errDecl;
-  if (isa<UnresolvedType>(errorVarDecl.getType().getElementType())) {
-    if (auto errorType =
-            shared.lookupBuiltinType("Error", getParentDecl(), smLoc))
-      errorVarDecl.changeElementType(errorType);
+  auto emitter = getEmitter();
+  MLValue withErrorSlot = withRaiseContext.finalizeErrorSlots(
+      emitter, exitErrorType, /*isSlotRequired=*/nestedTryOp);
+
+  VarDeclOp errDecl;
+  if (withErrorSlot) {
+    if (nestedTryOp)
+      nestedErrDecl = cast<VarDeclOp>(withErrorSlot.getDefiningOp());
+    else
+      errDecl = cast<VarDeclOp>(withErrorSlot.getDefiningOp());
   }
-  if (excValueDecl &&
-      isa<UnresolvedType>(excValueDecl.getType().getElementType()))
-    excValueDecl.changeElementType(nestedErrDecl.getType().getElementType());
+
+  if (nestedTryOp && !excValueDecl) {
+    OpBuilder::InsertPoint bodyIP = builder.saveInsertionPoint();
+    builder.setInsertionPoint(tryOp);
+    excValueDecl = getEmitter().emitVarDecl(
+        "__with_exc_value__", nestedErrDecl.getType().getElementType(), loc,
+        VarDeclKind::Synthesized);
+    OwnershipMarkInitializedOp::create(builder, loc, excValueDecl);
+    builder.restoreInsertionPoint(bodyIP);
+  }
 
   // This emits the call to the 'contextMgr.__exit__()' methods on the
   // context managers in the normal path.  If the type has no __exit__ method,
@@ -4284,7 +4274,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // If nothing in the except region raised, the error vardecl will still be
       // unresolved, just mark the except region as unreachable to silence
       // downstream warnings.
-      if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+      if (!errDecl) {
         UnreachableOp::create(builder, loc);
       } else {
         auto emitter = getEmitter();

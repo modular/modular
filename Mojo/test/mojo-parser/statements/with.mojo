@@ -80,7 +80,6 @@ def testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
     # CHECK-NEXT: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
-    # CHECK-NEXT: %__with_error__
     # CHECK-NEXT: lit.try {
     with a as val:
         # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
@@ -128,13 +127,12 @@ def testWithRaising(a: ExampleCM) raises:
     # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}(%a)
     # CHECK: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
-    # CHECK-NEXT: %__with_error__ = lit.var.decl
     # CHECK-NEXT: %__with_exc__ = lit.var.decl
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
     # CHECK-NEXT: lit.ref.store [[FALSE]], %__with_exc__
     # CHECK-NEXT: %__with_exc_value__ = lit.var.decl "__with_exc_value__" synth : !lit.ref<!Error
     # CHECK-NEXT: lit.ownership.mark_initialized %__with_exc_value__
-    # CHECK-NEXT: lit.try {
+    # CHECK: lit.try {
     # CHECK: lit.try {
     with a as val:
         # CHECK-NEXT: [[VALR:%.*]] = kgen.rebind %val
@@ -189,9 +187,9 @@ def testWithInTry(a: ExampleCM):
         # CHECK-NEXT: lit.ref.store [[FALSE]], %__with_exc__
         # CHECK-NEXT: %__with_exc_value__ = lit.var.decl
         # CHECK-NEXT: lit.ownership.mark_initialized %__with_exc_value__
-        # CHECK-NEXT: lit.try {
+        # CHECK: lit.try {
+        # CHECK-NEXT: %__inner_error__ = lit.var.decl
         with a as cm:
-            # CHECK: %__inner_error__ = lit.var.decl
             # CHECK: lit.try {
             # CHECK: [[RESULT:%.*]] = lit.call {{.*}}raise_error{{.*}}(%__inner_error__, %__call_result_tmp__
             raise_error()
@@ -263,7 +261,6 @@ def testCMWithoutExit():
     # CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
     # CHECK: %a = lit.var.decl "a"
     # CHECK: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%__call_result_tmp__, %a)
-    # CHECK-NEXT: %__with_error__ = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
@@ -283,7 +280,6 @@ def testCMWithoutExit():
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CM]])
     # CHECK: %a_1 = lit.var.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CM]], %a_1)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a_1
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
@@ -319,14 +315,12 @@ def testMultiClauseWith():
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMA]])
     # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMA]], %a)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try {
     #
     # CHECK: [[CMB:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}([[CMB]])
     # CHECK: %b = lit.var.decl "b"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}([[CMB]], %b)
-    # CHECK-NEXT: %__with_error__{{.*}} = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try {
     with CMWithoutExit() as a, CMWithoutExit() as b:
         # CHECK:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}
@@ -357,7 +351,6 @@ def testCMWithoutExitEarlyReturn():
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__init__{{.*}}(%__call_result_tmp__)
     # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%__call_result_tmp__, %a)
-    # CHECK-NEXT: %__with_error__ = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try {
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
     # CHECK-NEXT:   lit.call {{.*}}@CMWithoutExit::@"method{{.*}}([[IMMREF]])
@@ -394,9 +387,7 @@ def unconditional_exit() raises:
         # CHECK-NEXT:  lit.try.yield
         noop(42)
     # CHECK-NEXT: } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_error__, %__error__){{.*}}*, "move"
-    # CHECK-NEXT:   lit.raise
-    # CHECK-NEXT:   lit.try.yield
+    # CHECK-NEXT:   hlcf.unreachable
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: finally {
@@ -464,6 +455,29 @@ def with_infer_string() raises String:
 def with_infer_int() raises Int:
     with GenericExitCtxtMgr():
         raise_int()
+
+
+__enum ContextualWithError(ImplicitlyCopyable):
+    case custom(String)
+
+
+struct ContextualErrorExit(Movable):
+    def __init__(out self):
+        pass
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self):
+        pass
+
+    def __exit__(self, err: ContextualWithError) -> Bool:
+        return False
+
+
+def with_contextual_member_raise() raises ContextualWithError:
+    with ContextualErrorExit():
+        raise .custom("contextual error")
 
 
 # A context manager that has a Float __exit__ method.

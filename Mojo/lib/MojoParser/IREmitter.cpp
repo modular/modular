@@ -113,7 +113,7 @@ void IREmitter::emitCallControlFlow(Operation &call, FuncType signature,
 
   // If we are throwing out of the function, then move the error value into the
   // __error__ slot, performing implicit conversions if needed.
-  if (!raiseContext->isDeferringErrorConversions() &&
+  if (raiseContext->isEagerlyEmitted() &&
       callErrorSlot != contextualErrorSlot) {
     ExprDest moveDest(contextualErrorSlot, EC_RaiseValue);
     (void)emitResult(MRValue(callErrorSlot), callExpr, moveDest);
@@ -2011,8 +2011,22 @@ RaiseContext::RaiseContext(Operation *opForRaise, bool breakLoopElseOnRaise)
     size_t errorArgIndex = func.getNumArguments() - 2;
     assert(func.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
            ArgConvention::ByRefError);
-    errorSlots.push_back(MLValue(func.getArgument(errorArgIndex)));
+    MLValue errorSlot(func.getArgument(errorArgIndex));
+    assert(!isa<UnresolvedType>(errorSlot.getRValueType()) &&
+           "function error slots must have a resolved type");
+    errorSlots.push_back(errorSlot);
+    eagerlyEmitted = true;
   }
+}
+
+RaiseContext::RaiseContext(Operation *opForRaise, VarDeclOp errorDecl,
+                           bool breakLoopElseOnRaise)
+    : opForRaise(opForRaise), breakLoopElseOnRaise(breakLoopElseOnRaise),
+      eagerlyEmitted(true) {
+  assert(errorDecl &&
+         !isa<UnresolvedType>(errorDecl.getType().getElementType()) &&
+         "fixed error slots must have a resolved type");
+  errorSlots.push_back(MLValue(errorDecl.getResult()));
 }
 
 /// Gets the primary error slot of a raising function or try.
@@ -2020,22 +2034,14 @@ MLValue RaiseContext::getErrorSlot() const {
   return errorSlots.empty() ? MLValue() : errorSlots.front();
 }
 
-/// Records fixed storage created before a synthetic raising context.
-void RaiseContext::setErrorSlot(VarDeclOp errorDecl) {
-  assert(errorDecl && errorSlots.empty() &&
-         "error slot must be installed once");
-  errorSlots.push_back(MLValue(errorDecl.getResult()));
-}
-
 /// Returns a slot for an error type, creating it before a try when needed.
 MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
                                            ASTType errorType, Location loc) {
-  if (!isDeferringErrorConversions()) {
+  // Eager contexts always have a fixed error slot with a concrete type.
+  if (isEagerlyEmitted()) {
     MLValue errorSlot = getErrorSlot();
-    if (!isa<UnresolvedType>(errorType) &&
-        isa<UnresolvedType>(errorSlot.getRValueType())) {
-      cast<VarDeclOp>(errorSlot.getDefiningOp()).changeElementType(errorType);
-    }
+    assert(errorSlot && !isa<UnresolvedType>(errorSlot.getRValueType()) &&
+           "fixed error slots must have a resolved type");
     return errorSlot;
   }
 
@@ -2049,11 +2055,10 @@ MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
     }
   }
 
-  // Emit every try error slot ahead of the try so it dominates the try and
-  // except regions.
-  auto tryOp = cast<LIT::TryOp>(opForRaise);
+  // Emit error slots ahead of their owner so they dominate the owner and every
+  // region that can use them.
   OpBuilder errorDeclBuilder = *emitter.builder;
-  errorDeclBuilder.setInsertionPoint(tryOp);
+  errorDeclBuilder.setInsertionPoint(opForRaise);
   OpBuilder savedBuilder = *emitter.builder;
   emitter.builder = errorDeclBuilder;
   auto errDecl = emitter.emitVarDecl(errorSlots.empty() ? "__try_error__"
@@ -2067,8 +2072,7 @@ MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
 /// Coalesces an inferred slot with earlier storage of the same concrete type.
 MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
                                         const ExprNode *sourceExpr) {
-  if (!isDeferringErrorConversions() ||
-      isa<UnresolvedType>(errorSlot.getRValueType()))
+  if (isEagerlyEmitted() || isa<UnresolvedType>(errorSlot.getRValueType()))
     return errorSlot;
 
   auto slotIter = llvm::find(errorSlots, errorSlot);
@@ -2089,18 +2093,51 @@ MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
 void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
                                    Operation *sourceOperation,
                                    SMLoc sourceLoc) {
-  if (!isDeferringErrorConversions())
+  if (isEagerlyEmitted())
     return;
   assert(errorSlot && terminator && "raise site must be fully specified");
   raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
 }
 
-/// Converts all errors leaving a try to the type of its first error slot.
-MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter) {
-  MLValue primaryErrorSlot = getErrorSlot();
-  if (!isDeferringErrorConversions() || !primaryErrorSlot)
-    return primaryErrorSlot;
+/// When a 'try' block is emitted, we collect error slots for each raised type.
+/// This method then finds a common type and converts them all to that type.
+///
+/// Some clients will know which type they need, and some clients will require
+/// a slot (defaulting to Error if there is no raise).
+MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
+                                         ASTType requiredErrorType,
+                                         bool isSlotRequired) {
+  // Eager contexts have a fixed error slot with a concrete type and all users
+  // of it will have already emitted into it.
+  if (isEagerlyEmitted())
+    return getErrorSlot();
 
+  // If nothing raised in the try block, then we won't have any error slots.
+  if (errorSlots.empty()) {
+    if (!isSlotRequired)
+      return {};
+
+    // An error-taking `with` exit needs storage even if its body did not
+    // raise. A generic exit defaults that storage to Error.
+    if (!requiredErrorType)
+      requiredErrorType = emitter.getDeclScope().getShared().lookupBuiltinType(
+          "Error", emitter.getDeclScope(), {});
+    assert(requiredErrorType && "expected builtin Error type");
+    return getOrCreateErrorSlot(emitter, requiredErrorType,
+                                opForRaise->getLoc());
+  }
+
+  // Otherwise we have one or more raises, and they may have different types. If
+  // we're in a context with a required error type (eg due to a with block where
+  // the "exit" handler prescribes a type) that type.
+  MLValue primaryErrorSlot = getErrorSlot();
+  if (requiredErrorType &&
+      !requiredErrorType.isEqualCanon(primaryErrorSlot.getRValueType()))
+    primaryErrorSlot =
+        getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
+
+  // Move all the other error slots into the primary slot, performing implicit
+  // conversions as needed to get to that unified type.
   for (const RaiseSite &site : raiseSites) {
     if (site.errorSlot == primaryErrorSlot)
       continue;

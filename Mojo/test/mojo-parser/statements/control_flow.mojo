@@ -457,10 +457,10 @@ def for_range_loop():
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %value_iter_list
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %$ITER)
     for item in value_iter_list:
-        # CHECK: lit.loop {
-        # CHECK-NEXT:  %__for_error__ = lit.var.decl
+        # CHECK: %__try_error__ = lit.var.decl
+        # CHECK-NEXT: lit.loop {
         # CHECK-NEXT:  %item = lit.var.decl
-        # CHECK-NEXT:  lit.call {{.*}}__next__{{.*}}(%$ITER, %__for_error__, %item)
+        # CHECK-NEXT:  lit.call {{.*}}__next__{{.*}}(%$ITER, %__try_error__, %item)
         # CHECK-NEXT:  hlcf.if
         # CHECK-NEXT:  lit.ownership.mark_consumed %item
         # CHECK-NEXT:  lit.loop.break.else
@@ -495,10 +495,10 @@ def for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     # CHECK-NEXT: %$ITER = lit.var.decl "$ITER" synth
     # CHECK-NEXT: [[ITER:%.*]] = lit.call {{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$ITER)
     for ref item in mut_list_ref_iter:
-        # CHECK: lit.loop {
-        # CHECK-NEXT: %__for_error__ = lit.var.decl
+        # CHECK: %__try_error__ = lit.var.decl
+        # CHECK-NEXT: lit.loop {
         # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
-        # CHECK:   lit.call {{.*}}RefIter::@"__next__{{.*}}(%$ITER, %__for_error__, %__call_result_tmp__)
+        # CHECK:   lit.call {{.*}}RefIter::@"__next__{{.*}}(%$ITER, %__try_error__, %__call_result_tmp__)
 
         # CHECK:   %item = lit.var.decl "item" ref
 
