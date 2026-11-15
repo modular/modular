@@ -4051,6 +4051,17 @@ static bool mightPointTo(Value p1, Value p2) {
   return !underlyingP1 || !underlyingP2 || underlyingP1 == underlyingP2;
 }
 
+// Return true if this is a direct call to the move constructor or a call
+// through a witness entry.
+static bool isCallToMoveConstructor(LIT::CallOp call, ValueSet &valueSet) {
+  TypeDeclInfo &typeDecls = valueSet.getTypeDeclInfo();
+  if (FnOp fn = typeDecls.getFuncForSymbol(call.getDirectCallee()))
+    return fn.getSpecialFunctionKind() == SpecialFunctionKind::kMoveCtor;
+
+  auto witness = dyn_cast<GetWitnessAttr>(call.getCallee());
+  return witness && witness.getWitnessName().getValue() == "__init__(move:$0$)";
+}
+
 /// Fold a move from a synthetic call-result temporary into its final
 /// destination. This handles the shape emitted for a potentially throwing
 /// call:
@@ -4063,28 +4074,63 @@ static bool mightPointTo(Value p1, Value p2) {
 /// move. This ensures that writing the call result directly into it does not
 /// make an old value observable or require destruction on the error path.
 bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
-  FnOp moveFn =
-      valueSet.getTypeDeclInfo().getFuncForSymbol(moveCall.getDirectCallee());
-  if (!moveFn ||
-      moveFn.getSpecialFunctionKind() != SpecialFunctionKind::kMoveCtor ||
+  if (!isCallToMoveConstructor(moveCall, valueSet) ||
       moveCall.getNumOperands() != 2)
     return false;
 
+  // This logic is intentionally very conservative. We don't eliminate
+  // user-defined variables, and have conservative dataflow to avoid compile
+  // time explosion.
   Value moveSource = moveCall.getOperand(0);
   Value moveDest = moveCall.getOperand(1);
-  auto tmpDecl = moveSource.getDefiningOp<VarDeclOp>();
-  auto destDecl = moveDest.getDefiningOp<VarDeclOp>();
-  if (!tmpDecl || !destDecl || tmpDecl.getKind() != VarDeclKind::Synthesized ||
-      tmpDecl->getBlock() != moveCall->getBlock() ||
-      destDecl->getBlock() != moveCall->getBlock() ||
-      !destDecl->isBeforeInBlock(moveCall))
+  Value underlyingMoveSource = RefImmutOp::stripRebinds(moveSource);
+  auto tmpDecl = underlyingMoveSource.getDefiningOp<VarDeclOp>();
+  Value underlyingMoveDest = RefImmutOp::stripRebinds(moveDest);
+  auto destDecl = underlyingMoveDest.getDefiningOp<VarDeclOp>();
+  auto destArg = dyn_cast<BlockArgument>(underlyingMoveDest);
+  if (!tmpDecl || tmpDecl.getKind() != VarDeclKind::Synthesized ||
+      tmpDecl->getBlock() != moveCall->getBlock() || (!destDecl && !destArg) ||
+      (destDecl && (destDecl->getBlock() != moveCall->getBlock() ||
+                    !destDecl->isBeforeInBlock(moveCall))) ||
+      (destArg && destArg.getOwner() != moveCall->getBlock()))
     return false;
+
+  // Function result slots are uninitialized storage, so the initializer can
+  // safely write into them. Other arguments contain a live value that must
+  // remain unchanged if the initializer raises. Constructors also use a
+  // ByRefResult `self` slot, but their error paths require the move operation
+  // to establish its lifetime state.
+  if (destArg) {
+    FnOp fn = moveCall->getParentOfType<FnOp>();
+    if (!fn ||
+        fn.getFuncTypeGenerator().getArgConvention(destArg.getArgNumber()) !=
+            ArgConvention::ByRefResult ||
+        fn.getSpecialFunctionKind() == SpecialFunctionKind::kInit)
+      return false;
+  }
 
   LIT::CallOp initializer;
   size_t initializerResultIndex = 0;
   SmallVector<Operation *> errorPathConsumes;
+
+  // Rebinds preserve storage identity. Record them so they do not look like
+  // independent uses when finding the operation that initializes the
+  // temporary.
+  SmallPtrSet<Operation *, 4> sourceCasts;
+  for (Value value = moveSource; value != underlyingMoveSource;) {
+    Operation *cast = value.getDefiningOp();
+    assert(cast && cast->getNumOperands() == 1 && "expected rebind-like op");
+    sourceCasts.insert(cast);
+    value = cast->getOperand(0);
+  }
+
+  // Require exactly one initializer that writes the temporary as a result.
+  // Error propagation may consume it before the final move on the success
+  // path, but no other uses are safe to redirect.
   for (OpOperand &use : tmpDecl.getResult().getUses()) {
     Operation *user = use.getOwner();
+    if (sourceCasts.contains(user))
+      continue;
     if (user == moveCall && use.getOperandNumber() == 0)
       continue;
     if (isa<LIT::OwnershipMarkConsumedOp>(user)) {
@@ -4105,22 +4151,27 @@ bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
   }
   if (!initializer || initializer->getBlock() != moveCall->getBlock() ||
       !tmpDecl->isBeforeInBlock(initializer) ||
-      !destDecl->isBeforeInBlock(initializer) ||
+      (destDecl && !destDecl->isBeforeInBlock(initializer)) ||
       !initializer->isBeforeInBlock(moveCall))
     return false;
 
-  // There is no benefit in forwarding a dead assignment, and retaining its
-  // move preserves the existing unused-assignment diagnostic.
-  bool hasUseAfterMove = llvm::any_of(moveDest.getUses(), [&](OpOperand &use) {
-    Operation *user = use.getOwner();
-    return user->getBlock() == moveCall->getBlock() &&
-           moveCall->isBeforeInBlock(user);
-  });
-  if (!hasUseAfterMove)
+  // Preserve diagnostics for unused named assignments. Underscore-prefixed
+  // bindings and function result slots intentionally do not produce one.
+  bool hasUseAfterMove =
+      llvm::any_of(underlyingMoveDest.getUses(), [&](OpOperand &use) {
+        Operation *user = use.getOwner();
+        return user->getBlock() == moveCall->getBlock() &&
+               moveCall->isBeforeInBlock(user);
+      });
+  // The error path marks a forwarded result slot consumed. Do not forward
+  // into a result slot whose initialized value is used later.
+  if (destArg && hasUseAfterMove)
+    return false;
+  if (!hasUseAfterMove && destDecl && !destDecl.getName().starts_with("_"))
     return false;
 
-  // Every other consume of the temporary must be in control flow between its
-  // initialization and the final move.
+  // Redirecting an error-path consume is valid only when it belongs to this
+  // initialization and move sequence.
   for (Operation *consume : errorPathConsumes) {
     Operation *containingOp = consume;
     while (containingOp->getBlock() != moveCall->getBlock()) {
@@ -4135,10 +4186,20 @@ bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
 
   // Reject any access to the destination before the move, including accesses
   // nested in the error-propagation control flow.
-  for (auto iter = std::next(Block::iterator(destDecl)),
+  SmallPtrSet<Operation *, 4> destCasts;
+  for (Value value = moveDest; value != underlyingMoveDest;) {
+    Operation *cast = value.getDefiningOp();
+    assert(cast && cast->getNumOperands() == 1 && "expected rebind-like op");
+    destCasts.insert(cast);
+    value = cast->getOperand(0);
+  }
+  for (auto iter = destDecl ? std::next(Block::iterator(destDecl))
+                            : moveCall->getBlock()->begin(),
             end = Block::iterator(moveCall);
        iter != end; ++iter) {
     WalkResult result = iter->walk([&](Operation *nested) {
+      if (destCasts.contains(nested))
+        return WalkResult::advance();
       if (llvm::any_of(nested->getOperands(), [&](Value operand) {
             return mightPointTo(operand, moveDest);
           }))
@@ -4149,23 +4210,34 @@ bool DestructorInserter::optimizeMove(LIT::CallOp moveCall) {
       return false;
   }
 
+  // Retargeting the initializer changes the result storage's origin. Preserve
+  // the initializer's expected reference type while updating that origin.
   auto tmpRefType = cast<RefType>(tmpDecl.getType());
-  auto destRefType = cast<RefType>(moveDest.getType());
+  Value initializerDest = underlyingMoveDest;
+  auto underlyingDestRefType = cast<RefType>(underlyingMoveDest.getType());
+  Type initializerDestType =
+      cast<RefType>(initializer.getOperand(initializerResultIndex).getType())
+          .getWithOrigin(underlyingDestRefType.getOrigin());
+  if (initializerDest.getType() != initializerDestType) {
+    ImplicitLocOpBuilder builder(initializer.getLoc(), initializer);
+    initializerDest =
+        RebindOp::create(builder, initializerDestType, initializerDest);
+  }
+  auto destRefType = cast<RefType>(initializerDest.getType());
   TypedAttr tmpOrigin = tmpRefType.getOrigin();
-  TypedAttr destOrigin = destRefType.getOrigin();
   SmallVector<TypedAttr> implicitOrigins(initializer.getImplicitOrigins());
   bool replacedOrigin = false;
   for (TypedAttr &origin : implicitOrigins)
     if (origin == tmpOrigin) {
-      origin = destOrigin;
+      origin = destRefType.getOrigin();
       replacedOrigin = true;
     }
   if (!replacedOrigin)
     return false;
   initializer.setImplicitOrigins(implicitOrigins);
-  initializer.setOperand(initializerResultIndex, moveDest);
+  initializer.setOperand(initializerResultIndex, initializerDest);
   for (Operation *consume : errorPathConsumes)
-    consume->setOperand(0, moveDest);
+    consume->setOperand(0, initializerDest);
   moveCall->dropAllReferences();
   return true;
 }

@@ -832,7 +832,7 @@ def test_list_iter_owned() raises:
         pass
 
     assert_equal(copies, 0)
-    assert_equal(moves, 6)
+    assert_equal(moves, 4)
     assert_equal(dels, 2)
 
 

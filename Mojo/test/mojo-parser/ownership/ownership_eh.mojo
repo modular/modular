@@ -501,6 +501,56 @@ def raising_result_temporary() raises Float32:
     _ = value.__len__()
 
 
+# CHECK-LABEL: lit.fn @"unused_raising_result
+# CHECK: [[VALUE:%.*]] = lit.var.decl "_value"
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__call_error_tmp__, [[VALUE]])
+# CHECK-NOT: @"__init__(move
+def unused_raising_result() raises Float32:
+    var _value = make_string()
+
+
+# CHECK-LABEL: lit.fn @"return_raising_call_result
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: lit.call {{.*}}make_string{{.*}}(%__error__, %__result__)
+# CHECK-NOT: @"__init__(move
+def return_raising_call_result() raises Int -> String:
+    return make_string()
+
+
+# CHECK-LABEL: lit.fn @"return_taken_pointee
+# CHECK-NOT: %__call_result_tmp__ = lit.var.decl
+# CHECK: unsafe_take_pointee
+def return_taken_pointee[T: Movable & Deinitable](
+    mut value: T,
+) raises Int -> T:
+    return Pointer(to=value).unsafe_take_pointee()
+
+
+struct GenericIterator[T: Copyable & Deinitable](Iterator, Movable):
+    comptime Element = Self.T
+
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def __iter__(var self) -> Self:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.T:
+        return self.value.copy()
+
+
+# CHECK-LABEL: lit.fn @"unused_generic_for_result
+# CHECK: [[ELEMENT:%.*]] = lit.var.decl "_element"
+# CHECK-NOT: %__call_result_tmp___0 = lit.var.decl
+# CHECK: lit.call {{.*}}@"__next__{{.*}}({{.*}}, {{.*}}, [[ELEMENT]])
+def unused_generic_for_result[T: Copyable & Deinitable](var value: T) raises:
+    for _element in GenericIterator[T](value^):
+        pass
+
+
 # CHECK-LABEL: lit.fn @"live_destination_keeps_raising_result_temporary
 # CHECK: %__call_result_tmp__ = lit.var.decl
 def live_destination_keeps_raising_result_temporary() raises Float32:
