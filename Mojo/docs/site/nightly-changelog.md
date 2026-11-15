@@ -373,6 +373,10 @@ This version is still a work in progress.
 
 - `List.unsafe_ptr()` now returns a pointer with the list's interior origin.
 
+- `String.unsafe_ptr()` and `String.unsafe_ptr_mut()` now carry an interior
+  origin. Using the pointer after the string is mutated or reassigned is now a
+  compile-time error instead of a read of freed memory.
+
 - `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
   and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
   instead of a `RawFileDescriptor`. You can pass a `FileHandle` or

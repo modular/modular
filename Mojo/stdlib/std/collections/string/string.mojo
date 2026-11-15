@@ -1478,15 +1478,9 @@ struct String(
         return StringSpan(self).count_graphemes()
 
     @inline(.nodebug)
-    def unsafe_ptr(
-        self,
-    ) -> Pointer[Byte, origin_of(self)]:
-        """Retrieves a pointer to the underlying memory.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-
+    def _unsafe_ptr(self) -> Pointer[Byte, origin_of(self)]:
+        # Carries the whole-string origin, for the public accessors that derive
+        # an interior origin from it and for code that reallocates the buffer.
         if self._is_inline():
             # The string itself holds the data.
             return Pointer(to=self).unsafe_bitcast[Byte]().as_imm()
@@ -1495,9 +1489,25 @@ struct String(
                 origin_of(self)
             ]()
 
+    @inline(.nodebug)
+    @__unsafe_nested_origins_read_only
+    def unsafe_ptr(
+        self,
+    ) -> Pointer[Byte, Self._InteriorOrigin[origin_of(self)]]:
+        """Retrieves a pointer to the underlying memory.
+
+        Returns:
+            The pointer to the underlying memory.
+        """
+        return Pointer(
+            to=self._unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                "bytes", origin_of(self)
+            ]()
+        )
+
     def unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> Pointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, Self._InteriorOrigin[origin_of(self)]]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1516,7 +1526,11 @@ struct String(
         elif not self._is_unique() or new_cap > self.capacity_bytes():
             self._realloc_mutable(new_cap)
 
-        return self.unsafe_ptr().unsafe_mut_cast[True]()
+        return Pointer(
+            to=self._unsafe_ptr()
+            .unsafe_mut_cast[True]()
+            ._get_ref_with_unsafe_interior_origin["bytes", origin_of(self)]()
+        )
 
     @inline(.always)
     def as_c_string_span(
@@ -1557,9 +1571,11 @@ struct String(
             invalidates the span at compile time.
         """
 
+        # `unsafe_ptr()` reads `self`, so its pointer is always immutable. Build
+        # the pointer here to keep the mutability of `ref self`.
         return Span(
             unsafe_ptr=Pointer(
-                to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                to=self._unsafe_ptr()._get_ref_with_unsafe_interior_origin[
                     "bytes", origin_of(self)
                 ]()
             ),
@@ -1590,14 +1606,7 @@ struct String(
             - Any mutation of the byte slice must uphold UTF-8 validity of the
               overall string.
         """
-        return Span(
-            unsafe_ptr=Pointer(
-                to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
-                    "bytes", origin_of(self)
-                ]()
-            ),
-            length=self.byte_length(),
-        )
+        return Span(unsafe_ptr=self.unsafe_ptr_mut(), length=self.byte_length())
 
     def byte_length(self) -> Int:
         """Get the string length in bytes.
@@ -2401,7 +2410,7 @@ struct String(
     def _realloc_mutable(mut self, capacity: Int):
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
-        var old_ptr = self.unsafe_ptr()
+        var old_ptr = self._unsafe_ptr()
         var old_capacity = self.capacity_bytes()
         var target = old_capacity
         if capacity > old_capacity:

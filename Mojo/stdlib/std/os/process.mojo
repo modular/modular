@@ -412,9 +412,15 @@ struct Process:
         ](capacity=len(args) + 1)
         for ref arg in args:
             # Safety: each copy ends in the NUL appended above.
+            # TODO(https://github.com/modular/modular/issues/7605): a list
+            # whose element type names the interior origin of `args` is
+            # rejected once `args` is indexed after the list is created, so
+            # widen to the whole-list origin.
             argv_array.append(
                 CStringSpan(
-                    unsafe_from_ptr=arg.unsafe_ptr().unsafe_bitcast[c_char]()
+                    unsafe_from_ptr=arg.unsafe_ptr()
+                    .unsafe_origin_cast[ImmOrigin(origin_of(args))]()
+                    .unsafe_bitcast[c_char]()
                 )
             )
         # `argv` ptr array terminates with NULL PTR

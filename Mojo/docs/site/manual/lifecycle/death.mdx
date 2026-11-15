@@ -188,7 +188,7 @@ automatically:
 ```mojo
 def main():
     var foo = String("some text")
-    var bar = foo.unsafe_ptr()  # Pointer[Byte, origin_of(foo)]
+    var bar = foo.unsafe_ptr()  # origin derives from foo
 
     # time passes, and foo is never read directly again
 
