@@ -98,6 +98,7 @@ MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
+    "meta-models/Muse-Glimmer-30B__gpu_vision_cache": NIGHTLY | VARIANT | MACH | _1xB200,
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4": NIGHTLY | MACH | _8xB200,
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": NIGHTLY | VARIANT | MACH | _8xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
