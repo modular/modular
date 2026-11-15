@@ -728,3 +728,25 @@ def test_synthetic_acceptance_rejected_with_constrained_decoding() -> None:
     validate(SimpleNamespace(speculative=None))  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="synthetic_acceptance_rate"):
         validate(_cfg(0.8, True))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_recipe_execution_flags_survive_pipeline_resolution(
+    tmp_path: Path, enabled: bool
+) -> None:
+    """The shared config-file loader must preserve explicit false flags."""
+    config_path = tmp_path / "recipe.yaml"
+    value = str(enabled).lower()
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "runtime:\n"
+        f"  device_graph_capture: {value}\n"
+        f"  enable_overlap_scheduler: {value}\n",
+        encoding="utf-8",
+    )
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(config_file=str(config_path))
+    )
+    assert config.runtime.device_graph_capture is enabled
+    assert config.runtime.enable_overlap_scheduler is enabled

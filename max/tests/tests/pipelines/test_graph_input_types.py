@@ -67,6 +67,7 @@ from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
+from max.pipelines.architectures.flint.model_config import FlintConfig
 from max.pipelines.architectures.gemma4.batch_processor import (
     Gemma4BatchProcessor,
 )
@@ -111,6 +112,7 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
     STATE_CACHE_KEY,
     linear_state_regions,
 )
+from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.graph_specs import (
     GraphRole,
     _check_inputs,
@@ -313,6 +315,42 @@ def _nemotron_h(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
     return types, tuple(tree.leaves(types))
 
 
+def _flint() -> tuple[_InputTree, _InputTypes]:
+    """Published Flint BF16 TP1 cache tree, declared by its export config."""
+    devices = _gpus(1)
+    kv_params = FlintConfig.construct_kv_params(
+        huggingface_config=_fake(
+            hidden_size=2048,
+            num_attention_heads=32,
+            num_hidden_layers=49,
+            num_key_value_heads=4,
+            head_dim=128,
+            sliding_window=513,
+        ),
+        pipeline_config=_fake(
+            speculative=None, model=_fake(data_parallel_degree=1)
+        ),
+        devices=devices,
+        kv_cache_config=KVCacheConfig(kv_cache_page_size=128),
+        cache_dtype=DType.bfloat16,
+    )
+    assert list(kv_params.children) == ["sliding_attention", "full_attention"]
+    for name, layers, window in [
+        ("sliding_attention", 35, 513),
+        ("full_attention", 14, None),
+    ]:
+        child = kv_params.children[name]
+        assert isinstance(child, MHAKVCacheParams)
+        assert child.num_layers == layers
+        assert child.window_size == window
+        assert child.n_kv_heads == 4
+        assert child.head_dim == 128
+        assert child.dtype == DType.bfloat16
+        assert child.page_size == 128
+    types = decoder_input_types(kv_params, devices[0])
+    return types, tuple(tree.leaves(types))
+
+
 def _mimo_v2() -> tuple[_InputTree, _InputTypes]:
     """MiMo-V2 registered by role at TP2: a windowed and a full attention
     cache whose keys are wider than their values.
@@ -495,6 +533,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "nemotron_h_single_device": lambda: _nemotron_h(_gpus(1)),
     "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
     "mimo_v2": _mimo_v2,
+    "flint": _flint,
 }
 
 

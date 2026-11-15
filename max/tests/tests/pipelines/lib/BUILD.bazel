@@ -6,6 +6,7 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Guards shared PipelineArgs/PipelineConfig loading and CLI precedence.
 modular_py_test(
     name = "tests",
     srcs = glob(
