@@ -66,10 +66,6 @@ struct _ZeroStartingRange[dtype: DType = .int](
         return curr
 
     @inline(.always)
-    def __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @inline(.always)
     def __len__(self) -> Int:
         return _len_as_int(self.end - self.curr)
 
