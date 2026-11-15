@@ -43,6 +43,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -2902,6 +2903,20 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
     decl.setErroneous();
     return shared.emitError(funcOp.getLoc(), message);
   };
+
+  // '__moveinit__' and '__copyinit__' were replaced by '__init__' overloads.
+  // Diagnose them here, rather than as ordinary methods whose 'out self' would
+  // have type 'None'.
+  if (this->selfType) {
+    StringRef replacement =
+        llvm::StringSwitch<StringRef>(name.getValue())
+            .Case("__moveinit__", "__init__(out self, *, deinit move: Self)")
+            .Case("__copyinit__", "__init__(out self, *, copy: Self)")
+            .Default("");
+    if (!replacement.empty())
+      emitError() << name << " is no longer supported; use '" << replacement
+                  << "' instead";
+  }
 
   // If the argument list has a mut result or mut error, ignore it for type
   // checking purposes.

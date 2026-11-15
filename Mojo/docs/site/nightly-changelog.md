@@ -517,3 +517,8 @@ This version is still a work in progress.
 
 - `input()` no longer raises `EOF` after the first line when stdin is a pipe
   or redirected file.
+
+- [#7036](https://github.com/modular/modular/issues/7036) - Defining a
+  `__moveinit__()` or `__copyinit__()` method, which were removed, now reports
+  an error that names the `__init__()` overload to use instead. Previously, the
+  error was `'None' has no attributes` on the first use of `self`.

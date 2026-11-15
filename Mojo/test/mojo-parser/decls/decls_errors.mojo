@@ -789,6 +789,33 @@ struct TestOwnedDeinitErrors(Movable where False):
   # expected-error @+1 {{expected ')' in argument list}}
   def method(owned x): pass
 
+# Issue #7036: the removed '__moveinit__' and '__copyinit__' spellings name
+# their '__init__' replacements, and an unannotated 'out self' in them doesn't
+# cascade into errors in the body.
+struct LegacyMoveInit(Movable):
+  var x: Int
+
+  def __init__(out self, x: Int):
+    self.x = x
+
+  # expected-error @+1 {{'__moveinit__' is no longer supported; use '__init__(out self, *, deinit move: Self)' instead}}
+  def __moveinit__(out self, deinit existing: Self):
+    self.x = existing.x
+
+struct LegacyCopyInit(Copyable):
+  var x: Int
+
+  def __init__(out self, x: Int):
+    self.x = x
+
+  # expected-error @+1 {{'__copyinit__' is no longer supported; use '__init__(out self, *, copy: Self)' instead}}
+  def __copyinit__(out self, existing: Self):
+    self.x = existing.x
+
+  # expected-error @+1 {{'__moveinit__' is no longer supported; use '__init__(out self, *, deinit move: Self)' instead}}
+  def __moveinit__(out self, var existing: Self):
+    self.x = existing.x
+
 # expected-note @+1 {{previous definition here}}
 struct WrongType(RegisterPassable):
   # expected-error @+3 {{__init__ method must return Self type with 'out' argument}}
