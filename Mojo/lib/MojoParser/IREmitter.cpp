@@ -2099,6 +2099,70 @@ void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
   raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
 }
 
+/// The declaration `origin` is ultimately rooted at, null when it is rooted at
+/// no declaration at all. A field, interior or subtree origin refines a base
+/// whose invalidation governs it, so the base is what has to outlive a use of
+/// the refinement.
+static ParamDeclRefAttr getRootOrigin(TypedAttr origin) {
+  // A declaration reference is the only thing that can name a local origin, so
+  // walking to one crosses every refinement, mutcast and rebind on the way.
+  ParamDeclRefAttr root;
+  origin.walk([&](ParamDeclRefAttr declRef) {
+    // Only origins are of interest; a reference to any other kind of parameter
+    // is part of how the origin was spelled, not the storage it names.
+    if (isa<OriginType>(declRef.getType()))
+      root = declRef;
+  });
+  return root;
+}
+
+/// Diagnoses an except type that captures an origin declared in a try body.
+void RaiseContext::verifyExceptTypeLifetimeValidity(
+    IREmitter &emitter, MLValue exceptErrorSlot) const {
+  auto tryOp = dyn_cast<LIT::TryOp>(opForRaise);
+  if (!tryOp)
+    return;
+
+  SharedState &shared = emitter.getDeclScope().getShared();
+  ASTType exceptType = exceptErrorSlot.getRValueType();
+  SmallVector<ParamDeclRefAttr> roots;
+  for (TypedAttr origin :
+       shared.cachedOriginFinder.findOriginsIn({exceptType})) {
+    if (ParamDeclRefAttr root = getRootOrigin(origin))
+      roots.push_back(root);
+  }
+  if (roots.empty())
+    return;
+
+  // Error slots are declared before the try to dominate all its regions. Walk
+  // the try once to check whether the final except type names local storage.
+  tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
+    for (ParamDeclRefAttr root : roots) {
+      if (root != varDecl.getType().getOrigin())
+        continue;
+
+      auto site = llvm::find_if(raiseSites, [&](const RaiseSite &site) {
+        return site.errorSlot == exceptErrorSlot;
+      });
+      if (site == raiseSites.end())
+        continue;
+
+      auto diag = emitter.emitError(site->sourceLoc);
+      diag << "inferred error type " << exceptType << " captures origin ";
+      if (varDecl.isSynthetic()) {
+        diag << "of temporary";
+      } else {
+        diag << "'"
+             << ASTType::getOriginAsString(varDecl.getType().getOrigin(),
+                                           &shared)
+             << "'";
+      }
+      diag << " from within try body; it is not in scope in except body";
+      diag.attachNote(varDecl.getLoc()) << "origin declared here";
+    }
+  });
+}
+
 /// When a 'try' block is emitted, we collect error slots for each raised type.
 /// This method then finds a common type and converts them all to that type.
 ///
@@ -2149,73 +2213,10 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
     (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
     emitter.builder = savedBuilder;
   }
+
+  verifyExceptTypeLifetimeValidity(emitter, primaryErrorSlot);
+
   return primaryErrorSlot;
-}
-
-/// The declaration `origin` is ultimately rooted at, null when it is rooted at
-/// no declaration at all.  A field, interior or subtree origin refines a base
-/// whose invalidation governs it, so the base is what has to outlive a use of
-/// the refinement.
-static ParamDeclRefAttr getRootOrigin(TypedAttr origin) {
-  // A declaration reference is the only thing that can name a local origin, so
-  // walking to one crosses every refinement, mutcast and rebind on the way.
-  ParamDeclRefAttr root;
-  origin.walk([&](ParamDeclRefAttr declRef) {
-    // Only origins are of interest; a reference to any other kind of parameter
-    // is part of how the origin was spelled, not the storage it names.
-    if (isa<OriginType>(declRef.getType()))
-      root = declRef;
-  });
-  return root;
-}
-
-/// When a try block gets its error type inferred, this function makes sure the
-/// inferred type doesn't capture an origin from within a try body.  Such a
-/// thing would be an out of scope reference, e.g.:
-///
-///    try:
-///      var x = 42
-///      raise Pointer(to=x)
-///    except e: # x is not in scope here.
-void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
-  SmallVector<TypedAttr> origins =
-      shared.cachedOriginFinder.findOriginsIn({rvalueType});
-  // Typically we have something like Error or TypeCheckError which will have no
-  // origins, so we can avoid doing work.
-  if (origins.empty())
-    return;
-
-  // Only source-level try blocks infer their error type; a raising function
-  // receives its slot from the signature.
-  RaiseContext *raiseContext = getRaiseContext();
-  assert(raiseContext && "must be in a try block");
-  auto tryOp = dyn_cast<LIT::TryOp>(raiseContext->getOperation());
-  if (!tryOp)
-    return; // Functions don't infer their error type.
-
-  // Unfortunately, we don't have a good way to do a lookup given an origin
-  // attribute, so we scan the body of the try block for any vardecls. Is this
-  // the only thing that can declare an origin?
-  SmallPtrSet<Attribute, 8> roots;
-  for (auto o : origins)
-    if (ParamDeclRefAttr root = getRootOrigin(o))
-      roots.insert(root);
-  tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
-    if (roots.contains(varDecl.getType().getOrigin())) {
-      auto diag = emitError(loc);
-      diag << "inferred error type " << rvalueType << " captures origin ";
-      if (varDecl.isSynthetic()) {
-        diag << "of temporary";
-      } else {
-        diag << "'"
-             << ASTType::getOriginAsString(varDecl.getType().getOrigin(),
-                                           &shared)
-             << "'";
-      }
-      diag << " from within try body; it is not in scope in except body";
-      diag.attachNote(varDecl.getLoc()) << "origin declared here";
-    }
-  });
 }
 
 /// Check that the declarations `origin` is rooted at outlive `block`, emitting

@@ -88,6 +88,9 @@ struct RaiseContext {
   bool shouldBreakLoopElseOnRaise() const { return breakLoopElseOnRaise; }
 
 private:
+  void verifyExceptTypeLifetimeValidity(IREmitter &emitter,
+                                        MLValue exceptErrorSlot) const;
+
   struct RaiseSite {
     MLValue errorSlot;
     Operation *terminator;
@@ -677,9 +680,6 @@ public:
 
   //===--------------------------------------------------------------------===//
   // Statement emission helpers.
-
-  /// Verify inferred error types for escaping origins.
-  void checkInferredErrorType(ASTType rvalueType, SMLoc loc);
 
   /// Check that the declarations `origin` is rooted at outlive `block`,
   /// emitting an error at `expr` and returning failure when one does not.

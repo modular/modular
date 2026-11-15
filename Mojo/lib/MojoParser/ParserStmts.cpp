@@ -1617,9 +1617,6 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
       return failure();
   }
 
-  if (inferringErrorType)
-    emitter.checkInferredErrorType(errSlot.getRValueType(), loc.Start);
-
   auto raiseOp = LIT::RaiseOp::create(builder, translateLocation(loc.Start));
   raiseContext->recordRaiseSite(errSlot, raiseOp, /*sourceOperation=*/nullptr,
                                 loc.Start);
@@ -3606,8 +3603,6 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   MLValue errSlot = raiseContext->getErrorSlot();
   if (!errSlot)
     return populateFinallyBody();
-  bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
-
   auto nestedTry =
       TryOp::create(builder, tryOp.getLoc(), /*suppressWarnings=*/true);
 
@@ -3647,8 +3642,6 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
     ExprDest moveDest(outerErrSlot, EC_RaiseValue);
     SyntheticNode synthNode(loc);
     getEmitter().emitResult(MRValue(errDecl), &synthNode, moveDest);
-    if (inferringErrorType)
-      getEmitter().checkInferredErrorType(outerErrSlot.getRValueType(), loc);
     auto raiseOp = RaiseOp::create(builder, tryOp.getLoc());
     raiseContext->recordRaiseSite(outerErrSlot, raiseOp,
                                   /*sourceOperation=*/nestedTry, loc);
