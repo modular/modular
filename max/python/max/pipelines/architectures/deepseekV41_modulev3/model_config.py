@@ -13,7 +13,7 @@
 """Config for DeepSeek-V4.1-Flash models (ModuleV3).
 
 Unlike V4, the published ``config.json`` nests every model field under
-``text_config`` (and ``vision_config``, unused until vision lands); see
+``text_config`` (and the vision encoder's under ``vision_config``); see
 ``hf_config_shims.DeepseekV41HFConfig``. This config flattens the fields it
 needs from ``text_config`` onto itself -- so an arch module always sees a
 flat ``DeepseekV41Config``, never a sub-config reach-through. It subclasses
@@ -66,9 +66,64 @@ from ..deepseekV41.model_config import (
     RoutedExpertFormat as _V2RoutedExpertFormat,
 )
 from . import interface
+from .vision_encoder import DeepseekV41VisionConfig
 
 # DSpark draft stages when the checkpoint config does not say.
 _DEFAULT_DSPARK_STAGES = 3
+
+MAX_IMAGES_PER_REQUEST = "max_images_per_request"
+"""The one ``--vision-config-overrides`` key DeepSeek-V4.1 reads."""
+
+
+def max_images_per_request(pipeline_config: PipelineConfig) -> int | None:
+    """Returns the per-request image cap, ``None`` for no cap.
+
+    Set with ``--vision-config-overrides '{"max_images_per_request": N}'``,
+    as vLLM's ``--limit-mm-per-prompt``. ``0`` serves text only: the vision
+    encoder is neither loaded nor planned, and the router rejects any
+    request with an image.
+
+    Raises:
+        ValueError: On any other override key, or a cap that is not a
+            non-negative integer.
+    """
+    overrides = dict(pipeline_config.model.vision_config_overrides)
+    unknown = sorted(overrides.keys() - {MAX_IMAGES_PER_REQUEST})
+    if unknown:
+        raise ValueError(
+            f"DeepSeek-V4.1 vision_config_overrides accepts only "
+            f"{MAX_IMAGES_PER_REQUEST!r}, got {unknown}"
+        )
+    cap = overrides.get(MAX_IMAGES_PER_REQUEST)
+    if cap is not None and (
+        isinstance(cap, bool) or not isinstance(cap, int) or cap < 0
+    ):
+        raise ValueError(
+            f"{MAX_IMAGES_PER_REQUEST} must be a non-negative integer, "
+            f"got {cap!r}"
+        )
+    return cap
+
+
+def vision_config(
+    pipeline_config: PipelineConfig,
+) -> DeepseekV41VisionConfig | None:
+    """Returns the config of the vision encoder the deployment builds.
+
+    Returns ``None`` without a tower or with images capped at 0. Speculative
+    decoding serves text only, so it builds no encoder either.
+    """
+    huggingface_config = pipeline_config.model.huggingface_config
+    if (
+        not interface.has_vision_tower(huggingface_config)
+        or max_images_per_request(pipeline_config) == 0
+        or pipeline_config.speculative is not None
+    ):
+        return None
+    return DeepseekV41VisionConfig.from_hf(
+        huggingface_config.vision_config.to_dict(),
+        DeepseekV41Config.get_text_config(huggingface_config).hidden_size,
+    )
 
 
 def num_dspark_stages(text_config: Any) -> int:
@@ -405,6 +460,19 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     # field off its own ``V41Config`` copy of the text config.
     sliding_window: int = 128
 
+    has_vision: bool = False
+    """Whether the checkpoint has a vision tower
+    (:func:`~.interface.has_vision_tower`): its routers then
+    hold ``gate.bias_vl``, the selection bias of image-span rows, as the
+    interface's leaf contract declares."""
+
+    vision: DeepseekV41VisionConfig | None = None
+    """The vision encoder this deployment serves images with; ``None`` when
+    it serves text only (:func:`vision_config`)."""
+
+    image_token_id: int | None = None
+    """The token every position of an image span carries."""
+
     # MoE. Both expert counts are published checkpoint keys, so the config
     # keeps them even where a count has no reader yet.
     n_routed_experts: int = 384
@@ -533,6 +601,34 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         # No ``text_config`` attribute means the input already *is* the
         # text config; return it unchanged instead of unwrapping again.
         return getattr(huggingface_config, "text_config", huggingface_config)
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Returns the bytes of one largest image span's bf16 embeddings.
+
+        Returns 0 without a tower.
+        """
+        if not interface.has_vision_tower(huggingface_config):
+            return 0
+        hidden_size = cls.get_text_config(huggingface_config).hidden_size
+        return (
+            huggingface_config.vision_config.max_image_tokens * hidden_size * 2
+        )
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """Returns the row of one image span position: text width, bf16.
+
+        Returns ``None`` without a tower.
+        """
+        if not interface.has_vision_tower(huggingface_config):
+            return None
+        hidden_size = cls.get_text_config(huggingface_config).hidden_size
+        return hidden_size, DType.bfloat16
 
     @staticmethod
     def construct_kv_params(
@@ -722,5 +818,12 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             data_parallel_degree=model_config.data_parallel_degree,
             max_batch_rows=forward_row_bound(pipeline_config, max_seq_len),
             routed_expert_format=RoutedExpertFormat.of(hf_config),
+            has_vision=interface.has_vision_tower(hf_config),
+            vision=vision_config(pipeline_config),
+            image_token_id=(
+                None
+                if (token := getattr(hf_config, "image_token_id", None)) is None
+                else int(token)
+            ),
             **cls.resolve_text_fields(text_config),
         )

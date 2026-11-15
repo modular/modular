@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Registers text generation through the DeepSeek-V4.1 ModuleV3 trunk."""
+"""Registers DeepSeek-V4.1 ModuleV3 text and image generation."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
+from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 # Registers the ``deepseekv4`` reasoning parser at import.
 from .. import deepseekV4 as _deepseekV4  # noqa: F401
@@ -24,6 +24,7 @@ from .. import deepseekV4 as _deepseekV4  # noqa: F401
 from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
 from . import weight_adapters
 from .registration import (
+    DeepseekV41VisionEncoder,
     RegisteredDeepseekV41BatchProcessor,
     RegisteredDeepseekV41Config,
     RegisteredDeepseekV41Decoder,
@@ -46,9 +47,13 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     supports_device_graph_capture=False,
     supports_empty_batches=False,
     requires_max_batch_context_length=True,
-    modules={GraphRole.DECODER: RegisteredDeepseekV41Decoder},
+    modules={
+        GraphRole.DECODER: RegisteredDeepseekV41Decoder,
+        GraphRole.VISION: DeepseekV41VisionEncoder,
+    },
     tokenizer=DeepseekV41Tokenizer,
-    context_type=TextContext,
+    context_type=TextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,

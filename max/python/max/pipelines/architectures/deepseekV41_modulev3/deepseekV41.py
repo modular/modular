@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DeepSeek-V4.1 text trunk, tensor or data parallel over one mesh."""
+"""The DeepSeek-V4.1 trunk, tensor or data parallel over one mesh.
+
+Image span positions take the vision encoder's rows in place of their token
+embeddings; the router selects their experts with ``gate.bias_vl``, and no
+Engram n-gram spans them.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +41,8 @@ from max.pipelines.architectures.deepseekV41.engram_lookback import (
     read_engram_lookback,
 )
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -341,6 +348,9 @@ class Batch:
     ``replay`` holds the decoder's kept rows when the export plans them;
     ``rows`` always describes the full batch the layers up to the last KV
     source run on.
+
+    ``vision`` holds the image span rows and the batch rows they replace,
+    replicated over the mesh and indexed in the pre-split batch.
     """
 
     tokens: Tensor
@@ -359,6 +369,7 @@ class Batch:
     input_row_offsets_i64: Tensor | None = None
     draft_width: Tensor | None = None
     replay: ReplayRows | None = None
+    vision: VisionInputs[Tensor] | None = None
 
     @property
     def row_offsets(self) -> Tensor:
@@ -513,6 +524,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
         draft_width: Tensor | None = None,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> Batch:
         """Stages already-split inputs onto the mesh, as a :class:`Batch`.
 
@@ -537,6 +549,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         image_token_mask = F.distributed_broadcast(
             extras["image_token_mask"], mesh
         )
+        lookback_dead = extras["engram_lookback_dead"]
         if self.interface_config.engram_lookback_history:
             # The overlap export replaces the host window with the window
             # plus its device history: the row the source map names reads
@@ -545,20 +558,26 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             # Engram hash reads the same int32 window either way.
             history = extras["engram_lookback_history"].graph_values[0]
             assert isinstance(history, BufferValue)
+            source = extras["engram_lookback_source"]
             lookback = F.cast(
                 read_engram_lookback(
-                    extras["engram_lookback_ids"],
-                    extras["engram_lookback_source"],
-                    history,
+                    extras["engram_lookback_ids"], source, history
                 ),
                 DType.int32,
             )
+            if self.config.image_token_id is not None:
+                # The host's dead slots describe its own window, so a row
+                # that reads the history takes its dead slots from the
+                # recorded ids instead.
+                lookback_dead = F.where(
+                    (source >= 0).unsqueeze(-1),
+                    (lookback == self.config.image_token_id).cast(DType.uint8),
+                    lookback_dead,
+                )
         else:
             lookback = extras["engram_lookback"]
         lookback = F.distributed_broadcast(lookback, mesh)
-        lookback_dead = F.distributed_broadcast(
-            extras["engram_lookback_dead"], mesh
-        )
+        lookback_dead = F.distributed_broadcast(lookback_dead, mesh)
         tables = [
             extras[f"engram_table_{i}_{part}"]
             for i in range(len(self.config.engram_layer_ids))
@@ -656,6 +675,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             input_row_offsets_i64=input_row_offsets_i64,
             draft_width=draft_width,
             replay=replay,
+            vision=vision,
         )
 
     def _rebased(
@@ -830,11 +850,16 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         Under DP the embedding runs on the full replicated batch (the
         vocab-sharded gather all-reduces while every rank still holds the
         same rows) and the stream and ``pre`` are split afterwards, so the
-        per-rank trunk starts from its own rows.
+        per-rank trunk starts from its own rows. The image span rows merge
+        before the split, as their indices address the full batch.
         """
         hc = self.config.hc_mult
         full = b.tokens_full if b.tokens_full is not None else b.tokens
         h = self.embed(full)
+        if b.vision is not None:
+            h = F_merge_multimodal_embeddings(
+                h, b.vision.embeddings, b.vision.scatter_indices
+            )
         stream = F.stack([h] * hc, axis=1)
         rows = h.shape[0]
         pre = F.concat(
@@ -1115,8 +1140,9 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *rest: Tensor,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> ModuleV3Outputs:
-        """Runs the model over its graph inputs."""
+        """Runs the model over its graph inputs, and the batch's image rows."""
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
         if self.dp > 1:
@@ -1166,6 +1192,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
             comm_buffers=comm_buffers,
+            vision=vision,
         )
         stream, pre = self.embed_stream(b)
         stream, pre, _ = self._run_trunk(b, stream, pre, ())

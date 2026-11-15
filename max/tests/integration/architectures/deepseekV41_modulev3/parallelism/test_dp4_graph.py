@@ -240,7 +240,9 @@ def _dp_ep_compile_inputs(
 
 
 def _build_dp4_ep4(
-    replay: bool = False, lookback_history: bool = False
+    replay: bool = False,
+    lookback_history: bool = False,
+    image_token_id: int | None = None,
 ) -> tuple[DeepseekV41, V41Config, list[TensorType | BufferType]]:
     """The DP4+EP4 module, its interface config and its compile inputs."""
     text = _dp_text_config(replay, lookback_history)
@@ -257,6 +259,7 @@ def _build_dp4_ep4(
         kv_params=kv,
         devices=device_refs,
         max_seq_len=256,
+        image_token_id=image_token_id,
         **DeepseekV41Config.resolve_text_fields(text),
     )
     mesh = DeviceMesh(
@@ -279,10 +282,16 @@ def _build_dp4_ep4(
     return module, interface, inputs
 
 
-def _stage_dp4_ep4(replay: bool = False, lookback_history: bool = False) -> str:
+def _stage_dp4_ep4(
+    replay: bool = False,
+    lookback_history: bool = False,
+    image_token_id: int | None = None,
+) -> str:
     """Traces the DP4+EP4 graph and returns its staged text."""
     with _virtual_devices(_DP):
-        module, _, inputs = _build_dp4_ep4(replay, lookback_history)
+        module, _, inputs = _build_dp4_ep4(
+            replay, lookback_history, image_token_id
+        )
         return str(module.trace(*inputs))
 
 
@@ -408,10 +417,12 @@ def test_dp4_ep4_lookback_history_graph_stages_the_v2_mechanism() -> None:
     trunk (a buffer input the DP wiring has never carried before). The
     read is device-0 compute, so the step's collective inventory is
     exactly the default's -- an unplanned collective would lower into the
-    host waits that device-graph capture rejects.
+    host waits that device-graph capture rejects. A row that reads the
+    history takes its dead slots from the image token in the ids it reads.
     """
-    text = _stage_dp4_ep4(lookback_history=True)
+    text = _stage_dp4_ep4(lookback_history=True, image_token_id=129264)
     assert "engram_history_rows" in text
+    assert "129264" in text
     assert set(re.findall(r"\bmo\.distributed\.[\w.]+", text)) == set(
         re.findall(r"\bmo\.distributed\.[\w.]+", _stage_dp4_ep4())
     )

@@ -15,6 +15,10 @@
 The registered graph has a new ABI name: deployment constants precede the
 per-request state inputs instead of interleaving the original variadic tail.
 The legacy module and DSpark builder remain available to existing pairings.
+
+The ``VISION`` role encodes a batch's new images on the first device; the
+decoder takes the encoded span rows last, after the expert-parallel inputs,
+so every text input keeps its position.
 """
 
 from __future__ import annotations
@@ -28,12 +32,17 @@ import numpy as np
 from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
-from max.graph import BufferType, TensorType
+from max.engine import InferenceSession
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+)
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -52,10 +61,20 @@ from max.pipelines.lib.registration_runtime import (
     ModuleRuntime,
 )
 from max.pipelines.lib.request_state import RequestStateStore
-from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.role_contracts import (
+    DecoderInputs,
+    DecoderOutputs,
+    VisionInputs,
+)
 from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.pipelines.lib.vision_batching import create_empty_image_embeddings
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncodeResult,
+    concat_device_buffers,
+)
 from max.pipelines.modeling.types import RequestID
 from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self
@@ -72,6 +91,8 @@ from .model import (
     validate_engram_tables,
 )
 from .model_config import DeepseekV41Config
+from .vision_encoder import DeepseekV41VisionModel, vision_input_types
+from .vision_inputs import pack_uncached_images
 
 
 def _is_constant(name: str) -> bool:
@@ -307,7 +328,15 @@ class RegisteredDeepseekV41Inputs(DecoderModelInputs):
 
 
 class RegisteredDeepseekV41BatchProcessor(DecoderBatchProcessor):
-    """Adds request metadata to the framework's ragged batching and outputs."""
+    """Adds request metadata to the framework's ragged batching and outputs.
+
+    It also encodes the images the pipeline's vision cache selects: it packs
+    them, runs the vision graph on the first device and copies the span rows
+    to every device, where the decoder merges them.
+    """
+
+    _vision_model: CompiledCallable[Any, Any] | None = None
+    _empty_vision_embeddings: list[Buffer] | None = None
 
     def __init__(
         self,
@@ -357,6 +386,77 @@ class RegisteredDeepseekV41BatchProcessor(DecoderBatchProcessor):
             ),
         )
 
+    def bind_vision_encoder(
+        self,
+        *,
+        vision_model: CompiledCallable[Any, Any],
+        session: InferenceSession,
+    ) -> None:
+        """Binds the compiled vision graph."""
+        del session
+        self._vision_model = vision_model
+
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> list[list[Buffer]] | None:
+        """Packs the selected uncached images onto the first device.
+
+        Each entry is one encoder launch
+        (:func:`~.vision_inputs.pack_uncached_images`).
+        """
+        assert isinstance(self.config, DeepseekV41Config)
+        if self.config.vision is None:
+            return None
+        return pack_uncached_images(selection, devices[0], self.config.vision)
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: list[list[Buffer]] | None,
+    ) -> VisionEncodeResult:
+        """Encodes the packed images into their span rows on every device.
+
+        Runs one encoder launch per packed entry, in order.
+
+        Raises:
+            ValueError: If images arrive and no vision graph is bound.
+        """
+        if packed is None:
+            packed = self.pack_vision_inputs(selection, devices)
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
+            )
+        if self._vision_model is None:
+            raise ValueError("this DeepSeek-V4.1 deployment serves no images")
+        launches: list[Buffer] = []
+        for inputs in packed:
+            (rows,) = self._vision_model.execute_raw(*inputs)
+            assert isinstance(rows, Buffer)
+            launches.append(rows)
+        rows = (
+            launches[0]
+            if len(launches) == 1
+            else concat_device_buffers(launches)
+        )
+        return VisionEncodeResult(embeddings=rows.to(devices))
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Returns per-device zero-row span embeddings, cached across steps."""
+        if self._empty_vision_embeddings is None:
+            assert isinstance(self.config, DeepseekV41Config)
+            self._empty_vision_embeddings = create_empty_image_embeddings(
+                devices, self.config.hidden_size
+            )
+        return self._empty_vision_embeddings
+
 
 class RegisteredDeepseekV41Decoder(DeepseekV41):
     """Accepts shared semantic inputs while preserving checkpoint weight paths."""
@@ -364,6 +464,7 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
     graph_name: ClassVar[str] = "DeepseekV41_registered_v1"
     supports_data_parallel: ClassVar[bool] = True
     composes_request_state: ClassVar[bool] = True
+    consumes_vision: ClassVar[bool] = True
     input_layout: ClassVar[tuple[str, ...]] = (
         "tokens",
         "return_n_logits",
@@ -374,6 +475,7 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         "constants",
         "state",
         "ep",
+        "vision",
     )
 
     def __init__(self, config: RegisteredDeepseekV41Config) -> None:
@@ -445,12 +547,13 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         return_n_logits: Tensor | None = None,
         input_row_offsets: Tensor | None = None,
         *rest: Tensor,
+        vision: VisionInputs[Tensor] | None = None,
     ) -> DecoderOutputs:
         """Reconstructs the original trunk call from the shared role fields."""
         if isinstance(tokens, Tensor):
             assert return_n_logits is not None and input_row_offsets is not None
             return super().forward(
-                tokens, return_n_logits, input_row_offsets, *rest
+                tokens, return_n_logits, input_row_offsets, *rest, vision=vision
             )
         inputs = tokens
         names = extra_input_names(self.interface_config, self.dp)
@@ -477,4 +580,35 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
             *tree.leaves(inputs.kv),
             *extras,
             *tree.leaves(inputs.ep),
+            vision=inputs.vision,
+        )
+
+
+class DeepseekV41VisionEncoder(DeepseekV41VisionModel):
+    """The ``VISION`` role: the ViT, the aligner and the span assembly.
+
+    It runs on the first device in bfloat16, and is built only when the
+    deployment serves images (:func:`~.model_config.vision_config`).
+    """
+
+    graph_name: ClassVar[str] = "DeepseekV41Vision"
+
+    @classmethod
+    def is_enabled(cls, config: RegisteredDeepseekV41Config) -> bool:
+        """Returns whether this deployment serves images."""
+        return config.vision is not None
+
+    def __init__(self, config: RegisteredDeepseekV41Config) -> None:
+        assert config.vision is not None
+        with default_dtype(DType.bfloat16):
+            super().__init__(config.vision)
+        self.vision_config = config.vision
+        self.input_device: DeviceRef = config.devices[0]
+        self.embedding_dtype = DType.bfloat16
+        self.embedding_dim = config.vision.text_dim
+
+    def input_types(self) -> tuple[TensorType, ...]:
+        """Returns the packed patches, RoPE tables and gather indices."""
+        return vision_input_types(
+            self.vision_config, self.input_device, DType.bfloat16
         )

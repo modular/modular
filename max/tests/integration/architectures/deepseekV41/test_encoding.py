@@ -914,7 +914,7 @@ def test_literal_text_ids_match_encoding_each_piece(text: str) -> None:
 
 
 def test_modulev3_text_placeholders_stay_text() -> None:
-    """The text-only ModuleV3 tokenizer never emits the image token."""
+    """The ModuleV3 tokenizer keeps a typed placeholder as text."""
     _, delegate, image_token_id = _make_tokenizer_with_image_added_token()
     tokenizer = object.__new__(DeepseekV41ModuleV3Tokenizer)
     tokenizer.delegate = delegate

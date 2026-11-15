@@ -42,6 +42,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     STACKED_PROJECTIONS,
     V41Config,
     build_kv_params,
+    has_vision_tower,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
@@ -71,6 +72,7 @@ def declared() -> dict[str, tuple[DType, tuple[int, ...]]]:
         kv_params=kv,
         devices=[DeviceRef.CPU()],
         max_seq_len=256,
+        has_vision=has_vision_tower(full),
         **DeepseekV41Config.resolve_text_fields(text),
     )
     with F.lazy():
@@ -166,12 +168,6 @@ def test_every_census_tensor_is_consumed_by_a_declared_parameter(
         for source in _census_sources(name)
     }
     expected = {name for name in census if not abi_contract.allow_listed(name)}
-    # The trunk module this fixture builds is text-only: the router's
-    # vision bias is a leaf of the vision build's leaf contract
-    # (``test_param_tree`` pins that contract against the census), not
-    # of the text trunk, so its census tensors stay unconsumed here.
-    expected -= {
-        name for name in expected if name.endswith(".ffn.gate.bias_vl")
-    }
+    assert any(name.endswith(".ffn.gate.bias_vl") for name in consumed)
     assert not (consumed - expected), sorted(consumed - expected)[:5]
     assert not (expected - consumed), sorted(expected - consumed)[:5]

@@ -39,7 +39,8 @@ from ..deepseekV41.weight_adapters import (
     resolve_quantization_info,
     with_dtype,
 )
-from .model_config import DeepseekV41Config, EngramTableFormat
+from .interface import has_vision_tower
+from .model_config import DeepseekV41Config, EngramTableFormat, vision_config
 
 # (first, second, stacked, sharded) module-path suffixes: two projections
 # that read the same activation, stacked into one leaf that runs as one
@@ -120,17 +121,25 @@ def is_skipped_checkpoint_tensor(name: str) -> bool:
       allows every stage tensor by design: the base trunk does not wire
       the drafter, so the whole subtree is intentionally filtered.
     * ``vision.*`` (259), ``aligner.*`` (4), and the three image delimiters
-      -- the VL tower the text-only tree does not build. ``gate.bias_vl``
-      is NOT here: the router holds it whenever the config has
-      ``vision_config``, and the adapter drops it with the config.
+      -- the vision encoder's (:func:`is_vision_tensor`), a module of its
+      own. ``gate.bias_vl`` is NOT here: the router holds it whenever the
+      config has ``vision_config``, and the adapter drops it with the
+      config.
     * ``layers.{EG}.engram.embed.{weight,scale}`` -- the 4 host tables,
       ABI graph inputs, returned by :func:`engram_embed_tables` instead.
     """
-    if name.startswith(_MTP_PREFIX):
-        return True
-    if name.startswith(_VISION_PREFIXES) or name in _IMAGE_DELIMITERS:
+    if name.startswith(_MTP_PREFIX) or is_vision_tensor(name):
         return True
     return _ENGRAM_EMBED.match(name) is not None
+
+
+def is_vision_tensor(name: str) -> bool:
+    """Returns whether ``name`` is a weight of the vision encoder.
+
+    Its checkpoint names are the encoder module's own parameter paths, so the
+    adapter passes them through unchanged.
+    """
+    return name.startswith(_VISION_PREFIXES) or name in _IMAGE_DELIMITERS
 
 
 def to_tree_name(name: str) -> str:
@@ -838,6 +847,14 @@ def convert_safetensor_state_dict(
     this loader's own tables, not tree weights, and the adapter keeps
     only zero-copy views of them).
 
+    With a vision tower (:func:`~.interface.has_vision_tower`) the routers
+    keep ``gate.bias_vl``, which the leaf contract declares for such a
+    checkpoint. The vision encoder's tensors pass through under their
+    checkpoint names, which the encoder module declares, only when the
+    deployment builds the encoder (:func:`~.model_config.vision_config`); the
+    trunk declares none of them. Without ``pipeline_config`` the encoder
+    follows the tower.
+
     Returns :class:`AdapterResult`: ``state_dict`` feeds the module's
     parameter tree, and ``engram_tables`` -- the Engram embed tables as
     zero-copy uint8 views, in ``engram_layer_ids`` order -- feed the ABI
@@ -866,7 +883,10 @@ def convert_safetensor_state_dict(
         int(text.num_hidden_layers),
     )
     table_format = EngramTableFormat.of(huggingface_config)
-    has_vision = False
+    has_vision = has_vision_tower(huggingface_config)
+    builds_encoder = has_vision and (
+        pipeline_config is None or vision_config(pipeline_config) is not None
+    )
     engram_layer_ids = tuple(
         int(layer) for layer in getattr(text, "engram_layer_ids", ())
     )
@@ -910,6 +930,12 @@ def convert_safetensor_state_dict(
                 f"{list(table.weight_codes.shape)}, but quantization_config "
                 f"declares {table_format.value} Engram tables"
             )
+    if builds_encoder:
+        result.update(
+            (name, value.data())
+            for name, value in sorted(state_dict.items())
+            if is_vision_tensor(name)
+        )
     return result
 
 

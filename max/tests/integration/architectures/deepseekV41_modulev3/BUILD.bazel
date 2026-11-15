@@ -265,3 +265,88 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+modular_py_library(
+    name = "vision_fixtures",
+    testonly = True,
+    srcs = ["vision_fixtures.py"],
+    ignore_unresolved_imports = [
+        "tokenizers.AddedToken",
+        "tokenizers.Tokenizer",
+        "tokenizers.decoders",
+        "tokenizers.models",
+        "tokenizers.pre_tokenizers",
+    ],
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/modeling",
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+# The shared code the image path relies on: module_registration's decoder
+# and VISION role inputs (decoder_input_types, decoder_vision_input_types),
+# the vision cache's encode protocol (vision_encoder_cache.VisionEncodeResult,
+# concat_device_buffers, vision_batching.create_empty_image_embeddings), and
+# TextTokenizer's --tokenizer-impl chat encoder (pipelines/lib/tokenizer.py,
+# pipelines/lib/_chat_encoder.py). CPU only; nothing compiles.
+modular_py_test(
+    name = "test_vision_contract",
+    size = "small",
+    srcs = ["test_vision_contract.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        ":vision_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The image path's own checks: the encoder declares the checkpoint's vision
+# tensors, and the host inputs, launches, masks and spans. Only this model's
+# code can break them, so CI does not run them (idiomatic bring-up rule 3);
+# run them by name. CPU only; nothing compiles.
+modular_py_test(
+    name = "test_vision",
+    size = "small",
+    srcs = ["test_vision.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    tags = ["manual"],
+    deps = [
+        ":abi_contract",
+        ":vision_fixtures",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)

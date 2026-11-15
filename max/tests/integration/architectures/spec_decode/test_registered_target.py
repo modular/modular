@@ -332,6 +332,8 @@ def test_a_registered_vision_target_pairs_through_the_vision_cache(
     """A registered target with a VISION module encodes a pairing's images
     through the pipeline's vision cache, whatever its draft takes."""
     _calls(monkeypatch, _VISION_TARGET.name)
+    # The toy target names no adapter module to read.
+    monkeypatch.setattr(spec_adapters, "verify_merges_images", lambda _: True)
     draft = _draft(InputModality.TEXT)
     target = replace(_VISION_TARGET, checkpoint_drafts={"mtp": "ToyDraft"})
     assert _takes_images(target)

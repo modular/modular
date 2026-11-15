@@ -33,7 +33,8 @@ the EP gate/up scale-pair refusal.
 
 from __future__ import annotations
 
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -190,29 +191,112 @@ def test_convert_weight_data_drops_bias_vl_without_vision() -> None:
     assert "layers.0.ffn.gate.bias" in out
 
 
-def test_pipeline_adapter_filters_vision_before_materialization() -> None:
+def _weight_source(name: str) -> Mock:
+    source = Mock()
+    source.data.return_value = _wd(np.ones(8, np.float32), name, DType.float32)
+    return source
+
+
+def _deployment(
+    hf: PretrainedConfig,
+    *,
+    speculative: object = None,
+    overrides: dict[str, object] | None = None,
+) -> SimpleNamespace:
+    """A one-device pipeline config serving ``hf``, as the adapter and
+    ``vision_config`` read it."""
+    return SimpleNamespace(
+        model=SimpleNamespace(
+            huggingface_config=hf,
+            vision_config_overrides=overrides or {},
+            device_specs=[None],
+            data_parallel_degree=1,
+        ),
+        runtime=SimpleNamespace(ep_size=1),
+        speculative=speculative,
+    )
+
+
+_TOWER = {"num_hidden_layers": 1, "hidden_size": 64}
+
+
+@pytest.mark.parametrize(
+    ("vision", "pipeline"),
+    [
+        (None, {}),
+        ({}, {}),
+        (_TOWER, {"speculative": object()}),
+        (_TOWER, {"overrides": {"max_images_per_request": 0}}),
+    ],
+    ids=["absent", "empty", "speculative", "images_capped_at_0"],
+)
+def test_pipeline_adapter_filters_vision_before_materialization(
+    vision: dict[str, int] | None, pipeline: dict[str, Any]
+) -> None:
+    """Without a vision encoder no vision tensor is ever read.
+
+    The ``deepseek_v41`` config shim gives a checkpoint without
+    ``vision_config`` an empty one. A deployment that builds no encoder,
+    under speculative decoding or with ``max_images_per_request`` 0, still
+    reads the routers' ``gate.bias_vl`` of a checkpoint with a tower: the
+    leaf contract follows the checkpoint.
+    """
     hf = PretrainedConfig(
         text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
-        vision_config=PretrainedConfig(hidden_size=64),
+        vision_config=None if vision is None else PretrainedConfig(**vision),
     )
-    keep = Mock()
-    keep.data.return_value = _wd(
-        np.ones(8, np.float32), "layers.0.attn_norm.weight", DType.float32
-    )
+    keep = {
+        name: _weight_source(name)
+        for name in ("layers.0.attn_norm.weight", "layers.0.ffn.gate.bias_vl")
+        if vision or not name.endswith("bias_vl")
+    }
     skip = Mock()
     skip.data.side_effect = AssertionError("unsupported tensor materialized")
     adapted = convert_safetensor_state_dict(
         {
-            "layers.0.attn_norm.weight": keep,
             "layers.0.ffn.gate.bias_vl": skip,
-            "vision.patch_embedding.weight": skip,
+            **keep,
+            "vision.norm.weight": skip,
+            "image_start": skip,
             "mtp.0.head.weight": skip,
         },
         hf,
+        _deployment(hf, **pipeline),
     )
-    assert set(adapted) == {"layers.0.attn_norm.weight"}
+    assert set(adapted) == set(keep)
     skip.data.assert_not_called()
-    keep.data.assert_called_once_with()
+    for source in keep.values():
+        source.data.assert_called_once_with()
+
+
+def test_pipeline_adapter_passes_the_vision_encoder_weights_through() -> None:
+    """With ``vision_config`` the encoder's tensors keep their names.
+
+    The routers keep their vision bias, and the drafter stays unread.
+    """
+    hf = PretrainedConfig(
+        text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
+        vision_config=PretrainedConfig(num_hidden_layers=1, hidden_size=64),
+    )
+    names = (
+        "layers.0.attn_norm.weight",
+        "layers.0.ffn.gate.bias_vl",
+        "vision.norm.weight",
+        "aligner.w1.weight",
+        "image_start",
+        "image_newline",
+        "image_end",
+    )
+    skip = Mock()
+    skip.data.side_effect = AssertionError("unsupported tensor materialized")
+    sources = {name: _weight_source(name) for name in names}
+    adapted = convert_safetensor_state_dict(
+        {**sources, "mtp.0.head.weight": skip}, hf
+    )
+    assert set(adapted) == set(names)
+    for name in names:
+        assert [int(d) for d in adapted[name].shape] == [8]
+    skip.data.assert_not_called()
 
 
 def _leaf_u8(leaf: WeightData) -> np.ndarray:

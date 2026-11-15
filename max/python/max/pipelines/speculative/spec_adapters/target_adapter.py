@@ -312,6 +312,11 @@ class TargetAdapter:
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""
 
+    verify_merges_images: bool = True
+    """Whether the target's verify merges a batch's image rows. A pairing of a
+    target whose verify merges none takes no images: it reserves no vision
+    cache and refuses images at admission."""
+
     verify_commits_long_rows: bool = False
     """Whether the target's verify commits a row longer than one token and
     its drafts, at the row's last real token, in every recurrent leaf it

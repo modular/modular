@@ -195,12 +195,15 @@ class FeedForward(Module[..., Tensor]):
             config.n_routed_experts,
             config.num_experts_per_tok,
             config.routed_scaling_factor,
+            with_bias_vl=config.has_vision,
         )
         # The router builds its leaves on the module's default device (CPU);
         # the gate's matmul runs on the mesh, so replicate them there.
         replicated = DeviceMapping.replicated(mesh)
         self.gate.weight = self.gate.weight.to(replicated)
         self.gate.bias = self.gate.bias.to(replicated)
+        if self.gate.bias_vl is not None:
+            self.gate.bias_vl = self.gate.bias_vl.to(replicated)
         # The trunk's shared expert holds the adapter's stacked ``w13``
         # leaf. Under data parallelism it runs whole per rank (TP=1), so
         # its weights stay unsharded and nothing reduces.

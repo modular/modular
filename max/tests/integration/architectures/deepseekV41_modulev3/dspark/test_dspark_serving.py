@@ -39,7 +39,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures import register_all_models
+from max.pipelines.architectures import hf_config_shims, register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     model as model_module,
 )
@@ -65,6 +65,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.model import (
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
     dspark_draft_width,
+    vision_config,
 )
 from max.pipelines.architectures.dspark_deepseekV41_modulev3 import (
     DSparkDeepseekV41Draft,
@@ -74,6 +75,7 @@ from max.pipelines.architectures.dspark_deepseekV41_modulev3.model import (
     configure_dspark_draft,
 )
 from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context.context_validators import validate_no_images
 from max.pipelines.lib import (
     BatchProcessorRuntime,
     GraphRole,
@@ -84,6 +86,7 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.arch_lookup import ARCH_LOOKUP
+from max.pipelines.lib.memory_plan import _vision_row, vision_cache_plan
 from max.pipelines.lib.module_registration import construct_module, device_mesh
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
@@ -293,6 +296,35 @@ def test_dspark_pairs_the_modulev3_trunk_with_its_modulev3_draft() -> None:
     assert deepseekV41_modulev3_arch.spec_decode_graph_names == {
         "dspark": "UnifiedDSparkDeepseekV41ModuleV3"
     }
+
+
+def test_the_pairing_reserves_vision_cache_only_with_its_encoder() -> None:
+    """The pairing of a vision checkpoint serves text only: its verify step
+    merges no image rows, so it loads no encoder, reserves no vision cache
+    and refuses images at admission."""
+    register_all_models()
+    paired = spec_decode_architecture(
+        "DeepseekV41ForCausalLM", "dspark", None, prefer_module_v3=True
+    )
+    assert paired is not None
+    assert validate_no_images in paired.context_validators
+    model = SimpleNamespace(
+        huggingface_config=hf_config_shims.DeepseekV41HFConfig(**_hf_dict()),
+        vision_config_overrides={},
+    )
+    pipeline = SimpleNamespace(
+        model=model,
+        runtime=SimpleNamespace(vision_cache_utilization=0.05),
+        speculative=SimpleNamespace(speculative_method="dspark"),
+    )
+    reserved, plan = vision_cache_plan(
+        cast(Any, pipeline),
+        _vision_row(cast(Any, pipeline), paired),
+        1 << 34,
+        1,
+    )
+    assert vision_config(cast(Any, pipeline)) is None
+    assert (reserved, plan) == (0, None)
 
 
 def test_the_modulev3_stages_are_a_registered_block_draft(

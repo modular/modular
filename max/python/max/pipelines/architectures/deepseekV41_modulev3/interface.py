@@ -89,6 +89,28 @@ next step's window. The default stays the host-built window, so the default
 export's input list is unchanged."""
 
 
+def _field(config: object, name: str) -> object:
+    if isinstance(config, Mapping):
+        return config.get(name)
+    return getattr(config, name, None)
+
+
+def has_vision_tower(huggingface_config: object) -> bool:
+    """Returns whether the checkpoint has a vision tower.
+
+    The ``deepseek_v41`` HF config shim fills a missing ``vision_config``
+    with an empty one, so a tower is a ``vision_config`` that sets the
+    encoder's depth (``num_hidden_layers``).
+
+    Args:
+        huggingface_config: The HF config, or its ``to_dict()`` mapping.
+    """
+    vision = _field(huggingface_config, "vision_config")
+    return (
+        vision is not None and _field(vision, "num_hidden_layers") is not None
+    )
+
+
 @dataclass(frozen=True)
 class V41Config:
     """The slice of the V4.1 text config the interface depends on."""
@@ -168,7 +190,7 @@ class V41Config:
             candidate_topk_blocks=text["candidate_topk_blocks"],
             hc_mult=text["hc_mult"],
             engram_layer_ids=tuple(text["engram_layer_ids"]),
-            has_vision="vision_config" in config,
+            has_vision=has_vision_tower(config),
             decoder_replay=bool(
                 text.get("decoder_replay", DECODER_REPLAY_DEFAULT)
             ),
@@ -885,8 +907,9 @@ def extra_inputs(
     # window plus its device history: the host window arrives as int64
     # ids, each row says where to read its real window from (a history
     # row the previous step recorded, or -1 for the host window), and the
-    # history is a persistent device buffer. The dead companion stays with
-    # the host: it marks window slots, not the recorded ids.
+    # history is a persistent device buffer. The dead companion stays a
+    # host input; for a row that reads the history, the graph marks the
+    # image tokens of the recorded ids instead.
     if config.engram_lookback_history:
         i64 = DType.int64
         lookback: list[tuple[str, TensorType | BufferType]] = [

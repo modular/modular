@@ -56,6 +56,31 @@ def decoder_row_count(row_offsets: np.ndarray, window: int) -> int:
     return int(np.minimum(np.diff(row_offsets.astype(np.int64)), window).sum())
 
 
+def image_token_mask(
+    context_batch: Sequence[TextContext],
+    image_token_id: int | None,
+    verify_width: int = 0,
+) -> np.ndarray:
+    """Returns the uint8 mask of the step rows that sit in an image span.
+
+    Every position of an image span carries ``image_token_id``, and the
+    tokenizer lets that id appear nowhere else, so the row's token decides.
+    Rows are each request's active tokens followed by its ``verify_width``
+    draft rows, which are text.
+    """
+    lengths = np.array(
+        [ctx.tokens.active_length for ctx in context_batch], np.int64
+    )
+    if image_token_id is None or lengths.sum() == 0:
+        return np.zeros(
+            int(lengths.sum()) + verify_width * len(context_batch), np.uint8
+        )
+    tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
+    mask = (tokens == image_token_id).astype(np.uint8)
+    # Each request's draft rows follow its last active row.
+    return np.insert(mask, np.repeat(np.cumsum(lengths), verify_width), 0)
+
+
 def keep_all_plan(
     context_batch: Sequence[TextContext], verify_width: int
 ) -> ReplayPlan:
@@ -87,6 +112,9 @@ class DeepseekV41BatchProcessor(
     them after loading with :meth:`bind_engram`.
     """
 
+    _image_token_id: int | None = None
+    """The token of every image span position; ``None`` without images."""
+
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
@@ -100,6 +128,7 @@ class DeepseekV41BatchProcessor(
         if isinstance(config, DeepseekV41Config):
             self._engram_static = dict(config.engram_static_inputs)
             self._verifies = bool(config.dspark_trailing_inputs)
+            self._image_token_id = config.image_token_id
         self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
         self._ep_comm_initializer: EPCommInitializer | None = None
         self._lookback = EngramLookbackBatchState()
@@ -169,11 +198,11 @@ class DeepseekV41BatchProcessor(
     ) -> tuple[Buffer, ...]:
         device0 = self.runtime.devices[0]
         batch = len(context_batch)
-        mask_rows = int(row_offsets[-1])
-        if self._verifies:
-            # A verify gates every merged row: the prompt's, then each
-            # request's ``return_n_logits - 1`` drafts.
-            mask_rows += batch * max(return_n_logits - 1, 0)
+        lookback_ids = engram_lookback_token_ids(
+            [ctx.tokens.all for ctx in context_batch],
+            [ctx.tokens.processed_length for ctx in context_batch],
+            _NUM_LOOKBACK,
+        )
         per_request: dict[str, np.ndarray] = {
             # No request resumes yet: the window starts at the beginning of
             # every request and nothing is below the write floor. A request
@@ -182,9 +211,19 @@ class DeepseekV41BatchProcessor(
             # until that is supported.
             "swa_begin": np.zeros(batch, np.int32),
             "global_write_floor": np.zeros(batch, np.int32),
-            # Text only: no position is an image token.
-            "image_token_mask": np.zeros(mask_rows, np.uint8),
-            "engram_lookback_dead": np.zeros((batch, _NUM_LOOKBACK), np.uint8),
+            # A verify gates every merged row: each request's prompt rows,
+            # then its ``return_n_logits - 1`` drafts.
+            "image_token_mask": image_token_mask(
+                context_batch,
+                self._image_token_id,
+                max(return_n_logits - 1, 0) if self._verifies else 0,
+            ),
+            # No n-gram spans an image token, in the chunk or before it.
+            "engram_lookback_dead": (
+                np.zeros((batch, _NUM_LOOKBACK), np.uint8)
+                if self._image_token_id is None
+                else (lookback_ids == self._image_token_id).astype(np.uint8)
+            ),
             # The graph reads only the extent: the rows the decoder layers run.
             "decoder_rows": np.zeros(
                 decoder_row_count(row_offsets, self._v41.sliding_window),
@@ -192,13 +231,11 @@ class DeepseekV41BatchProcessor(
             ),
         }
         if self._v41.engram_lookback_history:
-            self._stage_lookback_history(per_request, context_batch)
+            self._stage_lookback_history(
+                per_request, lookback_ids, context_batch
+            )
         else:
-            per_request["engram_lookback"] = engram_lookback_token_ids(
-                [ctx.tokens.all for ctx in context_batch],
-                [ctx.tokens.processed_length for ctx in context_batch],
-                _NUM_LOOKBACK,
-            ).astype(np.int32)
+            per_request["engram_lookback"] = lookback_ids.astype(np.int32)
         buffers = {
             name: Buffer.from_numpy(array).to(device0)
             for name, array in per_request.items()
@@ -247,14 +284,11 @@ class DeepseekV41BatchProcessor(
     def _stage_lookback_history(
         self,
         per_request: dict[str, np.ndarray],
+        lookback_ids: np.ndarray,
         context_batch: Sequence[TextContext],
     ) -> None:
         """Stages the host window and the per-row source map of it."""
-        per_request["engram_lookback_ids"] = engram_lookback_token_ids(
-            [ctx.tokens.all for ctx in context_batch],
-            [ctx.tokens.processed_length for ctx in context_batch],
-            _NUM_LOOKBACK,
-        ).astype(np.int64)
+        per_request["engram_lookback_ids"] = lookback_ids.astype(np.int64)
         per_request["engram_lookback_source"] = self._lookback.source(
             context_batch
         )

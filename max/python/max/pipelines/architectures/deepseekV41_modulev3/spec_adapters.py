@@ -807,6 +807,9 @@ ADAPTER = TargetAdapter(
     # engine binds doesn't.
     relaxed_thinking_acceptance=False,
     prepares_every_batch=True,
+    # The DSpark graph takes no image rows yet, so the pairing serves text
+    # only.
+    verify_merges_images=False,
     trailing_input_types=trailing_input_types,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,

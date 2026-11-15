@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks the registered text runtime, its weight tree and load lifecycle."""
+"""Checks the registered runtime, its weight tree and load lifecycle."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -45,6 +46,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     build_kv_params,
     extra_input_names,
     extra_inputs,
+    has_vision_tower,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
     mhc_fused_post_pre,
@@ -55,6 +57,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.model import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
+    vision_config,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.tokenizer import (
     DeepseekV41Tokenizer,
@@ -63,15 +66,24 @@ from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
     AdapterResult,
     EngramTable,
 )
-from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.context import (
+    TextAndVisionContext,
+    TextContext,
+    TokenBuffer,
+)
 from max.pipelines.context.exceptions import InputError
-from max.pipelines.lib import KVCacheConfig, ModuleV3PipelineModelWithKVCache
+from max.pipelines.lib import (
+    GraphRole,
+    KVCacheConfig,
+    ModuleV3PipelineModelWithKVCache,
+)
 from max.pipelines.lib.config.config import _required_argument_changes
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.tokenizer import TextTokenizer
+from max.pipelines.modeling.types import InputModality
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
@@ -80,9 +92,19 @@ from tokenizers.models import WordLevel
 from transformers import AutoConfig, AutoTokenizer, PreTrainedTokenizerFast
 
 
-def test_registered_runtime_is_text_only() -> None:
+def test_registered_runtime_takes_text_and_images() -> None:
     assert deepseekV41_modulev3_arch.tokenizer is DeepseekV41Tokenizer
+    # The text tokenizer carries the --tokenizer-impl chat encoder.
     assert issubclass(DeepseekV41Tokenizer, TextTokenizer)
+    assert deepseekV41_modulev3_arch.context_type is TextAndVisionContext
+    assert deepseekV41_modulev3_arch.input_modalities == {
+        InputModality.TEXT,
+        InputModality.IMAGE,
+    }
+    assert set(deepseekV41_modulev3_arch.modules) == {
+        GraphRole.DECODER,
+        GraphRole.VISION,
+    }
     assert not deepseekV41_modulev3_arch.supports_device_graph_capture
     assert not deepseekV41_modulev3_arch.supports_empty_batches
     # The data/expert-parallel shapes are wired, so a multi-GPU launch
@@ -408,11 +430,59 @@ def test_config_selects_modulev3_without_new_shim(tmp_path: Path) -> None:
     assert DeepseekV41Config.get_text_config(hf).num_hidden_layers == 2
 
 
-def test_text_tokenizer_rejects_media_before_context_creation() -> None:
+@pytest.mark.parametrize("with_vision", [False, True])
+def test_the_config_shim_marks_a_vision_tower_only_when_present(
+    tmp_path: Path, with_vision: bool
+) -> None:
+    """The shim gives a config.json without ``vision_config`` an empty one.
+
+    That checkpoint serves text: no encoder, no vision cache, no
+    ``gate.bias_vl`` leaves.
+    """
+    register_all_models()
+    text = vars(text_config())
+    text["rope_scaling"] = None
+    config: dict[str, Any] = {
+        "model_type": "deepseek_v41",
+        "architectures": ["DeepseekV41ForCausalLM"],
+        "text_config": text,
+    }
+    if with_vision:
+        config["vision_config"] = {
+            "num_hidden_layers": 1,
+            "hidden_size": 16,
+            "num_attention_heads": 2,
+            "intermediate_size": 32,
+            "patch_size": 14,
+            "rope_theta": 10000,
+            "downsample_ratio": 3,
+            "max_image_tokens": 1024,
+        }
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    hf = AutoConfig.from_pretrained(tmp_path, local_files_only=True)
+    assert hf.vision_config is not None
+    assert has_vision_tower(hf) is with_vision
+    assert V41Config.from_hf(hf.to_dict()).has_vision is with_vision
+    assert (DeepseekV41Config.estimate_vision_cache_entry_bytes(hf) > 0) is (
+        with_vision
+    )
+    assert (DeepseekV41Config.get_vision_cache_row_spec(hf) is not None) is (
+        with_vision
+    )
+    pipeline = SimpleNamespace(
+        model=SimpleNamespace(
+            huggingface_config=hf, vision_config_overrides={}
+        ),
+        speculative=None,
+    )
+    assert (vision_config(cast(Any, pipeline)) is not None) is with_vision
+
+
+def test_tokenizer_rejects_video_before_context_creation() -> None:
     tokenizer = object.__new__(DeepseekV41Tokenizer)
     request = Mock()
     request.videos = [b"video"]
-    with pytest.raises(InputError, match="text inputs only"):
+    with pytest.raises(InputError, match="video"):
         asyncio.run(tokenizer.new_context(request))
 
 
@@ -461,9 +531,11 @@ def test_real_trunk_traces_symbolic_rows_and_batch(
     module.trace(*input_types)
 
 
-def test_text_tokenizer_constructor_needs_no_vision_config(
-    tmp_path: Path,
-) -> None:
+def _five_token_tokenizer(
+    tmp_path: Path, huggingface_config: SimpleNamespace
+) -> DeepseekV41Tokenizer:
+    """A tokenizer whose delegate has five ids, built as the pipeline builds
+    it."""
     delegate = PreTrainedTokenizerFast(
         tokenizer_object=Tokenizer(
             WordLevel(
@@ -485,12 +557,34 @@ def test_text_tokenizer_constructor_needs_no_vision_config(
     pipeline = Mock()
     pipeline.tokenizer_impl = None
     pipeline.draft_model = None
-    pipeline.model.huggingface_config = SimpleNamespace(eos_token_id=1)
+    pipeline.model.huggingface_config = huggingface_config
     pipeline.model.generation_config = SimpleNamespace(eos_token_id=None)
-    tokenizer = DeepseekV41Tokenizer(str(tmp_path), pipeline, max_length=64)
+    return DeepseekV41Tokenizer(str(tmp_path), pipeline, max_length=64)
+
+
+def test_tokenizer_serves_text_without_a_vision_config(
+    tmp_path: Path,
+) -> None:
+    tokenizer = _five_token_tokenizer(tmp_path, SimpleNamespace(eos_token_id=1))
     assert tokenizer.reasoning_start_token_id == 2
     assert tokenizer.reasoning_end_token_id == 3
-    assert not hasattr(tokenizer, "image_processor")
+    assert tokenizer.image_processor is None
+    assert tokenizer.max_images_per_request == 0
+
+
+def test_a_prompt_id_the_tokenizer_lacks_is_an_input_error(
+    tmp_path: Path,
+) -> None:
+    """The embedding has rows past the tokenizer, but the Engram token map
+    has an entry only for each tokenizer id, so the tokenizer's length bounds
+    a prompt's ids."""
+    tokenizer = _five_token_tokenizer(
+        tmp_path, SimpleNamespace(eos_token_id=1, vocab_size=8)
+    )
+    assert len(tokenizer.delegate) == 5
+    assert asyncio.run(tokenizer.encode([4])).tolist() == [4]
+    with pytest.raises(InputError, match="out of range"):
+        asyncio.run(tokenizer.encode([5]))
 
 
 def test_registration_disables_prefix_caching() -> None:
