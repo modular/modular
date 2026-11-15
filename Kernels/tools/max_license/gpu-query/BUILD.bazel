@@ -8,7 +8,7 @@ modular_cc_binary(
     name = "gpu-query",
     srcs = ["gpu_query.cpp"],
     deps = [
-        "//MLRT:Driver/DeviceContextImplCpp",
+        "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
         "//Support:Buffer",
     ],

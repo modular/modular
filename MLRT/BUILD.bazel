@@ -786,6 +786,7 @@ alias(
     visibility = [
         "//AsyncRT:__subpackages__",
         "//GraphCompiler:__subpackages__",
+        "//Kernels/tools/max_license/gpu-query:__pkg__",
         "//MLRT:__subpackages__",
         "//max/python/max/_core/max_license:__subpackages__",
         "//plugins:__subpackages__",
