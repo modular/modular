@@ -30,6 +30,13 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 from max import tree
+from max._artifact.vision import (
+    DeepseekV41Letterbox,
+    ModalityLayout,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -79,6 +86,7 @@ from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self
 
+from ..deepseekV41.image_processor import DeepseekV41ImageProcessor
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
 from .inputs import v41_config
@@ -90,7 +98,7 @@ from .model import (
     serving_token_map,
     validate_engram_tables,
 )
-from .model_config import DeepseekV41Config
+from .model_config import DeepseekV41Config, max_images_per_request
 from .vision_encoder import DeepseekV41VisionModel, vision_input_types
 from .vision_inputs import pack_uncached_images
 
@@ -584,6 +592,56 @@ class RegisteredDeepseekV41Decoder(DeepseekV41):
         )
 
 
+def deepseek_v41_vision_metadata(
+    huggingface_config: AutoConfig, max_images: int | None = None
+) -> VisionMetadata | None:
+    """Returns the image layout a serving engine lays out V4.1 images by.
+
+    The layout takes its constants from :class:`DeepseekV41ImageProcessor`.
+    Every span position, the delimiters included, carries
+    ``image_token_id``, so the span has no markers. The model takes no
+    video. The prompt joins adjacent text parts of a message with a blank
+    line, as the V4.1 encoder does.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+        max_images: The deployment's per-request image cap
+            (:func:`~.model_config.max_images_per_request`), or ``None``
+            for none, which the layout then omits.
+
+    Returns:
+        The layout, or ``None`` when the checkpoint's config has no
+        top-level ``image_token_id``: the tokenizer then places no image
+        token, so no image can serve.
+
+    Raises:
+        ValueError: If the checkpoint's ``vision_config`` sets a
+            ``max_wh_ratio``, which the layout does not apply, or a
+            ``min_pixels`` or ``max_image_tokens`` that Mach does not accept
+            (:class:`~max._artifact.vision.DeepseekV41Letterbox`).
+    """
+    image_token_id = getattr(huggingface_config, "image_token_id", None)
+    if image_token_id is None:
+        return None
+    processor = DeepseekV41ImageProcessor(huggingface_config.vision_config)
+    return VisionMetadata.from_layouts(
+        image=ModalityLayout(
+            patch_size=processor.patch_size,
+            merge_size=processor.downsample_ratio,
+            strategy=DeepseekV41Letterbox(
+                min_pixels=processor.min_pixels,
+                max_span_tokens=processor.max_image_tokens,
+            ),
+            span=Span(int(image_token_id)),
+        ),
+        video=None,
+        max_image_bytes=0,
+        max_video_bytes=0,
+        prompt=PromptText(text_part_separator="\n\n"),
+        max_images_per_request=max_images,
+    )
+
+
 class DeepseekV41VisionEncoder(DeepseekV41VisionModel):
     """The ``VISION`` role: the ViT, the aligner and the span assembly.
 
@@ -597,6 +655,25 @@ class DeepseekV41VisionEncoder(DeepseekV41VisionModel):
     def is_enabled(cls, config: RegisteredDeepseekV41Config) -> bool:
         """Returns whether this deployment serves images."""
         return config.vision is not None
+
+    @classmethod
+    def vision_metadata(
+        cls,
+        pipeline_config: PipelineConfig,
+        config: RegisteredDeepseekV41Config,
+    ) -> VisionMetadata | None:
+        """Returns the image layout of the checkpoint the pipeline serves.
+
+        ``None`` when the checkpoint's config names no ``image_token_id``.
+        """
+        # TODO(CLIN-2266): V4.1 has no ``vision_preprocess`` graph, so
+        # ``max export`` refuses this layout. Record the layout when Mach
+        # preprocesses the images, or export a ``vision_preprocess`` graph.
+        del cls, config
+        return deepseek_v41_vision_metadata(
+            pipeline_config.model.huggingface_config,
+            max_images_per_request(pipeline_config),
+        )
 
     def __init__(self, config: RegisteredDeepseekV41Config) -> None:
         assert config.vision is not None

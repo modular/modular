@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import NonCallableMock
@@ -27,7 +28,11 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.deepseekV41.arch import deepseekV41_arch
 from max.pipelines.architectures.deepseekV41_modulev3 import registration
+from max.pipelines.architectures.deepseekV41_modulev3.arch import (
+    deepseekV41_modulev3_arch,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     extra_input_names,
 )
@@ -195,3 +200,12 @@ def test_composition_keeps_trunk_heads_separate_from_adapter_verify_outputs() ->
     assert composed.return_logits == ReturnLogits.LAST_TOKEN
     assert composed.return_hidden_states == ReturnHiddenStates.NONE
     assert composed.dspark_trailing_inputs
+
+
+def test_the_registration_names_the_v41_format_spec() -> None:
+    """``max export`` copies the graph-API build's tool-call and reasoning
+    document, which ``formatspec`` also ships for these checkpoints."""
+    spec = deepseekV41_modulev3_arch.format_spec
+    assert spec == deepseekV41_arch.format_spec
+    assert isinstance(spec, Path)
+    assert spec.is_file()

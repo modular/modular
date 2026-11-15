@@ -259,6 +259,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -292,6 +293,7 @@ modular_py_library(
 
 # The shared code the image path relies on: module_registration's decoder
 # and VISION role inputs (decoder_input_types, decoder_vision_input_types),
+# its image layout export (vision_metadata_for, max/_artifact/vision.py),
 # the vision cache's encode protocol (vision_encoder_cache.VisionEncodeResult,
 # concat_device_buffers, vision_batching.create_empty_image_embeddings), and
 # TextTokenizer's --tokenizer-impl chat encoder (pipelines/lib/tokenizer.py,

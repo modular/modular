@@ -39,6 +39,10 @@ from .value_types import (
 
 VISION_CONFIG_FILE_NAME = "vision_config.json"
 
+# Mach's `multimodal::layout::MAX_IMAGE_PIXELS`: the most pixels an image may
+# decode to.
+_MAX_IMAGE_PIXELS = 64 * 1024 * 1024
+
 # TODO(DISTINF-523): The resize rules are a closed set, mirrored in
 # Mach's `multimodal::ResizeStrategy`; a model that sizes media by another rule
 # needs a new variant on both sides.
@@ -125,12 +129,68 @@ class MuseSmartResize:
     max_tokens: int
 
 
+@dataclass(frozen=True)
+class DeepseekV41Letterbox:
+    """Grows small images, then letterboxes them into a span budget.
+
+    An image smaller than ``min_pixels`` grows to that area, and each side
+    rounds up to whole patches. If the span then has more than
+    ``max_span_tokens`` positions, the target shrinks to the largest
+    aspect-preserving size whose span fits. A strip too thin for one merged
+    cell across at that cap gets a target one merged cell across, as long as
+    the cap allows. The image is fitted into the target with a bicubic
+    resize, centered with Python's half-to-even rounding, and padded with
+    gray ``(127, 127, 127)``, so it is not stretched.
+
+    The span is not one position per merged patch: each merged row ends
+    with a newline position, and a start and an end position frame the
+    rows, ``ceil(h / merge) * (ceil(w / merge) + 1) + 2`` positions in all.
+
+    Args:
+        min_pixels: The smallest source area; a smaller image grows to it.
+        max_span_tokens: The most span positions one image may take, the
+            start, newline and end positions included.
+
+    Raises:
+        ValueError: If ``min_pixels`` is not an integer from 0 to the 64
+            Mi-pixel image cap, or ``max_span_tokens`` is not an integer from
+            4, the positions of one merged cell, to ``2**32 - 1``. Mach
+            refuses a ``vision_config.json`` with any other value.
+    """
+
+    rule: ClassVar[str] = "deepseek_v41_letterbox"
+    min_pixels: int
+    max_span_tokens: int
+
+    def __post_init__(self) -> None:
+        # Mach reads `min_pixels` as u64 and `max_span_tokens` as u32.
+        if not _is_int_in(self.min_pixels, 0, _MAX_IMAGE_PIXELS):
+            raise ValueError(
+                f"min_pixels {self.min_pixels!r} is not an integer from 0 to "
+                f"the {_MAX_IMAGE_PIXELS}-pixel image cap"
+            )
+        if not _is_int_in(self.max_span_tokens, 4, 2**32 - 1):
+            raise ValueError(
+                f"max_span_tokens {self.max_span_tokens!r} is not an integer "
+                "from 4, the span of one merged cell, to 2**32 - 1"
+            )
+
+
+def _is_int_in(value: object, low: int, high: int) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and low <= value <= high
+    )
+
+
 ResizeStrategy: TypeAlias = (
     SmartResize
     | AspectRatioPreserving
     | VideoSmartResize
     | InklingPatchRows
     | MuseSmartResize
+    | DeepseekV41Letterbox
 )
 
 

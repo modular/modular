@@ -49,6 +49,7 @@ modular_py_library(
     ignore_unresolved_imports = ["tokenizers.Encoding"],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max/_artifact",
         "//max/python/max/engine",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",

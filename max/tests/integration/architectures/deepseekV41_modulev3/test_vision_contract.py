@@ -13,8 +13,9 @@
 """The shared contracts the image path relies on.
 
 Every test here is CPU-only and compiles nothing: module registration's
-decoder and ``VISION`` role inputs, the vision cache's encode protocol, and
-the ``--tokenizer-impl`` chat encoder of the text tokenizer.
+decoder and ``VISION`` role inputs and its export of the image layout, the
+vision cache's encode protocol, and the ``--tokenizer-impl`` chat encoder of
+the text tokenizer.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import asyncio
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 from unittest.mock import Mock
 
 import abi_contract
@@ -36,6 +37,9 @@ from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV41.encoding_dsv41 import (
     IMAGE_PLACEHOLDER,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.arch import (
+    deepseekV41_modulev3_arch,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,
@@ -44,6 +48,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.registration import (
     DeepseekV41VisionEncoder,
     RegisteredDeepseekV41BatchProcessor,
     RegisteredDeepseekV41Decoder,
+    deepseek_v41_vision_metadata,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.tokenizer import (
     DeepseekV41Tokenizer,
@@ -52,12 +57,14 @@ from max.pipelines.architectures.deepseekV41_modulev3.tokenizer import (
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.module_registration import (
+    ModuleV3DecoderPipelineModel,
     decoder_input_types,
     decoder_vision_input_types,
 )
 from max.tensor.sharding import DeviceMesh
 from transformers import PretrainedConfig
 from vision_fixtures import (
+    IMAGE,
     byte_tokenizer,
     chat_request,
     png,
@@ -94,6 +101,93 @@ def test_vision_role_follows_the_deployment() -> None:
     assert encoder.embedding_dtype == DType.bfloat16
     assert encoder.embedding_dim == 5120
     assert len(encoder.input_types()) == 7
+
+
+def test_registration_gives_the_image_layout_only_with_images() -> None:
+    """``max export`` writes the checkpoint's image layout, which the serving
+    engine's ``deepseek-v41`` profile mirrors, when the deployment serves
+    images. The layout carries the deployment's image cap only when one is
+    set."""
+    full = abi_contract.hf_config("full")
+    huggingface_config = SimpleNamespace(
+        vision_config=SimpleNamespace(**full["vision_config"]),
+        image_token_id=IMAGE,
+    )
+    pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            huggingface_config=huggingface_config,
+            vision_config_overrides={},
+        )
+    )
+    pipeline_model = deepseekV41_modulev3_arch.pipeline_model
+    assert isinstance(pipeline_model, type)
+    assert issubclass(pipeline_model, ModuleV3DecoderPipelineModel)
+    metadata = pipeline_model.vision_metadata_for(
+        cast(Any, pipeline_config), registered_config(vision=vision_config())
+    )
+    assert metadata is not None
+    assert metadata == deepseek_v41_vision_metadata(huggingface_config)
+    image = metadata.config["image"]
+    assert isinstance(image, dict)
+    assert image["strategy"] == {
+        "rule": "deepseek_v41_letterbox",
+        "min_pixels": 295_936,
+        "max_span_tokens": 1024,
+    }
+    assert image["span"] == {
+        "static": {
+            "image_token_id": IMAGE,
+            "begin_marker": None,
+            "end_marker": None,
+        }
+    }
+    assert (image["patch_size"], image["merge_size"]) == (14, 3)
+    assert metadata.config["video"] is None
+    assert "max_images_per_request" not in metadata.config
+    capped = SimpleNamespace(
+        model=SimpleNamespace(
+            huggingface_config=huggingface_config,
+            vision_config_overrides={"max_images_per_request": 3},
+        )
+    )
+    capped_metadata = pipeline_model.vision_metadata_for(
+        cast(Any, capped), registered_config(vision=vision_config())
+    )
+    assert capped_metadata is not None
+    assert capped_metadata.config["max_images_per_request"] == 3
+    assert (
+        pipeline_model.vision_metadata_for(
+            cast(Any, pipeline_config), registered_config()
+        )
+        is None
+    )
+
+
+def test_a_checkpoint_without_an_image_token_gives_no_image_layout() -> None:
+    """A config without a top-level ``image_token_id`` reads as no image
+    token, as the tokenizer reads it, so ``max export`` records no layout
+    rather than failing."""
+    full = abi_contract.hf_config("full")
+    huggingface_config = SimpleNamespace(
+        vision_config=SimpleNamespace(**full["vision_config"])
+    )
+    assert deepseek_v41_vision_metadata(huggingface_config) is None
+    pipeline_config = SimpleNamespace(
+        model=SimpleNamespace(
+            huggingface_config=huggingface_config,
+            vision_config_overrides={},
+        )
+    )
+    pipeline_model = deepseekV41_modulev3_arch.pipeline_model
+    assert isinstance(pipeline_model, type)
+    assert issubclass(pipeline_model, ModuleV3DecoderPipelineModel)
+    assert (
+        pipeline_model.vision_metadata_for(
+            cast(Any, pipeline_config),
+            registered_config(vision=vision_config()),
+        )
+        is None
+    )
 
 
 def test_encoding_copies_the_span_rows_to_every_device() -> None:

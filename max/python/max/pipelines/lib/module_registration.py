@@ -93,6 +93,7 @@ from __future__ import annotations
 import copy
 import copyreg
 import dataclasses
+import inspect
 import itertools
 import re
 from abc import ABCMeta
@@ -2272,10 +2273,13 @@ def _check_vision_registration(
     """Checks that a registration's image path is complete, or absent.
 
     Raises:
-        TypeError: If a ``VISION`` module lacks ``input_types()``, its
-            decoder doesn't consume image embeddings, or its batch processor
-            doesn't implement :class:`VisionBatchProcessor`; or if the
-            decoder consumes image embeddings with no ``VISION`` module.
+        TypeError: If a ``VISION`` module lacks ``input_types()``, sets a
+            ``vision_metadata``, ``vision_preprocess_spec`` or
+            ``vision_preprocess_video_spec`` that isn't a classmethod or a
+            staticmethod, its decoder doesn't consume image embeddings, or its
+            batch processor doesn't implement :class:`VisionBatchProcessor`;
+            or if the decoder consumes image embeddings with no ``VISION``
+            module.
     """
     if vision_cls is None:
         if consumes_vision(decoder_cls):
@@ -2288,6 +2292,21 @@ def _check_vision_registration(
         raise TypeError(
             f"the VISION module {vision_cls.__qualname__} needs input_types()"
         )
+    # The pipeline model calls each hook on the class, with no instance, so
+    # an instance method would fail only at export.
+    for hook in (
+        "vision_metadata",
+        "vision_preprocess_spec",
+        "vision_preprocess_video_spec",
+    ):
+        declared = inspect.getattr_static(vision_cls, hook, None)
+        if declared is not None and not isinstance(
+            declared, (classmethod, staticmethod)
+        ):
+            raise TypeError(
+                f"the VISION module {vision_cls.__qualname__}'s {hook} must"
+                " be a classmethod or a staticmethod"
+            )
     if not consumes_vision(decoder_cls):
         raise TypeError(
             f"{decoder_cls.__qualname__} doesn't consume image embeddings, "

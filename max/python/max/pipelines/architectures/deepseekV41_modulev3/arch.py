@@ -22,6 +22,7 @@ from .. import deepseekV4 as _deepseekV4  # noqa: F401
 
 # Registers the ``deepseekv41`` tool parser at import.
 from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
+from ..deepseekV41.arch import deepseekV41_arch
 from . import weight_adapters
 from .registration import (
     DeepseekV41VisionEncoder,
@@ -68,6 +69,7 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     batching=RegisteredDeepseekV41BatchProcessor,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",
+    format_spec=deepseekV41_arch.format_spec,
     checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},
     # The serving engine boots the fused graph by this name.
     spec_decode_graph_names={"dspark": "UnifiedDSparkDeepseekV41ModuleV3"},

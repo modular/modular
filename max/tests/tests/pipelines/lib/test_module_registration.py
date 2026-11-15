@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 from max import tree
 from max._artifact.value_types import treedef_to_json
+from max._artifact.vision import VisionMetadata
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -199,6 +200,60 @@ class StatefulDecoder(PlainDecoder):
 class ToyVision(PlainDecoder):
     def input_types(self) -> tuple[TensorType, ...]:
         return (X,)
+
+
+_LAYOUT = VisionMetadata({"image": None})
+
+
+class LayoutVision(ToyVision):
+    """Gives a media layout while its config serves images."""
+
+    @classmethod
+    def is_enabled(cls, config: Any) -> bool:
+        return bool(getattr(config, "serves_images", True))
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: Any, config: Any
+    ) -> VisionMetadata:
+        return _LAYOUT
+
+
+class UncallableLayoutVision(ToyVision):
+    vision_metadata: ClassVar[str] = "not a classmethod"
+
+
+class InstanceLayoutVision(ToyVision):
+    """Gives its layout from an instance, which no caller has."""
+
+    def vision_metadata(
+        self, pipeline_config: Any, config: Any
+    ) -> VisionMetadata:
+        return _LAYOUT
+
+
+class InstancePreprocessVision(ToyVision):
+    """Gives its preprocessing graph from an instance."""
+
+    def vision_preprocess_spec(self, pipeline_config: Any, config: Any) -> None:
+        return None
+
+
+class InstanceVideoPreprocessVision(ToyVision):
+    """Gives its video preprocessing graph from an instance."""
+
+    def vision_preprocess_video_spec(
+        self, pipeline_config: Any, config: Any
+    ) -> None:
+        return None
+
+
+class StaticLayoutVision(ToyVision):
+    """Gives its layout from a staticmethod, which a class call reaches."""
+
+    @staticmethod
+    def vision_metadata(pipeline_config: Any, config: Any) -> VisionMetadata:
+        return _LAYOUT
 
 
 class ToyDenoiser(Module[[BlockDiffusionInputs], BlockDiffusionOutputs]):
@@ -1041,6 +1096,39 @@ def test_a_derived_architecture_keeps_its_own_pipeline_model() -> None:
             "needs input_types",
         ),
         (
+            {
+                GraphRole.DECODER: VisionDecoder,
+                GraphRole.VISION: UncallableLayoutVision,
+            },
+            TypeError,
+            "vision_metadata must be a classmethod or a staticmethod",
+        ),
+        (
+            {
+                GraphRole.DECODER: VisionDecoder,
+                GraphRole.VISION: InstanceLayoutVision,
+            },
+            TypeError,
+            "vision_metadata must be a classmethod or a staticmethod",
+        ),
+        (
+            {
+                GraphRole.DECODER: VisionDecoder,
+                GraphRole.VISION: InstancePreprocessVision,
+            },
+            TypeError,
+            "vision_preprocess_spec must be a classmethod or a staticmethod",
+        ),
+        (
+            {
+                GraphRole.DECODER: VisionDecoder,
+                GraphRole.VISION: InstanceVideoPreprocessVision,
+            },
+            TypeError,
+            "vision_preprocess_video_spec must be a classmethod or a"
+            " staticmethod",
+        ),
+        (
             {GraphRole.DECODER: PlainDecoder, GraphRole.VISION: ToyVision},
             TypeError,
             "doesn't consume image embeddings",
@@ -1078,6 +1166,41 @@ def test_a_malformed_registration_fails(
 ) -> None:
     with pytest.raises(error, match=match):
         module_pipeline_model(ToyConfig, tuple(modules.items()), None)
+
+
+def test_a_registered_vision_module_gives_its_media_layout() -> None:
+    """``max export`` reads the layout through the registration, only while
+    the ``VISION`` module serves the config."""
+    model = module_pipeline_model(
+        ToyConfig,
+        ((GraphRole.DECODER, VisionDecoder), (GraphRole.VISION, LayoutVision)),
+        ToyVisionBatchProcessor,
+    )
+    pipeline_config: Any = SimpleNamespace()
+    assert model.vision_metadata_for(pipeline_config, ToyConfig()) is _LAYOUT
+    assert (
+        model.vision_metadata_for(
+            pipeline_config, SimpleNamespace(serves_images=False)
+        )
+        is None
+    )
+    static = module_pipeline_model(
+        ToyConfig,
+        (
+            (GraphRole.DECODER, VisionDecoder),
+            (GraphRole.VISION, StaticLayoutVision),
+        ),
+        ToyVisionBatchProcessor,
+    )
+    assert static.vision_metadata_for(pipeline_config, ToyConfig()) is _LAYOUT
+    without_hook = module_pipeline_model(
+        ToyConfig,
+        ((GraphRole.DECODER, VisionDecoder), (GraphRole.VISION, ToyVision)),
+        ToyVisionBatchProcessor,
+    )
+    assert (
+        without_hook.vision_metadata_for(pipeline_config, ToyConfig()) is None
+    )
 
 
 def test_a_vision_registration_rejects_a_text_batch_processor() -> None:

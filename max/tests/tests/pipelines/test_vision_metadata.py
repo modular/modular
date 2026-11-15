@@ -32,8 +32,15 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from max._artifact import ArtifactError
+from max._artifact.export import model_artifact
+from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.value_types import ArtifactFile
-from max._artifact.vision import VisionMetadata
+from max._artifact.vision import DeepseekV41Letterbox, VisionMetadata
+from max.pipelines.architectures.deepseekV41_modulev3.registration import (
+    DeepseekV41VisionEncoder,
+    deepseek_v41_vision_metadata,
+)
 from max.pipelines.architectures.gemma4.image_processor import (
     Gemma4ImageProcessor,
 )
@@ -113,10 +120,28 @@ def _muse_glimmer() -> VisionMetadata | None:
     )
 
 
+def _deepseek_v41() -> VisionMetadata | None:
+    """The values `deepseek-ai/DeepSeek-V4.1-Flash-1017`'s `config.json`
+    states."""
+    return deepseek_v41_vision_metadata(
+        _config(
+            vision_config=_config(
+                patch_size=14,
+                downsample_ratio=3,
+                min_pixels=295_936,
+                max_image_tokens=1024,
+                max_wh_ratio=None,
+            ),
+            image_token_id=129_264,
+        )
+    )
+
+
 _CASES: dict[str, Callable[[], VisionMetadata | None]] = {
     "gemma4": _gemma4_31b,
     "muse_glimmer": _muse_glimmer,
     "qwen3_5": _qwen3_5,
+    "deepseek_v41": _deepseek_v41,
 }
 
 
@@ -161,3 +186,50 @@ def test_vision_metadata_round_trips(name: str, tmp_path: Path) -> None:
 def test_a_text_only_checkpoint_has_no_vision_metadata() -> None:
     assert _gemma4(_config(vision_config=None)) is None
     assert qwen3_5_vision_metadata(_config()) is None
+
+
+@pytest.mark.parametrize(
+    ("min_pixels", "max_span_tokens"),
+    [(0, 4), (64 * 1024 * 1024, 2**32 - 1)],
+)
+def test_the_deepseek_v41_letterbox_takes_what_mach_takes(
+    min_pixels: int, max_span_tokens: int
+) -> None:
+    DeepseekV41Letterbox(min_pixels=min_pixels, max_span_tokens=max_span_tokens)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("min_pixels", -1),
+        ("min_pixels", 64 * 1024 * 1024 + 1),
+        ("min_pixels", True),
+        ("min_pixels", 1.0),
+        ("max_span_tokens", 3),
+        ("max_span_tokens", 2**32),
+        ("max_span_tokens", True),
+    ],
+)
+def test_the_deepseek_v41_letterbox_refuses_what_mach_refuses(
+    field: str, value: object
+) -> None:
+    """Values past Mach's checks or its u64 and u32 fields would export a
+    file Mach refuses at boot."""
+    fields: dict[str, Any] = {"min_pixels": 295_936, "max_span_tokens": 1024}
+    fields[field] = value
+    with pytest.raises(ValueError, match=field):
+        DeepseekV41Letterbox(**fields)
+
+
+def test_export_refuses_the_deepseek_v41_layout_without_preprocessing() -> None:
+    """V4.1 declares its image layout but no ``vision_preprocess`` graph, so
+    ``max export`` refuses its vision graph."""
+    assert not hasattr(DeepseekV41VisionEncoder, "vision_preprocess_spec")
+    pipeline_model = _config(
+        vision_metadata=_deepseek_v41,
+        vision_preprocess_spec=lambda: None,
+        vision_preprocess_video_spec=lambda: None,
+    )
+    graphs = PipelineModules({"decoder": _config(), "vision": _config()})
+    with pytest.raises(ArtifactError, match="no vision_preprocess graph"):
+        model_artifact(graphs, pipeline_model, None)
