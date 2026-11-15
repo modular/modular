@@ -1547,6 +1547,7 @@ def test_cache_reuses_graph(ctx: DeviceContext[]) raises:
         _ = builder.add_memset(buf, UInt8(0x5A))
 
     var first = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+    _ = first^
     assert_equal(build_count, 1)
 
     # Same closure and same (empty) input list, so the key matches and the build

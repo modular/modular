@@ -59,6 +59,6 @@ def main():
     # CHECK-NOT: init 7
     # CHECK-NOT: destroy 7
     try:
-        var x = fail("1234567")
+        _ = fail("1234567")
     except e:
         print("exception thrown")

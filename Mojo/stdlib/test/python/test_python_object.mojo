@@ -802,7 +802,7 @@ def test_advanced_slicing() raises:
     assert_equal("[]", String(py=data[10:20]))
 
     # Test slice assignment (if supported)
-    var mutable_list: PythonObject = [1, 2, 3, 4, 5]
+    var _: PythonObject = [1, 2, 3, 4, 5]
     # Note: slice assignment would be: mutable_list[1:3] = [10, 20]
     # but this might not be supported in current implementation
 

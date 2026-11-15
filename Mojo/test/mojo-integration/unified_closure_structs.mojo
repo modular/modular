@@ -236,7 +236,7 @@ def testShadowingNestedClosureParam():
 
 
 def main() raises:
-    var y: Int = atol(argv()[1])
+    _ = atol(argv()[1])  # y
     var one = atol(argv()[2])
     var four = atol(argv()[3])
 

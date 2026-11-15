@@ -307,7 +307,7 @@ def pool_ceil_test[
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    var output_shape = pool_shape_impl[
+    _ = pool_shape_impl[
         .float32,
         .int32,
         .int32,

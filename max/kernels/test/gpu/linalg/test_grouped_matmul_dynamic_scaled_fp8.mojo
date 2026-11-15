@@ -82,7 +82,6 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,

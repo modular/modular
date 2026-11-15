@@ -233,7 +233,7 @@ def test_sub_negative_past_end_raises() raises:
     var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
-        var q = p - -_LENGTH
+        _ = p - -_LENGTH
 
 
 # ===-----------------------------------------------------------------------===#

@@ -115,7 +115,6 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[.float32](length)
-    var intermediate_host = ctx.enqueue_create_host_buffer[.float32](length)
     var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input

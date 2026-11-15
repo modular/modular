@@ -530,6 +530,7 @@ def main() raises:
             row_major[1, num_threads](), ctx
         )
         var sink_dev = sink.device_tensor()
+        _ = sink_dev  # silence 'unused' warning.
 
         var a_tma_op = create_tensor_tile[
             coord[BM, BK_DESC], swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE

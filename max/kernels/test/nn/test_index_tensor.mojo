@@ -100,7 +100,7 @@ def test_index_tensor_DLRM() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = index_tensor_shape[
+    _ = index_tensor_shape[
         output_rank,
         input_type,
         .uint64,
@@ -196,7 +196,7 @@ def test_index_tensor_DLRM_batch() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = index_tensor_shape[
+    _ = index_tensor_shape[
         output_rank,
         input_type,
         .uint64,
@@ -296,7 +296,7 @@ def test_index_tensor_CLIPVIT() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var indices_dyn = indices.make_dynamic[.int64]()
-    var output_shape = gather_nd_shape[
+    _ = gather_nd_shape[
         output_rank,
         input_type,
         .uint64,
@@ -379,7 +379,7 @@ def test_index_tensor_llama2_mistral() raises:
 
     var input_dyn = input.make_dynamic[.int64]()
     var index_a_dyn = index_a.make_dynamic[.int64]()
-    var output_shape = gather_shape[output_rank, input_type, index_type](
+    _ = gather_shape[output_rank, input_type, index_type](
         input_dyn,
         index_a_dyn,
         0,

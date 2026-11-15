@@ -147,7 +147,7 @@ def test_context_create() raises:
     try:
         var driver = Driver.create(_get_plugin_spec())
         var device = driver[].get_device[Int64(0)]()
-        var ctx = device[].get_context()
+        _ = device[].get_context()
         # Let ctx go out of scope to exercise Context destructor.
     except e:
         raise Error(String(e))
