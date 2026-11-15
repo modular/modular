@@ -459,6 +459,10 @@ private:
   /// The innermost source-level construct accepting raised errors, or null if
   /// in a non-raising context.
   RaiseContext *curRaiseContext = nullptr;
+
+  /// The error bound by the enclosing except clause, when parsing one. This is
+  /// used by "raise;" to reraise the current error.
+  VarDeclOp caughtErrorVarDecl;
 };
 } // namespace
 
@@ -1502,38 +1506,6 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   return success();
 }
 
-/// Given an insertion point in a block, scan up the parent hierarchy to see if
-/// this block is nested under a try.  If so, return that operation and whether
-/// this block is nested within the 'except' part of the operation.  If
-/// we are currently in the 'else' part of a try, we keep scanning since the try
-/// isn't relevant.
-static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
-  while (Operation *parentOp = currentBlock->getParentOp()) {
-    // If we hit the top of the function we aren't nested.
-    if (isa<FnOp>(parentOp))
-      break;
-
-    // If this is a try, determine which region we're in.
-
-    TryOp tryOp = dyn_cast<TryOp>(parentOp);
-    if (tryOp) {
-      if (&tryOp.getTryRegion().front() == currentBlock)
-        return {tryOp, false};
-      if (&tryOp.getExceptRegion().front() == currentBlock)
-        return {tryOp, true};
-
-      // Must be in the else, which doesn't stop propagation.
-      assert(&tryOp.getElseRegion().front() == currentBlock);
-    }
-
-    // If this is not a try op, keep scanning.
-    currentBlock = parentOp->getBlock();
-  }
-
-  // Didn't find a try.
-  return {TryOp(), false};
-}
-
 /// Inject a call to a special method that the debugger stops at when
 /// supporting exception/error breakpoints.
 static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
@@ -1616,13 +1588,9 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     // If we had an error, emit it.
     emitter.emitExpr(errorExpr, dest);
   } else {
-    // Figure it if we're in a try, and if so, which subregion.
-    auto [tryOp, inExceptRegion] = findParentTry(builder.getInsertionBlock());
-
-    // Otherwise, we must be in the 'except' part of the try block and are
-    // rethrowing the current error.  This isn't correct Python semantics, see
-    // the caveat above.
-    if (!inExceptRegion) {
+    // A bare raise uses the error caught by the enclosing except clause. This
+    // isn't correct Python semantics; see the caveat above.
+    if (!caughtErrorVarDecl) {
       emitError(loc.Start, "'raise' must live within an 'except' block or a "
                            "function marked 'raises'")
           << loc;
@@ -1632,7 +1600,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
 
     // Re-raise the contextual exception.
     SyntheticNode synthNode(loc.Start);
-    emitter.emitResult(MRValue(tryOp.getErr()), &synthNode, dest);
+    emitter.emitResult(MRValue(caughtErrorVarDecl), &synthNode, dest);
   }
 
   // If we are in a debug build, we inject a call to a stop hook for the
@@ -3684,11 +3652,8 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
     return populateFinallyBody();
   bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
 
-  VarDeclOp errDecl = getEmitter().emitVarDecl(
-      "__finally_error__", UnresolvedType::get(getContext()), tryOp.getLoc(),
-      VarDeclKind::Synthesized);
-  auto nestedTry = TryOp::create(builder, tryOp.getLoc(), errDecl,
-                                 /*suppressWarnings=*/true);
+  auto nestedTry =
+      TryOp::create(builder, tryOp.getLoc(), /*suppressWarnings=*/true);
 
   // Stub out the else and finally regions of this try.
   builder.createBlock(&nestedTry.getElseRegion());
@@ -3710,9 +3675,11 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   builder.createBlock(&nestedTry.getExceptRegion());
 
   // If no errors got emitted, then the catch block is unreachable.
-  if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
+  MLValue nestedErrSlot = nestedRaiseContext.getErrorSlot();
+  if (!nestedErrSlot) {
     UnreachableOp::create(builder, tryOp.getLoc());
   } else {
+    auto errDecl = cast<VarDeclOp>(nestedErrSlot.getDefiningOp());
     ExprDest moveDest(errSlot, EC_RaiseValue);
     if (isa<UnresolvedType>(errSlot.getRValueType())) {
       auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
@@ -3754,7 +3721,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   llvm::SaveAndRestore builderSaver(builder);
 
   // Raised calls create their error slot lazily.
-  auto tryOp = TryOp::create(builder, loc, Value());
+  auto tryOp = TryOp::create(builder, loc);
   if (!inExceptRegion) {
     builder.createBlock(&tryOp.getExceptRegion());
     UnreachableOp::create(builder, loc);
@@ -3835,8 +3802,11 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       }
 
       // Forward to the normal suite parse method.
-      if (parseSuite(curIndent))
-        return failure();
+      {
+        llvm::SaveAndRestore errorSaver(caughtErrorVarDecl, errDecl);
+        if (parseSuite(curIndent))
+          return failure();
+      }
     }
     TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
@@ -4086,7 +4056,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = TryOp::create(builder, loc, errDecl, /*suppressWarnings=*/true);
+  auto tryOp = TryOp::create(builder, loc, /*suppressWarnings=*/true);
   // Stub the 'except' and 'else' regions.
   builder.createBlock(&tryOp.getExceptRegion());
 
@@ -4182,8 +4152,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // Generate the nested try. Stub the 'else' and 'finally' regions.
       nestedErrDecl = getEmitter().emitVarDecl("__inner_error__", errorType,
                                                loc, VarDeclKind::Synthesized);
-      nestedTryOp =
-          TryOp::create(builder, loc, nestedErrDecl, /*suppressWarnings=*/true);
+      nestedTryOp = TryOp::create(builder, loc, /*suppressWarnings=*/true);
       TryYieldOp::create(builder, loc);
       builder.createBlock(&nestedTryOp.getElseRegion());
       TryYieldOp::create(builder, loc);
@@ -4198,6 +4167,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // A `with` in a non-raising scope uses its try only for cleanup. Its
   // unreachable except region must not make `raise` valid in the body.
   RaiseContext withRaiseContext(nestedTryOp ? nestedTryOp : tryOp);
+  withRaiseContext.setErrorSlot(nestedTryOp ? nestedErrDecl : errDecl);
   {
     llvm::SaveAndRestore contextSaver(
         curRaiseContext, inExceptRegion ? &withRaiseContext : curRaiseContext);
@@ -6335,7 +6305,8 @@ ParseResult ParserBase::parseSuite(ASTDecl &containingDecl) {
   // If the context is a raising function, then use it as the raiseContext for
   // the StmtParser.
   auto fn = dyn_cast<DefASTDecl>(&containingDecl);
-  RaiseContext raiseContext(fn ? fn->getOp().getOperation() : nullptr);
+  RaiseContext raiseContext(
+      fn && fn->getOp().isThrows() ? fn->getOp().getOperation() : nullptr);
   StmtParser parser(lexer, containingDecl,
                     fn && fn->getOp().isThrows() ? &raiseContext : nullptr);
 

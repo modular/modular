@@ -1396,10 +1396,7 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
 
   // Go further and add a 'try' op to it, ensuring that throwing functions are
   // allowed in this expression.
-  VarDeclOp errDecl =
-      tmpEmitter.emitVarDecl("__try_error__", UnresolvedType::get(getContext()),
-                             location, VarDeclKind::Synthesized);
-  auto tryOp = TryOp::create(*tmpEmitter.builder, location, errDecl);
+  auto tryOp = TryOp::create(*tmpEmitter.builder, location);
 
   // Parse the expression into the try block.
   RaiseContext temporaryRaiseContext(tryOp);
@@ -1949,19 +1946,27 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Error handling helpers.
 
-/// Gets the by-reference argument of a raising function or the lazily-created
-/// error slot of a try.
-MLValue RaiseContext::getErrorSlot() const {
-  if (auto func = dyn_cast<FnOp>(opForRaise)) {
+RaiseContext::RaiseContext(Operation *opForRaise) : opForRaise(opForRaise) {
+  if (auto func = dyn_cast_or_null<FnOp>(opForRaise)) {
+    if (!func.isThrows()) {
+      this->opForRaise = nullptr;
+      return;
+    }
     size_t errorArgIndex = func.getNumArguments() - 2;
     assert(func.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
            ArgConvention::ByRefError);
-    return func.getArgument(errorArgIndex);
+    errorSlot = MLValue(func.getArgument(errorArgIndex));
   }
+}
 
-  // If the try block already has an error slot, use it, otherwise return null.
-  Value err = cast<LIT::TryOp>(opForRaise).getErr();
-  return err ? MLValue(err) : MLValue();
+/// Gets the error slot of a raising function or a try.
+MLValue RaiseContext::getErrorSlot() const { return errorSlot; }
+
+/// Records storage created before a try so it is available while emitting its
+/// regions.
+void RaiseContext::setErrorSlot(VarDeclOp errorDecl) {
+  assert(errorDecl && !errorSlot && "error slot must be installed once");
+  errorSlot = MLValue(errorDecl.getResult());
 }
 
 /// Creates a try's error slot immediately before the try so it dominates every
@@ -1981,7 +1986,7 @@ MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
   emitter.builder = errorDeclBuilder;
   auto errDecl = emitter.emitVarDecl("__try_error__", errorType, loc,
                                      VarDeclKind::Synthesized);
-  tryOp.getErrMutable().assign(errDecl.getResult());
+  setErrorSlot(errDecl);
   emitter.builder = savedBuilder;
   return MLValue(errDecl.getResult());
 }

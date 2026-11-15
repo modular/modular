@@ -165,7 +165,7 @@ def if_try(p: Bool):
     # CHECK:      [[TEST_P_SB:%.*]] = lit.call {{.*}}@"__mlir_bool__{{.*}}"(%p)
     # CHECK-NEXT: hlcf.if [[TEST_P_SB]] {
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
-    # CHECK-NEXT:   lit.try %e : {{.*}} {
+    # CHECK-NEXT:   lit.try {
     # CHECK-NEXT:     %b = lit.var.decl "b"  var
     # CHECK-NEXT:     kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
     # CHECK-NEXT:     lit.ref.store
@@ -460,7 +460,7 @@ def for_range_loop():
         # CHECK: lit.loop {
         # CHECK-NEXT:  [[ANON:%.*]] = lit.var.decl "anonymous*"
         # CHECK-NEXT:   %__call_error_tmp__ = lit.var.decl
-        # CHECK-NEXT:   lit.try %__call_error_tmp__
+        # CHECK-NEXT:   lit.try {
         # CHECK-NEXT:    lit.call {{.*}}__next__{{.*}}(%$ITER, %__call_error_tmp__, [[ANON]])
         # CHECK:    lit.try.yield
         # CHECK-NEXT:        } except {

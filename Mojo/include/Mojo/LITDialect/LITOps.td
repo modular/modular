@@ -949,22 +949,21 @@ def LIT_TryOp : LITOp<"try",
 
   let arguments = (ins
     OptionalAttr<StrAttr>:$label,
-    Optional<LIT_RefType>:$err,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    ($label^)? ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
+    ($label^)? (`->` type($results)^)? $tryRegion
     `except` custom<RegionWithArgs>($exceptRegion)
     `else` custom<RegionWithArgs>($elseRegion)
     (`finally` $finallyRegions^)? prop-dict attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins "Value":$err, CArg<"bool", "false">:$suppressWarnings),
-      [{ build($_builder, $_state, {}, /*label=*/{}, err, suppressWarnings, 1); }]>,
+    OpBuilder<(ins CArg<"bool", "false">:$suppressWarnings),
+      [{ build($_builder, $_state, {}, /*label=*/{}, suppressWarnings, 1); }]>,
   ];
 
   let extraClassDeclaration = [{

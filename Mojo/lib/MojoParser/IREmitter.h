@@ -44,11 +44,14 @@ class TraitType;
 /// function while it is emitted. The opForRaise is a FnOp when the context is a
 /// throwing function, or a TryOp when within one of those.
 struct RaiseContext {
-  explicit RaiseContext(Operation *opForRaise) : opForRaise(opForRaise) {}
+  explicit RaiseContext(Operation *opForRaise);
 
   /// Returns the existing error slot, or null when this try has not yet needed
   /// one.
   MLValue getErrorSlot() const;
+
+  /// Installs an error slot created before this try.
+  void setErrorSlot(VarDeclOp errorDecl);
 
   /// Returns the error slot, creating typed storage before a try when needed.
   MLValue getOrCreateErrorSlot(IREmitter &emitter, ASTType errorType,
@@ -57,6 +60,7 @@ struct RaiseContext {
 
 private:
   Operation *opForRaise;
+  MLValue errorSlot;
 };
 
 //===--------------------------------------------------------------------===//

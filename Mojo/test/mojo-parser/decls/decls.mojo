@@ -601,7 +601,7 @@ def test_typed_raises_fn3() raises Float32:
 
     # CHECK-NEXT: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT: lit.call {{.*}}test_typed_raises_fn2{{.*}}(%__call_error_tmp__, %anonymous2A)
     # CHECK: lit.try.yield
     # CHECK-NEXT: } except {
@@ -617,7 +617,7 @@ def test_typed_raises_fn3() raises Float32:
 def test_typed_raises_fn4() raises Float32:
     # CHECK: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT:   lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %anonymous2A)
 
     # Make sure to emit ExprDest outside the try block.
@@ -664,7 +664,7 @@ struct TypedRaisesInit[n: Int]:
 # CHECK-LABEL: lit.fn @"test_typed_raises_init
 def test_typed_raises_init() raises Float32:
     # CHECK: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
-    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: lit.try {
     # CHECK-NEXT: lit.call {{.*}}TypedRaisesInit{{.*}}__init__{{.*}}(%__call_error_tmp__,
     _ = TypedRaisesInit[1]()
 
@@ -1441,12 +1441,12 @@ comptime AutoParamAlias[t: Int] = AutoParamStruct[t]
 
 
 # CHECK-LABEL: lit.fn @"autoparam_via_alias
-# CHECK-SAME: <["f.t`1"]*"f.t`1": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.t`1">>>>()
+# CHECK-SAME: <["f.t`"]*"f.t`": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.t`">>>>()
 def autoparam_via_alias[f: type_of(AutoParamAlias[_])]():
     pass
 
 
 # CHECK-LABEL: lit.fn @"autoparam_direct_ref
-# CHECK-SAME: <["f.x`1"]*"f.x`1": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.x`1">>>>()
+# CHECK-SAME: <["f.x`"]*"f.x`": !Int, +, f: meta<!lit.struct<#AutoParamStruct <:!Int *"f.x`">>>>()
 def autoparam_direct_ref[f: type_of(AutoParamStruct[_])]():
     pass

@@ -145,18 +145,18 @@ def finally_may_raise() raises:
         # CHECK-NEXT: lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__try_error__, %__error__){{.*}}*, "move"
         # CHECK-NEXT: lit.var.lifetime.end %__try_error__
         # CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
-        # CHECK-NEXT: %__finally_error__ = lit.var.decl
+        # CHECK-NEXT: [[FINALLY_ERROR:%.*]] = lit.var.decl
         # CHECK-NEXT: lit.try
         # CHECK-NEXT:   [[RESULT:%.*]] = lit.var.decl
-        # CHECK-NEXT:   lifetime.start %__finally_error__
+        # CHECK-NEXT:   lifetime.start [[FINALLY_ERROR]]
         # CHECK-NEXT:   lifetime.start [[RESULT]]
-        # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__finally_error__, [[RESULT]])
+        # CHECK-NEXT:   [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}([[FINALLY_ERROR]], [[RESULT]])
         # CHECK-NEXT:   if [[IS_ERR]]
         # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__error__)
         # CHECK-NEXT:     mark_consumed [[RESULT]]
         # CHECK:      } except {
-        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
-        # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
+        # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[FINALLY_ERROR]], %__error__){{.*}}*, "move"
+        # CHECK-NEXT:   lit.var.lifetime.end [[FINALLY_ERROR]]
         # CHECK:      else
         # CHECK-NEXT:   lit.try.yield
         # CHECK-NEXT: }
@@ -189,7 +189,7 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:   lit.var.lifetime.end %__with_exc_value__
     # CHECK-NEXT:   lit.var.lifetime.start %__with_exc_value__
     # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__inner_error__, %__with_exc_value__){{.*}}*, "move"
-    # CHECK:      %__finally_error__ = lit.var.decl
+    # CHECK:      [[FINALLY_ERROR:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.try
     # CHECK-NEXT:   [[DID_ERR:%.*]] = lit.ref.load %__with_exc__
     # CHECK-NEXT:   lifetime.end %__with_exc__
@@ -197,9 +197,9 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %__call_result_tmp__
     # CHECK-NEXT:     [[ERR:%.*]] = lit.ref.immut %__with_exc_value__
     # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
-    # CHECK-NEXT:     lit.var.lifetime.start %__finally_error__
+    # CHECK-NEXT:     lit.var.lifetime.start [[FINALLY_ERROR]]
     # CHECK-NEXT:     lit.var.lifetime.start [[BOOL]]
-    # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], [[ERR]], %__finally_error__, [[BOOL]])
+    # CHECK-NEXT:     [[IS_ERR:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMM]], [[ERR]], [[FINALLY_ERROR]], [[BOOL]])
     # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__call_result_tmp__)
     # CHECK-NEXT:     lit.var.lifetime.end %__call_result_tmp__ :
     # CHECK-NEXT:     if [[IS_ERR]]
@@ -209,8 +209,8 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:       lit.var.lifetime.end [[BOOL]]
     # CHECK-NEXT:       lit.try.raise
     # CHECK-NEXT:     } else {
-    # CHECK-NEXT:       mark_consumed %__finally_error__
-    # CHECK-NEXT:       lit.var.lifetime.end %__finally_error__
+    # CHECK-NEXT:       mark_consumed [[FINALLY_ERROR]]
+    # CHECK-NEXT:       lit.var.lifetime.end [[FINALLY_ERROR]]
     # CHECK-NEXT:       yield
     # CHECK-NEXT:     }
     # CHECK-NEXT:     [[RES:%.*]] = lit.ref.load [[BOOL]]
@@ -221,8 +221,8 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:       lit.var.lifetime.end %__with_exc_value__
     # CHECK-NEXT:       hlcf.yield
     # CHECK-NEXT:     } else {
-    # CHECK-NEXT:       lit.var.lifetime.start %__finally_error__
-    # CHECK-NEXT:       lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_exc_value__, %__finally_error__){{.*}}*, "move"
+    # CHECK-NEXT:       lit.var.lifetime.start [[FINALLY_ERROR]]
+    # CHECK-NEXT:       lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__with_exc_value__, [[FINALLY_ERROR]]){{.*}}*, "move"
     # CHECK-NEXT:       lit.var.lifetime.end %__with_exc_value__
     # CHECK-NEXT:       lit.try.raise
     # CHECK-NEXT:     }
@@ -231,11 +231,11 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT:     mark_consumed %__with_exc_value__
     # CHECK-NEXT:     lit.var.lifetime.end %__with_exc_value__
     # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %__call_result_tmp__
-    # CHECK:          lit.call {{.*}}__exit__{{.*}}([[IMM]], %__finally_error__,
+    # CHECK:          lit.call {{.*}}__exit__{{.*}}([[IMM]], [[FINALLY_ERROR]],
     # CHECK-NEXT:     call {{.*}}__deinit__{{.*}}(%__call_result_tmp__)
     # CHECK:      } except {
-    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}(%__finally_error__, %__error__){{.*}}*, "move"
-    # CHECK-NEXT:   lit.var.lifetime.end %__finally_error__
+    # CHECK-NEXT:   lit.call {{.*}}Error::@"__init__{{.*}}"{{.*}}([[FINALLY_ERROR]], %__error__){{.*}}*, "move"
+    # CHECK-NEXT:   lit.var.lifetime.end [[FINALLY_ERROR]]
     # CHECK:      else
     # CHECK-NEXT:   lit.try.yield
     # CHECK-NEXT: }

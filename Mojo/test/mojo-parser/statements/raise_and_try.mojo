@@ -77,9 +77,9 @@ def tryFinally():
     finally:
         # CHECK: lit.return
         return
-    # CHECK: lit.try %__try_error__ :
+    # CHECK: lit.try {
     try:
-        # CHECK: lit.try %__try_error___0 :
+        # CHECK: lit.try {
         try:
             # CHECK-NEXT: lit.try.yield
             pass
@@ -96,7 +96,7 @@ def tryFinally():
 def tryExceptInTryFinally():
     # CHECK: lit.try {
     try:
-        # CHECK: lit.try %__try_error__ :
+        # CHECK: lit.try {
         try:
             # CHECK-NEXT: lit.try.yield
             pass
@@ -171,7 +171,7 @@ def raiseErrorInIf(cond: Bool) raises:
 
 # CHECK-LABEL: lit.fn @"raiseErrorInTry
 def raiseErrorInTry():
-    # CHECK: lit.try %__try_error__
+    # CHECK: lit.try {
     try:
         # CHECK-NEXT: lit.call {{.*}}@Error::@"__init__{{.*}}(%__try_error__)
         # CHECK-NEXT: lit.raise
@@ -182,9 +182,11 @@ def raiseErrorInTry():
 
 # CHECK-LABEL: lit.fn @"rethrowsToRethrow
 def rethrowsToRethrow():
-    # CHECK: lit.try [[TRY_ERROR1:%.*]] :
+    # CHECK: [[TRY_ERROR1:%.*]] = lit.var.decl "__try_error__"
+    # CHECK-NEXT: lit.try {
     try:
-        # CHECK: lit.try [[TRY_ERROR2:%.*]] :
+        # CHECK: [[TRY_ERROR2:%.*]] = lit.var.decl "__try_error__"
+        # CHECK-NEXT: lit.try {
         try:
             # CHECK: lit.call {{.*}}maybeRaises{{.*}}([[TRY_ERROR2]], %__call_result_tmp__
             maybeRaises()  # expected-warning {{'Int' value is unused; assign to '_' to discard the result}}
@@ -217,7 +219,7 @@ def fail() raises -> S:
 
 # CHECK-LABEL: lit.fn @"call_raising
 def call_raising():
-    # CHECK: lit.try %e
+    # CHECK: lit.try {
     try:
         # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}(%e, %x)
         var x = fail()

@@ -318,7 +318,7 @@ def autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
-# CHECK-SAME: <["a.x`1"]*"a.x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`1">>>>
+# CHECK-SAME: <["a.x`"]*"a.x`": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`">>>>
 def autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 

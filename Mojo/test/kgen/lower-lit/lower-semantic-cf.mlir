@@ -271,7 +271,7 @@ lit.fn @throwing_calls(
 
   %error = lit.var.decl "error" synth : !lit.ref<@Error, mut tlt>
   // CHECK: lit.try "try0" {
-  lit.try %error : !lit.ref<@Error, mut tlt> {
+  lit.try {
     // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
     // CHECK-NEXT: hlcf.if [[IS_ERR]]
     // CHECK-NEXT:   mark_consumed %result

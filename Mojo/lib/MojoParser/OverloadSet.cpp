@@ -1560,8 +1560,7 @@ CValue IREmitter::emitCallInTryBlock(
   // We're going to move the builder around, but restore it to the same
   // insertion point when we're done.
   auto savedBuilder = builder;
-  auto tryOp = TryOp::create(*builder, loc, errDecl,
-                             /*suppressWarnings=*/true);
+  auto tryOp = TryOp::create(*builder, loc, /*suppressWarnings=*/true);
   // Stub out the else and finally regions of this try.
   builder->createBlock(&tryOp.getElseRegion());
   TryYieldOp::create(*builder, tryOp.getLoc());
@@ -1574,6 +1573,7 @@ CValue IREmitter::emitCallInTryBlock(
   // surrounding source-level try. The catch callback below restores the
   // surrounding context before it converts and rethrows the error.
   RaiseContext nestedRaiseContext(tryOp);
+  nestedRaiseContext.setErrorSlot(errDecl);
   llvm::SaveAndRestore raiseContextSaver(raiseContext, &nestedRaiseContext);
   CValue result = emitCall(std::move(operands));
   if (!result)
