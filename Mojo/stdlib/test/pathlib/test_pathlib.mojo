@@ -142,6 +142,16 @@ def test_home() raises:
     set_home(original_home)
 
 
+def test_devnull() raises:
+    var devnull = Path.devnull()
+    assert_equal(devnull, Path("/dev/null"))
+    assert_true(devnull.exists())
+
+    # Writes are discarded and reads return end of file.
+    devnull.write_text("discarded")
+    assert_equal(devnull.read_text(), "")
+
+
 def test_stat() raises:
     var path = Path(source_location().file_name())
     var stat = path.stat()

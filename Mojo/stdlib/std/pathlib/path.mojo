@@ -32,6 +32,8 @@ import std.os
 import std.format._utils as fmt
 from std.os import PathLike, listdir, stat_result
 from std.ffi import c_char, external_call
+from std.io import IOError
+from std.sys import CompilationTarget
 
 from std.reflection import call_location
 
@@ -343,6 +345,37 @@ struct Path(
         ```
         """
         return std.os.path.expanduser("~")
+
+    @staticmethod
+    def devnull() raises IOError -> Path:
+        """Returns the path to the platform's null device.
+
+        Writes to the null device are discarded, and reads from it return end
+        of file. Use this instead of hardcoding `"/dev/null"`.
+
+        Constraints:
+            The target platform must be Linux or macOS.
+
+        Returns:
+            The path to the null device, `/dev/null` on Linux and macOS.
+
+        Raises:
+            Never on Linux or macOS. Other platforms may need to look up the
+            null device at runtime, which can fail.
+
+        Example:
+
+        ```mojo
+        from std.pathlib import Path
+
+        with open(Path.devnull(), "w") as f:
+            f.write("discarded")
+        ```
+        """
+        comptime assert (
+            CompilationTarget.is_linux() or CompilationTarget.is_macos()
+        ), "Path.devnull() is not implemented for this platform"
+        return Path("/dev/null")
 
     def is_dir(self) -> Bool:
         """Returns True if the path is a directory and False otherwise.
