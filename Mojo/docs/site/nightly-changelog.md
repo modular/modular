@@ -517,3 +517,7 @@ This version is still a work in progress.
 
 - `input()` no longer raises `EOF` after the first line when stdin is a pipe
   or redirected file.
+
+- Defining the removed `__moveinit__()` or `__copyinit__()` methods now
+  reports an error naming the `__init__()` overload to use, instead of
+  `'None' has no attributes`.
