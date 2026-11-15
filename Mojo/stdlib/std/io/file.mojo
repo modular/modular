@@ -74,6 +74,12 @@ comptime O_CLOEXEC = platform_map[
 ]()
 """Close file descriptor on exec."""
 
+# macOS fails a `read` or `write` of more than `INT_MAX` bytes with `EINVAL`
+# instead of transferring fewer. Linux already transfers at most `0x7FFFF000`
+# bytes per call, so this cap only changes behavior on macOS.
+comptime _MAX_IO_BYTES = Int(c_int.MAX)
+"""The most bytes to pass to a single `read` or `write` call."""
+
 # ===----------------------------------------------------------------------=== #
 # Helper functions
 # ===----------------------------------------------------------------------=== #
@@ -311,7 +317,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         var bytes_read = external_call["read", c_ssize_t](
             fd._value,
             buffer.unsafe_ptr(),
-            len(buffer) * size_of[dtype](),
+            min(len(buffer) * size_of[dtype](), _MAX_IO_BYTES),
         )
 
         if bytes_read < 0:
@@ -379,7 +385,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
             # Read bytes into the list buffer and get the number of bytes
             # successfully read. This may return with a partial read, and
             # signifies EOF with a result of zero bytes.
-            var chunk_bytes_to_read = len(result) - num_read
+            var chunk_bytes_to_read = min(len(result) - num_read, _MAX_IO_BYTES)
             var chunk_bytes_read = external_call["read", c_ssize_t](
                 fd._value,
                 result.unsafe_ptr().unsafe_offset(num_read),
@@ -491,7 +497,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         var fd = self._get_raw_fd()
         var bytes_written = external_call["write", c_ssize_t](
-            fd._value, bytes.unsafe_ptr(), len(bytes)
+            fd._value, bytes.unsafe_ptr(), min(len(bytes), _MAX_IO_BYTES)
         )
 
         if bytes_written < 0:
@@ -579,7 +585,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
             var bytes_written = external_call["write", c_ssize_t](
                 fd._value,
                 bytes.unsafe_ptr().unsafe_offset(total_written),
-                len(bytes) - total_written,
+                min(len(bytes) - total_written, _MAX_IO_BYTES),
             )
 
             if bytes_written < 0:
@@ -640,7 +646,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
         while total_written < len:
             var current_ptr = ptr.unsafe_offset(total_written)
             var bytes_written = external_call["write", c_ssize_t](
-                fd._value, current_ptr, len - total_written
+                fd._value, current_ptr, min(len - total_written, _MAX_IO_BYTES)
             )
 
             if bytes_written < 0:

@@ -282,6 +282,45 @@ def test_file_read_to_address() raises:
         assert_equal(f.read(buffer_1000), 0)
 
 
+comptime OVER_INT_MAX = Int(Int32.MAX) + 1
+"""More bytes than macOS will read or write in a single call."""
+
+
+def test_file_read_over_int_max() raises:
+    """Test reading into a buffer of more than `INT_MAX` bytes.
+
+    Only the file's 5 bytes are ever written into the buffer, so it takes
+    address space but almost no memory.
+    """
+    var temp_file = Path(gettempdir().value()) / "test_file_read_over_int_max"
+    with open(temp_file, "w") as f:
+        f.write("hello")
+
+    with open(temp_file, "r") as f:
+        var bytes = f.read_bytes(OVER_INT_MAX)
+        assert_equal(String(unsafe_from_utf8=bytes), "hello")
+
+        _ = f.seek(0)
+        var buffer = List[UInt8](unsafe_uninit_length=OVER_INT_MAX)
+        assert_equal(f.read(buffer), 5)
+
+
+def test_file_write_over_int_max() raises:
+    """Test writing more than `INT_MAX` bytes.
+
+    `/dev/null` never reads the bytes, so the buffer takes address space but
+    almost no memory.
+    """
+    var bytes = List[UInt8](unsafe_uninit_length=OVER_INT_MAX)
+    with open("/dev/null", "w") as f:
+        var written = f.write_once(bytes)
+        assert_true(written > 0)
+        assert_true(written <= Int(Int32.MAX))
+        f.write_all(bytes)
+        f.write_bytes(bytes)
+        f._write(bytes.unsafe_ptr(), len(bytes))
+
+
 def test_file_seek() raises:
     import std.os
 
