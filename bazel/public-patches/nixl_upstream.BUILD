@@ -19,12 +19,20 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 package(default_visibility = ["//visibility:public"])
 
 # libnixl and each plugin NIXL dlopens statically link their own abseil and
-# initialize absl logging. abseil is built with default visibility, as
-# libAsyncRTRuntimeGlobals exports it, so their calls would otherwise bind to
-# that earlier-loaded copy, whose logging is already initialized, and absl
-# aborts. Binding functions locally is enough: the logging state they touch has
-# internal linkage.
-_PLUGIN_LINKOPTS = ["-Wl,-Bsymbolic-functions"]
+# initialize absl logging. libAsyncRTRuntimeGlobals exports another abseil, so
+# the version script hides each copy in its object. An exported copy binds to
+# whichever abseil loaded first: absl logging aborts on the second
+# initialization, and ASan reports an ODR violation for each shared global. The
+# script hides ASan's ODR-indicator symbols for absl globals too.
+genrule(
+    name = "absl_local_lds",
+    outs = ["absl_local.lds"],
+    cmd = "echo '{ local: _ZN4absl*; _ZNK4absl*; _ZZN4absl*; _ZZNK4absl*; " +
+          "_ZT*N4absl*; _ZGV*N4absl*; AbslInternal*; " +
+          "__odr_asan_gen__Z*N4absl*; };' > $@",
+)
+
+_PLUGIN_LINKOPTS = ["-Wl,--version-script,$(location :absl_local.lds)"]
 
 # Upstream NIXL is Linux-only (uses SOCK_NONBLOCK, dlopen, etc.). Apply the
 # constraint at the package level so every target inherits it.
@@ -385,6 +393,7 @@ cc_library(
 # to bind at load time in the Python serving process.
 cc_binary(
     name = "rocm-uccl/libplugin_UCCL.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         "-Wl,-rpath,$$ORIGIN",
@@ -519,6 +528,7 @@ cc_library(
 # gets folded in.
 cc_binary(
     name = "cuda/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/cuda/ → <root>/lib.
@@ -543,6 +553,7 @@ cc_binary(
 # fallback.
 cc_binary(
     name = "cuda-verbs/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/cuda-verbs/ → <root>/lib.
@@ -578,6 +589,7 @@ cc_binary(
 # on CPU-only CI workers) point NIXL_PLUGIN_DIR at the cpu/ directory.
 cc_binary(
     name = "cpu/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
     ],
@@ -597,6 +609,7 @@ cc_binary(
 # time; the subdir here only keeps its filename distinct from cpu/.
 cc_binary(
     name = "cpu-verbs/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib. The two
@@ -628,6 +641,7 @@ cc_binary(
 # rdma-core is present.
 cc_binary(
     name = "rocm/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/rocm/ → <root>/lib.
@@ -647,6 +661,7 @@ cc_binary(
 # cuda-verbs, the resolved libraries must define IBVERBS_1.12 and MLX5_1.11.
 cc_binary(
     name = "rocm-verbs/libplugin_UCX.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <root>/lib/nixl/rocm-verbs/ → <root>/lib.
@@ -675,6 +690,7 @@ cc_binary(
 # directory as the cuda UCX plugin for NIXL's single-dir discovery.
 cc_binary(
     name = "cuda/libplugin_LIBFABRIC.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
     ],
@@ -693,6 +709,7 @@ cc_binary(
 # libplugin_LIBFABRIC.so (the name NIXL's loader discovers).
 cc_binary(
     name = "libplugin_LIBFABRIC_cpu.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib, where the
@@ -718,6 +735,7 @@ cc_binary(
 # first definition (libnixl, linked first), which carries the complete set.
 cc_binary(
     name = "libnixl.so",
+    additional_linker_inputs = [":absl_local.lds"],
     linkopts = _PLUGIN_LINKOPTS + [
         "-Wl,-z,undefs",
         # Set the SONAME so a downstream link records a clean `libnixl.so`
