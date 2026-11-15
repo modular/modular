@@ -423,6 +423,7 @@ modular_eager_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -550,6 +551,7 @@ modular_eager_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -593,6 +595,7 @@ modular_eager_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -674,6 +677,7 @@ modular_eager_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/support",
     ],
 )
@@ -1393,6 +1397,7 @@ modular_eager_py_test(
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/support",
     ],
 )

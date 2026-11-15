@@ -5258,6 +5258,7 @@ def _mla_split_dispatch_args(
     The decode kernel strides its split-K outputs by the triple's row count, so
     a prefill view needs its own triple rather than the whole batch's.
     """
+    # Keyed on the view, not its route: the prefill branch reads no triple.
     if view.is_decode():
         var decode_args = _mla_split_scalar_args(scalar_args_buf, 3)
         return (
@@ -5306,6 +5307,7 @@ def _mla_split_partitions(
     `decode_num_partitions` when the caller gave a count, and keeps the
     branch's own count when it gave none (the sparse arms); a prefill view
     keeps the caller's count."""
+    # Keyed on the view, not its route: the prefill branch reads no count.
     if view.is_decode():
         return decode_num_partitions if num_partitions_in else None
     return num_partitions_in
@@ -5580,8 +5582,8 @@ def _mla_split_view[
         ctx=ctx,
     )
 
-    # The whole-batch plan describes rows this view does not hold, so the
-    # prefill view plans its own rows.
+    # The whole-batch plan describes rows this view does not hold, so a view
+    # that takes the prefill branch plans its own rows.
     var plan: Optional[_MLASplitPrefillPlan] = None
     var plan_row_offsets = buffer_row_offsets.ptr.unsafe_mut_cast[
         True
@@ -5591,7 +5593,9 @@ def _mla_split_view[
     ]()
     var plan_rows = batch + 1
     comptime if not sparse_mla:
-        if not view.is_decode():
+        if not mla_graph_takes_decode_branch[
+            collection_t.CacheType.dtype, num_heads
+        ](view.max_q_len):
             var view_plan = _mla_split_prefill_plan(
                 TileTensor(row_offsets, row_major(view.rows + 1)),
                 view_collection.get_key_cache(Int(layer_idx)),
@@ -5794,10 +5798,22 @@ def mla_prefill_decode_graph_bf16[
 
     # Two self-calls, one per view, so each view's route gate sees its own
     # max query length; refused splits fall through to the whole-batch route.
-    comptime if allow_split and ctx.target.is_nvidia_gpu():
+    comptime if allow_split and (
+        ctx.target.is_nvidia_gpu()
+        or (ctx.target.is_amd_gpu() and not sparse_mla)
+    ):
         if case .Some(split) = mixed_split:
+            var split_pays = True
+            comptime if ctx.target.is_amd_gpu():
+                # Past the AMD fold's cap the decode view prefills too, over
+                # the whole-batch `buffer_length`, so the split would only
+                # repeat that work.
+                split_pays = mla_graph_takes_decode_branch[
+                    collection_t.CacheType.dtype, q.static_shape[1]
+                ](split.decode_view().max_q_len)
             if (
-                is_packed(q)
+                split_pays
+                and is_packed(q)
                 and is_packed(output)
                 and is_packed(input_row_offsets)
             ):

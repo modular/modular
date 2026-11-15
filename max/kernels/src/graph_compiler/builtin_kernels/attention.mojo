@@ -8516,7 +8516,9 @@ def _mla_mixed_split(
     the decode view's split-K count, or None for both to keep the
     whole-batch route. The dispatch buffer must be packed and hold both
     views' metadata."""
-    comptime if not context.target.is_nvidia_gpu():
+    comptime if not (
+        context.target.is_nvidia_gpu() or context.target.is_amd_gpu()
+    ):
         return (None, None)
     if Int(num_partitions_scalar.dim[0]()) < 2:
         return (None, None)

@@ -41,6 +41,7 @@ os.environ.setdefault("MODULAR_DEBUG", "source-tracebacks")
 
 import math
 from collections.abc import Sequence
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -61,6 +62,7 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     padded_lut_cols,
 )
+from max.nn.kv_cache.input_types import _mixed_step_decode_view
 from max.pipelines.architectures.kimi_k3_modulev3.dspark.mla_extent import (
     spec_verify_extent,
 )
@@ -72,9 +74,14 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 )
 from max.pipelines.architectures.kimi_k3_modulev3.spec_mla import (
     kimi_k3_mla_buffer_size,
+    kimi_k3_mla_table_rows,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     fuse_qkv_a_g_for_tp,
+)
+from max.pipelines.kv_cache.paged_kv_cache._mixed_step_split import (
+    mixed_step_decode_width,
+    mixed_step_split_record,
 )
 from max.support.math import ceildiv
 from max.tensor import Tensor, default_device
@@ -159,6 +166,29 @@ def _zeros(shape: tuple[int, ...], dtype: DType, device: Accelerator) -> Tensor:
     return Tensor(storage=buf)
 
 
+def _random_pages(
+    shape: tuple[int, ...],
+    dtype: DType,
+    lut: np.ndarray,
+    blocks_per_request: Sequence[int],
+    fill_ids: Sequence[int],
+) -> Buffer:
+    """FP8 blocks whose pages hold small random latents seeded by request
+    id, so a request's cached prefix is the same in every pool."""
+    assert dtype == DType.float8_e4m3fn
+    page_bytes = math.prod(shape[1:])
+    raw = np.zeros((shape[0], page_bytes), np.uint8)
+    for req, (count, fill_id) in enumerate(
+        zip(blocks_per_request, fill_ids, strict=True)
+    ):
+        rng = np.random.default_rng(1000 + fill_id)
+        # Exponent at most 7 and a random sign: |x| < 2, never NaN.
+        raw[lut[req, :count]] = rng.integers(
+            0, 0x40, (count, page_bytes), np.uint8
+        ) | (rng.integers(0, 2, (count, page_bytes), np.uint8) << 7)
+    return Buffer.from_numpy(raw).view(dtype=dtype, shape=shape)
+
+
 class _LatentPool:
     """One FP8 MLA latent pool whose pages survive across steps.
 
@@ -173,13 +203,12 @@ class _LatentPool:
         params: MLAKVCacheParams,
         blocks_per_request: Sequence[int],
         device: Accelerator,
+        fill_ids: Sequence[int] | None = None,
     ) -> None:
         self._params = params
         self._device = device
         total = sum(blocks_per_request)
-        self._kv_blocks = _zeros(
-            (total + 1, *params.shape_per_block), params.dtype, device
-        )
+        shape = (total + 1, *params.shape_per_block)
         self._lut = np.full(
             (len(blocks_per_request), padded_lut_cols(max(blocks_per_request))),
             total,
@@ -191,11 +220,25 @@ class _LatentPool:
                 next_block, next_block + count, dtype=np.uint32
             )
             next_block += count
+        self._kv_blocks = (
+            _zeros(shape, params.dtype, device)
+            if fill_ids is None
+            else Tensor(
+                storage=_random_pages(
+                    shape, params.dtype, self._lut, blocks_per_request, fill_ids
+                ).to(device)
+            )
+        )
 
     def values(
-        self, cache_lengths: Sequence[int], prompt_lens: Sequence[int]
+        self,
+        cache_lengths: Sequence[int],
+        prompt_lens: Sequence[int],
+        record: np.ndarray | None = None,
     ) -> PagedCacheValues:
-        """Builds one step's cache view over the persistent pool."""
+        """Builds one step's cache view over the persistent pool; a split
+        ``record`` fills the dispatch key's decode view as the cache manager
+        does."""
         max_prompt = max(prompt_lens)
         max_cache = max(
             cache + prompt
@@ -205,6 +248,20 @@ class _LatentPool:
             len(prompt_lens), max_prompt, max_cache
         )
         assert isinstance(key, MLAAttnKey)
+        view = (
+            None
+            if record is None
+            else _mixed_step_decode_view(record, len(prompt_lens))
+        )
+        if view is not None:
+            decode_key = self._params.resolve_attn_key(*view)
+            assert isinstance(decode_key, MLAAttnKey)
+            key = replace(
+                key,
+                decode_batch_size=decode_key.batch_size,
+                decode_max_prompt_length=decode_key.max_prompt_length,
+                decode_num_partitions=decode_key.num_partitions,
+            )
         device = self._device
         # The host-resident fields match the cache's declared symbolic input
         # types (``MLAKVCacheParams._get_symbolic_inputs_for_replica``): the
@@ -248,6 +305,8 @@ class _LatentPool:
                 mixed_step_split=Tensor(
                     storage=Buffer.from_numpy(
                         np.zeros(MIXED_STEP_SPLIT_SIZE, np.uint32)
+                        if record is None
+                        else record.astype(np.uint32)
                     )
                 ),
             )
@@ -872,3 +931,227 @@ def test_plan_extent_matches_the_host_helper_on_random_batches() -> None:
                 f"the plan op's extent {got} differs from the host helper's"
                 f" {want} on caches {cache_lengths} with rows {rows}"
             )
+
+
+# Two decode rows beside a prompt row whose window spans three pages.
+_MIXED_CACHE_LENGTHS = (125, 253, 70)
+_MIXED_WIDTHS = (_VERIFY_ROWS, _VERIFY_ROWS, 200)
+# The table production sizes for a model whose context is this batch's.
+_MIXED_FREQS_ROWS = kimi_k3_mla_table_rows(
+    max_seq_len=max(
+        c + w for c, w in zip(_MIXED_CACHE_LENGTHS, _MIXED_WIDTHS, strict=True)
+    ),
+    page_size=_PAGE_SIZE,
+    num_draft_tokens=_NUM_DRAFT_TOKENS,
+)
+# Only the projections' GEMMs, picked by row count, round differently:
+# measured 4e-3 to 6e-3 on MI355, against ~7e-2 unsplit.
+_TOL_MIXED_SPLIT = 1.5e-2
+
+
+def _run_ragged(
+    layer: KimiK3MLAAttention,
+    pool: _LatentPool,
+    cache_lengths: Sequence[int],
+    widths: Sequence[int],
+    hidden: np.ndarray,
+    device: Accelerator,
+    record: np.ndarray | None = None,
+) -> np.ndarray:
+    """One forward over rows of the given widths, request-major."""
+    assert isinstance(layer.kv_params, MLAKVCacheParams)
+    x = Tensor(hidden, dtype=DType.float32).cast(DType.bfloat16)
+    input_row_offsets = Tensor(
+        np.concatenate([[0], np.cumsum(widths)]).astype(np.uint32),
+        dtype=DType.uint32,
+    )
+    kv_collection = pool.values(cache_lengths, widths, record=record)
+    extent = sum(
+        ceildiv(cache + width, _PAGE_SIZE) * _PAGE_SIZE
+        for cache, width in zip(cache_lengths, widths, strict=True)
+    )
+    plan = kimi_k3_mla_prefill_plan(
+        kv_params=layer.kv_params,
+        kv_collection=kv_collection,
+        input_row_offsets=input_row_offsets,
+        buffer_size=extent,
+        buffer_length=Tensor(
+            np.array([extent], np.int32), dtype=DType.int32, device=CPU()
+        ),
+    )
+    freqs_cis = kimi_k3_nope_freqs_cis(
+        max_seq_len=_MIXED_FREQS_ROWS,
+        qk_rope_head_dim=_QK_ROPE_HEAD_DIM,
+        dtype=layer.kv_params.dtype,
+        device=device,
+    )
+    out = layer.forward_latent_ragged(
+        x, kv_collection, input_row_offsets, plan, freqs_cis
+    )
+    return out.cast(DType.float32).to_numpy()
+
+
+def _pool_for(
+    params: MLAKVCacheParams,
+    request_ids: Sequence[int],
+    device: Accelerator,
+) -> _LatentPool:
+    """A pool whose requests' cached prefixes are random, the same for a
+    request id in every pool."""
+    return _LatentPool(
+        params,
+        [
+            ceildiv(_MIXED_CACHE_LENGTHS[i] + _MIXED_WIDTHS[i], _PAGE_SIZE)
+            for i in request_ids
+        ],
+        device,
+        fill_ids=request_ids,
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="checks the AMD route; NVIDIA's split has its own tests",
+)
+@pytest.mark.compile_on_gpu(
+    "the fused MLA prefill/decode graph op is not interpreter-bindable"
+)
+@pytest.mark.parametrize("decode_first", [True, False])
+def test_mixed_split_matches_its_views_run_apart(decode_first: bool) -> None:
+    """A split mixed verify gives each row what its view gives run alone, at
+    the FP8 fold arm, the one AMD configuration that splits."""
+    heads = _HEADS_FOLD_ARM
+    order = [0, 1, 2] if decode_first else [2, 0, 1]
+    caches = [_MIXED_CACHE_LENGTHS[i] for i in order]
+    widths = [_MIXED_WIDTHS[i] for i in order]
+    total = sum(widths)
+    hidden = (_RNG.standard_normal((total, _HIDDEN)) * 0.05).astype(np.float32)
+    starts = np.concatenate([[0], np.cumsum(widths)])
+    rows = {i: hidden[starts[k] : starts[k + 1]] for k, i in enumerate(order)}
+    record = mixed_step_split_record(
+        widths,
+        [c + w for c, w in zip(caches, widths, strict=True)],
+        mixed_step_decode_width(_NUM_DRAFT_TOKENS),
+    )
+    assert record[0] != 0, "the batch must split"
+
+    device = Accelerator()
+    with default_device(device):
+        params = _kv_params(heads, [device])
+        layer = _make_layer(heads, params, _random_weights(heads))
+        split = _run_ragged(
+            layer,
+            _pool_for(params, order, device),
+            caches,
+            widths,
+            hidden,
+            device,
+            record=record,
+        )
+        unsplit = _run_ragged(
+            layer,
+            _pool_for(params, order, device),
+            caches,
+            widths,
+            hidden,
+            device,
+        )
+        decode_alone = _run_ragged(
+            layer,
+            _pool_for(params, [0, 1], device),
+            _MIXED_CACHE_LENGTHS[:2],
+            _MIXED_WIDTHS[:2],
+            np.concatenate([rows[0], rows[1]]),
+            device,
+        )
+        prompt_alone = _run_ragged(
+            layer,
+            _pool_for(params, [2], device),
+            _MIXED_CACHE_LENGTHS[2:],
+            _MIXED_WIDTHS[2:],
+            rows[2],
+            device,
+        )
+
+    by_request = {
+        i: split[starts[k] : starts[k + 1]] for k, i in enumerate(order)
+    }
+    tag = f"decode_first={decode_first}"
+    split_err = _parity_report(
+        f"{tag} split decode rows vs decode alone",
+        np.concatenate([by_request[0], by_request[1]]),
+        decode_alone,
+    )
+    assert split_err < _TOL_MIXED_SPLIT, (
+        f"{tag}: split decode rows diverge ({split_err})"
+    )
+    err = _parity_report(
+        f"{tag} split prompt row vs prompt alone", by_request[2], prompt_alone
+    )
+    assert err < _TOL_MIXED_SPLIT, f"{tag}: split prompt row diverges ({err})"
+    unsplit_by_request = {
+        i: unsplit[starts[k] : starts[k + 1]] for k, i in enumerate(order)
+    }
+    unsplit_err = _parity_report(
+        f"{tag} unsplit decode rows vs decode alone",
+        np.concatenate([unsplit_by_request[0], unsplit_by_request[1]]),
+        decode_alone,
+    )
+    assert unsplit_err < _TOL_PREFILL_ARM, (
+        f"{tag}: unsplit decode rows ({unsplit_err})"
+    )
+    # Split, the decode rows stay on the fold instead of crossing to the
+    # prefill branch.
+    assert split_err * 3 < unsplit_err, (
+        f"{tag}: the split ({split_err}) is not clearly closer than the"
+        f" unsplit batch ({unsplit_err})"
+    )
+
+
+def _cache_bytes(pool: _LatentPool) -> np.ndarray:
+    buf = pool._kv_blocks.driver_tensor.to(CPU())
+    return np.asarray(buf.view(dtype=DType.uint8).to_numpy()).reshape(
+        buf.shape[0], -1
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="checks the AMD route; NVIDIA's split has its own tests",
+)
+@pytest.mark.compile_on_gpu(
+    "the fused MLA prefill/decode graph op is not interpreter-bindable"
+)
+@pytest.mark.parametrize("decode_first", [True, False])
+def test_mixed_split_writes_the_cache_the_unsplit_batch_writes(
+    decode_first: bool,
+) -> None:
+    """A split mixed step stores every row's new latent where the unsplit
+    batch stores it, with the same bytes."""
+    heads = _HEADS_FOLD_ARM
+    order = [0, 1, 2] if decode_first else [2, 0, 1]
+    caches = [_MIXED_CACHE_LENGTHS[i] for i in order]
+    widths = [_MIXED_WIDTHS[i] for i in order]
+    hidden = (_RNG.standard_normal((sum(widths), _HIDDEN)) * 0.05).astype(
+        np.float32
+    )
+    record = mixed_step_split_record(
+        widths,
+        [c + w for c, w in zip(caches, widths, strict=True)],
+        mixed_step_decode_width(_NUM_DRAFT_TOKENS),
+    )
+    device = Accelerator()
+    with default_device(device):
+        params = _kv_params(heads, [device])
+        layer = _make_layer(heads, params, _random_weights(heads))
+        split_pool = _pool_for(params, order, device)
+        unsplit_pool = _pool_for(params, order, device)
+        _run_ragged(
+            layer, split_pool, caches, widths, hidden, device, record=record
+        )
+        _run_ragged(layer, unsplit_pool, caches, widths, hidden, device)
+        got = _cache_bytes(split_pool)
+        want = _cache_bytes(unsplit_pool)
+    np.testing.assert_array_equal(
+        got, want, err_msg=f"decode_first={decode_first}: cache bytes differ"
+    )
