@@ -424,6 +424,13 @@ This version is still a work in progress.
   - `if s.find(x):` is now `True` only when `x` is found. Before, it was
     `True` when `x` was missing and `False` when `x` was at offset 0.
 
+- A literal segment of a t-string (the text before, between, or after its
+  replacement fields) can now be at most 255 bytes long; a longer one is a
+  compile-time error. Each segment is now stored with a one-byte length prefix
+  instead of a NUL terminator.
+  Contributed by [@quetion667](https://github.com/quetion667) in
+  [#7621](https://github.com/modular/modular/pull/7621).
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
@@ -618,3 +625,9 @@ This version is still a work in progress.
   elements whose type names a mutable origin, such as
   `Pointer[Int, origin_of(x)]`, as `List.append()` already did. Inserting one
   was rejected as aliasing the collection.
+
+- A NUL byte (`\0`) in the literal text of a t-string is now kept as text.
+  Previously it ended the literal segment early, so `t"a\0b{x}"` with
+  `x = "ls"` produced `alsb` instead of `a\0bls`.
+  Contributed by [@quetion667](https://github.com/quetion667) in
+  [#7621](https://github.com/modular/modular/pull/7621).
