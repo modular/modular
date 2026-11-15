@@ -61,6 +61,16 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.1",
         timeout=90,
     ),
+    # Mach serves the export artifact at TP2; MAX Serve runs the same
+    # checkpoint through the mimo_v2_modulev3 recipe.
+    PipelineEntry(
+        pipeline="XiaomiMiMo/MiMo-V2.6-Flash-RL",
+        model_path="XiaomiMiMo/MiMo-V2.6-Flash-RL",
+        runner="modrunner-b200-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.b200.2",
+        timeout=90,
+    ),
     PipelineEntry(
         pipeline="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         model_path="meta-models/Muse-Spark-Open-816B-A42B-NVFP4",

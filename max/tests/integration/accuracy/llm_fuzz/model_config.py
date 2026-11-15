@@ -153,6 +153,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:muse_spark"],
         description="Muse Spark model-specific tests",
     ),
+    "mimo_v2": ModelProfile(
+        name="mimo_v2",
+        default_port=8620,
+        tags=["model:mimo_v2"],
+        description="MiMo-V2.6-Flash model-specific tests",
+    ),
     "beam": ModelProfile(
         name="beam",
         default_port=8900,
