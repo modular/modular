@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.format.tstring import (
+    _count_encoded_bytes,
     _encode_format_string,
-    _longest_literal_segment,
+    _literal_segment,
 )
-from std.testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 @fieldwise_init
@@ -641,7 +642,7 @@ def _encode_format_string_to_list(format: StaticString) -> List[Byte]:
     def append(byte: Byte) {mut}:
         result.append(byte)
 
-    _encode_format_string(format, append)
+    _ = _encode_format_string(format, append)
     return result^
 
 
@@ -677,16 +678,97 @@ def test_encode_length_counts_bytes() raises:
     assert_equal(got, _encode("café ", ""))
 
 
-def test_longest_literal_segment() raises:
-    assert_equal(_longest_literal_segment(""), 0)
-    assert_equal(_longest_literal_segment("{}"), 0)
-    assert_equal(_longest_literal_segment("aa{}b"), 2)
-    assert_equal(_longest_literal_segment("a{}bbb{}cc"), 3)
-    assert_equal(_longest_literal_segment("a{}b{}ccc"), 3)
-    # Escaped braces count as one byte each: the segments are "{}" and "{{".
-    assert_equal(_longest_literal_segment("{{}}{}{{{{"), 2)
+def _check_literal_segment(
+    format: StaticString,
+    start: Int,
+    want_segment: StaticString,
+    want_length: Int,
+    want_end: Int,
+) raises:
+    var segment, length, end = _literal_segment(format, start)
+    assert_equal(segment, want_segment)
+    assert_equal(length, want_length)
+    assert_equal(end, want_end)
+
+
+def test_literal_segment() raises:
+    _check_literal_segment("", 0, "", 0, 0)
+    _check_literal_segment("ab{}c", 0, "ab", 2, 2)
+    _check_literal_segment("ab{}c", 4, "c", 1, 5)
+    _check_literal_segment("ab{}", 4, "", 0, 4)
+    # Escaped braces stay escaped in the segment but count as one byte each.
+    _check_literal_segment("{{x}}{}", 0, "{{x}}", 3, 5)
     # "é" is two bytes.
-    assert_equal(_longest_literal_segment("é{}"), 2)
+    _check_literal_segment("é{}", 0, "é", 2, 2)
+
+
+def test_count_encoded_bytes() raises:
+    # "ab{}c" -> [2, "ab", 1, "c"]
+    var count, too_long_segment = _count_encoded_bytes("ab{}c")
+    assert_equal(count, 5)
+    assert_true(too_long_segment is None)
+
+
+def test_count_encoded_bytes_segment_of_255_bytes() raises:
+    var count, too_long_segment = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}"
+    )
+    assert_equal(count, 1 + 255 + 1)
+    assert_true(too_long_segment is None)
+
+
+def test_count_encoded_bytes_reports_too_long_segment() raises:
+    # The second segment is 256 bytes; the first and last ones fit.
+    var _, too_long_segment = _count_encoded_bytes(
+        "head{}"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}tail"
+    )
+    assert_equal(String(too_long_segment.value()), "a" * 256)
+
+
+def test_count_encoded_bytes_reports_too_long_first_and_last_segment() raises:
+    var _, first = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{}tail"
+    )
+    assert_equal(String(first.value()), "a" * 256)
+    var _, last = _count_encoded_bytes(
+        "head{}"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    )
+    assert_equal(String(last.value()), "a" * 256)
+
+
+def test_count_encoded_bytes_escaped_brace_at_the_limit() raises:
+    # `{{` is two bytes in the source but one in the segment: 254 "a"s and
+    # `{{` make a 255-byte segment, which fits.
+    var count, fits = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{{"
+    )
+    assert_equal(count, 1 + 255)
+    assert_true(fits is None)
+    # 255 "a"s and `{{` make 256 bytes; the segment comes back as written.
+    var _, too_long = _count_encoded_bytes(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{{"
+    )
+    assert_equal(String(too_long.value()), "a" * 255 + "{{")
 
 
 def test_encode_plain_text() raises:

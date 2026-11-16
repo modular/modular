@@ -168,7 +168,7 @@ struct TString[origins: ImmOrigin, array_origin: ImmOrigin](
 
 
 # Each literal segment's length is stored in a single byte.
-comptime _MAX_LITERAL_SEGMENT_LENGTH = 255
+comptime _MAX_LITERAL_SEGMENT_LENGTH = Int(Byte.MAX)
 
 
 @inline(.always)
@@ -201,18 +201,19 @@ def __make_tstring[
         The constructed TString object.
     """
     comptime fmt_str = StaticString(format_string)
-    comptime longest_literal = _longest_literal_segment(fmt_str)
-    comptime assert longest_literal <= _MAX_LITERAL_SEGMENT_LENGTH, String(
-        "t-string literal segment is ",
-        longest_literal,
-        " bytes long; at most ",
+    comptime counted = _count_encoded_bytes(fmt_str)
+    comptime too_long_segment = counted[1]
+    comptime assert too_long_segment is None, String(
+        "t-string literal segment is too long; at most ",
         _MAX_LITERAL_SEGMENT_LENGTH,
         (
             " bytes of literal text are supported without a replacement field"
-            " in between"
+            ' in between: "'
         ),
+        too_long_segment.or_else(""),
+        '"',
     )
-    comptime length = _count_encoded_bytes(fmt_str)
+    comptime length = counted[0]
     comptime bytes = _encoded_bytes[length](fmt_str)
 
     ref global_bytes = global_constant[bytes]()
@@ -222,14 +223,18 @@ def __make_tstring[
     }
 
 
-def _count_encoded_bytes(format: StaticString) -> Int:
+def _count_encoded_bytes(
+    format: StaticString,
+) -> Tuple[Int, Optional[StaticString]]:
+    # Returns the encoded length and `_encode_format_string`'s result. If a
+    # segment is too long, encoding stopped there and the count is partial.
     var count = 0
 
     def addone(_byte: Byte) {mut}:
         count += 1
 
-    _encode_format_string(format, addone)
-    return count
+    var too_long_segment = _encode_format_string(format, addone)
+    return count, too_long_segment
 
 
 def _encoded_bytes[
@@ -242,12 +247,15 @@ def _encoded_bytes[
         bytes[index] = byte
         index += 1
 
-    _encode_format_string(format, append)
+    # `__make_tstring` has already rejected a too-long segment.
+    _ = _encode_format_string(format, append)
     return bytes
 
 
-def _literal_segment(format: StaticString, start: Int) -> Tuple[Int, Int]:
-    """Measures the literal segment of a format string that starts at `start`.
+def _literal_segment(
+    format: StaticString, start: Int
+) -> Tuple[StaticString, Int, Int]:
+    """Finds the literal segment of a format string that starts at `start`.
 
     Assumes well-formed braces; `_encode_format_string` rejects malformed ones.
 
@@ -256,9 +264,10 @@ def _literal_segment(format: StaticString, start: Int) -> Tuple[Int, Int]:
         start: The byte offset where the segment starts.
 
     Returns:
-        The segment's length in bytes once escaped braces are resolved (`{{`
-        and `}}` count as one byte each), and the byte offset where the
-        segment ends: the `{}` that closes it, or the end of `format`.
+        The segment as written in `format` (escaped braces not yet resolved),
+        its length in bytes once escaped braces are resolved (`{{` and `}}`
+        count as one byte each), and the byte offset where the segment ends:
+        the `{}` that closes it, or the end of `format`.
     """
     comptime LBRACE = Byte(123)  # '{'
     comptime RBRACE = Byte(125)  # '}'
@@ -279,29 +288,19 @@ def _literal_segment(format: StaticString, start: Int) -> Tuple[Int, Int]:
         else:
             i += 1
         length += 1
-    return length, i
+    var end = min(i, len(bytes))
+    var segment = StaticString(
+        unsafe_from_utf8=Span(
+            unsafe_ptr=bytes.unsafe_ptr().unsafe_offset(start),
+            length=end - start,
+        )
+    )
+    return segment, length, i
 
 
-def _longest_literal_segment(format: StaticString) -> Int:
-    """Returns the length in bytes of the longest literal segment of `format`.
-
-    Args:
-        format: The format string.
-
-    Returns:
-        The largest length `_literal_segment` reports for any segment.
-    """
-    var longest = 0
-    var start = 0
-    while True:
-        var length, end = _literal_segment(format, start)
-        longest = max(longest, length)
-        if end >= format.byte_length():
-            return longest
-        start = end + 2  # Skip the `{}` that ends this segment.
-
-
-def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
+def _encode_format_string(
+    format: StaticString, f: Some[def(Byte)]
+) -> Optional[StaticString]:
     """Encode a format string into a flat byte sequence.
 
     The output is a sequence of length-prefixed literal segments: one byte
@@ -317,9 +316,9 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
     empty (a single length byte of 0). Likewise if the format string ends
     with `{}`, the last literal segment is empty.
 
-    A literal segment longer than `_MAX_LITERAL_SEGMENT_LENGTH` (255) bytes
-    does not fit in its length byte; `__make_tstring` rejects such a template
-    at compile time.
+    A literal segment longer than `_MAX_LITERAL_SEGMENT_LENGTH` bytes does
+    not fit in its length byte. Encoding stops at such a segment and
+    returns it, and `__make_tstring` rejects the template at compile time.
 
     For example, `"result: {} + {} = {}"` encodes as the bytes
     `[8, "result: ", 3, " + ", 3, " = ", 0]`, which we walk through as:
@@ -342,6 +341,10 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
             buffer directly. This lets callers collect the bytes however
             they need to, for example counting them or writing them into a
             fixed-size buffer.
+
+    Returns:
+        The first literal segment longer than `_MAX_LITERAL_SEGMENT_LENGTH`
+        bytes, as written in `format`, or `None` if every segment fits.
     """
     comptime LBRACE = Byte(123)  # '{'
     comptime RBRACE = Byte(125)  # '}'
@@ -360,7 +363,9 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
             and bytes.unsafe_ptr()[unsafe_offset=i + 1] == byte
         )
 
-    var first_length, _ = _literal_segment(format, 0)
+    var first_segment, first_length, _ = _literal_segment(format, 0)
+    if first_length > _MAX_LITERAL_SEGMENT_LENGTH:
+        return first_segment
     f(Byte(first_length))
 
     while i < len(bytes):
@@ -371,7 +376,11 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
                 f(LBRACE)
             elif peek_next_is(RBRACE):
                 # Empty replacement field {} -> length of the next segment.
-                var next_length, _ = _literal_segment(format, i + 2)
+                var next_segment, next_length, _ = _literal_segment(
+                    format, i + 2
+                )
+                if next_length > _MAX_LITERAL_SEGMENT_LENGTH:
+                    return next_segment
                 f(Byte(next_length))
             else:
                 abort()
@@ -388,3 +397,5 @@ def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
         else:
             f(byte)
             i += 1
+
+    return None

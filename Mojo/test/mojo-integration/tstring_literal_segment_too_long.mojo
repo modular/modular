@@ -18,9 +18,9 @@ def main():
     var x = 1
     # The literal before `{x}` is 4 * 64 = 256 bytes, one more than its
     # one-byte length prefix can hold.
-    # CHECK: t-string literal segment is 256 bytes long; at most 255 bytes
-    # CHECK-SAME: of literal text are supported without a replacement field
-    # CHECK-SAME: in between
+    # CHECK: t-string literal segment is too long; at most 255 bytes of
+    # CHECK-SAME: literal text are supported without a replacement field in
+    # CHECK-SAME: between: "{{a+}}"
     print(
         t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         t"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
