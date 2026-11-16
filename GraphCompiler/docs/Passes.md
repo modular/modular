@@ -755,6 +755,44 @@ Source:
 Pass definition:
 <https://github.com/modularml/modular/blob/b71cbf8b216acc98960181ebedcd1a1a627b2288/GraphCompiler/include/GraphCompiler/GraphCompiler/Conversion/MOGGToMGP.td>
 
+### SinkIntoDeviceGraphBodies
+
+#### Description
+
+Moves the ops that only a device-graph build body reads back into that body,
+after canonicalization hoisted them out of it.
+
+#### Dialects
+
+Consumes and produces `mgp`/`mogg` within a `ModuleOp`.
+
+#### Performance
+
+Keeps recording work inside the function `OutlineDeviceGraphDependencies`
+creates, so identical recordings share one function instead of each repeating
+the hoisted work.
+
+#### Additional notes
+
+Runs after the canonicalization that follows device-graph finalization, and
+before outlining. Canonicalization hoists every op whose operands all come from
+outside a `mgp.device_graph.dependencies` body ahead of it, which helps
+canonicalization and CSE. A value the body reads from above sinks back only when
+every use of it is inside that one body; a value shared with another body, or
+with the rest of the graph, stays outside and crosses as an argument. The sweep
+repeats, so a sunk consumer pulls in a producer that no longer has a user
+outside the body. An op that names the builder of an enclosing region has that
+operand rebound to the body's own builder argument as it crosses: the two are
+the same builder at run time, and a captured one would become a second `mut`
+builder parameter, which Mojo rejects as aliasing. A
+`mgp.device_graph.add_input` and a constant stay where they are, and a body that
+yields values is left alone, since nothing is outlined out of it yet.
+
+Source:
+`GraphCompiler/lib/MGPDialect/Transforms/SinkIntoDeviceGraphBodies.cpp`.
+Pass definition:
+`GraphCompiler/include/GraphCompiler/MGPDialect/Transforms/MGPTransforms.td`.
+
 ### OutlineDeviceGraphDependencies
 
 #### Description
@@ -783,12 +821,13 @@ kernel dispatch. A `mgp.device_graph.dependencies` body references enclosing SSA
 directly (the op is not `IsolatedFromAbove`), so each value the body uses from
 above becomes a trailing stub argument forwarded at the call site; the body's
 builder block argument leads the signature when the body records through it. A
-`collective.create` region takes its block arguments as parameters and returns
-what the region yields, so a multi-result region crosses as a tuple. A
-`mogg.buffer.constant` stays where the constant-resource table lives and crosses
-as an argument, and a dependencies body that yields values is left inline.
-Both containers survive with their node edges, dependency operands, signatures,
-and build-time closures.
+chain does not cross as an argument: it orders work rather than carrying data,
+so the body creates its own `mogg.chain.dummy`. A `collective.create` region
+takes its block arguments as parameters and returns what the region yields, so a
+multi-result region crosses as a tuple. A `mogg.buffer.constant` stays where the
+constant-resource table lives and crosses as an argument, and a dependencies
+body that yields values is left inline. Both containers survive with their node
+edges, dependency operands, signatures, and build-time closures.
 
 Source:
 `GraphCompiler/lib/MGPDialect/Transforms/OutlineDeviceGraphDependencies.cpp`.

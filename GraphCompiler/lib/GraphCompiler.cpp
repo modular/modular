@@ -429,6 +429,11 @@ void M::MO::buildMgpPipeline(mlir::OpPassManager &pm,
     pm.addPass(MGP::createFinalizeDeviceGraphsPass());
     pm.addPass(mlir::createReconcileUnrealizedCastsPass());
 
+    // Canonicalize first, then undo only the hoisting it did out of the build
+    // bodies, before outlining decides what each body captures.
+    pm.addNestedPass<MGP::ModelOp>(mlir::createCanonicalizerPass());
+    pm.addPass(MGP::createSinkIntoDeviceGraphBodiesPass());
+
     pm.addPass(MGP::createOutlineDeviceGraphDependenciesPass());
   }
 

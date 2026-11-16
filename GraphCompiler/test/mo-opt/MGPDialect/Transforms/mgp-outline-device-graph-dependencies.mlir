@@ -318,3 +318,40 @@ mgp.model @unused_builder device_graph devices [#M.device_ref<"gpu", 0>]
   }
   mef.output %ch0 : !mef.chain
 }
+
+// -----
+
+// A chain is ordering, not data: the emitters bind no Mojo value for a
+// `mogg.chain.dummy`, so the outlined body materializes its own instead of
+// taking one as an argument.
+
+// CHECK-LABEL: mgp.model @chain
+// CHECK: mgp.device_graph.dependencies builder(%{{.*}}) dependencies() {
+// CHECK-NEXT: ^bb0(%{{.*}}: !mgp.device_graph.builder):
+// CHECK-NEXT: mogg.call @[[UNIT:__[A-Za-z0-9_]+]] %{{.*}}, %{{.*}} : !mgp.buffer<<"gpu", 0>>, !mgp.tensor_spec<2x3xf32>
+// CHECK-NEXT: }
+// The chain used to arrive as a parameter; it is created inside instead.
+// CHECK: mogg.func @[[UNIT]] private (%{{.*}}: !mgp.buffer<<"gpu", 0>>, %{{.*}}: !mgp.tensor_spec<2x3xf32>) attributes {abi = #mogg.abi<MOGG>,
+// CHECK: mogg.chain.dummy()
+// CHECK: mgp.tensor.create %{{.*}}, %{{.*}}, %{{.*}} : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK: mogg.output
+mgp.model @chain device_graph devices [#M.device_ref<"gpu", 0>]
+  init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
+  %ch0 = grt.chain.create ()
+  %ctx = mgp.context.create 1
+  mef.output %ch0, %ctx, %weights, %gpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
+} execute (%ch0: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>, %in: !mgp.tensor<2x3xf32, <"gpu", 0>>) -> (!mef.chain) {
+  mgp.device_graph.collective builder(%b) stable() <"gpu", 0> {
+    %chain = mogg.chain.dummy()
+    %spec = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
+    %buf = mgp.tensor.extract.buffer %in : <2x3xf32, <"gpu", 0>>
+    %node = mgp.device_graph.dependencies builder(%b) dependencies() {
+    ^bb0(%dep_builder: !mgp.device_graph.builder):
+      %t = mgp.tensor.create %chain, %buf, %spec : !mgp.tensor<2x3xf32, <"gpu", 0>>
+      "test.use"(%t) : (!mgp.tensor<2x3xf32, <"gpu", 0>>) -> ()
+      mgp.device_graph.dependencies.yield
+    }
+    mgp.device_graph.collective.yield
+  }
+  mef.output %ch0 : !mef.chain
+}

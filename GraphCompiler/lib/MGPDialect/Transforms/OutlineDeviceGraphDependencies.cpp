@@ -55,8 +55,8 @@
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/SymbolTable.h"
-#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/STLExtras.h"
 
 using namespace M;
@@ -110,11 +110,11 @@ bool hasBodyToOutline(Block &body) {
   return llvm::hasNItemsOrMore(body.without_terminator(), 2);
 }
 
-/// Whether `op`'s body is worth outlining. A dependencies body that yields
-/// values stays inline: re-yielding its results through the op's `bodyResults`
-/// is not enabled yet.
-bool shouldOutline(DeviceGraphDependenciesOp op) {
-  return op.getBodyResults().empty() && hasBodyToOutline(op.getBodyBlock());
+/// Whether `op` may move into a body. A buffer constant cannot: it reads the
+/// enclosing compiled region's constant-resource table, which only the MGP ABI
+/// provides, so the outliner holds it back outside the function.
+bool canMoveIntoBody(Operation *op) {
+  return !isa<MGP::BufferConstantOp, MOGG::BufferConstantOp>(op);
 }
 
 /// Phase 1 of outlining: hold back what cannot move into a `mogg.func`.
@@ -131,7 +131,7 @@ FailureOr<SetVector<Operation *>> holdBackUnmovableOps(Region &region) {
   SetVector<Operation *> stay;
   bool outlineable = true;
   block.walk([&](Operation *op) {
-    if (!isa<MGP::BufferConstantOp, MOGG::BufferConstantOp>(op))
+    if (canMoveIntoBody(op))
       return;
     if (isa<MGP::BufferConstantOp>(op) && op->getBlock() == &block)
       stay.insert(op);
@@ -162,15 +162,30 @@ SmallVector<Value> closeOverCapturedValues(Region &region) {
         captured.insert(operand);
   });
 
+  Block &body = region.front();
+  SmallVector<Value> arguments;
   for (Value value : captured) {
-    BlockArgument arg =
-        region.front().addArgument(value.getType(), value.getLoc());
+    // Break captured chains: all execution ordering is now encoded as
+    // dependency nodes. Chains are not present in the generated Mojo code and
+    // can inhibit sinking.
+    if (isa<MEF::ChainType>(value.getType())) {
+      OpBuilder builder(value.getContext());
+      builder.setInsertionPointToStart(&body);
+      Value chain = MOGG::ChainDummyOp::create(builder, value.getLoc());
+      value.replaceUsesWithIf(chain, [&](OpOperand &use) {
+        return region.isAncestor(use.getOwner()->getParentRegion());
+      });
+      continue;
+    }
+
+    BlockArgument arg = body.addArgument(value.getType(), value.getLoc());
     value.replaceUsesWithIf(arg, [&](OpOperand &use) {
       return region.isAncestor(use.getOwner()->getParentRegion());
     });
+    arguments.push_back(value);
   }
 
-  return captured.takeVector();
+  return arguments;
 }
 
 /// Phase 2 of outlining: move `block`'s body, except the `stay` ops and the
@@ -299,10 +314,14 @@ struct OutlineDeviceGraphDependenciesPass
     OpBuilder builder(&getContext());
 
     module.walk<WalkOrder::PreOrder>([&](DeviceGraphDependenciesOp op) {
-      if (shouldOutline(op)) {
-        builder.setInsertionPointToEnd(module.getBody());
-        outlineDependenciesBody(builder, symtab, op);
-      }
+      // A body that yields values stays inline: re-yielding its results through
+      // the op's `bodyResults` is not enabled yet. A body of one op is not
+      // worth a function.
+      if (!op.getBodyResults().empty() || !hasBodyToOutline(op.getBodyBlock()))
+        return WalkResult::skip();
+
+      builder.setInsertionPointToEnd(module.getBody());
+      outlineDependenciesBody(builder, symtab, op);
       return WalkResult::skip();
     });
 

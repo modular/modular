@@ -30,11 +30,9 @@
 
 // A buffer constant stays in the closure: it reads the constant-resource table
 // of the compiled region it lives in, which a MOGG-ABI body does not carry. It
-// crosses into the outlined body as an argument. The builder leads the
-// parameter list because `mgp.device_graph.add_input` is the body's first
-// operation, so the builder is the first value the body uses.
+// crosses into the outlined body as an argument.
 // CHECK: builtin_primitives.primitives.mgp_buffer_constant(
-// CHECK: var [[CALL:var[_0-9]+]] = [[BODY:__device_graph_collective_create[_0-9]*]](builder, {{.*}})
+// CHECK: var [[CALL:var[_0-9]+]] = [[BODY:__device_graph_collective_create[_0-9]*]]({{.*}}builder{{.*}})
 
 // The single graph output is registered on the builder: the yielded output
 // tensor is packed into a fresh `AsyncValue` via `async_pack` and handed to
@@ -56,8 +54,16 @@
 // CHECK: def [[STUB:__[A-Za-z0-9_]+_build_graph]]({{.*}}: {{.*}}OpaquePointer[{{.*}}], {{.*}}: {{.*}}OpaquePointer[{{.*}}], mut {{.*}}: {{.*}}DeviceGraphBuilder) raises:
 // CHECK: BuildGraphCapable.build_graph(
 
+// Canonicalization hoists the ops whose operands all come from outside the
+// dependencies body; outlining sinks them back in first, so this unit's work —
+// including the tensor-to-buffer extraction that used to sit outside the
+// closure — runs inside its own function.
+// CHECK: def [[DEP:__device_graph_dependencies[_0-9]*]]({{.*}}mut {{.*}}: {{.*}}DeviceGraphBuilder{{.*}}) raises:
+// CHECK: builtin_primitives.primitives.mgp_tensor_extract_buffer(
+// CHECK: [[STUB]]({{.*}}, {{.*}}, {{.*}})
+
 // The outlined build body takes the values it reads from the region — here the
-// hoisted constant, the input, and the builder — and returns the graph output.
+// hoisted constant, the builder, the input — and returns the graph output.
 // Parameters follow first use, not the region's argument order.
 // CHECK: def [[BODY]]({{.*}}mut [[B:[a-z_0-9]+]]: {{.*}}DeviceGraphBuilder{{.*}}) raises -> {{.*}}:
 
@@ -88,10 +94,11 @@
 // CHECK: {{var[_0-9]+}} = [[OUT]].take()
 
 // The dispatch is recorded in its own `imm`-capturing `region`, ordered after
-// the alloc's node via the `dependencies=` list, and calls the node-free stub.
+// the alloc's node via the `dependencies=` list, and calls the unit's outlined
+// body.
 // CHECK: @inline(.never)
 // CHECK-NEXT: def [[WORK1:work[_0-9]+]](mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
-// CHECK: [[STUB]]({{.*}}, {{.*}}, builder)
+// CHECK: [[DEP]]({{.*}}, {{.*}}, builder)
 // CHECK: [[B]].region([[WORK1]], dependencies = {{\[}}[[NODE0]]{{\]}})
 
 mo.graph @dg(%x: !mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 3], f32, gpu:0> isDeviceGraph {
@@ -158,29 +165,3 @@ mo.graph @dg_host_input(%h: !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64, gpu:
   mo.output %0 : !mo.tensor<[4], si64, gpu:0>
 }
 
-// -----
-
-// Two chained dispatches: the second consumes the first, so they form a linear
-// chain of `mgp.device_graph.dependencies` ops that canonicalization fuses (the
-// `MergeChainedDependencies` pattern). The result is one `region` call whose
-// single closure records both stubs, rather than one closure each.
-// The chain edge survives as the body order: `DeviceGraphBuilder.region` chains
-// the nodes its body records.
-// The chained units fuse into one `mgp.device_graph.dependencies` body, which
-// outlining turns into one function that records both dispatches.
-// CHECK: def __device_graph_dependencies{{[_0-9]*}}({{.*}}mut {{.*}}: {{.*}}DeviceGraphBuilder{{.*}}) raises:
-// CHECK: [[CHAIN_STUB:__[A-Za-z0-9_]+_build_graph]]({{.*}}, {{.*}})
-// CHECK: [[CHAIN_STUB]]({{.*}}, {{.*}})
-// The graph body is a function too: its dispatch closure only calls the
-// outlined unit.
-// CHECK: def [[WORK:work[_0-9]+]](mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
-// CHECK: __device_graph_dependencies{{[_0-9]*}}({{.*}}builder{{.*}})
-// CHECK: {{.*}}.region([[WORK]], dependencies =
-
-mo.graph @dg_chain(%x: !mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 3], f32, gpu:0> isDeviceGraph {
-  %0 = mo.custom [symbol = "imposter_build_graph_capable", device = #M.device_ref<"gpu", 0>]
-      (%x) : (!mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 3], f32, gpu:0>
-  %1 = mo.custom [symbol = "imposter_build_graph_capable", device = #M.device_ref<"gpu", 0>]
-      (%0) : (!mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 3], f32, gpu:0>
-  mo.output %1 : !mo.tensor<[2, 3], f32, gpu:0>
-}

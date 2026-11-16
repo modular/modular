@@ -826,6 +826,35 @@ def FinalizeDeviceGraphsPass :
 }
 
 //===----------------------------------------------------------------------===//
+// SinkIntoDeviceGraphBodiesPass
+//===----------------------------------------------------------------------===//
+
+def SinkIntoDeviceGraphBodiesPass :
+    Pass<"mgp-sink-into-device-graph-bodies", "mlir::ModuleOp"> {
+  let summary = "Sink ops that feed only a device-graph build body into it.";
+  let description = [{
+    Runs after the canonicalization that precedes outlining.
+    Canonicalization hoists every op whose operands all come from outside a
+    `mgp.device_graph.dependencies` body ahead of it, which helps
+    canonicalization and CSE but leaves the outlined function holding less of
+    the recording than the body does.
+
+    This pass sinks those ops back. A value the body uses from above moves in
+    only when every use of it is inside that one body, because a value shared
+    with another body, or with the rest of the graph, would have to be
+    duplicated. The sweep repeats, so a sunk consumer pulls in a producer that
+    no longer has a user outside the body. A `mgp.device_graph.add_input` and
+    any constant stay where they are, since both cross as call arguments or
+    order the graph inputs.
+
+    A body that yields values, and an empty body, are left alone: nothing is
+    outlined out of either yet.
+
+    For models without device graphs, the pass is a no-op.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // OutlineDeviceGraphDependenciesPass
 //===----------------------------------------------------------------------===//
 
