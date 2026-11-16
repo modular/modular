@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
+#include "Mojo/MojoParser/ParserStats.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/ToolCommon/ElaborationStats.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
@@ -366,6 +367,32 @@ void M::ElaborationStatsReport::finish() {
     return;
   }
   KGEN::writeElaborationStatsJSON(sink->beginMember("elaboration"), parts);
+}
+
+void M::ParserStatsReport::configure(const CompilationOptions &options,
+                                     TimingReportSink &reportSink) {
+  if (!options.parserStats)
+    return;
+  enabled = true;
+  sink = &reportSink;
+  LIT::enableParserStats();
+}
+
+void M::ParserStatsReport::finish() {
+  if (!enabled)
+    return;
+  enabled = false;
+
+  llvm::SmallVector<LIT::ParserStatsPart> parts = LIT::takeParserStats();
+  if (!sink->isJSON()) {
+    for (const LIT::ParserStatsPart &part : parts) {
+      printTimingReportTitle(
+          "Parser statistics (--parser-stats): " + part.label, sink->stream());
+      LIT::printParserStats(sink->stream(), part);
+    }
+    return;
+  }
+  LIT::writeParserStatsJSON(sink->beginMember("parser"), parts);
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(

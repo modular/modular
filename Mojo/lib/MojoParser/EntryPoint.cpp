@@ -16,7 +16,9 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/ModuleCache.h"
 #include "Mojo/MojoParser/ModuleLoader.h"
+#include "Mojo/MojoParser/ParserStats.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "ParserProfiler.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -31,6 +33,7 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -306,6 +309,13 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
       context->get<Telemetry::TelemetryContext>()
           ->createUInt64Timer<std::chrono::milliseconds>(
               "mojo.parser.compile.time", M::Telemetry::Level::L2, attrs);
+
+  // Report on every exit, so a parse that fails still shows where it spent
+  // its time.
+  auto reportStats = llvm::scope_exit([&] {
+    if (ParserProfiler *profiler = sharedState.declResolver->getProfiler())
+      reportParserStats(profiler->finish(moduleIdentifier));
+  });
 
   // This is the result module we are parsing into.
   mlir::OwningOpRef<ModuleOp> module(ModuleOp::create(fileLoc));

@@ -306,6 +306,9 @@ static int run(const State &subcommandState) {
   ElaborationStatsReport elaborationStats;
   elaborationStats.configure(options, timingReport);
 
+  ParserStatsReport parserStats;
+  parserStats.configure(options, timingReport);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
@@ -336,6 +339,8 @@ static int run(const State &subcommandState) {
         return LIT::importMojoFile(ctx, sourceManager, &mlirCtx, options,
                                    parserOptions, ts);
       });
+  // The program may never return to this function, so report the parse now.
+  parserStats.finish();
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
 

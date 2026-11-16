@@ -25,6 +25,7 @@
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
+#include "ParserProfiler.h"
 #include "Support/LogicalResult.h"
 #include "Traits.h"
 
@@ -79,7 +80,10 @@ DeclResolver::DiagnosticDeclContextChanger::~DiagnosticDeclContextChanger() {
 //     bar()
 //   foo()
 
-DeclResolver::DeclResolver(SharedState &state) : SharedStateUser(state) {}
+DeclResolver::DeclResolver(SharedState &state) : SharedStateUser(state) {
+  if (isParserStatsEnabled())
+    profiler = std::make_unique<ParserProfiler>(state);
+}
 
 DeclResolver::~DeclResolver() {
   // Run the destructors on all the ASTDecl objects to make sure any
@@ -1626,6 +1630,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // Handle decls that are loaded from bytecode. These decls are not parsed like
   // decls originating from source files.
   if (decl.loadedFromBytecode) {
+    ParserProfiler::Scope profile(profiler.get(), decl,
+                                  ParserActivity::Bytecode);
     if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
       decl.setErroneous();
     else if (howResolved == DeclResolvedness::body)
@@ -1637,6 +1643,10 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
   // If the signature hasn't been parsed, do so.
   if (decl.resolvedness < DeclResolvedness::signature) {
+    ParserProfiler::Scope profile(profiler.get(), decl,
+                                  decl.getCursor().isInvalid()
+                                      ? ParserActivity::SyntheticSignature
+                                      : ParserActivity::Signature);
     if (decl.getCursor().isInvalid()) {
       if (failed(decl.resolveSyntheticSignature()))
         decl.setErroneous();
@@ -1659,6 +1669,13 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   // If the declaration hasn't been fully parsed and we need to, do so.
   if (decl.resolvedness < DeclResolvedness::body &&
       howResolved == DeclResolvedness::body) {
+    // A deferred source module has no cursor until it materializes, but its
+    // body still comes from source.
+    ParserProfiler::Scope profile(profiler.get(), decl,
+                                  decl.getCursor().isInvalid() &&
+                                          !isa<FileModuleASTDecl>(decl)
+                                      ? ParserActivity::SyntheticBody
+                                      : ParserActivity::Body);
     auto checkEndOfBodyCursor = [&](Lexer &lexer) {
       // If the final parse of the declaration didn't match the initial
       // parse, report an error about unrecognized tokens at end of

@@ -464,6 +464,12 @@ This version is still a work in progress.
   compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
   to get a full report.
 
+- `mojo build` and `mojo run` have a new hidden `--parser-stats` option that
+  reports the time the parser spends to resolve each declaration, to show
+  which declarations make parsing slow. Each declaration's time excludes the
+  resolutions it caused, so the times add up to the total parse time. The
+  report uses the same output options as `--elaboration-stats`.
+
 - `mojo precompile` may now take a `--namespace` option to allow it to bake the
   provided namespace into the package. A package `pkg` built with `--namespace
   foo.bar` must be placed at `foo/bar/pkg.mojoc` and imported as `foo.bar.pkg`.

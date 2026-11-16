@@ -659,6 +659,9 @@ static int build(const State &subcommandState) {
   ElaborationStatsReport elaborationStats;
   elaborationStats.configure(options, timingReport);
 
+  ParserStatsReport parserStats;
+  parserStats.configure(options, timingReport);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 

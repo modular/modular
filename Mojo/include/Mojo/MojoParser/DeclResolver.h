@@ -40,6 +40,7 @@ class FileModuleOp;
 class FnOp;
 class PackageOp;
 class ParserBase;
+class ParserProfiler;
 class SharedState;
 class UnresolvedImportOp;
 class ImportOp;
@@ -294,6 +295,9 @@ public:
     return declsCurrentlyProcessing.map.contains(&decl);
   }
 
+  /// Returns the profiler for `--parser-stats`, or null when it is off.
+  ParserProfiler *getProfiler() const { return profiler.get(); }
+
   //===--------------------------------------------------------------------===//
   // Top-Level Decl Resolution
   //===--------------------------------------------------------------------===//
@@ -509,6 +513,8 @@ private:
     }
   };
   CurrentProcessingSet declsCurrentlyProcessing;
+
+  std::unique_ptr<ParserProfiler> profiler;
 
   /// The declaration context used when pretty-printing parameter references in
   /// diagnostics.

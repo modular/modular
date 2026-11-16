@@ -24,6 +24,7 @@
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
+#include "ParserProfiler.h"
 #include "Signatures.h"
 #include "StabilityMarkers.h"
 #include "StructEmitter.h"
@@ -2369,8 +2370,12 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
 
   // Fully resolve the body so we can swap the IR value of the decl. Later on,
   // we will need this to determine the capture signature.
-  if (failed(resolveBody(lexer)))
-    return failure();
+  {
+    ParserProfiler::Scope profile(resolver.getProfiler(), *this,
+                                  ParserActivity::Body);
+    if (failed(resolveBody(lexer)))
+      return failure();
+  }
 
   // Collect the captured values and parameter references from the resolved
   // body.

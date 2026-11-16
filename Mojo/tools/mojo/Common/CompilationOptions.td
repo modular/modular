@@ -125,6 +125,18 @@ def elaboration_stats: Flag<["--", "-"], "elaboration-stats">,
     "a whole pipeline.">,
   MarshallingInfoFlag<CompilationOpts<"elaborationStats">>;
 
+def parser_stats: Flag<["--", "-"], "parser-stats">,
+  Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
+  HelpText<
+    "Reports the self time the parser spends to resolve each declaration, "
+    "split into its signature, its body, the synthetic signature and body of "
+    "a declaration without source, and the resolution of a declaration from "
+    "a precompiled package. The time of a resolution that another one "
+    "demands counts only for the demanded declaration. The report takes the "
+    "format and the destination of the timing reports: text on stderr, JSON "
+    "with `--timing-json`, a file with `--timing-file`.">,
+  MarshallingInfoFlag<CompilationOpts<"parserStats">>;
+
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",
   CompilationOptionGroup, MetaVarName<"ELABERRORVERBOSE">,
