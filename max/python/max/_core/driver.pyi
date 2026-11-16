@@ -1622,6 +1622,25 @@ class Buffer:
     def _data_ptr(self) -> int:
         """Gets the memory address of the buffer data. Internal use only."""
 
+    def _driver_buffer_handle(self) -> int:
+        """
+        Returns a new driver C API handle to this buffer's memory.
+
+        The result is an ``M_DriverBuffer *`` address. Internal use only.
+        The handle holds its own reference to the memory, so the memory
+        stays allocated until both the buffer and the handle are gone. The
+        caller owns the handle and releases it with ``M_DriverBufferDestroy``
+        from this same library; another copy of the driver cannot use it.
+
+        Raises:
+            ValueError: If the buffer is strided, empty, a sub-byte slice
+                that is not byte-aligned, borrowed, or host-hazard tracked.
+                A borrowed buffer, such as a graph-capture output, does not
+                own its memory, so no handle could keep it alive. A tracked
+                buffer is refused because a copy through the handle is not
+                ordered after pending host access to it.
+        """
+
     def _stamp_read(self, completion: HostHazardCompletion) -> None:
         """Add a read completion to the buffer. Internal use only."""
 

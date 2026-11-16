@@ -179,7 +179,9 @@ modular_cc_test(
     dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         ":Utils",
+        "//MLRT:Driver/CAPIHeaders",
         "//max:CAPI.headers",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -226,7 +228,9 @@ modular_cc_test(
     tags = ["gpu"],
     deps = [
         ":Utils",
+        "//MLRT:Driver/CAPIHeaders",
         "//max:CAPI.headers",
+        "//max/lib/max_license:max.static",
     ],
 )
 

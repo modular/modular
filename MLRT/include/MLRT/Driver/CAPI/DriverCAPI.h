@@ -882,8 +882,9 @@ M_DRIVER_API M_DriverStatus M_DriverBufferFromPointer(
 /// Drops this handle's reference to its memory; a null handle is
 /// `M_DRIVER_INVALID_ARGUMENT`. Memory from `M_DriverBufferAllocate` is freed
 /// when its last reference drops, which is at once unless something else
-/// shares it, so synchronize every stream that used it first; memory the
-/// caller owns is left untouched.
+/// shares it, so synchronize every stream that used it first. A handle MAX
+/// hands out for its own memory, such as a tensor's buffer, only drops its
+/// reference; memory the caller owns is left untouched.
 M_DRIVER_API M_DriverStatus M_DriverBufferDestroy(M_DriverBuffer *buffer);
 
 /// Writes the address to use in copies with this buffer to `*out`. For device

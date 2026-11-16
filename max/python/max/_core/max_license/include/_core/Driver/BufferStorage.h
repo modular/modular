@@ -72,6 +72,10 @@ struct BufferStorage {
   /// Allocation-intent recorded at construction (MXF-635 R1). Shared by every
   /// `Buffer` over this storage, including slices and views.
   Usage usage = Usage::Default;
+
+  /// Whether `buf` aliases memory it does not own, so holding a reference to
+  /// it does not keep the memory allocated. Views inherit it.
+  bool borrowed = false;
 };
 
 /// Mirrors GenericML `DeviceMemory::createView`: bounds-checks `newSpec`

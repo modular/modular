@@ -139,6 +139,10 @@ struct Buffer {
   /// iterate with negative strides.
   bool isContiguous() const;
 
+  /// Whether the buffer starts and ends on byte boundaries. Only a slice of a
+  /// sub-byte dtype can fail this, and then it shares bytes with neighbours.
+  bool isByteAligned() const;
+
   // Returns whether the memory is aligned.
   bool aligned(int alignment) const;
 

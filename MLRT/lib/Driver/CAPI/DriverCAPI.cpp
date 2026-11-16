@@ -28,6 +28,7 @@
 #include "MLRT/Driver/CAPI/DriverCAPI.h"
 
 #include "MLRT/Driver/CAPI/ArchitectureVersion.h"
+#include "MLRT/Driver/CAPI/DriverCAPIHandles.h"
 #include "MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/ErrorOr.h"
@@ -175,10 +176,6 @@ struct M_DriverStream {
 
 struct M_DriverEvent {
   M::Driver::DeviceEventRef event;
-};
-
-struct M_DriverBuffer {
-  M::Driver::DeviceBufferRef buffer;
 };
 
 struct M_DriverCompletionFlag {

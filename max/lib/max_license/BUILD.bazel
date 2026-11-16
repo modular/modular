@@ -127,6 +127,7 @@ modular_shared_library(
         # resolves the M_Driver* entry points against the driver
         # implementation this library already carries.
         "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/CAPIHandles",
         "//Mojo:CompilerRT.static",
         "//Support:Context",
         "//Support:Diagnostics",

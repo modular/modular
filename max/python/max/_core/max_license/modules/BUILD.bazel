@@ -24,6 +24,7 @@ modular_nanobind_library(
     ],
     deps = [
         "//Init",
+        "//MLRT:Driver/CAPIHandles",
         "//Support:Log",
         "//Support:ML",
         "//Support:Metrics",

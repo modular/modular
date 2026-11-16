@@ -1225,6 +1225,7 @@ modular_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":Driver/ArchitectureVersion",
+        ":Driver/CAPIHandles",
         ":Driver/ChunkedStagingRegion",
         ":Driver/DeviceContextAPI",
         "//Support:Base",
@@ -1235,6 +1236,34 @@ modular_cc_library(
     # so without always linking, a shared library such as libmax drops the
     # archive member and exports none of them.
     alwayslink = True,
+)
+
+# The driver C API's declarations without its implementation, for a target
+# that reaches the entry points through a shared library that already links
+# them, such as libmax, rather than a second copy.
+modular_cc_library(
+    name = "Driver/CAPIHeaders",
+    hdrs = ["include/MLRT/Driver/CAPI/DriverCAPI.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = ["//Support:SymbolExport"],
+)
+
+# The handle definitions, for the libmax code that wraps its own memory in
+# driver handles. Kept apart from the C API so no consumer of the C interface
+# sees the struct layout.
+modular_cc_library(
+    name = "Driver/CAPIHandles",
+    hdrs = ["include/MLRT/Driver/CAPI/DriverCAPIHandles.h"],
+    includes = ["include"],
+    visibility = [
+        "//max/lib/max_license:__pkg__",
+        "//max/python/max/_core/max_license/modules:__pkg__",
+    ],
+    deps = [
+        ":Driver/CAPIHeaders",
+        ":Driver/DeviceContextAPI",
+    ],
 )
 
 # The driver C API as a shared library, for consumers built outside bazel,

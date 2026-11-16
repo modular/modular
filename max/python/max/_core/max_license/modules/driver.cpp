@@ -11,6 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 // Driver module: exports Buffer class (renamed from Tensor)
+#include "MLRT/Driver/CAPI/DriverCAPIHandles.h"
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "Support/Nanobind/TypeCasters.h" // IWYU pragma: keep (type casters)
 #include "_core/DLPack/Utils.h"
@@ -1670,6 +1671,53 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
             return reinterpret_cast<uintptr_t>(self.data());
           },
           "Gets the memory address of the buffer data. Internal use only.")
+      .def(
+          "_driver_buffer_handle",
+          [](Python::Buffer &self) {
+            if (!self.isContiguous())
+              throw std::invalid_argument(
+                  "a driver buffer handle names contiguous memory, and this "
+                  "buffer is strided");
+            if (!self.isByteAligned())
+              throw std::invalid_argument(
+                  "a driver buffer handle names whole bytes, and this "
+                  "sub-byte slice starts or ends mid-byte");
+            if (self.isHostHazardTracked())
+              throw std::invalid_argument(
+                  "a host-hazard tracked buffer has no driver buffer handle: "
+                  "copies through the handle would not wait for pending host "
+                  "access");
+            ErrorOr<std::shared_ptr<Python::BufferStorage>> storage =
+                self.getInputStorage();
+            if (storage.isError())
+              throw std::runtime_error(storage.takeError().get());
+            if (storage.get()->borrowed)
+              throw std::invalid_argument(
+                  "a borrowed buffer has no driver buffer handle: it does not "
+                  "own its memory, so a handle could outlive it");
+            const DeviceBufferRef &buffer = storage.get()->buf;
+            if (!buffer || buffer->byteSize() == 0)
+              throw std::invalid_argument(
+                  "an empty buffer has no driver buffer handle");
+            return reinterpret_cast<uintptr_t>(wrapDriverBuffer(buffer));
+          },
+          R"nbdoc(
+          Returns a new driver C API handle to this buffer's memory.
+
+          The result is an ``M_DriverBuffer *`` address. Internal use only.
+          The handle holds its own reference to the memory, so the memory
+          stays allocated until both the buffer and the handle are gone. The
+          caller owns the handle and releases it with ``M_DriverBufferDestroy``
+          from this same library; another copy of the driver cannot use it.
+
+          Raises:
+              ValueError: If the buffer is strided, empty, a sub-byte slice
+                  that is not byte-aligned, borrowed, or host-hazard tracked.
+                  A borrowed buffer, such as a graph-capture output, does not
+                  own its memory, so no handle could keep it alive. A tracked
+                  buffer is refused because a copy through the handle is not
+                  ordered after pending host access to it.
+          )nbdoc")
       .def("_stamp_read", &Python::Buffer::stampRead, "completion"_a, R"nbdoc(
           Add a read completion to the buffer. Internal use only.
       )nbdoc")

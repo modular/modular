@@ -15,11 +15,13 @@
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "GraphCompiler/Driver/Device/DeviceExecution.h"
 #include "GraphCompiler/Support/ModelTensorSpec.h"
+#include "MLRT/Driver/CAPI/DriverCAPIHandles.h"
 #include "Support/DeviceSpecs.h"
 #include "Support/ML/TensorSpec.h"
 #include "max/c/common.h"
 #include "max/c/device.h"
 #include "max/max_license/API/c/EngineContext.h"
+#include "max/max_license/API/c/TensorDriverBuffer.h"
 #include "max/max_license/API/c/detail/helpers.h"
 #include "max/max_license/API/c/detail/types.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
@@ -267,6 +269,14 @@ MODULAR_API_EXPORT const void *M_getTensorData(const M_AsyncTensor *tensor) {
   if (!tensor || !tensor->storage)
     return nullptr;
   return tensor->storage->buffer->ptr();
+}
+
+MODULAR_API_EXPORT M_DriverBuffer *
+M_getTensorDriverBuffer(const M_AsyncTensor *tensor) {
+  if (!tensor || !tensor->storage || !tensor->storage->buffer ||
+      tensor->storage->buffer->byteSize() == 0)
+    return nullptr;
+  return M::Driver::wrapDriverBuffer(tensor->storage->buffer);
 }
 
 MODULAR_API_EXPORT M_TensorSpec *M_getTensorSpec(const M_AsyncTensor *tensor) {
