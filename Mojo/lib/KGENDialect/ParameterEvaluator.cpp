@@ -554,13 +554,14 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
   } else if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
     bool changed = false;
     // BindParamsAttr must always be re-created using an Evaluation Context.
-    SmallVector<TypedAttr> newParamValues;
-    for (TypedAttr param : bindParams.getParamValues()) {
+    SmallVector<TypedAttr> newBoundValues;
+    ParamsBindingArrayAttr params = bindParams.getParams();
+    for (TypedAttr param : params.getBoundValues()) {
       auto newParam = replaceImpl(param, depth);
       if (!newParam)
         return nullptr;
       changed |= newParam != param;
-      newParamValues.push_back(cast<TypedAttr>(newParam));
+      newBoundValues.push_back(cast<TypedAttr>(newParam));
     }
 
     Attribute newGenerator = replaceImpl(bindParams.getGenerator(), depth);
@@ -576,7 +577,9 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
     if (changed) {
       TypedAttr result = BindParamsAttr::get(
           bindParams.getContext(), cast<TypedAttr>(newGenerator),
-          newParamValues, bindParams.getDischarged(), getEvaluationContext());
+          ParamsBindingArrayAttr::get(bindParams.getContext(),
+                                      params.getBoundMask(), newBoundValues),
+          bindParams.getDischarged(), getEvaluationContext());
       if (!result)
         return nullptr;
       assert(isEqualCanon(result.getType(), newType) &&
@@ -741,8 +744,9 @@ PartiallySpecializedInputParams::from(
     auto remappedDeclType = remapType(type);
 
     // Even if we're skipping a binding site, we still need to remap the decl.
+    // A null value is an unbound parameter.
     // TODO: Disallow UnboundAttr for skipping bindings.
-    if (::isa<UnboundAttr>(value)) {
+    if (!value || ::isa<UnboundAttr>(value)) {
       // An unbound parameter stays a parameter of the specialized generator:
       // bind it to that generator's own variable at its new index.
       //

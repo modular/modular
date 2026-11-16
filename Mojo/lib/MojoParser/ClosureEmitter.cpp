@@ -1135,21 +1135,15 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
   if (prependedParams.empty())
     return {&decl, nullptr};
 
-  ArrayRef<ParamDeclAttr> promotedFnParams = function.getParams();
+  // Bind only the prepended capture params. The remaining inputs stay unbound.
+  // `getParams()` also lists the implicit origins, which are not inputs of the
+  // signature, so a binding per param would overrun the generator's inputs.
   ArrayRef<ParamDeclAttr> captureParams =
-      promotedFnParams.take_front(prependedParams.size());
-  SmallVector<TypedAttr> bindings;
-  bindings.reserve(promotedFnParams.size());
-  size_t captureIndex = 0;
-  for (auto [paramIndex, param] : llvm::enumerate(promotedFnParams)) {
-    if (paramIndex < captureParams.size()) {
-      bindings.push_back(ParamDeclRefAttr::get(captureParams[captureIndex++]));
-      continue;
-    }
-    bindings.push_back(UnboundAttr::get(ctx, param.getType()));
-  }
-  assert(captureIndex == captureParams.size() &&
-         "all capture params must be rebound");
+      function.getParams().take_front(prependedParams.size());
+  SmallVector<TypedAttr> bindings =
+      llvm::map_to_vector(captureParams, [](ParamDeclAttr param) -> TypedAttr {
+        return ParamDeclRefAttr::get(param);
+      });
   PValue boundFunction(function.getFuncLiteralGenerator(
       shared.getEvaluationContext(),
       ParameterExprArrayAttr::get(ctx, bindings)));

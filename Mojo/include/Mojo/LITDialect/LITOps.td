@@ -286,9 +286,9 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
   let summary = "Bind params onto an SSA value with function generator type.";
   let description = [{
     The `lit.bind_params` operation binds compile-time parameters onto an SSA
-    value whose type is a function generator type. Partial and out-of-order
-    parameter binding is allowed by specifying the unbound positions with
-    `#kgen.unbound`.
+    value whose type is a function generator type. `params` holds one entry
+    per generator input. Partial and out-of-order parameter binding is allowed
+    by leaving inputs unbound in `params`, which prints them as `?`.
 
     This is the SSA-value counterpart of `#kgen.bind_params`. All input
     parameters must be fully bound before the result can be used with
@@ -308,7 +308,7 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
 
   let arguments = (ins
     LIT_FnTypeGeneratorType:$generator,
-    KGEN_ParameterExprArrayAttr:$paramValues,
+    KGEN_ParamsBindingArrayAttr:$params,
     OptionalAttr<DenseBoolArrayAttr>:$discharged
   );
   let results = (outs LIT_FnTypeGeneratorType:$result);
@@ -317,14 +317,12 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
-    /// Derive the result type from the generator and parameter values.
-    /// Parameter values are normalized to the generator's input arity: missing
-    /// trailing values are treated as unbound and extra trailing values are
-    /// ignored. `discharged` is an optional bitmask over the generator's body
+    /// Derive the result type from the generator and the bound parameters.
+    /// `discharged` is an optional bitmask over the generator's body
     /// constraints: a set bit drops the matching constraint from the result
     /// type. Null (the default) retains all body constraints.
     static Type inferResultType(FnTypeGeneratorType generator,
-                                ArrayRef<TypedAttr> paramValues,
+                                ParamsBindingArrayAttr params,
                                 DenseBoolArrayAttr discharged = {});
   }];
 }

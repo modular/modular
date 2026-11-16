@@ -2431,7 +2431,7 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
           llvm::BitVector discharged(genType.getBodyConstraints().size(), true);
           // Record the type as the discharged body type.
           resultType = BindParamsAttr::get(
-              shared.getContext(), paramType.getParam(), /*paramValues=*/{},
+              shared.getContext(), paramType.getParam(), ArrayRef<TypedAttr>(),
               /*discharged=*/
               getDenseBoolArrayAttr(shared.getContext(), discharged),
               &shared.getEvaluationContext());

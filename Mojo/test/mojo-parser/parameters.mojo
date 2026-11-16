@@ -1550,8 +1550,7 @@ def scalar_type[dt: DType]():
 # CHECK-LABEL: lit.fn @"funct_partial_binding{{.*}}"<x: !Empty, F:
 def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () thin -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
+    # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F)>
 
     comptime G: def[u: Empty, v: Empty] () thin -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(

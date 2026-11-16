@@ -56,6 +56,7 @@ def UnsignedIndexAttr :
 // ParameterExprArrayAttr
 //===----------------------------------------------------------------------===//
 
+// TODO: remove this and switch to `ParamsBindingArrayAttr`
 def KGEN_ParameterExprArrayAttr
     : ArrayOfAttr<KGENDialect, "ParameterExprArray", "exprs", "TypedAttr">;
 
@@ -1720,14 +1721,56 @@ def KGEN_GetBaseTypeNameAttr : KGEN_ExprAttr<"GetBaseTypeName", "get_base_type_n
 // BindParams
 //===----------------------------------------------------------------------===//
 
+def KGEN_ParamsBindingArrayAttr
+    : KGENAttr<"ParamsBindingArray", "params_binding_array"> {
+  let summary = "Parameter values bound onto the inputs of a generator.";
+  let description = [{
+    The `#kgen.params_binding_array` attribute holds the parameter values
+    that a `#kgen.bind_params` attribute or a `lit.bind_params` operation binds
+    onto the inputs of a generator.
+
+    The values are sparse. `boundMask` has one bit per input, set where the
+    input is bound, and `boundValues` holds the values of the bound inputs in
+    order.
+  }];
+
+  let parameters = (ins
+    "DenseBoolArrayAttr":$boundMask,
+    OptionalArrayRefParameter<"TypedAttr">:$boundValues
+  );
+  let assemblyFormat = "`<` struct(params) `>`";
+
+  let builders = [
+    // Build `numParams` values from a dense list, where a null value or an
+    // UnboundAttr leaves that input unbound. Missing trailing values are
+    // unbound. The list must not be longer than `numParams`.
+    AttrBuilder<(ins
+      "size_t":$numParams,
+      "ArrayRef<TypedAttr>":$paramValues
+    )>
+  ];
+  let extraClassDeclaration = [{
+    /// Return the number of inputs, bound or not.
+    size_t size() const { return getBoundMask().size(); }
+
+    /// Return true if every input is bound.
+    bool isFullyBound() const { return getBoundValues().size() == size(); }
+
+    /// Return one value per input, null where the input is unbound.
+    SmallVector<TypedAttr> getDenseBindingArray() const;
+  }];
+  let genVerifyDecl = 1;
+}
+
 def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
   let summary = "Bind params onto an expression with generator type.";
   let description = [{
     The `#kgen.bind_params` attribute is used to bind parameters onto a
     generator parameter (a parameter whose type is some GeneratorType).
 
-    Partial & out-of-order parameter binding is allowed by specifying the
-    unbound positions with UnboundAttr.
+    `params` holds one entry per generator input. An input that `params`
+    leaves unbound stays an input of the result, which allows partial and
+    out-of-order binding. An unbound input prints as `?`.
 
     Example:
 
@@ -1745,11 +1788,11 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
 
   let parameters = (ins
     "TypedAttr":$generator,
-    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    "ParamsBindingArrayAttr":$params,
     OptionalParameter<"DenseBoolArrayAttr">:$discharged
   );
   let assemblyFormat =
-      "`<` custom<BindParams>($generator, $paramValues, $discharged) `>`";
+      "`<` custom<BindParams>($generator, $params, $discharged) `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -1758,36 +1801,47 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
     // construction.
     AttrBuilder<(ins
       "TypedAttr":$generator,
-      "ArrayRef<TypedAttr>":$paramValues,
+      "ParamsBindingArrayAttr":$params,
       "DenseBoolArrayAttr":$discharged,
-      CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext
-    ), "", "TypedAttr">,
-    AttrBuilder<(ins
-      "TypedAttr":$generator,
-      "ArrayRef<TypedAttr>":$paramValues,
       CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext
     ), "", "TypedAttr">
   ];
   let extraClassDeclaration = [{
-    /// Derive the result type from the generator and parameter values.
-    /// Parameter values are normalized to the generator's input arity: missing
-    /// trailing values are treated as unbound and extra trailing values are
-    /// ignored. `discharged` is an optional bitmask over the generator's body
+    /// Build from a dense list of parameter values, where a null value or an
+    /// UnboundAttr leaves that input unbound. Missing trailing values are
+    /// unbound. The list must not be longer than the generator's inputs.
+    static TypedAttr get(
+        MLIRContext *context, TypedAttr generator,
+        ArrayRef<TypedAttr> paramValues, DenseBoolArrayAttr discharged,
+        ParameterEvaluationContext *evaluationContext = nullptr);
+    static TypedAttr get(
+        MLIRContext *context, TypedAttr generator,
+        ArrayRef<TypedAttr> paramValues,
+        ParameterEvaluationContext *evaluationContext = nullptr);
+
+    /// Return one value per generator input, null where the input is unbound.
+    SmallVector<TypedAttr> getDenseBindingArray() const {
+      return getParams().getDenseBindingArray();
+    }
+
+    /// Derive the result type from the generator type and the bound
+    /// parameters. `params` must have one entry per generator input.
+    /// `discharged` is an optional bitmask over the generator's body
     /// constraints: a set bit drops the matching constraint from the result
     /// type. Null (the default) retains all body constraints.
     static Type inferResultType(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        GeneratorType genType, ParamsBindingArrayAttr params,
         DenseBoolArrayAttr discharged,
         ParameterEvaluationContext *evaluationContext);
     static Type inferResultType(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        GeneratorType genType, ParamsBindingArrayAttr params,
         ParameterEvaluationContext *evaluationContext);
     Type getType() const;
 
     /// A specific builder used to build the attribute from a bytecode context,
     /// bypassing simplification.
     static BindParamsAttr getFromBytecode(
-        TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+        TypedAttr generator, ParamsBindingArrayAttr params,
         DenseBoolArrayAttr discharged = {});
   }];
   let genVerifyDecl = 1;

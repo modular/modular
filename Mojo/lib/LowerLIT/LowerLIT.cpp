@@ -872,12 +872,17 @@ static LogicalResult lowerAttributesAndTypes(
         // metadata's body constraints.
         TypedAttr generator =
             cast<TypedAttr>(replacer.replace(attr.getGenerator()));
-        SmallVector<TypedAttr> paramValues;
-        for (TypedAttr value : attr.getParamValues())
-          paramValues.push_back(cast<TypedAttr>(replacer.replace(value)));
+        SmallVector<TypedAttr> boundValues;
+        ParamsBindingArrayAttr params = attr.getParams();
+        for (TypedAttr value : params.getBoundValues())
+          boundValues.push_back(cast<TypedAttr>(replacer.replace(value)));
         return std::make_pair(
-            BindParamsAttr::get(generator.getContext(), generator, paramValues,
-                                /*evaluationContext=*/nullptr),
+            BindParamsAttr::get(
+                generator.getContext(), generator,
+                ParamsBindingArrayAttr::get(generator.getContext(),
+                                            params.getBoundMask(), boundValues),
+                /*discharged=*/{},
+                /*evaluationContext=*/nullptr),
             WalkResult::skip());
       });
 
@@ -991,20 +996,23 @@ static LogicalResult lowerAttributesAndTypes(
 
         // Remove singleton parameter values from BindParamsAttr.
         if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
+          SmallVector<TypedAttr> paramValues =
+              bindParams.getDenseBindingArray();
           SmallVector<TypedAttr> newOperands;
-          for (auto [declType, param] : llvm::zip(
+          for (auto [declType, param] : llvm::zip_equal(
                    sugarCast<GeneratorType>(bindParams.getGenerator().getType())
                        .getInputParamTypes(),
-                   bindParams.getParamValues())) {
+                   paramValues)) {
             // Check for singleton type using the declared type on the
             // signature, instead of the concrete type of the param. This
             // prevents parametrically-singleton types from getting erased (only
             // always singleton params can be removed in general).
-            if (!singletonTypeHelper.isSingletonType(
-                    replacer.replace(declType)))
-              newOperands.push_back(cast<TypedAttr>(replacer.replace(param)));
+            if (singletonTypeHelper.isSingletonType(replacer.replace(declType)))
+              continue;
+            newOperands.push_back(
+                param ? cast<TypedAttr>(replacer.replace(param)) : TypedAttr());
           }
-          if (newOperands.size() != bindParams.getParamValues().size()) {
+          if (newOperands.size() != paramValues.size()) {
             TypedAttr generator =
                 cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
             return std::make_pair(
@@ -1597,7 +1605,8 @@ static void populateTypeDomainRules(StructDecls &decls,
           BindParamsAttr bindParams) -> FailureOr<Attribute> {
         // We always simplify BindParamsAttr against a evaluation context.
         SmallVector<TypedAttr> loweredParams;
-        for (TypedAttr param : bindParams.getParamValues()) {
+        ParamsBindingArrayAttr params = bindParams.getParams();
+        for (TypedAttr param : params.getBoundValues()) {
           auto replaced = replacer.asType.replace(param);
           if (failed(replaced))
             return failure();
@@ -1611,7 +1620,9 @@ static void populateTypeDomainRules(StructDecls &decls,
         // fold properly.
         TypedAttr evaluated = BindParamsAttr::get(
             bindParams.getContext(), cast<TypedAttr>(*generatorOr),
-            loweredParams, bindParams.getDischarged(), evalCtxPtr);
+            ParamsBindingArrayAttr::get(bindParams.getContext(),
+                                        params.getBoundMask(), loweredParams),
+            bindParams.getDischarged(), evalCtxPtr);
         return evaluated;
       });
 

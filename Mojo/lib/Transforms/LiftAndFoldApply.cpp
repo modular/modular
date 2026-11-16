@@ -80,7 +80,12 @@ static void liftAndFoldApply(Region *body, ImplicitLocOpBuilder &b,
         cast<TypedAttr>(replacer.replace(attr.getGenerator()));
 
     ParameterEvaluator evaluator;
-    for (auto [idx, paramValue] : llvm::enumerate(attr.getParamValues())) {
+    for (auto [idx, paramValue] :
+         llvm::enumerate(attr.getDenseBindingArray())) {
+      if (!paramValue) {
+        evaluator.appendIndexBinding(TypedAttr());
+        continue;
+      }
       TypedAttr value = cast<TypedAttr>(replacer.replace(paramValue));
       Type targetType = evaluator.replace(
           cast<GeneratorType>(generator.getType()).getInputParamTypes()[idx]);

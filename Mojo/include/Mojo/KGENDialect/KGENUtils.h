@@ -112,8 +112,10 @@ public:
   void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
   void printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait);
   void printBindParams(AsmPrinter &p, TypedAttr generator,
-                       ArrayRef<TypedAttr> paramValues,
+                       ParamsBindingArrayAttr params,
                        DenseBoolArrayAttr discharged = {});
+  void printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                               ParamsBindingArrayAttr params);
 
   /// Print the body after a composite type's mnemonic.
   void printStructInstanceBody(AsmPrinter &p, StructInstanceType type);
@@ -275,12 +277,27 @@ void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
 
+/// Parse and print the values of `params` for the inputs of `genType`, each
+/// after a comma. An unbound input is `?`, and inputs missing from the text are
+/// unbound.
+ParseResult parseParamsBindingArray(AsmParser &p, GeneratorType genType,
+                                    ParamsBindingArrayAttr &params);
+void printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                             ParamsBindingArrayAttr params);
+
+/// Parse and print the optional ` | "0101"` mask of discharged body
+/// constraints that follows the bound values.
+ParseResult parseDischargedBodyConstraints(AsmParser &p,
+                                           DenseBoolArrayAttr &discharged);
+void printDischargedBodyConstraints(AsmPrinter &p,
+                                    DenseBoolArrayAttr discharged);
+
 ParseResult parseBindParams(AsmParser &p, TypedAttr &generator,
-                            SmallVectorImpl<TypedAttr> &paramValues,
+                            ParamsBindingArrayAttr &params,
                             DenseBoolArrayAttr &discharged,
                             Type preParsedGeneratorType = {});
 void printBindParams(AsmPrinter &p, TypedAttr generator,
-                     ArrayRef<TypedAttr> paramValues,
+                     ParamsBindingArrayAttr params,
                      DenseBoolArrayAttr discharged = {});
 
 /// Convert a bitvector mask to a dense bool array attribute. Empty masks are

@@ -251,11 +251,16 @@ def WrappedTypeParamAttr : DialectAttribute<(attr
 
 def BindParamsAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$generator,
-  TypedAttrArray:$paramValues,
+  ConcreteAttribute<"ParamsBindingArrayAttr">:$params,
   ConcreteOptionalAttribute<"DenseBoolArrayAttr">:$discharged
 )> {
   let cBuilder = "BindParamsAttr::getFromBytecode($_args)";
 }
+
+def ParamsBindingArrayAttr : DialectAttribute<(attr
+  ConcreteAttribute<"DenseBoolArrayAttr">:$boundMask,
+  TypedAttrArray:$boundValues
+)>;
 
 def TypeGeneratorRefAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
@@ -695,7 +700,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     GetNumAnnotationsAttr,
     GetAnnotationValueAttr,
     GetAnnotationTypeAttr,
-    UntaggedUnionAttr
+    UntaggedUnionAttr,
+    ParamsBindingArrayAttr
   ];
 }
 

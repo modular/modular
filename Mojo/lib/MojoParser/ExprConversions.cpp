@@ -835,9 +835,9 @@ static TypedAttr emitFullConstraintDischarge(PValue generatorValue,
     discharged = KGEN::getDenseBoolArrayAttr(generatorValue.get().getContext(),
                                              indicesToDischarge);
   }
-  return BindParamsAttr::get(
-      generatorValue.get().getContext(), generatorValue.get(),
-      /*paramValues=*/{}, discharged, &shared.getEvaluationContext());
+  return BindParamsAttr::get(generatorValue.get().getContext(),
+                             generatorValue.get(), ArrayRef<TypedAttr>(),
+                             discharged, &shared.getEvaluationContext());
 }
 
 static CValue

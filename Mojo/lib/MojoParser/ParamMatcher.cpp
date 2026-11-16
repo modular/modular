@@ -1049,12 +1049,13 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
 
   if (auto actualBind = dyn_cast<BindParamsAttr>(actualAttr)) {
     if (auto expectedBind = dyn_cast<BindParamsAttr>(expectedAttr)) {
-      if (actualBind.getParamValues().size() ==
-          expectedBind.getParamValues().size()) {
+      ParamsBindingArrayAttr actualParams = actualBind.getParams();
+      ParamsBindingArrayAttr expectedParams = expectedBind.getParams();
+      if (actualParams.getBoundMask() == expectedParams.getBoundMask()) {
         PROP(matchParams(actualBind.getGenerator(),
                          expectedBind.getGenerator()));
-        for (auto [act, exp] : llvm::zip(actualBind.getParamValues(),
-                                         expectedBind.getParamValues())) {
+        for (auto [act, exp] : llvm::zip(actualParams.getBoundValues(),
+                                         expectedParams.getBoundValues())) {
           PROP(matchParams(act, exp));
         }
         // The discharged body constraints are derived from the generator and

@@ -1113,28 +1113,83 @@ Type GetBaseTypeNameAttr::getType() const {
 bool GetBaseTypeNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// ParamsBindingArrayAttr
+//===----------------------------------------------------------------------===//
+
+ParamsBindingArrayAttr
+ParamsBindingArrayAttr::get(MLIRContext *context, size_t numParams,
+                            ArrayRef<TypedAttr> paramValues) {
+  assert(paramValues.size() <= numParams &&
+         "more parameter values than generator inputs");
+  // Missing trailing values are unbound.
+  SmallVector<TypedAttr> boundValues;
+  SmallVector<bool> boundBits(numParams, false);
+  for (auto [idx, value] : llvm::enumerate(paramValues)) {
+    if (!value || isa<UnboundAttr>(value))
+      continue;
+    boundBits[idx] = true;
+    boundValues.push_back(value);
+  }
+  return get(context, Builder(context).getDenseBoolArrayAttr(boundBits),
+             boundValues);
+}
+
+SmallVector<TypedAttr> ParamsBindingArrayAttr::getDenseBindingArray() const {
+  SmallVector<TypedAttr> result;
+  result.reserve(size());
+  const TypedAttr *next = getBoundValues().begin();
+  for (bool isBound : getBoundMask().asArrayRef())
+    result.push_back(isBound ? *next++ : TypedAttr());
+  return result;
+}
+
+LogicalResult
+ParamsBindingArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               DenseBoolArrayAttr boundMask,
+                               ArrayRef<TypedAttr> boundValues) {
+  if (!boundMask)
+    return emitError() << "bound mask must be non-null";
+  if (llvm::is_contained(boundValues, TypedAttr()))
+    return emitError() << "bound values must be non-null";
+  size_t numBound = llvm::count(boundMask.asArrayRef(), true);
+  if (numBound != boundValues.size())
+    return emitError() << "bound mask sets " << numBound << " inputs but has "
+                       << boundValues.size() << " bound values";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
-/// Merge two lists of parameter bindings into a single binding list.
-/// Holes in a binding list are represented by UnboundAttrs.
-static SmallVector<TypedAttr>
-mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
-                   ArrayRef<TypedAttr> newBindings) {
-  SmallVector<TypedAttr> mergedBindings;
-  auto newIt = newBindings.begin();
-  for (TypedAttr prevParam : prevBindings) {
-    // If there was a hole here, and we still have new bindings left, fill it
-    // with the next new binding. Otherwise, keep whatever was in the previous
-    // binding.
-    if (::isa<UnboundAttr>(prevParam) && newIt != newBindings.end())
-      mergedBindings.push_back(*newIt++);
-    else
-      mergedBindings.push_back(prevParam);
+/// Fill the unbound inputs of `prevBindings` in order with `newBindings`,
+/// which has one entry per unbound input of `prevBindings`. An input that
+/// `newBindings` leaves unbound stays unbound.
+static ParamsBindingArrayAttr
+mergeParamBindings(MLIRContext *context, ParamsBindingArrayAttr prevBindings,
+                   ParamsBindingArrayAttr newBindings) {
+  ArrayRef<bool> prevMask = prevBindings.getBoundMask().asArrayRef();
+  ArrayRef<bool> newMask = newBindings.getBoundMask().asArrayRef();
+  assert(newMask.size() == static_cast<size_t>(llvm::count(prevMask, false)) &&
+         "new bindings must have one entry per unbound input");
+
+  SmallVector<bool> mergedMask;
+  SmallVector<TypedAttr> mergedValues;
+  mergedMask.reserve(prevMask.size());
+  auto prevValue = prevBindings.getBoundValues().begin();
+  auto newValue = newBindings.getBoundValues().begin();
+  auto newBit = newMask.begin();
+  for (bool prevBound : prevMask) {
+    bool bound = prevBound || *newBit++;
+    mergedMask.push_back(bound);
+    if (prevBound)
+      mergedValues.push_back(*prevValue++);
+    else if (bound)
+      mergedValues.push_back(*newValue++);
   }
-  // If we still have new bindings left, add them to the end.
-  mergedBindings.append(newIt, newBindings.end());
-  return mergedBindings;
+  return ParamsBindingArrayAttr::get(
+      context, Builder(context).getDenseBoolArrayAttr(mergedMask),
+      mergedValues);
 }
 
 /// Merge an outer residual-indexed discharge mask into an inner
@@ -1174,9 +1229,9 @@ static DenseBoolArrayAttr mergeDischargedConstraints(
 }
 
 BindParamsAttr BindParamsAttr::getFromBytecode(TypedAttr generator,
-                                               ArrayRef<TypedAttr> paramValues,
+                                               ParamsBindingArrayAttr params,
                                                DenseBoolArrayAttr discharged) {
-  return Base::get(generator.getContext(), generator, paramValues, discharged);
+  return Base::get(generator.getContext(), generator, params, discharged);
 }
 
 static bool isEagerlyInstantiatable(GeneratorType generator) {
@@ -1184,23 +1239,6 @@ static bool isEagerlyInstantiatable(GeneratorType generator) {
   // it might contain implicit origins that must be used within a generator.
   return !sugarIsa<FuncType>(generator.getBody()) &&
          !sugarIsa<FuncLiteralType>(generator.getBody());
-}
-
-static SmallVector<TypedAttr>
-normalizeBindParamsValues(GeneratorType genType,
-                          ArrayRef<TypedAttr> paramValues) {
-  ArrayRef<Type> inputParamTypes = genType.getInputParamTypes();
-  if (paramValues.size() == inputParamTypes.size())
-    return SmallVector<TypedAttr>(paramValues);
-
-  SmallVector<TypedAttr> normalizedParamValues;
-  ArrayRef<TypedAttr> prefixParamValues =
-      paramValues.take_front(inputParamTypes.size());
-  normalizedParamValues.append(prefixParamValues.begin(),
-                               prefixParamValues.end());
-  for (Type type : inputParamTypes.drop_front(normalizedParamValues.size()))
-    normalizedParamValues.push_back(UnboundAttr::get(type));
-  return normalizedParamValues;
 }
 
 static llvm::BitVector
@@ -1228,24 +1266,25 @@ DenseBoolArrayAttr KGEN::getDenseBoolArrayAttr(MLIRContext *context,
 }
 
 static Type
-inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+inferBindParamsResultType(GeneratorType genType, ParamsBindingArrayAttr params,
                           DenseBoolArrayAttr discharged,
                           ParameterEvaluationContext *evaluationContext) {
-  auto genType = sugarCast<GeneratorType>(generator.getType());
+  assert(params.size() == genType.getInputParamTypes().size() &&
+         "params must cover every generator input");
 
   // Binding no parameters and discharging no constraints is a no-op: the
   // specialized generator is the generator itself.
   GeneratorType specializedType;
-  if (paramValues.empty() && (!discharged || discharged.empty())) {
+  if (params.getBoundValues().empty() && (!discharged || discharged.empty())) {
     specializedType = genType;
   } else {
-    SmallVector<TypedAttr> normalizedParamValues =
-        normalizeBindParamsValues(genType, paramValues);
     llvm::BitVector dischargedBodyConstraints =
         denseBoolArrayAttrToBitVector(discharged);
+    // TODO: make `PartiallySpecializedInputParams` work directly on
+    // `ParamsBindingArrayAttr` without densify it first.
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genType.getInputParamTypes(), normalizedParamValues,
+            genType.getInputParamTypes(), params.getDenseBindingArray(),
             evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
     assert(specializationOpt && "Failed to specialize generator");
     specializedType =
@@ -1271,9 +1310,7 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
 /// version of its body generator (in contrast to a nested generator).
 static bool isCurriedBinding(BindParamsAttr bindParams) {
   auto genType = sugarCast<GeneratorType>(bindParams.getGenerator().getType());
-  ArrayRef<TypedAttr> values = bindParams.getParamValues();
-  if (values.size() != genType.getInputParamTypes().size() ||
-      llvm::any_of(values, llvm::IsaPred<UnboundAttr>))
+  if (!bindParams.getParams().isFullyBound())
     return true;
 
   PogListAttr metadata = genType.getParamListAttrs();
@@ -1285,23 +1322,24 @@ static bool isCurriedBinding(BindParamsAttr bindParams) {
 }
 
 Type BindParamsAttr::inferResultType(
-    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    GeneratorType genType, ParamsBindingArrayAttr params,
     DenseBoolArrayAttr discharged,
     ParameterEvaluationContext *evaluationContext) {
-  return inferBindParamsResultType(generator, paramValues, discharged,
+  return inferBindParamsResultType(genType, params, discharged,
                                    evaluationContext);
 }
 
 Type BindParamsAttr::inferResultType(
-    TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+    GeneratorType genType, ParamsBindingArrayAttr params,
     ParameterEvaluationContext *evaluationContext) {
-  return inferResultType(generator, paramValues, /*discharged=*/{},
-                         evaluationContext);
+  return inferResultType(genType, params, /*discharged=*/{}, evaluationContext);
 }
 
 Type BindParamsAttr::getType() const {
-  return inferResultType(getGenerator(), getParamValues(), getDischarged(),
-                         /*evaluationContext=*/nullptr);
+  return inferBindParamsResultType(
+      sugarCast<GeneratorType>(getGenerator().getType()), getParams(),
+      getDischarged(),
+      /*evaluationContext=*/nullptr);
 }
 
 /// Strips top-level sugar, including rebinds between canonically equal types,
@@ -1320,14 +1358,17 @@ static TypedAttr stripSugarAndSugarRebinds(TypedAttr value) {
 }
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues,
+                              ParamsBindingArrayAttr params,
                               DenseBoolArrayAttr discharged,
                               ParameterEvaluationContext *evaluationContext) {
-  Type type = inferBindParamsResultType(generator, paramValues, discharged,
-                                        evaluationContext);
+  auto genType = sugarCast<GeneratorType>(generator.getType());
+  assert(params.size() == genType.getInputParamTypes().size() &&
+         "params must cover every generator input");
+  Type type =
+      inferBindParamsResultType(genType, params, discharged, evaluationContext);
 
   // No bindings to apply: the generator already has the requested type.
-  if (paramValues.empty() && (!discharged || discharged.empty()) &&
+  if (params.getBoundValues().empty() && (!discharged || discharged.empty()) &&
       isEqualCanon(generator.getType(), type))
     return generator;
 
@@ -1341,14 +1382,14 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
   // new bindings belong to that body instead.
   auto bindParams = dyn_cast<BindParamsAttr>(strippedGenerator);
   if (bindParams && isCurriedBinding(bindParams)) {
-    SmallVector<TypedAttr> mergedParamValues =
-        mergeParamBindings(bindParams.getParamValues(), paramValues);
+    ParamsBindingArrayAttr mergedParams =
+        mergeParamBindings(context, bindParams.getParams(), params);
     DenseBoolArrayAttr innerMask = bindParams.getDischarged();
     DenseBoolArrayAttr mergedMask;
     if (innerMask || discharged) {
-      auto genType =
+      auto innerGenType =
           sugarCast<GeneratorType>(bindParams.getGenerator().getType());
-      PogListAttr metadata = genType.getParamListAttrs();
+      PogListAttr metadata = innerGenType.getParamListAttrs();
       size_t origBodyCount =
           metadata ? metadata.getBodyConstraints().size() : 0;
       mergedMask = mergeDischargedConstraints(generator.getContext(), innerMask,
@@ -1356,7 +1397,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     }
     TypedAttr flattened =
         BindParamsAttr::get(bindParams.getContext(), bindParams.getGenerator(),
-                            mergedParamValues, mergedMask, evaluationContext);
+                            mergedParams, mergedMask, evaluationContext);
     if (!flattened)
       return {};
     assert(isEqualCanon(flattened.getType(), type) &&
@@ -1372,13 +1413,12 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     assert(
         (evaluationContext || FuncSymbolGenerator::dynCast(genAttr)) &&
         "A foldable BindParamsAttr must be created with an evaluation context");
-    SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
-        cast<GeneratorType>(genAttr.getType()), paramValues);
     llvm::BitVector dischargedBodyConstraints =
         denseBoolArrayAttrToBitVector(discharged);
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genAttr.getInputParamTypes(), partialParamValues, evaluationContext,
+            genAttr.getInputParamTypes(), params.getDenseBindingArray(),
+            evaluationContext,
             /*emitErrorFn=*/{}, dischargedBodyConstraints);
     if (!specializationOpt)
       return {};
@@ -1402,7 +1442,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
 
   // No simplification applies. Build the BindParamsAttr directly.
   TypedAttr result =
-      Base::get(generator.getContext(), generator, paramValues, discharged);
+      Base::get(generator.getContext(), generator, params, discharged);
 
   // The inferred type could be more concrete as a evaluation context is used
   // for folding. When the trivially inferred type does not agree, simply
@@ -1416,54 +1456,46 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
 
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues,
+                              DenseBoolArrayAttr discharged,
+                              ParameterEvaluationContext *evaluationContext) {
+  auto params = ParamsBindingArrayAttr::get(
+      context,
+      sugarCast<GeneratorType>(generator.getType()).getInputParamTypes().size(),
+      paramValues);
+  return get(context, generator, params, discharged, evaluationContext);
+}
+
+TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues,
                               ParameterEvaluationContext *evaluationContext) {
   return get(context, generator, paramValues, /*discharged=*/{},
              evaluationContext);
 }
 
-static LogicalResult
-verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       DenseBoolArrayAttr discharged);
-
 TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
+                           ParamsBindingArrayAttr params,
                            DenseBoolArrayAttr discharged,
                            ParameterEvaluationContext *evaluationContext) {
-  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
-                                    discharged)))
+  if (failed(verify(emitError, generator, params, discharged)))
     return {};
-  return get(context, generator, paramValues, discharged, evaluationContext);
-}
-
-TypedAttr
-BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                           MLIRContext *context, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
-                           ParameterEvaluationContext *evaluationContext) {
-  if (failed(verifyBindParamsInputs(emitError, generator, paramValues,
-                                    /*discharged=*/{})))
-    return {};
-  return get(context, generator, paramValues, evaluationContext);
+  return get(context, generator, params, discharged, evaluationContext);
 }
 
 bool BindParamsAttr::isConstant() const { return false; }
 
+/// Verify that `generator` has a generator type, and that `discharged` matches
+/// its body constraints.
 static LogicalResult
-verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
-                       DenseBoolArrayAttr discharged) {
+verifyGeneratorAndDischarged(function_ref<InFlightDiagnostic()> emitError,
+                             TypedAttr generator,
+                             DenseBoolArrayAttr discharged) {
   auto genType = sugarDynCast<GeneratorType>(generator.getType());
   if (!genType)
     return emitError()
            << "bind_params generator operand must have a GeneratorType, got "
            << generator.getType();
-
-  if (paramValues.size() > genType.getInputParamTypes().size())
-    return emitError()
-           << "bind_params has more parameters than the generator expects";
 
   if (!discharged || discharged.empty())
     return success();
@@ -1489,9 +1521,17 @@ verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 BindParamsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                       TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                       TypedAttr generator, ParamsBindingArrayAttr params,
                        DenseBoolArrayAttr discharged) {
-  return verifyBindParamsInputs(emitError, generator, paramValues, discharged);
+  if (failed(verifyGeneratorAndDischarged(emitError, generator, discharged)))
+    return failure();
+  size_t numInputs =
+      sugarCast<GeneratorType>(generator.getType()).getInputParamTypes().size();
+  if (params.size() != numInputs)
+    return emitError() << "bind_params binds " << params.size()
+                       << " parameters but the generator has " << numInputs
+                       << " inputs";
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

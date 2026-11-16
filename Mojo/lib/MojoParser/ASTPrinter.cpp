@@ -729,7 +729,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           // Don't print extracts out of Int.value.
           if (auto extract = dyn_cast<LIT::StructExtractAttr>(value))
             value = extract.getStructValue();
-          printParam(os, value, ctx);
+          if (!value)
+            os << "_";
+          else
+            printParam(os, value, ctx);
         },
         separator);
     os << rSeparator;
@@ -742,13 +745,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     PogListAttr paramList =
         sugarCast<GeneratorType>(bindParams.getGenerator().getType())
             .getParamListAttrs();
-    if (ctx.shared && paramList &&
-        paramList.size() == bindParams.getParamValues().size()) {
-      printParamList(os, paramList, bindParams.getParamValues(), ctx,
+
+    if (ctx.shared && paramList && bindParams.getParams().isFullyBound()) {
+      printParamList(os, paramList,
+                     bindParams.getParams().getDenseBindingArray(), ctx,
                      /*typesImplied=*/true);
       return;
     }
-    printOperands(bindParams.getParamValues(), ", ", "[", "]");
+    printOperands(bindParams.getParams().getDenseBindingArray(), ", ", "[",
+                  "]");
     return;
   }
 

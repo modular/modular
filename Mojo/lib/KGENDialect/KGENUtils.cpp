@@ -1099,8 +1099,9 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
-static ParseResult
-parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
+ParseResult
+KGEN::parseDischargedBodyConstraints(AsmParser &p,
+                                     DenseBoolArrayAttr &discharged) {
   if (failed(p.parseOptionalVerticalBar()))
     return success();
 
@@ -1122,66 +1123,68 @@ parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
   return success();
 }
 
-ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
-                                  SmallVectorImpl<TypedAttr> &paramValues,
-                                  DenseBoolArrayAttr &discharged,
-                                  Type preParsedGeneratorType) {
-  if (!preParsedGeneratorType &&
-      parseColonTypeOrIndex(p, preParsedGeneratorType))
-    return failure();
+void KGEN::printDischargedBodyConstraints(AsmPrinter &p,
+                                          DenseBoolArrayAttr discharged) {
+  if (!discharged || discharged.empty())
+    return;
+  p << " | \"";
+  for (bool value : discharged.asArrayRef())
+    p << (value ? '1' : '0');
+  p << '"';
+}
 
-  if (parseParamValue(p, generator, preParsedGeneratorType))
-    return failure();
-
-  auto genType = sugarCast<GeneratorType>(preParsedGeneratorType);
+ParseResult KGEN::parseParamsBindingArray(AsmParser &p, GeneratorType genType,
+                                          ParamsBindingArrayAttr &params) {
   // Parse each operand, inferring its type from the signature type. Bound
   // parameters are allowed to refine the types of subsequent parameters, so
   // specialize the types as we go.
   ParameterEvaluator evaluator;
   IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
+  SmallVector<TypedAttr> paramValues;
   for (Type inputType : genType.getInputParamTypes()) {
     if (failed(p.parseOptionalComma()))
       break;
     Type remappedDeclType = evaluator.getReboundType(inputType);
     Type valueType;
+    TypedAttr value;
     if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
-        parseParamValue(p, paramValues.emplace_back(), valueType))
+        parseParamValue(p, value, valueType))
       return failure();
-    TypedAttr value = paramValues.back();
     if (::isa<UnboundAttr>(value)) {
+      paramValues.push_back(TypedAttr());
       auto residual = ParamIndexRefAttr::get(
           /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
+    paramValues.push_back(value);
     evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
-  return parseDischargedBodyConstraints(p, discharged);
+  // Inputs without a value in the text are unbound.
+  params = ParamsBindingArrayAttr::get(
+      p.getContext(), genType.getInputParamTypes().size(), paramValues);
+  return success();
 }
 
-void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
-                           DenseBoolArrayAttr discharged) {
-  KGENParamPrinter::createDiagnosticPrinter().printBindParams(
-      p, generator, paramValues, discharged);
+void KGEN::printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                                   ParamsBindingArrayAttr params) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamsBindingArray(
+      p, genType, params);
 }
 
-void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
-                                       ArrayRef<TypedAttr> paramValues,
-                                       DenseBoolArrayAttr discharged) {
-  printColonTypeParamValue(p, generator);
-  auto genType = sugarCast<GeneratorType>(generator.getType());
+void KGENParamPrinter::printParamsBindingArray(AsmPrinter &p,
+                                               GeneratorType genType,
+                                               ParamsBindingArrayAttr params) {
   ParameterEvaluator evaluator;
   IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
   for (auto [inputType, value] :
-       llvm::zip(genType.getInputParamTypes(), paramValues)) {
+       llvm::zip(genType.getInputParamTypes(), params.getDenseBindingArray())) {
     p << ", ";
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    if (::isa<UnboundAttr>(value)) {
-      printColonTypeOrDefault(p, value.getType(), remappedDeclType);
-      printParamValue(p, value);
+    if (!value) {
+      p << '?';
       auto residual = ParamIndexRefAttr::get(
           /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
@@ -1193,12 +1196,39 @@ void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
     printColonTypeParamValue(p, value);
     evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
-  if (discharged && !discharged.empty()) {
-    p << " | \"";
-    for (bool value : discharged.asArrayRef())
-      p << (value ? '1' : '0');
-    p << '"';
-  }
+}
+
+ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
+                                  ParamsBindingArrayAttr &params,
+                                  DenseBoolArrayAttr &discharged,
+                                  Type preParsedGeneratorType) {
+  if (!preParsedGeneratorType &&
+      parseColonTypeOrIndex(p, preParsedGeneratorType))
+    return failure();
+
+  if (parseParamValue(p, generator, preParsedGeneratorType))
+    return failure();
+
+  auto genType = sugarCast<GeneratorType>(preParsedGeneratorType);
+  if (parseParamsBindingArray(p, genType, params))
+    return failure();
+  return parseDischargedBodyConstraints(p, discharged);
+}
+
+void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
+                           ParamsBindingArrayAttr params,
+                           DenseBoolArrayAttr discharged) {
+  KGENParamPrinter::createDiagnosticPrinter().printBindParams(
+      p, generator, params, discharged);
+}
+
+void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
+                                       ParamsBindingArrayAttr params,
+                                       DenseBoolArrayAttr discharged) {
+  printColonTypeParamValue(p, generator);
+  printParamsBindingArray(p, sugarCast<GeneratorType>(generator.getType()),
+                          params);
+  printDischargedBodyConstraints(p, discharged);
 }
 
 /// Print a parameter name correctly, using a double quoted syntax if it
@@ -1508,14 +1538,14 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
 
       if (keyword == "bind_params" && operandType) {
         TypedAttr generator;
-        SmallVector<TypedAttr> paramValues;
+        ParamsBindingArrayAttr params;
         DenseBoolArrayAttr discharged;
-        if (parseBindParams(p, generator, paramValues, discharged, operandType))
+        if (parseBindParams(p, generator, params, discharged, operandType))
           return failure();
         if (p.parseRParen())
           return failure();
-        value = BindParamsAttr::get(p.getContext(), generator, paramValues,
-                                    discharged);
+        value =
+            BindParamsAttr::get(p.getContext(), generator, params, discharged);
         if (!isEqualCanon(value.getType(), type))
           return p.emitError(loc)
                  << "bind_params result type mismatch: expected " << type
@@ -1850,7 +1880,7 @@ void KGENParamPrinter::printParamValueImpl(AsmPrinter &p, TypedAttr value,
 
   if (auto bindParams = dyn_cast<BindParamsAttr>(value)) {
     p << "bind_params(";
-    printBindParams(p, bindParams.getGenerator(), bindParams.getParamValues(),
+    printBindParams(p, bindParams.getGenerator(), bindParams.getParams(),
                     bindParams.getDischarged());
     p << ')';
     return;
