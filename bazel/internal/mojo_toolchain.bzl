@@ -50,20 +50,21 @@ def _mojo_toolchain_impl(ctx):
     if ctx.attr.extra_build_env:
         build_env.update(ctx.attr.extra_build_env[MojoBuildEnvInfo].env)
 
-    # Expose driver plugin for test runtime.  The runtime_env and
+    # Expose driver plugins for test runtime.  The runtime_env and
     # extra_runfiles fields are merged by rules_mojo into RunEnvironmentInfo
-    # so tests find the plugin without a hardcoded --test_env in local.bazelrc.
+    # so tests find the plugins without a hardcoded --test_env in local.bazelrc.
     runtime_env = {}
     extra_runfiles = []
-    if ctx.file.driver_plugin:
-        plugin = ctx.file.driver_plugin.short_path
-        if ctx.attr.driver_plugin_name:
-            plugin = ctx.attr.driver_plugin_name + "@" + plugin
-        runtime_env["MODULAR_DRIVER_PLUGINS"] = plugin
-        extra_runfiles.append(ctx.file.driver_plugin)
+    entries = []
+    for target, plugin_name in ctx.attr.driver_plugins.items():
+        plugin = target[DefaultInfo].files.to_list()[0]
+        entries.append((plugin_name + "@" if plugin_name else "") + plugin.short_path)
+        extra_runfiles.append(plugin)
 
         # The plugin's shared library deps, which its RPATH finds in runfiles.
-        extra_runfiles.extend(ctx.attr.driver_plugin[DefaultInfo].default_runfiles.files.to_list())
+        extra_runfiles.extend(target[DefaultInfo].default_runfiles.files.to_list())
+    if entries:
+        runtime_env["MODULAR_DRIVER_PLUGINS"] = ";".join(entries)
 
     return [
         platform_common.ToolchainInfo(
@@ -109,14 +110,10 @@ mojo_toolchain = rule(
             cfg = CFG_WORKAROUND,
             doc = "Optional compiler plugin (.so) to set via MODULAR_COMPILER_PLUGINS in build actions.",
         ),
-        "driver_plugin": attr.label(
-            mandatory = False,
-            allow_single_file = True,
+        "driver_plugins": attr.label_keyed_string_dict(
+            allow_files = True,
             cfg = "target",
-            doc = "Optional driver plugin (.so) to set via MODULAR_DRIVER_PLUGINS at test runtime.",
-        ),
-        "driver_plugin_name": attr.string(
-            doc = "Optional name to register `driver_plugin` under, as `name@path` in MODULAR_DRIVER_PLUGINS. The HAL DeviceContext reports a driver's name as its API.",
+            doc = "Optional driver plugins (.so) to set via MODULAR_DRIVER_PLUGINS at test runtime, each mapped to an optional name to register it under.",
         ),
         "extra_build_env": attr.label(
             mandatory = False,
