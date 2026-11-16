@@ -49,7 +49,6 @@ from max._driver.max_license.device_context_dispatch.host_types import (
     _CompletionFlagBox,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
-    HALDeviceContext,
     _accelerator_api_and_arch,
 )
 from max.gpu.host import (

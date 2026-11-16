@@ -26,7 +26,6 @@ from max._driver.max_license.device_context_dispatch.device_context import (
 from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
 )
-from .device_context_hal import HALDeviceContext
 from max.gpu.host._driver_handles import _DeviceGraphPtr
 
 
@@ -71,7 +70,7 @@ struct HALDeviceGraph(ImplicitlyCopyable):
 struct HALDeviceGraphBuilder(Movable):
     """Unsupported: the HAL DeviceContext has no device-graph support."""
 
-    var _ctx: HALDeviceContext[]
+    var _ctx: DeviceContext[]
 
     def context(self) -> DeviceContext[]:
         """Returns the device context this builder records against.
@@ -79,9 +78,7 @@ struct HALDeviceGraphBuilder(Movable):
         Returns:
             The `DeviceContext` the builder was created from.
         """
-        return DeviceContext[](
-            _impl=rebind_var[DeviceContext[]._Impl](self._ctx)
-        )
+        return self._ctx
 
     def recording_context(self) raises -> DeviceContext[]:
         """Unsupported: returns a `DeviceContext` that records into this builder.
