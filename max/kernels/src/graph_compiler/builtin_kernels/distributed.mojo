@@ -207,7 +207,7 @@ struct DistributedAllReduceSum:
 
     @staticmethod
     def execute[
-        Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
+        Outs: TypeList[Trait=Output & Fused & StoreAccess & Tensor, ...],
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,
@@ -441,7 +441,7 @@ struct DistributedReduceScatterSum:
 
     @staticmethod
     def execute[
-        Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
+        Outs: TypeList[Trait=Output & Fused & StoreAccess & Tensor, ...],
         Ins: TypeList[Trait=Input & Tensor, ...],
         Sigs: TypeList[Trait=MutableInput & Tensor, ...],
         //,

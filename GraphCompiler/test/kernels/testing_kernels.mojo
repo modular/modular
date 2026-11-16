@@ -1046,7 +1046,7 @@ def _gpu_fused_tuple_concat_kernel[
 struct TraitTensorTupleFusedConcat:
     @staticmethod
     def execute[
-        Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        Ins: TypeList[Trait=Input & Fused & LoadAccess & Tensor, ...],
         //,
     ](
         z: Some[Output & TileTensorable],
@@ -1134,7 +1134,7 @@ def _gpu_fused_tuple_split_kernel[
 struct TraitTensorTupleFusedStoreSplit:
     @staticmethod
     def execute[
-        Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
+        Outs: TypeList[Trait=Output & Fused & StoreAccess & Tensor, ...],
         //,
     ](
         outputs: TensorTuple[*Outs],
@@ -1208,7 +1208,7 @@ def _gpu_fused_store_double_kernel[
 struct TraitFusedStoreDouble:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -1298,7 +1298,7 @@ def _launch_fused_store_parameter_closure[
 struct TraitFusedStoreParameterClosure:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -1369,7 +1369,7 @@ def _gpu_fused_store_unified_closure_kernel[
 struct TraitFusedStoreUnifiedClosure:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -1491,7 +1491,7 @@ struct TraitFusedTransformBias:
         # The body branches on the form the graph compiler delivered:
         # `_LegacyComputable & TileTensorable` (the transform plus the output
         # projection for the parent store) or `Storable`.
-        z: Some[Output & Fused & _LegacyComputeOutput],
+        z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -1583,7 +1583,7 @@ def _gpu_fused_transform_bias_unified_closure_kernel[
 struct TraitFusedTransformBiasUnifiedClosure:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & _LegacyComputeOutput],
+        z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -1647,7 +1647,7 @@ struct TraitTupleThenComputeOutput:
         //,
     ](
         outputs: TensorTuple[*Outs],
-        z: Some[Output & Fused & _LegacyComputeOutput],
+        z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         x: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
@@ -2026,7 +2026,7 @@ struct AddFuseInputs:
 struct AddComputeFusion:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & _LegacyComputeOutput],
+        z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         x: Some[Input & Tensor],
         y: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -2087,7 +2087,7 @@ def imposter_add_compute_fusion_shape(
 struct AddFuseOutput:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & Tensor],
         y: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -2300,8 +2300,8 @@ struct FusedVariadicInputs:
 struct ElementwisePrintShape:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
-        x: Some[Input & Fused & LoadAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
+        x: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime assert conforms_to(
@@ -2932,7 +2932,7 @@ struct MutableStore:
         _trace_name: StaticString,
     ](
         tw: TensorWrapper,
-        tensor: Some[Input & Fused & LoadAccess],
+        tensor: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime assert conforms_to(
@@ -2960,7 +2960,7 @@ struct MutableStore:
 struct MySquareComputeOutFusion:
     @staticmethod
     def execute(
-        outp: Some[Output & Fused & _LegacyComputeOutput],
+        outp: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         input: Some[Input & TileTensorable],
     ):
         comptime dtype = type_of(outp).dtype
@@ -4074,7 +4074,7 @@ struct MapLowerPartialFusedInputs:
 struct TraitTensorTupleFusedConcatUnifiedClosure:
     @staticmethod
     def execute[
-        Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        Ins: TypeList[Trait=Input & Fused & LoadAccess & Tensor, ...],
         //,
     ](
         z: Some[Output & TileTensorable],
@@ -4132,8 +4132,8 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
 struct TraitUnfusedExecute:
     @staticmethod
     def execute(
-        z: Some[Output & Fused & StoreAccess],
-        w: Some[Output & Fused & StoreAccess],
+        z: Some[Output & Fused & StoreAccess & Tensor],
+        w: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:

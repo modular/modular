@@ -149,7 +149,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         scale_ub: Float32,
         ctx: DeviceContext,
@@ -287,7 +287,7 @@ struct RMSNormQuantizeDynamicScaledFloat8:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         epsilon: Float32,
         weight_offset: Scalar[dtype=input_type],
@@ -358,7 +358,7 @@ struct LayerNormQuantizeDynamicScaledFloat8:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         beta: Some[Input & Tensor],
         epsilon: Float32,
@@ -464,7 +464,7 @@ struct RMSNormQuantizeDynamicScaledFloat8Dual:
         normed: Some[Output & Tensor],
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         epsilon: Float32,
         scale_ub: Float32,
@@ -2520,7 +2520,7 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         scale_type: DType,
     ](
         output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
@@ -2586,7 +2586,7 @@ struct QuantizeTensorDynamicScaledFloat8:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -2646,7 +2646,7 @@ struct QuantizeDynamicScaledFloat8GroupedMx:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         group_starts: Some[Input & Tensor],
         scale_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -2707,7 +2707,7 @@ struct QuantizeDynamicScaledFloat8:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -2776,7 +2776,7 @@ struct QuantizeDynamicScaledFloat8RowBounded:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         scale_ub: Float32,
         row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -2854,7 +2854,7 @@ struct QuantizeDynamicScaledFloat8Pow2Scales:
     ](
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:

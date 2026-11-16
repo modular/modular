@@ -25,7 +25,8 @@ The traits fall into three groups:
 - The `Stable` marker declares that the argument's storage is a stable address
   slot, read through `StableAddrEngine` (device only).
 - Metadata and access traits describe what the kernel can read off the argument
-  (`Tensor`) and how it touches individual elements.
+  (`Tensor`) and how it touches individual elements. The access markers carry
+  no metadata; bind `Tensor` alongside them to read the dtype, rank, or shape.
 
 Element access is split into marker / capability pairs. A graph-visible marker
 (`LoadAccess`, `StoreAccess`) records the access form in the distilled contract
@@ -195,7 +196,7 @@ trait Tensor:
 # ===----------------------------------------------------------------------=== #
 
 
-trait LoadAccess(Tensor):
+trait LoadAccess:
     """Marker trait: this tensor supports SIMD loads.
 
     The marker only advertises the capability; it carries no method, so a
@@ -207,7 +208,10 @@ trait LoadAccess(Tensor):
     pass
 
 
-trait Loadable(LoadAccess):
+# TODO(MOCO-4931): Refine only `LoadAccess` and declare `dtype` here. `Loadable`
+# refines `Tensor` only for `dtype`; a second `dtype` declaration doesn't unify
+# with `Tensor`'s in a composition.
+trait Loadable(LoadAccess, Tensor):
     """`LoadAccess` refined with the callable `load` method."""
 
     def load[
@@ -229,7 +233,7 @@ trait Loadable(LoadAccess):
         ...
 
 
-trait StoreAccess(Tensor):
+trait StoreAccess:
     """Marker trait: this tensor supports SIMD stores.
 
     The marker only advertises the capability; it carries no method, so a
@@ -241,7 +245,10 @@ trait StoreAccess(Tensor):
     pass
 
 
-trait Storable(StoreAccess):
+# TODO(MOCO-4931): Refine only `StoreAccess` and declare `dtype` here.
+# `Storable` refines `Tensor` only for `dtype`; a second `dtype` declaration
+# doesn't unify with `Tensor`'s in a composition.
+trait Storable(StoreAccess, Tensor):
     """`StoreAccess` refined with the callable `store` method."""
 
     def store[
@@ -261,7 +268,7 @@ trait Storable(StoreAccess):
         ...
 
 
-trait _LegacyComputeOutput(Tensor):
+trait _LegacyComputeOutput:
     """Opt-in: this output can take its fused epilogue as a compute lambda.
 
     Unlike `LoadAccess` and `StoreAccess`, this opt-in doesn't guarantee a
@@ -309,7 +316,10 @@ trait _LegacyComputeOutput(Tensor):
     pass
 
 
-trait _LegacyComputable(_LegacyComputeOutput):
+# TODO(MOCO-4931): Refine only `_LegacyComputeOutput` and declare `dtype` here.
+# `_LegacyComputable` refines `Tensor` only for `dtype`; a second `dtype`
+# declaration doesn't unify with `Tensor`'s in a composition.
+trait _LegacyComputable(Tensor, _LegacyComputeOutput):
     """`_LegacyComputeOutput` refined with the callable `compute` method.
 
     Only refine to it in the kernel body, after checking `conforms_to`; the

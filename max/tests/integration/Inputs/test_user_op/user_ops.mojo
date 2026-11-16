@@ -78,11 +78,11 @@ def kernel_with_parameterized_opaque_shape[
 struct ConcatOpaque:
     @staticmethod
     def execute[
-        Ins: TypeList[Trait=Input & Fused & LoadAccess, ...],
+        Ins: TypeList[Trait=Input & Fused & LoadAccess & Tensor, ...],
         //,
         axis: Int,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         inputs: TensorTuple[*Ins],
         ctx: DeviceContext,
     ) raises:

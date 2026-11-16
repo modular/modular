@@ -291,7 +291,7 @@ struct Range:
         dtype: DType,
         _trace_name: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         start: Scalar[dtype],
         stop: Scalar[dtype],
         step: Scalar[dtype],
@@ -357,8 +357,8 @@ struct Copy:
 
     @staticmethod
     def execute(
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime dtype = type_of(output).dtype
@@ -889,7 +889,7 @@ struct RandomNormal:
 
     @staticmethod
     def execute(
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         shape: Some[Input & Tensor],
         mean: Float32,
         variance: Float32,
@@ -978,7 +978,7 @@ struct RandomUniform:
     def execute[
         dtype: DType,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         shape: Some[Input & Tensor],
         lower_bound: Scalar[dtype],
         upper_bound: Scalar[dtype],
@@ -2013,7 +2013,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
     @inline(.always)
     @staticmethod
     def execute(
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
         start_pos: Some[Input & Tensor],
@@ -2103,7 +2103,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute(
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         x: Some[Input & Tensor],
         input_row_offsets: Some[Input & Tensor],
         start_pos: Some[Input & Tensor],
@@ -2425,8 +2425,8 @@ struct Struct_moe_exit_act_concat:
         simd_width: Int,
     ](
         output: Some[Output & Tensor],
-        latent: Some[Input & Fused & LoadAccess],
-        gate_up: Some[Input & Fused & LoadAccess],
+        latent: Some[Input & Fused & LoadAccess & Tensor],
+        gate_up: Some[Input & Fused & LoadAccess & Tensor],
         beta: Float32,
         linear_beta: Float32,
         context: DeviceContext,
@@ -2577,7 +2577,7 @@ struct Struct_moe_router_group_limited:
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
-        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_scores: Some[Input & Fused & LoadAccess & Tensor],
         expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
@@ -2848,7 +2848,7 @@ struct Struct_moe_single_group_router_eplb:
         expert_indices: Some[Output & Tensor],
         expert_indices_log: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
-        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_scores: Some[Input & Fused & LoadAccess & Tensor],
         expert_bias: Some[Input & Tensor],
         logcnt: Some[Input & Tensor],
         log2phy: Some[Input & Tensor],
@@ -2926,7 +2926,7 @@ struct Struct_moe_single_group_router:
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
-        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_scores: Some[Input & Fused & LoadAccess & Tensor],
         expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
@@ -2991,7 +2991,7 @@ struct Struct_moe_single_group_router_packed:
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
         packed: Some[Output & Tensor],
-        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_scores: Some[Input & Fused & LoadAccess & Tensor],
         expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
@@ -3061,7 +3061,7 @@ struct Struct_moe_single_group_router_image_bias:
     ](
         expert_indices: Some[Output & Tensor],
         expert_weights: Some[Output & Tensor],
-        expert_scores: Some[Input & Fused & LoadAccess],
+        expert_scores: Some[Input & Fused & LoadAccess & Tensor],
         expert_bias: Some[Input & Tensor],
         image_bias: Some[Input & Tensor],
         token_ids: Some[Input & Tensor],
@@ -5828,18 +5828,18 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
     @staticmethod
     def execute(
         y: Some[Output & Tensor],
-        x: Some[Input & Fused & LoadAccess],
-        dt: Some[Input & Fused & LoadAccess],
+        x: Some[Input & Fused & LoadAccess & Tensor],
+        dt: Some[Input & Fused & LoadAccess & Tensor],
         A: Some[Input & Tensor],
-        B: Some[Input & Fused & LoadAccess],
-        C: Some[Input & Fused & LoadAccess],
+        B: Some[Input & Fused & LoadAccess & Tensor],
+        C: Some[Input & Fused & LoadAccess & Tensor],
         D: Some[Input & Tensor],
         dt_bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
         ssm_pool: Some[MutableInput & Tensor],
         query_start_loc: Some[Input & Tensor],
         has_initial_state: Some[Input & Tensor],
-        cache_indices: Some[Input & Fused & LoadAccess],
+        cache_indices: Some[Input & Fused & LoadAccess & Tensor],
         update_state: Some[Input & Tensor],
         xbc: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -5887,18 +5887,18 @@ struct Mamba2SSDChunkScanVarlenFwdInplaceRows[dt_softplus: Bool = True]:
     @staticmethod
     def execute(
         y: Some[Output & Tensor],
-        x: Some[Input & Fused & LoadAccess],
-        dt: Some[Input & Fused & LoadAccess],
+        x: Some[Input & Fused & LoadAccess & Tensor],
+        dt: Some[Input & Fused & LoadAccess & Tensor],
         A: Some[Input & Tensor],
-        B: Some[Input & Fused & LoadAccess],
-        C: Some[Input & Fused & LoadAccess],
+        B: Some[Input & Fused & LoadAccess & Tensor],
+        C: Some[Input & Fused & LoadAccess & Tensor],
         D: Some[Input & Tensor],
         dt_bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
         ssm_pool: Some[MutableInput & Tensor],
         query_start_loc: Some[Input & Tensor],
         has_initial_state: Some[Input & Tensor],
-        cache_indices: Some[Input & Fused & LoadAccess],
+        cache_indices: Some[Input & Fused & LoadAccess & Tensor],
         update_state: Some[Input & Tensor],
         xbc: Some[Input & Tensor],
         verify_width: Some[Input & Tensor],
@@ -5931,17 +5931,17 @@ def _mamba2_ssd_scan_launch[
     dt_softplus: Bool, MIXED: Bool
 ](
     y: Some[Output & Tensor],
-    x: Some[Input & Fused & LoadAccess],
-    dt: Some[Input & Fused & LoadAccess],
+    x: Some[Input & Fused & LoadAccess & Tensor],
+    dt: Some[Input & Fused & LoadAccess & Tensor],
     A: Some[Input & Tensor],
-    B: Some[Input & Fused & LoadAccess],
-    C: Some[Input & Fused & LoadAccess],
+    B: Some[Input & Fused & LoadAccess & Tensor],
+    C: Some[Input & Fused & LoadAccess & Tensor],
     D: Some[Input & Tensor],
     dt_bias: Some[Input & Tensor],
     ssm_pool: Some[MutableInput & Tensor],
     query_start_loc: Some[Input & Tensor],
     has_initial_state: Some[Input & Tensor],
-    cache_indices: Some[Input & Fused & LoadAccess],
+    cache_indices: Some[Input & Fused & LoadAccess & Tensor],
     update_state: Some[Input & Tensor],
     xbc: Some[Input & Tensor],
     num_draft_tokens: Int,
@@ -6742,13 +6742,13 @@ struct CausalConv1DVarlenFwd[
     @staticmethod
     def execute(
         output: Some[Output & Tensor],
-        x: Some[Input & Fused & LoadAccess],
+        x: Some[Input & Fused & LoadAccess & Tensor],
         weight: Some[Input & Tensor],
         bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
         conv_states: Some[MutableInput & Tensor],
         query_start_loc: Some[Input & Tensor],
-        cache_indices: Some[Input & Fused & LoadAccess],
+        cache_indices: Some[Input & Fused & LoadAccess & Tensor],
         has_initial_state: Some[Input & Tensor],
         update_state: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -6802,13 +6802,13 @@ struct CausalConv1DVarlenFwdRows[
     @staticmethod
     def execute(
         output: Some[Output & Tensor],
-        x: Some[Input & Fused & LoadAccess],
+        x: Some[Input & Fused & LoadAccess & Tensor],
         weight: Some[Input & Tensor],
         bias: Some[Input & Tensor],
         # The caller owns this pool and the kernel writes it in place.
         conv_states: Some[MutableInput & Tensor],
         query_start_loc: Some[Input & Tensor],
-        cache_indices: Some[Input & Fused & LoadAccess],
+        cache_indices: Some[Input & Fused & LoadAccess & Tensor],
         has_initial_state: Some[Input & Tensor],
         update_state: Some[Input & Tensor],
         verify_width: Some[Input & Tensor],
@@ -6844,12 +6844,12 @@ def _causal_conv1d_varlen_fwd_launch[
     MIXED: Bool,
 ](
     output: Some[Output & Tensor],
-    x: Some[Input & Fused & LoadAccess],
+    x: Some[Input & Fused & LoadAccess & Tensor],
     weight: Some[Input & Tensor],
     bias: Some[Input & Tensor],
     conv_states: Some[MutableInput & Tensor],
     query_start_loc: Some[Input & Tensor],
-    cache_indices: Some[Input & Fused & LoadAccess],
+    cache_indices: Some[Input & Fused & LoadAccess & Tensor],
     has_initial_state: Some[Input & Tensor],
     update_state: Some[Input & Tensor],
     num_draft_tokens: Int,
@@ -7132,7 +7132,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
     def execute(
         output: Some[Output & Tensor],
         y: Some[Input & Tensor],
-        gate: Some[Input & Fused & LoadAccess],
+        gate: Some[Input & Fused & LoadAccess & Tensor],
         weight: Some[Input & Tensor],
         eps: Float32,
         ctx: DeviceContext,

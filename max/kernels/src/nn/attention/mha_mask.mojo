@@ -609,7 +609,7 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-comptime LoadView[T: Tensor] = downcast[
+comptime LoadView[T: LoadAccess] = downcast[
     downcast[T, UnsafeFusedView].FusedViewType,
     Loadable & TrivialRegisterPassable,
 ]
@@ -617,7 +617,7 @@ comptime LoadView[T: Tensor] = downcast[
 
 
 @inline(.always)
-def load_view[T: Tensor](operand: T) -> LoadView[T]:
+def load_view[T: LoadAccess](operand: T) -> LoadView[T]:
     """Returns the device view of a mask's graph operand.
 
     The kernel launches with the mask itself as its device form, so the mask

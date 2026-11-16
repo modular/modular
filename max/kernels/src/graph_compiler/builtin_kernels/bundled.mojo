@@ -131,7 +131,7 @@ struct BundledAllReduceSum:
         group_size: Int = 0,
         peer_rank: Optional[Int] = None,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
         ctx: DeviceContext,
@@ -236,7 +236,7 @@ struct BundledAllReduceSum:
         group_size: Int = 0,
         peer_rank: Optional[Int] = None,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         inputs: TensorTuple[*Ins],
         signal_buffers: TensorTuple[*Sigs],
         builder: DeviceGraphBuilder,

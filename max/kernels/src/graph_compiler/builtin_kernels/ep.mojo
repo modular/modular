@@ -3881,7 +3881,7 @@ struct DistributedEPCombine:
 
     @staticmethod
     def execute[
-        Outs: TypeList[Trait=Output & Fused & StoreAccess, ...],
+        Outs: TypeList[Trait=Output & Fused & StoreAccess & Tensor, ...],
         Tokens: TypeList[Trait=Input & Tensor, ...],
         SrcInfos: TypeList[Trait=Input & Tensor, ...],
         SendPtrs: TypeList[Trait=Input & Tensor, ...],
@@ -4168,7 +4168,7 @@ struct Struct_ep_combine_wait:
         n_gpus_per_node: Int,
         n_nodes: Int,
     ](
-        output_tokens: Some[Output & Fused & StoreAccess],
+        output_tokens: Some[Output & Fused & StoreAccess & Tensor],
         atomic_counters: Some[MutableInput & Tensor],
         recv_ptrs: Some[Input & Tensor],
         recv_count_ptrs: Some[Input & Tensor],
@@ -4388,7 +4388,7 @@ struct Struct_ep_combine_wait_mx:
         *,
         mx_min_tokens: Int,
     ](
-        output_tokens: Some[Output & Fused & StoreAccess],
+        output_tokens: Some[Output & Fused & StoreAccess & Tensor],
         atomic_counters: Some[MutableInput & Tensor],
         recv_ptrs: Some[Input & Tensor],
         recv_count_ptrs: Some[Input & Tensor],
@@ -4512,7 +4512,7 @@ struct Struct_ep_combine:
         skip_a2a: Bool,
         //,
     ](
-        output_tokens: Some[Output & Fused & StoreAccess],
+        output_tokens: Some[Output & Fused & StoreAccess & Tensor],
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
         src_info: Some[Input & Tensor],
@@ -4662,7 +4662,7 @@ struct Struct_ep_combine_skip_a2a:
         allreduce_world_size: Int,
         //,
     ](
-        output_tokens: Some[Output & Fused & StoreAccess],
+        output_tokens: Some[Output & Fused & StoreAccess & Tensor],
         atomic_counters: Some[MutableInput & Tensor],
         input_tokens: Some[Input & Tensor],
         src_info: Some[Input & Tensor],

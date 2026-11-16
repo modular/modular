@@ -95,8 +95,8 @@ struct ArgMax:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.arg_max` graph op.
@@ -162,8 +162,8 @@ struct ArgMin:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.arg_min` graph op.
@@ -276,7 +276,7 @@ struct RowMeanOfSquares:
     @staticmethod
     def execute(
         output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `reduction.row_mean_of_squares` graph op.
@@ -569,8 +569,8 @@ struct LayerNorm:
 
     @staticmethod
     def execute(
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         beta: Some[Input & Tensor],
         epsilon: Float32,
@@ -714,11 +714,11 @@ struct ReduceRMSNormRoPE:
         weight_offset: Float32,
         multiply_before_cast: Bool = True,
     ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         weight: Some[Input & Tensor],
-        cos_vals: Some[Input & Fused & LoadAccess],
-        sin_vals: Some[Input & Fused & LoadAccess],
+        cos_vals: Some[Input & Fused & LoadAccess & Tensor],
+        sin_vals: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(weight), TileTensorable)
@@ -885,8 +885,8 @@ struct LayerNormRopeRagged:
     def execute[
         interleaved: Bool,
     ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         beta: Some[Input & Tensor],
         epsilon: Float32,
@@ -1050,9 +1050,9 @@ struct ReduceGroupNorm:
     @staticmethod
     def execute(
         output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
-        gamma: Some[Input & Fused & LoadAccess],
-        beta: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        gamma: Some[Input & Fused & LoadAccess & Tensor],
+        beta: Some[Input & Fused & LoadAccess & Tensor],
         epsilon: Float32,
         num_groups: Int32,
         ctx: DeviceContext,
@@ -1276,8 +1276,8 @@ struct ReduceRMSNormFusedResidualAdd:
     ](
         output: Some[Output & Tensor],
         residual_output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
-        residual_input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        residual_input: Some[Input & Fused & LoadAccess & Tensor],
         gamma1: Some[Input & Tensor],
         gamma2: Some[Input & Tensor],
         ctx: DeviceContext,
@@ -1484,8 +1484,8 @@ struct RMSNormResidualAdd:
     ](
         output: Some[Output & Tensor],
         residual_output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
-        residual_input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        residual_input: Some[Input & Fused & LoadAccess & Tensor],
         gamma: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:

@@ -117,7 +117,10 @@ struct AdditiveMask[
             The mask.
         """
         comptime assert len(Ts) == 1, "AdditiveMask takes one mask operand"
-        comptime assert Ts[0].rank in (3, 4), "the bias must be rank 3 or 4"
+        comptime assert LoadView[Ts[0]].rank in (
+            3,
+            4,
+        ), "the bias must be rank 3 or 4"
         return {load_view(operands[0])}
 
     comptime device_type: AnyType = Self
@@ -300,8 +303,12 @@ struct SegmentMask[
             The mask.
         """
         comptime assert len(Ts) == 2, "SegmentMask takes two mask operands"
-        comptime assert Ts[0].dtype == .int32, "segment ids must be int32"
-        comptime assert Ts[1].dtype == .uint32, "row offsets must be uint32"
+        comptime assert (
+            LoadView[Ts[0]].dtype == .int32
+        ), "segment ids must be int32"
+        comptime assert (
+            LoadView[Ts[1]].dtype == .uint32
+        ), "row offsets must be uint32"
         return {load_view(operands[0]), load_view(operands[1])}
 
     comptime device_type: AnyType = Self
@@ -555,10 +562,14 @@ struct RelativeLogitsMask[
             len(Ts) == 3
         ), "RelativeLogitsMask takes three mask operands"
         comptime assert (
-            Ts[0].rank == 3
+            LoadView[Ts[0]].rank == 3
         ), "the bias must be (tokens, heads, extent)"
-        comptime assert Ts[1].dtype == .uint32, "cache lengths must be uint32"
-        comptime assert Ts[2].dtype == .uint32, "row offsets must be uint32"
+        comptime assert (
+            LoadView[Ts[1]].dtype == .uint32
+        ), "cache lengths must be uint32"
+        comptime assert (
+            LoadView[Ts[2]].dtype == .uint32
+        ), "row offsets must be uint32"
         return {
             load_view(operands[0]),
             load_view(operands[1]),

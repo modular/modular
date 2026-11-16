@@ -553,7 +553,7 @@ struct ConvCPU:
         static_padding: Coord,
         _trace_name: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         input: Some[Input & TileTensorable],
         filter: Some[Input & TileTensorable],
         strides: Some[Input & TileTensorable],
@@ -749,7 +749,7 @@ struct ConvGPU:
         static_padding: Coord,
         _trace_name: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         input: Some[Input & TileTensorable],
         filter: Some[Input & TileTensorable],
         strides: Some[Input & TileTensorable],
@@ -876,7 +876,7 @@ struct Conv2dResidualAdd:
         pad_right: Int,
         has_bias: Bool,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
         source: Some[Input & Tensor],
@@ -1111,7 +1111,7 @@ struct ConvTransposeCPU:
         input_layout: StaticString,
         filter_layout: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
         strides: Some[Input & Tensor],
@@ -1249,7 +1249,7 @@ struct ConvTransposeGPU:
         input_layout: StaticString,
         filter_layout: StaticString,
     ](
-        output: Some[Output & Fused & StoreAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
         input: Some[Input & Tensor],
         filter: Some[Input & Tensor],
         strides: Some[Input & Tensor],

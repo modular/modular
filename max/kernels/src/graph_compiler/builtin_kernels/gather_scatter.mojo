@@ -1687,9 +1687,9 @@ struct Gather:
         _trace_name: StaticString,
         axis: Int,
     ](
-        output: Some[Output & Fused & StoreAccess],
-        input: Some[Input & Fused & LoadAccess],
-        indices: Some[Input & Fused & LoadAccess],
+        output: Some[Output & Fused & StoreAccess & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        indices: Some[Input & Fused & LoadAccess & Tensor],
         ctx: DeviceContext,
     ) raises:
         comptime dtype = type_of(output).dtype

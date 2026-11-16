@@ -2323,8 +2323,8 @@ struct FlashAttentionCPU:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        k: Some[Input & Fused & LoadAccess],
-        v: Some[Input & Fused & LoadAccess],
+        k: Some[Input & Fused & LoadAccess & Tensor],
+        v: Some[Input & Fused & LoadAccess & Tensor],
         scale: Float32,
         mask_operands: TensorTuple[*MaskIns],
         ctx: DeviceContext,
@@ -5222,7 +5222,7 @@ trait _MLAPrefillGraphPagedOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -5388,7 +5388,7 @@ trait _MLADecodeGraphPagedFP8Op:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -5807,7 +5807,7 @@ trait _MLADecodeGraphPagedFP8SparseOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -6056,7 +6056,7 @@ trait _MLAPrefillGraphBF16PagedOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -6203,7 +6203,7 @@ trait _MLADecodeGraphBF16PagedOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -6384,7 +6384,7 @@ trait _MLADecodeGraphBF16PagedSparseOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -6621,7 +6621,7 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -6874,7 +6874,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         output: Some[Output & Tensor],
         lse: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -7056,7 +7056,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         output: Some[Output & Tensor],
         lse: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -7225,7 +7225,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         output: Some[Output & Tensor],
         lse: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -7439,7 +7439,7 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -7681,7 +7681,7 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -7981,7 +7981,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
         output_gate: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -8209,7 +8209,7 @@ struct Struct_mla_store_ragged_paged:
         dcp_size: Int = 1,
         dcp_interleave: Int = 1,
     ](
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -8362,7 +8362,7 @@ struct Struct_mla_store_ragged_paged_nvfp4:
         dcp_size: Int = 1,
         dcp_interleave: Int = 1,
     ](
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -8627,7 +8627,7 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -8926,7 +8926,7 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],
@@ -9212,7 +9212,7 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
-        kv: Some[Input & Fused & LoadAccess],
+        kv: Some[Input & Fused & LoadAccess & Tensor],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
         kv_norm_gamma: Some[Input & Tensor],

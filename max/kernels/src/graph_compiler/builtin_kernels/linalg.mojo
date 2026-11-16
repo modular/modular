@@ -263,7 +263,7 @@ struct MatmulCPU:
         packed_b: Bool,
         _trace_name: StaticString,
     ](
-        c: Some[Output & Fused & StoreAccess],
+        c: Some[Output & Fused & StoreAccess & Tensor],
         a: Some[Input & TileTensorable],
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -382,7 +382,7 @@ struct MatmulGPU:
         packed_b: Bool,
         _trace_name: StaticString,
     ](
-        c: Some[Output & Fused & _LegacyComputeOutput],
+        c: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         a: Some[Input & TileTensorable],
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -553,7 +553,7 @@ struct BatchMatmulCPU:
     def execute[
         transpose_b: Bool,
     ](
-        c: Some[Output & Fused & StoreAccess],
+        c: Some[Output & Fused & StoreAccess & Tensor],
         a: Some[Input & TileTensorable],
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -635,7 +635,7 @@ struct BatchMatmulGPU:
     def execute[
         transpose_b: Bool,
     ](
-        c: Some[Output & Fused & StoreAccess],
+        c: Some[Output & Fused & StoreAccess & Tensor],
         a: Some[Input & TileTensorable],
         b: Some[Input & TileTensorable],
         ctx: DeviceContext,
@@ -773,7 +773,7 @@ struct LinalgBandPart:
     @staticmethod
     def execute(
         output: Some[Output & Tensor],
-        input: Some[Input & Fused & LoadAccess],
+        input: Some[Input & Fused & LoadAccess & Tensor],
         num_lower: Some[Input & Tensor],
         num_upper: Some[Input & Tensor],
         exclude: Some[Input & Tensor],
@@ -839,7 +839,7 @@ struct Struct_grouped_matmul_ragged:
     @inline(.always)
     @staticmethod
     def execute(
-        c: Some[Output & Fused & _LegacyComputeOutput],
+        c: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         expert_start_indices: Some[Input & Tensor],
@@ -1878,7 +1878,7 @@ struct Struct_matmul_dynamic_block_scaled:
     def execute[
         SF_VECTOR_SIZE: Int,
     ](
-        c: Some[Output & Fused & _LegacyComputeOutput],
+        c: Some[Output & Fused & _LegacyComputeOutput & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         a_scales: Some[Input & Tensor],
@@ -3321,7 +3321,7 @@ struct Struct_mixed_gemv_epilogue:
     def execute[
         max_m: Int = _MIXED_GEMV_EPILOGUE_MAX_M
     ](
-        c: Some[Output & Fused & StoreAccess],
+        c: Some[Output & Fused & StoreAccess & Tensor],
         a: Some[Input & Tensor],
         b: Some[Input & Tensor],
         context: DeviceContext,
