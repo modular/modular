@@ -37,6 +37,7 @@ from max.benchmark.benchmark_shared.serving_metrics import (
     calculate_metrics,
     calculate_pixel_generation_metrics,
     compute_output_len,
+    run_cache_hit_rate,
 )
 from max.profiler.cpu import CPUMetrics
 from max.profiler.gpu import GPUStats, MemoryStats, UtilizationStats
@@ -3003,3 +3004,65 @@ def test_interactivity_drops_zero_durations_rather_than_poisoning_stats() -> (
     )
     # The e2e basis is positive for both requests.
     assert text.e2e_normalized_interactivity_tok_s is not None
+
+
+def _output_with_cache(
+    *,
+    prompt_tokens: int,
+    cached_tokens: int,
+    reported: bool = True,
+    success: bool = True,
+) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=success,
+        server_token_stats=ServerTokenStats(
+            prompt_tokens=prompt_tokens,
+            cached_tokens=cached_tokens,
+            cached_tokens_reported=reported,
+        ),
+    )
+
+
+def test_run_cache_hit_rate_is_cached_over_prompt_tokens() -> None:
+    outputs = [
+        _output_with_cache(prompt_tokens=100, cached_tokens=0),
+        _output_with_cache(prompt_tokens=100, cached_tokens=50),
+    ]
+
+    assert run_cache_hit_rate(outputs) == 0.25
+
+
+def test_run_cache_hit_rate_keeps_requests_the_trim_would_drop() -> None:
+    """``global_cached_token_rate`` skips the first and last N requests."""
+    outputs = [
+        _output_with_cache(prompt_tokens=100, cached_tokens=0) for _ in range(4)
+    ] + [_output_with_cache(prompt_tokens=100, cached_tokens=100)] * 4
+
+    assert run_cache_hit_rate(outputs) == 0.5
+
+
+def test_run_cache_hit_rate_ignores_failed_requests() -> None:
+    outputs = [
+        _output_with_cache(prompt_tokens=100, cached_tokens=100),
+        _output_with_cache(prompt_tokens=100, cached_tokens=0, success=False),
+    ]
+
+    assert run_cache_hit_rate(outputs) == 1.0
+
+
+def test_run_cache_hit_rate_is_none_when_nothing_was_reported() -> None:
+    outputs = [
+        _output_with_cache(prompt_tokens=100, cached_tokens=0, reported=False)
+    ]
+
+    assert run_cache_hit_rate(outputs) is None
+    assert run_cache_hit_rate([]) is None
+
+
+def test_run_cache_hit_rate_skips_requests_that_did_not_report() -> None:
+    outputs = [
+        _output_with_cache(prompt_tokens=100, cached_tokens=0, reported=False),
+        _output_with_cache(prompt_tokens=100, cached_tokens=40),
+    ]
+
+    assert run_cache_hit_rate(outputs) == 0.4

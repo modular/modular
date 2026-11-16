@@ -124,6 +124,7 @@ from max.benchmark.benchmark_shared.serving_metrics import (
     build_pixel_generation_result,
     build_text_generation_result,
     compute_output_len,
+    run_cache_hit_rate,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
     BenchmarkRunResultLabels,
@@ -155,8 +156,10 @@ from max.benchmark.benchmark_shared.workload import (
     load_workload_file,
 )
 from max.benchmark.benchmark_shared.workload_stats import (
+    EngineState,
     WorkloadStats,
     compute_workload_stats,
+    write_engine_state,
     write_workload_stats,
 )
 from max.profiler.cpu import (
@@ -829,6 +832,7 @@ async def benchmark(
             goodput_targets=args.goodput_targets,
             num_gpus=args.num_gpus,
         )
+    result.record_run_cache_hit_rate(run_cache_hit_rate(all_outputs))
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
 
@@ -1334,6 +1338,97 @@ def _settle_server_metrics(
     )
 
 
+# Share of a run's requests that may fail before its engine state is dropped.
+MAX_FAILED_REQUEST_FRACTION = 0.01
+
+
+def _single_load_point(args: ServingBenchmarkConfig) -> bool:
+    return len(args.max_concurrency) * len(args.request_rate) == 1
+
+
+def _serving_engine(backend: Backend) -> Literal["max", "mach"] | None:
+    """Names the engine a backend drives, None for a third-party server."""
+    if backend == "mach":
+        return "mach"
+    if backend in ("modular", "modular-chat"):
+        return "max"
+    return None
+
+
+def _engine_state_or_reason(
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+    backend: Backend,
+) -> EngineState | str:
+    """Returns the run's engine state, or why the run cannot supply one."""
+    if not validation_passed:
+        # Requests that errored leave the figures describing a different
+        # workload than the one run.
+        return "the run failed validation"
+    if result.text_data is None:
+        return "the run produced no text results"
+    # Validation does not fail a run for failed requests: the metrics leave
+    # them out (CENG-1381), so a run that lost most of its requests still
+    # passes. A few failures leave the figures close to the workload that
+    # was sent, so they are recorded rather than discarding the run.
+    records = [r for r in result.text_data.request_records if not r.cancelled]
+    failed = sum(1 for r in records if not r.success)
+    if failed > MAX_FAILED_REQUEST_FRACTION * len(records):
+        return f"{failed} of {len(records)} requests failed"
+    rate = result.run_cache_hit_rate
+    if rate is not None and rate > 1.0:
+        # The server reported more cached tokens than prompt tokens.
+        return f"the server reported a cache hit rate of {rate:.2f}"
+    return EngineState(
+        cache_hit_rate=result.run_cache_hit_rate,
+        decode_batch_size_mean=result.mean_decode_batch_size,
+        max_concurrency=max_concurrency,
+        engine=_serving_engine(backend),
+        failed_requests=failed,
+    )
+
+
+def _emit_engine_state(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    result: BenchmarkResult,
+    max_concurrency: int | None,
+    validation_passed: bool,
+) -> None:
+    # The stats file is first written before any request is sent. Once a run
+    # has measured the engine, it is rewritten with that state, so a real
+    # run no longer leaves the same file as a dry run. Both figures depend on
+    # the load, so a sweep over several load points has no single state.
+    into_stats = args.workload_stats_json is not None and _single_load_point(
+        args
+    )
+    if args.engine_state_json is None and not into_stats:
+        return
+    state = _engine_state_or_reason(
+        result, max_concurrency, validation_passed, args.backend
+    )
+    if isinstance(state, str):
+        logger.warning("No engine state written: %s", state)
+        return
+    if args.engine_state_json is not None:
+        write_engine_state(state, args.engine_state_json)
+        logger.info("Wrote engine state to %s", args.engine_state_json)
+    if into_stats:
+        assert args.workload_stats_json is not None
+        # Recomputed from the samples this run sent: the sweep draws a new
+        # sample for each concurrency level, so the file written before the
+        # run describes another draw of the same workload.
+        stats = _compute_session_stats(args, session).model_copy(
+            update={"engine_state": state}
+        )
+        write_workload_stats(stats, args.workload_stats_json)
+        logger.info(
+            "Wrote workload stats with the engine state to %s",
+            args.workload_stats_json,
+        )
+
+
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
@@ -1458,6 +1553,11 @@ def _run_benchmark_sweep(
             else:
                 idx = 0
             best_result = iteration_results[idx]
+            # Later iterations replay the same requests against a cache the
+            # first one filled, so only the first measures a cold start.
+            _emit_engine_state(
+                args, session, iteration_results[0], mc, validation_passed
+            )
 
             yield BenchmarkRunResult(
                 max_concurrency=mc,
@@ -1513,6 +1613,17 @@ def main_with_parsed_args(
 
     _load_workload_yaml(args)
     resolve_seed(args)
+
+    if args.engine_state_json is not None and not _single_load_point(args):
+        raise ValueError(
+            "--engine-state-json needs a single --max-concurrency and"
+            " --request-rate: the engine state depends on the load driven"
+        )
+    if args.engine_state_json is not None and args.dry_run:
+        raise ValueError(
+            "--engine-state-json needs a real run: a dry run sends no"
+            " requests, so it measures no engine state"
+        )
 
     end_condition = _resolve_end_condition(
         args=args, concurrency_range=args.max_concurrency

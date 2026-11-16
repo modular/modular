@@ -28,6 +28,7 @@ from max.benchmark.benchmark_serving import (
     main_with_parsed_args,
     parse_args,
 )
+from max.benchmark.benchmark_shared.backend_names import Backend
 from max.benchmark.benchmark_shared.config import (
     DEFAULT_BENCHMARK_SEED,
     Endpoint,
@@ -39,10 +40,16 @@ from max.benchmark.benchmark_shared.datasets.all import (
 )
 from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.iteration import resolve_seed
+from max.benchmark.benchmark_shared.metrics import BenchmarkResult
 from max.benchmark.benchmark_shared.workload import (
     _apply_workload_to_config,
     apply_workload,
     load_workload_file,
+)
+from max.benchmark.benchmark_shared.workload_stats import (
+    EngineState,
+    WorkloadStats,
+    write_workload_stats,
 )
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
@@ -379,6 +386,374 @@ def test_other_backends_do_not_wait_for_their_metrics(
     )
 
     wait.assert_not_called()
+
+
+def test_engine_state_json_rejects_a_multi_point_sweep() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        max_concurrency=[8, 16],
+    )
+    with pytest.raises(ValueError, match="single --max-concurrency"):
+        list(main_with_parsed_args(config))
+
+
+def test_engine_state_json_rejects_a_dry_run() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        dry_run=True,
+    )
+    with pytest.raises(ValueError, match="needs a real run"):
+        list(main_with_parsed_args(config))
+
+
+def _engine_state_result(
+    mocker: MockerFixture,
+    *,
+    cached_tokens_reported: bool = True,
+    cache_hit_rate: float = 0.7,
+) -> BenchmarkResult:
+    result = mocker.Mock(spec=BenchmarkResult)
+    result.text_data = mocker.Mock(request_records=[])
+    result.run_cache_hit_rate = (
+        cache_hit_rate if cached_tokens_reported else None
+    )
+    result.mean_decode_batch_size = 9.0
+    return result
+
+
+def test_engine_state_is_written_from_the_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    assert EngineState.model_validate_json(path.read_text()) == EngineState(
+        cache_hit_rate=0.7,
+        decode_batch_size_mean=9.0,
+        max_concurrency=32,
+        engine="max",
+    )
+
+
+@pytest.mark.parametrize(
+    ("backend", "engine"),
+    [
+        ("modular", "max"),
+        ("modular-chat", "max"),
+        ("mach", "mach"),
+        ("vllm", None),
+    ],
+)
+def test_engine_state_names_the_engine_the_backend_drives(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    backend: Backend,
+    engine: str | None,
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        backend=backend,
+        engine_state_json=str(path),
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    assert EngineState.model_validate_json(path.read_text()).engine == engine
+
+
+def test_engine_state_has_no_cache_hit_rate_when_the_server_reports_none(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config,
+        mocker.Mock(),
+        _engine_state_result(mocker, cached_tokens_reported=False),
+        32,
+        True,
+    )
+
+    state = EngineState.model_validate_json(path.read_text())
+    assert state.cache_hit_rate is None
+    assert state.decode_batch_size_mean == 9.0
+
+
+def test_engine_state_is_not_written_when_the_hit_rate_exceeds_one(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config,
+        mocker.Mock(),
+        _engine_state_result(mocker, cache_hit_rate=1.2),
+        32,
+        True,
+    )
+
+    assert not path.exists()
+
+
+def test_engine_state_is_not_written_for_a_failed_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, False
+    )
+
+    assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    ("success", "cancelled", "written"),
+    [(True, False, True), (False, True, True), (False, False, False)],
+    ids=["succeeded", "cancelled", "failed"],
+)
+def test_engine_state_is_not_written_when_a_request_failed(
+    tmp_path: Path,
+    mocker: MockerFixture,
+    success: bool,
+    cancelled: bool,
+    written: bool,
+) -> None:
+    """Validation leaves failed requests out, so a run that lost most of its
+    requests still passes it."""
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = mocker.Mock(
+        request_records=[
+            mocker.Mock(success=True, cancelled=False),
+            mocker.Mock(success=success, cancelled=cancelled),
+        ],
+    )
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert path.exists() == written
+
+
+def test_a_few_failed_requests_are_recorded_in_the_engine_state(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = mocker.Mock(
+        request_records=[mocker.Mock(success=True, cancelled=False)] * 199
+        + [mocker.Mock(success=False, cancelled=False)]
+    )
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert (
+        EngineState.model_validate_json(path.read_text()).failed_requests == 1
+    )
+
+
+def test_engine_state_comes_from_the_first_iteration(
+    mocker: MockerFixture,
+) -> None:
+    """Later iterations replay the same requests against a warm cache."""
+    results = [
+        mocker.Mock(aggregates=mocker.Mock(request_throughput=t))
+        for t in (1.0, 3.0, 2.0)
+    ]
+    outcomes = iter([(r, True) for r in results])
+
+    async def fake_benchmark(*_: object) -> tuple[object, bool]:
+        return next(outcomes)
+
+    mocker.patch.object(benchmark_serving, "benchmark", fake_benchmark)
+    mocker.patch.object(benchmark_serving, "_sample_for_seed")
+    mocker.patch.object(benchmark_serving, "retain_result")
+    mocker.patch.object(benchmark_serving, "flush_prefix_cache")
+    emit = mocker.patch.object(benchmark_serving, "_emit_engine_state")
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        max_concurrency=[8],
+        num_iters=3,
+        seed=0,
+    )
+
+    list(
+        benchmark_serving._run_benchmark_sweep(
+            config, mocker.Mock(), mocker.Mock(num_prompts_for=lambda _: 8)
+        )
+    )
+
+    assert emit.call_args.args[2] is results[0]
+
+
+def test_engine_state_is_not_written_without_text_results(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    path = tmp_path / "state.json"
+    result = _engine_state_result(mocker)
+    result.text_data = None
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M", engine_state_json=str(path)
+    )
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), result, 32, True
+    )
+
+    assert not path.exists()
+
+
+def test_engine_state_is_not_written_without_the_flag(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), mocker.Mock(spec=BenchmarkResult), 32, True
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
+def _dry_stats() -> WorkloadStats:
+    return WorkloadStats(
+        requests=10,
+        context_limit=None,
+        turns_dropped_at_context_limit=0,
+        input_len=None,
+        input_len_first_turn=None,
+        input_len_later_turn=None,
+        output_len=None,
+        tool_request_fraction=None,
+        tools_per_request=None,
+        image_request_fraction=None,
+        constrained_request_fraction=None,
+    )
+
+
+def _stats_config(tmp_path: Path, **overrides: Any) -> ServingBenchmarkConfig:
+    stats_path = tmp_path / "stats.json"
+    write_workload_stats(_dry_stats(), stats_path)
+    return ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        workload_stats_json=str(stats_path),
+        **overrides,
+    )
+
+
+def test_real_run_rewrites_the_stats_file_with_the_engine_state(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch.object(
+        benchmark_serving, "_compute_session_stats", return_value=_dry_stats()
+    )
+    config = _stats_config(tmp_path)
+    before = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert before.engine_state is None
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    after = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert after.engine_state == EngineState(
+        cache_hit_rate=0.7,
+        decode_batch_size_mean=9.0,
+        max_concurrency=32,
+        engine="max",
+    )
+    assert after.model_copy(update={"engine_state": None}) == before
+
+
+def test_both_files_are_written_when_both_flags_are_set(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch.object(
+        benchmark_serving, "_compute_session_stats", return_value=_dry_stats()
+    )
+    state_path = tmp_path / "state.json"
+    config = _stats_config(tmp_path, engine_state_json=str(state_path))
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, True
+    )
+
+    state = EngineState.model_validate_json(state_path.read_text())
+    stats = WorkloadStats.model_validate_json(
+        Path(config.workload_stats_json or "").read_text()
+    )
+    assert stats.engine_state == state
+
+
+def test_stats_file_keeps_its_pre_run_content_for_a_failed_run(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    config = _stats_config(tmp_path)
+    path = Path(config.workload_stats_json or "")
+    before = path.read_text()
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 32, False
+    )
+
+    assert path.read_text() == before
+
+
+def test_stats_file_keeps_its_pre_run_content_across_a_sweep(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Both figures depend on the load, so a sweep has no single state."""
+    config = _stats_config(tmp_path, max_concurrency=[8, 16])
+    path = Path(config.workload_stats_json or "")
+    before = path.read_text()
+
+    benchmark_serving._emit_engine_state(
+        config, mocker.Mock(), _engine_state_result(mocker), 8, True
+    )
+
+    assert path.read_text() == before
+
+
+def test_engine_state_json_is_still_refused_for_a_sweep() -> None:
+    config = ServingBenchmarkConfig(
+        model="HuggingFaceTB/SmolLM2-135M",
+        engine_state_json="state.json",
+        request_rate=[1.0, 2.0],
+    )
+    with pytest.raises(ValueError, match="single --max-concurrency"):
+        list(main_with_parsed_args(config))
 
 
 # ===----------------------------------------------------------------------=== #

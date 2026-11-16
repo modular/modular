@@ -57,7 +57,13 @@ from max.benchmark.benchmark_shared.result_groups import (
     SummaryGroup,
     ThroughputStatsGroup,
 )
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    model_validator,
+)
 
 __all__ = [
     "ConfidenceInfo",
@@ -1054,6 +1060,22 @@ class BenchmarkResult(BaseModel):
     text_data: TextGenAggregates | None = None
     pixel_data: PixelGenAggregates | None = None
 
+    # Share of the run's prompt tokens the server served from its prefix
+    # cache, over every completed request. Kept out of the serialized
+    # result: ``text_data.global_cached_token_rate`` is 0.0 both for a cold
+    # cache and for a server that reports none, and covers only the
+    # requests left after trimming.
+    _run_cache_hit_rate: float | None = PrivateAttr(default=None)
+
+    @property
+    def run_cache_hit_rate(self) -> float | None:
+        """Prefix-cache hit rate over the whole run; None when not reported."""
+        return self._run_cache_hit_rate
+
+    def record_run_cache_hit_rate(self, rate: float | None) -> None:
+        """Records the run's prefix-cache hit rate."""
+        self._run_cache_hit_rate = rate
+
     # Text-generation-only fields. Stay ``None`` for pixel workloads.
     spec_decode_stats: SpecDecodeStats | None = None
     session_server_stats: dict[str, list[ServerTokenStats]] | None = None
@@ -1223,6 +1245,14 @@ class BenchmarkResult(BaseModel):
         hist = self._find_batch_histogram(
             BatchType.TG,
             HistogramMetric.MAXSERVE_BATCH_EXECUTION_TIME_MILLISECONDS,
+        )
+        return hist.mean if hist else None
+
+    @property
+    def mean_decode_batch_size(self) -> float | None:
+        """Mean number of requests per decode (token generation) batch."""
+        hist = self._find_batch_histogram(
+            BatchType.TG, HistogramMetric.BATCH_SIZE
         )
         return hist.mean if hist else None
 

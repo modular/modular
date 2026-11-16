@@ -457,6 +457,25 @@ def test_get_histogram_refuses_to_pick_between_matching_series(
     ) == _hist(900.0, 10.0)
 
 
+def test_mean_decode_batch_size_is_none_for_ambiguous_series() -> None:
+    pm = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'max_batch_size{batch_type="decode",replica="0"}': _hist(
+                100.0, 10.0
+            ),
+            'max_batch_size{batch_type="decode",replica="1"}': _hist(
+                900.0, 10.0
+            ),
+        },
+        raw_text="",
+        backend="mach",
+    )
+
+    assert _make_metrics({"engine-0": pm}).mean_decode_batch_size is None
+
+
 def test_metrics_by_endpoint_defaults_to_empty() -> None:
     """With no endpoints scraped, convenience batch-time properties return
     safe defaults (None / 0) rather than raising."""
@@ -1234,6 +1253,61 @@ def test_modular_backend_stamp_leaves_max_serve_output_unchanged() -> None:
     assert unstamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
     assert stamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
     assert unstamped.to_result_dict() == stamped.to_result_dict()
+
+
+def test_mean_decode_batch_size_is_the_decode_phase_histogram_mean() -> None:
+    pm = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'max_batch_size{batch_type="CE"}': _hist(40.0, 10.0),
+            'max_batch_size{batch_type="TG"}': _hist(300.0, 100.0),
+        },
+        raw_text="",
+        backend="modular",
+    )
+
+    assert _make_metrics({"server": pm}).mean_decode_batch_size == 3.0
+
+
+def test_mean_decode_batch_size_on_mach_with_exporter_labels() -> None:
+    """Mach tags every series with ``otel_scope_name``."""
+    pm = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'max_batch_size{batch_type="decode",otel_scope_name="mach-engine"}': _hist(
+                4031.0, 559.0
+            ),
+            'max_batch_size{batch_type="prefill",otel_scope_name="mach-engine"}': _hist(
+                41.0, 11.0
+            ),
+            'max_batch_execution_time_milliseconds{batch_type="decode",otel_scope_name="mach-engine"}': _hist(
+                3019.0, 558.0
+            ),
+        },
+        raw_text="",
+        backend="mach",
+    )
+    result = _make_metrics({"engine-0": pm})
+
+    assert result.mean_decode_batch_size == pytest.approx(4031.0 / 559.0)
+    assert result.mean_decode_batch_time_ms == pytest.approx(3019.0 / 558.0)
+
+
+def test_mean_decode_batch_size_is_none_without_the_histogram() -> None:
+    assert _make_metrics({}).mean_decode_batch_size is None
+
+
+def test_run_cache_hit_rate_is_not_part_of_the_serialized_result() -> None:
+    result = _make_metrics({})
+    assert result.run_cache_hit_rate is None
+
+    result.record_run_cache_hit_rate(0.4)
+
+    assert result.run_cache_hit_rate == 0.4
+    assert "_run_cache_hit_rate" not in result.model_dump()
+    assert "run_cache_hit_rate" not in result.to_result_dict()
 
 
 class _FakeClock:

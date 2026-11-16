@@ -385,6 +385,9 @@ class ServerTokenStats:
     completion_tokens: int | None = None
     total_tokens: int | None = None
     cached_tokens: int = 0
+    # Whether the usage carried cached-token counts at all, so a server that
+    # reports none is not read as one that served nothing from its cache.
+    cached_tokens_reported: bool = False
 
 
 @dataclass
@@ -803,6 +806,8 @@ class OpenAIStreamRecorder:
                     if chunk.usage.prompt_tokens_details
                     else 0
                 ),
+                cached_tokens_reported=chunk.usage.prompt_tokens_details
+                is not None,
             )
 
         # Skip content processing for chunks with no choices.
@@ -1095,6 +1100,7 @@ async def _run_atom_nonstream_chat_request(
         completion_tokens=completion_tokens,
         total_tokens=usage.get("total_tokens"),
         cached_tokens=prompt_details.get("cached_tokens", 0),
+        cached_tokens_reported="cached_tokens" in prompt_details,
     )
     # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
     # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).

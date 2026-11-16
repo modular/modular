@@ -929,6 +929,33 @@ def _session_sort_key(sid: str) -> tuple[int, int, str]:
         return (1, 0, sid)
 
 
+def run_cache_hit_rate(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> float | None:
+    """Prefix-cache hit rate over every completed request of a run.
+
+    Unlike ``global_cached_token_rate`` this keeps the requests that the
+    head/tail trim and steady-state detection drop, so it covers the same
+    window as the server's own counters.
+
+    Args:
+        outputs: The run's request outputs.
+
+    Returns:
+        Cached prompt tokens over prompt tokens, or None when no request's
+        usage carried cached-token counts.
+    """
+    cached = prompt = 0
+    for o in outputs:
+        if not isinstance(o, RequestFuncOutput) or not o.success:
+            continue
+        stats = o.server_token_stats
+        if stats.cached_tokens_reported and stats.prompt_tokens:
+            cached += stats.cached_tokens
+            prompt += stats.prompt_tokens
+    return cached / prompt if prompt else None
+
+
 def build_text_generation_result(
     *,
     outputs: Sequence[BaseRequestFuncOutput],

@@ -40,6 +40,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
@@ -55,7 +56,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     Samples,
 )
 from openai.types.chat.completion_create_params import ResponseFormat
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
 WORKLOAD_STATS_SCHEMA_VERSION = 1
@@ -132,6 +133,27 @@ class Distribution(BaseModel):
         )
 
 
+class EngineState(BaseModel):
+    """Engine behavior measured while a real run served the workload.
+
+    Unlike the rest of the stats, these figures depend on the engine and on
+    the load the run drove, so a dry run has none. Each is None when the run
+    could not measure it.
+    """
+
+    # Share of input tokens the engine served from its prefix cache.
+    cache_hit_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Mean rows per decode batch, as production's decode batch-size mean.
+    decode_batch_size_mean: float | None = Field(default=None, ge=0.0)
+    # The load the run drove; both figures above move with it.
+    max_concurrency: int | None = Field(default=None, ge=1)
+    # The engine that served the run, when it is one production is cut by.
+    # Both figures mean different things on different engines.
+    engine: Literal["max", "mach"] | None = None
+    # Requests that failed; the figures leave them out.
+    failed_requests: int = Field(default=0, ge=0)
+
+
 class WorkloadStats(BaseModel):
     """What a workload would send, in the terms production is measured in."""
 
@@ -154,6 +176,9 @@ class WorkloadStats(BaseModel):
     tools_per_request: Distribution | None
     image_request_fraction: float | None
     constrained_request_fraction: float | None
+    # Defaulted so a dry run, and stats written before a run was measured,
+    # still load.
+    engine_state: EngineState | None = None
 
     @property
     def dropped_turn_fraction(self) -> float | None:
@@ -383,3 +408,8 @@ def compute_workload_stats(
 def write_workload_stats(stats: WorkloadStats, path: str | Path) -> None:
     """Writes ``stats`` as JSON to ``path``."""
     Path(path).write_text(stats.model_dump_json(indent=2) + "\n")
+
+
+def write_engine_state(state: EngineState, path: str | Path) -> None:
+    """Writes ``state`` as JSON to ``path``."""
+    Path(path).write_text(state.model_dump_json(indent=2) + "\n")

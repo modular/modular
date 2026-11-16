@@ -1223,7 +1223,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     workload_stats_json: str | None = Field(
         default=None,
-        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-multiturn, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-multiturn, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported. After a real run with a single --max-concurrency and --request-rate, the file is rewritten with the engine state the run measured (see --engine-state-json), unless more than 1% of the requests failed.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    engine_state_json: str | None = Field(
+        default=None,
+        description="Write the engine state this run measured (prefix-cache hit rate, mean decode batch size) as JSON to this path, for `kimberlite compare --telemetry`. Needs a single --max-concurrency and --request-rate, because both figures depend on the load. With --num-iters, the first iteration supplies it, since later ones replay the same requests against a warm cache.",
         json_schema_extra={"group": "Control Flags"},
     )
 

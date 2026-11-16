@@ -424,6 +424,30 @@ class TestOpenAIStreamRecorder:
         assert stats.completion_tokens == 1
         assert stats.total_tokens == 4
         assert stats.cached_tokens == 2
+        assert stats.cached_tokens_reported
+
+    def test_usage_without_prompt_details_reports_no_cached_tokens(
+        self,
+    ) -> None:
+        """A server that omits ``prompt_tokens_details`` reports nothing."""
+        recorder = OpenAIStreamRecorder(prompt_len=1, chat=True)
+
+        recorder.on_event(
+            json.dumps(
+                {
+                    "choices": [{"delta": {"content": "x"}}],
+                    "usage": {
+                        "prompt_tokens": 3,
+                        "completion_tokens": 1,
+                        "total_tokens": 4,
+                    },
+                }
+            )
+        )
+
+        stats = recorder.output.server_token_stats
+        assert stats.cached_tokens == 0
+        assert not stats.cached_tokens_reported
 
     def test_finish_without_content_fails(self) -> None:
         """Choices present but no modeled text field must fail."""
