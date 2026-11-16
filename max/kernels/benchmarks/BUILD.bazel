@@ -382,6 +382,9 @@ mojo_binary(
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             "gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo",
             "gpu/nn/bench_topk_split_amd.mojo",
+            # Same reason: the MLA gated `w_uv` projection against its
+            # unfused chain, timed on remote MI355.
+            "gpu/nn/bench_mla_gated_w_uv.mojo",
             # Same reason: the split KV cache no-regression gate, timed on
             # remote B200.
             "gpu/nn/bench_mha_sm100_split_kv.mojo",
@@ -433,6 +436,9 @@ mojo_binary(
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             "gpu/nn/bench_mla_decode_sparse_bf16_amd.mojo",
             "gpu/nn/bench_topk_split_amd.mojo",
+            # Same reason: the MLA gated `w_uv` projection against its
+            # unfused chain, timed on remote MI355.
+            "gpu/nn/bench_mla_gated_w_uv.mojo",
             # Same reason: the split KV cache no-regression gate, timed on
             # remote B200.
             "gpu/nn/bench_mha_sm100_split_kv.mojo",
@@ -950,6 +956,38 @@ build_test(
     name = "gpu/nn/bench_topk_split_amd.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/nn/bench_topk_split_amd.mojo.run"],
+)
+
+# The gated `w_uv` projection against its unfused chain, out of the `gpu/**`
+# glob so it can be timed on remote MI355; `manual` keeps it out of `//...`
+# and the `build_test` keeps it compiling.
+mojo_test(
+    name = "gpu/nn/bench_mla_gated_w_uv.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mla_gated_w_uv.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:max_mojo",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/nn/bench_mla_gated_w_uv.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/nn/bench_mla_gated_w_uv.mojo.run"],
 )
 
 # Deps/data/env shared by the softmax / m3 benchmark targets below.

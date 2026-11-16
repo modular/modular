@@ -196,8 +196,14 @@ def _mla_quant_config() -> QuantConfig:
     )
 
 
-def _mla_op(arm: str, *, with_record: bool) -> mlir.Operation:
-    """Builds the MLA combined op for ``arm`` and returns its graph op."""
+def _mla_op(
+    arm: str, *, with_record: bool, with_gate: bool = False
+) -> mlir.Operation:
+    """Builds the MLA combined op for ``arm`` and returns its graph op.
+
+    ``with_gate`` supplies the op's per-token output gate, which only the dense
+    BF16 arm folds into its last projection.
+    """
     sparse = arm in MLA_SPARSE_OPS
     quant_config = _mla_quant_config() if arm in ("fp8", "fp8_dense") else None
     kv_params = MLAKVCacheParams(
@@ -283,6 +289,18 @@ def _mla_op(arm: str, *, with_record: bool) -> mlir.Operation:
         TensorType(DType.uint32, ["row_offsets_len"], gpu),
         *index_types,
         *tree.leaves(kv_params.get_symbolic_inputs()[0]),
+        # The optional output gate, last so the cache leaves keep their slots.
+        *(
+            [
+                TensorType(
+                    DType.bfloat16,
+                    ["total_tokens", MLA_NUM_HEADS * MLA_V_HEAD_DIM],
+                    gpu,
+                )
+            ]
+            if with_gate
+            else []
+        ),
     ]
     with Graph("mla_mixed_split_op", input_types=input_types) as graph:
         q, kv, input_row_offsets = (x.tensor for x in graph.inputs[:3])
@@ -338,6 +356,7 @@ def _mla_op(arm: str, *, with_record: bool) -> mlir.Operation:
             w_k_scale=w_k_scale,
             w_uk_scale=w_uk_scale,
             w_uv_scale=w_uv_scale,
+            output_gate=graph.inputs[-1].tensor if with_gate else None,
         )
         graph.output(out)
     op_name = MLA_SPARSE_OPS[arm] if sparse else MLA_DENSE_OPS[arm]
@@ -349,6 +368,31 @@ def _mla_op(arm: str, *, with_record: bool) -> mlir.Operation:
     ]
     assert len(ops_found) == 1
     return ops_found[0]
+
+
+def test_the_gate_is_folded_only_when_the_caller_supplies_one() -> None:
+    """The dense BF16 op's gate parameter, and the operand it reads, are opt-in.
+
+    The kernel applies the gate only when both are present, so a build that
+    dropped either would run the layer's output ungated.
+    """
+    arm = "bf16_dense"
+    fused = _mla_op(arm, with_record=True, with_gate=True)
+    assert "has_output_gate" in str(fused)
+    # The gate is the op's second operand, right after `q`.
+    assert f"[total_tokens, {MLA_NUM_HEADS * MLA_V_HEAD_DIM}], bf16" in str(
+        fused.operands[1].type
+    )
+
+    unfused = _mla_op(arm, with_record=True)
+    assert "has_output_gate" not in str(unfused)
+
+
+def test_a_gate_on_a_sparse_or_fp8_op_is_refused() -> None:
+    """Only the dense BF16 arm has a projection store to fold the gate into."""
+    for arm in ("fp8_dense", *MLA_SPARSE_OPS):
+        with pytest.raises(ValueError, match="dense BF16-weight MLA op"):
+            _mla_op(arm, with_record=True, with_gate=True)
 
 
 @pytest.mark.parametrize("arm", MLA_ARMS)

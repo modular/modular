@@ -7973,9 +7973,14 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
     @staticmethod
     def execute[
         mask_str: StaticString,
+        # Set by the Python wrapper from whether the caller supplied one. An
+        # absent gate arrives as a placeholder tensor that is never read, and
+        # the projection keeps its ungated store.
+        has_output_gate: Bool = False,
     ](
         output: Some[Output & Tensor],
         q: Some[Input & Tensor],
+        output_gate: Some[Input & Tensor],
         kv: Some[Input & Fused & LoadAccess],
         input_row_offsets: Some[Input & Tensor],
         freqs_cis: Some[Input & Tensor],
@@ -8002,6 +8007,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
         comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(output_gate), TileTensorable)
         comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
         comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
         comptime assert conforms_to(type_of(kv_norm_gamma), TileTensorable)
@@ -8025,6 +8031,13 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output).rank == 3
         comptime assert type_of(q).rank == 3
+        comptime if has_output_gate:
+            comptime assert (
+                type_of(output_gate).rank == 2
+            ), "the MLA output gate is [tokens, num_heads * v_head_dim]"
+            comptime assert (
+                type_of(output_gate).dtype == DType.bfloat16
+            ), "the MLA output gate is bfloat16, like the output"
         comptime assert type_of(kv).rank == 2
         comptime assert type_of(input_row_offsets).rank == 1
         comptime assert type_of(freqs_cis).rank == 2
@@ -8077,6 +8090,29 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
             )
         )
 
+        # The output gate is a row slice of the fused input projection, so it
+        # keeps the parent's row stride; an absent one arrives as a placeholder
+        # and is never read.
+        var output_gate_ptr = maybe_null_pointer[present=has_output_gate](
+            output_gate.to_tile_tensor[.bfloat16]().unsafe_ptr()
+        )
+        var output_gate_row_stride = 0
+        comptime if has_output_gate:
+            var gate_strides = output_gate.to_tile_tensor[
+                .bfloat16
+            ]().layout.stride_coord()
+            output_gate_row_stride = Int(gate_strides[0])
+            # Both gate consumers (`_mla_gated_w_uv`,
+            # `_mla_apply_output_gate`) address the gate's columns as
+            # contiguous, so a column-strided gate would read wrong
+            # addresses; fail fast instead.
+            var gate_col_stride = Int(gate_strides[1])
+            if gate_col_stride != 1:
+                raise Error(
+                    t"the MLA output gate must have column stride 1, got"
+                    t" {gate_col_stride}"
+                )
+
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
             "attention.mla.graph.prefill.decode.paged",
             task_id=get_safe_task_id(context),
@@ -8093,6 +8129,7 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
             )
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
+                OutputGatePtrType=type_of(output_gate_ptr),
                 kernels=Self.kernels,
             ](
                 output.to_tile_tensor[.bfloat16](),
@@ -8117,6 +8154,8 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
                 num_partitions_in=num_partitions_proj,
                 mixed_split=split,
                 decode_num_partitions=decode_num_partitions,
+                output_gate=output_gate_ptr,
+                output_gate_row_stride=output_gate_row_stride,
             )
 
 

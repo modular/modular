@@ -49,9 +49,16 @@ reference's own recipe, not a workaround.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 from max import functional as F
-from max.driver import CPU, Device
+from max.driver import (
+    CPU,
+    Device,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.nn import Linear, Module
 from max.nn.attention_mask import MHAMaskVariant
@@ -78,6 +85,35 @@ from .tensor_parallel import check_divisible
 # K3's q_a_layernorm/kv_a_layernorm always use this epsilon, independent of
 # the model's general `rms_norm_eps` -- see `kimi_k3/layers/norm.py`.
 _KIMI_QKV_A_LAYERNORM_EPS = 1e-6
+
+# The accelerator whose MLA kernel folds the output gate into its `w_uv`
+# projection store.
+_FUSED_MLA_GATE_ARCH = "gfx950"
+
+
+@lru_cache(maxsize=1)
+def _folds_output_gate() -> bool:
+    """Whether this accelerator's MLA kernel folds the layer's output gate.
+
+    The kernel-side fold is target-generic; only gfx950 enables it because
+    that is where it is validated and measured. Other targets keep the
+    separate launch until benchmarked there.
+
+    The fold saves this layer's own ``attn * sigmoid(gate)`` launch by applying
+    the gate inside the kernel: in the decode branch's ``w_uv`` projection
+    store, or in one pass of the prefill branch, which is exactly the multiply
+    it replaces. Which branch runs is the kernel's run-time decision on the
+    batch's max query length, never this layer's; a trace-time row count cannot
+    see a served graph's symbolic extent and would leave every served batch
+    unfused. Asked once per process, since the architecture is process-wide and
+    the probe builds a device handle a step must not pay per layer.
+    """
+    # `accelerator_architecture_name()` raises on a GPU-less host, so the
+    # count check comes first and keeps such a host on the unfused chain.
+    return (
+        accelerator_count() > 0
+        and accelerator_architecture_name().startswith(_FUSED_MLA_GATE_ARCH)
+    )
 
 
 class KimiK3MLAAttention(Module[..., Tensor]):
@@ -431,6 +467,11 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             )
         w_uk_base = kv_b[:, :, : self.qk_nope_head_dim]
 
+        # The kernel applies the gate when its decode branch runs and falls
+        # back to one gated pass on the prefill branch, so the result does not
+        # depend on which branch the batch takes.
+        fuse_output_gate = _folds_output_gate()
+
         attn = mla_prefill_decode_graph(
             q=query,
             kv=kv,
@@ -462,6 +503,9 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             num_partitions_scalar=_require_mla_cache_field(
                 kv_collection.mla_num_partitions, "mla_num_partitions"
             ),
+            # Folded by the kernel when this accelerator's MLA kernel has the
+            # fold; see `_folds_output_gate`.
+            output_gate=gate_pre if fuse_output_gate else None,
         )
         if attn.is_distributed:
             attn = attn.rebind_mapping(
@@ -471,6 +515,8 @@ class KimiK3MLAAttention(Module[..., Tensor]):
             attn, [total_seq_len, self.num_heads * self.v_head_dim]
         )
 
+        if fuse_output_gate:
+            return self.o_proj(attn)
         return self.o_proj(attn * F.sigmoid(gate_pre))
 
 

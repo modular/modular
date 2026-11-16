@@ -7933,6 +7933,7 @@ def mla_prefill_decode_graph(
     selection_lag: int = 0,
     sparse_attn_sink_inert: bool = False,
     sparse_split_rows_per_request: int = 0,
+    output_gate: TensorValue | None = None,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -7996,12 +7997,20 @@ def mla_prefill_decode_graph(
             matches its row bit for bit. Zero leaves the split to the
             dispatcher. Only the sparse op with BF16 weights and an SM100 FP8
             cache supports it.
+        output_gate: Optional ``[total_seq_len, num_heads * v_head_dim]``
+            bfloat16 per-token gate, which the dense BF16-weight op multiplies
+            into its output. The decode branch folds it into the ``w_uv``
+            projection's store, so the caller skips its own elementwise pass;
+            the prefill branch has no such store and applies it in one pass of
+            its own, which is exactly the operation the caller would have run.
+            Every other arm refuses a gate.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
 
     Raises:
-        ValueError: If ``sparse_split_rows_per_request`` is non-zero on a call
+        ValueError: If ``output_gate`` is supplied to an op that cannot fold
+            it, or if ``sparse_split_rows_per_request`` is non-zero on a call
             whose op cannot take it.
     """
     _validate_mla_prefill_decode_graph_inputs(
@@ -8015,8 +8024,42 @@ def mla_prefill_decode_graph(
     )
     parameters = _mha_parameters(mask_variant)
 
-    input_values: MutableSequence[Value[Any]] = [
-        q,
+    # Only the dense BF16-weight op declares the gate operand, and only its
+    # `w_uv` projection store can fold the multiply in. The FP8-weight and
+    # sparse variants would have to run the gate as a pass of their own, which
+    # is what the caller already does, and an operand they do not take would
+    # shift every later operand out of place.
+    folds_output_gate = quant_config is None and sparse_indices is None
+
+    if output_gate is not None:
+        if not folds_output_gate:
+            raise ValueError(
+                "output_gate needs the dense BF16-weight MLA op, without FP8"
+                " weight scales or sparse indices"
+            )
+        if output_gate.dtype != DType.bfloat16:
+            raise ValueError(
+                f"expected a bfloat16 output_gate but got {output_gate.dtype}"
+            )
+        if output_gate.rank != 2 or output_gate.shape[0] != q.shape[0]:
+            raise ValueError(
+                "expected output_gate of shape [total_seq_len,"
+                f" num_heads * v_head_dim] but got {output_gate.shape}"
+            )
+        gate_width = int(q.shape[1]) * v_head_dim
+        if int(output_gate.shape[1]) != gate_width:
+            raise ValueError(
+                f"expected output_gate's width {gate_width} but got"
+                f" {output_gate.shape[1]}"
+            )
+        parameters["has_output_gate"] = True
+
+    input_values: MutableSequence[Value[Any]] = [q]
+    if folds_output_gate:
+        # The op's gate input; an absent gate reuses `q` as a placeholder that
+        # the kernel specializes away.
+        input_values.append(output_gate if output_gate is not None else q)
+    input_values += [
         kv,
         input_row_offsets,
         freqs_cis,

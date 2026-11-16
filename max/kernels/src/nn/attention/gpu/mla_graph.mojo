@@ -73,6 +73,7 @@ from linalg.fp4_utils import (
     nvfp4_kv_quantize_x8,
 )
 from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
+from nn.activations import sigmoid
 from nn.fused_qk_rope import rope_k_cache, rope_q_proj, rope_value
 from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams
@@ -4251,6 +4252,103 @@ def convert_bf16_to_fp8_e4m3fn(
 
 
 # ===-----------------------------------------------------------------------===#
+# Output-gated `w_uv` projection (the MLA layer's post-attention gate)
+# ===-----------------------------------------------------------------------===#
+
+
+def _mla_gated_w_uv(
+    output_t: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
+    raw_output_t: TileTensor[.bfloat16, address_space=.GENERIC, ...],
+    w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
+    gate: TileTensor[.bfloat16, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """Computes `output_t = (raw_output_t @ w_uv) * sigmoid(gate)`.
+
+    The `w_uv` projection's own store applies the gate, so the layer needs no
+    separate elementwise pass over the attention output. `sigmoid` rounds the
+    same way it does there (fp32, then one bfloat16 cast), so the fused result
+    is bit-identical to `output * sigmoid(gate)` over the unfused projection.
+
+    Args:
+        output_t: `[num_heads, seq_len, v_head_dim]` output view.
+        raw_output_t: `[num_heads, seq_len, kv_latent_dim]` attention output.
+        w_uv: `[num_heads, v_head_dim, kv_latent_dim]` projection weight.
+        gate: `[seq_len, num_heads * v_head_dim]` per-token gate, in any row
+            stride.
+        ctx: Device context.
+    """
+    comptime v_head_dim = w_uv.static_shape[1]
+
+    @inline(.always)
+    def gated_value[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var} -> SIMD[dtype, width]:
+        comptime assert (
+            idx.rank == 3
+        ), "the `w_uv` output is [num_heads, seq_len, v_head_dim]"
+        comptime assert dtype == .bfloat16, "the gated store is bfloat16"
+        var gate_col = Int(idx[0]) * v_head_dim + Int(idx[2])
+        var gate_val = gate.load[
+            width=width, alignment=align_of[Scalar[.bfloat16]]()
+        ](Coord(Int(idx[1]), gate_col))
+        return val * sigmoid[dtype, width](gate_val.cast[dtype]())
+
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](output_t, raw_output_t, w_uv, gated_value, ctx)
+
+
+def _mla_apply_output_gate[
+    v_head_dim: Int
+](
+    output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
+    gate: Pointer[Scalar[.bfloat16], _],
+    gate_row_stride: Int,
+    ctx: DeviceContext,
+) raises:
+    """Multiplies `output` by `sigmoid(gate)` in place, one pass.
+
+    The prefill branch has no `w_uv` projection store to fold the gate into,
+    so it applies the same multiply in one pass of its own; see
+    `mla_prefill_decode_graph_bf16`'s `output_gate`.
+
+    Parameters:
+        v_head_dim: Output width per head.
+
+    Args:
+        output: `[seq_len, num_heads, v_head_dim]` tensor to gate.
+        gate: `[seq_len, num_heads * v_head_dim]` per-token gate.
+        gate_row_stride: Row stride of `gate`, in elements.
+        ctx: Device context.
+    """
+
+    @inline(.always)
+    def gate_kernel[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        comptime assert idx.rank == 3, "the attention output is rank 3"
+        var gate_col = Int(idx[1]) * v_head_dim + Int(idx[2])
+        var gate_val = gate.unsafe_offset(
+            Int(idx[0]) * gate_row_stride + gate_col
+        ).unsafe_load[width=width, alignment=align_of[Scalar[.bfloat16]]()]()
+        output.store(
+            idx, output.load[width](idx) * sigmoid[.bfloat16, width](gate_val)
+        )
+
+    _elementwise_impl_gpu[
+        simd_width=simd_width_of[DType.bfloat16, target=ctx.target](),
+        trace_description="mla_output_gate",
+    ](
+        gate_kernel,
+        shape=(
+            Int(output.dim[0]()),
+            Int(output.dim[1]()),
+            Int(output.dim[2]()),
+        ),
+        ctx=ctx,
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # Manually fused MLA prefill branch (BF16)
 # ===-----------------------------------------------------------------------===#
 
@@ -4262,6 +4360,8 @@ def mla_prefill_branch_bf16[
     & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
+    # Presence of `output_gate` (inferred from its type); see the docstring.
+    OutputGatePtrType: OptionalPointer = NullPointer[DType.bfloat16],
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -4282,6 +4382,9 @@ def mla_prefill_branch_bf16[
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     kv_input_fn: KVInputFnType,
     ctx: DeviceContext,
+    # Optional per-token output gate; see `mla_prefill_decode_graph_bf16`.
+    output_gate: OutputGatePtrType = null_pointer[OutputGatePtrType](),
+    output_gate_row_stride: Int = 0,
 ) raises:
     """BF16 MLA prefill path.
 
@@ -4293,6 +4396,8 @@ def mla_prefill_branch_bf16[
         KVInputFnType: Type of the closure that loads the KV latent
             values (inferred).
         mask_str: Mask variant.
+        OutputGatePtrType: `OptionalPointer` type of `output_gate` (inferred,
+            defaults to `NullPointer`); a null type applies no gate.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
@@ -4325,6 +4430,12 @@ def mla_prefill_branch_bf16[
             + qk_rope_head_dim. It runs on the device, so it must copy what
             it captures.
         ctx: Device context.
+        output_gate: Optional bfloat16 `[seq_len, num_heads * v_head_dim]`
+            per-token output gate applied in one pass after attention, which
+            is the unfused fallback for a caller that could not get the gate
+            folded into its own kernel. Row-strided by
+            `output_gate_row_stride`.
+        output_gate_row_stride: Row stride of `output_gate`, in elements.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -4551,6 +4662,16 @@ def mla_prefill_branch_bf16[
             ctx,
         )
 
+    comptime if not OutputGatePtrType.is_null:
+        _mla_apply_output_gate[v_head_dim](
+            output,
+            rebind[MutPointer[Scalar[.bfloat16], MutAnyOrigin]](
+                as_optional_reg(output_gate).value()
+            ),
+            output_gate_row_stride,
+            ctx,
+        )
+
 
 # ===-----------------------------------------------------------------------===#
 # Manually fused MLA decode branch (BF16)
@@ -4616,6 +4737,8 @@ def mla_decode_branch_bf16[
     # Whether `output` is the attention's latent output, `[.., kv_latent_dim]`,
     # so the branch skips the `w_uv` projection.
     latent_output: Bool = False,
+    # Presence of `output_gate` (inferred from its type); see the docstring.
+    OutputGatePtrType: OptionalPointer = NullPointer[DType.bfloat16],
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -4651,6 +4774,11 @@ def mla_decode_branch_bf16[
     # Whether this launch belongs to the row-invariant pin's verify, whose count
     # the capture key needs; see `_mla_decode_split`.
     row_invariant_verify: Bool = False,
+    # Optional `[seq_len, num_heads * v_head_dim]` output gate, row-strided by
+    # `output_gate_row_stride`; applied in the `w_uv` projection's store. See
+    # the docstring.
+    output_gate: OutputGatePtrType = null_pointer[OutputGatePtrType](),
+    output_gate_row_stride: Int = 0,
 ) raises:
     """BF16 MLA decode path.
 
@@ -4686,6 +4814,8 @@ def mla_decode_branch_bf16[
         latent_output: Whether `output` receives the attention's latent
             output, before `w_uv`, so `w_uv` is not read (defaults to
             `False`).
+        OutputGatePtrType: `OptionalPointer` type of `output_gate` (inferred,
+            defaults to `NullPointer`); a null type applies no gate.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
 
     Args:
@@ -4734,6 +4864,12 @@ def mla_decode_branch_bf16[
         row_invariant_verify: Whether this launch is the row-invariant pin's
             own verify, which the SM100 dispatcher sizes at the pin's count
             instead of from the live cache; see `_mla_decode_split`.
+        output_gate: Optional bfloat16 `[seq_len, num_heads * v_head_dim]`
+            per-token output gate, row-strided by `output_gate_row_stride`.
+            When present, the `w_uv` projection's store multiplies each value
+            by `sigmoid(gate)`, so the caller needs no separate elementwise
+            pass. Null applies no gate.
+        output_gate_row_stride: Row stride of `output_gate`, in elements.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -4774,6 +4910,9 @@ def mla_decode_branch_bf16[
         comptime assert (
             w_uv.static_shape[1] == v_head_dim
         ), "w_uv.static_shape[1] should be equal to v_head_dim"
+    comptime assert (
+        not latent_output or OutputGatePtrType.is_null
+    ), "an output gate needs the `w_uv` projection it is applied in"
 
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
@@ -4988,9 +5127,26 @@ def mla_decode_branch_bf16[
     )
 
     comptime if not latent_output:
-        _batched_matmul_gpu[
-            transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
-        ](output_t, raw_output_t, w_uv, ctx)
+        comptime if OutputGatePtrType.is_null:
+            _batched_matmul_gpu[
+                transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+            ](output_t, raw_output_t, w_uv, ctx)
+        else:
+            _mla_gated_w_uv(
+                output_t,
+                raw_output_t,
+                w_uv,
+                TileTensor(
+                    rebind[MutPointer[Scalar[.bfloat16], MutAnyOrigin]](
+                        as_optional_reg(output_gate).value()
+                    ),
+                    Layout(
+                        Coord(seq_len, Idx[num_heads * v_head_dim]),
+                        Coord(output_gate_row_stride, Idx[1]),
+                    ),
+                ),
+                ctx,
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5657,6 +5813,8 @@ def mla_prefill_decode_graph_bf16[
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     nvfp4_convert_ratio: Int = 0,
     nvfp4_convert_max_rows: Int = 0,
+    # Presence of `output_gate` (inferred from its type); see the docstring.
+    OutputGatePtrType: OptionalPointer = NullPointer[DType.bfloat16],
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
@@ -5696,6 +5854,11 @@ def mla_prefill_decode_graph_bf16[
     # Whether this launch belongs to the row-invariant pin's verify, whose count
     # the capture key needs; see `_mla_decode_split`.
     row_invariant_verify: Bool = False,
+    # Optional `[seq_len, num_heads * v_head_dim]` per-token output gate, which
+    # replaces the caller's separate `output * sigmoid(gate)` pass. See the
+    # docstring.
+    output_gate: OutputGatePtrType = null_pointer[OutputGatePtrType](),
+    output_gate_row_stride: Int = 0,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
@@ -5724,6 +5887,8 @@ def mla_prefill_decode_graph_bf16[
             once (defaults to 0, never); see `nvfp4_prefill_converts_once`.
         nvfp4_convert_max_rows: Most rows that conversion may allocate
             (defaults to 0).
+        OutputGatePtrType: `OptionalPointer` type of `output_gate` (inferred,
+            defaults to `NullPointer`); a null type applies no gate.
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
         allow_split: Whether a passed `mixed_split` may run as two
             self-calls (defaults to True); the per-view calls pass False.
@@ -5790,7 +5955,19 @@ def mla_prefill_decode_graph_bf16[
         row_invariant_verify: Whether this launch is the row-invariant pin's
             own verify; forwarded to the decode branch, see
             `_mla_decode_split`.
+        output_gate: Optional bfloat16 `[seq_len, num_heads * v_head_dim]`
+            per-token output gate, row-strided by `output_gate_row_stride`.
+            The decode branch applies it inside the `w_uv` projection's store,
+            so a caller that would otherwise run `output * sigmoid(gate)`
+            saves that launch. The prefill branch has no such store, so it
+            falls back to one gated pass, which keeps the result identical at
+            every row count. Null applies no gate.
+        output_gate_row_stride: Row stride of `output_gate`, in elements.
     """
+    comptime assert not sparse_mla or OutputGatePtrType.is_null, (
+        "the sparse MLA prefill branch ignores the output gate; gate the"
+        " result in the caller instead of passing one here"
+    )
     var seq_len = q.dim(0)
 
     if seq_len == 0:
@@ -5873,6 +6050,7 @@ def mla_prefill_decode_graph_bf16[
                         TopkLengthsPtrType=TopkLengthsPtrType,
                         nvfp4_convert_ratio=nvfp4_convert_ratio,
                         nvfp4_convert_max_rows=nvfp4_convert_max_rows,
+                        OutputGatePtrType=OutputGatePtrType,
                         kernels=kernels,
                         allow_split=False,
                     ](
@@ -5905,6 +6083,19 @@ def mla_prefill_decode_graph_bf16[
                         args.prefill_d_indices,
                         selection_lag,
                         row_invariant_verify=row_invariant_verify,
+                        # The view's row 0 is the gate's `first_token` row:
+                        # the gate is per token of the whole batch, so a view
+                        # that starts `first_token` tokens in reads its rows
+                        # from the same offset. AMD takes this split on a
+                        # non-sparse mixed step whenever the decode view fits
+                        # the decode fold, so the fold rides it live there;
+                        # test_mla_output_gate_fold.py runs a mixed step
+                        # through it.
+                        output_gate=_mla_split_offset_pointer(
+                            output_gate,
+                            first_token * output_gate_row_stride,
+                        ),
+                        output_gate_row_stride=output_gate_row_stride,
                     )
                     _ = args^
                 return
@@ -5940,6 +6131,8 @@ def mla_prefill_decode_graph_bf16[
             num_partitions_in,
             selection_lag=selection_lag,
             row_invariant_verify=row_invariant_verify,
+            output_gate=output_gate,
+            output_gate_row_stride=output_gate_row_stride,
         )
 
     comptime num_heads = q.static_shape[1]
@@ -6039,6 +6232,7 @@ def mla_prefill_decode_graph_bf16[
         # fp8 caches) is handled by the sparse branch above.
         mla_prefill_branch_bf16[
             mask_str=mask_str,
+            OutputGatePtrType=OutputGatePtrType,
             kernels=kernels,
         ](
             output,
@@ -6057,4 +6251,6 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             kv_input_fn,
             ctx,
+            output_gate=output_gate,
+            output_gate_row_stride=output_gate_row_stride,
         )
