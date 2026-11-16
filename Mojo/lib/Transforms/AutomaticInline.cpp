@@ -26,6 +26,7 @@
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -502,14 +503,18 @@ void CallGraph::performInlining(uint64_t threshold) {
 }
 
 void CallGraph::collectNonCallReferencedSymbols(Operation *module) {
+  // One walker for the whole scan: its visited set persists across values,
+  // so a value visited under one attribute is not revisited under another;
+  // the insert below is idempotent, so the collected set is unchanged.
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](FlatSymbolRefAttr ref) {
+    nonCallReferencedSyms.insert(ref.getAttr());
+  });
   module->walk([&](Operation *op) {
     if (isa<KGENCallOpInterface>(op))
       return;
-    for (NamedAttribute attr : op->getAttrs()) {
-      attr.getValue().walk([&](FlatSymbolRefAttr ref) {
-        nonCallReferencedSyms.insert(ref.getAttr());
-      });
-    }
+    for (NamedAttribute attr : op->getAttrs())
+      walker.walk(attr.getValue());
   });
   for (auto &[func, node] : nodes)
     node.nonCallReferencedSyms = &nonCallReferencedSyms;
