@@ -59,10 +59,9 @@ cd ..
 ```
 
 Third-party crates for the Bazel build come from the `@crates` repository. In
-the monorepo it is generated from `bazel/third-party/rust/Cargo.toml`, which
-`bazel/third-party/rust/generate.py` derives from every workspace Bazel builds,
-this one included; run `python3 bazel/third-party/rust/generate.py --lock`
-after changing this workspace's dependencies. The open-source build generates
+the monorepo it is generated from the root `Cargo.toml` and `Cargo.lock`, which
+lock this workspace's crates too; run `./bazel/sync-rust.sh` after changing
+this workspace's dependencies. The open-source build generates
 `@crates` from this workspace's own `Cargo.toml`/`Cargo.lock` instead (see
 `oss/modular/oss.MODULE.bazel`). The pyo3 crates are the one exception:
 `modular_pyo3_extension` injects pyo3 through the `rust_pyo3_toolchain`, which
