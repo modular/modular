@@ -302,11 +302,13 @@ mgp.model @dg_host_input device_graph devices [#M.device_ref<"gpu", 0>]
 // CHECK-LABEL: mgp.model @dg_stable_slots
 // CHECK: mgp.device_graph.collective.create
 // CHECK-SAME: builder(%[[B0:[a-zA-Z0-9_]+]])
-// CHECK: %[[P0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.place %[[B0]][0], %[[IN0:[a-zA-Z0-9_]+]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK: %[[IDX0:[a-zA-Z0-9_]+]] = index.constant 0
+// CHECK: %[[P0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.place %[[B0]][%[[IDX0]]], %[[IN0:[a-zA-Z0-9_]+]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
 // CHECK: %[[S0:[a-zA-Z0-9_]+]] = mgp.tensor.extract.tensor_spec %[[IN0]]
 // CHECK: mgp.device_graph.stable.tensor %[[P0]], %[[S0]] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
 // CHECK: builder(%[[B1:[a-zA-Z0-9_]+]])
-// CHECK: %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B1]][0] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
+// CHECK: %[[IDX0B:[a-zA-Z0-9_]+]] = index.constant 0
+// CHECK: %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B1]][%[[IDX0B]]] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
 // CHECK: %[[S1:[a-zA-Z0-9_]+]] = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
 // CHECK: mgp.device_graph.stable.tensor %[[A0]], %[[S1]] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
 // CHECK: {stableTypes = #mgp<stable_addr_array[<<2x3xf32, <"gpu", 0>>>]>}
@@ -327,12 +329,14 @@ mgp.model @dg_stable_slots device_graph devices [#M.device_ref<"gpu", 0>, #M.dev
   %c0, %c1 = mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
-    %p0 = mgp.device_graph.stable.place %b[0], %in0 : !mgp.tensor<2x3xf32, <"gpu", 0>>
+    %idx0 = index.constant 0
+    %p0 = mgp.device_graph.stable.place %b[%idx0], %in0 : !mgp.tensor<2x3xf32, <"gpu", 0>>
     %s0 = mgp.tensor.extract.tensor_spec %in0 : <2x3xf32, <"gpu", 0>>
     %t0 = mgp.device_graph.stable.tensor %p0, %s0 : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
     mgp.device_graph.collective.yield %in0 : !mgp.tensor<2x3xf32, <"gpu", 0>>
   }, <"gpu", 1> {
-    %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
+    %idx0 = index.constant 0
+    %a0 = mgp.device_graph.stable.get %b[%idx0] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
     %s1 = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
     %t1 = mgp.device_graph.stable.tensor %a0, %s1 : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
     mgp.device_graph.collective.yield %in1 : !mgp.tensor<2x3xf32, <"gpu", 1>>

@@ -76,6 +76,11 @@ mgp.model @dg_collective device_graph devices [#M.device_ref<"gpu", 0>, #M.devic
 // The reading region views the slot as a stable tensor, which is an ordinary
 // `OwnedTensor` over the slot's address; here it is yielded as that region's
 // result.
+//
+// The input is staged, not synthesized: the partition pass creates the slot
+// index inside the pipeline, the same way a real model reaches this point, so
+// it stays a literal in the generated call rather than crossing a function
+// boundary as a constant resource.
 
 // CHECK: def [[BUILD:collective_build_for[_0-9]*]][n{{[_0-9]*}} : Int](mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
 // CHECK: comptime if n{{[_0-9]*}} == 0:
@@ -86,10 +91,12 @@ mgp.model @dg_collective device_graph devices [#M.device_ref<"gpu", 0>, #M.devic
 // CHECK: var {{var[_0-9]+}} = {{__device_graph_collective_create[_0-9]*}}(builder{{.*}})
 // CHECK: max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
 // The producing region publishes its tensor to the shared slot.
-// CHECK: {{.*}}.place_stable(0, {{.*}})
+// The slot ordinal is a parameter, not a literal: it is hoisted out of the
+// region so recordings that differ only by slot stay identical.
+// CHECK: {{.*}}.place_stable({{arg[_0-9]+}}, {{.*}})
 // The reading region views the slot as a stable tensor, which is an ordinary
 // `OwnedTensor` over the slot's address.
-// CHECK: [[SLOT:var[_0-9]+]] = {{.*}}.get_stable(0)
+// CHECK: [[SLOT:var[_0-9]+]] = {{.*}}.get_stable({{arg[_0-9]+}})
 // CHECK: [[SPEC:var[_0-9]+]] = builtin_primitives.primitives.mgp_tensor_spec_create[
 // CHECK: builtin_primitives.primitives.mgp_device_graph_stable_tensor[2, 2, DType.float32]([[SLOT]], [[SPEC]])
 
@@ -104,19 +111,44 @@ mgp.model @dg_collective_stable device_graph devices [#M.device_ref<"gpu", 0>, #
            %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>,
            %in0: !mgp.tensor<2x3xf32, <"gpu", 0>>, %in1: !mgp.tensor<2x3xf32, <"gpu", 1>>)
     -> (!mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>, stable>) {
-  %c0, %c1 = mgp.device_graph.collective builder(%b) stable(
-      !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
-  ) <"gpu", 0> {
-    %p0 = mgp.device_graph.stable.place %b[0], %in0 : !mgp.tensor<2x3xf32, <"gpu", 0>>
-    mgp.device_graph.collective.yield %in0 : !mgp.tensor<2x3xf32, <"gpu", 0>>
-  }, <"gpu", 1> {
-    %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
-    %s0 = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
-    %t0 = mgp.device_graph.stable.tensor %a0, %s0 : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
-    mgp.device_graph.collective.yield %t0 : !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
-  } : !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
+  %p0, %c1 = mgp.device_graph.staging
+      inputs(%in0, %gpu0, %in1, %gpu1
+          : !mgp.tensor<2x3xf32, <"gpu", 0>>,
+            !mgp.device_context<<"gpu", 0>>,
+            !mgp.tensor<2x3xf32, <"gpu", 1>>,
+            !mgp.device_context<<"gpu", 1>>) {
+    ^bb0(%builder: !mgp.device_graph.builder,
+         %in0_t: !mgp.tensor<2x3xf32, <"gpu", 0>>,
+         %gpu0_t: !mgp.device_context<<"gpu", 0>>,
+         %in1_t: !mgp.tensor<2x3xf32, <"gpu", 1>>,
+         %gpu1_t: !mgp.device_context<<"gpu", 1>>):
 
-  mef.output %ch0, %c0, %c1
+    // A producer on gpu:0.
+    %a = mogg.routine.async (%in0_t)
+        : (%arg: !mgp.tensor<2x3xf32, <"gpu", 0>>)
+        -> !mgp.tensor<2x3xf32, <"gpu", 0>> {
+      %u = mogg.async.unpack(%arg) : !mgp.tensor<2x3xf32, <"gpu", 0>>
+      %p = mogg.async.pack(%u) : !mgp.tensor<2x3xf32, <"gpu", 0>>
+      mogg.output %p : !mogg.async<!mgp.tensor<2x3xf32, <"gpu", 0>>>
+    } fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.producer0">> inOutSignature = <""> {device = #M.device_ref<"gpu", 0>}
+
+    // Promote the producer's result to a stable address on gpu:0.
+    %s0 = mgp.device_graph.stable.create %a : !mgp.tensor<2x3xf32, <"gpu", 0>>
+
+    // A consumer on gpu:1 reads the slot and yields the stable view.
+    %c1 = mogg.routine.async (%s0)
+        : (%arg0: !mgp.tensor<2x3xf32, <"gpu", 0>, stable>)
+        -> !mgp.tensor<2x3xf32, <"gpu", 0>, stable> {
+      %u0 = mogg.async.unpack(%arg0) : !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
+      %p = mogg.async.pack(%u0) : !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
+      mogg.output %p : !mogg.async<!mgp.tensor<2x3xf32, <"gpu", 0>, stable>>
+    } fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.consumer1">> inOutSignature = <""> {device = #M.device_ref<"gpu", 1>}
+
+    mgp.device_graph.staging.yield %a, %c1
+        : !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
+  } -> !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
+
+  mef.output %ch0, %p0, %c1
       : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>, stable>
 }
 

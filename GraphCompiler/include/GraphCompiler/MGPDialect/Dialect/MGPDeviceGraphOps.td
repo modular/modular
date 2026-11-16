@@ -581,8 +581,7 @@ def DeviceGraphStableGetOp : MGP_DeviceGraphOp<"stable.get", [
     collective's slot table. `$index` names an entry of the collective's
     `stableTypes`, and the result type must equal that entry. The op is
     verified against the nearest enclosing `mgp.device_graph.collective` or,
-    after finalization, `mgp.device_graph.collective.create`; lowering may
-    wrap it in intermediate regions on the way there.
+    after finalization, `mgp.device_graph.collective.create`.
 
     The result is the slot itself, not a tensor. The slot holds a data pointer
     that `mgp.device_graph.stable.place` rewrites before every replay, so a
@@ -597,14 +596,15 @@ def DeviceGraphStableGetOp : MGP_DeviceGraphOp<"stable.get", [
 
     Example:
     ```mlir
-      %a1 = mgp.device_graph.stable.get %b[1]
+      %c1 = index.constant 1
+      %a1 = mgp.device_graph.stable.get %b[%c1]
           : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     ```
   }];
 
   let arguments = (ins
     MGP_DeviceGraphBuilderType:$graphBuilder,
-    I64Attr:$index
+    Index:$index
   );
   let results = (outs MGP_StableAddressType:$result);
   let assemblyFormat = [{
@@ -643,7 +643,8 @@ def DeviceGraphStablePlaceOp : MGP_DeviceGraphOp<"stable.place", [
 
     Example:
     ```mlir
-      %p0 = mgp.device_graph.stable.place %b[0], %t
+      %c0 = index.constant 0
+      %p0 = mgp.device_graph.stable.place %b[%c0], %t
           : !mgp.tensor<4xf32, <"gpu", 0>>
     ```
   }];
@@ -651,7 +652,7 @@ def DeviceGraphStablePlaceOp : MGP_DeviceGraphOp<"stable.place", [
   let arguments = (ins
     MGP_DeviceGraphBuilderType:$graphBuilder,
     MGP_DeviceTensorType:$tensor,
-    I64Attr:$index
+    Index:$index
   );
   let results = (outs MGP_StableAddressType:$placedAddr);
   let assemblyFormat = [{
@@ -693,7 +694,8 @@ def DeviceGraphStableTensorOp : MGP_DeviceGraphOp<"stable.tensor", [
 
     Example:
     ```mlir
-      %a0 = mgp.device_graph.stable.get %b[0]
+      %c0 = index.constant 0
+      %a0 = mgp.device_graph.stable.get %b[%c0]
           : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
       %spec = mgp.tensor_spec.create : !mgp.tensor_spec<4xf32>
       %t = mgp.device_graph.stable.tensor %a0, %spec
@@ -775,10 +777,12 @@ def DeviceGraphCollectiveOp : MGP_DeviceGraphOp<"collective", [
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>,
       !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     ) <"gpu", 0> {
-      %p0 = mgp.device_graph.stable.place %b[0], %val : !mgp.tensor<4xf32, <"gpu", 0>>
+      %c0 = index.constant 0
+      %p0 = mgp.device_graph.stable.place %b[%c0], %val : !mgp.tensor<4xf32, <"gpu", 0>>
       mgp.device_graph.collective.yield %val : !mgp.tensor<4xf32>
     }, <"gpu", 1> {
-      %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+      %c0_0 = index.constant 0
+      %a0 = mgp.device_graph.stable.get %b[%c0_0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
       mgp.device_graph.collective.yield %val : !mgp.tensor<4xf32>
     } : !mgp.tensor<4xf32>, !mgp.tensor<4xf32>
     ```

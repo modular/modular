@@ -40,12 +40,15 @@ func.func @device_graph_collective_uses_stable_slots() {
   // CHECK-SAME:    !mgp.stable_addr<<4xf32, <"gpu", 0>>>,
   // CHECK-SAME:    !mgp.stable_addr<<4xf32, <"gpu", 1>>>
   // CHECK-SAME:  ) <"gpu", 0> {
-  // CHECK-NEXT:    %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
-  // CHECK-NEXT:    %[[A1:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][1] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+  // CHECK-NEXT:    %[[C0:[a-zA-Z0-9_]+]] = index.constant 0
+  // CHECK-NEXT:    %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[C0]]] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+  // CHECK-NEXT:    %[[C1:[a-zA-Z0-9_]+]] = index.constant 1
+  // CHECK-NEXT:    %[[A1:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[C1]]] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
   // CHECK-NEXT:    "test.consume"(%[[A0]], %[[A1]]) : (!mgp.stable_addr<<4xf32, <"gpu", 0>>>, !mgp.stable_addr<<4xf32, <"gpu", 1>>>) -> ()
   // CHECK-NEXT:    mgp.device_graph.collective.yield
   // CHECK-NEXT:  }, <"gpu", 1> {
-  // CHECK-NEXT:    %[[A1B:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][1] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+  // CHECK-NEXT:    %[[C1B:[a-zA-Z0-9_]+]] = index.constant 1
+  // CHECK-NEXT:    %[[A1B:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[C1B]]] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
   // CHECK-NEXT:    "test.consume"(%[[A1B]]) : (!mgp.stable_addr<<4xf32, <"gpu", 1>>>) -> ()
   // CHECK-NEXT:    mgp.device_graph.collective.yield
   // CHECK-NEXT:  }
@@ -53,12 +56,15 @@ func.func @device_graph_collective_uses_stable_slots() {
     !mgp.stable_addr<<4xf32, <"gpu", 0>>>,
     !mgp.stable_addr<<4xf32, <"gpu", 1>>>
   ) <"gpu", 0> {
-    %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
-    %a1 = mgp.device_graph.stable.get %b[1] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+    %c0 = index.constant 0
+    %a0 = mgp.device_graph.stable.get %b[%c0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+    %c1 = index.constant 1
+    %a1 = mgp.device_graph.stable.get %b[%c1] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     "test.consume"(%a0, %a1) : (!mgp.stable_addr<<4xf32, <"gpu", 0>>>, !mgp.stable_addr<<4xf32, <"gpu", 1>>>) -> ()
     mgp.device_graph.collective.yield
   }, <"gpu", 1> {
-    %a1 = mgp.device_graph.stable.get %b[1] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+    %c1_0 = index.constant 1
+    %a1 = mgp.device_graph.stable.get %b[%c1_0] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     "test.consume"(%a1) : (!mgp.stable_addr<<4xf32, <"gpu", 1>>>) -> ()
     mgp.device_graph.collective.yield
   }
@@ -78,14 +84,16 @@ func.func @device_graph_collective_stable_place() {
   // CHECK-SAME:  ) stable(
   // CHECK-SAME:    !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   // CHECK-SAME:  ) <"gpu", 0> {
-  // CHECK-NEXT:    %[[P0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.place %[[B]][0], %[[VAL]] : !mgp.tensor<4xf32, <"gpu", 0>>
+  // CHECK-NEXT:    %[[C0:[a-zA-Z0-9_]+]] = index.constant 0
+  // CHECK-NEXT:    %[[P0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.place %[[B]][%[[C0]]], %[[VAL]] : !mgp.tensor<4xf32, <"gpu", 0>>
   // CHECK-NEXT:    "test.consume"(%[[P0]]) : (!mgp.stable_addr<<4xf32, <"gpu", 0>>>) -> ()
   // CHECK-NEXT:    mgp.device_graph.collective.yield
   // CHECK-NEXT:  }
   mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
-    %p0 = mgp.device_graph.stable.place %b[0], %val : !mgp.tensor<4xf32, <"gpu", 0>>
+    %c0 = index.constant 0
+    %p0 = mgp.device_graph.stable.place %b[%c0], %val : !mgp.tensor<4xf32, <"gpu", 0>>
     "test.consume"(%p0) : (!mgp.stable_addr<<4xf32, <"gpu", 0>>>) -> ()
     mgp.device_graph.collective.yield
   }
@@ -102,7 +110,8 @@ func.func @device_graph_stable_tensor() {
   // CHECK-SAME:  ) stable(
   // CHECK-SAME:    !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
   // CHECK-SAME:  ) <"gpu", 1> {
-  // CHECK-NEXT:    %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][0] : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
+  // CHECK-NEXT:    %[[C0:[a-zA-Z0-9_]+]] = index.constant 0
+  // CHECK-NEXT:    %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[C0]]] : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
   // CHECK-NEXT:    %[[S:[a-zA-Z0-9_]+]] = mgp.tensor_spec.create : !mgp.tensor_spec<4xf32>
   // CHECK-NEXT:    %[[T:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.tensor %[[A0]], %[[S]] : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
   // CHECK-NEXT:    "test.consume"(%[[T]]) : (!mgp.tensor<4xf32, <"gpu", 0>, mut, stable>) -> ()
@@ -111,10 +120,37 @@ func.func @device_graph_stable_tensor() {
   mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
   ) <"gpu", 1> {
-    %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
+    %c0 = index.constant 0
+    %a0 = mgp.device_graph.stable.get %b[%c0] : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
     %spec = mgp.tensor_spec.create : !mgp.tensor_spec<4xf32>
     %t = mgp.device_graph.stable.tensor %a0, %spec : !mgp.stable_addr<<4xf32, <"gpu", 0>, mut>>
     "test.consume"(%t) : (!mgp.tensor<4xf32, <"gpu", 0>, mut, stable>) -> ()
+    mgp.device_graph.collective.yield
+  }
+
+  return
+}
+
+// -----
+
+// A dynamic index cannot be checked against the enclosing slot list, so it
+// verifies without the range and slot-type checks: slot 0 is declared as
+// `gpu 0` but this op names it as `gpu 1` through a block argument.
+
+// CHECK-LABEL: func.func @device_graph_stable_get_dynamic_index
+func.func @device_graph_stable_get_dynamic_index(%n: index) {
+  // CHECK:       mgp.device_graph.collective builder(
+  // CHECK-SAME:    %[[B:[a-zA-Z0-9_]+]]
+  // CHECK-SAME:  ) stable(
+  // CHECK-SAME:    !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+  // CHECK-SAME:  ) <"gpu", 0> {
+  // CHECK-NEXT:    %[[A0:[a-zA-Z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%{{[a-zA-Z0-9_]+}}] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+  // CHECK-NEXT:    mgp.device_graph.collective.yield
+  // CHECK-NEXT:  }
+  mgp.device_graph.collective builder(%b) stable(
+      !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+  ) <"gpu", 0> {
+    %a0 = mgp.device_graph.stable.get %b[%n] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     mgp.device_graph.collective.yield
   }
 

@@ -18,6 +18,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
@@ -74,8 +75,9 @@ struct StableAddrState {
     }
 
     TensorSpecType specType = stable.getTensor().getType().getTensorSpec();
+    Value slotIndex = index::ConstantOp::create(builder, loc, index(stable));
     Value slot = DeviceGraphStableGetOp::create(
-        builder, loc, stable.getStableType(), builderArg, index(stable));
+        builder, loc, stable.getStableType(), builderArg, slotIndex);
     Value spec =
         TensorSpecCreateOp::create(builder, loc, specType, runtimeDims);
     tensor = DeviceGraphStableTensorOp::create(builder, loc, slot, spec);
@@ -87,8 +89,9 @@ struct StableAddrState {
   /// region's consumers read through it rather than a redundant `stable.get`.
   void place(OpBuilder &builder, Location loc, DeviceGraphStableCreateOp stable,
              Value source) {
+    Value slotIndex = index::ConstantOp::create(builder, loc, index(stable));
     Value placed = DeviceGraphStablePlaceOp::create(builder, loc, builderArg,
-                                                    source, index(stable));
+                                                    source, slotIndex);
     Value spec = TensorExtractTensorSpecOp::create(builder, loc, source);
     stableTensors[stable] =
         DeviceGraphStableTensorOp::create(builder, loc, placed, spec);

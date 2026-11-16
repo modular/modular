@@ -19,10 +19,12 @@
 // CHECK-SAME:      !mgp.stable_addr<<2x3xf32, <"gpu", 1>>>)
 // CHECK:       <"gpu", 0> {
 // CHECK:         %[[PROD0:[a-z0-9_]+]] = mogg.routine.async
-// CHECK:         %[[P0:[a-z0-9_]+]] = mgp.device_graph.stable.place %[[B]][0], %[[PROD0]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK:         %[[IDX0:[a-z0-9_]+]] = index.constant 0
+// CHECK:         %[[P0:[a-z0-9_]+]] = mgp.device_graph.stable.place %[[B]][%[[IDX0]]], %[[PROD0]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
 // CHECK:         %[[S0:[a-z0-9_]+]] = mgp.tensor.extract.tensor_spec %[[PROD0]] : <2x3xf32, <"gpu", 0>>
 // CHECK:         %[[T0:[a-z0-9_]+]] = mgp.device_graph.stable.tensor %[[P0]], %[[S0]] : !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>
-// CHECK:         %[[G1:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][1] : !mgp.stable_addr<<2x3xf32, <"gpu", 1>>>
+// CHECK:         %[[IDX1:[a-z0-9_]+]] = index.constant 1
+// CHECK:         %[[G1:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[IDX1]]] : !mgp.stable_addr<<2x3xf32, <"gpu", 1>>>
 // CHECK:         %[[S1:[a-z0-9_]+]] = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
 // CHECK:         %[[T1:[a-z0-9_]+]] = mgp.device_graph.stable.tensor %[[G1]], %[[S1]] : !mgp.stable_addr<<2x3xf32, <"gpu", 1>>>
 // CHECK:         mogg.routine.async (%[[T0]], %[[T1]], %{{[a-z0-9_]+}})
@@ -33,10 +35,12 @@
 // CHECK:         mgp.device_graph.collective.yield
 // CHECK:       }, <"gpu", 1> {
 // CHECK:         %[[PROD1:[a-z0-9_]+]] = mogg.routine.async
-// CHECK:         %[[P1:[a-z0-9_]+]] = mgp.device_graph.stable.place %[[B]][1], %[[PROD1]]
+// CHECK:         %[[IDX1B:[a-z0-9_]+]] = index.constant 1
+// CHECK:         %[[P1:[a-z0-9_]+]] = mgp.device_graph.stable.place %[[B]][%[[IDX1B]]], %[[PROD1]]
 // CHECK:         %[[S1B:[a-z0-9_]+]] = mgp.tensor.extract.tensor_spec %[[PROD1]]
 // CHECK:         %[[T1B:[a-z0-9_]+]] = mgp.device_graph.stable.tensor %[[P1]], %[[S1B]]
-// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][0]
+// CHECK:         %[[IDX0B:[a-z0-9_]+]] = index.constant 0
+// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[IDX0B]]]
 // CHECK:         %[[S0B:[a-z0-9_]+]] = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
 // CHECK:         %[[T0B:[a-z0-9_]+]] = mgp.device_graph.stable.tensor %[[G0]], %[[S0B]]
 // CHECK:         mogg.routine.async (%[[T0B]], %[[T1B]], %{{[a-z0-9_]+}})
@@ -149,10 +153,12 @@ mgp.model @multi_device_stable device_graph devices [#M.device_ref<"gpu", 0>, #M
 // CHECK-SAME:      !mgp.stable_addr<<2x3xf32, <"gpu", 0>>>)
 // CHECK:       <"gpu", 0> {
 // CHECK:         mogg.routine.async
-// CHECK:         mgp.device_graph.stable.place
+// CHECK:         %[[IDX0:[a-z0-9_]+]] = index.constant 0
+// CHECK:         mgp.device_graph.stable.place %[[B]][%[[IDX0]]]
 // CHECK:         mgp.device_graph.collective.yield
 // CHECK:       }, <"gpu", 1> {
-// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][0]
+// CHECK:         %[[IDX0B:[a-z0-9_]+]] = index.constant 0
+// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[IDX0B]]]
 // CHECK:         %[[S0:[a-z0-9_]+]] = mgp.tensor_spec.create : !mgp.tensor_spec<2x3xf32>
 // CHECK:         %[[T0:[a-z0-9_]+]] = mgp.device_graph.stable.tensor %[[G0]], %[[S0]]
 // CHECK:         mogg.routine.async (%[[T0]], %{{[a-z0-9_]+}})
@@ -315,9 +321,11 @@ mgp.model @host_wrapper_follows_its_device device_graph devices [#M.device_ref<"
 // CHECK:       mgp.device_graph.collective builder(%[[B:[a-z0-9_]+]]) stable(
 // CHECK-SAME:      !mgp.stable_addr<<?x3xf32, <"gpu", 0>>>)
 // CHECK:       <"gpu", 0> {
-// CHECK:         mgp.device_graph.stable.place %[[B]][0]
+// CHECK:         %[[IDX0:[a-z0-9_]+]] = index.constant 0
+// CHECK:         mgp.device_graph.stable.place %[[B]][%[[IDX0]]]
 // CHECK:       }, <"gpu", 1> {
-// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][0]
+// CHECK:         %[[IDX0B:[a-z0-9_]+]] = index.constant 0
+// CHECK:         %[[G0:[a-z0-9_]+]] = mgp.device_graph.stable.get %[[B]][%[[IDX0B]]]
 // CHECK:         %[[S0:[a-z0-9_]+]] = mgp.tensor_spec.create %[[N]] : !mgp.tensor_spec<?x3xf32>
 // CHECK:         mgp.device_graph.stable.tensor %[[G0]], %[[S0]]
 // CHECK:         mgp.device_graph.collective.yield

@@ -51,7 +51,8 @@ func.func @collective_bad_yield_type() {
   ) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
-    %a0 = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+    %c0 = index.constant 0
+    %a0 = mgp.device_graph.stable.get %b[%c0] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
     mgp.device_graph.collective.yield %a0 : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   } : !mgp.tensor<4xf32>
 
@@ -86,8 +87,9 @@ func.func @stable_get_index_out_of_range() {
   mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
+    %c1 = index.constant 1
     // expected-error@+1 {{'mgp.device_graph.stable.get' op stable slot index 1 is out of range; the enclosing collective declares 1 slot(s)}}
-    %a = mgp.device_graph.stable.get %b[1] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
+    %a = mgp.device_graph.stable.get %b[%c1] : !mgp.stable_addr<<4xf32, <"gpu", 0>>>
     mgp.device_graph.collective.yield
   }
 
@@ -104,8 +106,9 @@ func.func @stable_get_type_mismatch() {
   mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
+    %c0 = index.constant 0
     // expected-error@+1 {{'mgp.device_graph.stable.get' op stable slot #0 is declared as '!mgp.stable_addr<<4xf32, <"gpu", 0>>>', but the op uses '!mgp.stable_addr<<4xf32, <"gpu", 1>>>'}}
-    %a = mgp.device_graph.stable.get %b[0] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
+    %a = mgp.device_graph.stable.get %b[%c0] : !mgp.stable_addr<<4xf32, <"gpu", 1>>>
     mgp.device_graph.collective.yield
   }
 
@@ -124,8 +127,9 @@ func.func @stable_place_type_mismatch() {
   mgp.device_graph.collective builder(%b) stable(
       !mgp.stable_addr<<4xf32, <"gpu", 0>>>
   ) <"gpu", 0> {
+    %c0 = index.constant 0
     // expected-error@+1 {{'mgp.device_graph.stable.place' op stable slot #0 is declared as '!mgp.stable_addr<<4xf32, <"gpu", 0>>>', but the op uses '!mgp.stable_addr<<4xf32, <"gpu", 1>>>'}}
-    %p = mgp.device_graph.stable.place %b[0], %val : !mgp.tensor<4xf32, <"gpu", 1>>
+    %p = mgp.device_graph.stable.place %b[%c0], %val : !mgp.tensor<4xf32, <"gpu", 1>>
     mgp.device_graph.collective.yield
   }
 

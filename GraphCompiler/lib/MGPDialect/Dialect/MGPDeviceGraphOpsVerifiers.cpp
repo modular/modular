@@ -23,6 +23,7 @@
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoBuilder.h"
 #include "GraphCompiler/MOGGDialect/Support/MojoIdentifiers.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
@@ -185,10 +186,15 @@ static StableAddressArrayAttr enclosingStableTypes(Operation *op) {
 
 /// Checks that slot `index` exists in the enclosing collective and is declared
 /// with `slotType`. Slots are named by index rather than by SSA value, so this
-/// is the only place the two agree.
-static LogicalResult verifyStableSlot(Operation *op, int64_t index,
+/// is the only place the two agree. A non-constant index cannot be checked
+/// against a static slot list, so it verifies clean.
+static LogicalResult verifyStableSlot(Operation *op, Value index,
                                       Type slotType) {
-  if (index < 0)
+  std::optional<int64_t> constant = mlir::getConstantIntValue(index);
+  if (!constant)
+    return success();
+
+  if (*constant < 0)
     return op->emitOpError("stable slot index must not be negative");
 
   StableAddressArrayAttr stableTypes = enclosingStableTypes(op);
@@ -196,13 +202,14 @@ static LogicalResult verifyStableSlot(Operation *op, int64_t index,
     return success();
 
   ArrayRef<StableAddressType> slots = stableTypes.getValue();
-  if (static_cast<uint64_t>(index) >= slots.size())
+  if (static_cast<uint64_t>(*constant) >= slots.size())
     return op->emitOpError("stable slot index ")
-           << index << " is out of range; the enclosing collective declares "
+           << *constant
+           << " is out of range; the enclosing collective declares "
            << slots.size() << " slot(s)";
-  if (slots[index] != slotType)
+  if (slots[*constant] != slotType)
     return op->emitOpError("stable slot #")
-           << index << " is declared as " << slots[index]
+           << *constant << " is declared as " << slots[*constant]
            << ", but the op uses " << slotType;
   return success();
 }

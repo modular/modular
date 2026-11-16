@@ -355,3 +355,41 @@ mgp.model @chain device_graph devices [#M.device_ref<"gpu", 0>]
   }
   mef.output %ch0 : !mef.chain
 }
+
+// -----
+
+// A constant nested inside a region of the body is lifted to the head of the
+// body before outlining, so it crosses as a call argument like a top-level one
+// instead of being baked into the function.
+
+// CHECK-LABEL: mgp.model @create_nested_const
+// CHECK: mgp.device_graph.collective.create
+// The constant is lifted out of the unit's body and leads the call.
+// CHECK: %[[CONST:.*]] = mgp.buffer.constant
+// CHECK-NEXT: %{{.*}} = mogg.call @[[BUILD:__[A-Za-z0-9_]+]] %[[CONST]], %{{.*}}, %{{.*}} :
+// CHECK-NEXT: mgp.device_graph.yield
+// CHECK: mogg.func @[[UNIT:__[A-Za-z0-9_]+]] private (%{{.*}}: !mgp.buffer) attributes {abi = #mogg.abi<MOGG>,
+// CHECK: mogg.func @[[BUILD]] private (%{{.*}}: !mgp.buffer, %{{.*}}: !mgp.device_graph.builder, %{{.*}}: !mgp.tensor<2x3xf32, <"gpu", 0>>)  -> !mgp.tensor<2x3xf32, <"gpu", 0>>
+// The build stub takes the constant as a parameter and holds none itself.
+// CHECK-NOT: mgp.buffer.constant
+// CHECK: mogg.call @[[UNIT]] %{{.*}} : !mgp.buffer
+mgp.model @create_nested_const device_graph devices [#M.device_ref<"gpu", 0>]
+  init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
+  %ch0 = grt.chain.create ()
+  %ctx = mgp.context.create 1
+  mef.output %ch0, %ctx, %weights, %gpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
+} execute (%ch0: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>, %in: !mgp.tensor<2x3xf32, <"gpu", 0>>) -> (!mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>) {
+  %cache = "test.cache"() : () -> !mgp.device_graph.cache
+  %graphs = mgp.device_graph.collective.create %ctx cache(%cache : !mgp.device_graph.cache) graph(%gpu : !mgp.device_context<<"gpu", 0>>) builder(%b) inputs(%in : !mgp.tensor<2x3xf32, <"gpu", 0>>) {
+    %node = mgp.device_graph.dependencies builder(%b) dependencies() {
+    ^bb0(%dep_builder: !mgp.device_graph.builder):
+      %c = mgp.buffer.constant #M.aligned_bytes<"0x01", align 8> : !M.array<1xui8>
+      "test.use"(%c) : (!mgp.buffer) -> ()
+      mgp.device_graph.dependencies.yield
+    }
+    "test.use"(%in) : (!mgp.tensor<2x3xf32, <"gpu", 0>>) -> ()
+    mgp.device_graph.yield %in : !mgp.tensor<2x3xf32, <"gpu", 0>>
+  } : !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 0>>) -> !mgp.tensor<2x3xf32, <"gpu", 0>>>
+  %ch, %out = mgp.device_graph.collective.execute %graphs inputs(%in : !mgp.tensor<2x3xf32, <"gpu", 0>>) : !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 0>>) -> !mgp.tensor<2x3xf32, <"gpu", 0>>> -> !mgp.tensor<2x3xf32, <"gpu", 0>>
+  mef.output %ch0, %out : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>
+}

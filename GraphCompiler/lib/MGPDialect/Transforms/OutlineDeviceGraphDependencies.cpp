@@ -110,37 +110,42 @@ bool hasBodyToOutline(Block &body) {
   return llvm::hasNItemsOrMore(body.without_terminator(), 2);
 }
 
-/// Whether `op` may move into a body. A buffer constant cannot: it reads the
-/// enclosing compiled region's constant-resource table, which only the MGP ABI
-/// provides, so the outliner holds it back outside the function.
+/// Whether `op` may move into a body. A constant may not: a buffer constant
+/// reads the enclosing compiled region's constant-resource table, which only
+/// the MGP ABI provides, and any other constant names a size, index or slot
+/// that distinguishes otherwise identical recordings. Both stay outside the
+/// function and cross as call arguments.
 bool canMoveIntoBody(Operation *op) {
-  return !isa<MGP::BufferConstantOp, MOGG::BufferConstantOp>(op);
+  return !isa<MGP::BufferConstantOp, MOGG::BufferConstantOp>(op) &&
+         !op->hasTrait<mlir::OpTrait::ConstantLike>();
 }
 
 /// Phase 1 of outlining: hold back what cannot move into a `mogg.func`.
 ///
-/// A `mogg.buffer.constant` reads the enclosing compiled region's
-/// constant-resource table, which only the MGP ABI provides, so a top-level
-/// constant stays in the source body and crosses as a call argument. A nested
-/// constant, a MOGG-level one, or a body that uses a value of a type that
-/// cannot cross the boundary leaves the whole body inline.
+/// Determine what operations cannot move during outlining. Constant operations
+/// read their values from a table of constants on the MGP ABI, which is not
+/// present on MOGG ABI functions. This function computes the set of operations
+/// that cannot move due to this ABI limitation.
 ///
 /// Returns the ops that stay, or failure when the body cannot be outlined.
 FailureOr<SetVector<Operation *>> holdBackUnmovableOps(Region &region) {
   Block &block = region.front();
   SetVector<Operation *> stay;
   bool outlineable = true;
-  block.walk([&](Operation *op) {
+  region.walk([&](Operation *op) {
     if (canMoveIntoBody(op))
       return;
-    if (isa<MGP::BufferConstantOp>(op) && op->getBlock() == &block)
-      stay.insert(op);
-    else
+    if (isa<MOGG::BufferConstantOp>(op))
       outlineable = false;
+    else
+      stay.insert(op);
   });
 
   if (!outlineable)
     return failure();
+
+  for (Operation *op : llvm::reverse(stay))
+    op->moveBefore(&block, block.begin());
   return stay;
 }
 

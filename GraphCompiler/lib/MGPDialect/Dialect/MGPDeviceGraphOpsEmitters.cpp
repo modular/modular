@@ -244,8 +244,8 @@ LogicalResult DeviceGraphStableGetOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
 
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
-  state.setMojoValueFor(getResult(),
-                        state.file->var(builder.getStable(getIndex())));
+  state.setMojoValueFor(getResult(), state.file->var(builder.getStable(
+                                         state.getMojoValueFor(getIndex()))));
   return success();
 }
 
@@ -265,8 +265,9 @@ LogicalResult DeviceGraphStablePlaceOp::emitMojo(MOGG::EmitMojoState &state) {
           .bitcast(kComptimeDTypeNoneType)();
 
   DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
-  state.setMojoValueFor(getPlacedAddr(), state.file->var(builder.placeStable(
-                                             getIndex(), dataPtr)));
+  state.setMojoValueFor(getPlacedAddr(),
+                        state.file->var(builder.placeStable(
+                            state.getMojoValueFor(getIndex()), dataPtr)));
   return success();
 }
 
