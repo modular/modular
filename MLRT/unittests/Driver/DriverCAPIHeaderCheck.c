@@ -202,29 +202,6 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
   M_DriverStatus (*host_region_chunk_bytes)(
       const M_DriverHostRegion *, uint64_t *) = M_DriverHostRegionChunkBytes;
 
-  // Copies.
-  M_DriverStatus (*copy_host_to_device)(const M_DriverStream *, void *,
-                                        const void *, uint64_t) =
-      M_DriverCopyHostToDevice;
-  M_DriverStatus (*copy_device_to_host)(const M_DriverStream *, void *,
-                                        const void *, uint64_t) =
-      M_DriverCopyDeviceToHost;
-  M_DriverStatus (*copy_batch)(const M_DriverStream *, M_DriverCopyDirection,
-                               void *const *, const void *const *,
-                               const uint64_t *, size_t) = M_DriverCopyBatch;
-  M_DriverStatus (*copy_device_to_device)(const M_DriverStream *, void *,
-                                          const void *, uint64_t) =
-      M_DriverCopyDeviceToDevice;
-  M_DriverStatus (*memset_device)(const M_DriverStream *, void *, uint8_t,
-                                  uint64_t) = M_DriverMemset;
-  M_DriverStatus (*copy_peer_to_peer)(
-      const M_DriverStream *, const M_DriverDevice *, void *,
-      const M_DriverDevice *, const void *, uint64_t) = M_DriverCopyPeerToPeer;
-  M_DriverStatus (*copy_peer_to_peer_unordered)(
-      const M_DriverStream *, const M_DriverDevice *, void *,
-      const M_DriverDevice *, const void *, uint64_t) =
-      M_DriverCopyPeerToPeerUnordered;
-
   // Copies through buffer views.
   M_DriverStatus (*copy_host_to_buffer)(const M_DriverStream *,
                                         M_DriverBufferView, const void *) =
@@ -268,7 +245,7 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          device_allocator_stats != NULL &&
          device_allocator_request_sizes != NULL &&
          device_reset_allocator_peaks != NULL && device_stream != NULL &&
-         stream_enqueue_host_function != NULL && memset_device != NULL &&
+         stream_enqueue_host_function != NULL &&
          enable_all_peer_access != NULL && all_peer_access_enabled != NULL &&
          device_context_handle != NULL &&
          device_bind_to_current_thread != NULL &&
@@ -293,9 +270,6 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          mapping_byte_size != NULL && host_region_create != NULL &&
          host_region_destroy != NULL && host_region_chunk_count != NULL &&
          host_region_chunk_address != NULL && host_region_chunk_bytes != NULL &&
-         copy_host_to_device != NULL && copy_device_to_host != NULL &&
-         copy_batch != NULL && copy_device_to_device != NULL &&
-         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL &&
          copy_host_to_buffer != NULL && copy_buffer_to_host != NULL &&
          copy_buffer_to_buffer != NULL && copy_buffer_peer != NULL &&
          copy_buffer_peer_unordered != NULL && copy_buffer_batch != NULL &&

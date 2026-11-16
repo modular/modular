@@ -1426,9 +1426,6 @@ modular_cc_test(
         # consumable without a C++ compiler.
         "DriverCAPIHeaderCheck.c",
     ],
-    # These still test the address copies the buffer view copies deprecate.
-    # TODO(pprovins): drop with those entry points, once nothing calls them.
-    copts = ["-Wno-deprecated-declarations"],
     data = _CAPI_TEST_PLUGINS,
     env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],
@@ -1452,9 +1449,6 @@ modular_cc_test(
         "CAPIHostRegionTest.cpp",
         "CAPITestHelpers.h",
     ],
-    # These still test the address copies the buffer view copies deprecate.
-    # TODO(pprovins): drop with those entry points, once nothing calls them.
-    copts = ["-Wno-deprecated-declarations"],
     data = _CAPI_TEST_PLUGINS,
     env = _CAPI_TEST_PLUGIN_ENV | select({
         "//:amd_gpu": {"HSA_USERPTR_FOR_PAGED_MEM": "0"},
@@ -1512,9 +1506,6 @@ modular_cc_test(
         "CAPIPeerTest.cpp",
         "CAPITestHelpers.h",
     ],
-    # These still test the address copies the buffer view copies deprecate.
-    # TODO(pprovins): drop with those entry points, once nothing calls them.
-    copts = ["-Wno-deprecated-declarations"],
     data = _CAPI_TEST_PLUGINS,
     env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_multi_gpu"],

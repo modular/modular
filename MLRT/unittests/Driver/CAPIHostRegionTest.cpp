@@ -117,8 +117,6 @@ void roundTripsThroughTheDevice(const M_DriverDevice *device,
                                    buffer.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *deviceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(buffer.get(), &deviceAddress), M_DRIVER_OK);
   ASSERT_EQ(M_DriverStreamWaitForDevice(stream.get(), device), M_DRIVER_OK)
       << lastError();
 
@@ -129,11 +127,11 @@ void roundTripsThroughTheDevice(const M_DriverDevice *device,
   std::memset(first, 0, lastBytes);
 
   ASSERT_EQ(
-      M_DriverCopyHostToDevice(stream.get(), deviceAddress, last, lastBytes),
+      M_DriverCopyHostToBuffer(stream.get(), view(buffer, 0, lastBytes), last),
       M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(
-      M_DriverCopyDeviceToHost(stream.get(), first, deviceAddress, lastBytes),
+      M_DriverCopyBufferToHost(stream.get(), first, view(buffer, 0, lastBytes)),
       M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)

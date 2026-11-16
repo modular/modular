@@ -117,14 +117,12 @@ TEST(DriverCApiPeer, UnorderedPeerCopyOrderedByEvents) {
                                    source.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *sourceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(source.get(), &sourceAddress), M_DRIVER_OK);
 
   StreamHandle producer;
   ASSERT_EQ(M_DriverStreamCreate(first.get(), producer.receive()), M_DRIVER_OK)
       << lastError();
-  ASSERT_EQ(M_DriverCopyHostToDevice(producer.get(), sourceAddress,
-                                     sourceHostAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
             M_DRIVER_OK)
       << lastError();
   M_DriverEvent *produced = nullptr;
@@ -148,21 +146,18 @@ TEST(DriverCApiPeer, UnorderedPeerCopyOrderedByEvents) {
                                    destination.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *destinationAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(destination.get(), &destinationAddress),
-            M_DRIVER_OK);
 
   // A peer copy is enqueued on the destination's own context, so a stream of
   // the source device is refused.
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(producer.get(), second.get(),
-                                            destinationAddress, first.get(),
-                                            sourceAddress, kBytes),
+  EXPECT_EQ(M_DriverCopyBufferPeerUnordered(producer.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
             M_DRIVER_INVALID_ARGUMENT);
   EXPECT_FALSE(lastError().empty());
 
-  ASSERT_EQ(M_DriverCopyPeerToPeerUnordered(copier.get(), second.get(),
-                                            destinationAddress, first.get(),
-                                            sourceAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferPeerUnordered(copier.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   M_DriverEvent *copied = nullptr;
@@ -180,8 +175,8 @@ TEST(DriverCApiPeer, UnorderedPeerCopyOrderedByEvents) {
       << lastError();
   void *landingAddress = nullptr;
   ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
-  ASSERT_EQ(M_DriverCopyDeviceToHost(copier.get(), landingAddress,
-                                     destinationAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
@@ -256,17 +251,12 @@ TEST(DriverCApiPeer, OrderedPeerCopyWaitsForTheSourceContext) {
                                    /*pinned_host=*/false, slowDevice.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *slowDeviceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(slowDevice.get(), &slowDeviceAddress),
-            M_DRIVER_OK);
 
   BufferHandle source;
   ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/false,
                                    source.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *sourceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(source.get(), &sourceAddress), M_DRIVER_OK);
   BufferHandle sourceHost;
   ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/true,
                                    sourceHost.receive()),
@@ -287,9 +277,6 @@ TEST(DriverCApiPeer, OrderedPeerCopyWaitsForTheSourceContext) {
                                    destination.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *destinationAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(destination.get(), &destinationAddress),
-            M_DRIVER_OK);
   BufferHandle landing;
   ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/true,
                                    landing.receive()),
@@ -302,32 +289,32 @@ TEST(DriverCApiPeer, OrderedPeerCopyWaitsForTheSourceContext) {
   // pattern, all on the producer and none of it waited for by the host.
   std::vector<uint8_t> zeros(kBytes, 0);
   std::memcpy(sourceHostAddress, zeros.data(), kBytes);
-  ASSERT_EQ(M_DriverCopyHostToDevice(producer.get(), sourceAddress,
-                                     sourceHostAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
       << lastError();
   std::memcpy(sourceHostAddress, expected.data(), kBytes);
   for (int round = 0; round < 32; ++round) {
-    ASSERT_EQ(M_DriverCopyHostToDevice(producer.get(), slowDeviceAddress,
-                                       slowHostAddress, kSlowBytes),
+    ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(),
+                                       view(slowDevice, 0, kSlowBytes),
+                                       slowHostAddress),
               M_DRIVER_OK)
         << lastError();
   }
-  ASSERT_EQ(M_DriverCopyHostToDevice(producer.get(), sourceAddress,
-                                     sourceHostAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
             M_DRIVER_OK)
       << lastError();
 
-  ASSERT_EQ(M_DriverCopyPeerToPeer(copier.get(), second.get(),
-                                   destinationAddress, first.get(),
-                                   sourceAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferPeer(copier.get(), view(destination, 0, kBytes),
+                                   view(source, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
 
-  ASSERT_EQ(M_DriverCopyDeviceToHost(copier.get(), landingAddress,
-                                     destinationAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
@@ -395,13 +382,11 @@ TEST(DriverCApiPeer, UnorderedPeerCopyLeavesAPendingErrorInPlace) {
                                    source.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *sourceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(source.get(), &sourceAddress), M_DRIVER_OK);
   StreamHandle producer;
   ASSERT_EQ(M_DriverStreamCreate(first.get(), producer.receive()), M_DRIVER_OK)
       << lastError();
-  ASSERT_EQ(M_DriverCopyHostToDevice(producer.get(), sourceAddress,
-                                     sourceHostAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
@@ -415,9 +400,6 @@ TEST(DriverCApiPeer, UnorderedPeerCopyLeavesAPendingErrorInPlace) {
                                    destination.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *destinationAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(destination.get(), &destinationAddress),
-            M_DRIVER_OK);
   BufferHandle landing;
   ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/true,
                                    landing.receive()),
@@ -430,15 +412,15 @@ TEST(DriverCApiPeer, UnorderedPeerCopyLeavesAPendingErrorInPlace) {
   // must neither fail the unordered copy nor be consumed by it.
   ErrorOrSuccess planted = plantPendingError(*sourceContext);
   ASSERT_FALSE(planted.isError()) << planted.getError();
-  ASSERT_EQ(M_DriverCopyPeerToPeerUnordered(copier.get(), second.get(),
-                                            destinationAddress, first.get(),
-                                            sourceAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferPeerUnordered(copier.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
             M_DRIVER_OK)
       << "the unordered copy must not take the source context's pending "
          "error: "
       << lastError();
-  ASSERT_EQ(M_DriverCopyDeviceToHost(copier.get(), landingAddress,
-                                     destinationAddress, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
@@ -524,8 +506,6 @@ TEST(DriverCApiPeer, BatchD2DPeer) {
                                    destination.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *dst = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(destination.get(), &dst), M_DRIVER_OK);
   StreamHandle copier;
   ASSERT_EQ(M_DriverStreamCreate(first.get(), copier.receive()), M_DRIVER_OK)
       << lastError();
@@ -539,7 +519,8 @@ TEST(DriverCApiPeer, BatchD2DPeer) {
   void *zerosAddress = nullptr;
   ASSERT_EQ(M_DriverBufferPointer(zeros.get(), &zerosAddress), M_DRIVER_OK);
   std::memset(zerosAddress, 0, kPattern);
-  ASSERT_EQ(M_DriverCopyHostToDevice(copier.get(), dst, zerosAddress, kPattern),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(
+                copier.get(), view(destination, 0, kPattern), zerosAddress),
             M_DRIVER_OK)
       << lastError();
   // The only ordering against the producer.
@@ -551,20 +532,16 @@ TEST(DriverCApiPeer, BatchD2DPeer) {
     uint64_t from, to, size;
   };
   const Piece pieces[3] = {{0, 2048, 512}, {1024, 0, 1000}, {3000, 3500, 96}};
-  void *dsts[3];
-  const void *srcs[3];
-  uint64_t sizes[3];
+  M_DriverBufferView dsts[3];
+  M_DriverBufferView srcs[3];
   std::vector<uint8_t> expected(kPattern, 0);
   for (size_t i = 0; i < 3; ++i) {
-    dsts[i] = static_cast<uint8_t *>(dst) + pieces[i].to;
-    srcs[i] = static_cast<const uint8_t *>(src) + pieces[i].from;
-    sizes[i] = pieces[i].size;
+    dsts[i] = view(destination, pieces[i].to, pieces[i].size);
+    srcs[i] = view(source, pieces[i].from, pieces[i].size);
     std::memcpy(expected.data() + pieces[i].to, pattern.data() + pieces[i].from,
                 pieces[i].size);
   }
-  ASSERT_EQ(M_DriverCopyBatch(copier.get(), M_DRIVER_COPY_DEVICE_TO_DEVICE,
-                              dsts, srcs, sizes, 3),
-            M_DRIVER_OK)
+  ASSERT_EQ(M_DriverCopyBufferBatch(copier.get(), dsts, srcs, 3), M_DRIVER_OK)
       << lastError();
 
   BufferHandle landing;
@@ -574,9 +551,9 @@ TEST(DriverCApiPeer, BatchD2DPeer) {
       << lastError();
   void *landingAddress = nullptr;
   ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
-  ASSERT_EQ(
-      M_DriverCopyDeviceToHost(copier.get(), landingAddress, dst, kPattern),
-      M_DRIVER_OK)
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kPattern)),
+            M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
       << lastError();

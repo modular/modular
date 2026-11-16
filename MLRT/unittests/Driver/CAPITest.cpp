@@ -108,8 +108,8 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
             (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MAJOR) << 24) |
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
-  EXPECT_EQ(version >> 24, 1u);
-  EXPECT_EQ((version >> 16) & 0xffu, 8u);
+  EXPECT_EQ(version >> 24, 2u);
+  EXPECT_EQ((version >> 16) & 0xffu, 0u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -165,7 +165,7 @@ TEST(DriverCApi, RejectsNullAndOutOfRangeArguments) {
             M_DRIVER_INVALID_ARGUMENT);
   EXPECT_EQ(M_DriverMemoryRegister(device.get(), nullptr, 0, nullptr),
             M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_EQ(M_DriverCopyHostToDevice(nullptr, nullptr, nullptr, 0),
+  EXPECT_EQ(M_DriverCopyHostToBuffer(nullptr, {}, nullptr),
             M_DRIVER_INVALID_ARGUMENT);
   EXPECT_EQ(M_DriverMappingDestroySync(nullptr), M_DRIVER_INVALID_ARGUMENT);
   EXPECT_EQ(
@@ -499,7 +499,7 @@ void expectRoundTrip(M_DriverDevice *device, M_DriverStream *queue = nullptr) {
     queue = created.get();
   }
 
-  ASSERT_EQ(M_DriverCopyHostToDevice(queue, address, hostBytes, kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(queue, view(buffer, 0, kBytes), hostBytes),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(queue), M_DRIVER_OK) << lastError();
@@ -507,7 +507,7 @@ void expectRoundTrip(M_DriverDevice *device, M_DriverStream *queue = nullptr) {
   // Overwrite the host buffer so the return leg has to do the work.
   std::memset(hostBytes, 0, kBytes);
 
-  ASSERT_EQ(M_DriverCopyDeviceToHost(queue, hostBytes, address, kBytes),
+  ASSERT_EQ(M_DriverCopyBufferToHost(queue, hostBytes, view(buffer, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(queue), M_DRIVER_OK) << lastError();
@@ -576,9 +576,12 @@ TEST(DriverCApi, BorrowedBufferWrapsCallerMemoryWithoutOwningIt) {
   for (size_t i = 0; i < scratch.size(); ++i)
     scratch[i] = static_cast<uint8_t>(i);
 
+  // The CPU device's memory space is host memory, so caller memory wraps as
+  // device memory there, which a copy can then name through a view; against
+  // an accelerator it would have to be device memory already.
   BufferHandle borrowed;
   ASSERT_EQ(M_DriverBufferFromPointer(device.get(), scratch.data(),
-                                      scratch.size(), /*is_host=*/true,
+                                      scratch.size(), /*is_host=*/false,
                                       borrowed.receive()),
             M_DRIVER_OK)
       << lastError();
@@ -591,14 +594,12 @@ TEST(DriverCApi, BorrowedBufferWrapsCallerMemoryWithoutOwningIt) {
   // Host memory the caller owns is wrapped, not copied.
   EXPECT_EQ(address, scratch.data());
 
-  // A copy into the wrapped range lands in the caller's memory. The CPU
-  // device's memory space is host memory, so a pageable range needs no
-  // registration here; against an accelerator it would.
+  // A copy into the wrapped range lands in the caller's memory.
   StreamHandle stream;
   ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK);
   std::vector<uint8_t> source(scratch.size(), 0xAB);
-  ASSERT_EQ(M_DriverCopyHostToDevice(stream.get(), scratch.data(),
-                                     source.data(), source.size()),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(
+                stream.get(), view(borrowed, 0, scratch.size()), source.data()),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
@@ -753,20 +754,21 @@ TEST(DriverCApi, MixedBackendHandlesAreRefused) {
   }
   M_DriverEventDestroy(acceleratorEvent);
 
-  // A peer copy whose source device is the CPU is a mix too, whichever side
-  // the stream runs on.
+  // A peer copy whose source is CPU memory is a mix too.
   constexpr uint64_t kBytes = 64;
-  std::vector<uint8_t> hostBytes(kBytes);
   BufferHandle buffer;
   ASSERT_EQ(M_DriverBufferAllocate(accelerator.get(), kBytes,
                                    /*pinned_host=*/false, buffer.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *address = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(buffer.get(), &address), M_DRIVER_OK);
-  EXPECT_EQ(M_DriverCopyPeerToPeer(acceleratorStream.get(), accelerator.get(),
-                                   address, cpu.get(), hostBytes.data(),
-                                   kBytes),
+  BufferHandle cpuBuffer;
+  ASSERT_EQ(M_DriverBufferAllocate(cpu.get(), kBytes, /*pinned_host=*/false,
+                                   cpuBuffer.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverCopyBufferPeer(acceleratorStream.get(),
+                                   view(buffer, 0, kBytes),
+                                   view(cpuBuffer, 0, kBytes)),
             M_DRIVER_INVALID_ARGUMENT);
   EXPECT_FALSE(lastError().empty());
 }
@@ -930,216 +932,6 @@ TEST(DriverCApi, AcceleratorThreadBindingKeepsCopiesWorking) {
   M_DriverUnbindFromCurrentThread();
 }
 
-TEST(DriverCApi, UnorderedPeerCopyValidatesItsArguments) {
-  DeviceHandle dst;
-  DeviceHandle src;
-  ASSERT_TRUE(makeCpuDevice(dst));
-  ASSERT_TRUE(makeCpuDevice(src));
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(dst.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-
-  // Every call below is refused before the driver touches either range, so
-  // host memory stands in for both.
-  constexpr uint64_t kBytes = 64;
-  std::vector<uint8_t> dstBytes(kBytes);
-  std::vector<uint8_t> srcBytes(kBytes);
-
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(nullptr, dst.get(), dstBytes.data(),
-                                            src.get(), srcBytes.data(), kBytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(stream.get(), nullptr,
-                                            dstBytes.data(), src.get(),
-                                            srcBytes.data(), kBytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(stream.get(), dst.get(),
-                                            dstBytes.data(), nullptr,
-                                            srcBytes.data(), kBytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(stream.get(), dst.get(), nullptr,
-                                            src.get(), srcBytes.data(), kBytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(stream.get(), dst.get(),
-                                            dstBytes.data(), src.get(), nullptr,
-                                            kBytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(stream.get(), dst.get(),
-                                            dstBytes.data(), src.get(),
-                                            srcBytes.data(), 0),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-
-  // The CPU backend adopts any non null handle as a queue of its own, which
-  // reaches the adopted stream path on a host with no vendor queue to hand
-  // over. A backend that adopts nothing, such as the HAL shim, has no adopted
-  // stream to refuse.
-  StreamHandle adopted;
-  if (M_DriverStreamFromNativeHandle(dst.get(),
-                                     reinterpret_cast<void *>(0x1234),
-                                     adopted.receive()) == M_DRIVER_OK) {
-    EXPECT_EQ(M_DriverCopyPeerToPeerUnordered(adopted.get(), dst.get(),
-                                              dstBytes.data(), src.get(),
-                                              srcBytes.data(), kBytes),
-              M_DRIVER_NOT_SUPPORTED);
-    EXPECT_FALSE(lastError().empty());
-  }
-}
-
-/// Copies four pieces of different sizes, laid out back to back, out to device
-/// memory in one batch and back in another, and checks every byte arrives
-/// unchanged. Both batches run on `stream`, which runs on `device`.
-void expectBatchRoundTrip(M_DriverDevice *device, M_DriverStream *stream) {
-  constexpr std::array<uint64_t, 4> kSizes = {512, 1024, 256, 2304};
-  constexpr uint64_t kBytes = 4096;
-  std::vector<uint8_t> expected(kBytes);
-  for (size_t i = 0; i < kBytes; ++i)
-    expected[i] = static_cast<uint8_t>(i * 31 + 7);
-
-  BufferHandle host;
-  ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/true,
-                                   host.receive()),
-            M_DRIVER_OK)
-      << lastError();
-  void *hostAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(host.get(), &hostAddress), M_DRIVER_OK);
-  auto *hostBytes = static_cast<uint8_t *>(hostAddress);
-  std::memcpy(hostBytes, expected.data(), kBytes);
-
-  BufferHandle target;
-  ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/false,
-                                   target.receive()),
-            M_DRIVER_OK)
-      << lastError();
-  void *targetAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(target.get(), &targetAddress), M_DRIVER_OK);
-
-  std::array<void *, 4> hostPieces{};
-  std::array<const void *, 4> hostSources{};
-  std::array<void *, 4> devicePieces{};
-  std::array<const void *, 4> deviceSources{};
-  uint64_t offset = 0;
-  for (size_t i = 0; i < kSizes.size(); ++i) {
-    hostPieces[i] = hostBytes + offset;
-    hostSources[i] = hostBytes + offset;
-    devicePieces[i] = static_cast<uint8_t *>(targetAddress) + offset;
-    deviceSources[i] = static_cast<uint8_t *>(targetAddress) + offset;
-    offset += kSizes[i];
-  }
-  ASSERT_EQ(offset, kBytes);
-
-  ASSERT_EQ(M_DriverCopyBatch(stream, M_DRIVER_COPY_HOST_TO_DEVICE,
-                              devicePieces.data(), hostSources.data(),
-                              kSizes.data(), kSizes.size()),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream), M_DRIVER_OK) << lastError();
-
-  // Zero the host side so the return batch has to do the work.
-  std::memset(hostBytes, 0, kBytes);
-
-  ASSERT_EQ(M_DriverCopyBatch(stream, M_DRIVER_COPY_DEVICE_TO_HOST,
-                              hostPieces.data(), deviceSources.data(),
-                              kSizes.data(), kSizes.size()),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream), M_DRIVER_OK) << lastError();
-
-  EXPECT_EQ(std::memcmp(hostBytes, expected.data(), kBytes), 0);
-}
-
-TEST(DriverCApi, CpuBatchCopiesSeveralPiecesEachWay) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-
-  expectBatchRoundTrip(device.get(), stream.get());
-
-  // An empty batch enqueues nothing, so it needs no arrays.
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                              nullptr, nullptr, nullptr, 0),
-            M_DRIVER_OK)
-      << lastError();
-}
-
-TEST(DriverCApi, BatchCopyValidatesItsArguments) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-
-  // Every call below is refused before anything is enqueued, so host memory
-  // stands in for both sides, and the destination staying zero shows that no
-  // piece ran.
-  constexpr uint64_t kPiece = 64;
-  std::vector<uint8_t> dstBytes(2 * kPiece, 0);
-  std::vector<uint8_t> srcBytes(2 * kPiece, 0x5a);
-  std::array<void *, 2> dsts = {dstBytes.data(), dstBytes.data() + kPiece};
-  std::array<const void *, 2> srcs = {srcBytes.data(),
-                                      srcBytes.data() + kPiece};
-  std::array<uint64_t, 2> sizes = {kPiece, kPiece};
-
-  EXPECT_EQ(M_DriverCopyBatch(nullptr, M_DRIVER_COPY_HOST_TO_DEVICE,
-                              dsts.data(), srcs.data(), sizes.data(), 2),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                              nullptr, nullptr, nullptr, 1),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-
-  // A bad piece is named by its index, and the good piece before it is not
-  // enqueued either.
-  std::array<void *, 2> nullAddress = {dstBytes.data(), nullptr};
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                              nullAddress.data(), srcs.data(), sizes.data(), 2),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_NE(lastError().find("piece 1"), std::string::npos) << lastError();
-  std::array<uint64_t, 2> zeroSize = {kPiece, 0};
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                              dsts.data(), srcs.data(), zeroSize.data(), 2),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_NE(lastError().find("piece 1"), std::string::npos) << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-  EXPECT_EQ(dstBytes, std::vector<uint8_t>(2 * kPiece, 0));
-
-  // The CPU backend adopts any non null handle as a queue of its own, which
-  // reaches the adopted stream path on a host with no vendor queue to hand
-  // over. A backend that adopts nothing, such as the HAL shim, has no adopted
-  // stream to refuse.
-  StreamHandle adopted;
-  if (M_DriverStreamFromNativeHandle(device.get(),
-                                     reinterpret_cast<void *>(0x1234),
-                                     adopted.receive()) == M_DRIVER_OK) {
-    EXPECT_EQ(M_DriverCopyBatch(adopted.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                                dsts.data(), srcs.data(), sizes.data(), 2),
-              M_DRIVER_NOT_SUPPORTED);
-    EXPECT_FALSE(lastError().empty());
-  }
-}
-
-TEST(DriverCApi, AcceleratorBatchCopiesSeveralPiecesEachWay) {
-  if (M_DriverAcceleratorCount() == 0)
-    GTEST_SKIP() << "no accelerator on this host";
-
-  DeviceHandle device;
-  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
-      << lastError();
-
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-  expectBatchRoundTrip(device.get(), stream.get());
-}
-
 //===----------------------------------------------------------------------===//
 // Events
 //===----------------------------------------------------------------------===//
@@ -1241,9 +1033,8 @@ TEST(DriverCApi, AdoptedNativeStreamAcceptsOrderingOperations) {
   ASSERT_EQ(M_DriverBufferAllocate(device.get(), kBytes, /*pinned_host=*/false,
                                    buffer.receive()),
             M_DRIVER_OK);
-  void *address = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(buffer.get(), &address), M_DRIVER_OK);
-  EXPECT_EQ(M_DriverCopyDeviceToDevice(adopted.get(), address, address, kBytes),
+  EXPECT_EQ(M_DriverCopyBufferToBuffer(adopted.get(), view(buffer, 0, kBytes),
+                                       view(buffer, 0, kBytes)),
             M_DRIVER_NOT_SUPPORTED);
 }
 
@@ -1714,11 +1505,9 @@ TEST(DriverCApi, RegisteringCallerMemoryMakesItDeviceAddressable) {
                                    buffer.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *deviceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(buffer.get(), &deviceAddress), M_DRIVER_OK);
 
   ASSERT_EQ(
-      M_DriverCopyHostToDevice(stream.get(), deviceAddress, address, kBytes),
+      M_DriverCopyHostToBuffer(stream.get(), view(buffer, 0, kBytes), address),
       M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
@@ -1726,7 +1515,7 @@ TEST(DriverCApi, RegisteringCallerMemoryMakesItDeviceAddressable) {
   std::memset(slab, 0, kBytes);
 
   ASSERT_EQ(
-      M_DriverCopyDeviceToHost(stream.get(), address, deviceAddress, kBytes),
+      M_DriverCopyBufferToHost(stream.get(), address, view(buffer, 0, kBytes)),
       M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
@@ -2038,37 +1827,30 @@ TEST(DriverCApi, BatchCopyThroughRegisteredMemoryLeavesTheRegistrationAlone) {
                                    buffer.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *deviceAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(buffer.get(), &deviceAddress), M_DRIVER_OK);
-  auto *deviceBytes = static_cast<uint8_t *>(deviceAddress);
 
   // Repeated, so a wrapper that freed or unregistered the range would break a
   // later round.
   constexpr std::array<uint64_t, 3> kSizes = {4096, 8192, kBytes - 12288};
   std::array<void *, 3> hostDsts{};
   std::array<const void *, 3> hostSrcs{};
-  std::array<void *, 3> deviceDsts{};
-  std::array<const void *, 3> deviceSrcs{};
+  std::array<M_DriverBufferView, 3> deviceViews{};
   uint64_t offset = 0;
   for (size_t i = 0; i < kSizes.size(); ++i) {
     hostDsts[i] = slabBytes + offset;
     hostSrcs[i] = slabBytes + offset;
-    deviceDsts[i] = deviceBytes + offset;
-    deviceSrcs[i] = deviceBytes + offset;
+    deviceViews[i] = view(buffer, offset, kSizes[i]);
     offset += kSizes[i];
   }
   for (int round = 0; round < 3; ++round) {
-    ASSERT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_HOST_TO_DEVICE,
-                                deviceDsts.data(), hostSrcs.data(),
-                                kSizes.data(), kSizes.size()),
+    ASSERT_EQ(M_DriverCopyHostToBufferBatch(stream.get(), deviceViews.data(),
+                                            hostSrcs.data(), kSizes.size()),
               M_DRIVER_OK)
         << lastError();
     ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
         << lastError();
     std::memset(slab, 0, kBytes);
-    ASSERT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_DEVICE_TO_HOST,
-                                hostDsts.data(), deviceSrcs.data(),
-                                kSizes.data(), kSizes.size()),
+    ASSERT_EQ(M_DriverCopyBufferToHostBatch(stream.get(), hostDsts.data(),
+                                            deviceViews.data(), kSizes.size()),
               M_DRIVER_OK)
         << lastError();
     ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
@@ -2216,8 +1998,13 @@ TEST(DriverCApi, DeviceStreamOrdersAfterSharedQueueWork) {
   ASSERT_FALSE((*max)->enqueueSetMemory(**target, kFill, 1).isError());
   // No host synchronization between the fill and the copy: only the queue
   // orders them.
-  ASSERT_EQ(M_DriverCopyDeviceToHost(shared.get(), landingAddress,
-                                     (*target)->ptr(), kBytes),
+  BufferHandle wrapped;
+  ASSERT_EQ(M_DriverBufferFromPointer(device.get(), (*target)->ptr(), kBytes,
+                                      /*is_host=*/false, wrapped.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverCopyBufferToHost(shared.get(), landingAddress,
+                                     view(wrapped, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(shared.get()), M_DRIVER_OK)
@@ -2256,241 +2043,6 @@ TEST(DriverCApi, StreamCreateIsNotDeviceStream) {
                     "created stream is MAX's queue";
 #endif
   EXPECT_NE(sharedNative, createdNative);
-}
-
-//===----------------------------------------------------------------------===//
-// Memset
-//===----------------------------------------------------------------------===//
-
-namespace {
-
-/// Fills 4 KiB of device memory with a pattern through a copy, zeroes the
-/// middle half with a memset, and checks only that half changed.
-void expectMemsetFillsRangeOnly(M_DriverDevice *device) {
-  constexpr uint64_t kBytes = 4096;
-  constexpr uint64_t kBegin = 1024;
-  constexpr uint64_t kEnd = 3072;
-
-  BufferHandle host;
-  ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/true,
-                                   host.receive()),
-            M_DRIVER_OK)
-      << lastError();
-  void *hostAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(host.get(), &hostAddress), M_DRIVER_OK);
-  std::memset(hostAddress, 0xAB, kBytes);
-
-  BufferHandle target;
-  ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/false,
-                                   target.receive()),
-            M_DRIVER_OK)
-      << lastError();
-  void *targetAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(target.get(), &targetAddress), M_DRIVER_OK);
-
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device, stream.receive()), M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamWaitForDevice(stream.get(), device), M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverCopyHostToDevice(stream.get(), targetAddress, hostAddress,
-                                     kBytes),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverMemset(stream.get(),
-                           static_cast<uint8_t *>(targetAddress) + kBegin, 0,
-                           kEnd - kBegin),
-            M_DRIVER_OK)
-      << lastError();
-  // The copy reads the host buffer when it runs, so it must finish before the
-  // buffer is overwritten for the return leg.
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-  std::memset(hostAddress, 0x11, kBytes);
-  ASSERT_EQ(M_DriverCopyDeviceToHost(stream.get(), hostAddress, targetAddress,
-                                     kBytes),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-
-  const auto *bytes = static_cast<const uint8_t *>(hostAddress);
-  for (uint64_t i = 0; i < kBytes; ++i) {
-    const uint8_t expected = (i >= kBegin && i < kEnd) ? 0 : 0xAB;
-    ASSERT_EQ(bytes[i], expected) << "at byte " << i;
-  }
-}
-
-} // namespace
-
-TEST(DriverCApi, CpuMemsetFillsRangeOnly) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  expectMemsetFillsRangeOnly(device.get());
-}
-
-TEST(DriverCApi, AcceleratorMemsetFillsRangeOnly) {
-  if (M_DriverAcceleratorCount() == 0)
-    GTEST_SKIP() << "no accelerator on this host";
-  DeviceHandle device;
-  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
-      << lastError();
-  expectMemsetFillsRangeOnly(device.get());
-}
-
-TEST(DriverCApi, MemsetValidatesItsArguments) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-  uint8_t bytes[16] = {};
-  EXPECT_EQ(M_DriverMemset(nullptr, bytes, 1, sizeof bytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_EQ(M_DriverMemset(stream.get(), nullptr, 1, sizeof bytes),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_EQ(M_DriverMemset(stream.get(), bytes, 1, 0),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
-  for (uint8_t byte : bytes)
-    EXPECT_EQ(byte, 0);
-
-  // See BatchCopyValidatesItsArguments for why the CPU backend adopts this.
-  StreamHandle adopted;
-  if (M_DriverStreamFromNativeHandle(device.get(),
-                                     reinterpret_cast<void *>(0x1234),
-                                     adopted.receive()) == M_DRIVER_OK) {
-    EXPECT_EQ(M_DriverMemset(adopted.get(), bytes, 1, sizeof bytes),
-              M_DRIVER_NOT_SUPPORTED);
-    EXPECT_FALSE(lastError().empty());
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// Device-to-device batch copies
-//===----------------------------------------------------------------------===//
-
-namespace {
-
-/// Copies three disjoint pieces of one device buffer into another, at
-/// different offsets than they came from, with one batch.
-void expectDeviceToDeviceBatch(M_DriverDevice *device) {
-  constexpr uint64_t kBytes = 4096;
-  std::vector<uint8_t> pattern(kBytes);
-  for (size_t i = 0; i < kBytes; ++i)
-    pattern[i] = static_cast<uint8_t>(i * 13 + 5);
-
-  BufferHandle host;
-  ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/true,
-                                   host.receive()),
-            M_DRIVER_OK)
-      << lastError();
-  void *hostAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(host.get(), &hostAddress), M_DRIVER_OK);
-  std::memcpy(hostAddress, pattern.data(), kBytes);
-
-  BufferHandle source;
-  BufferHandle destination;
-  for (BufferHandle *buffer : {&source, &destination})
-    ASSERT_EQ(M_DriverBufferAllocate(device, kBytes, /*pinned_host=*/false,
-                                     buffer->receive()),
-              M_DRIVER_OK)
-        << lastError();
-  void *src = nullptr;
-  void *dst = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(source.get(), &src), M_DRIVER_OK);
-  ASSERT_EQ(M_DriverBufferPointer(destination.get(), &dst), M_DRIVER_OK);
-
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device, stream.receive()), M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamWaitForDevice(stream.get(), device), M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverCopyHostToDevice(stream.get(), src, hostAddress, kBytes),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-  // Zero the destination so pieces the batch leaves alone read as 0.
-  std::memset(hostAddress, 0, kBytes);
-  ASSERT_EQ(M_DriverCopyHostToDevice(stream.get(), dst, hostAddress, kBytes),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-  std::memset(hostAddress, 0x11, kBytes);
-
-  struct Piece {
-    uint64_t from, to, size;
-  };
-  const std::array<Piece, 3> pieces = {
-      {{0, 2048, 512}, {1024, 0, 1000}, {3000, 3500, 96}}};
-  std::array<void *, 3> dsts{};
-  std::array<const void *, 3> srcs{};
-  std::array<uint64_t, 3> sizes{};
-  std::vector<uint8_t> expected(kBytes, 0);
-  for (size_t i = 0; i < pieces.size(); ++i) {
-    dsts[i] = static_cast<uint8_t *>(dst) + pieces[i].to;
-    srcs[i] = static_cast<const uint8_t *>(src) + pieces[i].from;
-    sizes[i] = pieces[i].size;
-    std::memcpy(expected.data() + pieces[i].to, pattern.data() + pieces[i].from,
-                pieces[i].size);
-  }
-  ASSERT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_DEVICE_TO_DEVICE,
-                              dsts.data(), srcs.data(), sizes.data(),
-                              pieces.size()),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverCopyDeviceToHost(stream.get(), hostAddress, dst, kBytes),
-            M_DRIVER_OK)
-      << lastError();
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK)
-      << lastError();
-  EXPECT_EQ(std::memcmp(hostAddress, expected.data(), kBytes), 0);
-}
-
-} // namespace
-
-TEST(DriverCApi, CpuBatchD2DSameDevice) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  expectDeviceToDeviceBatch(device.get());
-}
-
-TEST(DriverCApi, AcceleratorBatchD2DSameDevice) {
-  if (M_DriverAcceleratorCount() == 0)
-    GTEST_SKIP() << "no accelerator on this host";
-  DeviceHandle device;
-  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
-      << lastError();
-  expectDeviceToDeviceBatch(device.get());
-}
-
-TEST(DriverCApi, BatchD2DUnknownDirectionRejected) {
-  DeviceHandle device;
-  ASSERT_TRUE(makeCpuDevice(device));
-  StreamHandle stream;
-  ASSERT_EQ(M_DriverStreamCreate(device.get(), stream.receive()), M_DRIVER_OK)
-      << lastError();
-  uint8_t dstBytes[8] = {};
-  const uint8_t srcBytes[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-  void *dsts[1] = {dstBytes};
-  const void *srcs[1] = {srcBytes};
-  const uint64_t sizes[1] = {sizeof dstBytes};
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(),
-                              static_cast<M_DriverCopyDirection>(3), dsts, srcs,
-                              sizes, 1),
-            M_DRIVER_INVALID_ARGUMENT);
-  EXPECT_FALSE(lastError().empty());
-  // Zero size pieces are still refused in the new direction.
-  const uint64_t zero[1] = {0};
-  EXPECT_EQ(M_DriverCopyBatch(stream.get(), M_DRIVER_COPY_DEVICE_TO_DEVICE,
-                              dsts, srcs, zero, 1),
-            M_DRIVER_INVALID_ARGUMENT);
-  ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
-  for (uint8_t byte : dstBytes)
-    EXPECT_EQ(byte, 0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2901,9 +2453,8 @@ TEST(DriverCApi, AcceleratorViewBatchCopiesPieces) {
   expectViewBatch(device.get());
 }
 
-/// The range checks are new with views, since an address carries no extent:
-/// each one is a status before anything is enqueued, so the destination keeps
-/// its bytes.
+/// Each range check is a status before anything is enqueued, so the
+/// destination keeps its bytes.
 TEST(DriverCApi, ViewsOutsideTheirBufferAreRefused) {
   DeviceHandle device;
   ASSERT_TRUE(makeCpuDevice(device));
@@ -3041,9 +2592,11 @@ TEST(DriverCApi, ViewsOfHostMemoryAreRefused) {
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
   EXPECT_EQ(callerBytes, std::vector<uint8_t>(kBytes, 0));
 
-  // See BatchCopyValidatesItsArguments for why the CPU backend adopts this.
-  // The stream is refused before the views are checked, so a bad view still
-  // reads as the adopted stream.
+  // The CPU backend adopts any non null handle as a queue of its own, which
+  // reaches the adopted stream path on a host with no vendor queue to hand
+  // over. A backend that adopts nothing, such as the HAL shim, has no adopted
+  // stream to refuse. The stream is refused before the views are checked, so
+  // a bad view still reads as the adopted stream.
   const M_DriverBufferView bad = view(host, 0, 16);
   StreamHandle adopted;
   if (M_DriverStreamFromNativeHandle(device.get(),
@@ -3432,12 +2985,10 @@ TEST(DriverCApi, HostFunctionRunsAfterPriorWork) {
                                    filled.receive()),
             M_DRIVER_OK)
       << lastError();
-  void *filledAddress = nullptr;
-  ASSERT_EQ(M_DriverBufferPointer(filled.get(), &filledAddress), M_DRIVER_OK);
   ASSERT_EQ(M_DriverStreamWaitForDevice(stream.get(), device.get()),
             M_DRIVER_OK);
-  ASSERT_EQ(M_DriverCopyHostToDevice(stream.get(), filledAddress, hostAddress,
-                                     kBytes),
+  ASSERT_EQ(M_DriverCopyHostToBuffer(stream.get(), view(filled, 0, kBytes),
+                                     hostAddress),
             M_DRIVER_OK)
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
@@ -3446,8 +2997,8 @@ TEST(DriverCApi, HostFunctionRunsAfterPriorWork) {
   HostCopy copy;
   copy.from = hostAddress;
   copy.into.assign(kBytes, 0);
-  ASSERT_EQ(M_DriverCopyDeviceToHost(stream.get(), hostAddress, filledAddress,
-                                     kBytes),
+  ASSERT_EQ(M_DriverCopyBufferToHost(stream.get(), hostAddress,
+                                     view(filled, 0, kBytes)),
             M_DRIVER_OK)
       << lastError();
   const M_DriverStatus status =

@@ -51,9 +51,8 @@
 //    that adopt an existing object by address say so, and an address that did
 //    not come from this interface or from MAX is undefined behavior.
 //  * Device memory crosses this interface as a buffer view, a buffer handle
-//    plus a byte range, and not as an address. Some backends have no device
-//    address to give, so the copies that take a device address are kept only
-//    for the consumers that still use them.
+//    plus a byte range, and not as an address, because some backends have no
+//    device address to give.
 //
 //===----------------------------------------------------------------------===//
 
@@ -78,33 +77,21 @@ extern "C" {
 // `MODULAR_DRIVER_EXPORT`; the `extern "C"` half is the block above.
 #define M_DRIVER_API DRIVER_VISIBILITY_EXPORT
 
-// Marks an entry point that `replacement` supersedes, so a call to it warns.
-// The header is also compiled as C, where `[[deprecated]]` needs C23, so C
-// gets the GNU spelling and a compiler with neither gets no warning.
-#if defined(__cplusplus) && __cplusplus >= 201402L
-#define M_DRIVER_DEPRECATED(replacement) [[deprecated("use " replacement)]]
-#elif defined(__GNUC__)
-#define M_DRIVER_DEPRECATED(replacement)                                       \
-  __attribute__((deprecated("use " replacement)))
-#else
-#define M_DRIVER_DEPRECATED(replacement)
-#endif
-
 //===----------------------------------------------------------------------===//
 // Version
 //===----------------------------------------------------------------------===//
 
 /// The version of this interface, in three parts. The major number changes
-/// when an existing declaration changes shape or meaning. The minor number
-/// grows when anything is added, whether an entry point, a status value or an
-/// enum value. The patch number grows for a fix that changes no declaration,
-/// so a consumer can tell two libraries with the same surface apart. A
-/// consumer built against an older minor keeps working against a newer
+/// when an existing declaration is removed or changes shape or meaning. The
+/// minor number grows when anything is added, whether an entry point, a status
+/// value or an enum value. The patch number grows for a fix that changes no
+/// declaration, so a consumer can tell two libraries with the same surface
+/// apart. A consumer built against an older minor keeps working against a newer
 /// library with the same major, but it can receive a status or enum value it
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
-#define M_DRIVER_CAPI_VERSION_MAJOR 1
-#define M_DRIVER_CAPI_VERSION_MINOR 8
+#define M_DRIVER_CAPI_VERSION_MAJOR 2
+#define M_DRIVER_CAPI_VERSION_MINOR 0
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -1042,161 +1029,6 @@ M_DRIVER_API M_DriverStatus M_DriverHostRegionChunkAddress(
 M_DRIVER_API M_DriverStatus
 M_DriverHostRegionChunkBytes(const M_DriverHostRegion *region, uint64_t *out);
 
-/// Enqueues a host-to-device copy of `byte_size` bytes from `src_host` to
-/// `dst_device`, on `stream`, and returns without waiting for it.
-///
-/// Addresses are raw: `dst_device` is a device address MAX or this interface
-/// produced (`M_DriverBufferPointer`, a tensor, or a registered mapping), and
-/// `src_host` is a host address (a mapped slab, or caller memory pinned with
-/// `M_DriverMemoryRegister`). The copy runs on `stream`'s context, so it is
-/// ordered against everything else enqueued there, and it is in place: the
-/// destination must already be sized.
-///
-/// Neither range may overlap the other, and both must stay valid until the
-/// copy has completed -- synchronize `stream`, or wait on an event recorded
-/// after this call, before releasing or reusing either.
-///
-/// Mirrors `cuMemcpyHtoDAsync` / `Buffer.inplace_copy_from` on a stream.
-///
-/// Deprecated: use `M_DriverCopyHostToBuffer`.
-M_DRIVER_DEPRECATED("M_DriverCopyHostToBuffer")
-M_DRIVER_API M_DriverStatus
-M_DriverCopyHostToDevice(const M_DriverStream *stream, void *dst_device,
-                         const void *src_host, uint64_t byte_size);
-
-/// Enqueues a device-to-host copy of `byte_size` bytes from `src_device` to
-/// `dst_host`, on `stream`, and returns without waiting for it.
-///
-/// The host destination must be DMA-accessible to the device
-/// (`M_DriverMemoryRegister`, or a pinned buffer); a pageable host pointer
-/// either fails or is staged through a bounce buffer, which the caller cannot
-/// observe, so pin first.
-///
-/// Mirrors `cuMemcpyDtoHAsync`.
-///
-/// Deprecated: use `M_DriverCopyBufferToHost`.
-M_DRIVER_DEPRECATED("M_DriverCopyBufferToHost")
-M_DRIVER_API M_DriverStatus
-M_DriverCopyDeviceToHost(const M_DriverStream *stream, void *dst_host,
-                         const void *src_device, uint64_t byte_size);
-
-/// The direction every piece of an `M_DriverCopyBatch` shares.
-typedef enum M_DriverCopyDirection {
-  /// `dsts` are device addresses and `srcs` are host addresses.
-  M_DRIVER_COPY_HOST_TO_DEVICE = 0,
-  /// `dsts` are host addresses and `srcs` are device addresses.
-  M_DRIVER_COPY_DEVICE_TO_HOST = 1,
-  /// `dsts` are device addresses on `stream`'s device. `srcs` are device
-  /// addresses on that device, or on a peer it can access with access
-  /// enabled (`M_DriverDeviceEnablePeerAccess`); a source it cannot reach
-  /// fails in the driver as `M_DRIVER_RUNTIME_ERROR`. Unlike
-  /// `M_DriverCopyPeerToPeer`, nothing waits for the source device, so the
-  /// caller orders `stream` after the sources' producer, for example with
-  /// `M_DriverStreamWaitForDevice`.
-  M_DRIVER_COPY_DEVICE_TO_DEVICE = 2,
-} M_DriverCopyDirection;
-
-/// Enqueues `count` copies in one direction, `sizes[i]` bytes from `srcs[i]`
-/// to `dsts[i]`, on `stream`, and returns without waiting for them.
-///
-/// One vendor submission where the driver has a batched copy (CUDA 12.8+ and
-/// recent HIP), otherwise the equivalent sequence of scalar copies. Each piece
-/// has the requirements of `M_DriverCopyHostToDevice`, `DeviceToHost` or the
-/// device-to-device direction: a device address belongs to `stream`'s device
-/// (or, for a device-to-device source, a reachable peer), a host address is
-/// DMA accessible, the two ranges do not overlap, and both stay valid until
-/// the batch completes. Nothing is recorded on or awaited on any other
-/// stream.
-///
-/// A `count` of 0 succeeds. A null address, zero size, null array with a non
-/// zero count, or unknown direction is `M_DRIVER_INVALID_ARGUMENT`, and
-/// nothing is enqueued.
-///
-/// Deprecated: use `M_DriverCopyBufferBatch` for the device-to-device
-/// direction, `M_DriverCopyHostToBufferBatch` for host-to-device and
-/// `M_DriverCopyBufferToHostBatch` for device-to-host.
-M_DRIVER_DEPRECATED("the buffer view batch copies")
-M_DRIVER_API M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
-                                              M_DriverCopyDirection direction,
-                                              void *const *dsts,
-                                              const void *const *srcs,
-                                              const uint64_t *sizes,
-                                              size_t count);
-
-/// Enqueues a device-to-device copy of `byte_size` bytes from `src_device` to
-/// `dst_device`, on `stream`, and returns without waiting for it.
-///
-/// Both addresses must belong to `stream`'s own device and context; this is the
-/// same-device path, which the driver issues as a direct device copy.
-/// Cross-device copies use `M_DriverCopyPeerToPeer`.
-///
-/// Mirrors `Buffer.inplace_copy_from` and `cuMemcpyDtoDAsync`.
-///
-/// Deprecated: use `M_DriverCopyBufferToBuffer`.
-M_DRIVER_DEPRECATED("M_DriverCopyBufferToBuffer")
-M_DRIVER_API M_DriverStatus
-M_DriverCopyDeviceToDevice(const M_DriverStream *stream, void *dst_device,
-                           const void *src_device, uint64_t byte_size);
-
-/// Enqueues a fill of `byte_size` bytes at `dst_device` with `value`, on
-/// `stream`, and returns without waiting for it.
-///
-/// `dst_device` is device memory of `stream`'s device. A `byte_size` of 0 is
-/// `M_DRIVER_INVALID_ARGUMENT`, and a stream adopted from a native handle is
-/// `M_DRIVER_NOT_SUPPORTED`, as for the copies.
-///
-/// Mirrors `cuMemsetD8Async`.
-///
-/// Deprecated: use `M_DriverFillBuffer`.
-M_DRIVER_DEPRECATED("M_DriverFillBuffer")
-M_DRIVER_API M_DriverStatus M_DriverMemset(const M_DriverStream *stream,
-                                           void *dst_device, uint8_t value,
-                                           uint64_t byte_size);
-
-/// Enqueues a copy of `byte_size` bytes from `src_device`+`src` to
-/// `dst_device`+`dst`, on `stream`, and returns without waiting for it.
-///
-/// This is the cross-device path, issued as a peer copy (`cuMemcpyPeer` on
-/// CUDA, the xGMI equivalent on AMD). It is direct only between devices that
-/// can access each other (`M_DriverDeviceCanAccess`) with access enabled by
-/// `M_DriverDeviceEnablePeerAccess`; on CUDA a pair without access still goes
-/// through the peer copy, which the vendor then stages through host memory.
-/// `M_DriverEnableAllPeerAccess` enables every pair at once but fails as a
-/// whole on a host where any pair cannot reach each other.
-///
-/// The copy is enqueued on `stream`, which must run on the device that owns
-/// `dst`, and the driver brackets it against the source device's shared
-/// context, so `stream` first waits for everything enqueued there and that
-/// context then waits for the copy before it runs anything else. Passing
-/// `dst_device` explicitly lets the caller state the destination device, and
-/// it is checked.
-///
-/// Mirrors `cuMemcpyPeerAsync` and the cross-device broadcast copy.
-///
-/// Deprecated: use `M_DriverCopyBufferPeer`.
-M_DRIVER_DEPRECATED("M_DriverCopyBufferPeer")
-M_DRIVER_API M_DriverStatus M_DriverCopyPeerToPeer(
-    const M_DriverStream *stream, const M_DriverDevice *dst_device, void *dst,
-    const M_DriverDevice *src_device, const void *src, uint64_t byte_size);
-
-/// Like `M_DriverCopyPeerToPeer`, except that the driver records nothing on
-/// and waits for nothing on the source device's shared context.
-/// `M_DriverCopyPeerToPeer` brackets the copy so `stream` waits for that
-/// context's work and the context then waits for the copy, which also makes
-/// MAX's compute stream on the source device stall behind the copy. This
-/// variant leaves the ordering to the caller, who records an event on the
-/// stream that produced `src` and waits for it on `stream` before this call,
-/// and keeps `src` alive until an event recorded on `stream` after this call
-/// has fired. Because it touches nothing on the source device's shared
-/// context, it also neither reports nor clears an error MAX left pending
-/// there, where the ordered variant does (see the Devices section).
-///
-/// Deprecated: use `M_DriverCopyBufferPeerUnordered`.
-M_DRIVER_DEPRECATED("M_DriverCopyBufferPeerUnordered")
-M_DRIVER_API M_DriverStatus M_DriverCopyPeerToPeerUnordered(
-    const M_DriverStream *stream, const M_DriverDevice *dst_device, void *dst,
-    const M_DriverDevice *src_device, const void *src, uint64_t byte_size);
-
 //===----------------------------------------------------------------------===//
 // Copies through buffer views
 //===----------------------------------------------------------------------===//
@@ -1213,8 +1045,14 @@ M_DRIVER_API M_DriverStatus M_DriverCopyPeerToPeerUnordered(
 /// names, which includes a buffer from another backend than the stream. A
 /// stream adopted from a native handle is `M_DRIVER_NOT_SUPPORTED` before any
 /// view is checked. A view does not keep its buffer alive past the call, so
-/// the caller keeps the buffer until the work that uses it has completed, as
-/// for the address copies.
+/// the caller keeps the buffer until the work that uses it has completed.
+///
+/// Each copy and fill runs on `stream`'s context, so it is ordered against
+/// everything else enqueued there, and it is in place: the destination must
+/// already be sized. The source and destination ranges may not overlap, and
+/// both, host memory included, must stay valid until the work has completed:
+/// synchronize `stream`, or wait on an event recorded after the call, before
+/// releasing or reusing either.
 typedef struct M_DriverBufferView {
   const M_DriverBuffer *buffer;
   /// Bytes from the buffer's start.
@@ -1229,9 +1067,8 @@ typedef struct M_DriverBufferView {
 /// `dst` is device memory on `stream`'s device. `src_host` is host memory the
 /// device can DMA from (a pinned buffer's `M_DriverBufferPointer`, a chunk of
 /// a host region, or caller memory registered with `M_DriverMemoryRegister`).
-/// Otherwise this is `M_DriverCopyHostToDevice`: the same ordering, the same
-/// overlap and lifetime rules, and the same refusal of a stream adopted from a
-/// native handle.
+///
+/// Mirrors `cuMemcpyHtoDAsync`.
 M_DRIVER_API M_DriverStatus M_DriverCopyHostToBuffer(
     const M_DriverStream *stream, M_DriverBufferView dst, const void *src_host);
 
@@ -1239,13 +1076,20 @@ M_DRIVER_API M_DriverStatus M_DriverCopyHostToBuffer(
 /// and returns without waiting for it.
 ///
 /// `src` is device memory on `stream`'s device, and `dst_host` is host memory
-/// the device can DMA to. Otherwise this is `M_DriverCopyDeviceToHost`.
+/// the device can DMA to (`M_DriverMemoryRegister`, or a pinned buffer); a
+/// pageable host pointer either fails or is staged through a bounce buffer,
+/// which the caller cannot observe, so pin first.
+///
+/// Mirrors `cuMemcpyDtoHAsync`.
 M_DRIVER_API M_DriverStatus M_DriverCopyBufferToHost(
     const M_DriverStream *stream, void *dst_host, M_DriverBufferView src);
 
 /// Enqueues a copy from `src` to `dst`, both device memory on `stream`'s
 /// device, on `stream`, and returns without waiting for it. The two views
-/// must have the same size. Otherwise this is `M_DriverCopyDeviceToDevice`.
+/// must have the same size. A copy between devices uses
+/// `M_DriverCopyBufferPeer`.
+///
+/// Mirrors `cuMemcpyDtoDAsync`.
 M_DRIVER_API M_DriverStatus
 M_DriverCopyBufferToBuffer(const M_DriverStream *stream, M_DriverBufferView dst,
                            M_DriverBufferView src);
@@ -1254,19 +1098,34 @@ M_DriverCopyBufferToBuffer(const M_DriverStream *stream, M_DriverBufferView dst,
 /// on `stream`'s device, on `stream`, and returns without waiting for it. The
 /// two views must have the same size.
 ///
-/// Each view's buffer names its device, so the call takes no device handles.
-/// Otherwise this is `M_DriverCopyPeerToPeer`: both devices are of one
-/// backend, and the driver brackets the copy against the context `src`'s
-/// buffer was allocated on, which is the shared context of its device for
-/// memory from `M_DriverBufferAllocate` and from MAX's accelerators.
+/// Each view's buffer names its device, so the call takes no device handles,
+/// and both devices are of one backend. This is the cross-device path, issued
+/// as a peer copy (`cuMemcpyPeerAsync` on CUDA, the xGMI equivalent on AMD).
+/// It is direct only between devices that can access each other
+/// (`M_DriverDeviceCanAccess`) with access enabled by
+/// `M_DriverDeviceEnablePeerAccess`; on CUDA a pair without access still goes
+/// through the peer copy, which the vendor then stages through host memory.
+/// `M_DriverEnableAllPeerAccess` enables every pair at once but fails as a
+/// whole on a host where any pair cannot reach each other.
+///
+/// The driver brackets the copy against the context `src`'s buffer was
+/// allocated on, which is the shared context of its device for memory from
+/// `M_DriverBufferAllocate` and from MAX's accelerators: `stream` first waits
+/// for everything enqueued there, and that context then waits for the copy
+/// before it runs anything else.
 M_DRIVER_API M_DriverStatus M_DriverCopyBufferPeer(const M_DriverStream *stream,
                                                    M_DriverBufferView dst,
                                                    M_DriverBufferView src);
 
-/// Like `M_DriverCopyBufferPeer`, with the ordering of
-/// `M_DriverCopyPeerToPeerUnordered`: nothing is recorded on or awaited on the
-/// source device's shared context, so the caller orders `stream` after the
-/// producer of `src` and keeps `src` alive until the copy has completed.
+/// Like `M_DriverCopyBufferPeer`, except that the driver records nothing on
+/// and waits for nothing on the source device's shared context, so MAX's
+/// compute stream on the source device does not stall behind the copy. The
+/// caller records an event on the stream that produced `src` and waits for it
+/// on `stream` before this call, and keeps `src` alive until an event recorded
+/// on `stream` after this call has fired. Because it touches nothing on the
+/// source device's shared context, it also neither reports nor clears an
+/// error MAX left pending there, where the ordered variant does (see the
+/// Devices section).
 M_DRIVER_API M_DriverStatus
 M_DriverCopyBufferPeerUnordered(const M_DriverStream *stream,
                                 M_DriverBufferView dst, M_DriverBufferView src);
@@ -1274,11 +1133,14 @@ M_DriverCopyBufferPeerUnordered(const M_DriverStream *stream,
 /// Enqueues `count` device-to-device copies, `srcs[i]` to `dsts[i]`, on
 /// `stream`, and returns without waiting for them.
 ///
-/// This is the `M_DRIVER_COPY_DEVICE_TO_DEVICE` direction of
-/// `M_DriverCopyBatch`: each `dsts[i]` is on `stream`'s device, each
-/// `srcs[i]` is on that device or a peer it can access with access enabled,
-/// `dsts[i].size` equals `srcs[i].size`, and nothing waits for the source
-/// device, so the caller orders `stream` after the sources' producer.
+/// One vendor submission where the driver has a batched copy (CUDA 12.8+ and
+/// recent HIP), otherwise the equivalent sequence of single copies. Each
+/// `dsts[i]` is on `stream`'s device, each `srcs[i]` is on that device or a
+/// peer it can access with access enabled (`M_DriverDeviceEnablePeerAccess`),
+/// a source it cannot reach fails in the driver as `M_DRIVER_RUNTIME_ERROR`,
+/// and `dsts[i].size` equals `srcs[i].size`. Unlike `M_DriverCopyBufferPeer`,
+/// nothing waits for the source device, so the caller orders `stream` after
+/// the sources' producer, for example with `M_DriverStreamWaitForDevice`.
 ///
 /// A `count` of 0 succeeds. A null array with a non zero count, or a bad
 /// piece, is `M_DRIVER_INVALID_ARGUMENT`, the message names the piece's
@@ -1291,8 +1153,7 @@ M_DRIVER_API M_DriverStatus M_DriverCopyBufferBatch(
 /// `srcs_host[i]` into `dsts[i]`, on `stream`, and returns without waiting for
 /// them.
 ///
-/// This is the `M_DRIVER_COPY_HOST_TO_DEVICE` direction of `M_DriverCopyBatch`:
-/// one vendor submission where the driver has a batched copy, each `dsts[i]`
+/// One vendor submission where the driver has a batched copy. Each `dsts[i]`
 /// is device memory on `stream`'s device, each `srcs_host[i]` is host memory
 /// the device can DMA from, and nothing is recorded on or awaited on any other
 /// stream.
@@ -1306,15 +1167,16 @@ M_DRIVER_API M_DriverStatus M_DriverCopyHostToBufferBatch(
 
 /// Enqueues `count` device-to-host copies, `srcs[i].size` bytes from `srcs[i]`
 /// to `dsts_host[i]`, on `stream`, and returns without waiting for them. This
-/// is `M_DriverCopyHostToBufferBatch` turned around, the
-/// `M_DRIVER_COPY_DEVICE_TO_HOST` direction of `M_DriverCopyBatch`.
+/// is `M_DriverCopyHostToBufferBatch` turned around.
 M_DRIVER_API M_DriverStatus M_DriverCopyBufferToHostBatch(
     const M_DriverStream *stream, void *const *dsts_host,
     const M_DriverBufferView *srcs, size_t count);
 
 /// Enqueues a fill of the `dst.size` bytes of `dst` with `value`, on `stream`,
 /// and returns without waiting for it. `dst` is device memory on `stream`'s
-/// device. Otherwise this is `M_DriverMemset`.
+/// device.
+///
+/// Mirrors `cuMemsetD8Async`.
 M_DRIVER_API M_DriverStatus M_DriverFillBuffer(const M_DriverStream *stream,
                                                M_DriverBufferView dst,
                                                uint8_t value);

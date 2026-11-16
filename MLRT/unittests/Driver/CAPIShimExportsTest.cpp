@@ -87,7 +87,7 @@ TEST(DriverCApiShim, ExportsEveryEntryPoint) {
   auto version =
       reinterpret_cast<Version>(dlsym(library, "M_DriverCApiVersion"));
   ASSERT_NE(version, nullptr);
-  EXPECT_EQ(version() >> 24, 1u);
+  EXPECT_EQ(version() >> 24, 2u);
   using Count = int64_t (*)(void);
   auto count =
       reinterpret_cast<Count>(dlsym(library, "M_DriverAcceleratorCount"));

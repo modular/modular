@@ -242,10 +242,6 @@ bool sameDevice(const Device &a, const Device &b) {
   return a.api() == b.api() && a.id() == b.id();
 }
 
-bool sameDevice(const M_DriverDevice &a, const M_DriverDevice &b) {
-  return sameDevice(a.ctx->device(), b.ctx->device());
-}
-
 /// True when both objects belong to the same backend. Every backend casts the
 /// objects it is handed to its own types without checking, so a mix is
 /// refused here, where it can be a status, rather than misread there.
@@ -1410,33 +1406,9 @@ M_DriverStatus M_DriverHostRegionChunkBytes(const M_DriverHostRegion *region,
 
 namespace {
 
-// The enqueue half of each copy and fill, shared by the address entry points
-// and the buffer view entry points so both reach the driver through the same
-// calls. Each caller has already checked its own arguments.
-
-M_DriverStatus enqueueHostToDevice(const char *what,
-                                   const M_DriverStream &stream, void *dst,
-                                   const void *src, uint64_t byte_size) {
-  if (isExternal(stream))
-    return notSupportedForExternalStream(what);
-  return reportIfError(stream.ctx->enqueueCopyToDevice(dst, src, byte_size),
-                       what);
-}
-
-M_DriverStatus enqueueDeviceToHost(const char *what,
-                                   const M_DriverStream &stream, void *dst,
-                                   const void *src, uint64_t byte_size) {
-  if (isExternal(stream))
-    return notSupportedForExternalStream(what);
-  return reportIfError(stream.ctx->enqueueCopyFromDevice(dst, src, byte_size),
-                       what);
-}
-
 M_DriverStatus enqueueDeviceToDevice(const char *what,
                                      const M_DriverStream &stream, void *dst,
                                      const void *src, uint64_t byte_size) {
-  if (isExternal(stream))
-    return notSupportedForExternalStream(what);
   DeviceContext &ctx = *stream.ctx;
   // The copy is issued on the context that owns the destination, which is what
   // the driver checks; these handles only describe the two ranges.
@@ -1450,18 +1422,10 @@ M_DriverStatus enqueueDeviceToDevice(const char *what,
       what);
 }
 
-M_DriverStatus enqueueFill(const char *what, const M_DriverStream &stream,
-                           void *dst, uint8_t value, uint64_t byte_size) {
-  if (isExternal(stream))
-    return notSupportedForExternalStream(what);
-  return reportIfError(
-      stream.ctx->enqueueSetMemory(dst, byte_size, value, /*valSize=*/1), what);
-}
+enum class CopyDirection { HostToDevice, DeviceToHost, DeviceToDevice };
 
-/// The batch behind `M_DriverCopyBatch` and `M_DriverCopyBufferBatch`, for
-/// pieces already checked and a stream that is not adopted.
 M_DriverStatus enqueueBatch(const char *what, const M_DriverStream &stream,
-                            M_DriverCopyDirection direction,
+                            CopyDirection direction,
                             llvm::ArrayRef<void *> dsts,
                             llvm::ArrayRef<const void *> srcs,
                             llvm::ArrayRef<uint64_t> sizes) {
@@ -1471,8 +1435,8 @@ M_DriverStatus enqueueBatch(const char *what, const M_DriverStream &stream,
   // too: a source on another context would make the driver bracket the batch
   // against that context's stream, and the address reaches the vendor's copy
   // unchanged, where peer access resolves it.
-  const bool dstHost = direction == M_DRIVER_COPY_DEVICE_TO_HOST;
-  const bool srcHost = direction == M_DRIVER_COPY_HOST_TO_DEVICE;
+  const bool dstHost = direction == CopyDirection::DeviceToHost;
+  const bool srcHost = direction == CopyDirection::HostToDevice;
   DeviceContext &ctx = *stream.ctx;
   auto borrow = [&](const void *address, uint64_t size, bool host) {
     void *ptr = const_cast<void *>(address);
@@ -1500,26 +1464,13 @@ M_DriverStatus enqueueBatch(const char *what, const M_DriverStream &stream,
   return reportIfError(ctx.enqueueBatchCopy(dstBuffers, srcBuffers), what);
 }
 
-/// The peer copy behind `M_DriverCopyPeerToPeer`, `M_DriverCopyBufferPeer` and
-/// their unordered variants, which differ only in whether the driver brackets
-/// the copy with waits on the source context's stream. The caller has checked
-/// that nothing is null and that `byte_size` is not 0.
+/// The peer copy behind `M_DriverCopyBufferPeer` and its unordered variant,
+/// which differ only in whether the driver brackets the copy with waits on the
+/// source context's stream.
 M_DriverStatus enqueuePeerCopy(const char *what, const M_DriverStream &stream,
-                               const M_DriverDevice &dst_device, void *dst,
-                               const M_DriverDevice &src_device,
+                               void *dst, DeviceContext &srcContext,
                                const void *src, uint64_t byte_size,
                                bool crossStreamSync) {
-  if (isExternal(stream))
-    return notSupportedForExternalStream(what);
-  // The copy is enqueued on the destination's context; a stream that runs on
-  // another device would enqueue it against the wrong memory.
-  M_DriverDevice streamDevice{DeviceContextRef::copy(stream.ctx.getPointer())};
-  if (!sameDevice(streamDevice, dst_device))
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "the stream does not run on dst_device; a peer copy is "
-                "enqueued on the destination's own context");
-  if (!sameApi(*stream.ctx, contextOf(src_device)))
-    return mixedBackends(what);
   // The destination is stamped with the copy stream's own context, because
   // the driver waits for the source and records the copy's completion on the
   // destination buffer's context, so the device's shared context there would
@@ -1531,12 +1482,12 @@ M_DriverStatus enqueuePeerCopy(const char *what, const M_DriverStream &stream,
   // MAX's. Either way the two contexts sit on different devices, which is
   // what makes the driver emit a direct peer copy rather than staging
   // through host memory.
-  DeviceContextRef srcCtx = DeviceContextRef::copy(src_device.ctx.getPointer());
+  DeviceContext *srcCtx = &srcContext;
   if (!crossStreamSync) {
-    ErrorOr<Service *> service = serviceFor(*src_device.ctx);
+    ErrorOr<Service *> service = serviceFor(srcContext);
     if (service.isError())
       return fail(service, what);
-    srcCtx = DeviceContextRef::copy((*service)->ctx.getPointer());
+    srcCtx = (*service)->ctx.getPointer();
   }
   DeviceBufferRef dstBuffer =
       stream.ctx->createBufferOwning(dst, byte_size, /*owning=*/false);
@@ -1550,120 +1501,6 @@ M_DriverStatus enqueuePeerCopy(const char *what, const M_DriverStream &stream,
 
 } // namespace
 
-M_DriverStatus M_DriverCopyHostToDevice(const M_DriverStream *stream,
-                                        void *dst_device, const void *src_host,
-                                        uint64_t byte_size) {
-  if (stream == nullptr || dst_device == nullptr || src_host == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "stream, dst_device or src_host is null");
-  if (byte_size == 0)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  return enqueueHostToDevice("M_DriverCopyHostToDevice", *stream, dst_device,
-                             src_host, byte_size);
-}
-
-M_DriverStatus M_DriverCopyDeviceToHost(const M_DriverStream *stream,
-                                        void *dst_host, const void *src_device,
-                                        uint64_t byte_size) {
-  if (stream == nullptr || dst_host == nullptr || src_device == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "stream, dst_host or src_device is null");
-  if (byte_size == 0)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  return enqueueDeviceToHost("M_DriverCopyDeviceToHost", *stream, dst_host,
-                             src_device, byte_size);
-}
-
-M_DriverStatus M_DriverCopyBatch(const M_DriverStream *stream,
-                                 M_DriverCopyDirection direction,
-                                 void *const *dsts, const void *const *srcs,
-                                 const uint64_t *sizes, size_t count) {
-  if (stream == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "stream is null");
-  if (direction != M_DRIVER_COPY_HOST_TO_DEVICE &&
-      direction != M_DRIVER_COPY_DEVICE_TO_HOST &&
-      direction != M_DRIVER_COPY_DEVICE_TO_DEVICE)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "direction is not a copy direction");
-  if (isExternal(*stream))
-    return notSupportedForExternalStream("M_DriverCopyBatch");
-  if (count == 0)
-    return succeed();
-  if (dsts == nullptr || srcs == nullptr || sizes == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "dsts, srcs or sizes is null with a non zero count");
-
-  // Checked here so a bad piece is a status before anything is enqueued.
-  for (size_t i = 0; i < count; ++i) {
-    if (dsts[i] == nullptr || srcs[i] == nullptr)
-      return fail(M_DRIVER_INVALID_ARGUMENT,
-                  "piece " + std::to_string(i) + " has a null address");
-    if (sizes[i] == 0)
-      return fail(M_DRIVER_INVALID_ARGUMENT,
-                  "piece " + std::to_string(i) + " has a size of 0");
-  }
-  return enqueueBatch("M_DriverCopyBatch", *stream, direction,
-                      llvm::ArrayRef(dsts, count), llvm::ArrayRef(srcs, count),
-                      llvm::ArrayRef(sizes, count));
-}
-
-M_DriverStatus M_DriverCopyDeviceToDevice(const M_DriverStream *stream,
-                                          void *dst_device,
-                                          const void *src_device,
-                                          uint64_t byte_size) {
-  if (stream == nullptr || dst_device == nullptr || src_device == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "stream, dst_device or src_device is null");
-  if (byte_size == 0)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  return enqueueDeviceToDevice("M_DriverCopyDeviceToDevice", *stream,
-                               dst_device, src_device, byte_size);
-}
-
-M_DriverStatus M_DriverMemset(const M_DriverStream *stream, void *dst_device,
-                              uint8_t value, uint64_t byte_size) {
-  if (stream == nullptr || dst_device == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "stream or dst_device is null");
-  if (byte_size == 0)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  return enqueueFill("M_DriverMemset", *stream, dst_device, value, byte_size);
-}
-
-namespace {
-
-/// The address-taking peer copies' argument checks, ahead of the shared body.
-M_DriverStatus copyPeerToPeer(const char *what, const M_DriverStream *stream,
-                              const M_DriverDevice *dst_device, void *dst,
-                              const M_DriverDevice *src_device, const void *src,
-                              uint64_t byte_size, bool crossStreamSync) {
-  if (stream == nullptr || dst_device == nullptr || src_device == nullptr ||
-      dst == nullptr || src == nullptr)
-    return fail(M_DRIVER_INVALID_ARGUMENT,
-                "stream, device or address argument is null");
-  if (byte_size == 0)
-    return fail(M_DRIVER_INVALID_ARGUMENT, "byte_size is 0");
-  return enqueuePeerCopy(what, *stream, *dst_device, dst, *src_device, src,
-                         byte_size, crossStreamSync);
-}
-
-} // namespace
-
-M_DriverStatus M_DriverCopyPeerToPeer(const M_DriverStream *stream,
-                                      const M_DriverDevice *dst_device,
-                                      void *dst,
-                                      const M_DriverDevice *src_device,
-                                      const void *src, uint64_t byte_size) {
-  return copyPeerToPeer("M_DriverCopyPeerToPeer", stream, dst_device, dst,
-                        src_device, src, byte_size, /*crossStreamSync=*/true);
-}
-
-M_DriverStatus M_DriverCopyPeerToPeerUnordered(
-    const M_DriverStream *stream, const M_DriverDevice *dst_device, void *dst,
-    const M_DriverDevice *src_device, const void *src, uint64_t byte_size) {
-  return copyPeerToPeer("M_DriverCopyPeerToPeerUnordered", stream, dst_device,
-                        dst, src_device, src, byte_size,
-                        /*crossStreamSync=*/false);
-}
-
 //===----------------------------------------------------------------------===//
 // Copies through buffer views
 //===----------------------------------------------------------------------===//
@@ -1674,9 +1511,7 @@ DeviceContext &contextOf(const M_DriverBufferView &view) {
   return view.buffer->buffer->context();
 }
 
-/// The address a view resolves to, which stays inside this library: the view
-/// entry points hand it to the same enqueue bodies the address entry points
-/// use, so the ordering and the contexts they stamp are the same.
+/// The address a view resolves to, which stays inside this library.
 void *addressOf(const M_DriverBufferView &view) {
   return static_cast<uint8_t *>(view.buffer->buffer->ptr()) + view.offset;
 }
@@ -1774,12 +1609,10 @@ struct BatchSide {
 };
 
 /// The batch behind the three view batch entry points: every piece is checked
-/// before anything is enqueued, then the batch reaches the driver as the
-/// address batch in the same direction.
+/// before anything is enqueued.
 M_DriverStatus copyViewBatch(const char *what, const M_DriverStream *stream,
-                             M_DriverCopyDirection direction,
-                             const BatchSide &dst, const BatchSide &src,
-                             size_t count) {
+                             CopyDirection direction, const BatchSide &dst,
+                             const BatchSide &src, size_t count) {
   if (M_DriverStatus status = checkStream(what, stream); status != M_DRIVER_OK)
     return status;
   if (count == 0)
@@ -1855,10 +1688,7 @@ M_DriverStatus copyBufferPeer(const char *what, const M_DriverStream *stream,
   // The source is stamped with the context its buffer was allocated on, which
   // is its device's shared context for memory from this interface's device
   // handles and from MAX's accelerators, without a lookup per copy.
-  const M_DriverDevice dstDevice{
-      DeviceContextRef::copy(stream->device.getPointer())};
-  const M_DriverDevice srcDevice{DeviceContextRef::copy(&contextOf(src))};
-  return enqueuePeerCopy(what, *stream, dstDevice, addressOf(dst), srcDevice,
+  return enqueuePeerCopy(what, *stream, addressOf(dst), contextOf(src),
                          addressOf(src), dst.size, crossStreamSync);
 }
 
@@ -1876,7 +1706,9 @@ M_DriverStatus M_DriverCopyHostToBuffer(const M_DriverStream *stream,
           checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
       status != M_DRIVER_OK)
     return status;
-  return enqueueHostToDevice(what, *stream, addressOf(dst), src_host, dst.size);
+  return reportIfError(
+      stream->ctx->enqueueCopyToDevice(addressOf(dst), src_host, dst.size),
+      what);
 }
 
 M_DriverStatus M_DriverCopyBufferToHost(const M_DriverStream *stream,
@@ -1891,7 +1723,9 @@ M_DriverStatus M_DriverCopyBufferToHost(const M_DriverStream *stream,
           checkView(what, {"src"}, *stream, Placement::StreamDevice, src);
       status != M_DRIVER_OK)
     return status;
-  return enqueueDeviceToHost(what, *stream, dst_host, addressOf(src), src.size);
+  return reportIfError(
+      stream->ctx->enqueueCopyFromDevice(dst_host, addressOf(src), src.size),
+      what);
 }
 
 M_DriverStatus M_DriverCopyBufferToBuffer(const M_DriverStream *stream,
@@ -1934,7 +1768,7 @@ M_DriverStatus M_DriverCopyBufferBatch(const M_DriverStream *stream,
                                        const M_DriverBufferView *srcs,
                                        size_t count) {
   return copyViewBatch("M_DriverCopyBufferBatch", stream,
-                       M_DRIVER_COPY_DEVICE_TO_DEVICE, {"dst", "dsts", dsts},
+                       CopyDirection::DeviceToDevice, {"dst", "dsts", dsts},
                        {"src", "srcs", srcs, nullptr, Placement::StreamBackend},
                        count);
 }
@@ -1944,7 +1778,7 @@ M_DriverStatus M_DriverCopyHostToBufferBatch(const M_DriverStream *stream,
                                              const void *const *srcs_host,
                                              size_t count) {
   return copyViewBatch("M_DriverCopyHostToBufferBatch", stream,
-                       M_DRIVER_COPY_HOST_TO_DEVICE, {"dst", "dsts", dsts},
+                       CopyDirection::HostToDevice, {"dst", "dsts", dsts},
                        {"src", "srcs_host", nullptr, srcs_host}, count);
 }
 
@@ -1953,7 +1787,7 @@ M_DriverStatus M_DriverCopyBufferToHostBatch(const M_DriverStream *stream,
                                              const M_DriverBufferView *srcs,
                                              size_t count) {
   return copyViewBatch(
-      "M_DriverCopyBufferToHostBatch", stream, M_DRIVER_COPY_DEVICE_TO_HOST,
+      "M_DriverCopyBufferToHostBatch", stream, CopyDirection::DeviceToHost,
       {"dst", "dsts_host", nullptr, dsts_host}, {"src", "srcs", srcs}, count);
 }
 
@@ -1966,5 +1800,7 @@ M_DriverStatus M_DriverFillBuffer(const M_DriverStream *stream,
           checkView(what, {"dst"}, *stream, Placement::StreamDevice, dst);
       status != M_DRIVER_OK)
     return status;
-  return enqueueFill(what, *stream, addressOf(dst), value, dst.size);
+  return reportIfError(stream->ctx->enqueueSetMemory(addressOf(dst), dst.size,
+                                                     value, /*valSize=*/1),
+                       what);
 }
