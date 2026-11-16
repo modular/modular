@@ -1199,6 +1199,35 @@ modular_eager_py_test(
     ],
 )
 
+# Executes the AMD W4A8 layer at TP2 on two devices: the fused shared
+# gate/up window is produced by the routing glue and consumed by the exit
+# collective, a producer/consumer pair only a real two-device run can grade.
+# CDNA4-only (the packed MXFP4 chain), so `//:mi355_gpu` gates it.
+modular_eager_py_test(
+    name = "moe_latent_window_fold_tests_2gpu",
+    size = "enormous",
+    srcs = ["test_moe_latent_window_fold_2gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_multi_gpu",
+        "//:mi355_gpu",
+    ],
+    deps = [
+        ":moe_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_eager_py_test(
     name = "tp_output_head_tests_gpu",
     size = "enormous",

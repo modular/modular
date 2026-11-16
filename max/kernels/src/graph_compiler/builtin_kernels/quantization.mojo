@@ -55,6 +55,7 @@ from linalg.fp8_quantization import (
 )
 from linalg.block_scaled_quantization import (
     moe_gather_quantize_mx_amd,
+    moe_cast_window_bf16,
     moe_sort_gather_quantize_fused_compilable,
     moe_sort_gather_quantize_fused_supported,
     moe_sort_gather_quantize_mx_amd,
@@ -1320,6 +1321,7 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
         TOPK: Int,
         NUM_EXPERTS: Int,
         NUM_COLS: Int,
+        CAST_COLS: Int,
     ](
         token_expert_order: Some[Output & Tensor],
         expert_start_indices: Some[Output & Tensor],
@@ -1328,6 +1330,7 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
         expert_usage_stats: Some[Output & Tensor],
         output: Some[Output & Tensor],
         scales: Some[Output & Tensor],
+        window: Some[Output & Tensor],
         input: Some[Input & Tensor],
         topk_ids: Some[Input & Tensor],
         context: DeviceContext,
@@ -1356,6 +1359,11 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
             output: `[P, K]` float8_e4m3fn, one row per sorted slot.
             scales: `[P, K // SF_VECTOR_SIZE]` float8_e8m0fnu block scales,
                 row-major.
+            window: `[M, CAST_COLS]` bfloat16, the rest of the producer row
+                that follows the `NUM_COLS` quantized columns, rounded on
+                the way past. The one-launch arm writes it for free; the
+                fallback arms launch `moe_cast_window_bf16`. `CAST_COLS` of
+                0 makes it the empty `[M, 0]` tensor and skips both.
             input: `[M, K]` bfloat16 activations -- or the `float32` they
                 were cast from, which rounds through bfloat16 inside the
                 kernel -- one row per token.
@@ -1374,6 +1382,7 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
         )
         comptime assert conforms_to(type_of(expert_ids), TileTensorable)
         comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(window), TileTensorable)
         comptime assert conforms_to(type_of(topk_ids), TileTensorable)
         comptime assert conforms_to(type_of(input), TileTensorable)
         comptime assert type_of(output).rank == 2
@@ -1383,6 +1392,8 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
         comptime assert type_of(restore_token_order).rank == 1
         comptime assert type_of(expert_ids).rank == 1
         comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(window).rank == 2
+        comptime assert type_of(window).dtype == .bfloat16
         comptime assert type_of(topk_ids).rank == 1
         comptime assert type_of(input).rank == 2
         comptime assert (
@@ -1406,6 +1417,40 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
         var start_tt = expert_start_indices.to_tile_tensor[.uint32]()
         var ids_tt = expert_ids.to_tile_tensor[.int32]()
         var stats_tt = expert_usage_stats.to_tile_tensor[.uint32]()
+        var window_tt = window.to_tile_tensor[.bfloat16]()
+        var num_rows_in = Int(input_tt.dim(0))
+        # The window is one row per source token, `CAST_COLS` wide, and the
+        # producer row has to hold the quantized columns and the window.
+        comptime if CAST_COLS > 0:
+            if (
+                Int(window_tt.dim(0)) != num_rows_in
+                or Int(window_tt.dim(1)) != CAST_COLS
+                or Int(input_tt.dim(1)) < NUM_COLS + CAST_COLS
+            ):
+                raise Error(
+                    "moe.sort.gather.quantize.dynamic.block.scaled: the"
+                    " window must be [rows, CAST_COLS] and the input row must"
+                    " hold NUM_COLS + CAST_COLS columns"
+                )
+            # The one-launch arm rewraps the window's pointer as a row-major
+            # tile, so a strided window would be written at the wrong
+            # addresses; that launcher carries only the pointer, so the
+            # strides are checked here.
+            if not (
+                Int(window_tt.layout.stride[1]().value()) == 1
+                and Int(window_tt.layout.stride[0]().value()) == CAST_COLS
+            ):
+                raise Error(
+                    "moe.sort.gather.quantize.dynamic.block.scaled: the"
+                    " window must be row-major contiguous"
+                )
+        # `CAST_COLS == 0` leaves the window empty: it is never read, and a
+        # zero-width tensor's pointer is not touched.
+        var window_p: Optional[
+            MutPointer[Scalar[.bfloat16], MutAnyOrigin]
+        ] = None
+        comptime if CAST_COLS > 0:
+            window_p = window_tt.as_unsafe_any_origin().ptr
         var topk_ids_tt = topk_ids.to_tile_tensor[.int32]()
         var num_slots = Int(topk_ids_tt.dim(0))
         # The fused and source-scatter kernels are instantiated behind
@@ -1420,7 +1465,9 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
                 num_slots, NUM_EXPERTS, NUM_COLS
             ):
                 moe_sort_gather_quantize_mx_amd[
-                    num_experts=NUM_EXPERTS, num_cols=NUM_COLS
+                    num_experts=NUM_EXPERTS,
+                    num_cols=NUM_COLS,
+                    cast_cols=CAST_COLS,
                 ](
                     context,
                     output_tt,
@@ -1433,9 +1480,16 @@ struct Struct_moe_sort_gather_quantize_dynamic_block_scaled:
                     stats_tt,
                     topk_ids_tt,
                     TOPK,
+                    window=window_p,
                 )
                 fused_served = True
         if not fused_served:
+            comptime if CAST_COLS > 0:
+                moe_cast_window_bf16[
+                    in_dtype=type_of(input).dtype,
+                    num_cols=NUM_COLS,
+                    cast_cols=CAST_COLS,
+                ](context, window_tt, input_tt)
             moe_create_indices[input_type=DType.int32](
                 order_tt,
                 start_tt,

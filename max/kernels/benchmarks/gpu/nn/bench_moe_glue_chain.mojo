@@ -101,6 +101,7 @@ from layout.coord import DynamicCoord
 from nn.gather_scatter import Axis, gather
 from nn.moe import moe_create_indices
 from linalg.block_scaled_quantization import (
+    moe_cast_window_bf16,
     moe_gather_quantize_mx_amd,
     moe_sort_gather_quantize_fused_supported,
     moe_sort_gather_quantize_mx_amd,
@@ -119,6 +120,14 @@ comptime TOPK = 16
 comptime LATENT = 3584
 comptime SF = MXFP8_SF_VECTOR_SIZE
 comptime SCALE_COLS = LATENT // SF
+# The K3 per-device shared-expert gate/up shard: 2 * 6144 / TP8. The merged
+# entry GEMM writes it as float32 columns behind the latent, and the exit
+# collective reads it as bfloat16.
+comptime WINDOW = 1536
+# The router's per-device shard of the same merged GEMM row, so the bench's
+# window read is bracketed by real neighbours exactly as in production.
+comptime ROUTER_COLS = NUM_EXPERTS
+comptime MERGED_COLS = LATENT + WINDOW + ROUTER_COLS
 
 # Above this many fanned rows the host-side checks sample a prefix of the
 # output rows instead of reading every row back.
@@ -285,7 +294,7 @@ def launch_source_major(
 def launch_sort_fused(
     quantized: MutTileTensor[.float8_e4m3fn, address_space=.GENERIC, ...],
     scales: MutTileTensor[.float8_e8m0fnu, address_space=.GENERIC, ...],
-    latent: ImmTileTensor[.bfloat16, address_space=.GENERIC, ...],
+    latent: ImmTileTensor[.float32, address_space=.GENERIC, ...],
     order: MutTileTensor[.uint32, address_space=.GENERIC, ...],
     start: MutTileTensor[.uint32, address_space=.GENERIC, ...],
     restore: MutTileTensor[.uint32, address_space=.GENERIC, ...],
@@ -294,7 +303,11 @@ def launch_sort_fused(
     topk: ImmTileTensor[.int32, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
-    """The production one-launch sort+gather+quantize over the flat ids."""
+    """The production one-launch sort+gather+quantize over the flat ids.
+
+    Reads the merged entry's float32 row with no window, so pairing it with
+    `launch_sort_fused_window` on the same row isolates the window's cost.
+    """
     moe_sort_gather_quantize_mx_amd[num_experts=NUM_EXPERTS, num_cols=LATENT](
         ctx,
         quantized,
@@ -308,6 +321,57 @@ def launch_sort_fused(
         topk,
         TOPK,
     )
+
+
+def launch_sort_fused_window(
+    quantized: MutTileTensor[.float8_e4m3fn, address_space=.GENERIC, ...],
+    scales: MutTileTensor[.float8_e8m0fnu, address_space=.GENERIC, ...],
+    latent: ImmTileTensor[.float32, address_space=.GENERIC, ...],
+    order: MutTileTensor[.uint32, address_space=.GENERIC, ...],
+    start: MutTileTensor[.uint32, address_space=.GENERIC, ...],
+    restore: MutTileTensor[.uint32, address_space=.GENERIC, ...],
+    ids: MutTileTensor[.int32, address_space=.GENERIC, ...],
+    stats: MutTileTensor[.uint32, address_space=.GENERIC, ...],
+    topk: ImmTileTensor[.int32, address_space=.GENERIC, ...],
+    window: MutTileTensor[.bfloat16, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """The same one-launch sort+gather+quantize, plus the gate/up window.
+
+    The window is the producer row's `WINDOW` columns behind the quantized
+    ones, rounded in the same pass.
+    """
+    moe_sort_gather_quantize_mx_amd[
+        num_experts=NUM_EXPERTS, num_cols=LATENT, cast_cols=WINDOW
+    ](
+        ctx,
+        quantized,
+        scales,
+        latent,
+        order,
+        start,
+        restore,
+        ids,
+        stats,
+        topk,
+        TOPK,
+        window=window.as_unsafe_any_origin().ptr,
+    )
+
+
+def launch_window_cast(
+    window: MutTileTensor[.bfloat16, address_space=.GENERIC, ...],
+    latent: ImmTileTensor[.float32, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """The window narrowing as a launch of its own, one per layer.
+
+    Reads the same merged float32 row and writes the same window as the fused
+    arm, so the two are a like-for-like pair.
+    """
+    moe_cast_window_bf16[
+        in_dtype=DType.float32, num_cols=LATENT, cast_cols=WINDOW
+    ](ctx, window, latent)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -959,7 +1023,7 @@ def main() raises:
         "kernels",
         (
             "idx,gather,quant,chain,fused,fusedchain,opta,optachain,"
-            "sortfusedchain,ab,abk,srcmajor,srcmajorchain,abc"
+            "sortfusedchain,wincast,sortwin,ab,abk,srcmajor,srcmajorchain,abc"
         ),
     )
 
@@ -971,6 +1035,23 @@ def main() raises:
 
     var topk_h = gen_topk_ids(spread, m_tokens, rng_seed)
     var latent_bf16_h = gen_latent(m_tokens, rng_seed)
+    # The merged entry GEMM's per-device row the two window arms read: the
+    # latent as float32, then the shared gate/up window, then the router's
+    # own columns.
+    var wide_h = List[Scalar[.float32]]()
+    for row in range(m_tokens):
+        for col in range(MERGED_COLS):
+            if col < LATENT:
+                wide_h.append(
+                    latent_bf16_h[row * LATENT + col].cast[.float32]()
+                )
+            elif col < LATENT + WINDOW:
+                var wmag = Float64(1 << (((col - LATENT) // SF) % 9)) / 256.0
+                wide_h.append(
+                    (random_float64(-4.0, 4.0) * wmag).cast[.float32]()
+                )
+            else:
+                wide_h.append(Float32(0.25))
 
     print(
         "bench_moe_glue_chain: M=",
@@ -999,6 +1080,8 @@ def main() raises:
         var ids_d = ctx.enqueue_create_buffer[.int32](NUM_EXPERTS)
         var stats_d = ctx.enqueue_create_buffer[.uint32](2)
         var latent_d = ctx.enqueue_create_buffer[.bfloat16](m_tokens * LATENT)
+        var window_d = ctx.enqueue_create_buffer[.bfloat16](m_tokens * WINDOW)
+        var wide_d = ctx.enqueue_create_buffer[.float32](m_tokens * MERGED_COLS)
         var gathered_d = ctx.enqueue_create_buffer[.bfloat16](slots * LATENT)
         var quantized_d = ctx.enqueue_create_buffer[.float8_e4m3fn](
             slots * LATENT
@@ -1026,6 +1109,7 @@ def main() raises:
 
         ctx.enqueue_copy(topk_d, topk_h)
         ctx.enqueue_copy(latent_d, latent_bf16_h)
+        ctx.enqueue_copy(wide_d, wide_h)
 
         var order_tt = TileTensor(order_d, row_major(slots))
         var start_tt = TileTensor(start_d, row_major(NUM_EXPERTS + 1))
@@ -1034,6 +1118,8 @@ def main() raises:
         var stats_tt = TileTensor(stats_d, row_major(2))
         var topk_tt = TileTensor(topk_d, row_major(slots))
         var latent_tt = TileTensor(latent_d, row_major(m_tokens, LATENT))
+        var window_tt = TileTensor(window_d, row_major(m_tokens, WINDOW))
+        var wide_tt = TileTensor(wide_d, row_major(m_tokens, MERGED_COLS))
         var gathered_tt = TileTensor(gathered_d, row_major(slots, LATENT))
         var quantized_tt = TileTensor(quantized_d, row_major(slots, LATENT))
         var scales_tt = TileTensor(scales_d, row_major(slots, SCALE_COLS))
@@ -1260,7 +1346,7 @@ def main() raises:
                 launch_sort_fused(
                     quant2_tt,
                     scales2_tt,
-                    latent_tt,
+                    wide_tt,
                     order2_tt,
                     start2_tt,
                     restore2_tt,
@@ -1384,13 +1470,33 @@ def main() raises:
             launch_sort_fused(
                 quant2_tt,
                 scales2_tt,
-                latent_tt,
+                wide_tt,
                 order2_tt,
                 start2_tt,
                 restore2_tt,
                 ids2_tt,
                 stats2_tt,
                 topk_tt,
+                ctx,
+            )
+
+        @inline(.always)
+        def launch_window_cast_fn(ctx: DeviceContext[]) raises {imm}:
+            launch_window_cast(window_tt, wide_tt, ctx)
+
+        @inline(.always)
+        def launch_sort_fused_window_fn(ctx: DeviceContext[]) raises {imm}:
+            launch_sort_fused_window(
+                quant2_tt,
+                scales2_tt,
+                wide_tt,
+                order2_tt,
+                start2_tt,
+                restore2_tt,
+                ids2_tt,
+                stats2_tt,
+                topk_tt,
+                window_tt,
                 ctx,
             )
 
@@ -1565,6 +1671,47 @@ def main() raises:
             else:
                 print(
                     "SKIP sortfusedchain: slots=",
+                    slots,
+                    " outside the sort-fused kernel's decode range",
+                )
+
+        if selected(kernels, "wincast"):
+            bench_and_probe(
+                bench,
+                launch_window_cast_fn,
+                "wincast",
+                m_tokens,
+                spread,
+                reps,
+                iters,
+                tail_iters,
+                batch_tail,
+                batch_size,
+                warmup,
+                csv_prefix,
+                ctx,
+            )
+
+        if selected(kernels, "sortwin"):
+            if sort_probe_live:
+                bench_and_probe(
+                    bench,
+                    launch_sort_fused_window_fn,
+                    "sortwin",
+                    m_tokens,
+                    spread,
+                    reps,
+                    iters,
+                    tail_iters,
+                    batch_tail,
+                    batch_size,
+                    warmup,
+                    csv_prefix,
+                    ctx,
+                )
+            else:
+                print(
+                    "SKIP sortwin: slots=",
                     slots,
                     " outside the sort-fused kernel's decode range",
                 )
@@ -1795,3 +1942,4 @@ def main() raises:
         _ = sort_scales_h
     _ = topk_h
     _ = latent_bf16_h
+    _ = wide_h

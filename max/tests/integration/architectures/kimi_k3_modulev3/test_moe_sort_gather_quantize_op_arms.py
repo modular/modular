@@ -60,6 +60,19 @@ SF = 32
 FUSED_SLOTS = 1024
 FALLBACK_SLOTS = 1040
 
+# The K3 verify step's row count (4 requests x 7 positions): 28 * 16 slots.
+VERIFY_SLOTS = 448
+
+WINDOW = 1536
+"""The bf16 window the op rounds beside the quantized columns.
+
+Production width: 2 * 6144 / TP8, i.e. 3 wavefronts of the fused kernel's
+192 window-writing threads.
+"""
+
+ROUTER_COLS = 896
+"""The router's own columns behind the window, which the op must not read."""
+
 
 def _is_gfx950_gpu() -> bool:
     try:
@@ -81,14 +94,21 @@ def model() -> Model:
     with Graph(
         "moe_sort_gather_quantize_op_arms",
         input_types=[
-            TensorType(DType.bfloat16, ["m", K], device=gpu),
+            TensorType(
+                DType.float32, ["m", K + WINDOW + ROUTER_COLS], device=gpu
+            ),
             TensorType(DType.int32, ["p"], device=gpu),
         ],
     ) as graph:
         latent, topk_ids = (i.tensor for i in graph.inputs)
         graph.output(
             *moe_sort_gather_quantize_dynamic_block_scaled(
-                latent, topk_ids, topk=TOPK, num_experts=NUM_EXPERTS
+                latent,
+                topk_ids,
+                topk=TOPK,
+                num_experts=NUM_EXPERTS,
+                cols=K,
+                cast_cols=WINDOW,
             )
         )
     return session.load(graph)
@@ -131,6 +151,12 @@ class _Run:
     scales: np.ndarray
     """The E8M0 block scales, as raw bytes."""
 
+    window: np.ndarray
+    """The gate/up window the op rounded for free, as bf16 bit patterns."""
+
+    window_ref: np.ndarray
+    """The same source columns as bf16 bits: the op must match them."""
+
 
 def _dequantize(quant: np.ndarray, scales: np.ndarray) -> np.ndarray:
     """fp8 payload x its E8M0 block scales, as float32."""
@@ -144,25 +170,73 @@ def _dequantize(quant: np.ndarray, scales: np.ndarray) -> np.ndarray:
     return values * np.repeat(block_scales, SF, axis=1)
 
 
+def _f32_from_bits(bits: int) -> np.float32:
+    """The float32 whose bit pattern is `bits`."""
+    return np.array([bits], dtype=np.uint32).view(np.float32)[0]
+
+
+def _bf16_bits(x: np.ndarray) -> np.ndarray:
+    """float32 -> bfloat16 bit patterns, round-to-nearest-even.
+
+    The graph's own ``.cast(DType.bfloat16)`` is `fptrunc`, so this mirrors it
+    bit for bit: nearest-even on the 16 dropped bits, and overflow to
+    infinity. A NaN keeps its payload -- only the low 16 bits are dropped, the
+    quiet bit is set and the sign is kept -- which is what the hardware does
+    (0x7FABCDEF narrows to 0x7FEB, 0xFF800001 to 0xFFC0).
+    """
+    u = x.view(np.uint32)
+    rounded = ((u.astype(np.uint64) + 0x7FFF + ((u >> 16) & 1)) >> 16).astype(
+        np.uint16
+    )
+    nan = np.isnan(x)
+    rounded[nan] = ((u[nan] >> 16) | 0x0040).astype(np.uint16)
+    return rounded
+
+
+def _bf16_float(x: np.ndarray) -> np.ndarray:
+    """float32 rounded through bfloat16 and back, as float32."""
+    return (_bf16_bits(x).astype(np.uint32) << 16).view(np.float32)
+
+
 def _run(model: Model, num_slots: int, seed: int) -> _Run:
     """Executes the op at one slot count and returns its host outputs."""
     num_tokens = num_slots // TOPK
     rng = np.random.default_rng(seed)
     # A per-token magnitude, so the E8M0 scale is exercised away from 1.0.
-    latent = rng.standard_normal((num_tokens, K)).astype(np.float32) * np.exp2(
-        rng.integers(-3, 4, size=(num_tokens, 1))
-    ).astype(np.float32)
-    latent_t = torch.from_numpy(latent).to(torch.bfloat16)
+    wide = rng.standard_normal((num_tokens, K + WINDOW + ROUTER_COLS)).astype(
+        np.float32
+    ) * np.exp2(rng.integers(-3, 4, size=(num_tokens, 1))).astype(np.float32)
+    # The window columns carry what the narrowing has to decide specially,
+    # one class per 256 columns, and the router columns behind it are poison
+    # the op must never read.
+    for col in range(K, K + WINDOW):
+        match col % 256:
+            case 0:
+                wide[:, col] = np.inf
+            case 32:
+                wide[:, col] = _f32_from_bits(0x7FABCDEF)
+            case 64:
+                wide[:, col] = -np.inf
+            case 96:
+                wide[:, col] = _f32_from_bits(0xFF800001)
+            case 128:
+                wide[:, col] = np.nan
+            case 192:
+                wide[:, col] = np.float32(1e-45)
+            case 255:
+                wide[:, col] = np.float32(3.4028235e38)
+    wide[:, K + WINDOW :] = np.nan
+    latent_t = _bf16_float(wide)
     ids = _topk_ids(num_tokens, seed + 1)
 
     device = model.input_devices[0]
     outputs = model.execute(
-        md.Buffer.from_dlpack(latent_t).to(device),
+        md.Buffer.from_dlpack(wide).to(device),
         md.Buffer.from_numpy(ids).to(device),
     )
-    order, start, restore, expert_ids, stats, quant, scales = outputs
+    order, start, restore, expert_ids, stats, quant, scales, window = outputs
     return _Run(
-        latent=latent_t.float().numpy(),
+        latent=latent_t[:, :K],
         ids=ids,
         order=order.to_numpy(),
         start=start.to_numpy(),
@@ -171,6 +245,10 @@ def _run(model: Model, num_slots: int, seed: int) -> _Run:
         stats=stats.to_numpy(),
         quant=_params(quant, DType.uint8, (num_slots, K)),
         scales=_params(scales, DType.uint8, (num_slots, K // SF)),
+        # The driver has no bf16 numpy path, so the window is compared as
+        # the uint16 bit patterns both sides already hold.
+        window=_params(window, DType.uint16, (num_tokens, WINDOW)),
+        window_ref=_bf16_bits(wide[:, K : K + WINDOW]),
     )
 
 
@@ -206,6 +284,11 @@ def _check(num_slots: int, run: _Run) -> None:
     # slots of the same token.
     payload = _dequantize(run.quant, run.scales)
     sources = order // TOPK
+
+    # The window the op writes beside the payload is this device's slice of
+    # the producer row, narrowed to bfloat16 -- the exit collective reads it
+    # at that width, so it must be the cast's own bytes.
+    np.testing.assert_array_equal(run.window, run.window_ref)
     for source in np.unique(sources):
         rows = payload[sources == source]
         np.testing.assert_array_equal(
@@ -223,6 +306,12 @@ def _check(num_slots: int, run: _Run) -> None:
 def test_fused_arm(model: Model) -> None:
     """`P == 1024` is the fused kernel's largest launch."""
     _check(FUSED_SLOTS, _run(model, FUSED_SLOTS, seed=7))
+
+
+@_requires_gfx950
+def test_verify_step_arm(model: Model) -> None:
+    """`P == 448` is the verify step's 28 rows x 16 picks."""
+    _check(VERIFY_SLOTS, _run(model, VERIFY_SLOTS, seed=13))
 
 
 @_requires_gfx950

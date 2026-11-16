@@ -219,6 +219,7 @@ def _moe_sort_gather_quantize_mxfp8(
     topk: int,
     num_experts: int,
     cols: int,
+    cast_cols: int = 0,
 ) -> tuple[TensorValue, ...]:
     """The fused expert sort + fan-out gather + MXFP8 quantize.
 
@@ -235,7 +236,10 @@ def _moe_sort_gather_quantize_mxfp8(
     ``activations`` may be wider than ``cols``: the merged entry GEMM writes
     the latent as the leading columns of one fp32 result, so the op reads
     that window in place rather than a contiguous copy of it, and it rounds
-    through bfloat16 itself -- the separate ``.cast`` launch is gone.
+    through bfloat16 itself. The ``cast_cols`` columns that follow ``cols``
+    -- the shared expert's gate/up -- are rounded to bfloat16 in the same
+    launch and returned as the eighth output, so the exit collective's
+    activation needs no cast pass of its own.
     """
     return moe_sort_gather_quantize_dynamic_block_scaled(
         TensorValue(activations),
@@ -244,6 +248,7 @@ def _moe_sort_gather_quantize_mxfp8(
         topk=topk,
         num_experts=num_experts,
         cols=cols,
+        cast_cols=cast_cols,
     )
 
 
@@ -712,6 +717,10 @@ class KimiK3LatentMoE(Module[..., Tensor]):
 
         mesh = self.routed_expert_down_proj.weight.mesh
         sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
+        # The merged entry's shared gate/up window, when this rank computed
+        # one: TP=1 runs the shared expert on its own, so there is nothing to
+        # narrow.
+        shared_gate_up: Tensor | None = None
         if sharded:
             # `latent` comes back in the merged GEMM's own dtype, which is
             # fp32 when the router rode it (its logits keep their fp32
@@ -758,12 +767,21 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 expert_usage_stats,
                 quantized,
                 act_scales,
+                shared_gate_up,
             ) = moe_sort_gather_quantize_mxfp8(
                 entry,
                 flat_idx,
                 self.num_experts_per_token,
                 self.num_experts,
                 cols=int(latent.shape[1]),
+                # The window is this device's column shard of the shared
+                # gate/up, so its kernel-visible width is the sharded one
+                # (the tensor's own shape reports the unreduced width).
+                cast_cols=(
+                    0
+                    if not isinstance(shared_gate_up, Tensor)
+                    else int(shared_gate_up.shape[1]) // mesh.axis_size(TP)
+                ),
             )
             usage_stats = amd_moe_usage_stats(
                 expert_ids, latent, self.max_tokens_per_expert
@@ -776,6 +794,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 expert_usage_stats,
                 quantized,
                 act_scales,
+                shared_gate_up,
             ) = (
                 replicated(token_expert_order),
                 replicated(expert_start_indices),
@@ -784,6 +803,16 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 replicated(expert_usage_stats),
                 replicated(quantized),
                 replicated(act_scales),
+                # The exit collective takes it where the producer had it:
+                # this device's column shard of the shared gate/up. An empty
+                # window (TP=1, no merged entry) is never read.
+                (
+                    shared_gate_up.rebind_mapping(
+                        NamedMapping(mesh, (None, TP))
+                    )
+                    if shared_gate_up.shape[1] != 0
+                    else replicated(shared_gate_up)
+                ),
             )
             if self.amd_mega_ffn:
                 expert_out = amd_w4a8_ffn(
@@ -906,6 +935,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             # `routed_expert_norm`'s defaults (weight_offset 0.0,
             # multiply_before_cast False), the only form the kernel
             # implements.
+            assert isinstance(shared_gate_up, Tensor)
             act = F.allreduce_rms_norm_exit_concat(
                 combined,
                 shared_gate_up,
@@ -941,6 +971,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 hidden_states
             )
 
+        assert isinstance(shared_gate_up, Tensor)
         weight = self._exit_weight()
         dtype = weight.dtype
         latent_slice = normed.to(NamedMapping(mesh, (None, TP))).cast(dtype)
@@ -999,7 +1030,9 @@ class KimiK3LatentMoE(Module[..., Tensor]):
             output, sharded as ``gate_up_proj`` itself returns it, the
             replicated latent in the GEMM's output dtype (the leading
             slice of that output), and the replicated fp32 router logits,
-            or ``None`` when the router did not join.
+            or ``None`` when the router did not join. The shared gate/up
+            slice keeps the GEMM's dtype; the W4A8 routing-glue op narrows
+            it.
         """
         entry = self.routed_expert_down_proj.weight
         router = self.gate.gate_score.weight
@@ -1026,9 +1059,11 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         )
         latent, shared_gate_up, *logits = out.split(widths, axis=-1)
         replicated = NamedMapping(mesh, (None, None))
+        # The AMD W4A8 path's routing-glue op rounds the window while it walks
+        # the same rows, so only the other exits pay a cast here.
         return (
             out,
-            shared_gate_up.cast(dtype),
+            shared_gate_up if self.amd_tp_w4a8 else shared_gate_up.cast(dtype),
             latent.rebind_mapping(replicated),
             logits[0].rebind_mapping(replicated) if logits else None,
         )

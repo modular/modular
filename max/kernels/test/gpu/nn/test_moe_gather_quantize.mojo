@@ -66,6 +66,7 @@ from std.utils import StaticTuple
 import max.gpu.primitives.warp as warp
 
 from linalg.block_scaled_quantization import (
+    moe_cast_window_bf16,
     moe_gather_quantize_mx_amd,
     moe_sort_gather_quantize_fused_supported,
     moe_sort_gather_quantize_mx_amd,
@@ -958,11 +959,47 @@ def run_sort_case[
 
 @inline(.always)
 def _bf16_rne(x: Float32) -> Scalar[.bfloat16]:
-    """Rounds an fp32 to bf16, nearest-even, as the graph's `.cast` does."""
+    """Rounds an fp32 to bf16, nearest-even, as the graph's `.cast` does.
+
+    A NaN narrows to its own top mantissa bits with the quiet bit set, which is
+    what the hardware conversion writes: adding the rounding bias to a NaN
+    would carry into the exponent and could even flip the sign.
+    """
     var bits = UInt32(bitcast[.uint32](x))
+    if (bits & UInt32(0x7F800000)) == UInt32(0x7F800000) and (
+        bits & UInt32(0x007FFFFF)
+    ) != UInt32(0):
+        return bitcast[.bfloat16](UInt16((bits >> 16) | UInt32(0x0040)))
     var lsb = (bits >> 16) & UInt32(1)
     var rounded = bits + UInt32(0x7FFF) + lsb
     return bitcast[.bfloat16](UInt16(rounded >> 16))
+
+
+@inline(.always)
+def _window_probe(v: Scalar[.bfloat16], col: Int) -> Float32:
+    """The fp32 the window column carries: rounding ties plus the cast's edges.
+
+    Every fourth column is a round-to-nearest-even tie (see
+    `_rounding_probe`); one column in 256 instead carries a value the
+    narrowing has to decide specially -- infinity, negative infinity, NaNs
+    whose payload and sign must survive, the smallest subnormal, or the
+    largest finite fp32, which overflows to infinity.
+    """
+    if col % 256 == 0:
+        return inf[.float32]()
+    if col % 256 == 32:
+        return bitcast[.float32](UInt32(0x7FABCDEF))
+    if col % 256 == 64:
+        return -inf[.float32]()
+    if col % 256 == 96:
+        return bitcast[.float32](UInt32(0xFF800001))
+    if col % 256 == 128:
+        return nan[.float32]()
+    if col % 256 == 192:
+        return bitcast[.float32](UInt32(1))
+    if col % 256 == 255:
+        return bitcast[.float32](UInt32(0x7F7FFFFF))
+    return _rounding_probe(v, col)
 
 
 @inline(.always)
@@ -990,6 +1027,10 @@ def _rounding_probe(v: Scalar[.bfloat16], col: Int) -> Float32:
     """
     var base = v.cast[.float32]()
     if col % 4 == 0:
+        return base
+    # A zero has no smaller magnitude to step to: its predecessor's bit
+    # pattern is a NaN, which is not what this probe is testing.
+    if (UInt16(bitcast[.uint16](v)) & UInt16(0x7FFF)) == UInt16(0):
         return base
     var other = _bf16_neighbour(v, up=col % 4 == 1).cast[.float32]()
     if col % 4 == 3:
@@ -1269,6 +1310,176 @@ def run_sort_fp32_wide_case[
     _ = cand_restore_d
     _ = cand_ids_d
     _ = cand_stats_d
+
+
+def run_cast_window_case[
+    num_experts: Int = NUM_EXPERTS,
+    num_cols: Int = LATENT,
+    topk: Int = TOPK,
+    window_cols: Int = 1536,
+](num_tokens: Int, spread: String, ctx: DeviceContext) raises:
+    """The shared expert's trailing window, narrowed by the same launch.
+
+    The merged entry GEMM writes the latent, the shared experts' gate/up and
+    the router logits as one float32 row, and the exit collective reads the
+    gate/up half at the model dtype. The sort-fused kernel rounds that
+    trailing window while it walks the same rows, so the standalone cast
+    launch is gone; the arm that does not serve the shape
+    (`moe_cast_window_bf16`) must write the same bytes.
+
+    The window columns carry round-to-nearest-even ties, so a truncating or
+    wrong-tie-direction narrowing fails, and both window buffers start as
+    poison, so an unwritten element fails too.
+
+    `window_cols` defaults to the production width, 2 * 6144 / TP8: 3
+    wavefronts of the fused kernel's window writers (192 = 1536 // 8
+    threads). A window wider than one pass of an arm's writers takes its
+    multi-pass loop -- the fused kernel's CTA covers `num_cols` window
+    columns and the standalone cast's 256 threads cover 2048 -- which TP2
+    production reaches (window 6144 > latent 3584).
+    """
+    comptime scale_cols = num_cols // SF
+    comptime poison_cols = 32
+    comptime wide_cols = num_cols + window_cols + poison_cols
+    var slots = num_tokens * topk
+    var topk_h = gen_topk_ids[num_experts, topk](spread, num_tokens, 7)
+    var latent_h = gen_latent[num_cols](num_tokens, 11)
+    # The row the merged GEMM writes: the latent, then the window, then NaN
+    # poison no arm may read.
+    var wide_h = List[Scalar[.float32]]()
+    var expect_h = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+    for row in range(num_tokens):
+        for col in range(wide_cols):
+            if col < num_cols:
+                wide_h.append(
+                    _rounding_probe(latent_h[row * num_cols + col], col)
+                )
+            elif col < num_cols + window_cols:
+                # The probe's base value wraps within the row: a window
+                # wider than the latent must not read past it.
+                var probe = _window_probe(
+                    latent_h[row * num_cols + (col - num_cols) % num_cols],
+                    col,
+                )
+                wide_h.append(probe)
+                expect_h[row * window_cols + col - num_cols] = _bf16_rne(probe)
+            else:
+                wide_h.append(_nan())
+
+    var topk_d = ctx.enqueue_create_buffer[.int32](slots)
+    var wide_d = ctx.enqueue_create_buffer[.float32](num_tokens * wide_cols)
+    var order_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var start_d = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var restore_d = ctx.enqueue_create_buffer[.uint32](slots)
+    var ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var stats_d = ctx.enqueue_create_buffer[.uint32](2)
+    var q_d = ctx.enqueue_create_buffer[.float8_e4m3fn](slots * num_cols)
+    var s_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slots * scale_cols)
+    var fused_window_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+    var fallback_window_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+
+    var wide_tt = TileTensor(wide_d, row_major(num_tokens, wide_cols))
+    var topk_tt = TileTensor(topk_d, row_major(slots))
+    var order_tt = TileTensor(order_d, row_major(slots))
+    var start_tt = TileTensor(start_d, row_major(num_experts + 1))
+    var restore_tt = TileTensor(restore_d, row_major(slots))
+    var ids_tt = TileTensor(ids_d, row_major(num_experts))
+    var stats_tt = TileTensor(stats_d, row_major(2))
+    var q_tt = TileTensor(q_d, row_major(slots, num_cols))
+    var s_tt = TileTensor(s_d, row_major(slots, scale_cols))
+    var fused_window_tt = TileTensor(
+        fused_window_d, row_major(num_tokens, window_cols)
+    )
+    var fallback_window_tt = TileTensor(
+        fallback_window_d, row_major(num_tokens, window_cols)
+    )
+
+    var poison_h = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+    for p in range(num_tokens * window_cols):
+        poison_h[p] = bitcast[.bfloat16](UInt16(0xABCD))
+
+    ctx.enqueue_copy(topk_d, topk_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+    ctx.enqueue_copy(fused_window_d, poison_h)
+    ctx.enqueue_copy(fallback_window_d, poison_h)
+
+    # The one-launch arm: sort, gather, quantize and the window narrowing.
+    moe_sort_gather_quantize_mx_amd[
+        num_experts=num_experts, num_cols=num_cols, cast_cols=window_cols
+    ](
+        ctx,
+        q_tt,
+        s_tt,
+        wide_tt,
+        order_tt,
+        start_tt,
+        restore_tt,
+        ids_tt,
+        stats_tt,
+        topk_tt,
+        topk,
+        window=fused_window_tt.as_unsafe_any_origin().ptr,
+    )
+    # The arm that serves the shapes the one-launch kernel does not.
+    moe_cast_window_bf16[
+        in_dtype=DType.float32, num_cols=num_cols, cast_cols=window_cols
+    ](ctx, fallback_window_tt, wide_tt)
+
+    var fused_h = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+    var fallback_h = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_tokens * window_cols
+    )
+    ctx.enqueue_copy(fused_h, fused_window_d)
+    ctx.enqueue_copy(fallback_h, fallback_window_d)
+    ctx.synchronize()
+
+    for p in range(num_tokens * window_cols):
+        assert_equal(
+            bitcast[.uint16](fused_h[p]),
+            bitcast[.uint16](expect_h[p]),
+            String(
+                t"the fused arm's window differs from the graph cast's at {p}"
+                t" (M={num_tokens}, spread={spread})"
+            ),
+        )
+        assert_equal(
+            bitcast[.uint16](fallback_h[p]),
+            bitcast[.uint16](fused_h[p]),
+            String(
+                t"the standalone window cast differs from the fused arm's at"
+                t" {p} (M={num_tokens}, spread={spread})"
+            ),
+        )
+    print(
+        "ok cast-window M=",
+        num_tokens,
+        " lat=",
+        num_cols,
+        " window=",
+        window_cols,
+        " spread=",
+        spread,
+        sep="",
+    )
+
+    _ = order_d
+    _ = start_d
+    _ = restore_d
+    _ = ids_d
+    _ = stats_d
+    _ = q_d
+    _ = s_d
+    _ = topk_d
 
 
 def run_sort_out_of_range_case[
@@ -2645,6 +2856,18 @@ def main() raises:
         for m in [1, 16, 64]:
             for spread in ["u", "s", "p"]:
                 run_sort_fp32_wide_case(m, spread, ctx)
+
+        # The shared expert's window, narrowed by the routing glue instead of
+        # a pass of its own: both arms must write the graph cast's bytes.
+        # M=28 and M=32 are the K3 verify step's row counts.
+        for m in [1, 16, 28, 32, 64]:
+            for spread in ["u", "s", "p"]:
+                run_cast_window_case(m, spread, ctx)
+        # A window wider than one pass of either arm's writers: 4608 columns
+        # take the fused kernel two passes (its CTA covers `num_cols` window
+        # columns) and the standalone cast three (its 256 threads cover
+        # 2048).
+        run_cast_window_case[window_cols=4608](16, "u", ctx)
 
         # A small latent width shrinks the CTA below one warp, taking the
         # kernel's LDS-atomic fold instead of the warp-shuffle reduce.

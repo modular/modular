@@ -15754,6 +15754,7 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
     topk: int,
     num_experts: int,
     cols: int | None = None,
+    cast_cols: int = 0,
 ) -> tuple[TensorValue, ...]:
     """Fused MoE expert sort + fan-out gather + MXFP8 quantize (AMD CDNA4).
 
@@ -15790,17 +15791,21 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
             latent is the leading slice of one fp32 result -- is read in
             place instead of being copied into a contiguous ``[T, K]``
             tensor first. Defaults to ``input.shape[1]``.
+        cast_cols: Width of the bfloat16 window the op also writes from the
+            same rows: the ``cast_cols`` columns that follow the ``cols``
+            quantized ones, rounded to bfloat16. 0 for a producer row that
+            has no such columns, which also skips the rounding.
 
     Returns:
-        A tuple of seven tensors, in :func:`moe_create_indices`'s order
-        followed by the quantized pair: ``token_expert_order``
+        A tuple of eight tensors, in :func:`moe_create_indices`'s order
+        followed by the quantized pair and the window: ``token_expert_order``
         ``[num_tokens * topk]`` uint32, ``expert_start_indices``
         ``[num_experts + 1]`` uint32, ``restore_token_order``
         ``[num_tokens * topk]`` uint32, ``expert_ids`` ``[num_experts]``
         int32, ``expert_usage_stats`` ``[2]`` uint32, then the quantized
-        ``[num_tokens * topk, cols]`` float8_e4m3fn activations and their
+        ``[num_tokens * topk, cols]`` float8_e4m3fn activations, their
         ``[num_tokens * topk, cols // sf_vector_size]`` float8_e8m0fnu
-        scales.
+        scales, and the ``[num_tokens, cast_cols]`` bfloat16 window.
     """
     if input.rank != 2:
         raise ValueError("input tensor must be rank 2 tensor")
@@ -15841,6 +15846,15 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
         )
     if cols % sf_vector_size != 0:
         raise ValueError(f"cols must be a multiple of {sf_vector_size}")
+    if cast_cols != 0 and (cast_cols < 8 or cast_cols % 8 != 0):
+        raise ValueError("cast_cols must be zero or a multiple of 8")
+    if cast_cols > 0 and (
+        not isinstance(width, StaticDim) or cols + cast_cols > int(width)
+    ):
+        raise ValueError(
+            f"cast_cols ({cast_cols}) must fit inside input.shape[1] behind"
+            f" cols ({cols})"
+        )
 
     # Static shapes are checked here; the kernel's launcher re-checks the
     # slot count against the real sizes on every launch, which covers the
@@ -15886,12 +15900,18 @@ def moe_sort_gather_quantize_dynamic_block_scaled(
                 shape=[slots, ceildiv(Dim(cols), Dim(sf_vector_size))],
                 device=input.device,
             ),  # scales
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[rows, cast_cols],
+                device=input.device,
+            ),  # window
         ],
         parameters={
             "SF_VECTOR_SIZE": sf_vector_size,
             "TOPK": topk,
             "NUM_EXPERTS": num_experts,
             "NUM_COLS": cols,
+            "CAST_COLS": cast_cols,
         },
     )
     return tuple(t.tensor for t in result)

@@ -4895,6 +4895,8 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
     IdsEngine: TensorEngine,
     StatsEngine: TensorEngine,
     TopkIdsEngine: TensorEngine,
+    *,
+    cast_cols: Int = 0,
 ](
     output: TileTensor[
         .float8_e4m3fn, output_layout, MutAnyOrigin, Engine=OutputEngine
@@ -4917,6 +4919,7 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
     ],
     topk: Int32,
     num_slots: Int32,
+    window: Optional[MutPointer[Scalar[.bfloat16], MutAnyOrigin]],
 ):
     """Expert sort + fan-out gather + MXFP8 quantize in one launch, AMD CDNA4.
 
@@ -4938,6 +4941,13 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
     no order entry and no payload row, its restore entry holds the
     `num_slots` sentinel, and `expert_start_indices[num_experts]` counts the
     valid pairs only -- all exactly as `moe_create_indices`.
+
+    With `cast_cols > 0`, `window` receives the `cast_cols` columns of the
+    same input row that follow the quantized ones, rounded to bfloat16: the
+    caller that feeds this kernel the wide producer row gets that slice
+    narrowed here instead of in a pass of its own. The pair whose slot index
+    is a multiple of `topk` writes its token's whole window row, so every
+    row is written exactly once.
     """
     comptime assert OutputEngine.element_size == 1
     comptime assert ScalesEngine.element_size == 1
@@ -5141,6 +5151,33 @@ def _moe_sort_gather_quantize_mx_amd_kernel[
             if tid % 4 == 0:
                 scales.store((Int(pos), tid // 4), e8m0_scale)
 
+        # The producer row's trailing window, rounded to bfloat16 for its own
+        # consumer. One pair per token writes the token's whole row, so this
+        # costs one vector step of one CTA in `topk` and saves a launch.
+        comptime if cast_cols > 0:
+            if i % Int(topk) == 0:
+                var window_row = i // Int(topk)
+                if window_row < Int(input.dim(0)):
+                    var window_tile = TileTensor(
+                        window.unsafe_value(),
+                        row_major((Int(input.dim(0)), Idx[cast_cols])),
+                    )
+                    comptime in_align = align_of[Scalar[in_dtype]]()
+                    comptime out_align = align_of[SIMD[.bfloat16, 8]]()
+                    # The CTA has `num_cols // 8` threads, so a window wider
+                    # than the quantized columns needs more than one pass.
+                    comptime vec = 8
+                    comptime stride = num_cols
+                    var col = vec * tid
+                    while col < cast_cols:
+                        var window_vec = input.load[
+                            width=vec, alignment=in_align
+                        ]((window_row, num_cols + col))
+                        window_tile.store[alignment=out_align](
+                            (window_row, col), window_vec.cast[.bfloat16]()
+                        )
+                        col += stride
+
 
 @inline(.always)
 def moe_sort_gather_quantize_mx_amd[
@@ -5149,6 +5186,7 @@ def moe_sort_gather_quantize_mx_amd[
     out_dtype: DType = .float8_e4m3fn,
     scales_dtype: DType = .float8_e8m0fnu,
     in_dtype: DType = .bfloat16,
+    cast_cols: Int = 0,
     //,
     OutputEngine: TensorEngine,
     ScalesEngine: TensorEngine,
@@ -5189,6 +5227,8 @@ def moe_sort_gather_quantize_mx_amd[
         mut=False, .int32, address_space=.GENERIC, ..., Engine=TopkIdsEngine
     ],
     topk: Int,
+    *,
+    window: Optional[MutPointer[Scalar[.bfloat16], MutAnyOrigin]] = None,
 ) raises:
     """Sorts, gathers and MX-quantizes the MoE routing glue in one launch.
 
@@ -5215,6 +5255,9 @@ def moe_sort_gather_quantize_mx_amd[
             reduce's output, read without the separate bf16 cast -- rounds
             through bfloat16 before the quantize, so it produces the same
             payload and scales.
+        cast_cols: Width of the bfloat16 window the one-launch kernel also
+            writes from each source row, from the `cast_cols` columns that
+            follow the quantized ones. 0 skips it, and `window` is unused.
         OutputEngine: Engine policy of the `output_tile` tensor.
         ScalesEngine: Engine policy of the `scales_tile` tensor.
         InputEngine: Engine policy of the `input_tile` tensor.
@@ -5242,6 +5285,12 @@ def moe_sort_gather_quantize_mx_amd[
             (token, pick) pair.
         topk: Experts per token; the source row is the pair index
             divided by it.
+        window: The `[num_tokens, cast_cols]` bfloat16 window output. Its
+            shape is checked where the tensor is built -- the graph op's
+            wrapper -- because this launcher only carries the device
+            pointer. Passing it with `cast_cols == 0` is an error, as is
+            omitting it when `cast_cols > 0`, and the input row must hold
+            `num_cols + cast_cols` columns.
 
     Raises:
         Error: If the launch falls outside
@@ -5257,6 +5306,21 @@ def moe_sort_gather_quantize_mx_amd[
     comptime assert ids_tile.flat_rank == 1, "ids must be rank 1"
     comptime assert stats_tile.flat_rank == 1, "stats must be rank 1"
     comptime assert topk_ids_tile.flat_rank == 1, "topk_ids must be rank 1"
+    comptime assert cast_cols >= 0, "cast_cols must not be negative"
+    comptime assert (
+        cast_cols == 0 or cast_cols % 8 == 0
+    ), "a cast window needs a multiple of 8 columns"
+    if cast_cols > 0 and not window:
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: cast_cols="
+            + String(cast_cols)
+            + " needs the window output"
+        )
+    if cast_cols == 0 and window:
+        raise Error(
+            "moe_sort_gather_quantize_mx_amd: cast_cols=0 but a window was"
+            " passed; an empty window is not written"
+        )
     comptime assert (
         num_cols % MXFP8_SF_VECTOR_SIZE == 0
     ), "the sort-fused MoE quantize needs columns divisible by 32"
@@ -5295,7 +5359,7 @@ def moe_sort_gather_quantize_mx_amd[
         and Int(stats_tile.dim[0]()) == 2
         and Int(order_tile.dim[0]()) == num_slots
         and Int(restore_tile.dim[0]()) == num_slots
-        and Int(input_tile.dim[1]()) >= num_cols
+        and Int(input_tile.dim[1]()) >= num_cols + cast_cols
         and Int(output_tile.dim[0]()) == num_slots
         and Int(output_tile.dim[1]()) == num_cols
         and Int(scales_tile.dim[0]()) == num_slots
@@ -5362,6 +5426,7 @@ def moe_sort_gather_quantize_mx_amd[
         IdsEngine,
         StatsEngine,
         TopkIdsEngine,
+        cast_cols=cast_cols,
     ]
 
     ctx.enqueue_function[kernel](
@@ -5376,9 +5441,115 @@ def moe_sort_gather_quantize_mx_amd[
         topk_ids_tile,
         Int32(topk),
         Int32(num_slots),
+        window,
         grid_dim=(num_slots, 1, 1),
         block_dim=(num_cols // 8, 1, 1),
         attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+)
+@__name(t"moe_cast_window_bf16_kernel_{in_dtype}")
+def _moe_cast_window_bf16_kernel[
+    in_dtype: DType,
+    num_cols: Int,
+    cast_cols: Int,
+    window_layout: TensorLayout,
+    input_layout: TensorLayout,
+    WindowEngine: TensorEngine,
+    InputEngine: TensorEngine,
+](
+    window: TileTensor[
+        .bfloat16, window_layout, MutAnyOrigin, Engine=WindowEngine
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
+    ],
+):
+    """Rounds one producer row's trailing window to bfloat16, one CTA a row.
+
+    The fallback-arm counterpart of the cast
+    `_moe_sort_gather_quantize_mx_amd_kernel` does for free: the columns
+    `[num_cols, num_cols + cast_cols)` of each input row, narrowed to
+    bfloat16 for the consumer that reads them at that width.
+    """
+    comptime vec = 8
+    comptime threads = 256
+    comptime assert (
+        cast_cols % vec == 0
+    ), "a cast window needs a multiple of 8 columns"
+    comptime in_align = align_of[Scalar[in_dtype]]()
+    comptime out_align = align_of[SIMD[.bfloat16, 8]]()
+    var row = block_idx.x
+    var col = vec * thread_idx.x
+    while col < cast_cols:
+        window.store[alignment=out_align](
+            (row, col),
+            input.load[width=vec, alignment=in_align](
+                (row, num_cols + col)
+            ).cast[.bfloat16](),
+        )
+        col += vec * threads
+
+
+@inline(.always)
+def moe_cast_window_bf16[
+    in_dtype: DType,
+    num_cols: Int,
+    cast_cols: Int,
+    //,
+    WindowEngine: TensorEngine,
+    InputEngine: TensorEngine,
+](
+    ctx: DeviceContext,
+    window: TileTensor[
+        mut=True, .bfloat16, address_space=.GENERIC, ..., Engine=WindowEngine
+    ],
+    input: TileTensor[
+        mut=False, in_dtype, address_space=.GENERIC, ..., Engine=InputEngine
+    ],
+) raises:
+    """Launches `_moe_cast_window_bf16_kernel` over `input`'s rows.
+
+    Args:
+        ctx: Device context.
+        window: The `[num_rows, cast_cols]` bfloat16 output.
+        input: The producer row, `num_cols + cast_cols` (or more) wide.
+    """
+    comptime assert cast_cols > 0, "a window cast needs cast_cols > 0"
+    var num_rows = Int(input.dim(0))
+    if num_rows == 0:
+        return
+    if not (
+        Int(window.dim(0)) == num_rows
+        and Int(window.dim(1)) == cast_cols
+        and Int(input.dim(1)) >= num_cols + cast_cols
+    ):
+        raise Error(
+            "moe_cast_window_bf16: the window must be ["
+            + String(num_rows)
+            + ", "
+            + String(cast_cols)
+            + "] and the input row at least "
+            + String(num_cols + cast_cols)
+            + " columns"
+        )
+    comptime kernel = _moe_cast_window_bf16_kernel[
+        in_dtype,
+        num_cols,
+        cast_cols,
+        type_of(window).LayoutType,
+        type_of(input).LayoutType,
+        WindowEngine,
+        InputEngine,
+    ]
+    ctx.enqueue_function[kernel](
+        window,
+        input,
+        grid_dim=(num_rows, 1, 1),
+        block_dim=(256, 1, 1),
     )
 
 

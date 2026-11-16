@@ -34,6 +34,7 @@ target.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 
@@ -52,6 +53,9 @@ from max.nn._graph_ops import (
     moe_sort_gather_quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
+    KimiK3DenseMLP,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     _moe_exit_act_concat,
@@ -120,9 +124,14 @@ def test_sort_wrapper_output_types() -> None:
     ) as graph:
         latent, topk_ids = (i.tensor for i in graph.inputs)
         outputs = moe_sort_gather_quantize_dynamic_block_scaled(
-            latent, topk_ids, topk=16, num_experts=num_experts
+            latent,
+            topk_ids,
+            topk=16,
+            num_experts=num_experts,
+            cols=K - 32,
+            cast_cols=32,
         )
-        assert len(outputs) == 7
+        assert len(outputs) == 8
         (
             order,
             start,
@@ -131,6 +140,7 @@ def test_sort_wrapper_output_types() -> None:
             stats,
             quantized,
             scales,
+            window,
         ) = outputs
         assert order.dtype == DType.uint32
         assert order.shape[0] == topk_ids.shape[0]
@@ -144,10 +154,13 @@ def test_sort_wrapper_output_types() -> None:
         assert int(stats.shape[0]) == 2
         assert quantized.dtype == DType.float8_e4m3fn
         assert quantized.shape[0] == topk_ids.shape[0]
-        assert int(quantized.shape[1]) == K
+        assert int(quantized.shape[1]) == K - 32
         assert scales.dtype == DType.float8_e8m0fnu
         assert scales.shape[0] == topk_ids.shape[0]
-        assert int(scales.shape[1]) == K // 32
+        assert int(scales.shape[1]) == (K - 32) // 32
+        assert window.dtype == DType.bfloat16
+        assert window.shape[0] == latent.shape[0]
+        assert int(window.shape[1]) == 32
 
 
 def test_exit_act_concat_output_type() -> None:
@@ -221,7 +234,7 @@ def test_exit_act_concat_rejects_bad_inputs() -> None:
 def test_sort_wrapper_rejects_bad_inputs() -> None:
     """Every unsupported combination fails fast rather than mis-launching."""
 
-    good_input = TensorType(DType.bfloat16, [8, K], device=GPU)
+    good_input = TensorType(DType.bfloat16, [8, K + 32], device=GPU)
     good_ids = TensorType(DType.int32, [8 * 16], device=GPU)
 
     def build(
@@ -231,6 +244,7 @@ def test_sort_wrapper_rejects_bad_inputs() -> None:
         topk: int = 16,
         num_experts: int = 896,
         cols: int | None = None,
+        cast_cols: int = 32,
     ) -> None:
         with Graph(
             "fused_moe_sort_gather_quantize_bad",
@@ -243,14 +257,15 @@ def test_sort_wrapper_rejects_bad_inputs() -> None:
                 topk=topk,
                 num_experts=num_experts,
                 cols=cols,
+                cast_cols=cast_cols,
             )
 
-    rank3 = TensorType(DType.bfloat16, [2, 4, K], device=GPU)
-    fp16 = TensorType(DType.float16, [8, K], device=GPU)
+    rank3 = TensorType(DType.bfloat16, [2, 4, K + 32], device=GPU)
+    fp16 = TensorType(DType.float16, [8, K + 32], device=GPU)
     uint32_ids = TensorType(DType.uint32, [128], device=GPU)
     rank2_ids = TensorType(DType.int32, [128, 1], device=GPU)
     dynamic_cols = TensorType(DType.bfloat16, [8, "k"], device=GPU)
-    misaligned = TensorType(DType.bfloat16, [8, K - 4], device=GPU)
+    misaligned = TensorType(DType.bfloat16, [8, K - 4 + 32], device=GPU)
     wrong_slots = TensorType(DType.int32, [100], device=GPU)
 
     cases: list[tuple[Callable[[], None], str]] = [
@@ -264,6 +279,8 @@ def test_sort_wrapper_rejects_bad_inputs() -> None:
         ),
         (lambda: build(input_type=misaligned), "K not a multiple of 32"),
         (lambda: build(cols=K + 32), "cols past the input's width"),
+        (lambda: build(cast_cols=12), "cast_cols not a multiple of 8"),
+        (lambda: build(cast_cols=64), "cast window past the input's width"),
         (lambda: build(cols=K - 4), "cols not a multiple of 32"),
         (lambda: build(ids_type=wrong_slots), "slot count != tokens * topk"),
         (
@@ -488,6 +505,36 @@ def test_amd_w4a8_tp2_trace_builds() -> None:
     assert SORT_FUSED_OP in _trace_moe(amd_w4a8=True, tp_size=2)
 
 
+def test_sharded_non_amd_exit_activates_the_narrowed_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every sharded exit but the AMD one narrows the window itself.
+
+    The merged entry GEMM writes float32 whenever the router rides it, so
+    the shared expert's gate/up comes back float32. Only the AMD W4A8
+    routing-glue op rounds that window while it walks the same rows; on
+    every other sharded exit -- another vendor at TP>1, or AMD without the
+    MXFP4 quant config -- ``_merged_entry`` has to narrow it, as the base
+    did, so the shared activation runs on the model dtype.
+    """
+    seen: list[DType] = []
+    narrow = KimiK3DenseMLP.situ_and_mul
+
+    def spy(self: KimiK3DenseMLP, gate_up: Tensor) -> Tensor:
+        seen.append(gate_up.dtype)
+        return narrow(self, gate_up)
+
+    monkeypatch.setattr(KimiK3DenseMLP, "situ_and_mul", spy)
+    ir = _trace_moe(amd_w4a8=False, tp_size=2)
+    # This path activates the shared half in its own concat, not inside the
+    # AMD exit collective, so the one call is the window's only reader.
+    assert "allreduce_rms_norm_exit_concat" not in ir
+    assert seen == [DType.bfloat16], (
+        "the shared expert's activation read the merged entry GEMM's own"
+        f" dtype instead of the model's: {seen}"
+    )
+
+
 def test_dense_path_keeps_the_unfused_chain() -> None:
     """Every other path keeps the unfused chain and never stages a fused op.
 
@@ -527,4 +574,65 @@ def test_amd_w4a8_keeps_the_combine_in_the_model_dtype() -> None:
     )
     assert "mo.composite.distributed.allreduce_rms_norm" in ir, (
         "the exit lost its fused allreduce+norm launch"
+    )
+
+
+def test_amd_w4a8_narrows_the_gate_up_inside_the_routing_glue() -> None:
+    """The exit collective reads the routing glue's own bf16 window.
+
+    The merged entry GEMM writes the shared expert's gate/up as float32
+    columns behind the latent; the routing glue narrows them while it walks
+    the same rows. So the graph must both carry the bf16 window out of the
+    glue into the exit collective and contain no separate cast of it.
+    """
+    tp_size = 2
+    ir = _trace_moe(amd_w4a8=True, tp_size=tp_size)
+    # Per rank: the shared expert's whole gate/up, at this rank's share of the
+    # FFN width.
+    window_cols = 2 * MOE_INTER
+    bf16_window = f"!mo.tensor<[seq, {window_cols}], bf16"
+    f32_window = f"!mo.tensor<[seq, {window_cols}], f32"
+
+    op_lines = [line for line in ir.splitlines() if SORT_FUSED_OP in line]
+    assert op_lines, f"{SORT_FUSED_OP} not staged"
+    assert any(bf16_window in line.split("->")[-1] for line in op_lines), (
+        "the routing glue does not return the gate/up window: " + op_lines[0]
+    )
+    # At TP2 the rank's window is wider than the latent, which is the shape a
+    # per-column write bound would have truncated; this trace is the graph-build
+    # check for it.
+    params = {
+        name: int(value)
+        for name, value in re.findall(r"(\w+) = (\d+) : index", op_lines[0])
+    }
+    assert params["CAST_COLS"] > params["NUM_COLS"], (
+        "this fixture must exercise a window wider than the latent, at TP2: "
+        + op_lines[0]
+    )
+    exit_lines = [
+        line
+        for line in ir.splitlines()
+        if "allreduce_rms_norm_exit_concat" in line
+    ]
+    assert exit_lines, "the exit collective is not staged"
+    assert any(bf16_window in line for line in exit_lines), (
+        "the exit collective does not read the bf16 window: " + exit_lines[0]
+    )
+
+    # A cast of the window in a launch of its own reads the f32 window and
+    # writes the bf16 one. The glue reads the merged row instead, so it
+    # matches neither half of this.
+    def narrows_in_its_own_launch(line: str) -> bool:
+        sides = line.split("->")
+        if len(sides) != 2:
+            return False
+        operands, results = sides
+        return f32_window in operands and bf16_window in results
+
+    casts = [
+        line for line in ir.splitlines() if narrows_in_its_own_launch(line)
+    ]
+    assert not casts, (
+        "a separate cast of the gate/up window is back; the routing glue must"
+        " narrow it in place: " + casts[0]
     )
