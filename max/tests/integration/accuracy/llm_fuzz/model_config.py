@@ -177,6 +177,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:smollm"],
         description="SmolLM model-specific tests",
     ),
+    "deepseek_v4": ModelProfile(
+        name="deepseek_v4",
+        default_port=8091,
+        tags=["model:deepseek_v4"],
+        description="DeepSeek-V4-Flash-0731",
+    ),
     "laguna": ModelProfile(
         name="laguna",
         default_port=8091,

@@ -1,0 +1,25 @@
+# DeepSeek-V4-Flash-0731 llm-fuzz known failures, one `scenario:test` per line.
+#
+# Read through `DeepSeek-V4-Flash-0731.sh`, which names this file in
+# `exclude_files`, for MAX Serve and for Mach alike. An entry belongs here only
+# if Mach and a reference engine serving the same checkpoint (MAX Serve, or
+# vLLM with its deepseek_v4 tokenizer, reasoning and tool parsers) both fail
+# it. A test Mach fails and a reference passes is a Mach gap and stays red.
+#
+# Controls, 2026-11-12, `--validation-only`, 330 tests, 2x B200, 32K context:
+# Mach behind the orchestrator (`--format-spec deepseek_v4`), MAX Serve with
+# this config, vLLM 0.32.0 with fp8 KV (its only KV path for this model on
+# B200). No test failed on Mach and on a reference, so the list is empty.
+
+# Not listed, on purpose:
+#
+# needle_prefix_cache:prefix_cache_hits fails on Mach only. The Mach registry
+# entry disables prefix caching for this model (mach/docs/models/
+# deepseek-v4-flash.md, "Known limits"), so every follow-up turn reports
+# cached_tokens=0. MAX Serve reuses the prefix (29 of 30 turns, INTERESTING)
+# and vLLM reports no cached_tokens (INTERESTING). It stays red until Mach
+# serves this model with prefix caching.
+#
+# openrouter_tests:assistant-prefill fails on vLLM (empty content after the
+# trailing assistant message, which the reference encoder closes with EOS) and
+# passes on Mach and MAX Serve, so it is not a shared failure.
