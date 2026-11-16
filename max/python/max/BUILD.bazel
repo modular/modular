@@ -96,7 +96,7 @@ modular_nanobind_extension(
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
         "//max/lib/max_license:max",
     ],
     module_name = "_core",

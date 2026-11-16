@@ -245,9 +245,10 @@ build --host_per_file_copt=external/.*llvm-project/clang/lib/(Basic|Support)/.*@
 # Nor do LLVM's Debuginfod and HTTP libraries yet, which lldb uses from libLLVM.
 build --per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
 build --host_per_file_copt=external/.*llvm-project/llvm/lib/(Debuginfod|HTTP)/.*@-fvisibility=default
-# MLIR has no export annotations either, so @llvm-project//mlir:MLIR exports
-# it the way CMake's libMLIR does, with default visibility. The toolchain's
-# -fvisibility=hidden is what makes this necessary.
+# MLIR has no export annotations either, so //bazel/internal:MLIR exports it
+# the way CMake's libMLIR does, with default visibility, then hides what this
+# repo doesn't use with libMLIR.map. The toolchain's -fvisibility=hidden is
+# what makes this necessary.
 build --per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
 build --host_per_file_copt=external/.*llvm-project/mlir/.*@-fvisibility=default
 # abseil and rules_cc's runfiles library are exported from

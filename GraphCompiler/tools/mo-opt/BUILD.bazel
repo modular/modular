@@ -27,7 +27,7 @@ modular_cc_binary(
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     mojo_deps = [
         "//max:builtin_kernels",

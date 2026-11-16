@@ -882,7 +882,7 @@ modular_shared_library(
         ":Driver/Compilation",
         ":Driver/Runtime",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     output_name = "MojoRuntimeBindings",
     tags = [ALLOW_UNUSED_TAG],

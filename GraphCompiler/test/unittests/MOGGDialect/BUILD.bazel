@@ -13,7 +13,7 @@ modular_cc_test(
         "//MLRT:Driver/Compilation",
         "//MLRT:Driver/Runtime",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     deps = [
         "//GraphCompiler",
@@ -36,7 +36,7 @@ modular_cc_test(
         "//MLRT:Driver/Compilation",
         "//MLRT:Driver/Runtime",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     deps = [
         "//GraphCompiler",

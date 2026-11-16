@@ -100,7 +100,7 @@ _MOJO_DYNAMIC_DEPS = [
     "//AsyncRT:RuntimeGlobals",
     "//MLRT:Driver/Compilation",
     "//Support:Globals",
-    "@llvm-project//mlir:MLIR",
+    "//bazel/internal:MLIR",
     "@llvm-project//clang:clangBasic",
     "@llvm-project//llvm:LLVM",
 ]

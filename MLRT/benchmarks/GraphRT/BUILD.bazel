@@ -35,7 +35,7 @@ modular_cc_test(
     dynamic_deps = [
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     tags = ["manual"],
     deps = [

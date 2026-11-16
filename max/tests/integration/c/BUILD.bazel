@@ -209,7 +209,7 @@ modular_cc_test(
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
         "//max/lib/max_license:max",
     ],
     env = {

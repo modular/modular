@@ -1676,7 +1676,7 @@ modular_shared_library(
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/Compilation",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     exports_filter = [
         "@@+http_archive+crashpad//:__subpackages__",
@@ -1772,7 +1772,7 @@ modular_shared_library(
     dynamic_deps = [
         ":MojoLLDB",
         "@llvm-project//llvm:LLVM",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     deps = [
         ":KGENDialect",

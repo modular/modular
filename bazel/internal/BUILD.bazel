@@ -1,3 +1,4 @@
+load("@llvm-project//llvm:dylib.bzl", "llvm_dylib_deps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
@@ -9,6 +10,7 @@ load("//bazel:config.bzl", "ASYNCRT_PROFILING_OPTIONS", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 load(":jemalloc.bzl", "jemalloc_with_lg_page")
+load(":mlir_dylib.bzl", "MLIR_DYLIB_LIBS")
 load(":mojo_toolchain.bzl", "mojo_toolchain")
 load(":python_extension_name_toolchain.bzl", "python_extension_name_toolchain")
 
@@ -377,4 +379,25 @@ cc_shared_library(
         "@llvm-project//third-party:zlib",
         "@llvm-project//third-party:zstd",
     ],
+)
+
+# MLIR as a single shared library, like CMake's libMLIR (MLIR_LINK_MLIR_DYLIB),
+# so a process that loads several shared libraries built on MLIR has one copy
+# of its process-wide state. Linked against libLLVM under
+# --@llvm-project//llvm:link_llvm_dylib.
+cc_shared_library(
+    name = "MLIR",
+    additional_linker_inputs = [":libMLIR.map"],
+    dynamic_deps = llvm_dylib_deps(),
+    exports_filter = ["@llvm-project//mlir:__subpackages__"],
+    # Like libLLVM: MLIR is built with default visibility, so without
+    # -Bsymbolic-functions every call within the library goes through the PLT.
+    user_link_flags = select({
+        "@platforms//os:linux": [
+            "-Wl,-Bsymbolic-functions",
+            "-Wl,--version-script,$(location :libMLIR.map)",
+        ],
+        "//conditions:default": [],
+    }),
+    deps = MLIR_DYLIB_LIBS,
 )

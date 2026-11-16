@@ -19,7 +19,7 @@ modular_cc_binary(
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     mojo_deps = [

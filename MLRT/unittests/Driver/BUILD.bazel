@@ -765,7 +765,7 @@ modular_cc_test(
             "@llvm-project//llvm:LLVM",
             "//AsyncRT:RuntimeGlobals",
             "//Support:Globals",
-            "@llvm-project//mlir:MLIR",
+            "//bazel/internal:MLIR",
         ],
         env = select({
             "//:nvidia_gpu": {
@@ -816,7 +816,7 @@ modular_cc_test(
             "@llvm-project//llvm:LLVM",
             "//AsyncRT:RuntimeGlobals",
             "//Support:Globals",
-            "@llvm-project//mlir:MLIR",
+            "//bazel/internal:MLIR",
         ],
         env = {
             "MOCK_DEVICE_ARCH": "mock1",
@@ -1478,7 +1478,7 @@ modular_cc_test(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     env = _CAPI_TEST_PLUGIN_ENV,
     gpu_constraints = ["//:has_gpu"],

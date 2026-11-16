@@ -93,7 +93,7 @@ modular_cc_test(
         "@llvm-project//llvm:LLVM",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],

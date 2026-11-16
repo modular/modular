@@ -22,7 +22,7 @@ modular_cc_test(
         "//Mojo:CompilerRT",
         "//MLRT:Driver/Compilation",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     deps = [
         ":test_kernels",

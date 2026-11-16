@@ -25,7 +25,7 @@ modular_nanobind_extension(
         "@llvm-raw//:mlir/lib/Bindings/Python/Rewrite.h",
     ],
     dynamic_deps = [
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
         "//max/lib/max_license:max",
     ],
     local_defines = [

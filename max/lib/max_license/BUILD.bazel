@@ -56,7 +56,7 @@ modular_shared_library(
         "//MLRT:Driver/Runtime",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     linkopts = select({
         "@platforms//os:linux": ["-Wl,--version-script,$(location :libmax.map)"],

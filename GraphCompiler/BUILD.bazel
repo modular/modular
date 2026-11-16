@@ -1748,7 +1748,7 @@ modular_shared_library(
         "//MLRT:Driver/DeviceContext",
         "//Mojo:CompilerRT",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     exports_filter = ["@abseil-cpp//:__subpackages__"],
     visibility = [

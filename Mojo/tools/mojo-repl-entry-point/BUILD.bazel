@@ -17,7 +17,7 @@ modular_cc_binary(
         "//Mojo:CompilerRT",
         "//MLRT:Driver/Compilation",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     linkopts = select({
         "@platforms//os:linux": [

@@ -16,7 +16,7 @@ modular_cc_binary(
         "//MLRT:Driver/Compilation",
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
-        "@llvm-project//mlir:MLIR",
+        "//bazel/internal:MLIR",
     ],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
