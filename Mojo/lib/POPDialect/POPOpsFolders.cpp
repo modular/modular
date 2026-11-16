@@ -2815,6 +2815,94 @@ static ErrorTreeOrSuccess interpretGetStackTrace(ExternalCallOp op,
   return state.mapResults(IntegerAttr::get(op.getResultTypes().front(), 0));
 }
 
+/// Return true if `type` is a 64-bit integer: an MLIR integer or `index`, or a
+/// scalar SIMD of an integer dtype, such as Mojo's `Int64`. Besides pointers,
+/// these are the only values a library function can take or return, since
+/// each fills exactly one integer register.
+static bool is64BitInteger(Type type, TargetInfoAttr target) {
+  std::optional<int64_t> size =
+      DataLayoutInterface::getTypeAllocSize(target, type);
+  if (size != static_cast<int64_t>(sizeof(uint64_t)))
+    return false;
+  if (type.isIntOrIndex())
+    return true;
+  auto simdType = dyn_cast<SIMDType>(type);
+  if (!simdType || !simdType.isScalar())
+    return false;
+  std::optional<KGENDType> dtype = simdType.getResolvedDType();
+  return dtype && (dtype->isInt() || dtype->isIndex() || dtype->isUIndex());
+}
+
+/// Call `entry`, a function from an interpreter library. The compiler runs
+/// only on x86-64 and AArch64 Linux and AArch64 macOS. Their C calling
+/// conventions pass the first six pointer or integer arguments in registers,
+/// so a library function that takes and returns only pointers and 64-bit
+/// integers can be called through one six-argument pointer type. That type
+/// differs from the library function's, so UBSan's function type check is off
+/// here.
+__attribute__((no_sanitize("function"))) static ErrorTreeOrSuccess
+interpretLibraryCall(ExternalCallOp op, void *entry,
+                     ArrayRef<Attribute> operands, InterpreterState &state) {
+  constexpr size_t kMaxArgs = 6;
+  TargetInfoAttr target = state.getTarget();
+  Type resultType = op.getNumResults() ? op.getResultTypes().front() : Type();
+  if (!target || op.getNumFixedArgsAttr() || operands.size() > kMaxArgs ||
+      (resultType && !is64BitInteger(resultType, target))) {
+    return ErrorTree(op.getLoc(),
+                     Twine("cannot call '") + op.getCallee().getValue() +
+                         "' at compile time: it must not be variadic, take at "
+                         "most 6 pointers or 64-bit integers, and return a "
+                         "64-bit integer or nothing");
+  }
+
+  SmallVector<uint64_t, kMaxArgs> args;
+  SmallVector<size_t> pointerSlots;
+  SmallVector<int64_t> addrs;
+  for (Attribute operand : operands) {
+    if (auto ptr = dyn_cast<PointerAttr>(operand)) {
+      pointerSlots.push_back(args.size());
+      addrs.push_back(ptr.getAddr());
+      args.push_back(0);
+      continue;
+    }
+    auto value = dyn_cast<TypedAttr>(operand);
+    ErrorOr<int64_t> intValue = getScalarIntegerValue(value);
+    if (intValue.isError() || !is64BitInteger(value.getType(), target)) {
+      return ErrorTree(op.getLoc(), Twine("cannot call '") +
+                                        op.getCallee().getValue() +
+                                        "' at compile time with an argument "
+                                        "that is not a pointer or a 64-bit "
+                                        "integer");
+    }
+    args.push_back(static_cast<uint64_t>(*intValue));
+  }
+
+  // The library function runs before `allocator` frees the copies.
+  llvm::BumpPtrAllocator allocator;
+  ErrorOr<SmallVector<void *>> realAddrs =
+      state.memoryToExternalCall(addrs, [&](size_t size, size_t align) {
+        return allocator.Allocate(std::max<size_t>(size, 1),
+                                  std::max(align, alignof(void *)));
+      });
+  if (realAddrs.isError())
+    return ErrorTree(op.getLoc(), realAddrs.takeError());
+  for (auto [slot, realAddr] : llvm::zip_equal(pointerSlots, *realAddrs))
+    args[slot] = reinterpret_cast<uintptr_t>(realAddr);
+
+  // A library function ignores the registers past its own arguments, so one
+  // call shape fits every arity up to `kMaxArgs`.
+  args.resize(kMaxArgs, 0);
+  using EntryFn =
+      uint64_t (*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+  auto result = static_cast<int64_t>(reinterpret_cast<EntryFn>(entry)(
+      args[0], args[1], args[2], args[3], args[4], args[5]));
+  if (!resultType)
+    return success();
+  if (auto simdType = dyn_cast<SIMDType>(resultType))
+    return state.mapResults(SIMDAttr::get(result, simdType));
+  return state.mapResults(IntegerAttr::get(resultType, result));
+}
+
 /// FIXME(#26342): We shouldn't implement interpreter support for external_call,
 /// this bakes assumptions about the functions. This is a temporary workaround
 /// because of the fact that the gpu path does not use the dedicated pop memory
@@ -2843,6 +2931,12 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
     return interpreterWrite(*this, expandedOperands, state);
   if (callee == "KGEN_CompilerRT_GetStackTrace")
     return interpretGetStackTrace(*this, expandedOperands, state);
+
+  ErrorOr<void *> entry = state.lookupInterpreterLibSymbol(callee);
+  if (entry.isError())
+    return ErrorTree(getLoc(), entry.takeError());
+  if (*entry)
+    return interpretLibraryCall(*this, *entry, expandedOperands, state);
 
   return ErrorTree(
       getLoc(),

@@ -217,4 +217,16 @@ defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
   MarshallingInfoChoice<CompilationOpts<"debugInfoLanguage">, ["Mojo", "C"],
                         ["kLangMojo", "kLangC"]>;
 
+defm interpreter_libs : CommandOption<["--", "-"], "interpreter-libs",
+  ExperimentalCompilationOptionGroup, MetaVarName<"LIBRARY">,
+  HelpText<
+    "Loads the shared library LIBRARY so that a comptime `external_call` can "
+    "call its functions. Repeat the option to load several libraries. "
+    "Compile results are cached by each library's file name and contents, so "
+    "put a version in the name, such as libfoo.v2.so, and bump it when "
+    "anything the library depends on changes."
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"interpreterLibs">,
+                        "normalizeStringSmallVector">;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

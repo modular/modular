@@ -407,6 +407,87 @@ ErrorOrSuccess InterpreterState::copyMarkedRegions(int64_t srcAddr,
   return success();
 }
 
+ErrorOr<SmallVector<void *>> InterpreterState::memoryToExternalCall(
+    ArrayRef<int64_t> addrs,
+    function_ref<void *(size_t size, size_t align)> allocate) {
+  if (target.getDataLayout().getPointerSize() != sizeof(void *))
+    return Error("the target's pointer size differs from the compiler's");
+
+  // The real address of each blob, either the blob itself or a copy.
+  DenseMap<const MemoryBlob *, char *> copies;
+  SmallVector<const MemoryBlob *> worklist;
+  // The blob holding `addr`, queued to be exposed, and where `addr` is in it.
+  auto reach =
+      [&](int64_t addr) -> ErrorOr<std::pair<const MemoryBlob *, int64_t>> {
+    ErrorOr<std::pair<MemoryBlob &, int64_t>> mem = getMemory(addr, 0);
+    if (mem.isError())
+      return mem.takeError();
+    auto [blob, offset] = mem.takeValue();
+    if (copies.try_emplace(&blob, nullptr).second)
+      worklist.push_back(&blob);
+    return std::make_pair(&blob, offset);
+  };
+
+  SmallVector<std::pair<const MemoryBlob *, int64_t>> roots;
+  for (int64_t addr : addrs) {
+    ErrorOr<std::pair<const MemoryBlob *, int64_t>> root = reach(addr);
+    if (root.isError())
+      return root.takeError();
+    roots.push_back(*root);
+  }
+
+  // A copied blob still holds interpreter addresses, which mean nothing to
+  // the library function, so each pointer in it is patched to the real address
+  // of what it points at. That address is known only once the target blob is
+  // placed, so the patches wait until the worklist is empty.
+  struct Fixup {
+    char *at;
+    const MemoryBlob *blob;
+    int64_t offset;
+  };
+  SmallVector<Fixup> fixups;
+  while (!worklist.empty()) {
+    const MemoryBlob *blob = worklist.pop_back_val();
+    if (blob->symbolRegions && blob->symbolRegions->any())
+      return Error("an argument holds a function reference");
+    // Pointers in interpreter memory hold interpreter addresses, so only
+    // memory that holds no pointers can be passed in place. Memory backed by
+    // an attribute must not be written.
+    bool holdsPointers = blob->pointerRegions && blob->pointerRegions->any();
+    if (blob->isOwned() && !holdsPointers) {
+      copies[blob] = static_cast<char *>(blob->getOwned());
+      continue;
+    }
+    auto *copy = static_cast<char *>(allocate(blob->size, blob->align));
+    copies[blob] = copy;
+    std::memcpy(copy, blob->getMemory(), blob->size);
+    if (!holdsPointers)
+      continue;
+    for (unsigned offset : blob->pointerRegions->set_bits()) {
+      if (offset + sizeof(void *) > blob->size)
+        return Error("a pointer runs past the end of its blob");
+      uintptr_t addr;
+      std::memcpy(&addr, copy + offset, sizeof(addr));
+      if (!addr)
+        continue;
+      if (ErrorOr<std::pair<const MemoryBlob *, int64_t>> to =
+              reach(static_cast<int64_t>(addr));
+          !to.isError()) {
+        fixups.push_back({copy + offset, to->first, to->second});
+      }
+    }
+  }
+  for (const Fixup &fixup : fixups) {
+    char *to = copies.lookup(fixup.blob) + fixup.offset;
+    std::memcpy(fixup.at, &to, sizeof(to));
+  }
+
+  SmallVector<void *> realAddrs;
+  for (auto [blob, offset] : roots)
+    realAddrs.push_back(copies.lookup(blob) + offset);
+  return realAddrs;
+}
+
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
                                                         TypedAttr value) {
   if (!target)

@@ -226,6 +226,10 @@ public:
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs;
 
+  // Interpreter libraries, the shared libraries whose functions a comptime
+  // `pop.external_call` can call.
+  SmallVector<std::string> interpreterLibs;
+
   bool verboseOutput = false;
 
   int elaborationErrorLimit = 20;

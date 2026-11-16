@@ -32,6 +32,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/DynamicLibrary.h"
 
 #include <regex>
 
@@ -578,6 +579,21 @@ IREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
       func, symbol, name, symtabCopy, target, emissionKind, emissionOptions,
       elaborator->options, elaborator->getOptions());
   return closure;
+}
+
+ErrorOr<void *> IREvaluator::lookupInterpreterLibSymbol(StringRef symbol) {
+  for (const std::string &path : elaborator->options.interpreterLibs) {
+    std::string reason;
+    llvm::sys::DynamicLibrary lib =
+        llvm::sys::DynamicLibrary::getPermanentLibrary(path.c_str(), &reason);
+    if (!lib.isValid()) {
+      return Error(Twine("cannot load interpreter library '") + path +
+                   "': " + reason);
+    }
+    if (void *entry = lib.getAddressOfSymbol(symbol.str().c_str()))
+      return entry;
+  }
+  return nullptr;
 }
 
 void IREvaluator::addDeferredFunction(OwningOpRef<FuncOp> func) {

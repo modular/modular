@@ -88,6 +88,9 @@ public:
   /// inflated as well.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
+  /// Look up `symbol` in the interpreter libraries.
+  ErrorOr<void *> lookupInterpreterLibSymbol(StringRef symbol) override;
+
   /// Evaluate the function with the provided constant inputs.
   ErrorTreeOr<TypedAttr> evaluateFunction(FuncOp func,
                                           ArrayRef<TypedAttr> inputs);

@@ -164,6 +164,12 @@ public:
   /// out-of-line definition of a type to interpret.
   virtual Operation *lookupTypeDefinition(SymbolRefAttr symbol) { return {}; }
 
+  /// Look up `symbol` in the interpreter libraries. Return null when no library
+  /// defines it.
+  virtual ErrorOr<void *> lookupInterpreterLibSymbol(StringRef symbol) {
+    return nullptr;
+  }
+
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Management
 
@@ -215,6 +221,22 @@ public:
   /// pointer-region tracking stays in sync with the copied bytes.
   ErrorOrSuccess copyMarkedRegions(int64_t srcAddr, int64_t dstAddr,
                                    size_t len);
+
+  /// Give a function from an interpreter library the memory at each of
+  /// `addrs` and the memory it reaches through pointers. The function runs in
+  /// the compiler process, so it needs real addresses, not interpreter
+  /// addresses. The interpreter cannot see what the function reads, so all
+  /// reachable memory is exposed before the call, not on demand. Owned memory
+  /// that holds no pointers is passed in place, so the function can write
+  /// results into it. Other memory is copied into memory from `allocate`, with
+  /// its pointers patched to real addresses. Return the real address of each
+  /// of `addrs`. A pointer that is null or does not point into interpreter
+  /// memory is copied unchanged. The function may run on several threads at
+  /// once and must not write through pointers into memory that another call's
+  /// arguments share.
+  ErrorOr<SmallVector<void *>> memoryToExternalCall(
+      ArrayRef<int64_t> addrs,
+      function_ref<void *(size_t size, size_t align)> allocate);
 
   /// Write an attribute value of a given type to the provided chunk of memory.
   ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);

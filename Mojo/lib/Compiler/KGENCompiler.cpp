@@ -49,7 +49,9 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
@@ -954,13 +956,37 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 /// Returns Mojo transform backend, or an error if the backend could not be
 /// created.
 static ErrorOr<RCRef<Cache::BlobCacheBackend>>
-getMojoCacheBackend(const std::string baseExtra) {
+getMojoCacheBackend(const CompilationOptions &options) {
   std::filesystem::path path(kMojoCacheBaseDirName.str());
-  if (!baseExtra.empty())
-    path = path / baseExtra;
+  if (!options.cacheBaseExtra.empty())
+    path = path / options.cacheBaseExtra;
   path = path / "transform";
+  // Interpreter libraries act as part of the compiler, so each set of them gets
+  // its own cache, as getBinaryID() does for a CUDA toolchain path. The key is
+  // each library's file name and contents. The compiler does not see what a
+  // library depends on, so by convention its author puts a version in the
+  // name, such as libmoka_compiler.v1.1.so, and bumps it when a dependency
+  // changes.
+  std::string version = getVersionString();
+  if (!options.interpreterLibs.empty()) {
+    std::string key;
+    for (const std::string &lib : options.interpreterLibs) {
+      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> bytes =
+          llvm::MemoryBuffer::getFile(lib, /*IsText=*/false,
+                                      /*RequiresNullTerminator=*/false);
+      if (!bytes) {
+        return Error(Twine("cannot read interpreter library '") + lib +
+                     "': " + bytes.getError().message());
+      }
+      key += std::filesystem::path(lib).filename().string() + ":" +
+             llvm::utohexstr(XXH3_64bits((*bytes)->getBufferStart(),
+                                         (*bytes)->getBufferSize())) +
+             "\n";
+    }
+    version += "-" + llvm::utohexstr(XXH3_64bits(key.data(), key.size()));
+  }
   return Cache::getLocalDefaultBackendChain(
-      path, getVersionString(),
+      path, version,
       Cache::CacheOwner{getVersionBinaryPath(), getVersionBuildID()});
 }
 
@@ -1026,7 +1052,7 @@ KGENCompiler::KGENCompiler(MLIRContext &context, CompilationOptions options,
 
 ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
                                              TargetInfoAttr target) {
-  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
+  auto cacheBackend = getMojoCacheBackend(options);
   if (cacheBackend.isError())
     return cacheBackend.takeError();
 
@@ -1109,7 +1135,7 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
 }
 
 ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
-  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
+  auto cacheBackend = getMojoCacheBackend(options);
   if (cacheBackend.isError())
     return cacheBackend.takeError();
   auto transformCache =
@@ -1182,7 +1208,7 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
     return configPM.takeError();
 
   populateElaborateModulePasses(pm, target, options);
-  auto cacheBackend = getMojoCacheBackend(options.cacheBaseExtra);
+  auto cacheBackend = getMojoCacheBackend(options);
 
   if (cacheBackend.isError() || !chain) {
     if (failed(pm.run(module)))
