@@ -287,6 +287,19 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     if (!existingValueType) {
       if (isa<LValueContextualType>(representation))
         return cast<LValueContextualType>(representation).type;
+
+      // A call target like `b.get()` in `b.get() = .blue()` has a type that
+      // doesn't depend on the assigned value, so emit it to get that type.
+      if (expr->kind == ExprNode::kCall &&
+          patternDeclKind == PatternDeclKind::kNone) {
+        LValue exprLValue = emitter.emitExprLValue(expr, context);
+        if (!exprLValue) { // Error already emitted.
+          representation = NullRepresentation();
+          return {};
+        }
+        representation = exprLValue;
+        return exprLValue.getRValueType();
+      }
       return {};
     }
 

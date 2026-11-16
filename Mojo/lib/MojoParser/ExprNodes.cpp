@@ -4597,7 +4597,38 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
       CallOperands(CallSyntax::kOperator, expr, std::move(dest), argValue));
 }
 
+/// Return true if `expr` is an inferred member like `.red`, `.red()`,
+/// `.red.opacity(0.5)` or `.alpha_blended[42]`, or a conditional whose
+/// branches all are.  Must match resolveInferredBaseAttrRef in IRValues.cpp.
+static bool isInferredBaseAttrRefExpr(const ExprNode *expr) {
+  switch (expr->kind) {
+  case ExprNode::kInferredAttributeRef:
+    return true;
+  case ExprNode::kCall:
+    return isInferredBaseAttrRefExpr(cast<CallNode>(expr)->callee);
+  case ExprNode::kAttributeRef:
+    return isInferredBaseAttrRefExpr(cast<AttributeRefNode>(expr)->base);
+  case ExprNode::kSubscript:
+    return isInferredBaseAttrRefExpr(cast<SubscriptNode>(expr)->base);
+  case ExprNode::kParen:
+    return isInferredBaseAttrRefExpr(cast<ParenNode>(expr)->subExpr);
+  case ExprNode::kIfElse: {
+    auto *ifElse = cast<IfElseOpNode>(expr);
+    return isInferredBaseAttrRefExpr(ifElse->trueExpr) &&
+           isInferredBaseAttrRefExpr(ifElse->falseExpr);
+  }
+  default:
+    return false;
+  }
+}
+
 AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+  // Like a single inferred member, defer `.red() if c else .blue()` until
+  // there is a contextual type.  Check this before emitting the condition so
+  // it is only emitted once.
+  if (!dest.getExpectedTypeIfSpecified() && isInferredBaseAttrRefExpr(this))
+    return emitter.emitResult(InferredBaseAttrRefUValue(this), this, dest);
+
   RValue condRVal = emitter.emitExprScalarBool(condExpr, EC_BoolCondition);
   Location ifLoc = getLocation(emitter);
 

@@ -1508,6 +1508,47 @@ def test_inferred_attribute_ref():
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
   takes_color(.size)
 
+struct ColorBox:
+  var color: Color
+
+  def __init__(out self):
+    self.color = Color()
+
+  def get(ref self) -> ref[self.color] Color:
+    return self.color
+
+  def get_copy(self) -> Color:
+    return self.color
+
+def takes_color_param[c: Color]():
+  pass
+
+def test_inferred_attribute_ref_through_ifelse_and_ref(
+    flag: Bool, mut box: ColorBox, imm_box: ColorBox
+):
+  # A conditional expression passes its contextual type down to both branches.
+  takes_color(.red if flag else .blue)
+  takes_color(.hsb_to_rgb(120, 100, 50) if flag else .alpha_blended[42](1, 2))
+  takes_color((.red if flag else .blue).opacity(0.5))
+  takes_color(.red if flag else (.green if flag else .blue))
+  takes_colors([.red if flag else .blue, .green])
+  takes_color_param[.red if True else .blue]()
+
+  # Still an error without a contextual type.
+  # expected-error @below {{cannot resolve inferred member without a contextual type}}
+  _ = .red if flag else .blue
+
+  # A `ref` result gives the assigned value its contextual type.
+  box.get() = .blue
+  box.get() = .hsb_to_rgb(120, 100, 50)
+  box.get() = .red if flag else .blue
+
+  # Calls that don't return a mutable reference still can't be assigned to.
+  # expected-error @below {{expression must be mutable in assignment}}
+  box.get_copy() = .blue
+  # expected-error @below {{expression must be mutable in assignment}}
+  imm_box.get() = .blue
+
 def test_dtype_error_message():
     # expected-error @below {{cannot implicitly convert 'SIMD[.float32, 3]' value to 'SIMD[.float32, 4]'}}
     var x: SIMD[DType.float32, 4] = SIMD[DType.float32, 3](1.0)
