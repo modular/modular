@@ -1072,9 +1072,9 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
 
     // If we are allowed to consume the subject and it is an RValue, take an
     // owning reference to the payload while keeping the reference we got back
-    // from _unsafe_get_enum_payload alive.  The parent is marked consumed once
-    // the bindings have been materialized, which lets var patterns bind enum
-    // payloads without them even needing to be movable.
+    // from _unsafe_get_enum_payload alive.  This lets var patterns bind enum
+    // payloads without them even needing to be movable. The parent is disarmed
+    // once the bindings have been materialized.
     if (consume && parent.getIfMRValue()) {
       auto parentRef = parent.getMValueReference();
       auto payloadRef = payload.getMValueReference();
@@ -1082,9 +1082,10 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
       Location loc = expr->getLocation(emitter);
       Value payloadPtr =
           RefToPointerOp::create(*emitter.builder, loc, payloadRef);
-      // Give the stolen payload its own origin. Reusing the parent's origin
-      // would let a later mark_consumed on the subject invalidate this ref.
-      auto origin = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
+      // This path binds the payload in place (including non-movable types), so
+      // keep the parent's origin and disarm with mark_destroyed. mark_consumed
+      // would emit VarLifetimeEnd on the subject and invalidate this alias.
+      auto origin = cast<RefType>(parentRef.getType()).getOrigin();
       StringAttr name = StringAttr::get(emitter.getContext(), "(enum payload)");
       // The new value will own the original value, but define the start of a
       // new live range.
@@ -1092,8 +1093,9 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
           *emitter.builder, loc, payloadPtr, origin, name,
           /*startsUninit=*/false, /*endsUninit=*/true);
       // The payload reference owns the payload now, but the parent cannot be
-      // marked consumed yet: the binding still has to be moved out of it.
+      // disarmed yet: the binding still has to be moved out of it.
       consumedRoots.push_back(parentRef);
+      disarmWithDestroyed = true;
       return MRValue(ownedPayload);
     }
 
@@ -1340,10 +1342,23 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
   if (!rootRef)
     return success();
   Location loc = expr->getLocation(emitter);
-  // Steal each child into a ref with its own origin. Reusing the subject's
-  // origin would let the later mark_consumed invalidate these refs before the
-  // bindings (and non-movable payloads) are used.
-  auto origin = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
+
+  // Non-movable children must reuse the subject's storage, so the subject can
+  // only be disarmed with mark_destroyed (mark_consumed would emit
+  // VarLifetimeEnd and invalidate those aliases). When every child is movable
+  // we give them an independent AnyOrigin, move them into fresh VarDecls, and
+  // mark_consumed the subject so its field destructors do not run.
+  bool anyNonMovable = llvm::any_of(children, [&](const PatternPath &child) {
+    return !child.type.isMovable(expr->getLoc(), emitter.shared, curDeclScope);
+  });
+  if (anyNonMovable)
+    disarmWithDestroyed = true;
+
+  TypedAttr origin =
+      anyNonMovable
+          ? cast<RefType>(rootRef.getType()).getOrigin()
+          : TypedAttr(
+                emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true));
   SmallVector<CValue, 4> ownedChildren;
   for (const PatternPath &childPath : children) {
     CValue child = getPathValue(emitter, &childPath, expr);
@@ -1359,7 +1374,7 @@ PatternEmitState::getConsumedBindingValues(IREmitter &emitter,
   }
   // Every child now has its own owning reference, so the aggregate owns
   // nothing once the bindings have been moved out. Record it so the caller can
-  // mark it consumed after materializing them.
+  // disarm it after materializing them.
   consumedRoots.push_back(rootRef);
 
   for (auto [childIndex, childPath] : llvm::enumerate(children)) {
@@ -1395,9 +1410,19 @@ void PatternEmitState::markConsumedRoots(IREmitter &emitter, Location loc) {
   for (Value root : consumedRoots) {
     if (!marked.insert(root).second)
       continue;
-    OwnershipMarkConsumedOp::create(*emitter.builder, loc, root);
+    // mark_consumed clears every subfield bit (needed to prevent the subject's
+    // field destructor from running before a moved binding is used) and emits
+    // VarLifetimeEnd. That is only safe when movable bindings were moved into
+    // fresh storage. Non-movable bindings still alias the subject, so use
+    // mark_destroyed which suppresses the whole-object destructor without
+    // ending the subject's LLVM lifetime.
+    if (disarmWithDestroyed)
+      OwnershipMarkDestroyedOp::create(*emitter.builder, loc, root);
+    else
+      OwnershipMarkConsumedOp::create(*emitter.builder, loc, root);
   }
   consumedRoots.clear();
+  disarmWithDestroyed = false;
 }
 
 CValue PatternEmitState::emitTestableValue(IREmitter &emitter,

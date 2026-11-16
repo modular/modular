@@ -791,20 +791,29 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // assignment, a pattern declaration has no existing destination to update.
   // Bind the name to this reference before resolving the destination, which
   // would otherwise create a VarDeclOp and require a move into it.
+  //
+  // Stolen match payloads that use AnyOrigin still alias the subject. Moving
+  // them into a fresh VarDecl lets a later mark_consumed end the subject's
+  // lifetime without invalidating the binding. Skip reuse for those.
   if (MRValue ownedValue = cValue.getIfMRValue();
       ownedValue && dest.getPatternDeclKind() == PatternDeclKind::kVar) {
-    if (auto *name = dyn_cast_or_null<DeclRefNode>(dest.getLValueExprNode())) {
-      CValue refinedValue =
-          maybeEmitRefinementRebind({ownedValue, expr}, *this);
-      auto refinedOwnedValue = refinedValue.getIfMRValue();
-      assert(refinedOwnedValue && "Refinement must preserve an MRValue");
+    bool aliasesConsumedSubject = sugarIsa<AnyOriginAttr>(
+        cast<RefType>(ownedValue.getType()).getOrigin());
+    if (!aliasesConsumedSubject) {
+      if (auto *name =
+              dyn_cast_or_null<DeclRefNode>(dest.getLValueExprNode())) {
+        CValue refinedValue =
+            maybeEmitRefinementRebind({ownedValue, expr}, *this);
+        auto refinedOwnedValue = refinedValue.getIfMRValue();
+        assert(refinedOwnedValue && "Refinement must preserve an MRValue");
 
-      StringAttr nameAttr = StringAttr::get(getContext(), name->spelling);
-      ASTDecl &decl = getDeclResolver().addFullyResolvedDecl(
-          MLValue(refinedOwnedValue), nameAttr, name->getLoc(), &declScope);
-      shared.notifyListenerOnVariableDecl(decl, name->getLoc());
-      dest.representation = NullRepresentation();
-      return MBValue(refinedOwnedValue);
+        StringAttr nameAttr = StringAttr::get(getContext(), name->spelling);
+        ASTDecl &decl = getDeclResolver().addFullyResolvedDecl(
+            MLValue(refinedOwnedValue), nameAttr, name->getLoc(), &declScope);
+        shared.notifyListenerOnVariableDecl(decl, name->getLoc());
+        dest.representation = NullRepresentation();
+        return MBValue(refinedOwnedValue);
+      }
     }
   }
 

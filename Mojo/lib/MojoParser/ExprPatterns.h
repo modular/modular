@@ -216,14 +216,19 @@ struct PatternEmitState {
   DenseMap<const PatternPath *, CValue> pathValues;
 
   /// Aggregates whose children were moved out while projecting rvalue
-  /// bindings. They are marked consumed only once every binding has been
+  /// bindings. They are disarmed only once every binding has been
   /// materialized, so their fields are not destroyed before the moves run.
   SmallVector<Value, 2> consumedRoots;
+
+  /// When true, disarm with `mark_destroyed` instead of `mark_consumed`.
+  /// Non-movable payloads must reuse the subject's storage, so ending the
+  /// subject's LLVM lifetime with `mark_consumed` would invalidate them.
+  bool disarmWithDestroyed = false;
 
   CValue getPathValue(IREmitter &emitter, const PatternPath *path,
                       const ExprNode *expr, bool consume = false);
 
-  /// Mark every recorded aggregate as completely consumed.
+  /// Disarm every recorded aggregate (`mark_consumed` or `mark_destroyed`).
   void markConsumedRoots(IREmitter &emitter, Location loc);
 
   /// Transfer the direct children of an rvalue aggregate before materializing

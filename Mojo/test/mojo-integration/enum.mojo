@@ -477,12 +477,12 @@ def test_elementwise():
 # CHECK-LABEL: == consuming payloads
 def test_consuming_payloads():
     print("== consuming payloads")
-    # TODO(MOCO-5256): The lines below pin a known bug: a one-element payload is
-    # destroyed before the arm uses it, and again after. Once the transfer is
-    # fixed, it is destroyed once, after its use.
+    # A one-element movable payload is stolen, moved into the binding, then
+    # destroyed once after the arm. The subject is mark_consumed so its field
+    # destructor does not run.
     # CHECK-NEXT: init 7
     # CHECK-NEXT: move 7
-    # CHECK-NEXT: destroy 7
+    # CHECK-NEXT: move 7
     # CHECK-NEXT: enum consumed 7
     # CHECK-NEXT: destroy 7
     match Token.tracked(Tracked(7)):
@@ -492,7 +492,7 @@ def test_consuming_payloads():
             pass
     # CHECK-NEXT: init 8
     # CHECK-NEXT: move 8
-    # CHECK-NEXT: destroy 8
+    # CHECK-NEXT: move 8
     # CHECK-NEXT: optional consumed 8
     # CHECK-NEXT: destroy 8
     match Optional[Tracked](Tracked(8)):

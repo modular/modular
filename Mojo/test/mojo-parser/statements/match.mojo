@@ -1019,12 +1019,15 @@ def make_linear_tuple() -> Tuple[SomeLinearType, SomeLinearType]:
 
 # CHECK-LABEL: lit.fn @"match_rvalue_tuple_var_binding
 # CHECK:          lit.ref.to_pointer
-# CHECK:          [[X:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          [[X_STOLEN:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ref.to_pointer
 # CHECK:          [[UNBOUND:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.var.decl "anonymous*" synth
-# CHECK-NOT:      lit.var.decl "x" var
 # CHECK:          {{.*}}@"__init__(move{{.*}}([[UNBOUND]]
+# Movable stolen children are moved into a fresh VarDecl before mark_consumed
+# ends the subject's lifetime (storage reuse would UAF after VarLifetimeEnd).
+# CHECK:          [[X:%.*]] = lit.var.decl "x" var
+# CHECK:          {{.*}}@"__init__(move{{.*}}([[X_STOLEN]]
 # CHECK:          lit.ownership.mark_consumed
 # CHECK:          lit.ownership.use [[X]]
 # CHECK:          {{.*}}@"consume{{.*}}([[X]])
@@ -1082,9 +1085,11 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[CONSUMING_ELEMENT_PTR]]
 # CHECK-NEXT:      [[TRANSFER_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
 # CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[TRANSFER_PTR]] "(pattern child)" end_uninit
+# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
+# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}([[OWNED_PAYLOAD]]
 # CHECK-NEXT:      lit.ownership.mark_consumed [[SUBJECT]]
-# CHECK-NEXT:      lit.ownership.use [[OWNED_PAYLOAD]]
-# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[OWNED_PAYLOAD]])
+# CHECK-NEXT:      lit.ownership.use [[X]]
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
 # CHECK-NEXT:      hlcf.match.complete
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      hlcf.yield
