@@ -1913,7 +1913,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             UInt64(size_of[dtype]()),
         )
 
-    @inline(.always)
     def enqueue_cpu_range[
         FuncType: ImplicitlyCopyable & Deinitable & def(Int) -> None,
     ](self, func: FuncType, count: Int) raises:
@@ -1966,7 +1965,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             group._create_task(run(i), desired_worker_id=i % num_workers)
         group.wait[origin_of(func)._mlir_origin]()
 
-    @inline(.always)
     def enqueue_cpu_function[
         FuncType: ImplicitlyCopyable & Deinitable & def() -> None,
     ](self, func: FuncType) raises:
