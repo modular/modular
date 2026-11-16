@@ -44,6 +44,8 @@ protected:
   };
 
   bool yieldToOS();
+  // Mojo's SpinWaiter class contains inline storage for SpinWaiter<true>
+  // if this data member is changed remember to update std.utils.lock.mojo
   size_t iterations = 0;
 };
 } // namespace Detail

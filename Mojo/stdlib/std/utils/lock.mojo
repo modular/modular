@@ -19,7 +19,7 @@ shared resources in multi-threaded code.
 """
 
 from std.atomic import Atomic, Ordering
-from std.ffi import external_call
+from std.ffi import external_call, c_size_t
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter
@@ -29,27 +29,31 @@ from std.ffi import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer[MutUntrackedOrigin]
-    """Pointer to the underlying SpinWaiter instance."""
+    var storage: c_size_t
+    """Underlying SpinWaiter instance.
+    
+    This memory must be sized and aligned to accommodate a 
+    C++ SpinWaiter<true> class instance.
+    """
 
     def __init__(out self):
         """Initializes a SpinWaiter instance."""
-        self.storage = external_call[
-            "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer[MutUntrackedOrigin],
-        ]()
+        self.storage = 0
+        external_call["KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter", NoneType](
+            Pointer(to=self.storage)
+        )
 
     def __deinit__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
-            self.storage
+            Pointer(to=self.storage)
         )
 
-    def wait(self):
+    def wait(mut self):
         """Blocks the current task for a duration determined by the underlying
         policy."""
         external_call["KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait", NoneType](
-            self.storage
+            Pointer(to=self.storage)
         )
 
 

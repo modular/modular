@@ -161,9 +161,12 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel() {
 //===----------------------------------------------------------------------===//
 
 /// Creates a new SpinWaiter instance.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter() {
-  return new SpinWaiter<true>();
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter(AsyncRTSpinWaiterRef waiter) {
+  // Remember to update SpinWaiter in std.utils.lock.mojo if this size changes
+  static_assert(sizeof(SpinWaiter<true>) <= sizeof(size_t) &&
+                alignof(SpinWaiter<true>) <= alignof(size_t));
+  new (waiter) SpinWaiter<true>();
 }
 
 /// Waits on the SpinWaiter
@@ -175,5 +178,5 @@ KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(AsyncRTSpinWaiterRef waiter) {
 /// Destroys the given SpinWaiter.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(AsyncRTSpinWaiterRef waiter) {
-  delete waiter;
+  waiter->~SpinWaiter<true>();
 }
