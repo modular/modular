@@ -16567,13 +16567,12 @@ def block_scaled_preshuffle_grouped_scale_4d(
             one. ``None`` falls back to ``total_tokens``, which is correct but
             roughly ``top_k``-fold larger per slot than anything the matmul
             reads. Must be positive and bound ``max_num_tokens_per_expert`` at
-            every step: too small is silent corruption, since the matmul
-            strides past the allocation.
+            every step: too small raises at run time.
 
     Returns:
         Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * slot_rows,
         K_SCALES]``, where ``slot_rows`` is ``align_up(max_rows_per_expert,
-        32)`` or ``total_tokens``. The first ``num_active_experts *
+        32)`` or ``align_up(total_tokens, 32)``. The first ``num_active_experts *
         max_padded_M`` rows are written; the rest is left untouched but
         accessible, and is what ``max_rows_per_expert`` bounds.
     """
@@ -16604,12 +16603,16 @@ def block_scaled_preshuffle_grouped_scale_4d(
     # invisible at decode and fatal at prefill -- 896 experts x 105,760 rows x
     # 112 B is 10.6 GB where 665 MB is addressed, on a model with ~4 GB of
     # headroom. Padded to 32 here rather than at the call site so a caller
-    # cannot hand over an unpadded bound and read past the slot.
-    slot_rows = (
+    # cannot hand over an unpadded bound and read past the slot. The default
+    # needs the padding too: the kernel strides slots by
+    # `align_up(max_num_tokens_per_expert, 32)`, which exceeds an unpadded
+    # `total_tokens` whenever a step has fewer than 32 rows (every decode).
+    rows_bound = (
         a_scales.shape[0]
         if max_rows_per_expert is None
-        else ((max_rows_per_expert + 31) // 32) * 32
+        else max_rows_per_expert
     )
+    slot_rows = ((rows_bound + 31) // 32) * 32
     out_rows = num_experts * slot_rows
 
     return ops.custom(

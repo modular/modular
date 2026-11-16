@@ -370,6 +370,7 @@ def test_up_proj_dispatch_matmul_ab(
             padded_m_scalar,
             n_active_scalar,
             num_experts=n_experts,
+            max_rows_per_expert=padded_m,
         )
 
         est_m = ops.constant(total_tokens, dtype=DType.uint32, device=cpu_ref)

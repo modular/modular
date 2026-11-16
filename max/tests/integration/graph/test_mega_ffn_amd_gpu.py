@@ -130,19 +130,22 @@ def test_mega_ffn_amd_single_node_only(n_nodes: int, fused: bool) -> None:
     accelerator_api() != "hip", reason="the AMD MoE FFN is gfx950-only"
 )
 @pytest.mark.parametrize(
-    "regime, i",
+    "regime, i, tokens_per_expert",
     [
-        ("mega", I),
-        ("prefill_mega", I),
-        ("prefill_gemm", I),
-        ("chain", I),
+        ("mega", I, (16, 0, 21, 9)),
+        ("prefill_mega", I, (16, 0, 21, 9)),
+        ("prefill_gemm", I, (16, 0, 21, 9)),
+        ("chain", I, (16, 0, 21, 9)),
         # below the prefill kernels' K floor (512): the op takes the chain
-        ("prefill_mega", 256),
+        ("prefill_mega", 256, (16, 0, 21, 9)),
+        # a decode step: fewer rows in total than one 32-row scale slot
+        ("mega", I, (1, 0, 2, 1)),
     ],
 )
-def test_mega_ffn_amd_matches_chain(regime: str, i: int) -> None:
+def test_mega_ffn_amd_matches_chain(
+    regime: str, i: int, tokens_per_expert: tuple[int, ...]
+) -> None:
     n1 = 2 * i
-    tokens_per_expert = [16, 0, 21, 9]
     n_experts = len(tokens_per_expert)
     total = sum(tokens_per_expert)
     max_tok = max(tokens_per_expert)

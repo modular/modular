@@ -58,9 +58,9 @@ def test_fp6_format_code_rejects_unknown_names() -> None:
 # expert's is correct but roughly `top_k`-fold too large per slot, which is
 # invisible at decode and fatal at a 6610-token Kimi K3 prefill: 896 x 105,760
 # x 112 B is 10.6 GB on a model already at 305 of 309 GB. These pin that the
-# bound is opt-in (so MiniMax M3 and Kimi K2.5 are untouched) and that the
-# region the matmul addresses still fits inside what the bound allocates -- too
-# small a bound is silent corruption, not a crash.
+# bound is opt-in and that the region the kernel addresses fits inside what
+# either sizing allocates. Every slot strides by a multiple of 32 rows, so an
+# unpadded default overruns any step of fewer than 32 rows.
 _K3_EXPERTS, _K3_TOP_K, _K3_ROW_BOUND, _K3_K_SCALES = 896, 16, 8192, 112
 _M3_EXPERTS, _M3_TOP_K, _M3_ROW_BOUND, _M3_K_SCALES = 128, 4, 8192, 192
 
@@ -104,17 +104,19 @@ def _preshuffled_scale_rows(
     [
         (6610, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES),
         (6610, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
+        # Decode: one token's 4 rows, while each slot strides by 32.
+        (1, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
     ],
-    ids=["kimi_k3", "minimax_m3"],
+    ids=["kimi_k3", "minimax_m3", "minimax_m3_decode"],
 )
-def test_preshuffled_scale_buffer_defaults_to_the_post_expansion_count(
+def test_preshuffled_scale_buffer_defaults_to_the_padded_post_expansion_count(
     tokens: int, top_k: int, num_experts: int, k_scales: int
 ) -> None:
-    """Omitting the bound must reproduce the old shape byte for byte."""
-    assert (
-        _preshuffled_scale_rows(tokens, top_k, num_experts, k_scales, None)
-        == num_experts * tokens * top_k
-    )
+    """Without a bound, each slot holds the step's rows padded to 32."""
+    rows = _preshuffled_scale_rows(tokens, top_k, num_experts, k_scales, None)
+    assert rows == num_experts * ((tokens * top_k + 31) // 32) * 32
+    max_padded_m = ((tokens + 31) // 32) * 32
+    assert rows >= num_experts * max_padded_m
 
 
 @pytest.mark.parametrize(

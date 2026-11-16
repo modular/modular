@@ -18,6 +18,7 @@
 
 """Registers quantization and dequantization graph ops backed by the `quantization` and `linalg` kernels."""
 
+from std.math import align_up
 from std.sys import align_of
 from std.sys.info import size_of
 import extensibility
@@ -2353,6 +2354,13 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
         var dst_tt = output.to_tile_tensor[.float8_e8m0fnu]().bitcast[.uint8]()
         var a_off_tt = expert_start_indices.to_tile_tensor[.uint32]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
+        var slot_rows = align_up(Int(max_num_tokens_per_expert), 32)
+        if Int(num_active_experts) * slot_rows > Int(dst_tt.dim[0]()):
+            raise Error(
+                t"A-scale preshuffle needs {num_active_experts} slots of"
+                t" {slot_rows} rows, but its output holds"
+                t" {Int(dst_tt.dim[0]())} rows"
+            )
         # Persistent grid: one CTA per WG slot, grid-strides real tiles.
         # `cu_count * 2` matches the matmul's persistent dispatch (see
         # `PreShuffledBGroupedGEMM.total_wg`).
