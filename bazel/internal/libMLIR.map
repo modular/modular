@@ -86,6 +86,7 @@
       mlir::ROCDL::ROCDLDialect::*;
       mlir::ROCDL::ROCDLTargetAttr::*;
       mlir::ROCDL::SerializeGPUModuleBase::*;
+      mlir::scf::populateSCFStructuralTypeConversionsAndLegality?*;
       mlir::scf::SCFDialect::*;
       mlir::ub::PoisonOp::*;
       mlir::ub::UBDialect::*;
