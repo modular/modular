@@ -54,4 +54,7 @@ inkling_modulev3_arch = SupportedArchitecture(
     supports_device_graph_capture=True,
     checkpoints_recurrent_state=True,
     reasoning_parser="inkling",
+    checkpoint_drafts={"mtp": "MTPInklingDraftModel"},
+    # Mach binds the fused graph by this name, the graph-API pairing's.
+    spec_decode_graph_names={"mtp": "inkling_with_mtp_graph"},
 )

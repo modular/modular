@@ -112,6 +112,9 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "HYV4ForCausalLM_ModuleV3": ".hy_v4.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
+    "InklingForConditionalGeneration_ModuleV3": (
+        ".inkling_modulev3.spec_adapters"
+    ),
     "KimiK25ForConditionalGeneration": ".kimik2_5.spec_adapters",
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",
     "KimiK3ForConditionalGeneration_ModuleV3": (

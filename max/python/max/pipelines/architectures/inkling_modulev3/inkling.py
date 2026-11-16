@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -22,7 +22,7 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType, TensorValue
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
@@ -108,12 +108,17 @@ class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
         kv_params: MHAKVCacheParams,
         num_devices: int,
         quant_config: QuantConfig | None = None,
+        is_local: bool | None = None,
+        force_dense_mlp: bool = False,
+        commit_conv_state: bool = True,
     ) -> None:
         """Builds one layer's norms, attention, convs, and feed-forward.
 
         A routed-expert layer takes ``quant_config`` for its experts when
         ``layer_idx`` appears in its quantized layers; the sinks and the gate
-        stay at dtype.
+        stay at dtype. An MTP depth names its own attention flavor in
+        ``is_local``, runs a dense feed-forward, and doesn't commit its conv
+        inputs.
         """
         hidden = text_config.hidden_size
         self.attn_norm = InklingRMSNorm(hidden, eps=text_config.rms_norm_eps)
@@ -122,16 +127,20 @@ class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             layer_idx=layer_idx,
             kv_params=kv_params,
             num_devices=num_devices,
+            is_local=is_local,
+            commit_conv_state=commit_conv_state,
         )
         # Replicated: each rank convolves its full-width partial sum of the
         # branch output. The convolution's linearity makes reducing
         # afterwards equivalent to reducing first.
         self.attn_sconv = ShortConvolution(
-            channels=hidden, kernel_size=text_config.sconv_kernel_size
+            channels=hidden,
+            kernel_size=text_config.sconv_kernel_size,
+            commit_conv_state=commit_conv_state,
         )
         self.mlp_norm = InklingRMSNorm(hidden, eps=text_config.rms_norm_eps)
         self.mlp: InklingMoE | InklingDenseMLP
-        if text_config.is_moe_layer(layer_idx):
+        if text_config.is_moe_layer(layer_idx) and not force_dense_mlp:
             # Only routed experts quantize; sinks and gate stay at dtype.
             routed_quant = (
                 quant_config
@@ -154,7 +163,9 @@ class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
                 hidden, text_config.dense_intermediate_size
             )
         self.mlp_sconv = ShortConvolution(
-            channels=hidden, kernel_size=text_config.sconv_kernel_size
+            channels=hidden,
+            kernel_size=text_config.sconv_kernel_size,
+            commit_conv_state=commit_conv_state,
         )
 
     def forward(
@@ -256,9 +267,13 @@ class Inkling(Module[..., ModuleV3Outputs]):
         masks the padded vocabulary tail with ``-inf`` when the unpadded size
         is the smaller one.
         """
-        if return_hidden_states != ReturnHiddenStates.NONE:
+        if return_hidden_states not in (
+            ReturnHiddenStates.NONE,
+            ReturnHiddenStates.ALL_NORMALIZED,
+        ):
             raise NotImplementedError(
-                "Inkling ModuleV3 does not return hidden states"
+                "Inkling ModuleV3 returns no"
+                f" {return_hidden_states.value} hidden states"
             )
         text_config = config.text_config
         self.text_config = text_config
@@ -367,35 +382,57 @@ class Inkling(Module[..., ModuleV3Outputs]):
                 image_indices,
             )
         )
-        replicated = tokens.mapping
-
         kv_tree = self.kv_params.unflatten_kv_inputs(
             iter(kv_input_values(kv_inputs))
         )
-        kv_collections = {
-            key: PagedCacheValues.from_upstream(
-                tree.leaves(child, leaf=KVCacheInputsPerDevice), replicated
-            )
-            for key, child in kv_tree.items()
-            if key != STATE_CACHE_KEY
-        }
+        assert STATE_CACHE_KEY in kv_tree, (
+            "Inkling always convolves; the cache declared no conv-state child"
+        )
+        h = self.hidden_states(
+            tokens,
+            input_row_offsets,
+            image_embeddings,
+            image_indices,
+            {
+                key: PagedCacheValues.from_upstream(
+                    tree.leaves(child, leaf=KVCacheInputsPerDevice),
+                    tokens.mapping,
+                )
+                for key, child in kv_tree.items()
+                if key != STATE_CACHE_KEY
+            },
+            tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            ),
+        )
+        return self._logits(
+            h, input_row_offsets, first_row_offsets, return_n_logits
+        )
+
+    def hidden_states(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        image_embeddings: Tensor,
+        image_indices: Tensor,
+        kv_collections: Mapping[str, PagedCacheValues],
+        conv_state: Sequence[RecurrentStateInputsPerDevice[Any, Any]],
+    ) -> Tensor:
+        """Returns the residual stream after the last layer, before the norm.
+
+        Takes the tokens, row offsets and image inputs replicated over the
+        mesh, the attention caches by flavor, and the conv state's leaves per
+        device. Spec decoding's verify projects its own logits and hidden
+        states from it.
+        """
+        mesh = self.norm.weight.mesh
         positions = _token_positions(
             input_row_offsets,
             next(iter(kv_collections.values())).cache_lengths,
             tokens.shape[0],
         )
-        assert STATE_CACHE_KEY in kv_tree, (
-            "Inkling always convolves; the cache declared no conv-state child"
-        )
-        pools, slot_rows = self._conv_state(
-            tree.leaves(
-                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
-            ),
-            mesh,
-            replicated,
-        )
+        pools, slot_rows = self._conv_state(conv_state, mesh, tokens.mapping)
 
-        h = self.embed(tokens)
         # Every rank needs the positions for its conv rings.
         log_scaling = as_replicated(
             _log_scaling_tau(
@@ -405,11 +442,11 @@ class Inkling(Module[..., ModuleV3Outputs]):
             ),
             mesh,
         )
-        if self.embed_norm is not None:
-            h = self.embed_norm(h)
         # Merged after the embedding norm, so the tower's rows skip it.
         h = as_replicated(
-            _merge_multimodal_embeddings(h, image_embeddings, image_indices),
+            _merge_multimodal_embeddings(
+                self.embed_tokens(tokens), image_embeddings, image_indices
+            ),
             mesh,
         )
 
@@ -444,10 +481,14 @@ class Inkling(Module[..., ModuleV3Outputs]):
                 ),
             )
         # Only the last layer's delta is still unreduced.
-        h = h + reduce_partial(delta)
-        return self._logits(
-            h, input_row_offsets, first_row_offsets, return_n_logits
-        )
+        return h + reduce_partial(delta)
+
+    def embed_tokens(self, tokens: Tensor) -> Tensor:
+        """Embeds ``tokens`` and applies the embedding norm, if the model has one."""
+        h = self.embed(tokens)
+        if self.embed_norm is not None:
+            h = self.embed_norm(h)
+        return h
 
     @staticmethod
     def _broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
@@ -461,7 +502,7 @@ class Inkling(Module[..., ModuleV3Outputs]):
 
     def _conv_state(
         self,
-        per_device: list[RecurrentStateInputsPerDevice[TensorValue, Any]],
+        per_device: Sequence[RecurrentStateInputsPerDevice[Any, Any]],
         mesh: DeviceMesh,
         replicated: DeviceMapping,
     ) -> tuple[list[Tensor], list[Tensor]]:
@@ -500,7 +541,7 @@ class Inkling(Module[..., ModuleV3Outputs]):
             )
         return pools, rows
 
-    def _lm_head(self, h: Tensor) -> Tensor:
+    def project_logits(self, h: Tensor) -> Tensor:
         """Projects normed rows to float32 logits on the first device."""
         logits = self.unembed(self.norm(h))
         if logits.is_distributed:
@@ -526,39 +567,51 @@ class Inkling(Module[..., ModuleV3Outputs]):
         return_n_logits: Tensor,
     ) -> ModuleV3Outputs:
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = self._lm_head(last_h)
+        last_logits = self.project_logits(last_h)
         logits: Tensor | None = None
         offsets: Tensor | None = None
         if self.return_logits == ReturnLogits.VARIABLE:
-            count = return_n_logits[0]
-            distance = F.range(
-                count,
-                0,
-                -1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=h.mesh,
+            logits, offsets = self.variable_logits(
+                h, input_row_offsets, return_n_logits
             )
-            indices = (input_row_offsets[1:].unsqueeze(-1) - distance).reshape(
-                (-1,)
-            )
-            logits = self._lm_head(F.gather(h, indices, axis=0))
-            offsets = F.range(
-                0,
-                indices.shape[0] + count,
-                count,
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=h.mesh,
-            ).local_shards[0]
         elif self.return_logits == ReturnLogits.ALL:
-            logits = self._lm_head(h)
+            logits = self.project_logits(h)
             offsets = first_row_offsets
         return ModuleV3Outputs(
             next_token_logits=last_logits,
             logits=logits,
             logit_offsets=offsets,
         )
+
+    def variable_logits(
+        self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Returns the logits of each sequence's last ``return_n_logits`` rows.
+
+        Also returns their row offsets, on the first device.
+        """
+        count = return_n_logits[0]
+        distance = F.range(
+            count,
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=h.mesh,
+        )
+        indices = (input_row_offsets[1:].unsqueeze(-1) - distance).reshape(
+            (-1,)
+        )
+        logits = self.project_logits(F.gather(h, indices, axis=0))
+        offsets = F.range(
+            0,
+            indices.shape[0] + count,
+            count,
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=h.mesh,
+        ).local_shards[0]
+        return logits, offsets
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
         """Graph input types, in the order :meth:`forward` consumes them."""

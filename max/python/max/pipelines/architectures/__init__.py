@@ -370,6 +370,11 @@ def register_all_models() -> None:
             "MTPInklingDraftModel", ".mtp_inkling", "mtp_inkling_draft_arch"
         ),
         _LazyArch(
+            "MTPInklingDraftModel_ModuleV3",
+            ".mtp_inkling_modulev3",
+            "mtp_inkling_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "MTPQwen3_5DraftModel", ".mtp_qwen3_5", "mtp_qwen3_5_draft_arch"
         ),
         _LazyArch(
