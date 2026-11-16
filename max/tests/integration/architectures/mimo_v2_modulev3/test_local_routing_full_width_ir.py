@@ -112,29 +112,19 @@ def _load_post_fusion_ir(
     )
 
 
-def _attention_allreduces(config: MiMoV2Config) -> list[int]:
-    """Returns the op indices of every layer's attention reduction.
-
-    A layer's `2 * layer`-th allreduce is its attention output's; the
-    `2 * layer + 1`-th is its MLP or MoE output's.
-    """
-    return [
-        ALLREDUCES_PER_LAYER * layer for layer in range(len(config.layer_types))
-    ]
+def _moe_attention_allreduces(config: MiMoV2Config) -> list[int]:
+    """Op indices of the MoE layers' attention reductions, in execution order."""
+    return [ALLREDUCES_PER_LAYER * layer for layer in sorted(config.moe_layers)]
 
 
-def test_full_width_production_fuses_every_attention_allreduce(
+def test_full_width_production_fuses_only_moe_attention_allreduces(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pins which of production's full-width allreduces fuse, per op index.
 
-    A layer's attention boundary is allreduce + residual add + the norm in
-    front of its MLP or MoE, which is exactly the composite, and that norm's
-    FP8 quantize folds into the same composite whether it scales in 1x128
-    groups (the dense layer) or in block groups (the MoE layers). The MLP
-    output reductions do not fuse, because the next layer's norm is inside the
-    norm-plus-quantize op its projection already runs. The replica trace test
-    compares against the same indices.
+    The dense layer's norm feeds the MLP's 1x128 FP8 quantize, which the
+    composite cannot take, so only the MoE layers' attention reductions
+    fuse. The replica trace test compares against the same indices.
 
     The same compile also pins where the router gate's weight cast runs (see
     `_assert_gate_cast_runs_at_init`), since only a full-width gate takes the
@@ -164,7 +154,7 @@ def test_full_width_production_fuses_every_attention_allreduce(
         name=MiMoV2Decoder.graph_name,
     )
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
-    assert fused_allreduces(ir) == _attention_allreduces(config)
+    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
     _assert_gate_cast_runs_at_init(tmp_path)
 
 
@@ -218,7 +208,7 @@ def test_full_width_replica_trace_fuses_as_production(
     ir = _load_post_fusion_ir(staged.graph, registry, tmp_path)
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
-    assert fused_allreduces(ir) == _attention_allreduces(config)
+    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
 
 
 @pytest.fixture(scope="module")
@@ -274,7 +264,7 @@ def test_replica_trace_loads_and_preserves_production_fusion(
     ops = allreduce_ops(ir)
     assert len(ops) == ALLREDUCES_PER_LAYER * len(config.layer_types), ops
     assert_allreduce_form(ir)
-    assert fused_allreduces(ir) == _attention_allreduces(config)
+    assert fused_allreduces(ir) == _moe_attention_allreduces(config)
 
 
 def test_replica_weights_stage_the_real_first_four_layers(

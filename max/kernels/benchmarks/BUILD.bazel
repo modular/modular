@@ -115,11 +115,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # No multi-GPU Metal machines exist; needs P2P
-    "gpu/comm/bench_mcast_rmsnorm.mojo": select({
-        "//:b200_gpu": [],
-        "//:h100_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),  # The window needs ::multimem, which only SM90+ NVIDIA GPUs have
     "gpu/comm/bench_reducescatter_rmsnorm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -405,11 +400,6 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
-            # Dedicated `mojo_binary` below: the multicast arm the boundary's
-            # window serves is compiled in only under
-            # `MODULAR_MULTICAST_ALLREDUCE_RMS_NORM`, which the generic glob
-            # cannot pass.
-            "gpu/comm/bench_mcast_rmsnorm.mojo",
         ],
     )
 ]
@@ -461,57 +451,9 @@ mojo_binary(
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
-            # Dedicated `mojo_binary` below, with the arm's define.
-            "gpu/comm/bench_mcast_rmsnorm.mojo",
         ],
     )
 ]
-
-# The multicast residual boundary's window and kernel arms, timed per call at
-# the shapes MiMo-V2's decode step runs. The arm is compiled in only under
-# `MODULAR_MULTICAST_ALLREDUCE_RMS_NORM`, which is why this source leaves the
-# generic glob: the same reason `bench_qwen38_decode_attn` carries its defines.
-mojo_binary(
-    name = "gpu/comm/bench_mcast_rmsnorm",
-    srcs = ["gpu/comm/bench_mcast_rmsnorm.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM=1",
-    ],
-    data = select({
-        "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
-        "//conditions:default": [],
-    }),
-    enable_assertions = False,
-    env = select({
-        "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
-        "//conditions:default": {},
-    }),
-    # The arm stores through `multimem` and exchanges through a team-wide
-    # window, so it needs an SM90+ NVIDIA team: the same constraint its sibling
-    # test carries.
-    target_compatible_with = select({
-        "//:b200_gpu": ["//:has_multi_gpu"],
-        "//:h100_gpu": ["//:has_multi_gpu"],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:comm",
-        "//max:internal_utils",
-        "//max:layout",
-        "//max:max_mojo",
-        "//max:nn",
-        "//max:shmem",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
-
-build_test(
-    name = "gpu/comm/bench_mcast_rmsnorm.mojo.test",
-    tags = ["gpu"],
-    targets = ["gpu/comm/bench_mcast_rmsnorm"],
-)
 
 # SM100 BF16 grouped matmul per token tile width at one routed-rows shape
 # (`--test_arg=--counts=...`, `--ids=...`); timed on remote B200.

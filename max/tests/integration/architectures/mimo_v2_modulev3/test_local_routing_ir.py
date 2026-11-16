@@ -245,13 +245,13 @@ def test_four_device_forward_ir_reduces_on_every_device(
         post_fusion, len(config.layer_types)
     )
     if layout == "tp_tp":
-        # Every layer's attention boundary fuses: the norm in front of the MLP
-        # or MoE is the composite's epilogue. Only the dense layer's boundary
-        # takes the FP8 quantize that norm feeds along with it; a MoE layer's
-        # quantize runs inside the shared MoE subgraph, behind its own
-        # reductions, so those composites are the reduction, the residual add
-        # and the norm alone.
-        assert len(fused_allreduces(post_fusion)) == len(config.layer_types)
+        # The composite writes one scale a row, so it takes only a per-token
+        # quantize. The dense layer's MLP takes a 1x128 one, narrower than the
+        # row, so that layer's whole boundary stays unfused. A MoE layer's
+        # quantize runs inside the shared MoE subgraph, the norm's only reader,
+        # so that composite is the reduction, the residual add and the norm
+        # alone.
+        assert len(fused_allreduces(post_fusion)) == len(config.moe_layers)
     # Two non-router broadcasts carry the graph inputs. The shared MoE
     # subgraph must not contain its two router-result broadcasts.
     assert len(treatment_broadcasts) == 2, treatment_broadcasts
@@ -266,7 +266,7 @@ def test_four_device_verify_ir_reduces_on_every_device(
     treatment_broadcasts = _assert_local_routing_ir(
         post_fusion, len(config.layer_types)
     )
-    assert len(fused_allreduces(post_fusion)) == len(config.layer_types)
+    assert len(fused_allreduces(post_fusion)) == len(config.moe_layers)
     # The verify graph carries the same two non-router input broadcasts.
     assert len(treatment_broadcasts) == 2, treatment_broadcasts
 

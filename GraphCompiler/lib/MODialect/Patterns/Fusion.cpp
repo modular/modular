@@ -1378,15 +1378,6 @@ static bool normMatchesInputDtype(MO::Composite::ReduceRMSNormOp rmsNormOp,
   return normTy && normTy.hasRank() && normTy.getDtype() == inputTy.getDtype();
 }
 
-/// Whether the composite being matched serves a scale per group of columns.
-///
-/// The distributed op carries the group as an attribute and writes it in the
-/// multicast arm's launch, or -- where that arm is not compiled in, or does not
-/// fit the shape -- by staging the normed rows for the quantizer. The bundled
-/// op has no group attribute at all and its handler writes one scale a row, so
-/// a narrower group must not fold into it.
-enum class GroupedEpilogue { kServed, kPerTokenOnly };
-
 /// Validates the fused `allreduce + add + rms_norm [+ quantize_fp8]` chain.
 /// `inputTy` is the tensor type entering the add op (the allreduce output on
 /// the relevant device); a null `quantizeOp` is the chain that stops at the
@@ -1394,8 +1385,7 @@ enum class GroupedEpilogue { kServed, kPerTokenOnly };
 static bool
 verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
                          MO::Composite::ReduceRMSNormOp rmsNormOp,
-                         MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp,
-                         GroupedEpilogue groupedEpilogue) {
+                         MO::Composite::QuantizeDynamicScaledFP8Op quantizeOp) {
   if (!inputTy.hasRank())
     return false;
   // The fused kernel needs P2P between the peers and flattens to [rows, cols].
@@ -1412,21 +1402,11 @@ verifyFusedAllReducePath(TensorType inputTy, MO::AddOp residualOp,
     // quantize op that asks for one must stay unfused.
     if (quantizeOp.getAmaxFloor())
       return false;
-    // A grouped epilogue fuses too, in the composite that can name it: the
-    // distributed op writes the scales itself, either in the boundary kernel's
-    // own launch (the multicast arm, for the 1x128-group shape it ports) or by
-    // running the quantizer over the normed rows it stages in the input dtype.
-    // Both produce the scales the grouped quantize would, so the group has to
-    // be a whole number of columns of the row. `-1` is the per-token scale and
-    // a group the width of the row is the same epilogue, so both stay.
+    // The fused kernel writes one scale a row, so only a per-token quantize
+    // folds: `-1`, or a group the width of the row. A narrower group stays
+    // unfused.
     int64_t groupSize = quantizeOp.getGroupSizeOrPerToken().getSExtValue();
-    int64_t cols = inputTy.getIntDim(rank - 1);
-    if (groupSize != -1 && (groupSize > cols || cols % groupSize != 0))
-      return false;
-    // A narrower group is the grouped epilogue, which only a composite that
-    // names the group can write.
-    if (groupedEpilogue == GroupedEpilogue::kPerTokenOnly && groupSize > 0 &&
-        groupSize < cols)
+    if (groupSize != -1 && groupSize != inputTy.getIntDim(rank - 1))
       return false;
   } else {
     // out_dtype == in_dtype is what turns the kernel's quantize phases off.
@@ -1453,10 +1433,9 @@ static TensorType makeUnwrittenScaleType(TensorType normTy) {
 struct FuseAllReduceAddRMSNormQuantFP8PatternMatcher {
 public:
   FuseAllReduceAddRMSNormQuantFP8PatternMatcher(MO::AllReduceSumOp allReduceOp,
-                                                DeviceRefAttr targetDevice,
-                                                GroupedEpilogue groupedEpilogue)
+                                                DeviceRefAttr targetDevice)
       : allReduceOp(allReduceOp), targetDevice(targetDevice),
-        groupedEpilogue(groupedEpilogue), builder(allReduceOp->getContext()) {}
+        builder(allReduceOp->getContext()) {}
 
   void apply() {
     unsigned devicesCount = allReduceOp.getOutputs().size();
@@ -1484,24 +1463,12 @@ public:
           rmsNormOp.getMultiplyBeforeCast() !=
               firstNorm.getMultiplyBeforeCast())
         return;
-    // One epilogue for every device too, and whether it folds in at all. The
-    // folded epilogue makes the composite's output the quantized rows, so it
-    // replaces the norm's result: a chain whose norm is read by anything other
-    // than the quantize keeps the composite that stops at the norm, or that
-    // other reader would be left without the rows it asked for. The group size
-    // is what the epilogue reads: `-1` (or a group the width of the row) is the
-    // per-token scale the kernel writes for every row, and a narrower group is
-    // the grouped epilogue it writes or stages.
-    int64_t quantGroupSize = -1;
-    foldsQuantize = quantizes;
-    if (quantizes) {
-      quantGroupSize = quantGroupSizes.begin()->second;
-      for (auto &[device, groupSize] : quantGroupSizes)
-        if (groupSize != quantGroupSize)
-          return;
-      if (!normFeedsOnlyTheQuantize())
-        foldsQuantize = false;
-    }
+    // Whether the quantize folds in at all. The folded epilogue makes the
+    // composite's output the quantized rows, so it replaces the norm's result:
+    // a chain whose norm is read by anything other than the quantize keeps the
+    // composite that stops at the norm, or that other reader would be left
+    // without the rows it asked for.
+    foldsQuantize = quantizes && normFeedsOnlyTheQuantize();
 
     builder.setInsertionPointAfter(allReduceOp);
     // The stand-in for `scale_ub` is the compiler's own value, not something
@@ -1545,9 +1512,7 @@ public:
             /*inChain=*/allReduceOp.getInChain(),
             /*epsilon=*/firstNorm.getEpsilonAttr(),
             /*weight_offset=*/firstNorm.getWeightOffsetAttr(),
-            /*multiply_before_cast=*/firstNorm.getMultiplyBeforeCastAttr(),
-            /*group_size_or_per_token=*/
-            builder.getIndexAttr(foldsQuantize ? quantGroupSize : -1));
+            /*multiply_before_cast=*/firstNorm.getMultiplyBeforeCastAttr());
 
     allReduceOp.getOutChain().replaceAllUsesWith(
         allReduceFusedOp.getOutChain());
@@ -1573,20 +1538,12 @@ public:
 private:
   MO::AllReduceSumOp allReduceOp;
   DeviceRefAttr targetDevice;
-  // Which grouped epilogue the composite may carry: the non-bundled matcher
-  // serves the grouped one, whose scales the distributed op's own handler
-  // writes.
-  GroupedEpilogue groupedEpilogue;
   OpBuilder builder;
   llvm::DenseMap<DeviceRefAttr, MO::AddOp> residualOps;
   llvm::DenseMap<DeviceRefAttr, MO::Composite::ReduceRMSNormOp> rmsNormOps;
   llvm::DenseMap<DeviceRefAttr, MO::Composite::QuantizeDynamicScaledFP8Op>
       quantizeOps;
   llvm::DenseMap<DeviceRefAttr, Value> residualValues;
-  // Per device, the quantize's group size when it is a proper divisor of the
-  // row (-1 for a per-token scale), which is what tells the two epilogues
-  // apart.
-  llvm::DenseMap<DeviceRefAttr, int64_t> quantGroupSizes;
   bool quantizes = false;
   // Whether the composite's own launch writes the quantized output, which it
   // cannot when the norm has a reader besides the quantize.
@@ -1664,19 +1621,13 @@ private:
     matchQuantizeOp(rmsNormOp.getResult(), quantizeOp);
 
     if (!verifyFusedAllReducePath(allReduceOut.getType(), residualOp, rmsNormOp,
-                                  quantizeOp, groupedEpilogue))
+                                  quantizeOp))
       return false;
 
     residualOps[device] = residualOp;
     rmsNormOps[device] = rmsNormOp;
-    if (quantizeOp) {
+    if (quantizeOp)
       quantizeOps[device] = quantizeOp;
-      TensorType inputTy = allReduceOut.getType();
-      int64_t groupSize = quantizeOp.getGroupSizeOrPerToken().getSExtValue();
-      int64_t cols = inputTy.getIntDim(inputTy.getRank() - 1);
-      quantGroupSizes[device] =
-          groupSize > 0 && groupSize < cols ? groupSize : -1;
-    }
     residualValues[device] = residualValue;
     return true;
   }
@@ -1837,8 +1788,7 @@ private:
       auto launchTy = dyn_cast<TensorType>(launchAllredOut.getType());
       if (!launchTy)
         return false;
-      if (!verifyFusedAllReducePath(launchTy, addOp, rmsNormOp, quantizeOp,
-                                    GroupedEpilogue::kPerTokenOnly))
+      if (!verifyFusedAllReducePath(launchTy, addOp, rmsNormOp, quantizeOp))
         return false;
       if (!claimedAdds.insert(addOp.getOperation()).second ||
           !claimedNorms.insert(rmsNormOp.getOperation()).second ||
@@ -3802,8 +3752,8 @@ private:
 
 void applyFuseAllReduceAddRMSNormQuantFP8(MO::AllReduceSumOp allReduceOp,
                                           M::DeviceRefAttr targetDeviceRef) {
-  FuseAllReduceAddRMSNormQuantFP8PatternMatcher fuser(
-      allReduceOp, targetDeviceRef, GroupedEpilogue::kServed);
+  FuseAllReduceAddRMSNormQuantFP8PatternMatcher fuser(allReduceOp,
+                                                      targetDeviceRef);
   fuser.apply();
 }
 

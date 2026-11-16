@@ -478,18 +478,11 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
   let description = [{
     Sum-reduces same-shaped per-device inputs, adds the residual, then applies
     RMSNorm and dynamic FP8 quantization. Returns the quantized output, its
-    scale, and the post-add residual.
+    scale, and the post-add residual. The scale is one per row; a quantize
+    with a narrower scale group stays unfused.
 
     `multiply_before_cast` is the fused `mo.composite.reduce.rms_norm`'s cast order. It
     may be false only when the output is not quantized.
-
-    `group_size_or_per_token` is the quantized epilogue's scale granularity, as
-    on `mo.composite.quantize_dynamic_scaled_fp8`: `K` gives one scale per `K`
-    columns of a row, and the attribute's default `-1` is the per-token scale
-    the kernel has always written. A grouped epilogue is written in the
-    boundary kernel's own launch where its multicast arm serves the shape, and
-    otherwise by running the quantizer over the normed rows the kernel stages in
-    a workspace outside graph memory planning.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -500,8 +493,7 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    BoolAttr:$multiply_before_cast,
-    DefaultValuedAttr<IndexAttr, "-1">:$group_size_or_per_token
+    BoolAttr:$multiply_before_cast
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -512,8 +504,7 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
-    `multiply_before_cast` `=` $multiply_before_cast
-    (`,` `group_size_or_per_token` `=` $group_size_or_per_token^)? `}`
+    `multiply_before_cast` `=` $multiply_before_cast `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }

@@ -17,10 +17,10 @@ mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_fused_location(
   %allred:2, %out_chain = "mo.distributed.allreduce.sum"(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:1>, !mo.buffer<[64], ui8, gpu:0>, !mo.buffer<[64], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:1>, !mo.chain) loc("allreduce")
   %add0 = "mo.add"(%res0, %allred#0) : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:0>) -> !mo.tensor<[4, 8], bf16, gpu:0> loc("add0")
   %norm0 = "mo.composite.reduce.rms_norm"(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[4, 8], bf16, gpu:0> loc("norm0")
-  %q0:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm0, %scale_ub) {group_size_or_per_token = 4 : index} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[2, 4], bf16, gpu:0>) loc("quantize0")
+  %q0:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm0, %scale_ub) {group_size_or_per_token = 8 : index} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[1, 4], bf16, gpu:0>) loc("quantize0")
   %add1 = "mo.add"(%res1, %allred#1) : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[4, 8], bf16, gpu:1>) -> !mo.tensor<[4, 8], bf16, gpu:1> loc("add1")
   %norm1 = "mo.composite.reduce.rms_norm"(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[4, 8], bf16, gpu:1> loc("norm1")
-  %q1:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm1, %scale_ub) {group_size_or_per_token = 4 : index} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.tensor<[2, 4], bf16, gpu:1>) loc("quantize1")
+  %q1:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm1, %scale_ub) {group_size_or_per_token = 8 : index} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.tensor<[1, 4], bf16, gpu:1>) loc("quantize1")
   mo.output %q0#0, %q1#0, %out_chain : !mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.chain
 }
 
@@ -48,10 +48,10 @@ mo.graph @all_reduce_rms_norm_quantize_dynamic_scaled_fp8_tapped_location(
   %allred:2, %out_chain = "mo.distributed.allreduce.sum"(%in0, %in1, %sig0, %sig1, %c) : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:1>, !mo.buffer<[64], ui8, gpu:0>, !mo.buffer<[64], ui8, gpu:1>, !mo.chain) -> (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:1>, !mo.chain) loc("allreduce_tapped")
   %add0 = "mo.add"(%res0, %allred#0) : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:0>) -> !mo.tensor<[4, 8], bf16, gpu:0> loc("add0_tapped")
   %norm0 = "mo.composite.reduce.rms_norm"(%add0, %gamma0) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[8], bf16, gpu:0>) -> !mo.tensor<[4, 8], bf16, gpu:0> loc("norm0_tapped")
-  %q0:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm0, %scale_ub) {group_size_or_per_token = 4 : index} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[2, 4], bf16, gpu:0>) loc("quantize0_tapped")
+  %q0:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm0, %scale_ub) {group_size_or_per_token = 8 : index} : (!mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[1, 4], bf16, gpu:0>) loc("quantize0_tapped")
   %add1 = "mo.add"(%res1, %allred#1) : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[4, 8], bf16, gpu:1>) -> !mo.tensor<[4, 8], bf16, gpu:1> loc("add1_tapped")
   %norm1 = "mo.composite.reduce.rms_norm"(%add1, %gamma1) {epsilon = #M.dense_array<1.0e-06> : tensor<f32>, weight_offset = #M.dense_array<0.0> : tensor<f32>, multiply_before_cast = true} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[8], bf16, gpu:1>) -> !mo.tensor<[4, 8], bf16, gpu:1> loc("norm1_tapped")
-  %q1:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm1, %scale_ub) {group_size_or_per_token = 4 : index} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.tensor<[2, 4], bf16, gpu:1>) loc("quantize1_tapped")
+  %q1:2 = "mo.composite.quantize_dynamic_scaled_fp8"(%norm1, %scale_ub) {group_size_or_per_token = 8 : index} : (!mo.tensor<[4, 8], bf16, gpu:1>, !mo.tensor<[], f32>) -> (!mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.tensor<[1, 4], bf16, gpu:1>) loc("quantize1_tapped")
   mo.output %q0#0, %q1#0, %norm0, %norm1, %out_chain : !mo.tensor<[4, 8], f8e4m3fn, gpu:0>, !mo.tensor<[4, 8], f8e4m3fn, gpu:1>, !mo.tensor<[4, 8], bf16, gpu:0>, !mo.tensor<[4, 8], bf16, gpu:1>, !mo.chain
 }
 
