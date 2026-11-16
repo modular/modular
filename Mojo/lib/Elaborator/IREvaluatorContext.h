@@ -22,6 +22,8 @@
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/Threading/Shared.h"
 
+#include <atomic>
+
 namespace M::KGEN {
 
 //===----------------------------------------------------------------------===//
@@ -34,7 +36,7 @@ struct ImplNodeBase {
       : inst(inst), paramGraph(std::move(graph)) {}
 
   ImplNodeBase(Region &scope) : paramGraph(scope) {}
-  virtual ~ImplNodeBase() = default;
+  virtual ~ImplNodeBase() { delete errorPtr.load(std::memory_order_relaxed); }
 
   /// Initialize the fields of the node if created with the single-argument
   /// constructor above.
@@ -42,18 +44,42 @@ struct ImplNodeBase {
 
   virtual void setToError(ErrorTree &&err) = 0;
 
+  /// Records the node's first error. A node is reachable from more than one
+  /// elaboration path (concurrent tasks, or a suspended node resumed after a
+  /// blocker errored), so a second error is expected; the first one is the
+  /// root cause, so keep it.
+  void setFirstError(ErrorTree &&err) {
+    ErrorTree *published = new ErrorTree(std::move(err));
+    ErrorTree *expected = nullptr;
+    if (!errorPtr.compare_exchange_strong(expected, published,
+                                          std::memory_order_release)) {
+      // Lost the race to another path's error; ours is not the root cause.
+      delete published;
+    }
+  }
+  /// Whether the node has recorded an error. Safe against a concurrent
+  /// `setFirstError`.
+  bool recordedError() const {
+    return errorPtr.load(std::memory_order_acquire) != nullptr;
+  }
+  /// Copies the node's error, or nullopt. Safe against a concurrent
+  /// `setFirstError`.
+  std::optional<ErrorTree> copyError() const {
+    if (ErrorTree *err = errorPtr.load(std::memory_order_acquire))
+      return err->copy();
+    return std::nullopt;
+  }
+
   /// This op represents a concrete instantiation of a generator.
   InstantiatedOpInterface inst;
 
   /// Keep track of the nested parameter scopes within this symbol.
   ParameterUseDefGraph paramGraph;
 
-  /// An error contained by this node. This allows us to delay error handling in
-  /// cases where an error is recoverable.
-  std::optional<ErrorTree> error;
-  /// An atomic indicating whether an error is present. This can be used to
-  /// check for an error when the ImplNode is shared.
-  std::atomic<bool> hasError = false;
+  /// The first error recorded by this node, published with release ordering.
+  /// A node is processed by more than one task over its life, so it is only
+  /// touched through `setFirstError`/`recordedError`/`copyError`.
+  std::atomic<ErrorTree *> errorPtr = nullptr;
 
   /// The elaborator will asynchronously dispatch elaboration of generator
   /// instantiations with no result parameters in separate tasks, deferring

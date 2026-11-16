@@ -72,33 +72,7 @@ PImplNode::PImplNode(PParamNode *parent)
   return mutex;
 }
 
-void PImplNode::setToError(ErrorTree &&err) {
-  if (error) {
-#ifndef MODULAR_PRODUCTION
-    std::lock_guard<std::mutex> guard(getGlobalMutex());
-    llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: ";
-    if (parent && parent->gen)
-      llvm::errs() << parent->getMangledName().strref();
-    else if (inst)
-      llvm::errs() << inst.getName();
-    else
-      llvm::errs() << "[ROOT NODE]";
-    llvm::errs() << "\n";
-    ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
-
-    emitLimitedError(
-        [&] {
-          return std::move(*error).emit(
-              [](Location loc) { return mlir::emitError(loc); }, "HERE",
-              this->getEvaluator().getElabErrorIncludePrelude());
-        },
-        errorLimit);
-#endif // MODULAR_PRODUCTION
-    llvm_unreachable("impl node already has an error");
-  }
-  hasError.store(true);
-  error = std::move(err);
-}
+void PImplNode::setToError(ErrorTree &&err) { setFirstError(std::move(err)); }
 
 void PParamNode::emplace() {
   if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
@@ -138,10 +112,10 @@ void ParametricExpansionGraph::didCompleteTask() {
 void ParametricExpansionGraph::didAddTask() { ++numOutstandingResources; }
 
 ErrorTreeOr<PImplNode *> PParamNode::getFirstConcreteNode() {
-  if (!impl.error)
-    return &impl;
-  return ErrorTree(gen.getLoc(), "function instantiation failed 2",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed 2",
+                     std::move(*err));
+  return &impl;
 }
 
 ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
@@ -154,10 +128,10 @@ ErrorTreeOr<FuncOp> PParamNode::getFirstConcreteFunc() {
 }
 
 ErrorTreeOrSuccess PParamNode::collectErrorsOrSuccess() {
-  if (!impl.error)
-    return success();
-  return ErrorTree(gen.getLoc(), "function instantiation failed 1",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed 1",
+                     std::move(*err));
+  return success();
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -889,7 +863,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, PImplNode *inode) {
     });
   }
   inode->blocker.reset();
-  return success(!inode->error);
+  return success(!inode->recordedError());
 }
 
 /// Concretizes the locations of all operations within scope bound by the
@@ -1457,7 +1431,7 @@ void ParametricElaborator::completeImplNodeProcessing(PImplNode *inode) {
   // NOTE: This is one of the two spots where an ImplNode may be accessed in
   // parallel. Synchronize the error state check using an atomic. Any data race
   // here is benign but this makes TSAN happy.
-  bool hasError = inode->hasError.load();
+  bool hasError = inode->recordedError();
   if ((!hasError && (--inode->numDependencies != 0)) ||
       inode->done.exchange(true)) {
     signalWorklist();
@@ -1492,14 +1466,14 @@ void ParametricElaborator::completeImplNodeProcessing(PImplNode *inode) {
     // Check intra-SCC edges that were removed to break the cycle. Any callee
     // that errored during the first pass needs to propagate its error here.
     for (auto [loc, genNode] : inode->sccRemovedDeps) {
-      if (inode->error)
+      if (inode->recordedError())
         break;
       if (failed(collectConcreteImplementations(loc, inode, genNode)))
         break;
     }
     inode->sccRemovedDeps.clear();
 
-    if (!inode->error)
+    if (!inode->recordedError())
       finalizeInstance(inode);
   }
 
@@ -1545,7 +1519,8 @@ LogicalResult ParametricElaborator::processImplNode(PImplNode *inode) {
     ElaborationState result = processScope(inode, item);
     if (result.isError()) {
       // Interrupt indicates a fatal error.
-      assert(inode->error && "node processing interrupted but no error set");
+      assert(inode->recordedError() &&
+             "node processing interrupted but no error set");
       return success();
     }
     if (result.shouldSkipFrame()) {
@@ -1562,12 +1537,12 @@ LogicalResult ParametricElaborator::processImplNode(PImplNode *inode) {
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
     if (item.onComplete && failed(item.onComplete(inode))) {
-      assert(inode->error && "callback failed but no error set");
+      assert(inode->recordedError() && "callback failed but no error set");
       return success();
     }
     inode->stack.pop_back();
   }
-  assert(!inode->error && "unexpected error");
+  assert(!inode->recordedError() && "unexpected error");
   return success();
 }
 
@@ -2740,7 +2715,7 @@ LogicalResult ParametricElaborator::run(
     VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getName()] { return name.str(); });
     // Erase all erroneous instances.
-    if (node.impl.error) {
+    if (node.impl.recordedError()) {
       node.impl.inst.erase();
       continue;
     }
