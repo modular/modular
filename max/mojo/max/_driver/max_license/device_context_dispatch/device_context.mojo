@@ -41,10 +41,10 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceFunction,
     _DispatchEnqueuer,
     _HALDeviceExternalFunction,
+    _HALDeviceFunction,
 )
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
-    HALDeviceFunction,
     _HALDeviceContextScope,
     _GPU_DRIVER,
     _check_config_dims,
@@ -2053,17 +2053,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ](func_attribute=func_attribute)
             )
         else:
-            result = type_of(result)(
-                _impl=self._impl.compile_function[
-                    func,
-                    compile_options=compile_options,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](func_attribute=func_attribute)
-            )
+            # The HAL backend ignores the compile options, link options and
+            # dump flags; they are accepted for parity with the legacy backend.
+            result = type_of(result)(self, func_attribute=func_attribute)
 
     def compile_function[
         ClosureType: RegisterPassable & def() -> None,
@@ -2325,7 +2317,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        var hal_f: HALDeviceFunction[...] = f._impl
+        var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             var launch = HalLaunchOptions(
                 grid_dim,
@@ -2876,7 +2868,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceContext"
         )
-        var hal_f: HALDeviceFunction[...] = f._impl
+        var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
                 hal_f.Wrapper, hal_f.declared_arg_types

@@ -35,10 +35,12 @@ from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     DefaultDeviceTypeEncoder,
-    HALDeviceFunction,
+    HALDeviceContext,
+    _DeviceFunctionInner,
     _check_exec_config_launch_support,
     _launch_attributes_ptr,
 )
+from max._driver.max_license.hal._machine import DeviceSpec
 from max._driver.max_license.hal.execution_config import (
     GPUExecutionConfiguration,
 )
@@ -50,6 +52,7 @@ from max.gpu.host import (
     NearComputeGeneralPurposeScratchpadExecutionConfig,
     _launch_args,
 )
+from max.gpu.host._driver_handles import _DeviceFunctionPtr
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from max._driver.max_license.hal import FunctionHandle, Stream, get_device_spec
@@ -92,6 +95,37 @@ trait _DispatchEnqueuer:
         ...
 
 
+@fieldwise_init
+struct _HALDeviceFunction[
+    ret_type: AnyType,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
+    //,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
+    Wrapper: DeviceFunctionWrapper = _IdentityWrapper,
+    *,
+    target: CompilationTarget = default_accelerator(),
+](ImplicitlyCopyable, Movable):
+    """The state of a `DeviceFunction` on the HAL backend."""
+
+    comptime _target = DeviceSpec.target[get_device_spec[0]()]()
+    comptime _wrapped_func = Self.Wrapper.wrap[Self.func]
+
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
+
+    var _ctx: HALDeviceContext.Unknown
+    var _inner: ArcPointer[_DeviceFunctionInner]
+    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
+    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
+    var _handle: _DeviceFunctionPtr[mut=True]
+    # The compilation result for `Self._wrapped_func`: its assembly and
+    # linkage name.
+    var _func_info: CompiledFunctionInfo[
+        type_of(Self._wrapped_func), Self._wrapped_func, Self._target
+    ]
+
+
 struct DeviceFunction[
     ret_type: AnyType,
     declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -107,13 +141,37 @@ struct DeviceFunction[
     """Represents a compiled device function for GPU execution.
 
     This struct encapsulates a compiled GPU function that can be launched on a
-    device.
+    device. It provides methods for managing the function's lifecycle, copying
+    data to constant memory, and dumping debug information such as assembly
+    code, LLVM IR, or SASS code.
+
+    `DeviceFunction` is typically created through the `compile_function()`
+    method of a `DeviceContext` rather than directly instantiated.
+
+    Example:
+
+    ```mojo
+    from max.gpu.host import DeviceContext
+
+    def my_kernel():
+        # Kernel implementation
+        pass
+
+    with DeviceContext() as ctx:
+        # Compile the kernel
+        var kernel = ctx.compile_function[my_kernel]()
+        # Enqueue the kernel for execution
+        ctx.enqueue_function(kernel, grid_dim=1, block_dim=1)
+    ```
 
     Parameters:
         ret_type: The return type of `func` (inferred).
-        declared_arg_types: The argument types of `func` (inferred).
+        declared_arg_types: The argument types of `func` (inferred). Launch
+            arguments are checked against these.
         func: The kernel that was compiled.
-        Wrapper: The wrapper the kernel was compiled through.
+        Wrapper: Selects the function that is actually compiled for `func`,
+            such as a generated entry point. Defaults to compiling `func` as
+            written.
         target: The target architecture it was compiled for.
         compile_options: The compilation options used.
         link_options: The linker options used.
@@ -132,12 +190,8 @@ struct DeviceFunction[
         link_options=Self.link_options,
         _ptxas_info_verbose=Self._ptxas_info_verbose,
     ]
-    comptime _HAL = HALDeviceFunction[
-        Self.func,
-        Self.Wrapper,
-        target=Self.target,
-        compile_options=Self.compile_options,
-        link_options=Self.link_options,
+    comptime _HAL = _HALDeviceFunction[
+        Self.func, Self.Wrapper, target=Self.target
     ]
     comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
 
@@ -158,24 +212,56 @@ struct DeviceFunction[
 
         Args:
             ctx: The device context to compile for.
-            func_attribute: An attribute to use when compiling the function.
+            func_attribute: An attribute to use when compiling the function. The
+                HAL backend accepts only `MAX_DYNAMIC_SHARED_SIZE_BYTES`, and it
+                has no effect.
             name: The symbol name to give the function. The HAL backend
                 ignores it.
 
         Raises:
-            If the compilation fails.
+            If the compilation or function loading fails, or if the HAL backend
+            is given an unsupported function attribute.
         """
-        comptime if use_legacy_backend():
+        comptime __guard case False = use_legacy_backend() else:
+            comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl = Self._Legacy(
                 ctx._impl,
                 func_attribute=func_attribute,
                 name=name,
             )
-        else:
-            self._impl = Self._HAL(
-                ctx._impl,
-                func_attribute=func_attribute,
-            )
+            return
+        comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
+
+        if case .Some(func_attribute) = func_attribute:
+            # The CUDA plugin lifts the dynamic shared memory cap to the
+            # device's opt-in limit when it loads a function, and Metal and
+            # HIP have no cap, so a requested cap needs nothing more.
+            if (
+                func_attribute.attribute
+                != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            ):
+                raise Error(
+                    "the function attribute '",
+                    func_attribute.attribute,
+                    "' is not currently supported",
+                )
+        var info = ctx._impl._context[]._compile_inner[
+            type_of(Self._HAL._wrapped_func),
+            Self._HAL._wrapped_func,
+            compile_options=Self.compile_options,
+            link_options=Self.link_options,
+        ]()
+        # The context's function cache owns the loaded module: repeated
+        # constructions of the same kernel reuse the cached module.
+        var func_handle = ctx._impl._context[].get_or_load_function(
+            info.asm, info.function_name
+        )
+        self._impl = Self._HAL(
+            ctx._impl.into_unknown_target(),
+            ArcPointer(_DeviceFunctionInner(func_handle, ctx._impl._context)),
+            None,
+            info,
+        )
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend function.

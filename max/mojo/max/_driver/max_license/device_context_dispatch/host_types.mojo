@@ -28,7 +28,6 @@ from std.sys.info import CompilationTarget
 
 from max._driver.max_license.device_context_hal.device_context_hal import (
     HALDeviceContext,
-    HALDeviceFunction,
     _check_config_dims,
 )
 from max._driver.max_license.hal import Event, Stream, get_device_spec
@@ -73,6 +72,7 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceFunction,
     _DispatchEnqueuer,
     _HALDeviceExternalFunction,
+    _HALDeviceFunction,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -470,7 +470,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        var hal_f: HALDeviceFunction[...] = f._impl
+        var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             var launch = HalLaunchOptions(
                 grid_dim,
@@ -543,11 +543,11 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, *args, host_args=()
             )
         else:
-            var gpu_f = DeviceFunction[func, target=Self.target](
-                _impl=rebind_var[DeviceFunction[func, target=Self.target]._HAL](
-                    self._impl._ctx.compile_function[func]()
-                )
-            )
+            var gpu_f = DeviceFunction[
+                func,
+                DeviceContext[Self.target].FunctionWrapper,
+                target=Self.target,
+            ](DeviceContext[Self.target](_impl=self._impl._ctx.copy()))
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
                 _check_config_dims["DeviceStream.enqueue_function"](
                     execution_config, location=call_location()
@@ -593,7 +593,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        var hal_f: HALDeviceFunction[...] = f._impl
+        var hal_f: _HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
                 hal_f.Wrapper, hal_f.declared_arg_types

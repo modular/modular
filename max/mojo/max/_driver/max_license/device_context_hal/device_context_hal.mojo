@@ -29,7 +29,6 @@ from std.builtin.device_passable import (
 )
 from std.collections.optional import OptionalReg
 from std.ffi import _Global
-from std.compile import CompiledFunctionInfo
 from std.memory import ArcPointer
 from std.memory.unsafe import bitcast
 
@@ -68,8 +67,6 @@ from max.gpu.host import (
     GridBlockLaunchConfig,
     LaunchAttribute,
     default_accelerator,
-    Attribute,
-    FuncAttribute,
 )
 from ..hal.execution_config import check_config_fields_launchable
 from max.gpu.host.nvidia import (
@@ -77,29 +74,18 @@ from max.gpu.host.nvidia import (
     GridBlockAttributeLaunchConfig,
     LaunchAttributeHolderExecutionConfig,
 )
-from std.builtin.variadics import TypeList
 
 from max.gpu.host.info import (
     GPUInfo,
     get_gpu_info,
     _device_type_encoder_target,
 )
-from max.gpu.host._launch_args import (
-    DeviceFunctionWrapper,
-    _IdentityWrapper,
-)
 
 # Re-exports any `__extension`s an overlay's hook file declares.
 from ._device_context_hal_extras import *
-from max.gpu.host._driver_handles import (
-    _DeviceContextPtr,
-    _DeviceFunctionPtr,
-)
+from max.gpu.host._driver_handles import _DeviceContextPtr
 from max.gpu.host._vendor_handles import CUstream
-from max.gpu.host._driver_common import (
-    _DumpPath,
-    _check_dim_in_range,
-)
+from max.gpu.host._driver_common import _check_dim_in_range
 
 
 def _launch_attributes_ptr(
@@ -738,65 +724,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     ) -> ArcPointer[Stream[get_device_spec[0]()]]:
         return self._stream
 
-    @inline(.always)
-    def compile_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        compile_options: StaticString = (Self.target.default_compile_options()),
-        link_options: StaticString = "",
-        # Ignored; accepted for API parity with the legacy backend.
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self, *, func_attribute: OptionalReg[FuncAttribute] = None
-    ) raises -> HALDeviceFunction[
-        func,
-        MaxPluginForTarget[Self.target].FunctionWrapper,
-        target=Self.target,
-        compile_options=compile_options,
-        link_options=link_options,
-    ]:
-        """Compiles the provided `capturing` function for execution on this
-        device.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            The compiled function.
-
-        Raises:
-            If the operation fails.
-        """
-        return HALDeviceFunction[
-            func,
-            MaxPluginForTarget[Self.target].FunctionWrapper,
-            target=Self.target,
-            compile_options=compile_options,
-            link_options=link_options,
-        ](self, func_attribute=func_attribute)
-
     # ===-------------------------------------------------------------------===#
     # Buffer operations
     # ===-------------------------------------------------------------------===#
@@ -893,135 +820,6 @@ struct _HALDeviceContextScope(Movable):
                 self._prev_driver_ctx
             )
             self._active = False
-
-
-# ===-----------------------------------------------------------------------===#
-# DeviceFunction
-# ===-----------------------------------------------------------------------===#
-
-
-struct HALDeviceFunction[
-    ret_type: AnyType,
-    declared_arg_types: TypeList[Trait=AnyType, ...],
-    //,
-    func: def(*args: *declared_arg_types) thin -> ret_type,
-    Wrapper: DeviceFunctionWrapper = _IdentityWrapper,
-    *,
-    target: CompilationTarget = default_accelerator(),
-    compile_options: StaticString = (target.default_compile_options()),
-    link_options: StaticString = "",
-](ImplicitlyCopyable, Movable):
-    """Represents a compiled device function ready for execution on a GPU.
-
-    The `DeviceFunction` struct encapsulates a compiled GPU kernel that can be
-    executed on a device. It provides methods for managing the function's lifecycle,
-    copying data to constant memory, and dumping debug information such as
-    assembly code, LLVM IR, or SASS code.
-
-    `DeviceFunction` is typically created through the `compile_function()`
-    method of a `DeviceContext` rather than directly instantiated.
-
-    Example:
-
-    ```mojo
-    from max.gpu.host import DeviceContext
-
-    def my_kernel():
-        # Kernel implementation
-        pass
-
-    with DeviceContext() as ctx:
-        # Compile the kernel
-        var kernel = ctx.compile_function[my_kernel]()
-        # Enqueue the kernel for execution
-        ctx.enqueue_function(kernel, grid_dim=1, block_dim=1)
-    ```
-
-    Parameters:
-        ret_type: The return type of `func` (inferred).
-        declared_arg_types: The argument types of `func` (inferred). Launch
-            arguments are checked against these.
-        func: The kernel to compile.
-        Wrapper: Selects the function that is actually compiled for `func`,
-            such as a generated entry point. Defaults to compiling `func` as
-            written.
-        target: The accelerator the function is compiled for.
-        compile_options: The compilation options used.
-        link_options: The linker options used.
-    """
-
-    comptime _target = DeviceSpec.target[get_device_spec[0]()]()
-    comptime _wrapped_func = Self.Wrapper.wrap[Self.func]
-
-    # ===-------------------------------------------------------------------===#
-    # Fields
-    # ===-------------------------------------------------------------------===#
-
-    var _ctx: HALDeviceContext.Unknown
-    var _inner: ArcPointer[_DeviceFunctionInner]
-    # Null until the C++ runtime shim provides it; read by the CUDA/HIP
-    # interop accessors (`_nvidia_cuda` / `_amdgpu_hip`).
-    var _handle: _DeviceFunctionPtr[mut=True]
-    # The compilation result for `Self._wrapped_func`: its assembly and
-    # linkage name.
-    var _func_info: CompiledFunctionInfo[
-        type_of(Self._wrapped_func), Self._wrapped_func, Self._target
-    ]
-
-    # ===-------------------------------------------------------------------===#
-    # Life cycle methods
-    # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    @inline(.always)
-    def __init__(
-        out self,
-        ctx: HALDeviceContext,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-    ) raises:
-        """Compiles `Self.func` for `ctx`'s device and loads the function.
-
-        Args:
-            ctx: The device context to compile for.
-            func_attribute: Optional attribute for the loaded function. Only
-                `MAX_DYNAMIC_SHARED_SIZE_BYTES` is accepted, and it has no
-                effect.
-
-        Raises:
-            If compilation or function loading fails, or if an unsupported
-            function attribute is provided.
-        """
-        if case .Some(func_attribute) = func_attribute:
-            # The CUDA plugin lifts the dynamic shared memory cap to the
-            # device's opt-in limit when it loads a function, and Metal and
-            # HIP have no cap, so a requested cap needs nothing more.
-            if (
-                func_attribute.attribute
-                != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            ):
-                raise Error(
-                    "the function attribute '",
-                    func_attribute.attribute,
-                    "' is not currently supported",
-                )
-        var info = ctx._context[]._compile_inner[
-            type_of(Self._wrapped_func),
-            Self._wrapped_func,
-            compile_options=Self.compile_options,
-            link_options=Self.link_options,
-        ]()
-        # The context's function cache owns the loaded module: repeated
-        # constructions of the same kernel reuse the cached module.
-        var func_handle = ctx._context[].get_or_load_function(
-            info.asm, info.function_name
-        )
-        self._ctx = ctx.into_unknown_target()
-        self._handle = None
-        self._func_info = info
-        self._inner = ArcPointer(
-            _DeviceFunctionInner(func_handle, ctx._context)
-        )
 
 
 def _check_copy_src_size(
