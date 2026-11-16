@@ -24,6 +24,9 @@ llvm_source.configure(
         "//bazel/public-patches:llvm-mfma-allow-non-mai-users.patch",
         # Fix Hexagon qfloat conversions: https://github.com/llvm/llvm-project/pull/240791
         "//bazel/public-patches:llvm-hexagon-qfp-pair-refill.patch",
+        # Don't merge stores into HVX vectors without auto-HVX:
+        # https://github.com/llvm/llvm-project/pull/242323
+        "//bazel/public-patches:llvm-hexagon-store-merge-no-autohvx.patch",
     ],
 )
 
