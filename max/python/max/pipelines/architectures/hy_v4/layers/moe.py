@@ -28,15 +28,13 @@ from max.nn import Module
 from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_tensor import MXFP8Activation, MXFP8Tensor
 from max.nn.kernels import (
     grouped_quantize_dynamic_block_scaled,
     moe_create_indices,
     moe_finalize,
     moe_router_group_limited,
-)
-from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
-    DeepseekV3TopKRouter,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -61,13 +59,53 @@ def _on_device(module: _M, rank: int) -> _M:
     )
 
 
-class HYV4TopKRouter(DeepseekV3TopKRouter):
+class HYV4TopKRouter(MoEGate):
     """noaux_tc router whose logits are computed in float32.
 
     The reference casts both the hidden state and the BF16 gate weight to
     float32 before the matmul; a BF16 matmul output would perturb the
-    near-tied scores that decide the top-k.
+    near-tied scores that decide the top-k. Scores are sigmoids, picked by a
+    group-limited top-k with a learned float32 expert correction bias.
     """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_experts: int,
+        num_experts_per_token: int,
+        routed_scaling_factor: float,
+        n_group: int,
+        topk_group: int,
+        norm_topk_prob: bool,
+    ) -> None:
+        """Stores the router dimensions and routing parameters.
+
+        Args:
+            hidden_dim: Dimension of the hidden state.
+            num_experts: Number of routed experts.
+            num_experts_per_token: Top-k experts to select per token.
+            routed_scaling_factor: Scaling factor applied to expert weights.
+            n_group: Number of expert groups.
+            topk_group: Number of expert groups selected per token.
+            norm_topk_prob: Whether to normalize the top-k probabilities.
+        """
+        super().__init__(
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_experts_per_token=num_experts_per_token,
+        )
+        if num_experts % n_group != 0:
+            raise ValueError(
+                f"num_experts must be divisible by n_group: {num_experts} % "
+                f"{n_group} != 0"
+            )
+        self.n_group = n_group
+        self.topk_group = topk_group
+        self.routed_scaling_factor = routed_scaling_factor
+        self.norm_topk_prob = norm_topk_prob
+        self.e_score_correction_bias = Tensor.zeros(
+            [num_experts], dtype=DType.float32
+        )
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
         """Scores each token's experts and returns the routing weights."""
@@ -198,12 +236,9 @@ class HYV4MoE(Module[[Tensor], Tensor]):
             num_experts=config.n_routed_experts,
             num_experts_per_token=config.num_experts_per_tok,
             routed_scaling_factor=config.routed_scaling_factor,
-            scoring_func="sigmoid",
-            topk_method="noaux_tc",
             n_group=config.n_group,
             topk_group=config.topk_group,
             norm_topk_prob=config.norm_topk_prob,
-            correction_bias_dtype=DType.float32,
         )
         self.experts = HYV4Experts(
             config.hidden_size,
