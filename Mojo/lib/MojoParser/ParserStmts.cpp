@@ -3337,7 +3337,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   pushChildScope(scopeGuard, keepDecl);
   {
     // A throwing __next__ terminates the loop through its error path.
-    RaiseContext loopRaiseContext(loopOp, /*breakLoopElseOnRaise=*/true);
+    RaiseContext loopRaiseContext = RaiseContext::getForLoopIteratorContext();
     llvm::SaveAndRestore raiseContextSaver(curRaiseContext, &loopRaiseContext);
     auto loopEmitter = getEmitter();
 
@@ -4101,8 +4101,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // A `with` in a non-raising scope uses its try only for cleanup. Its
   // unreachable except region must not make `raise` valid in the body.
-  Operation *withRaiseOp =
-      nestedTryOp ? nestedTryOp.getOperation() : tryOp.getOperation();
+  TryOp withRaiseOp = nestedTryOp ? nestedTryOp : tryOp;
   RaiseContext withRaiseContext = nestedErrDecl
                                       ? RaiseContext(withRaiseOp, nestedErrDecl)
                                       : RaiseContext(withRaiseOp);
@@ -6241,8 +6240,7 @@ ParseResult ParserBase::parseSuite(ASTDecl &containingDecl) {
   // If the context is a raising function, then use it as the raiseContext for
   // the StmtParser.
   auto fn = dyn_cast<DefASTDecl>(&containingDecl);
-  RaiseContext raiseContext(
-      fn && fn->getOp().isThrows() ? fn->getOp().getOperation() : nullptr);
+  RaiseContext raiseContext(fn ? fn->getOp() : FnOp());
   StmtParser parser(lexer, containingDecl,
                     fn && fn->getOp().isThrows() ? &raiseContext : nullptr);
 

@@ -136,11 +136,11 @@ def test_parametric_list_literal():
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 def test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#List <:!AnyType_Copyable_Movable !Int>
-    # CHECK: %__try_error__{{.*}} = lit.var.decl
-    # CHECK-NEXT: lit.loop {
-    # CHECK: %i1 = lit.var.decl "i1"
-    # CHECK: %__call_result_tmp__ = lit.var.decl
-    # CHECK: lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__try_error__, %__call_result_tmp__)
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__{{.*}} = lit.var.decl
+    # CHECK-NEXT: %i1 = lit.var.decl "i1"
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}SimpleIntRange::@"__next__{{.*}}(%$ITER, %__try_error__, %__call_result_tmp__)
     # CHECK: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__
     # CHECK:      lit.call {{.*}}@List::@"append
     # CHECK-NEXT: lit.loop.continue
@@ -148,12 +148,12 @@ def test_list_comprehension():
     var a_collection = [i1 * 2 for i1 in SimpleIntRange()]
 
     # CHECK: %b_collection = lit.var.decl{{.*}}#List <:!AnyType_Copyable_Movable !Int>
-    # CHECK: %__try_error__{{.*}} = lit.var.decl
-    # CHECK-NEXT: lit.loop {
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__{{.*}} = lit.var.decl
     # CHECK-NEXT: %i2 = lit.var.decl
     # CHECK: lit.call {{.*}}SimpleIntRange::@"__next__
-    # CHECK: %__try_error__{{.*}} = lit.var.decl
-    # CHECK-NEXT: lit.loop {
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__{{.*}} = lit.var.decl
     # CHECK-NEXT: %i3 = lit.var.decl
     # CHECK: lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__
@@ -164,8 +164,8 @@ def test_list_comprehension():
 
     # Inferred to type IntList and using an "if" clause.
     # CHECK: %c_collection = lit.var.decl{{.*}}!lit.ref<!IntList,
-    # CHECK: %__try_error__{{.*}} = lit.var.decl
-    # CHECK-NEXT: lit.loop {
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__{{.*}} = lit.var.decl
     # CHECK-NEXT: %i4 = lit.var.decl
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK:    @SIMD::@"__bool__
@@ -261,8 +261,8 @@ def test_dict_literal(aBool: Bool):
 # CHECK-LABEL: lit.fn @"test_dict_comprehension
 def test_dict_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Dict <:!AnyType_Copyable_Deinitable_Movable !Int, :!AnyType_Copyable_Deinitable_Movable !String>
-    # CHECK: %__try_error__{{.*}} = lit.var.decl
-    # CHECK-NEXT: lit.loop {
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__{{.*}} = lit.var.decl
     # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK:     lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK:      [[STRING_TMP:%.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!String
@@ -311,8 +311,8 @@ def test_set_literal():
 # CHECK-LABEL: lit.fn @"test_set_comprehension
 def test_set_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}#Set <:!AnyType !Int>
-    # CHECK: %__try_error__ = lit.var.decl
-    # CHECK-NEXT: lit.loop {
+    # CHECK: lit.loop {
+    # CHECK-NEXT: %__try_error__ = lit.var.decl
     # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK:   lit.call {{.*}}SimpleIntRange::@"__next__
     # CHECK: [[RES:%.*]] = lit.call {{.*}}@SIMD::@"__mul__

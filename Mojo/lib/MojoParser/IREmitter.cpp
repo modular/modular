@@ -235,7 +235,7 @@ IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
   // If the raise context is not associated with an operation, then it is not
   // valid.  We allow this so callers can construct one from a function without
   // having to worry about its throwability.
-  if (raiseContext && raiseContext->getOperation() == nullptr)
+  if (raiseContext && raiseContext->isInvalid())
     raiseContext = nullptr;
 }
 
@@ -249,7 +249,7 @@ IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
   // If the raise context is not associated with an operation, then it is not
   // valid.  We allow this so callers can construct one from a function without
   // having to worry about its throwability.
-  if (raiseContext && raiseContext->getOperation() == nullptr)
+  if (raiseContext && raiseContext->isInvalid())
     raiseContext = nullptr;
 }
 
@@ -1995,38 +1995,42 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
 //===----------------------------------------------------------------------===//
 // Error handling helpers.
 
-RaiseContext::RaiseContext(Operation *opForRaise, bool breakLoopElseOnRaise)
-    : opForRaise(opForRaise), breakLoopElseOnRaise(breakLoopElseOnRaise) {
-  if (!opForRaise) // We accept null as a convenience.
+RaiseContext::RaiseContext(FnOp fn) : opForRaise(fn) {
+  // We accept non-throwing functions as a convenience, but make their context
+  // invalid so callers cannot emit a raise through it.
+  if (!fn || !fn.isThrows()) {
+    opForRaise = nullptr;
     return;
+  }
 
-  // Otherwise we have a try or a function.  If the function doesn't throw,
-  // treat it like null so we know it isn't valid.
-  if (auto func = dyn_cast<FnOp>(opForRaise)) {
-    if (!func.isThrows()) {
-      this->opForRaise = nullptr;
-      return;
-    }
-    // Otherwise, notice the prepopulated return slot.
-    size_t errorArgIndex = func.getNumArguments() - 2;
-    assert(func.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
-           ArgConvention::ByRefError);
-    MLValue errorSlot(func.getArgument(errorArgIndex));
-    assert(!isa<UnresolvedType>(errorSlot.getRValueType()) &&
-           "function error slots must have a resolved type");
-    errorSlots.push_back(errorSlot);
+  // Notice the prepopulated function error slot.
+  size_t errorArgIndex = fn.getNumArguments() - 2;
+  assert(fn.getFuncTypeGenerator().getArgConvention(errorArgIndex) ==
+         ArgConvention::ByRefError);
+  MLValue errorSlot(fn.getArgument(errorArgIndex));
+  assert(!isa<UnresolvedType>(errorSlot.getRValueType()) &&
+         "function error slots must have a resolved type");
+  errorSlots.push_back(errorSlot);
+  eagerlyEmitted = true;
+}
+
+RaiseContext::RaiseContext(TryOp tryOp, VarDeclOp errorDecl)
+    : opForRaise(tryOp) {
+
+  // If there is a prescribed error slot to use, the raises will be eagerly
+  // resolved.
+  if (errorDecl) {
     eagerlyEmitted = true;
+    assert(!isa<UnresolvedType>(errorDecl.getType().getElementType()) &&
+           "fixed error slots must have a resolved type");
+    errorSlots.push_back(MLValue(errorDecl.getResult()));
   }
 }
 
-RaiseContext::RaiseContext(Operation *opForRaise, VarDeclOp errorDecl,
-                           bool breakLoopElseOnRaise)
-    : opForRaise(opForRaise), breakLoopElseOnRaise(breakLoopElseOnRaise),
-      eagerlyEmitted(true) {
-  assert(errorDecl &&
-         !isa<UnresolvedType>(errorDecl.getType().getElementType()) &&
-         "fixed error slots must have a resolved type");
-  errorSlots.push_back(MLValue(errorDecl.getResult()));
+RaiseContext RaiseContext::getForLoopIteratorContext() {
+  auto result = RaiseContext(TryOp());
+  result.breakLoopElseOnRaise = true;
+  return result;
 }
 
 /// Gets the primary error slot of a raising function or try.
@@ -2056,9 +2060,11 @@ MLValue RaiseContext::getOrCreateErrorSlot(IREmitter &emitter,
   }
 
   // Emit error slots ahead of their owner so they dominate the owner and every
-  // region that can use them.
+  // region that can use them. A for-loop iterator error is local to the loop
+  // body, so it can use the current insertion point directly.
   OpBuilder errorDeclBuilder = *emitter.builder;
-  errorDeclBuilder.setInsertionPoint(opForRaise);
+  if (opForRaise)
+    errorDeclBuilder.setInsertionPoint(opForRaise);
   OpBuilder savedBuilder = *emitter.builder;
   emitter.builder = errorDeclBuilder;
   auto errDecl = emitter.emitVarDecl(errorSlots.empty() ? "__try_error__"

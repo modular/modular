@@ -44,15 +44,20 @@ class TraitType;
 /// function, source-level try body, or loop iterator call. The opForRaise is a
 /// FnOp for a throwing function and a TryOp for a try body.
 struct RaiseContext {
-  explicit RaiseContext(Operation *opForRaise,
-                        bool breakLoopElseOnRaise = false);
-  // Create a RaiseContext for a try block that requires a specific error decl.
-  // Raises within its body will be eagerly resolved instead of collected
-  // lazily.  The benefit of this is that contextual member resolution will see
-  // the concrete type of the VarDecl, allowing "raise .enumElt" to work in
-  // with blocks that require a specific error type.
-  RaiseContext(Operation *opForRaise, VarDeclOp errorDecl,
-               bool breakLoopElseOnRaise = false);
+  explicit RaiseContext(FnOp fn);
+
+  // Create a RaiseContext for a try block.  If errorDecl is specified, then
+  // this uses the specified error decl for all raises and raises within its
+  // body will be eagerly resolved instead of collected lazily.  The benefit of
+  // this is that contextual member resolution will see the concrete type of the
+  // VarDecl, allowing "raise .enumElt" to work in with blocks that require a
+  // specific error type.
+  //
+  // If null, the errors are processed lazily when the except block is seen.
+  explicit RaiseContext(TryOp tryOp, VarDeclOp errorDecl = {});
+
+  /// Creates a context for a throwing `__next__()` call in a for loop.
+  static RaiseContext getForLoopIteratorContext();
 
   /// Returns the primary error slot, or null when none has been needed.
   MLValue getErrorSlot() const;
@@ -80,7 +85,9 @@ struct RaiseContext {
   /// time.
   bool isEagerlyEmitted() const { return eagerlyEmitted; }
   size_t getNumErrorSlots() const { return errorSlots.size(); }
-  Operation *getOperation() const { return opForRaise; }
+  bool isInvalid() const {
+    return opForRaise == nullptr && !breakLoopElseOnRaise;
+  }
 
   // When emitting for-each loops, the `__next__()` function will throw on loop
   // termination.  This flag indicates whether we are in a context like this, it
@@ -101,7 +108,7 @@ private:
   Operation *opForRaise;
   SmallVector<MLValue, 2> errorSlots;
   SmallVector<RaiseSite, 4> raiseSites;
-  bool breakLoopElseOnRaise;
+  bool breakLoopElseOnRaise = false;
   bool eagerlyEmitted = false;
 };
 
