@@ -28,6 +28,7 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     Endpoint,
     SamplingConfig,
+    ServingBenchmarkConfig,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
@@ -1173,6 +1174,17 @@ class TestRequestDriver:
 
 class TestBuildFinalPayload:
     """Unit tests for the ``_build_final_payload`` payload helper."""
+
+    def test_json_override_assignment_is_resolved_before_payload(self) -> None:
+        config = ServingBenchmarkConfig(model="m")
+        # Workload overrides are assigned after the benchmark config is built.
+        overrides = {"extra_body": '{"repetition_penalty":1.0}'}
+        for key, value in overrides.items():
+            setattr(config, key, value)
+
+        payload = _build_final_payload({"model": "m"}, config.extra_body)
+
+        assert payload == {"model": "m", "repetition_penalty": 1.0}
 
     def test_none_and_empty_return_copy_unchanged(self) -> None:
         payload = {"model": "m"}

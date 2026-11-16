@@ -92,6 +92,7 @@ MODELS: Mapping[str, set[str]] = {
     "google/gemma-4-31B-it__mtp": VARIANT | MACH | _1xB200,
     "google/gemma-4-31B-it__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__tuned": NIGHTLY | VARIANT | _1xB200,
+    "LiquidAI/LFM3-1.7B": NIGHTLY | _1xB200,
     "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
     "meta-llama/Llama-3.1-8B-Instruct__dflash": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
     "meta-llama/Llama-3.1-8B-Instruct__eagle": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)

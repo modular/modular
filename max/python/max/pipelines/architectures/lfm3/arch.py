@@ -23,6 +23,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from .lfm3 import Lfm3
 from .model_config import Lfm3Config
+from .weight_adapters import lfm3_weight_rules
 
 lfm3_arch = SupportedArchitecture(
     name="Lfm3ForCausalLM",
@@ -36,5 +37,7 @@ lfm3_arch = SupportedArchitecture(
     context_type=TextContext,
     config=Lfm3Config,
     checkpoints_recurrent_state=True,
+    weight_rules=lfm3_weight_rules,
+    use_weight_rules=True,
     format_spec=Path(__file__).parent / "formatspec.json",
 )

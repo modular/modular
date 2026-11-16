@@ -80,6 +80,7 @@ from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
 from max.pipelines.architectures.inkling.state_cache import (
     InklingConvStateLayout,
 )
+from max.pipelines.architectures.lfm3.model_config import Lfm3Config
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -351,6 +352,54 @@ def _flint() -> tuple[_InputTree, _InputTypes]:
     return types, tuple(tree.leaves(types))
 
 
+def _lfm3() -> tuple[_InputTree, _InputTypes]:
+    """Published text BF16 TP1 geometry, including the conv-only state leaf."""
+    devices = _gpus(1)
+    hf = _fake(
+        hidden_size=2048,
+        num_attention_heads=16,
+        num_key_value_heads=4,
+        head_dim=128,
+        layer_types=["conv"] * 13
+        + ["sliding_attention"] * 5
+        + ["full_attention"] * 6,
+        sliding_window=256,
+        conv_L_cache=7,
+    )
+    hf.get_text_config = lambda: hf
+    kv_params = Lfm3Config.construct_kv_params(
+        huggingface_config=hf,
+        pipeline_config=_fake(
+            speculative=None, model=_fake(data_parallel_degree=1)
+        ),
+        devices=devices,
+        kv_cache_config=KVCacheConfig(kv_cache_page_size=128),
+        cache_dtype=DType.bfloat16,
+    )
+    assert list(kv_params.children) == [
+        "sliding_attention",
+        "full_attention",
+        "conv_state",
+    ]
+    for name, layers, window in [
+        ("sliding_attention", 5, 256),
+        ("full_attention", 6, None),
+    ]:
+        child = kv_params.child(name, MHAKVCacheParams)
+        assert child.num_layers == layers
+        assert child.window_size == window
+        assert child.dtype == DType.bfloat16
+        assert child.page_size == 128
+    conv = kv_params.child("conv_state", RecurrentStateParams)
+    assert len(conv.regions) == 1
+    assert conv.regions[0].leaf_id == "lfm3/conv"
+    assert conv.regions[0].num_layers == 13
+    assert conv.regions[0].row_shape == (2048, 6)
+    assert conv.regions[0].dtype == DType.bfloat16
+    types = decoder_input_types(kv_params, devices[0])
+    return types, tuple(tree.leaves(types))
+
+
 def _mimo_v2() -> tuple[_InputTree, _InputTypes]:
     """MiMo-V2 registered by role at TP2: a windowed and a full attention
     cache whose keys are wider than their values.
@@ -534,6 +583,7 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "nemotron_h_multi_device": lambda: _nemotron_h(_gpus(2)),
     "mimo_v2": _mimo_v2,
     "flint": _flint,
+    "lfm3": _lfm3,
 }
 
 

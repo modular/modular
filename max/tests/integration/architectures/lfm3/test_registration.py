@@ -20,6 +20,7 @@ from unittest.mock import NonCallableMock
 from max.dtype import DType
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.lfm3 import Lfm3, Lfm3Config, lfm3_arch
+from max.pipelines.architectures.lfm3.weight_adapters import lfm3_weight_rules
 from max.pipelines.lib import GraphRole
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.module_registration import ModuleV3DecoderPipelineModel
@@ -54,6 +55,8 @@ def test_arch_registers_the_decoder_module() -> None:
     assert issubclass(model, ModuleV3DecoderPipelineModel)
     assert model.decoder_cls is Lfm3
     assert lfm3_arch.checkpoints_recurrent_state
+    assert lfm3_arch.use_weight_rules
+    assert lfm3_arch.weight_rules is lfm3_weight_rules
 
 
 def test_finalize_returns_a_finalized_copy() -> None:
