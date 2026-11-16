@@ -308,6 +308,11 @@ class TargetAdapter:
     """Whether a reasoning model's drafts may be accepted under the relaxed
     in-thinking rule, which adds the ``in_thinking_phase`` input."""
 
+    fold_index_glue: bool = False
+    """Whether the accept path answers its per-step index glue in one
+    launch, the folded ops a target opts into; the default keeps the
+    whole-tensor op chains."""
+
     prepares_every_batch: bool = False
     """Whether the target's own batch processor prepares every batch of the
     pairing, as it does a distributed one."""

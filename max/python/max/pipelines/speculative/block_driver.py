@@ -854,6 +854,7 @@ class BlockDriver(
         ep_input_types: Sequence[TensorType | BufferType] = (),
         trailing_input_types: Sequence[TensorType | BufferType] = (),
         hisparse_input_types: Sequence[TensorType | BufferType] = (),
+        fold_index_glue: bool = False,
     ) -> None:
         super().__init__()
         self._verify = verify
@@ -976,6 +977,7 @@ class BlockDriver(
             relaxed_delta=relaxed_delta,
             draft_proposal=draft_proposal,
             vocab_size=vocab_size,
+            fold_index_glue=fold_index_glue,
         )
         # Registered under the hand-written modules' names, so state_dict keys
         # and the weights registry are unchanged.

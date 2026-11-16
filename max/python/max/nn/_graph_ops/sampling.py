@@ -22,6 +22,7 @@ from typing import Literal
 import numpy as np
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Dim, TensorType, TensorValue, ops
+from max.graph.dim import StaticDim
 from max.nn._graph_ops import (
     apply_packed_bitmask,
     apply_packed_bitmask_with_penalties,
@@ -76,6 +77,20 @@ _SEED_DOMAIN_COIN = 0xC2B2AE3D27D4EB4F
 # but keeping every batch-level stream on its own domain tag is cheap
 # insurance against a future caller adding one.
 _SEED_DOMAIN_SYNTHETIC = 0xFF51AFD7ED558CCD
+
+_INDEX_GLUE_MAX_ELEMENTS = 4096
+"""Static element ceiling above which the graph-side chains stay.
+
+The tensors the folded ops replace whole-tensor chains over are
+``batch``-sized or ``batch x drafts`` and hold a few dozen elements at
+decode sizes, where each chain costs one launch floor per member. This is a
+build-time gate only, and it applies where the size is known: the accept
+path's own graphs carry ``batch_size`` and ``num_steps`` as symbolic dims, so
+their element count is not, and a symbolic shape takes the fold by
+construction -- the ops are one thread per row of the mask, so their cost
+scales with that count either way. A static shape past the ceiling is a
+caller this fold was not written for and keeps the chain.
+"""
 
 
 @dataclass(frozen=True)
@@ -261,6 +276,50 @@ def _shared_scalar(seed: TensorValue) -> TensorValue:
     return seed[0] if seed.rank == 1 else seed
 
 
+def _static_numel(value: TensorValue) -> int | None:
+    """Returns ``value``'s element count, or None if a dim is not static."""
+    total = 1
+    for dim in value.shape:
+        if not isinstance(dim, StaticDim):
+            return None
+        total *= dim.dim
+    return total
+
+
+def _first_rejected_index_fused(
+    rejected: TensorValue, rows: str = "batch_size"
+) -> TensorValue:
+    """Returns each row's first rejected position, in one launch."""
+    return ops.custom(
+        "sampler.first_rejected",
+        device=rejected.device,
+        values=[rejected],
+        out_types=[
+            TensorType(DType.int64, [Dim(rows), 1], device=rejected.device)
+        ],
+    )[0].tensor
+
+
+def _accept_pair_fused(
+    target_masked: TensorValue,
+    dist: TensorValue,
+    token_indices: TensorValue,
+    coins: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Returns the verdict's rejection mask and residual fallback, one launch."""
+    bk_shape = [target_masked.shape[0], target_masked.shape[1]]
+    results = ops.custom(
+        "sampler.accept_pair",
+        device=target_masked.device,
+        values=[target_masked, dist, token_indices, coins],
+        out_types=[
+            TensorType(DType.bool, bk_shape, device=target_masked.device),
+            TensorType(DType.int64, bk_shape, device=target_masked.device),
+        ],
+    )
+    return results[0].tensor, results[1].tensor
+
+
 def _keyed_seed_rows(
     seed: TensorValue, rows: Dim, device: DeviceRef, domain: int
 ) -> TensorValue:
@@ -370,13 +429,33 @@ def _recovery_seed_rows(
 
 
 def _find_first_rejected(
-    rejected: TensorValue, device: DeviceRef, rows: str = "batch_size"
+    rejected: TensorValue,
+    device: DeviceRef,
+    rows: str = "batch_size",
+    *,
+    fold_index_glue: bool = False,
 ) -> TensorValue:
     """Finds the index of the first True in each row of a boolean mask.
 
     A sentinel True is appended so that "all accepted" maps to
     ``num_steps`` rather than producing an undefined result.
+
+    ``fold_index_glue`` opts the caller into answering in one launch, an
+    opt-in only the K3 accept path sets; every other caller keeps the chain.
     """
+    numel = _static_numel(rejected)
+    if (
+        fold_index_glue
+        and device != DeviceRef.CPU()
+        and rejected.rank == 2
+        and (numel is None or numel <= _INDEX_GLUE_MAX_ELEMENTS)
+    ):
+        # One launch instead of the sentinel concat, int32 cast, descending
+        # range, multiply and argmax this otherwise lowers to. The mask is
+        # `[batch, drafts]` by construction, so a symbolic batch dim -- which is
+        # what the accept graph carries -- is no reason to decline; the size
+        # bound only applies where the count is static.
+        return _first_rejected_index_fused(rejected, rows)
     with_sentinel = ops.rebind(
         ops.concat(
             [
@@ -512,6 +591,7 @@ def synthetic_acceptance_sampler(
     max_k: TensorValue | None = None,
     top_p: TensorValue | None = None,
     min_top_p: TensorValue | None = None,
+    fold_index_glue: bool = False,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Synthetic sampler for speculative decoding benchmarking.
 
@@ -540,6 +620,9 @@ def synthetic_acceptance_sampler(
         top_p: Per-row nucleus threshold.
         min_top_p: Smallest ``top_p`` across the batch, as a scalar for
             the kernel's scalar threshold.
+        fold_index_glue: Whether to answer the per-step index glue in one
+            launch, an opt-in only the K3 accept path sets; the default
+            keeps the chain.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
@@ -573,7 +656,10 @@ def synthetic_acceptance_sampler(
 
     synthetic_rejected = random_values >= float(base_acceptance_rate)
     first_rejected_idx = ops.squeeze(
-        _find_first_rejected(synthetic_rejected, device), axis=-1
+        _find_first_rejected(
+            synthetic_rejected, device, fold_index_glue=fold_index_glue
+        ),
+        axis=-1,
     )
     # Callers feed ``recovered`` back to the draft as the committed tokens.
     shape = [Dim("batch_size"), Dim("num_steps")]
@@ -589,6 +675,8 @@ def greedy_acceptance_sampler(
     draft_tokens: TensorValue,
     target_logits: TensorValue,
     token_bitmasks: TensorValue | None = None,
+    *,
+    fold_index_glue: bool = False,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
@@ -617,7 +705,8 @@ def greedy_acceptance_sampler(
     )
 
     first_rejected_idx = ops.squeeze(
-        _find_first_rejected(rejected, device), axis=-1
+        _find_first_rejected(rejected, device, fold_index_glue=fold_index_glue),
+        axis=-1,
     )
 
     return first_rejected_idx, target_tokens_draft, bonus_tokens
@@ -643,6 +732,11 @@ class AcceptanceSampler:
     ``relaxed_topk`` / ``relaxed_delta`` require ``draft_proposal="argmax"``;
     the relaxed rule assumes the drafted token is the draft's own argmax, so
     it does not carry over to a sampled proposal.
+
+    ``fold_index_glue`` opts the accept path into answering its per-step
+    index glue in one launch. It is an opt-in only the K3 accept path sets;
+    the default keeps the whole-tensor op chains every other caller built
+    before the fold existed.
     """
 
     def __init__(
@@ -654,11 +748,13 @@ class AcceptanceSampler:
         vocab_size: int | None = None,
         relaxed_topk: int | None = None,
         relaxed_delta: float | None = None,
+        fold_index_glue: bool = False,
     ) -> None:
         self._num_draft_steps = num_draft_steps
         self._use_stochastic = use_stochastic
         self._draft_proposal = draft_proposal
         self._vocab_size = vocab_size
+        self._fold_index_glue = fold_index_glue
         if draft_proposal == "sampled" and vocab_size is None:
             raise ValueError(
                 "vocab_size is required when draft_proposal='sampled'"
@@ -786,6 +882,7 @@ class AcceptanceSampler:
                 max_k=max_k,
                 top_p=top_p,
                 min_top_p=min_top_p,
+                fold_index_glue=self._fold_index_glue,
             )
         if self._use_stochastic:
             assert seed is not None, "stochastic acceptance requires a seed"
@@ -812,9 +909,13 @@ class AcceptanceSampler:
                 vocab_size=self._vocab_size,
                 penalties=penalties,
                 rows=rows,
+                fold_index_glue=self._fold_index_glue,
             )
         return greedy_acceptance_sampler(
-            draft_tokens, target_logits, token_bitmasks
+            draft_tokens,
+            target_logits,
+            token_bitmasks,
+            fold_index_glue=self._fold_index_glue,
         )
 
 
@@ -831,6 +932,8 @@ def _sampled_draft_verdict(
     num_steps: Dim,
     device: DeviceRef,
     rows: str = "batch_size",
+    *,
+    fold_index_glue: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
     """Judges sampled draft proposals with the exact rejection-sampling test.
 
@@ -838,40 +941,13 @@ def _sampled_draft_verdict(
     over the truncated target distribution and, on rejection, recovers from
     the residual ``max(0, p_target - q_draft)``.
 
+    ``fold_index_glue`` opts the caller into answering the verdict's index
+    glue in one launch, an opt-in only the K3 accept path sets; every other
+    caller keeps the chain.
+
     Returns:
         ``(rejected, recovered)``, both ``[batch, num_steps]``.
     """
-    batch_indices = ops.broadcast_to(
-        ops.reshape(
-            ops.range(
-                0,
-                batch_size,
-                1,
-                out_dim=Dim(rows),
-                device=device,
-                dtype=DType.int64,
-            ),
-            shape=[Dim(rows), 1],
-        ),
-        shape=[Dim(rows), Dim("num_steps")],
-    )
-    step_indices = ops.broadcast_to(
-        ops.reshape(
-            ops.range(
-                0,
-                num_steps,
-                1,
-                out_dim=Dim("num_steps"),
-                device=device,
-                dtype=DType.int64,
-            ),
-            shape=[1, Dim("num_steps")],
-        ),
-        shape=[Dim(rows), Dim("num_steps")],
-    )
-    gather_indices = ops.stack(
-        [batch_indices, step_indices, token_indices], axis=2
-    )
     bk_shape = [Dim(rows), Dim("num_steps")]
     bkv_shape: list[Dim] = [
         Dim(rows),
@@ -900,25 +976,79 @@ def _sampled_draft_verdict(
         ),
         bkv_shape,
     )
-    p_target = ops.gather_nd(target_masked, gather_indices)
-
-    # The draft sampled its token out of this distribution, so the mass it
-    # carries there is q. Zero means the scheduler had no distribution for
-    # the row, and q = 1 degrades the test to typical acceptance. Reading q
-    # from the same tensor the residual subtracts keeps the two consistent,
-    # which is what rejection sampling needs.
-    q_draft = ops.gather_nd(dist, gather_indices)
-    has_dist = q_draft > ops.constant(0.0, DType.float32, device)
-    q_eff = ops.where(
-        has_dist, q_draft, ops.constant(1.0, DType.float32, device)
-    )
-
     # One key per (request, draft position), rather than the implicit stream
     # that ``set_seed`` keys off row 0 of the seed tensor alone.
     coins = keyed_uniform(_coin_seed_rows(seed, batch_size, num_steps, device))
-    # ``coin >= min(1, p_target / q)`` without dividing, so a q that
-    # underflows to 0 degrades toward reject rather than accept.
-    rejected = (coins * q_eff) >= p_target
+
+    numel = _static_numel(token_indices)
+    if (
+        fold_index_glue
+        and device != DeviceRef.CPU()
+        and (numel is None or numel <= _INDEX_GLUE_MAX_ELEMENTS)
+    ):
+        # The two masses live at one vocabulary index each, so the gather, the
+        # compare, the select and the reject test are one launch instead of
+        # nine: the index tensor they shared was a `[rows, steps, 3]` stack of
+        # two ranges and two broadcasts built only to feed them.
+        rejected, fallback_ids = _accept_pair_fused(
+            target_masked, dist, token_indices, coins
+        )
+        fallback = ops.reshape(fallback_ids, [flat_rows])
+    else:
+        batch_indices = ops.broadcast_to(
+            ops.reshape(
+                ops.range(
+                    0,
+                    batch_size,
+                    1,
+                    out_dim=Dim(rows),
+                    device=device,
+                    dtype=DType.int64,
+                ),
+                shape=[Dim(rows), 1],
+            ),
+            shape=[Dim(rows), Dim("num_steps")],
+        )
+        step_indices = ops.broadcast_to(
+            ops.reshape(
+                ops.range(
+                    0,
+                    num_steps,
+                    1,
+                    out_dim=Dim("num_steps"),
+                    device=device,
+                    dtype=DType.int64,
+                ),
+                shape=[1, Dim("num_steps")],
+            ),
+            shape=[Dim(rows), Dim("num_steps")],
+        )
+        gather_indices = ops.stack(
+            [batch_indices, step_indices, token_indices], axis=2
+        )
+        p_target = ops.gather_nd(target_masked, gather_indices)
+
+        # The draft sampled its token out of this distribution, so the mass it
+        # carries there is q. Zero means the scheduler had no distribution for
+        # the row, and q = 1 degrades the test to typical acceptance. Reading q
+        # from the same tensor the residual subtracts keeps the two consistent,
+        # which is what rejection sampling needs.
+        q_draft = ops.gather_nd(dist, gather_indices)
+        has_dist = q_draft > ops.constant(0.0, DType.float32, device)
+        q_eff = ops.where(
+            has_dist, q_draft, ops.constant(1.0, DType.float32, device)
+        )
+        # ``coin >= min(1, p_target / q)`` without dividing, so a q that
+        # underflows to 0 degrades toward reject rather than accept.
+        rejected = (coins * q_eff) >= p_target
+        fallback = ops.reshape(
+            ops.where(
+                has_dist,
+                ops.constant(-1, DType.int64, device),
+                token_indices,
+            ),
+            [flat_rows],
+        )
 
     # Residual: max(masked target - proposal, 0), both already normalized.
     # A row without a distribution subtracts a one-hot of its drafted
@@ -931,14 +1061,7 @@ def _sampled_draft_verdict(
         gumbel_argmax_from_residual(
             ops.reshape(target_masked, [flat_rows, vocab_size]),
             ops.reshape(dist, [flat_rows, vocab_size]),
-            fallback=ops.reshape(
-                ops.where(
-                    has_dist,
-                    ops.constant(-1, DType.int64, device),
-                    token_indices,
-                ),
-                [flat_rows],
-            ),
+            fallback=fallback,
             seed=seed_rows,
         ),
         bk_shape,
@@ -1114,6 +1237,8 @@ def stochastic_acceptance_sampler(
     vocab_size: int | None = None,
     penalties: LogitPenalties | None = None,
     rows: str = "batch_size",
+    *,
+    fold_index_glue: bool = False,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Verifies speculative draft tokens against the target model.
 
@@ -1158,6 +1283,10 @@ def stochastic_acceptance_sampler(
     ``rows`` names the batch dimension of every per-row argument. A caller
     verifying one data-parallel replica's slice passes that replica's own
     name, so the slice is never asserted to equal the whole batch.
+
+    ``fold_index_glue`` opts the caller into answering the per-step index
+    glue in one launch, an opt-in only the K3 accept path sets; every other
+    caller keeps the chain.
 
     Returns:
         Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
@@ -1272,6 +1401,7 @@ def stochastic_acceptance_sampler(
             num_steps,
             device,
             rows,
+            fold_index_glue=fold_index_glue,
         )
     else:
         rejected_strict, recovered_strict, sampled_bonus = (
@@ -1362,7 +1492,10 @@ def stochastic_acceptance_sampler(
         )
 
     first_rejected_idx = ops.squeeze(
-        _find_first_rejected(rejected, device, rows), axis=-1
+        _find_first_rejected(
+            rejected, device, rows, fold_index_glue=fold_index_glue
+        ),
+        axis=-1,
     )
 
     if sampled_bonus is not None:

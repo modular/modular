@@ -49,6 +49,7 @@ from .topk_fi_cluster import (
     topk_topp_sampling_from_prob_cluster,
 )
 from .dspark_draft import dspark_draft_sample_gpu
+from .spec_glue import accept_pair, first_rejected_index
 
 
 def topk_topp_masked_probs[

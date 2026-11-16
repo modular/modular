@@ -127,7 +127,9 @@ from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
 from nn.argmaxmin_gpu import argmax_with_bias_gpu
 from nn.topk import gumbel_sampling_fused_gpu
 from nn.sampling import (
+    accept_pair,
     dspark_draft_sample_gpu,
+    first_rejected_index,
     topk_topp_masked_probs,
     topk_topp_sampling_from_prob,
 )
@@ -4154,6 +4156,94 @@ struct Struct_keyed_uniform:
         keyed_uniform(
             out_values.to_tile_tensor[.float32](),
             seed.to_tile_tensor[.uint64]().as_imm(),
+            ctx,
+        )
+
+
+@extensibility.register("sampler.first_rejected")
+struct Struct_first_rejected:
+    """Registers the `sampler.first_rejected` graph op.
+
+    Writes each row's first rejected draft position, or the row's draft count
+    when every draft was accepted. A sentinel concat, an int32 cast, a
+    descending range, a multiply and an argmax answer the same question with
+    five launches over one `[batch, drafts]` mask; this answers it with one.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        _trace_name: StaticString,
+    ](
+        first: Some[Output & Tensor],
+        rejected: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(first), TileTensorable)
+        comptime assert conforms_to(type_of(rejected), TileTensorable)
+        comptime assert type_of(first).rank == 2
+        comptime assert type_of(rejected).rank == 2
+        comptime assert type_of(first).dtype == DType.int64
+        comptime assert type_of(rejected).dtype == DType.bool
+        comptime assert (
+            ctx.target.is_gpu()
+        ), "sampler.first_rejected is GPU-only"
+        first_rejected_index(
+            rejected.to_tile_tensor[.bool]().as_imm(),
+            first.to_tile_tensor[.int64](),
+            ctx,
+        )
+
+
+@extensibility.register("sampler.accept_pair")
+struct Struct_accept_pair:
+    """Registers the `sampler.accept_pair` graph op.
+
+    Writes the sampled-draft verdict's two per-position decisions: whether the
+    accept coin rejects the draft, and which token the residual should remove
+    (the proposal, or a one-hot at the drafted token for a row that carried no
+    distribution). Reading two masses at one vocabulary index would otherwise
+    need a `[rows, steps, 3]` index tensor to gather them, then a compare, a
+    select, a multiply and a compare: one launch per member here becomes one.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        _trace_name: StaticString,
+    ](
+        rejected: Some[Output & Tensor],
+        fallback: Some[Output & Tensor],
+        probs: Some[Input & Tensor],
+        dist: Some[Input & Tensor],
+        tokens: Some[Input & Tensor],
+        coins: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(rejected), TileTensorable)
+        comptime assert conforms_to(type_of(fallback), TileTensorable)
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert conforms_to(type_of(dist), TileTensorable)
+        comptime assert conforms_to(type_of(tokens), TileTensorable)
+        comptime assert conforms_to(type_of(coins), TileTensorable)
+        comptime assert type_of(rejected).rank == 2
+        comptime assert type_of(fallback).rank == 2
+        comptime assert type_of(probs).rank == 3
+        comptime assert type_of(dist).rank == 3
+        comptime assert type_of(rejected).dtype == DType.bool
+        comptime assert type_of(fallback).dtype == DType.int64
+        comptime assert type_of(probs).dtype == DType.float32
+        comptime assert type_of(dist).dtype == DType.float32
+        comptime assert type_of(tokens).dtype == DType.int64
+        comptime assert type_of(coins).dtype == DType.float32
+        comptime assert ctx.target.is_gpu(), "sampler.accept_pair is GPU-only"
+        accept_pair(
+            probs.to_tile_tensor[.float32]().as_imm(),
+            dist.to_tile_tensor[.float32]().as_imm(),
+            tokens.to_tile_tensor[.int64]().as_imm(),
+            coins.to_tile_tensor[.float32]().as_imm(),
+            rejected.to_tile_tensor[.bool](),
+            fallback.to_tile_tensor[.int64](),
             ctx,
         )
 

@@ -2424,6 +2424,9 @@ def _driver_call(
         use_greedy_acceptance=speculative.use_greedy_acceptance,
         # Sizes the draft distributions under draft_proposal="sampled".
         vocab_size=huggingface_config.get_text_config().vocab_size,
+        # The target's adapter opts its accept path into the folded index
+        # glue; every target without the opt-in keeps the op chains.
+        fold_index_glue=spec_adapters.fold_index_glue(target_arch),
         ep_input_types=ep_input_types,
         # The target's HiSparse tables follow the EP inputs, so an export
         # without them keeps every slot above and below.

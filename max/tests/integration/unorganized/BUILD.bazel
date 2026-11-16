@@ -519,6 +519,32 @@ modular_py_test(
     ],
 )
 
+# The accept path's folded index glue against the chains it replaced.
+modular_py_test(
+    name = "test-index-glue-fused",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_index_glue_fused.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Test for gumbel sampling
 modular_py_test(
     name = "test-gumbel-sampling",

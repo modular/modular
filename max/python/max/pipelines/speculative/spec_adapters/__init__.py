@@ -69,6 +69,7 @@ __all__ = [
     "ep_tail",
     "export_contract",
     "extra",
+    "fold_index_glue",
     "has_adapter",
     "hisparse_input_types",
     "prepares_every_batch",
@@ -291,6 +292,15 @@ def relaxed_thinking_acceptance(target_arch: str) -> bool:
     The relaxed in-thinking rule decides it.
     """
     return _adapter(target_arch).relaxed_thinking_acceptance
+
+
+def fold_index_glue(target_arch: str) -> bool:
+    """Returns whether the target's accept path folds its index glue.
+
+    A target opts into the folded single-launch ops; the default keeps the
+    whole-tensor op chains.
+    """
+    return _adapter(target_arch).fold_index_glue
 
 
 def prepares_every_batch(target_arch: str) -> bool:

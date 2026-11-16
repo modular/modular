@@ -524,4 +524,7 @@ ADAPTER = TargetAdapter(
     trailing_buffers=trailing_buffers,
     extra=extra,
     export_contract=export_contract,
+    # The pairing this fold was written for: K3's accept graph answers its
+    # per-step index glue in one launch. Every other target keeps the chain.
+    fold_index_glue=True,
 )
