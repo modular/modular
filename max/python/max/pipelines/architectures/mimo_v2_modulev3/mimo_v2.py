@@ -43,10 +43,10 @@ from max.nn.norm import rms_norm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
-from .batch_split import split_replicated_batch
 from .layers.attention import MiMoV2Attention
 from .layers.moe import (
     MiMoV2ExpertParallelMoE,

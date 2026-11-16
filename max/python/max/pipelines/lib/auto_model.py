@@ -327,7 +327,7 @@ class AutoModel:
             ``pdb`` and ``print`` inside a module's ``forward()`` show real
             values on every step. Each step is much slower, so use it for
             debugging. It needs a ModuleV3 text generation architecture, on one
-            device.
+            device or one device per data-parallel replica.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names, such as ``device_specs`` or
             ``enable_prefix_caching``. They win over the debug defaults.

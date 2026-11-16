@@ -42,6 +42,7 @@ from max.pipelines.architectures.deepseekV41.engram_lookback import (
 )
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import (
@@ -112,32 +113,6 @@ def _hc_mean(stream: Tensor) -> Tensor:
     for i in range(1, hc_mult):
         total = total + stream[:, i].cast(DType.float32)
     return (total * (1.0 / hc_mult)).cast(stream.dtype)
-
-
-def _split_replicated_batch(
-    t: Tensor,
-    input_row_offsets: Tensor,
-    input_row_offsets_i64: Tensor,
-    data_parallel_splits: Tensor,
-    mapping: DeviceMapping,
-) -> tuple[Tensor, Tensor]:
-    """Splits a replicated ragged batch into DP shards (tokens, offsets).
-
-    The DeepseekV3 ModuleV3 pattern: each rank cuts its requests' rows out
-    of its own replicated copy, so no rank receives another's data.
-    """
-    devices = [DeviceRef.from_device(d) for d in mapping.mesh.devices]
-    t_shards, offsets_shards = split_batch_replicated(
-        devices,
-        [TensorValue(shard) for shard in t.local_shards],
-        [TensorValue(shard) for shard in input_row_offsets.local_shards],
-        TensorValue(input_row_offsets_i64),
-        TensorValue(data_parallel_splits),
-    )
-    return (
-        Tensor.from_shard_values(t_shards, mapping),
-        Tensor.from_shard_values(offsets_shards, mapping),
-    )
 
 
 def _slice_requests(
@@ -591,7 +566,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 )
             shard_mapping = DeviceMapping(mesh, (Sharded(0),))
             tokens_full, offsets_full = tokens, offsets
-            tokens, offsets = _split_replicated_batch(
+            tokens, offsets = split_replicated_batch(
                 tokens,
                 offsets,
                 input_row_offsets_i64,
@@ -600,7 +575,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             )
             # The image mask is per step token (the router reads it per
             # row), so it splits with the tokens.
-            image_token_mask, _ = _split_replicated_batch(
+            image_token_mask, _ = split_replicated_batch(
                 image_token_mask,
                 offsets_full,
                 input_row_offsets_i64,
@@ -879,14 +854,14 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 and self.dp > 1
             )
             mapping = DeviceMapping(self.mesh, (Sharded(0),))
-            stream, _ = _split_replicated_batch(
+            stream, _ = split_replicated_batch(
                 stream,
                 b.row_offsets_full,
                 b.input_row_offsets_i64,
                 b.data_parallel_splits,
                 mapping,
             )
-            pre, _ = _split_replicated_batch(
+            pre, _ = split_replicated_batch(
                 pre,
                 b.row_offsets_full,
                 b.input_row_offsets_i64,

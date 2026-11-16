@@ -22,9 +22,8 @@ from typing import ClassVar
 from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, ops
 from max.nn import Module
-from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.attention import AttentionWithRope
 from max.nn.common_layers.kv_cache import per_device_caches
 from max.nn.common_layers.mlp import MLP
@@ -39,8 +38,10 @@ from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.lora import LoRATargetModule
 from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
@@ -302,24 +303,19 @@ def _split_batch(
     """Returns each replica's tokens and row offsets, on its device."""
     assert inputs.host_input_row_offsets is not None
     assert inputs.data_parallel_splits is not None
-    tokens = TensorValue(inputs.tokens)
-    input_row_offsets = TensorValue(inputs.input_row_offsets)
-    split_tokens, split_offsets = split_batch_replicated(
-        devices,
-        [tokens.to(device) for device in devices],
-        [input_row_offsets.to(device) for device in devices],
-        TensorValue(inputs.host_input_row_offsets).cast(DType.int64),
-        TensorValue(inputs.data_parallel_splits),
+    mesh = DeviceMesh(
+        tuple(device.to_device() for device in devices),
+        (len(devices),),
+        ("dp",),
     )
-    return [
-        (
-            Tensor.from_graph_value(replica_tokens),
-            Tensor.from_graph_value(offsets),
-        )
-        for replica_tokens, offsets in zip(
-            split_tokens, split_offsets, strict=True
-        )
-    ]
+    tokens, row_offsets = split_replicated_batch(
+        inputs.tokens.to(mesh),
+        inputs.input_row_offsets.to(mesh),
+        inputs.host_input_row_offsets.cast(DType.int64),
+        inputs.data_parallel_splits,
+        DeviceMapping(mesh, (Sharded(0),)),
+    )
+    return list(zip(tokens.local_shards, row_offsets.local_shards, strict=True))
 
 
 class Llama3Decoder(Module[[DecoderInputs], DecoderOutputs]):

@@ -42,11 +42,9 @@ from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
 from max.pipelines.architectures.deepseekV3_2_modulev3.nextn import (
     DeepseekV3_2NextN,
 )
-from max.pipelines.architectures.deepseekV3_modulev3.deepseekV3 import (
-    split_replicated_batch,
-)
 from max.pipelines.architectures.glm5_1_modulev3 import spec_adapters
 from max.pipelines.architectures.glm5_1_modulev3.glm5_1 import Glm5_1Decoder
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative.driver import (
     DistributedInputs,
     DraftStepInput,

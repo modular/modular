@@ -39,6 +39,7 @@ from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative.driver import (
     gather_variable_rows,
 )
@@ -56,7 +57,6 @@ from ..deepseekV2_modulev3.layers.rotary_embedding import (
 )
 from ..deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
-    split_replicated_batch,
 )
 from .layers.prefill_context_parallel import (
     PrefillContextParallelStep,

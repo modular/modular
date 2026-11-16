@@ -343,8 +343,9 @@ def _check_eager(
     Raises:
         ValueError: If ``runtime.eager`` is set for a task other than text
             generation, an architecture without a ModuleV3 decoder, more than
-            one device, or with device graph capture or synthesis, the overlap
-            scheduler, MEF export, LoRA, speculative decoding or expert
+            one device per data-parallel replica, or with device graph capture
+            or synthesis, the overlap scheduler, MEF export, LoRA, speculative
+            decoding or expert
             parallelism.
     """
     if not runtime.eager:
@@ -377,8 +378,9 @@ def _check_eager(
         name
         for name, conflicting in (
             (
-                "more than one device",
-                model is not None and len(model.device_specs) > 1,
+                "more than one device per data-parallel replica",
+                model is not None
+                and len(model.device_specs) > model.data_parallel_degree,
             ),
             (
                 "device_graph_capture=True (--device-graph-capture)",

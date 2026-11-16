@@ -27,8 +27,7 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, DimLike, TensorType, TensorValue
-from max.nn._graph_ops.data_parallel import split_batch_replicated
+from max.graph import BufferType, DimLike, TensorType, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.multi_latent_attention import (
@@ -36,6 +35,7 @@ from max.nn.common_layers.multi_latent_attention import (
 )
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -118,32 +118,6 @@ def _kv_mapping(mesh: DeviceMesh, data_parallel_degree: int) -> DeviceMapping:
             Unknown() if name == DP else Replicated()
             for name in mesh.axis_names
         ),
-    )
-
-
-def _split_replicas(
-    h: Tensor,
-    input_row_offsets: Tensor,
-    input_row_offsets_i64: Tensor,
-    data_parallel_splits: Tensor,
-    mapping: DeviceMapping,
-    prefix: str,
-) -> tuple[Tensor, Tensor]:
-    """Splits a replicated batch into each replica's rows.
-
-    ``split_replicated_batch`` with the split dims named by ``prefix``.
-    """
-    h_shards, offset_shards = split_batch_replicated(
-        [DeviceRef.from_device(d) for d in mapping.mesh.devices],
-        [TensorValue(shard) for shard in h.local_shards],
-        [TensorValue(shard) for shard in input_row_offsets.local_shards],
-        TensorValue(input_row_offsets_i64),
-        TensorValue(data_parallel_splits),
-        prefix=prefix,
-    )
-    return (
-        Tensor.from_shard_values(h_shards, mapping),
-        Tensor.from_shard_values(offset_shards, mapping),
     )
 
 
@@ -419,13 +393,13 @@ class Glm5_1MTPProposer(TensorAdapter):
             # The driver hands the whole query on every device; each replica
             # drafts its own requests, as the target verified them.
             assert batch.distributed is not None
-            embedded, offsets = _split_replicas(
+            embedded, offsets = split_replicated_batch(
                 embedded,
                 offsets,
                 F.cast(batch.distributed.host_query_offsets, DType.int64),
                 batch.distributed.data_parallel_splits,
                 rows,
-                split_prefix,
+                prefix=split_prefix,
             )
         kv_mapping = _kv_mapping(self.mesh, batch.data_parallel_degree)
         kv_collection = PagedCacheValues.from_upstream(

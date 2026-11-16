@@ -28,13 +28,17 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import TensorValue
 from max.nn import Module, as_subgraph
-from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
@@ -46,7 +50,6 @@ from max.tensor.sharding import (
 from ...deepseekV3_modulev3.deepseekV3 import (
     DeepseekV3TextModel,
     gather_last_tokens,
-    split_replicated_batch,
 )
 from ..model_config import KimiK2_5Config
 
@@ -94,8 +97,8 @@ class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
         if self.config.data_parallel_degree > 1:
-            batch_context_length = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in inputs.batch_context_lengths],
+            batch_context_length = cache_tensor(
+                inputs.batch_context_lengths,
                 DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
             )
             assert inputs.host_input_row_offsets is not None

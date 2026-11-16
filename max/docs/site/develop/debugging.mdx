@@ -176,10 +176,11 @@ Eager mode is for debugging, and it has these limits:
   after every op instead of fusing ops. In bfloat16, a token that is a near tie
   can come out differently.
 - It runs ModuleV3 text generation architectures that register a `DECODER`
-  module, on one device. Any other model fails before anything loads, with a
-  message that says why. It can't be combined with device graph capture, the
-  overlap scheduler, LoRA, speculative decoding or expert parallelism, and
-  `max serve`, `max export` and `max warm-cache` refuse it.
+  module, on one device or one device per data-parallel replica. Data
+  parallelism is checked with Llama. Any other model fails before anything
+  loads, with a message that says why. It can't be combined with device graph
+  capture, the overlap scheduler, LoRA, speculative decoding or expert
+  parallelism, and `max serve`, `max export` and `max warm-cache` refuse it.
 - The interpreter logs a warning that asks you to file a bug for each op it
   hands to the compiler. For the paged attention and KV cache ops, that's
   expected.

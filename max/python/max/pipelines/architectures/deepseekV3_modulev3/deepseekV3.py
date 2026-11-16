@@ -22,11 +22,14 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn import Module, as_subgraph
-from max.nn._graph_ops.data_parallel import split_batch_replicated
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.quant_moe import (
@@ -39,6 +42,7 @@ from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -72,35 +76,6 @@ def gather_last_tokens(h: Tensor, input_row_offsets: Tensor) -> Tensor:
     # The rule-less body runs on each device's own rows; its result keeps h's
     # placements.
     return F.functional(_body)(h, input_row_offsets).rebind_mapping(h.mapping)
-
-
-def split_replicated_batch(
-    h: Tensor,
-    input_row_offsets: Tensor,
-    input_row_offsets_i64: Tensor,
-    data_parallel_splits: Tensor,
-    mapping: DeviceMapping,
-    group_size: int = 1,
-) -> tuple[Tensor, Tensor]:
-    """Splits a replicated batch into data-parallel shards.
-
-    ``group_size`` consecutive devices form one replica and take the same
-    split: the ``tp`` axis of a ``(dp, tp)`` mesh.
-    """
-    devices = mapping.mesh.devices
-
-    h_shards, input_row_offsets_shards = split_batch_replicated(
-        [DeviceRef.from_device(d) for d in devices],
-        [TensorValue(shard) for shard in h.local_shards],
-        [TensorValue(shard) for shard in input_row_offsets.local_shards],
-        TensorValue(input_row_offsets_i64),
-        TensorValue(data_parallel_splits),
-        group_size=group_size,
-    )
-    return (
-        Tensor.from_shard_values(h_shards, mapping),
-        Tensor.from_shard_values(input_row_offsets_shards, mapping),
-    )
 
 
 class DeepseekV3TextModel(
@@ -309,8 +284,8 @@ class DeepseekV3(Module[..., ModuleV3Outputs]):
             cpu_mesh = DeviceMesh(
                 tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
             )
-            batch_context_lengths_tensor = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in batch_context_lengths],
+            batch_context_lengths_tensor = cache_tensor(
+                batch_context_lengths,
                 DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
             )
 
@@ -410,8 +385,8 @@ class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
             cpu_mesh = DeviceMesh(
                 tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
             )
-            batch_context_length = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in inputs.batch_context_lengths],
+            batch_context_length = cache_tensor(
+                inputs.batch_context_lengths,
                 DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
             )
             data_parallel_splits = inputs.data_parallel_splits

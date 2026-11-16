@@ -112,19 +112,29 @@ def test_eager_refuses_architectures_without_a_module_v3_decoder(
         _check_eager(PipelineRuntimeConfig(eager=True), None, arch, None, None)
 
 
-def test_eager_runs_on_one_device() -> None:
-    model = MAXModelConfig(
-        model_path="test/model",
-        device_specs=[DeviceSpec.accelerator(0), DeviceSpec.accelerator(1)],
-    )
-    with pytest.raises(ValueError, match="more than one device"):
+def test_eager_runs_on_one_device_per_replica() -> None:
+    devices = [DeviceSpec.accelerator(0), DeviceSpec.accelerator(1)]
+    runtime = PipelineRuntimeConfig(eager=True)
+    arch = _arch(_EagerDecoder)
+    with pytest.raises(ValueError, match="more than one device per"):
         _check_eager(
-            PipelineRuntimeConfig(eager=True),
-            model,
-            _arch(_EagerDecoder),
+            runtime,
+            MAXModelConfig(model_path="test/model", device_specs=devices),
+            arch,
             None,
             None,
         )
+    _check_eager(
+        runtime,
+        MAXModelConfig(
+            model_path="test/model",
+            device_specs=devices,
+            data_parallel_degree=2,
+        ),
+        arch,
+        None,
+        None,
+    )
 
 
 def test_eager_turns_off_capture_and_overlap(

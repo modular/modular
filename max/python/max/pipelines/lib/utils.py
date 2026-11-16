@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import is_virtual_device_mode
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 
@@ -35,6 +36,9 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn._compilation_timer import (  # noqa: F401
     CompilationTimer,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding.action import PerShard
 from transformers import AutoConfig
 
 from .weight_transform import WeightTransform
@@ -98,6 +102,79 @@ def compute_data_parallel_splits(
     splits_summed = np.cumsum(splits)
 
     return splits_summed
+
+
+def split_replicated_batch(
+    h: Tensor,
+    input_row_offsets: Tensor,
+    input_row_offsets_i64: Tensor,
+    data_parallel_splits: Tensor,
+    mapping: DeviceMapping,
+    group_size: int = 1,
+    prefix: str = "",
+) -> tuple[Tensor, Tensor]:
+    """Splits a replicated ragged batch into each replica's rows.
+
+    Each device cuts its replica's rows out of its own copy of ``h``, so no
+    device receives another's data. ``group_size`` consecutive devices form
+    one replica and take the same rows. It is built from tensor ops, so it
+    runs the same way traced and eagerly.
+
+    Args:
+        h: The batch, replicated on every device of ``mapping``.
+        input_row_offsets: The batch's row offsets, replicated likewise.
+        input_row_offsets_i64: The row offsets as int64, on the host.
+        data_parallel_splits: The first request of each replica, then the
+            batch size, on the host.
+        mapping: How the split tensors lie on the devices.
+        group_size: Devices per replica.
+        prefix: Prepended to the split dimensions' names.
+
+    Returns:
+        Each device's rows of ``h``, and their row offsets starting from zero.
+
+    Raises:
+        ValueError: If ``group_size`` doesn't evenly divide the devices.
+    """
+    num_devices = mapping.mesh.num_devices
+    if group_size < 1 or num_devices % group_size:
+        raise ValueError(
+            f"group_size {group_size} must evenly divide the {num_devices}"
+            " devices"
+        )
+    num_replicas = num_devices // group_size
+
+    def split(
+        rows: Tensor, row_offsets: Tensor, replica: int
+    ) -> tuple[Tensor, Tensor]:
+        first = data_parallel_splits[replica]
+        last = data_parallel_splits[replica + 1]
+        rows = F.slice_tensor(
+            rows,
+            [
+                (
+                    slice(
+                        input_row_offsets_i64[first],
+                        input_row_offsets_i64[last],
+                    ),
+                    f"{prefix}_input_split_{replica}",
+                ),
+                ...,
+            ],
+        )
+        # The last replica's offsets run to the end of the batch's.
+        stop = None if replica + 1 == num_replicas else last + 1
+        rebased = F.slice_tensor(
+            row_offsets,
+            [(slice(first, stop), f"{prefix}_offset_split_{replica}")],
+        )
+        return rows, rebased - row_offsets[first]
+
+    return F.call_on_mesh(split, mapping.mesh, out_specs=[mapping, mapping])(
+        h,
+        input_row_offsets,
+        PerShard([index // group_size for index in range(num_devices)]),
+    )
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
