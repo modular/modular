@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for MoE, TensorParallelMoE, and ExpertParallelMoE (ModuleV3)."""
+"""Tests for ModuleV3 MoE layers and the ``max.nn.kernels`` ops they use.
+
+Covers MoE, TensorParallelMoE and ExpertParallelMoE, and the sharding rules
+of the MoE kernels in ``max.nn.kernels`` (``moe_finalize``,
+``router_gate_mixed_gemv``) that those layers run on.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +32,7 @@ from max.nn.common_layers.moe import (
     MoE,
     TensorParallelMoE,
 )
-from max.nn.kernels import moe_finalize
+from max.nn.kernels import moe_finalize, router_gate_mixed_gemv
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import (
     DeviceMapping,
@@ -36,6 +41,7 @@ from max.tensor.sharding import (
     Placement,
     Replicated,
     Sharded,
+    ShardingError,
 )
 
 # Small dimensions for fast graph-trace tests.
@@ -188,3 +194,68 @@ def test_moe_finalize_keeps_down_placement(
     assert ir.count('symbol = "moe.finalize"') == (
         0 if bounded else len(devices)
     )
+
+
+@pytest.mark.parametrize("placement", [Replicated(), Sharded(0)])
+def test_router_gate_mixed_gemv_takes_the_activation_placement(
+    mock_accelerator: MagicMock, placement: Placement
+) -> None:
+    """The fused gate GEMV reads the activation, so its logits follow it.
+
+    The gate weight is a replicated graph constant, so a row-sharded
+    activation keeps its rows: the wrapper stages no gather or reshard of
+    the activation ahead of the projection.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        hidden = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+        )
+        hidden = hidden.rebind_mapping(DeviceMapping(mesh, (placement,)))
+        weight = Tensor.zeros(
+            [_NUM_EXPERTS, _HIDDEN_DIM], dtype=DType.float32, device=replicated
+        )
+        logits = router_gate_mixed_gemv(hidden, weight)
+
+    assert logits.mapping.mesh == mesh
+    assert logits.mapping.placements == (placement,)
+    assert logits.dtype == DType.float32
+    assert logits.shape.rank == 2
+    assert logits.shape[1] == _NUM_EXPERTS
+    # The rows follow the activation, not just the placement tag.
+    assert logits.shape[0] == hidden.shape[0]
+
+
+def test_router_gate_mixed_gemv_rejects_a_sharded_gate_weight(
+    mock_accelerator: MagicMock,
+) -> None:
+    """A gate weight split by expert is the one placement the rule refuses.
+
+    Each device would hold its own experts' logits, which is not the
+    activation's placement and not a partial sum either, so no row keeps the
+    weight in place: satisfying one gathers it, and the default policy
+    refuses that automatic move instead of labelling the result wrongly.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        hidden = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+        )
+        weight = Tensor.zeros(
+            [_NUM_EXPERTS, _HIDDEN_DIM],
+            dtype=DType.float32,
+            device=DeviceMapping(mesh, (Sharded(0),)),
+        )
+        with pytest.raises(
+            ShardingError,
+            match=(
+                "needs a resharding; this region does not reshard automatically"
+            ),
+        ):
+            router_gate_mixed_gemv(hidden, weight)

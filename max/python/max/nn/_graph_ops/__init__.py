@@ -10071,7 +10071,7 @@ any wider window it is handed.
 """
 
 _ROUTER_GATE_MIXED_GEMV_MAX_M = 128
-"""The row window `mo.router.gate.mixed.gemv` defaults to.
+"""The row window `moe.router.gate.mixed.gemv` defaults to.
 
 A caller that wants the op's own window stages no parameter at all, so the
 graph keeps the IR it had before the window became a parameter; the number is
@@ -10106,6 +10106,13 @@ def _router_gate_mixed_gemv(
 ) -> TensorValue:
     """Computes mixed-input router logits from fixed gate weights.
 
+    The graph op it stages is ``moe.router.gate.mixed.gemv``.
+    :func:`max.nn.kernels.router_gate_mixed_gemv` is this builder's public
+    form, so its docstring is that op's doc too. ``max_private``'s legacy
+    Graph API gate (``minimax_m3/layers/moe_gate.py``) calls this builder
+    directly on ``TensorValue``s, without a wrapper, so a rename has to
+    update that caller.
+
     On SM100, ``gate_weight`` must be initialized before graph execution and
     remain unchanged during execution. The kernel prefetches weights before
     waiting for dependent grids, so weights produced by preceding graph ops
@@ -10113,7 +10120,8 @@ def _router_gate_mixed_gemv(
 
     Args:
         hidden_states: ``[rows, hidden]`` BF16 activation.
-        gate_weight: ``[experts, hidden]`` float32 gate weight, a graph constant.
+        gate_weight: ``[experts, hidden]`` float32 or bfloat16 gate weight,
+            a graph constant.
         max_m: The largest row count to launch the fused GEMV for; above it the
             op takes the cast + fp32 matmul chain it replaces. The op's own
             window bounds it per target, so the default leaves every target at

@@ -28,15 +28,15 @@ from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.graph import StaticDim
 from max.nn import Module
-from max.nn._graph_ops import _is_sm10x_gpu, _router_gate_mixed_gemv
+from max.nn._graph_ops import _is_sm10x_gpu
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import ExpertParallelMoE, TensorParallelMoE
-from max.nn.kernels import moe_router_group_limited
+from max.nn.kernels import moe_router_group_limited, router_gate_mixed_gemv
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, match_operand_placement
+from max.tensor.sharding import DeviceMapping
 
 from ..model_config import Glm5NextConfig
 
@@ -47,12 +47,6 @@ __all__ = [
     "Glm5NextTopKRouter",
     "build_mlp",
 ]
-
-# The logits take the activation's placement: the gate weight is replicated.
-_router_gate_mixed_gemv_op = F.functional(
-    _router_gate_mixed_gemv,
-    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
-)
 
 # A bf16-weight launch walks K in `8 * 128` granules with no tail guard
 # (max/kernels/src/linalg/gemv.mojo); Flash's K is 4096.
@@ -210,7 +204,7 @@ class Glm5NextTopKRouter(MoEGate):
             ``(seq_len, num_experts_per_token)``.
         """
         if _mixed_gemv_applies(hidden_states, self.gate_score.weight):
-            logits = _router_gate_mixed_gemv_op(
+            logits = router_gate_mixed_gemv(
                 hidden_states, self.gate_score.weight
             )
         else:

@@ -15,7 +15,11 @@
 
 from max import functional as F
 from max.dtype import DType
-from max.nn._graph_ops import _mixed_gemv_epilogue, _moe_sigmoid_gemv_router
+from max.nn._graph_ops import (
+    _mixed_gemv_epilogue,
+    _moe_sigmoid_gemv_router,
+    _router_gate_mixed_gemv,
+)
 from max.nn._graph_ops import grouped_matmul_ragged as _grouped_matmul_ragged
 from max.nn._graph_ops import moe_create_indices as _moe_create_indices
 from max.nn._graph_ops import (
@@ -185,6 +189,42 @@ moe_sigmoid_gemv_router = F.functional(
     _moe_sigmoid_gemv_router, rule=_moe_sigmoid_gemv_router_rule
 )
 
+
+def router_gate_mixed_gemv_rule(
+    hidden_states: TensorLayout,
+    gate_weight: TensorLayout,
+    max_m: int,
+    precise_max_m: int,
+) -> list[AxisAssignment]:
+    """Strategies for ``router_gate_mixed_gemv``: logits follow the activation.
+
+    The gate weight is a replicated graph constant, so the projection is
+    linear in ``hidden_states`` alone: a replicated activation gives
+    replicated logits, and a row-sharded one gives each device the logits of
+    its own rows. No other placement is sound -- an activation sharded on its
+    hidden axis would need a partial sum, and a gate weight sharded by expert
+    would leave each device holding its own experts' logits -- and no row
+    keeps either in place: every row names a replicated gate weight, and
+    neither names an activation sharded on its hidden axis. Satisfying a row
+    therefore moves that operand (a gather of the weight, a re-shard of the
+    activation), which the default policy refuses to do automatically, so the
+    call raises ``ShardingError`` rather than labelling the logits wrongly.
+
+    ``max_m`` and ``precise_max_m`` bound the row window the op runs its
+    fused launch over; neither changes a placement.
+    """
+    return [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), R), (Sharded(0),)),
+    ]
+
+
+# The gate weight is replicated, so each device projects only its own rows:
+# the logits take the activation's placement and no rank gathers another's.
+router_gate_mixed_gemv = F.functional(
+    _router_gate_mixed_gemv, rule=router_gate_mixed_gemv_rule
+)
+
 # The epilogue GEMV runs on the placement of the activation it reads, which is
 # what a column-parallel projection's output keeps.
 mixed_gemv_epilogue = F.functional(
@@ -226,4 +266,5 @@ __all__ = [
     "moe_sigmoid_gemv_group_limited_router_packed",
     "moe_sigmoid_gemv_router",
     "moe_single_group_router_packed",
+    "router_gate_mixed_gemv",
 ]

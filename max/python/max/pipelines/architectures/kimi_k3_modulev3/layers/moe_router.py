@@ -41,20 +41,11 @@ from max import functional as F
 from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.graph import StaticDim
-from max.nn._graph_ops import _router_gate_mixed_gemv
-from max.nn.kernels import moe_router_group_limited
+from max.nn.kernels import moe_router_group_limited, router_gate_mixed_gemv
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )
 from max.tensor import Tensor
-from max.tensor.sharding import match_operand_placement
-
-# The output takes the activation's placement: under TP the router stays
-# replicated, so the logits the fused GEMV returns are replicated too.
-_router_gate_mixed_gemv_op = F.functional(
-    _router_gate_mixed_gemv,
-    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
-)
 
 # K granules the fused GEMV can walk the gate weight's contraction by on
 # gfx950: `simd_width * num_threads` (max/kernels/src/linalg/gemv.mojo).
@@ -153,7 +144,7 @@ class KimiK3TopKRouter(DeepseekV3TopKRouter):
         # (a dtype other than fp32/bf16, a dynamic shape) raises at graph
         # build rather than silently taking the slower inherited path.
         return self.route(
-            _router_gate_mixed_gemv_op(hidden_states, self.gate_score.weight)
+            router_gate_mixed_gemv(hidden_states, self.gate_score.weight)
         )
 
     def route(self, logits: Tensor) -> tuple[Tensor, Tensor]:

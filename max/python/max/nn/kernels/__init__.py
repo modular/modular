@@ -77,6 +77,7 @@ from .moe import (
     moe_sigmoid_gemv_group_limited_router_packed,
     moe_sigmoid_gemv_router,
     moe_single_group_router_packed,
+    router_gate_mixed_gemv,
 )
 from .norm import mtp_eh_norm
 from .quant import (
@@ -206,6 +207,7 @@ __all__ = [
     "rms_norm_quantize_dynamic_scaled_float8_dual",
     "rope_ragged",
     "rope_split_store_ragged",
+    "router_gate_mixed_gemv",
     "row_invariant_matmul",
     "scatter_nd_skip_oob_indices",
     "silu_quantize_fp8",

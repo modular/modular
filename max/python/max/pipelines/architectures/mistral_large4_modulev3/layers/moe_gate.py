@@ -29,7 +29,7 @@ and it runs float32-precise arithmetic up to 256 rows, so a row's routing does
 not depend on how many rows share the launch in the band a served request
 reaches: a 64-row context step and a 256-row verify step agree bit for bit.
 The activation's widening is normally a launch of its own; on SM100 the GEMV
-instead widens it in registers (``mo.router.gate.mixed.gemv``), which is
+instead widens it in registers (``moe.router.gate.mixed.gemv``), which is
 bit-identical to the cast followed by the fp32 GEMV because BF16 widens
 losslessly and the fused launch keeps that GEMV's K split. Above the fused
 window the op stages the cast and the matmul again, and this model bounds that
@@ -49,26 +49,12 @@ from __future__ import annotations
 import numpy as np
 from max import functional as F
 from max.dtype import DType
-from max.nn._graph_ops import _router_gate_mixed_gemv
 from max.nn.common_layers.moe import MoEGate
-from max.nn.kernels import moe_router_group_limited
+from max.nn.kernels import moe_router_group_limited, router_gate_mixed_gemv
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping, match_operand_placement
+from max.tensor.sharding import DeviceMapping
 
 from ._dispatch import fused_fp32_gemv_applies
-
-_GATE_OP = "mo.router.gate.mixed.gemv"
-"""The fused router gate's custom op."""
-
-_FUSED_GEMV = F.functional(
-    _router_gate_mixed_gemv,
-    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
-)
-"""The gate GEMV that widens its BF16 activation in registers.
-
-Its logits take the activation's placement: the router runs replicated, so a
-rank's own logits stay on that rank.
-"""
 
 _FUSED_GEMV_MAX_ROWS = 64
 """The last row count that takes the fused launch rather than the chain.
@@ -107,7 +93,7 @@ def _gate_logits(hidden_states: Tensor, weight: Tensor) -> Tensor:
         weight: The ``(num_experts, hidden_dim)`` gate weight.
     """
     if fused_fp32_gemv_applies(hidden_states, weight):
-        return _FUSED_GEMV(
+        return router_gate_mixed_gemv(
             hidden_states,
             F.cast(weight, DType.float32),
             max_m=_FUSED_GEMV_MAX_ROWS,

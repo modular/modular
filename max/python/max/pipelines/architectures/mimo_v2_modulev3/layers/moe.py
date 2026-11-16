@@ -40,7 +40,6 @@ from max.nn._graph_ops import (
     MEGAFFN_MIMO_K2,
     MEGAFFN_MIMO_MAX_EXPERTS,
     MEGAFFN_MIMO_N1,
-    _router_gate_mixed_gemv,
     megaffn_mimo_w4a8,
     moe_create_indices,
     moe_finalize,
@@ -51,7 +50,7 @@ from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.nn.kernels import moe_router_group_limited
+from max.nn.kernels import moe_router_group_limited, router_gate_mixed_gemv
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
@@ -63,17 +62,9 @@ from max.tensor.sharding import (
     NamedMapping,
     Partial,
     Sharded,
-    match_operand_placement,
 )
 
 from ..quant import FP8_BLOCK
-
-# The fused mixed router GEMV keeps the logits on the input's placement, which
-# is replicated under tensor parallelism.
-_router_gate_mixed_gemv_op = F.functional(
-    _router_gate_mixed_gemv,
-    rule=match_operand_placement(_router_gate_mixed_gemv, "hidden_states"),
-)
 
 MEGAFFN_MIMO_BAND_ROWS = 512
 """The most routed rows a step may carry and still take the one launch.
@@ -258,7 +249,7 @@ class MiMoV2Router(Module[[Tensor], tuple[Tensor, Tensor]]):
         """Returns the ``[tokens, num_experts]`` float32 gate logits."""
         if not self._fused_gate_applies(x, weight):
             return x.cast(DType.float32) @ weight.cast(DType.float32).T
-        return _router_gate_mixed_gemv_op(x, weight.cast(DType.float32))
+        return router_gate_mixed_gemv(x, weight.cast(DType.float32))
 
     def _fused_gate_applies(self, x: Tensor, weight: Tensor) -> bool:
         """Whether the fused GEMV can carry this call's gate.
