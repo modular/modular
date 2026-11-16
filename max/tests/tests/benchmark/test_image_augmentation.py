@@ -128,7 +128,9 @@ def test_augment_rejects_out_of_range_fraction() -> None:
     has to run ahead of the zero early-return or it is unreachable."""
     samples = RequestSamples(requests=[_make_request()])
     for bad in (-0.5, 1.5):
-        with pytest.raises(ValueError, match=r"must be in \[0, 1\]"):
+        with pytest.raises(
+            ValueError, match=r"image_fraction must be in \[0, 1\]"
+        ):
             augment_samples_with_images(
                 samples,
                 fraction=bad,
@@ -576,18 +578,6 @@ def test_augment_samples_skips_chat_judge() -> None:
         for session in samples.chat_sessions
     ]
     assert after == before
-
-
-def test_augment_samples_invalid_fraction_raises() -> None:
-    samples = RequestSamples(requests=[_make_request()])
-    with pytest.raises(ValueError, match="image_fraction"):
-        augment_samples_with_images(
-            samples,
-            fraction=1.5,
-            image_count=1,
-            image_long_side=512,
-            image_aspect_ratio=1.0,
-        )
 
 
 def test_selection_is_seeded_independently_of_the_global_stream() -> None:
