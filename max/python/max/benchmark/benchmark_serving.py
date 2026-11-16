@@ -114,9 +114,11 @@ from max.benchmark.benchmark_shared.request import (
     progressbar_request_driver,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
+    MACH_METRICS_QUIET_S,
     MissingEngineMetricsError,
     collect_benchmark_metrics,
     fetch_spec_decode_metrics,
+    wait_for_metrics_to_settle,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     build_pixel_generation_result,
@@ -496,6 +498,7 @@ async def benchmark(
     # don't affect the delta calculation.
     baseline_endpoints: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             baseline_endpoints = collect_benchmark_metrics(
                 args.metrics_urls, backend, session.base_url
@@ -773,6 +776,7 @@ async def benchmark(
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     endpoint_metrics: Mapping[str, ParsedMetrics] = {}
     if args.collect_server_stats:
+        _settle_server_metrics(args, backend, session.base_url)
         try:
             endpoint_metrics = collect_benchmark_metrics(
                 args.metrics_urls,
@@ -1316,6 +1320,18 @@ def _emit_workload_stats(
         logger.info("Wrote workload stats to %s", args.workload_stats_json)
     if args.print_workload_stats:
         print_workload_stats(session.samples, stats)
+
+
+def _settle_server_metrics(
+    args: ServingBenchmarkConfig, backend: Backend, base_url: str
+) -> None:
+    """Lets a Mach engine publish its last metrics before they are read."""
+    if backend != "mach":
+        return
+    wait_for_metrics_to_settle(
+        lambda: collect_benchmark_metrics(args.metrics_urls, backend, base_url),
+        quiet_s=MACH_METRICS_QUIET_S,
+    )
 
 
 def _run_dry_run_sweep(

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -138,7 +139,12 @@ class ParsedMetrics:
             labels: Optional dictionary of labels (such as {"batch_type": "CE"})
 
         Returns:
-            HistogramData if found, None otherwise
+            HistogramData if found, None otherwise. A series whose labels
+            match exactly is preferred. Otherwise a series that carries the
+            requested labels plus others, such as the ``otel_scope_name``
+            Mach adds, is used. If more than one such series matches, the
+            lookup logs a warning and returns None, and it does not try the
+            remaining metric name spellings.
 
         Examples:
             >>> # Get histogram without labels
@@ -160,6 +166,31 @@ class ParsedMetrics:
             key = _format_metric_key(candidate, labels or {})
             if key in self.histograms:
                 return self.histograms[key]
+            # Mach's OpenTelemetry exporter adds labels such as
+            # ``otel_scope_name`` to every series, so a series carrying
+            # the requested labels plus others is still the one asked for.
+            if labels:
+                wanted = {f'{k}="{v}"' for k, v in labels.items()}
+                matches = [
+                    series
+                    for series in sorted(self.histograms)
+                    if series.startswith(f"{candidate}{{")
+                    and wanted <= set(_LABEL_PAIR.findall(series))
+                ]
+                if len(matches) > 1:
+                    # Picking one would report a single replica's figure as
+                    # the deployment's.
+                    logger.warning(
+                        "%s with labels %s matches %d series (%s); not"
+                        " reporting any of them",
+                        candidate,
+                        labels,
+                        len(matches),
+                        ", ".join(matches),
+                    )
+                    return None
+                if matches:
+                    return self.histograms[matches[0]]
         return None
 
     def histogram_family(self, metric_name: str) -> dict[str, HistogramData]:
@@ -222,6 +253,9 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
         metrics_port = parsed_url.port or 8000
 
     return f"http://{host}:{metrics_port}/metrics"
+
+
+_LABEL_PAIR = re.compile(r'\w+="(?:[^"\\]|\\.)*"')
 
 
 def _format_metric_key(metric_name: str, labels: dict[str, str]) -> str:
@@ -477,6 +511,68 @@ def collect_benchmark_metrics(
 
 # Only Mach's pipeline driver sets this gauge.
 _MACH_PIPELINE_ENGINE_GAUGE = "max_pipeline_held_seats"
+
+
+# Mach publishes its histograms in steps, about two seconds apart on the build
+# this was measured on, so a scrape right after a run can miss the last step
+# and one right before a run can still carry the previous run's tail.
+MACH_METRICS_QUIET_S = 3.0
+METRICS_SETTLE_POLL_S = 0.5
+METRICS_SETTLE_TIMEOUT_S = 15.0
+
+
+def _observation_count(metrics: Mapping[str, ParsedMetrics]) -> float:
+    return sum(
+        hist.count for pm in metrics.values() for hist in pm.histograms.values()
+    )
+
+
+def wait_for_metrics_to_settle(
+    scrape: Callable[[], Mapping[str, ParsedMetrics]],
+    *,
+    quiet_s: float,
+    poll_s: float = METRICS_SETTLE_POLL_S,
+    timeout_s: float = METRICS_SETTLE_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Waits until scraped histograms stop gaining observations.
+
+    Args:
+        scrape: Returns the current metrics by endpoint, empty when the
+            scrape failed.
+        quiet_s: How long the observation count must stay unchanged.
+        poll_s: Time between scrapes.
+        timeout_s: When to give up, so traffic from elsewhere cannot hold the
+            caller up forever.
+        sleep: Sleeps for the given seconds.
+        now: Returns a monotonic time in seconds.
+
+    Returns:
+        True once the count was quiet for ``quiet_s``; False when the scrape
+        failed or the timeout passed first.
+    """
+    deadline = now() + timeout_s
+    last_count: float | None = None
+    last_change = now()
+    while True:
+        metrics = scrape()
+        if not metrics:
+            return False
+        count = _observation_count(metrics)
+        t = now()
+        if count != last_count:
+            last_count, last_change = count, t
+        elif t - last_change >= quiet_s:
+            return True
+        if t >= deadline:
+            logger.warning(
+                "Server metrics were still changing after %.0f s; using them"
+                " as they are",
+                timeout_s,
+            )
+            return False
+        sleep(poll_s)
 
 
 def _is_mach_pipeline_engine(parsed: ParsedMetrics) -> bool:

@@ -43,9 +43,11 @@ from max.benchmark.benchmark_shared.server_metrics import (
     parse_spec_decode_metrics,
     print_server_metrics,
     verify_always_emitted_metrics,
+    wait_for_metrics_to_settle,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
     from unittest.mock import MagicMock
 
 
@@ -395,6 +397,64 @@ def test_get_histogram_helper() -> None:
         "max_batch_execution_time_milliseconds", {"batch_type": "missing"}
     )
     assert result_missing is None
+
+
+def test_get_histogram_ignores_labels_the_exporter_adds() -> None:
+    """Mach's exporter tags every series with ``otel_scope_name``."""
+    decode_hist = HistogramData(buckets=[], sum=1762.0, count=257.0)
+    prefill_hist = HistogramData(buckets=[], sum=41.0, count=11.0)
+    metrics = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'max_batch_size{batch_type="decode",otel_scope_name="mach-engine"}': decode_hist,
+            'max_batch_size{batch_type="prefill",otel_scope_name="mach-engine"}': prefill_hist,
+        },
+        raw_text="",
+    )
+
+    assert metrics.get_histogram(
+        "max_batch_size", {"batch_type": "decode"}
+    ) == (decode_hist)
+    assert metrics.get_histogram(
+        "max_batch_size", {"batch_type": "prefill"}
+    ) == (prefill_hist)
+    assert (
+        metrics.get_histogram("max_batch_size", {"batch_type": "mixed"}) is None
+    )
+    # Unlabeled lookups keep their exact-match meaning.
+    assert metrics.get_histogram("max_batch_size") is None
+
+
+def test_get_histogram_refuses_to_pick_between_matching_series(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two replicas' series must not be reported as one figure."""
+    metrics = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'max_batch_size{batch_type="decode",replica="0"}': _hist(
+                100.0, 10.0
+            ),
+            'max_batch_size{batch_type="decode",replica="1"}': _hist(
+                900.0, 10.0
+            ),
+        },
+        raw_text="",
+    )
+
+    with caplog.at_level("WARNING"):
+        result = metrics.get_histogram(
+            "max_batch_size", {"batch_type": "decode"}
+        )
+
+    assert result is None
+    assert "matches 2 series" in caplog.text
+    # Naming the series fully still selects it.
+    assert metrics.get_histogram(
+        "max_batch_size", {"batch_type": "decode", "replica": "1"}
+    ) == _hist(900.0, 10.0)
 
 
 def test_metrics_by_endpoint_defaults_to_empty() -> None:
@@ -1174,6 +1234,86 @@ def test_modular_backend_stamp_leaves_max_serve_output_unchanged() -> None:
     assert unstamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
     assert stamped.mean_prefill_batch_time_ms == pytest.approx(100.0)
     assert unstamped.to_result_dict() == stamped.to_result_dict()
+
+
+class _FakeClock:
+    """A clock that only moves when the code under test sleeps."""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+        self.sleeps = 0
+
+    def now(self) -> float:
+        return self.t
+
+    def sleep(self, seconds: float) -> None:
+        self.t += seconds
+        self.sleeps += 1
+
+
+def _counts(count: float) -> dict[str, ParsedMetrics]:
+    return {
+        "engine": ParsedMetrics(
+            counters={},
+            gauges={},
+            histograms={"max_batch_size": _hist(count * 7, count)},
+            raw_text="",
+        )
+    }
+
+
+def _settle(
+    clock: _FakeClock,
+    scrape: Callable[[], Mapping[str, ParsedMetrics]],
+    timeout_s: float = 15.0,
+) -> bool:
+    return wait_for_metrics_to_settle(
+        scrape,
+        quiet_s=3.0,
+        poll_s=0.5,
+        timeout_s=timeout_s,
+        sleep=clock.sleep,
+        now=clock.now,
+    )
+
+
+def test_settle_waits_for_the_last_export_step() -> None:
+    """Mach publishes in steps; the count keeps rising until the last one."""
+    clock = _FakeClock()
+    steps = {0.0: 100.0, 2.0: 300.0, 4.0: 400.0}
+
+    def scrape() -> dict[str, ParsedMetrics]:
+        return _counts(max(v for t, v in steps.items() if t <= clock.now()))
+
+    assert _settle(clock, scrape)
+    # Quiet from the last step at t=4 until t=7.
+    assert clock.now() >= 7.0
+
+
+def test_settle_returns_after_the_quiet_period_when_nothing_changes() -> None:
+    clock = _FakeClock()
+
+    assert _settle(clock, lambda: _counts(50.0))
+
+    assert clock.now() == 3.0
+
+
+def test_settle_gives_up_when_the_server_keeps_changing() -> None:
+    clock = _FakeClock()
+
+    def scrape() -> dict[str, ParsedMetrics]:
+        return _counts(clock.now())
+
+    assert not _settle(clock, scrape, timeout_s=5.0)
+    assert clock.now() <= 5.5
+
+
+def test_settle_does_not_wait_when_the_scrape_fails() -> None:
+    clock = _FakeClock()
+
+    assert not _settle(clock, dict)
+
+    assert clock.sleeps == 0
 
 
 class TestMachSpecDecode:

@@ -355,6 +355,32 @@ def test_live_run_stats_json_reflects_server_clamped_limit(
     assert blob["context_limit"] == 2048
 
 
+def test_mach_metrics_settle_before_they_are_read(
+    mocker: MockerFixture,
+) -> None:
+    wait = mocker.patch.object(benchmark_serving, "wait_for_metrics_to_settle")
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+
+    benchmark_serving._settle_server_metrics(
+        config, "mach", "http://localhost:8091"
+    )
+
+    wait.assert_called_once()
+
+
+def test_other_backends_do_not_wait_for_their_metrics(
+    mocker: MockerFixture,
+) -> None:
+    wait = mocker.patch.object(benchmark_serving, "wait_for_metrics_to_settle")
+    config = ServingBenchmarkConfig(model="HuggingFaceTB/SmolLM2-135M")
+
+    benchmark_serving._settle_server_metrics(
+        config, "modular", "http://localhost:8000"
+    )
+
+    wait.assert_not_called()
+
+
 # ===----------------------------------------------------------------------=== #
 # Seed handling (PERF-2587)
 # ===----------------------------------------------------------------------=== #
