@@ -1554,7 +1554,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
         # stream can't overwrite or free it until the copy has read it.
         _check_device_to_device_copy(self._impl, dst_buf._impl, src_buf._impl)
-        var src_ctx = src_buf._impl._ctx.unwrap_hal()
+        var src_ctx = src_buf._impl._ctx._impl
         var sync = not (src_ctx._hal_stream() is self._impl._hal_stream())
         if sync:
             self._impl.enqueue_wait_for(src_ctx)
@@ -2312,7 +2312,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime __guard case False = use_legacy_backend() else:
             comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_function(
-                f.unwrap_legacy(),
+                f._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -2325,7 +2325,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        var hal_f: HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             var launch = HalLaunchOptions(
                 grid_dim,
@@ -2876,7 +2876,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceContext"
         )
-        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        var hal_f: HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
                 hal_f.Wrapper, hal_f.declared_arg_types

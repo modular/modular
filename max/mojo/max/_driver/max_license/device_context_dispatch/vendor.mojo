@@ -62,7 +62,7 @@ def CUDA(ctx: DeviceContext) raises -> CUcontext:
         If the context is not a CUDA context.
     """
     comptime if use_legacy_backend():
-        return rebind_var[CUcontext](_legacy_CUDA(ctx.unwrap_legacy()))
+        return rebind_var[CUcontext](_legacy_CUDA(ctx._impl))
     else:
         raise Error(
             "CUcontext access is not wired for the HAL DeviceContext; the"
@@ -83,7 +83,7 @@ def CUDA(stream: DeviceStreamBase) raises -> CUstream:
         If the stream is not a CUDA stream.
     """
     comptime if use_legacy_backend():
-        return rebind_var[CUstream](_legacy_CUDA(stream.unwrap_legacy()))
+        return rebind_var[CUstream](_legacy_CUDA(stream._impl))
     else:
         return unsafe_cast[Type=_CUstream_st, origin=UntrackedOrigin[mut=True]](
             stream._native_stream()
@@ -103,7 +103,7 @@ def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
         If the function is not a CUDA function.
     """
     comptime if use_legacy_backend():
-        return rebind_var[CUmodule](_legacy_CUDA_MODULE(func.unwrap_legacy()))
+        return rebind_var[CUmodule](_legacy_CUDA_MODULE(func._impl))
     else:
         raise Error(
             "CUmodule access is not wired for the HAL DeviceContext; the plugin"
@@ -124,7 +124,7 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
         If the context is not a HIP context.
     """
     comptime if use_legacy_backend():
-        return rebind_var[hipDevice_t](_legacy_HIP(ctx.unwrap_legacy()))
+        return rebind_var[hipDevice_t](_legacy_HIP(ctx._impl))
     else:
         raise Error("hipDevice_t access is not wired for the HAL DeviceContext")
 
@@ -142,7 +142,7 @@ def HIP(stream: DeviceStreamBase) raises -> hipStream_t:
         If the stream is not a HIP stream.
     """
     comptime if use_legacy_backend():
-        return rebind_var[hipStream_t](_legacy_HIP(stream.unwrap_legacy()))
+        return rebind_var[hipStream_t](_legacy_HIP(stream._impl))
     else:
         return unsafe_cast[
             Type=_ihipStream_t, origin=UntrackedOrigin[mut=True]
@@ -162,7 +162,7 @@ def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
         If the function is not a HIP function.
     """
     comptime if use_legacy_backend():
-        return rebind_var[hipModule_t](_legacy_HIP_MODULE(func.unwrap_legacy()))
+        return rebind_var[hipModule_t](_legacy_HIP_MODULE(func._impl))
     else:
         raise Error(
             "hipModule_t access is not wired for the HAL DeviceContext; the HIP"

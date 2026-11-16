@@ -458,7 +458,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime __guard case False = use_legacy_backend() else:
             comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             self._impl.enqueue_function(
-                f.unwrap_legacy(),
+                f._impl,
                 *args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -470,7 +470,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             return
         comptime assert not use_legacy_backend()  # TODO(MOCO-5393)
 
-        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        var hal_f: HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             var launch = HalLaunchOptions(
                 grid_dim,
@@ -593,7 +593,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        var hal_f: HALDeviceFunction[...] = f.unwrap_hal()
+        var hal_f: HALDeviceFunction[...] = f._impl
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_compiled[
                 hal_f.Wrapper, hal_f.declared_arg_types
