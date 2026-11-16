@@ -86,6 +86,13 @@
 #                       (the harness's) for a third-party simulator; under
 #                       self-simulation, the agent's effort, since one endpoint
 #                       plays both sides. "unset" sends none.
+#   --reasoning-passback on|off
+#                      Send each earlier agent turn's reasoning back as
+#                       reasoning_content (default: on, since the OpenRouter
+#                       harness replays it). Stock tau2 drops it, which
+#                       changes the prompt a reasoning model's chat template
+#                       expects. Recorded in score.json, so compare scores
+#                       only across runs with the same setting.
 #   --num-trials N     Runs per task (default: 4, the published tau2 leaderboard
 #                       convention, giving 200 graded simulations). Do not lower
 #                       this to save time and then read the verdict: reward is
@@ -138,7 +145,8 @@
 #
 # Env overrides: EXACTO_CACHE, EXACTO_TAU2_PIN, EXACTO_TAU2_PYTHON,
 #               EXACTO_REFERENCE_USER_LLM, EXACTO_API_KEY, EXACTO_USER_API_BASE,
-#               EXACTO_USER_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY.
+#               EXACTO_USER_API_KEY, EXACTO_TAU2_REASONING_PASSBACK,
+#               GEMINI_API_KEY, OPENROUTER_API_KEY.
 
 set -euo pipefail
 
@@ -166,6 +174,7 @@ user_api_base=""
 user_api_key="${EXACTO_USER_API_KEY:-}"
 reasoning_effort="high"
 user_reasoning_effort=""
+reasoning_passback="${EXACTO_TAU2_REASONING_PASSBACK:-on}"
 user_max_tokens=8192
 num_trials=4
 num_tasks=""
@@ -179,7 +188,7 @@ serve_config=""
 out_dir="/tmp/exacto-taubench-results"
 refresh=0
 
-usage() { sed -n '15,141p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,149p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -192,6 +201,7 @@ while [[ $# -gt 0 ]]; do
     --user-max-tokens) user_max_tokens="$2"; shift 2 ;;
     --reasoning-effort) reasoning_effort="$2"; shift 2 ;;
     --user-reasoning-effort) user_reasoning_effort="$2"; shift 2 ;;
+    --reasoning-passback) reasoning_passback="$2"; shift 2 ;;
     --num-trials) num_trials="$2"; shift 2 ;;
     --num-tasks) num_tasks="$2"; shift 2 ;;
     --task-split) task_split="$2"; shift 2 ;;
@@ -210,6 +220,10 @@ done
 
 url="${url%/}"; url="${url%/v1}"; url="${url%/}"
 [[ "$user_llm" == "self" ]] && user_llm=""
+if [[ "$reasoning_passback" != on && "$reasoning_passback" != off ]]; then
+  echo "error: --reasoning-passback must be on or off, got '$reasoning_passback'" >&2
+  exit 1
+fi
 # The env default only applies to a simulator that can use it, so a stale
 # export cannot block self-simulation or another provider.
 if [[ -z "$user_api_base" && "$user_llm" == openai/* ]]; then
@@ -413,6 +427,45 @@ open(path, "w").write(src.replace(anchor, addition + anchor))
 PYPATCH
 }
 
+# tau2 rebuilds each earlier agent turn from its content and tool calls only, so
+# a reasoning model sees a history without its own reasoning, which some chat
+# templates render as an empty reasoning block. The OpenRouter harness replays
+# the whole earlier output, reasoning included. tau2 keeps the reasoning in
+# raw_data, which is choices[0] of the response; an engine names the field
+# reasoning_content or reasoning. Only agent requests change: the simulator's
+# view comes from flip_roles, which builds messages without raw_data.
+patch_reasoning_passback() {
+  vpy - "$CHECKOUT/src/tau2/utils/llm_utils.py" <<'PYPATCH'
+import sys
+path = sys.argv[1]
+anchor = (
+    "            litellm_messages.append(\n"
+    "                {\n"
+    "                    \"role\": \"assistant\",\n"
+    "                    \"content\": message.content,\n"
+    "                    \"tool_calls\": tool_calls,\n"
+    "                }\n"
+    "            )\n"
+)
+replacement = '''            _assistant = {
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": tool_calls,
+            }
+            _choice = message.raw_data if isinstance(message.raw_data, dict) else {}
+            _generated = _choice.get("message") or {}
+            _reasoning = _generated.get("reasoning_content") or _generated.get("reasoning")
+            if _reasoning:
+                _assistant["reasoning_content"] = _reasoning
+            litellm_messages.append(_assistant)
+'''
+src = open(path).read()
+if src.count(anchor) != 1:
+    sys.exit(f"ERROR: tau2 changed; cannot patch reasoning passback in {path}")
+open(path, "w").write(src.replace(anchor, replacement))
+PYPATCH
+}
+
 ensure_checkout() {
   local uv; uv="$(find_uv)"
   if [[ "$refresh" == 1 ]]; then rm -rf "$CHECKOUT"; fi
@@ -447,6 +500,7 @@ ensure_checkout() {
   patch_empty_agent_turn
   patch_empty_user_turn
   patch_api_key_env
+  if [[ "$reasoning_passback" == on ]]; then patch_reasoning_passback; fi
 }
 
 detect_model() {
@@ -679,7 +733,7 @@ elif [[ -n "$user_api_base" ]]; then
 else
   user_desc="$user_llm"
 fi
-echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} reasoning_effort=$reasoning_effort user=$user_desc user_reasoning_effort=$user_reasoning_effort"
+echo "[exacto] running tau2 airline: trials=$num_trials tasks=${num_tasks:-50(all)} reasoning_effort=$reasoning_effort reasoning_passback=$reasoning_passback user=$user_desc user_reasoning_effort=$user_reasoning_effort"
 (
   cd "$CHECKOUT"
   # Pin the data directory explicitly. tau2 otherwise derives it from the
@@ -703,7 +757,10 @@ echo "[exacto] harness results: $out_dir/tau2-results.json"
 ENDPOINT_META="$out_dir/endpoint.json"
 capture_endpoint_meta "$ENDPOINT_META"
 
-REPORT_ARGS=(--reference-user-llm "$reference_user_llm")
+REPORT_ARGS=(
+  --reference-user-llm "$reference_user_llm"
+  --reasoning-passback "$reasoning_passback"
+)
 
 # Count the chosen split from the pinned checkout rather than hardcoding the
 # dataset size anywhere: that is what tells a subset run from a full one.
@@ -765,6 +822,10 @@ if effort(s.get("agent_llm_args")) != "high":
 if not self_simulated and effort(s.get("user_llm_args")) != "medium":
     print(f"::warning::simulator reasoning_effort is "
           f"{effort(s.get('user_llm_args'))}, not the harness's medium.")
+if s.get("reasoning_passback") is False:
+    print("::warning::earlier agent reasoning was not sent back, unlike the "
+          "OpenRouter harness, so a reasoning model's score is not comparable "
+          "to OpenRouter's or to a run with --reasoning-passback on.")
 if s.get("max_steps") != 200:
     print(f"::warning::max_steps is {s.get('max_steps')}, expected 200.")
 graded = s.get("total") or 0

@@ -661,6 +661,7 @@ def test_tau2_config_names_the_user_simulator_and_a_subset() -> None:
         "user_llm": "gemini/gemini-2.5-flash",
         "user_api_base": None,
         "user_max_tokens": None,
+        "reasoning_passback": None,
         "sample_size": 2,
     }
     summary["full_task_count"] = 2
@@ -766,6 +767,40 @@ def test_a_run_without_empty_simulator_turns_records_zero() -> None:
     _, summary = exacto_report.parse_tau2_log(TAU2_LOG)
     assert summary["empty_user_turns"] == 0
     assert summary["empty_user_turn_finish_reasons"] == {}
+
+
+def test_reasoning_passback_is_recorded_and_splits_the_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fixture's one errored simulation is over the default budget.
+    monkeypatch.setenv("EVAL_MAX_ERROR_RATE", "0")
+    log_path = tmp_path / "tau2-results.json"
+    log_path.write_text(json.dumps(TAU2_LOG))
+
+    def run(passback: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        out = tmp_path / passback
+        exacto_report.main(
+            [
+                "--harness=tau2",
+                f"--log={log_path}",
+                "--dataset=taubench_airline",
+                f"--out-dir={out}",
+                "--metric-prefix=EXACTO_TAUBENCH",
+                f"--reasoning-passback={passback}",
+            ]
+        )
+        return (
+            json.loads((out / "score.json").read_text()),
+            json.loads((out / "config.json").read_text()),
+        )
+
+    on_score, on_config = run("on")
+    off_score, off_config = run("off")
+    assert on_score["reasoning_passback"] is True
+    assert off_score["reasoning_passback"] is False
+    assert on_config["reasoning_passback"] is True
+    # Off is what every run before the switch did, so it keeps their config.
+    assert off_config["reasoning_passback"] is None
 
 
 def test_an_unknown_full_count_keeps_the_subset_size() -> None:

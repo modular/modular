@@ -582,6 +582,11 @@ def eval_config(
         "user_max_tokens": user_args.get("max_tokens")
         if own_simulator
         else None,
+        # Left unset when off, so runs from before the switch existed, which
+        # never sent reasoning back, keep their config hash.
+        "reasoning_passback": True
+        if summary.get("reasoning_passback")
+        else None,
         "sample_size": _sample_size(rows, summary.get("full_task_count")),
     }
 
@@ -864,6 +869,15 @@ def main(argv: list[str] | None = None) -> None:
         "--endpoint-meta",
         help="JSON file describing what served the model, recorded verbatim.",
     )
+    parser.add_argument(
+        "--reasoning-passback",
+        choices=["on", "off"],
+        help=(
+            "tau2 only: whether the runner sent each earlier agent turn's "
+            "reasoning back. It changes the prompt a reasoning model sees, so "
+            "scores compare only across runs with the same setting."
+        ),
+    )
     args = parser.parse_args(argv)
 
     log = load_json(args.log)
@@ -881,6 +895,8 @@ def main(argv: list[str] | None = None) -> None:
         summary["reference_user_llm"] = args.reference_user_llm
     if args.full_task_count:
         summary["full_task_count"] = args.full_task_count
+    if args.reasoning_passback:
+        summary["reasoning_passback"] = args.reasoning_passback == "on"
     write_outputs(
         args.out_dir,
         args.dataset,
