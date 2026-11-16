@@ -757,7 +757,7 @@ def MojoHAL_DeviceContext_stream(
 ) abi("C") -> _CString[]:
     comptime assert not use_legacy_backend(), "HAL backend only"
     var hal_ctx = ctx[].unwrap_hal()
-    var stream = DeviceStream(_impl=_HALDeviceStream(hal_ctx, hal_ctx._stream))
+    var stream = DeviceStream(_impl=_HALDeviceStream(ctx[], hal_ctx._stream))
     var boxed = alloc(Layout[DeviceStream].single())
     boxed.unsafe_ptr().unsafe_write(stream^)
     out_stream[] = boxed^.unsafe_leak()
@@ -1023,7 +1023,7 @@ def MojoHAL_DeviceContext_allocateCompletionFlag(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        var flag = ArcPointer(_CompletionFlagBox(ctx[].unwrap_hal()))
+        var flag = ArcPointer(_CompletionFlagBox(ctx[]))
         var boxed = alloc(Layout[ArcPointer[_CompletionFlagBox]].single())
         boxed.unsafe_ptr().unsafe_write(flag^)
         out_flag[] = boxed^.unsafe_leak()

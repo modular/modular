@@ -98,7 +98,7 @@ struct _HALDeviceStream[target: CompilationTarget = default_accelerator()](
     """The state of a `DeviceStream` on the HAL backend: the context that owns
     the stream, and the HAL stream, which all copies share."""
 
-    var _ctx: HALDeviceContext[Self.target]
+    var _ctx: DeviceContext[Self.target]
     var _stream: ArcPointer[Stream[get_device_spec[0]()]]
 
 
@@ -166,7 +166,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             self._impl = Self._Legacy(ctx._impl)
         else:
-            self._impl = Self._HAL(ctx._impl, ctx._impl._stream)
+            self._impl = Self._HAL(ctx, ctx._impl._stream)
 
     def __init__(out self, *, var _impl: Self._Impl):
         """Wraps an already-constructed backend stream.
@@ -547,7 +547,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 func,
                 DeviceContext[Self.target].FunctionWrapper,
                 target=Self.target,
-            ](DeviceContext[Self.target](_impl=self._impl._ctx.copy()))
+            ](self._impl._ctx)
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
                 _check_config_dims["DeviceStream.enqueue_function"](
                     execution_config, location=call_location()
@@ -873,7 +873,7 @@ struct DeviceEvent(ImplicitlyCopyable):
 struct _CompletionFlagBox(Movable):
     """A plugin flag shared with the C++ ``M::Driver::CompletionFlag``."""
 
-    var ctx: HALDeviceContext[]
+    var ctx: DeviceContext[]
     var flag: FlagHandle
 
     @staticmethod
@@ -882,13 +882,14 @@ struct _CompletionFlagBox(Movable):
             return flags
         raise Error("completion flags are not supported on this device")
 
-    def __init__(out self, ctx: HALDeviceContext[]) raises:
+    def __init__(out self, ctx: DeviceContext[]) raises:
         # `reset` must not fail later inside a driver callback.
         if not ctx.supports_flag_wait():
             raise Error("completion flags are not supported on this device")
-        comptime Ext = type_of(ctx._context[].extensions())
+        var hal = ctx.unwrap_hal()
+        comptime Ext = type_of(hal._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagV1):
-            ref hal_ctx = ctx._context[]
+            ref hal_ctx = hal._context[]
             var flags = Self._flags(hal_ctx.extensions())
             self.flag = flags.create(hal_ctx._raw[], hal_ctx._handle)
             self.ctx = ctx
@@ -896,9 +897,10 @@ struct _CompletionFlagBox(Movable):
         raise Error("completion flags are not supported on this device")
 
     def __deinit__(deinit self):
-        comptime Ext = type_of(self.ctx._context[].extensions())
+        var hal = self.ctx.unwrap_hal()
+        comptime Ext = type_of(hal._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagV1):
-            ref hal_ctx = self.ctx._context[]
+            ref hal_ctx = hal._context[]
             try:
                 Self._flags(hal_ctx.extensions()).destroy(
                     hal_ctx._raw[], hal_ctx._handle, self.flag
@@ -907,9 +909,10 @@ struct _CompletionFlagBox(Movable):
                 print("warning: failed to destroy completion flag:", e)
 
     def signal(self, value: UInt64) raises:
-        comptime Ext = type_of(self.ctx._context[].extensions())
+        var hal = self.ctx.unwrap_hal()
+        comptime Ext = type_of(hal._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagV1):
-            ref hal_ctx = self.ctx._context[]
+            ref hal_ctx = hal._context[]
             Self._flags(hal_ctx.extensions()).signal(
                 hal_ctx._raw[], self.flag, value
             )
@@ -917,18 +920,20 @@ struct _CompletionFlagBox(Movable):
         raise Error("completion flags are not supported on this device")
 
     def load(self) raises -> UInt64:
-        comptime Ext = type_of(self.ctx._context[].extensions())
+        var hal = self.ctx.unwrap_hal()
+        comptime Ext = type_of(hal._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagV1):
-            ref hal_ctx = self.ctx._context[]
+            ref hal_ctx = hal._context[]
             return Self._flags(hal_ctx.extensions()).load(
                 hal_ctx._raw[], self.flag
             )
         raise Error("completion flags are not supported on this device")
 
     def reset(self) raises:
-        comptime Ext = type_of(self.ctx._context[].extensions())
+        var hal = self.ctx.unwrap_hal()
+        comptime Ext = type_of(hal._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
-            ref hal_ctx = self.ctx._context[]
+            ref hal_ctx = hal._context[]
             if case .Some(reset) = hal_ctx.extensions().completion_flag_reset():
                 reset.reset(hal_ctx._raw[], self.flag)
                 return

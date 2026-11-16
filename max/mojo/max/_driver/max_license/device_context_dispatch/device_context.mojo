@@ -996,7 +996,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         else:
             return DeviceStream(
                 _impl=rebind_var[DeviceStream._Impl](
-                    _HALDeviceStream(self._impl, self._impl._stream)
+                    _HALDeviceStream(self, self._impl._stream)
                 )
             )
 
@@ -1022,7 +1022,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             return DeviceStream(
                 _impl=rebind_var[DeviceStream._Impl](
                     _HALDeviceStream(
-                        self._impl, self._impl._context[].create_stream()
+                        self, self._impl._context[].create_stream()
                     )
                 )
             )
@@ -1089,9 +1089,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         return CompletionFlag(
             _impl=CompletionFlag._HAL(
-                ArcPointer(
-                    _CompletionFlagBox(self._impl.assert_default_target())
-                )
+                ArcPointer(_CompletionFlagBox(self.assert_default_target()))
             )
         )
 
