@@ -1074,6 +1074,36 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionType
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionType : KGENType<"UntaggedUnion", "untagged_union", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>
+]> {
+  let summary = "Overlapping storage without a tag or lifecycle";
+  let description = [{
+    Members share offset zero. The store extent is the largest member's
+    allocation size, without rounding to the strictest member alignment.
+    This allows a following field to occupy the union's tail padding.
+    An empty union has size zero and alignment one. Values and struct fields
+    use the store extent; standalone allocations and array elements round it
+    up to the union's alignment. Enclosing storage supplies any tag and
+    lifecycle.
+  }];
+  let parameters = (ins "TypedAttr":$variadic);
+  let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [TypeBuilder<(ins "TypedAttr":$variadic)>];
+  let genVerifyDecl = 1;
+  let extraClassDeclaration = [{
+    static UntaggedUnionType getFromBytecode(TypedAttr variadic);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // VariantType
 //===----------------------------------------------------------------------===//
 

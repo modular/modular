@@ -1413,6 +1413,24 @@ def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionInitOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionInitOp : KGENOp<"untagged_union.init", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "Zero the complete store extent of an untagged union";
+  let description = [{
+    Initializes storage before constructing a new active member. Clears all
+    bytes within the store extent, including padding and inactive members,
+    without touching allocation tail padding or a following struct field.
+    The caller owns
+    the storage and must destroy any previous active member first.
+  }];
+  let arguments = (ins Arg<PointerOf<KGEN_UntaggedUnionType>, "", [MemWrite]>:$storage);
+  let assemblyFormat = "$storage attr-dict `:` type($storage)";
+}
+
+//===----------------------------------------------------------------------===//
 // VariantCreateOp
 //===----------------------------------------------------------------------===//
 

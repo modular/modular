@@ -1170,7 +1170,7 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPOffset(OffsetOp op) {
   OffsetOpAdaptor adaptor(getLoweredOperands(op), op);
   builder->setInsertionPoint(op);
   Type elementType =
-      typeConverter->convertType(op.getPtr().getType().getElementType());
+      typeConverter->convertMemoryType(op.getPtr().getType().getElementType());
   unsigned addrSpace = op.getPtr().getType().getAddrSpaceOrZero();
   Type intPtrType =
       IntegerType::get(&typeConverter->getContext(),
@@ -1297,7 +1297,7 @@ LowerPOPToLLVMPass::lowerPOPStackAllocation(StackAllocationOp op) {
   StackAllocationOpAdaptor adaptor(getLoweredOperands(op), op);
   builder->setInsertionPoint(op);
   PointerType ptrType = cast<PointerType>(op.getType());
-  Type elementType = typeConverter->convertType(ptrType.getElementType());
+  Type elementType = typeConverter->convertMemoryType(ptrType.getElementType());
   if (!elementType)
     return op.emitError("could not lower pointer element type");
   std::optional<int64_t> typeAllocSize = DataLayoutInterface::getTypeAllocSize(
@@ -1374,9 +1374,13 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPArrayCreate(ArrayCreateOp op) {
   if (!type)
     return op.emitError("failed to convert array type");
   Value array = LLVM::UndefOp::create(*builder, op.getLoc(), type);
-  for (auto [idx, value] : llvm::enumerate(adaptor.getOperands()))
+  Type elementType = cast<LLVM::LLVMArrayType>(type).getElementType();
+  for (auto [idx, value] : llvm::enumerate(adaptor.getOperands())) {
+    value = typeConverter->padMemoryValue(*builder, op.getLoc(), value,
+                                          elementType);
     array =
         LLVM::InsertValueOp::create(*builder, op.getLoc(), array, value, idx);
+  }
   builder->replaceOp(op, array);
   return success();
 }
@@ -1388,10 +1392,13 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPArrayRepeat(ArrayRepeatOp op) {
   if (!type)
     return op.emitError("failed to convert array type");
   Value array = LLVM::UndefOp::create(*builder, op.getLoc(), type);
+  Type elementType = cast<LLVM::LLVMArrayType>(type).getElementType();
   for (unsigned i = 0, size = *op.getType().getResolvedSize(); i < size;) {
     for (Value value : adaptor.getOperands()) {
       if (i == size)
         break;
+      value = typeConverter->padMemoryValue(*builder, op.getLoc(), value,
+                                            elementType);
       array =
           LLVM::InsertValueOp::create(*builder, op.getLoc(), array, value, i++);
     }
@@ -1403,17 +1410,24 @@ LogicalResult LowerPOPToLLVMPass::lowerPOPArrayRepeat(ArrayRepeatOp op) {
 LogicalResult LowerPOPToLLVMPass::lowerPOPArrayGet(ArrayGetOp op) {
   ArrayGetOpAdaptor adaptor(getLoweredOperands(op), op);
   builder->setInsertionPoint(op);
-  builder->replaceOpWithNewOp<LLVM::ExtractValueOp>(
-      op, adaptor.getArray(), cast<IntegerAttr>(op.getIndex()).getInt());
+  Value value =
+      LLVM::ExtractValueOp::create(*builder, op.getLoc(), adaptor.getArray(),
+                                   cast<IntegerAttr>(op.getIndex()).getInt());
+  Type valueType = typeConverter->convertType(op.getType());
+  builder->replaceOp(op, typeConverter->unpadMemoryValue(*builder, op.getLoc(),
+                                                         value, valueType));
   return success();
 }
 
 LogicalResult LowerPOPToLLVMPass::lowerPOPArrayReplace(ArrayReplaceOp op) {
   ArrayReplaceOpAdaptor adaptor(getLoweredOperands(op), op);
   builder->setInsertionPoint(op);
+  Type elementType =
+      cast<LLVM::LLVMArrayType>(adaptor.getArray().getType()).getElementType();
+  Value value = typeConverter->padMemoryValue(*builder, op.getLoc(),
+                                              adaptor.getValue(), elementType);
   builder->replaceOpWithNewOp<LLVM::InsertValueOp>(
-      op, adaptor.getArray(), adaptor.getValue(),
-      cast<IntegerAttr>(op.getIndex()).getInt());
+      op, adaptor.getArray(), value, cast<IntegerAttr>(op.getIndex()).getInt());
   return success();
 }
 
@@ -2181,7 +2195,11 @@ struct ConvertPOPAlignedFree : public ConvertSymbolOpToLLVM<AlignedFreeOp> {
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
+  ConvertPOPGlobalAlloc(mlir::LLVMTypeConverter &typeConverter,
+                        SymbolTable &symtab, InterpreterMemoryConverter &imc)
+      : ConvertSymbolOpToLLVM(typeConverter, symtab), imc(imc) {}
+
+  InterpreterMemoryConverter &imc;
 
   // Tracks the next available local index per parent function to give
   // deterministic names.
@@ -2195,7 +2213,8 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
                                 DirectRewriter &b) const override {
     // Set the alignment if specified. Otherwise use the natural alignment.
     auto kgenPtrType = cast<PointerType>(op.getType());
-    auto elementType = typeConverter->convertType(kgenPtrType.getElementType());
+    auto elementType =
+        getTypeConverter()->convertMemoryType(kgenPtrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), kgenPtrType, op.getAlignmentAttr());
 
@@ -2234,17 +2253,19 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
       global.getBodyRegion().push_back(new Block);
       ImplicitLocOpBuilder ib(op.getLoc(), op.getContext());
       ib.setInsertionPointToStart(global.getBody());
-      ErrorOr<Value> value =
-          convertParameterToLLVM(ib, *getTypeConverter(), /*imc=*/nullptr,
-                                 /*scope=*/nullptr, *init);
+      auto scope = imc.createScope();
+      ErrorOr<Value> value = convertGlobalConstantToLLVM(
+          ib, *getTypeConverter(), imc, scope, *init);
       if (value.isError()) {
         ib.emitError(value.getError());
         return failure();
       }
-      // Wrap the scalar value in the array type.
+      // Keep the initializer's memory image as the array element.
+      arrayType = LLVM::LLVMArrayType::get(value->getType(), 1);
+      global.setGlobalType(arrayType);
       Value array = LLVM::UndefOp::create(ib, arrayType);
-      array = LLVM::InsertValueOp::create(ib, array, value.get(),
-                                          ArrayRef<int64_t>{0});
+      array =
+          LLVM::InsertValueOp::create(ib, array, *value, ArrayRef<int64_t>{0});
       LLVM::ReturnOp::create(ib, array);
     }
 
@@ -2343,7 +2364,8 @@ public:
                                 DirectRewriter &rewriter) const override {
     auto kgenPtrType = cast<PointerType>(op.getType());
     auto opaquePtrType = LLVM::LLVMPointerType::get(getContext());
-    Type elementType = convertType(kgenPtrType.getElementType());
+    Type elementType =
+        getTypeConverter()->convertMemoryType(kgenPtrType.getElementType());
     if (!elementType)
       return rewriter.notifyMatchFailure(
           op.getLoc(), "failed to convert constant result type");
@@ -2367,13 +2389,14 @@ public:
       b.setInsertionPointToStart(global.getBody());
       InterpreterMemoryConverter::MaterializationScope scope =
           imc.createScope();
-      ErrorOr<Value> value = convertParameterToLLVM(
-          b, *getTypeConverter(), /*imc=*/&imc, &scope, op.getValue());
+      ErrorOr<Value> value = convertGlobalConstantToLLVM(
+          b, *getTypeConverter(), imc, scope, op.getValue());
       if (value.isError()) {
         b.emitError(value.getError());
         return failure();
       }
-      LLVM::ReturnOp::create(b, value.get());
+      global.setGlobalType(value->getType());
+      LLVM::ReturnOp::create(b, *value);
 
       // Insert the global into the module.
       symtab.insert(it->second = global);
@@ -2406,7 +2429,8 @@ struct ConvertExternPointerSymbol
                                 ExternPointerSymbolOpAdaptor adaptor,
                                 DirectRewriter &b) const override {
     int64_t addressSpace = op.getResSymbol().getType().getAddrSpaceOrZero();
-    Type resType = convertType(op.getResSymbol().getType().getElementType());
+    Type resType = getTypeConverter()->convertMemoryType(
+        op.getResSymbol().getType().getElementType());
     unsigned align = getAlignment(
         getTypeConverter(), op.getResSymbol().getType(), op.getAlignmentAttr());
 
@@ -2462,9 +2486,10 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
 
   // Convert external calls.
-  patterns.insert<ConvertPOPGlobalAlloc, ConvertExternPointerSymbol,
-                  ConvertPOPAlignedAlloc, ConvertPOPAlignedFree,
-                  ConvertPOPNoAliasPointerCast>(typeConverter, symtab);
+  patterns.insert<ConvertPOPGlobalAlloc>(typeConverter, symtab, imc);
+  patterns.insert<ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
+                  ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast>(
+      typeConverter, symtab);
   if (lowering)
     lowering->populateLowerGlobalPOPToLLVMPatterns(patterns, typeConverter,
                                                    symtab, targetInfo);

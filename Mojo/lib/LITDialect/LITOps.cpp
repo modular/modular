@@ -1614,6 +1614,47 @@ void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
 }
 
 //===----------------------------------------------------------------------===//
+// RefUnionCastOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+RefUnionCastOp::inferReturnTypes(MLIRContext *context,
+                                 std::optional<Location> loc, Adaptor adaptor,
+                                 SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto ref = dyn_cast<RefType>(adaptor.getContainer().getType());
+  auto storage = ref ? sugarDynCast<UntaggedUnionType>(ref.getElementType())
+                     : UntaggedUnionType();
+  if (!storage)
+    return mlir::emitOptionalError(
+        loc, "container must reference untagged union storage");
+  auto index = dyn_cast<TypedAttr>(adaptor.getIndexAttr());
+  if (!index || !index.getType().isIndex())
+    return mlir::emitOptionalError(loc, "member index must have index type");
+  if (auto constant = dyn_cast<IntegerAttr>(index)) {
+    if (constant.getInt() < 0)
+      return mlir::emitOptionalError(loc, "member index must be nonnegative");
+    if (auto members = dyn_cast<ParamListAttr>(storage.getVariadic());
+        members && uint64_t(constant.getInt()) >= members.getValues().size())
+      return mlir::emitOptionalError(loc, "member index out of range");
+  }
+  auto member = ParamListGetAttr::get(storage.getVariadic(), index);
+  inferredReturnTypes.push_back(RefType::get(
+      ParamType::get(member), ref.getOrigin(), ref.getAddressSpace()));
+  return success();
+}
+
+LogicalResult RefUnionCastOp::verify() {
+  SmallVector<Type> inferred;
+  if (failed(
+          inferReturnTypes(getContext(), getLoc(), Adaptor(*this), inferred)))
+    return failure();
+  if (!isEqualCanon(getType(), inferred.front()))
+    return emitOpError("result must preserve the member type, container origin "
+                       "and address space");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 

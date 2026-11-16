@@ -118,7 +118,33 @@ std::optional<Type> getMLIRTypeForDType(MLIRContext *ctx, KGENDType dtype,
 /// built-in MLIR types to LLVM types.
 struct POPToLLVMTypeConverter : public mlir::LLVMTypeConverter,
                                 public LLVMDataLayout {
+  /// Register the type conversions for `target`. A type with unresolved
+  /// parameters does not convert. An untagged union value or struct field gets
+  /// an LLVM type of the union's size, without tail padding. For example,
+  /// members SIMD[DType.int64, 4] and five Int64 give `{ i64, [32 x i8] }`.
+  /// Use convertMemoryType() for stack allocations and array elements.
   POPToLLVMTypeConverter(TargetInfoAttr target);
+
+  /// Return the LLVM type of `type` in memory: in a stack allocation, an array
+  /// element or a global. For an untagged union, this is the value type with
+  /// its tail padding added. For example, a 40-byte union with alignment 32
+  /// gets `{ { i64, [32 x i8] }, [24 x i8] }`, 64 bytes. Other types get the
+  /// same type as from convertType(). Return a null type if `type` does not
+  /// convert.
+  Type convertMemoryType(Type type) const;
+
+  /// Return `value` as a value of `memoryType`. If `value` already has that
+  /// type, return it. Otherwise `memoryType` must be a type from
+  /// convertMemoryType() with tail padding added. The result holds `value` in
+  /// field 0, and its padding bytes are undefined.
+  Value padMemoryValue(OpBuilder &b, Location loc, Value value,
+                       Type memoryType) const;
+
+  /// Return the value of `valueType` that `value` holds. If `value` already has
+  /// that type, return it. Otherwise `value` must have a type from
+  /// convertMemoryType() with tail padding added, and the result is field 0.
+  Value unpadMemoryValue(OpBuilder &b, Location loc, Value value,
+                         Type valueType) const;
 
   /// Get the LLVM field index for a logical KGEN struct field.
   /// When struct types are converted to LLVM, padding fields may be inserted
@@ -308,12 +334,32 @@ void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
-/// Generate the LLVM IR to materialize a constant of the given value. This is
-/// used to convert attribute values in `kgen.param.constant`.
+/// Return an LLVM value for the constant `attr`, for `kgen.param.constant`. A
+/// string needs `imc`, and a reference into interpreter memory needs `scope`.
+/// An untagged union constant gets the union's value type, and an array element
+/// gets its memory type. An untagged union constant needs an enclosing
+/// function, because its lowering uses a stack slot. Return an error if `attr`
+/// is not supported or its type does not convert. For a global initializer,
+/// use convertGlobalConstantToLLVM().
 ErrorOr<Value> convertParameterToLLVM(
     ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
     InterpreterMemoryConverter *imc,
     InterpreterMemoryConverter::MaterializationScope *scope, TypedAttr attr);
+
+/// Return an LLVM value for the global initializer `attr`. Usually this is the
+/// value from convertParameterToLLVM(). If `attr` holds an untagged union, the
+/// result is one packed struct. It holds each union fragment, and each field
+/// without a union, at its byte offset. Zero bytes fill the gaps. Each pointer
+/// and function address stays one value, so the linker can relocate it. For
+/// example, a 20-byte union that holds a pointer contributes the pointer and 12
+/// single bytes. The result has the allocation size of the memory type of
+/// `attr`. The caller must use the type of the result as the type of the
+/// global. Return an error if a type does not convert or the fragments do not
+/// fill a union.
+ErrorOr<Value> convertGlobalConstantToLLVM(
+    ImplicitLocOpBuilder &b, const POPToLLVMTypeConverter &tc,
+    InterpreterMemoryConverter &imc,
+    InterpreterMemoryConverter::MaterializationScope &scope, TypedAttr attr);
 
 //===----------------------------------------------------------------------===//
 // DebugInfoTypeConverter
@@ -561,16 +607,15 @@ ErrorOr<std::pair<int64_t, int64_t>> getWorkGroupSizeRange(Attribute value);
 /// Used to clean up residual casts before generating calls.
 mlir::Value squashPointlessCasts(mlir::Value v);
 
-/// Return the byte alignment for a KGEN pointer type. Uses the explicit
-/// alignment attribute when present, otherwise falls back to the ABI alignment
-/// of the pointee type derived from the type converter.
-inline unsigned getAlignment(const POPToLLVMTypeConverter *tc,
-                             PointerType ptrType,
-                             mlir::TypedAttr alignmentAttr = {}) {
-  if (alignmentAttr)
-    return mlir::cast<mlir::IntegerAttr>(alignmentAttr).getInt();
-  return tc->getTypeABIAlign(tc->convertType(ptrType.getElementType()));
-}
+/// Return the byte alignment of the memory that `ptrType` points to. If the
+/// caller gives `alignmentAttr`, it must be an integer attribute, and the
+/// result is its value. If the pointee contains an untagged union, the result
+/// is the KGEN alignment of the pointee, because its LLVM type can have a
+/// smaller alignment. Otherwise the result is the LLVM ABI alignment of the
+/// converted pointee. Without `alignmentAttr`, `tc` must not be null and the
+/// pointee layout must be known.
+unsigned getAlignment(const POPToLLVMTypeConverter *tc, PointerType ptrType,
+                      mlir::TypedAttr alignmentAttr = {});
 
 } // namespace M::KGEN
 

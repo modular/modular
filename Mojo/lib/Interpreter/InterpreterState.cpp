@@ -484,6 +484,75 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
+ErrorOr<SmallVector<TypedAttr>>
+InterpreterState::readMemoryFragments(int64_t addr, size_t size,
+                                      Type pointerType) {
+  auto memory = getMemory(addr, size);
+  if (memory.isError())
+    return memory.takeError();
+  auto [blob, start] = memory.takeValue();
+  auto *bytes = static_cast<const uint8_t *>(blob.getMemory()) + start;
+  auto byteType = IntegerType::get(ctx, 8);
+  size_t pointerSize = target.getDataLayout().getPointerSize();
+  SmallVector<TypedAttr> fragments;
+  for (size_t offset = 0; offset < size;) {
+    bool pointer =
+        blob.pointerRegions && (*blob.pointerRegions)[start + offset];
+    bool symbol = blob.symbolRegions && (*blob.symbolRegions)[start + offset];
+    if (!pointer && !symbol) {
+      fragments.push_back(IntegerAttr::get(byteType, bytes[offset++]));
+      continue;
+    }
+    if (pointerSize > size - offset)
+      return Error("union field ends inside an interpreted pointer or symbol");
+    APInt bits(pointerSize * CHAR_BIT, 0);
+    llvm::LoadIntFromMemory(bits, bytes + offset, pointerSize);
+    if (symbol) {
+      auto value = getSymbol(bits.getZExtValue());
+      if (value.isError())
+        return value.takeError();
+      fragments.push_back(*value);
+    } else {
+      fragments.push_back(PointerAttr::get(bits.getSExtValue(), pointerType));
+    }
+    offset += pointerSize;
+  }
+  return fragments;
+}
+
+ErrorOrSuccess
+InterpreterState::writeMemoryFragments(int64_t addr, size_t size,
+                                       ArrayRef<TypedAttr> fragments) {
+  size_t extent = 0;
+  SmallVector<int64_t> fragmentSizes;
+  for (TypedAttr fragment : fragments) {
+    auto fragmentSize =
+        DataLayoutInterface::getTypeStoreSize(target, fragment.getType());
+    if (!fragmentSize || *fragmentSize <= 0 ||
+        uint64_t(*fragmentSize) > size - extent)
+      return Error("union fragments exceed the field extent");
+    extent += *fragmentSize;
+    fragmentSizes.push_back(*fragmentSize);
+  }
+  if (extent != size)
+    return Error("union fragments do not fill the field extent");
+  if (!size)
+    return success();
+
+  // Clearing the whole field first permits byte fragments to replace an old
+  // pointer without triggering the partial-pointer-write guard.
+  auto writable = getWritableMemory(addr, size);
+  if (writable.isError())
+    return writable.takeError();
+  size_t offset = 0;
+  for (auto [fragment, fragmentSize] : llvm::zip(fragments, fragmentSizes)) {
+    if (ErrorOrSuccess err = writeAttributeToMemory(addr + offset, fragment))
+      return err.takeError();
+    offset += fragmentSize;
+  }
+  return success();
+}
+
 uint64_t InterpreterState::addSymbolToSymbolTable(TypedAttr symbol) {
   uint64_t result = symbols.size();
   for (auto [index, existing] : llvm::enumerate(symbols)) {
@@ -738,6 +807,11 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
                        symbolMap[index.getZExtValue()]);
         llvm::StoreIntToMemory(newIndex, owned,
                                target.getDataLayout().getPointerSize());
+
+        // Mark the slot again, as for pointers above: a read that follows the
+        // marks rather than a type, such as an untagged union's, needs it.
+        (void)interned->setMarkedRegion(symbolRegion, -1, target,
+                                        RegionMark::Symbol);
       }
     }
     return interned.try_emplace(space, std::move(map)).first->second;

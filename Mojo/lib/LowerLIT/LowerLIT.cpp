@@ -2135,6 +2135,15 @@ static Value lowerOp(RefToPointerOp op, RefToPointerOpAdaptor adaptor,
   return adaptor.getRef();
 }
 
+static Value lowerOp(RefUnionCastOp op, RefUnionCastOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  auto resultType = b.asType.replace(op.getType());
+  if (failed(resultType))
+    return {};
+  return POP::PointerBitcastOp::create(b, op.getLoc(), *resultType,
+                                       adaptor.getContainer());
+}
+
 static Value lowerOp(RefFromPointerOp op, RefFromPointerOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   return adaptor.getPtr();
@@ -2395,10 +2404,11 @@ static LogicalResult lowerLITTypes(ModuleOp module, StructDecls &state,
         .Case<MaterializeIntoOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefUpcastOp, RefToPointerOp, RefFromPointerOp,
               RefFromPointerREPLOp, RefToKgenPtrOp, RefFromKgenPtrOp,
-              RefStructGEROp, RefLoadOp, RefStoreOp, MemcpyOp, RebindOp,
-              RefPackCreateOp, RefPackExtractOp, RefPackFromPointerPackOp,
-              RefPackConcatOp, VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
-              MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
+              RefStructGEROp, RefUnionCastOp, RefLoadOp, RefStoreOp, MemcpyOp,
+              RebindOp, RefPackCreateOp, RefPackExtractOp,
+              RefPackFromPointerPackOp, RefPackConcatOp, VarDeclOp,
+              VarLifetimeStartOp, VarLifetimeEndOp, MojoVersionMajorOp,
+              MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });
   });

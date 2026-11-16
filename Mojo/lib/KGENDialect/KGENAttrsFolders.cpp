@@ -321,7 +321,7 @@ computeStructFieldOffset(ArrayRef<Type> fieldTypes, int64_t fieldIndex,
     std::optional<int64_t> curFieldAlign =
         DataLayoutInterface::getTypeABIAlign(target, fieldTypes[i]);
     std::optional<int64_t> curFieldSize =
-        DataLayoutInterface::getTypeAllocSize(target, fieldTypes[i]);
+        getStructFieldSize(target, fieldTypes[i]);
     if (!curFieldAlign || !curFieldSize) {
       emitError("could not determine size or alignment for field type");
       return failure();

@@ -28,6 +28,16 @@
 #include "Support/SymbolExport.h"
 
 namespace M::KGEN {
+/// Return the size a struct field occupies before the next field. This is the
+/// alloc size, except for an untagged union, which occupies only its store
+/// size: the largest member's alloc size, not rounded up to the union's
+/// alignment. The next field can then start in the union's tail padding, so
+/// an enum's tag goes directly after its largest payload. This is safe because
+/// every write of a union stops at its store size: initialization, a
+/// whole-value copy, a member store and an interpreter write. A union's stride
+/// (`size_of`, array elements) stays its alloc size.
+std::optional<int64_t> getStructFieldSize(TargetInfoAttr target, Type type);
+
 class ParameterEvaluationContext;
 class FnMetadataAttrInterface;
 class FuncInterface;

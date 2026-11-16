@@ -1525,7 +1525,10 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   if (it != valueInfoIndex.end())
     return getFullValueRef(it->second);
 
-  // If this is a GER, check the base and focus in on a field of it.
+  // A union cast aliases the whole container, so track the container.
+  if (auto unionCast = value.getDefiningOp<RefUnionCastOp>())
+    return getDirectValueRef(unionCast.getContainer(), isDeref);
+
   if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
     // For index access, we can't determine field offset without concrete index.
     // Treat as opaque access to the full container.
@@ -2652,6 +2655,8 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
     // interior origins.
     if (auto structGER = v.getDefiningOp<RefStructGEROp>())
       v = structGER.getOperand();
+    else if (auto unionCast = v.getDefiningOp<RefUnionCastOp>())
+      v = unionCast.getContainer();
     else if (auto rebind = v.getDefiningOp<RebindOp>())
       v = rebind.getOperand();
     else if (auto immut = v.getDefiningOp<RefImmutOp>())

@@ -94,6 +94,10 @@ def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
+def WrappedUntaggedUnionType : DialectType<(type
+  TypedAttr:$variadic
+)>;
+
 def DeferredType : DialectType<(type)>;
 
 def MLIRDeferredType : DialectType<(type
@@ -132,6 +136,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     MLIRDeferredType,
     NeverType,
     SIMDType,
+    WrappedUntaggedUnionType,
   ];
 }
 
@@ -377,6 +382,11 @@ def VariantAttr : DialectAttribute<(attr
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
+
+def UntaggedUnionAttr : DialectAttribute<(attr
+  TypedAttrArray:$fragments,
+  ConcreteType<"UntaggedUnionType">:$type
+)>;
 
 def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"SymbolRefAttr">:$value
@@ -684,7 +694,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     AnnotationAttr,
     GetNumAnnotationsAttr,
     GetAnnotationValueAttr,
-    GetAnnotationTypeAttr
+    GetAnnotationTypeAttr,
+    UntaggedUnionAttr
   ];
 }
 

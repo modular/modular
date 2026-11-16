@@ -223,6 +223,16 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
+  /// Read [addr, addr + size) as bytes, pointers and symbols, as its marks
+  /// say, for a type that cannot name what it holds (an untagged union).
+  ErrorOr<SmallVector<TypedAttr>> readMemoryFragments(int64_t addr, size_t size,
+                                                      Type pointerType);
+
+  /// Write fragments from readMemoryFragments over a whole field, replacing
+  /// its old marks.
+  ErrorOrSuccess writeMemoryFragments(int64_t addr, size_t size,
+                                      ArrayRef<TypedAttr> fragments);
+
   /// Allocate a slot in the symbol table and store the specified symbol.
   uint64_t addSymbolToSymbolTable(TypedAttr symbol);
 

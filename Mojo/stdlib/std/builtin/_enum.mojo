@@ -60,13 +60,22 @@ from std.traits import (
 
 
 @doc_hidden
+@always_inline("builtin")
 def __enum_discriminant_dtype(num_cases: Int) -> DType:
-    """Returns the `!kgen.variant` discriminant type for `num_cases` cases."""
-    if num_cases <= 256:
-        return DType.uint8
-    if num_cases <= 65536:
-        return DType.uint16
-    return DType.uint32
+    """Returns the discriminant type for `num_cases` cases."""
+    # `__EnumStorage.tag` has the type `Scalar[__enum_discriminant_dtype(n)]`.
+    # In generic code `n` is unknown, so that dtype parameter stays an
+    # unevaluated call. Printed IR does not parse such a call back to the same
+    # type. The parser inlines a builtin function instead, so the parameter
+    # becomes a `pop.select` on `n`. A builtin body must fold, so it uses
+    # `pop.select` and not `if`.
+    return __mlir_op.`pop.select`(
+        (num_cases <= 256).__mlir_bool__(),
+        DType.uint8,
+        __mlir_op.`pop.select`(
+            (num_cases <= 65536).__mlir_bool__(), DType.uint16, DType.uint32
+        ),
+    )
 
 
 @doc_hidden
@@ -105,13 +114,12 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     comptime __move_ctor_is_trivial = Self._Cases.all[IsTriviallyMovable]()
 
     comptime _mlir_type = __mlir_type[
-        `!kgen.variant<[rebind(:`,
+        `!kgen.untagged_union<[rebind(:`,
         type_of(Self.case_types),
         ` `,
         Self.case_types,
         `)]>`,
     ]
-    var _impl: Self._mlir_type
 
     # Build discriminants with `from_int=`, a plain `pop.cast`. Declaring an
     # enum resolves its copy constructor, and a conversion through `SIMD.cast`
@@ -121,16 +129,25 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         __enum_discriminant_dtype(Self._Cases.length)
     ]
 
+    var untagged_union: Self._mlir_type
+    var tag: Self._Discriminant
+
     @inline(.always)
     def __init__(out self, *, unsafe_uninitialized: Tuple[]):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        # Inactive bytes participate in compile-time value identity. Match
+        # variant construction by clearing them before writing the payload.
+        __mlir_op.`kgen.untagged_union.init`(
+            Pointer(to=self.untagged_union)._mlir_value
+        )
 
     @inline(.always)
     def __init__(
         out self, *, copy: Self
     ) where Self._Cases.all_conforms_to[Copyable]():
         comptime if Self.__copy_ctor_is_trivial:
-            self._impl = copy._impl
+            self.untagged_union = copy.untagged_union
+            self.tag = copy.tag
             return
         self = Self(unsafe_uninitialized=())
         var discriminant = copy._discriminant()
@@ -148,7 +165,8 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         out self, *, deinit move: Self
     ) where Self._Cases.all_conforms_to[Movable]():
         comptime if Self.__move_ctor_is_trivial:
-            self._impl = move._impl
+            self.untagged_union = move.untagged_union
+            self.tag = move.tag
             return
         self = Self(unsafe_uninitialized=())
         var discriminant = move._discriminant()
@@ -170,16 +188,9 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
 
     @inline(.nodebug)
     def _discriminant(ref self) -> ref[self] Self._Discriminant:
-        var discr_ptr = __mlir_op.`pop.variant.discr_gep`[
-            _type=__mlir_type[
-                `!kgen.pointer<scalar<`,
-                Self._Discriminant.dtype._mlir_value,
-                `>>`,
-            ]
-        ](Pointer(to=self._impl)._get_kgen_pointer())
-        return Pointer[_, origin_of(self)](
-            _mlir_value=discr_ptr
-        ).unsafe_bitcast[Self._Discriminant]()[]
+        return Pointer[Self._Discriminant, origin_of(self)](
+            _mlir_value=Pointer(to=self.tag)._mlir_value
+        )[]
 
     @inline(.nodebug)
     def get_discriminant(self) -> Int:
@@ -204,12 +215,17 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
         Returns:
             A pointer to the payload of case `id`.
         """
-        return {
-            _mlir_value = __mlir_op.`pop.variant.bitcast`[
-                _type=Pointer[Self._Cases()[id], origin_of(self)]._mlir_type,
-                index=id.__mlir_index__(),
-            ](Pointer(to=self._impl)._get_kgen_pointer())
-        }
+        var member = __mlir_op.`lit.ref.union.cast`[index=id.__mlir_index__()](
+            __get_mvalue_as_litref(self.untagged_union)
+        )
+        var typed_member = rebind[
+            Pointer[
+                Self._Cases()[id], origin_of(self.untagged_union)
+            ]._mlir_lit_ref
+        ](member)
+        return Pointer[Self._Cases()[id], origin_of(self)](
+            _mlir_value=__mlir_op.`lit.ref.to_pointer`(typed_member)
+        )
 
 
 trait __Enum(EnumLike):

@@ -238,6 +238,9 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
     if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
       hadGEP = true;
       value = structGER.getContainer();
+    } else if (auto unionCast = value.getDefiningOp<RefUnionCastOp>()) {
+      // The cast aliases the whole union, so it is not a field projection.
+      value = unionCast.getContainer();
     } else if (auto rebindOp = value.getDefiningOp<RebindOp>()) {
       value = rebindOp.getOperand();
     } else if (auto immut = value.getDefiningOp<RefImmutOp>()) {
@@ -473,7 +476,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
-  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
+  if (isa<RefStructGEROp, RefUnionCastOp, RebindOp, RefImmutOp>(op) ||
       llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(op.getDialect())) {
     if (op.getNumResults() == 1)
       results.push_back(ResultEffect::ignore);

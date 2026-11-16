@@ -1215,6 +1215,35 @@ struct ConvertKGENSourceLoc : ConvertPOPToLLVMPattern<SourceLocOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENUntaggedUnionInit
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENUntaggedUnionInit
+    : ConvertPOPToLLVMPattern<UntaggedUnionInitOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult matchAndRewrite(UntaggedUnionInitOp op,
+                                UntaggedUnionInitOpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    auto type =
+        cast<UntaggedUnionType>(op.getStorage().getType().getElementType());
+    auto size = type.getTypeSize(getTypeConverter()->getTarget());
+    if (!size)
+      return op.emitOpError(
+          "cannot initialize unresolved untagged union field");
+    if (*size != 0) {
+      ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+      LLVM::MemsetOp::create(b, adaptor.getStorage(),
+                             LLVM::ConstantOp::create(b, b.getI8Type(), 0),
+                             LLVM::ConstantOp::create(b, b.getI64Type(), *size),
+                             /*isVolatile=*/false);
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENStructCreate
 //===----------------------------------------------------------------------===//
 
@@ -1324,6 +1353,7 @@ static void populateKGENToLLVMPatterns(
       ConvertKGENCallIndirect,
       ConvertKGENCreateFuncPtr,
       ConvertKGENSourceLoc,
+      ConvertKGENUntaggedUnionInit,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,

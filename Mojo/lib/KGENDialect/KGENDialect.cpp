@@ -104,6 +104,7 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 using WrappedParamRefType = WrappedAttrType<ParamType>;
 using WrappedTypeValueType = WrappedAttrType<TypeValueType>;
 using WrappedVariantType = WrappedAttrType<VariantType>;
+using WrappedUntaggedUnionType = WrappedAttrType<UntaggedUnionType>;
 
 using WrappedParamOperatorAttr = WrappedAttrType<ParamOperatorAttr>;
 using WrappedTypeParamAttr = WrappedAttrType<TypeParamAttr>;

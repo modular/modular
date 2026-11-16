@@ -100,6 +100,7 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StructInstanceType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
+  registerMnemonicType<UntaggedUnionType>();
 
   // Register the SIMD type with custom parser/printer that sugars
   // `!kgen.simd<1, dtype>` to `!kgen.scalar<dtype>`.
@@ -150,6 +151,14 @@ void TypeValueType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
 
 void VariantType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
   printer.printVariantBody(p, *this);
+}
+
+void UntaggedUnionType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printer.printVariantTypes(p, getVariadic());
+  p << '>';
 }
 
 void SIMDType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
@@ -1726,8 +1735,7 @@ layOutElements(ArrayRef<Type> types, TargetInfoAttr target,
   for (Type type : types) {
     std::optional<int64_t> typeAlign =
         DataLayoutInterface::getTypeABIAlign(target, type);
-    std::optional<int64_t> typeSize =
-        DataLayoutInterface::getTypeAllocSize(target, type);
+    std::optional<int64_t> typeSize = getStructFieldSize(target, type);
     if (!typeAlign || !typeSize)
       return {};
     offsets.push_back(llvm::alignTo(end, *typeAlign));
@@ -2120,6 +2128,113 @@ static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
 
 static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
   KGENParamPrinter::createDiagnosticPrinter().printVariantTypes(p, variadic);
+}
+
+UntaggedUnionType UntaggedUnionType::get(MLIRContext *ctx, TypedAttr variadic) {
+  // Both storage types erase metatype witnesses from concrete member lists.
+  return Base::get(ctx, VariantType::get(ctx, variadic).getVariadic());
+}
+
+UntaggedUnionType UntaggedUnionType::getFromBytecode(TypedAttr variadic) {
+  return Base::get(variadic.getContext(), variadic);
+}
+
+UntaggedUnionType
+UntaggedUnionType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *ctx, TypedAttr variadic) {
+  if (failed(verify(emitError, variadic)))
+    return {};
+  return get(ctx, variadic);
+}
+
+Type UntaggedUnionType::parse(AsmParser &p) {
+  auto loc = p.getCurrentLocation();
+  if (p.parseLess())
+    return {};
+  TypedAttr variadic;
+  if (succeeded(p.parseOptionalGreater())) {
+    auto listType = ParamListType::get(TypeType::get(p.getContext()));
+    variadic = ParamListAttr::get({}, listType);
+  } else if (parseVariantTypes(p, variadic) || p.parseGreater()) {
+    return {};
+  }
+  return getChecked([&] { return p.emitError(loc); }, p.getContext(), variadic);
+}
+
+void UntaggedUnionType::print(AsmPrinter &p) const {
+  p << '<';
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members || !members.getValues().empty())
+    printVariantTypes(p, getVariadic());
+  p << '>';
+}
+
+LogicalResult
+UntaggedUnionType::verify(function_ref<InFlightDiagnostic()> emitError,
+                          TypedAttr variadic) {
+  auto list = dyn_cast<ParamListType>(variadic.getType());
+  auto metatype = list ? dyn_cast<ParameterTypeInterface>(list.getElementType())
+                       : ParameterTypeInterface();
+  if (!list || (!isTypeExprType(list.getElementType()) &&
+                (!metatype || !metatype.isMetaType())))
+    return emitError() << "union members must be a list of types";
+  return success();
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeSize(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  int64_t size = 0;
+  for (TypedAttr member : members.getValues()) {
+    auto memberSize =
+        DataLayoutInterface::getTypeAllocSize(target, ParamType::get(member));
+    if (!memberSize)
+      return {};
+    size = std::max(size, *memberSize);
+  }
+  return size;
+}
+
+std::optional<int64_t>
+UntaggedUnionType::getTypeAlign(TargetInfoAttr target) const {
+  auto members = dyn_cast<ParamListAttr>(getVariadic());
+  if (!members)
+    return {};
+  SmallVector<Type> types =
+      llvm::map_to_vector(members.getValues(), [](TypedAttr member) {
+        return ParamType::get(member);
+      });
+  return getMaxAlignmentAmongTypes(types, target);
+}
+
+std::optional<int64_t> KGEN::getStructFieldSize(TargetInfoAttr target,
+                                                Type type) {
+  if (isa<UntaggedUnionType>(type))
+    return DataLayoutInterface::getTypeStoreSize(target, type);
+  return DataLayoutInterface::getTypeAllocSize(target, type);
+}
+
+ErrorOrSuccess UntaggedUnionType::writeTo(TypedAttr value, int64_t addr,
+                                          InterpreterState &state) const {
+  auto snapshot = dyn_cast<UntaggedUnionAttr>(value);
+  auto size = getTypeSize(state.getTarget());
+  if (!snapshot || !size)
+    return Error("cannot write unresolved untagged union field");
+  return state.writeMemoryFragments(addr, *size, snapshot.getFragments());
+}
+
+ErrorOr<TypedAttr> UntaggedUnionType::readFrom(int64_t addr,
+                                               InterpreterState &state) const {
+  auto size = getTypeSize(state.getTarget());
+  if (!size)
+    return Error("cannot read unresolved untagged union field");
+  auto fragments = state.readMemoryFragments(
+      addr, *size, PointerType::get(NoneType::get(getContext())));
+  if (fragments.isError())
+    return fragments.takeError();
+  return UntaggedUnionAttr::get(getContext(), *fragments, *this);
 }
 
 OptionalParseResult VariantType::parseValue(AsmParser &p,

@@ -1167,10 +1167,10 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 // `__enum_init`, `_get_enum_discriminant` and `_unsafe_get_enum_payload`.
 // The parts:
 //
-// - Storage. `__enum_storage` is the enum's only field. `__EnumStorage` is a
-//   `!kgen.variant` over the case types, addressed by case index, so it holds
-//   the active case's payload and that case's index
-//   (`__enum_discriminant_dtype` sizes the index to the case count). `Tuple[]`
+// - Storage. `__enum_storage` is the enum's only field. `__EnumStorage` holds
+//   the case payloads in a `!kgen.untagged_union` over the case types, and
+//   the active case's index in a separate tag field
+//   (`__enum_discriminant_dtype` sizes the tag to the case count). `Tuple[]`
 //   stands for no payload. `__EnumStorage` copies, moves and destroys the
 //   active payload and carries the conditional conformances (`Copyable` where
 //   every case type is, and so on). The enum's own copy, move and destructor

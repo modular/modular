@@ -1898,6 +1898,27 @@ def LIT_RefFromKgenPtrOp : LITOp<"ref.from_kgen_ptr", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RefUnionCastOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefUnionCastOp : LITOp<"ref.union.cast", [Pure, InferTypeOpAdaptor]> {
+  let summary = "Cast a reference to untagged union storage to one member";
+  let description = [{
+    Casts a reference to the union into a reference to one member, at offset
+    zero. The result aliases the whole union and keeps the union's origin and
+    address space. The caller guarantees that the member is active before
+    accessing it.
+  }];
+  let arguments = (ins LIT_RefType:$container, AttrOfType<Index>:$index);
+  let results = (outs LIT_RefType:$result);
+  let assemblyFormat = [{
+    $container `[` custom<IndexParamValue>($index) `]` attr-dict
+    `:` type($container) `->` type($result)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
 

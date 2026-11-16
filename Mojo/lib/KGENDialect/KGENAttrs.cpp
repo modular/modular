@@ -2320,6 +2320,35 @@ StructExtractAttr StructExtractAttr::getFromBytecode(TypedAttr structValue,
 }
 
 //===----------------------------------------------------------------------===//
+// UntaggedUnionAttr
+//===----------------------------------------------------------------------===//
+
+bool UntaggedUnionAttr::isConstant() const {
+  return !isParameterizedType(getType()) &&
+         llvm::all_of(getFragments(), [](TypedAttr fragment) {
+           return ParameterAttr::isSimpleConstant(fragment);
+         });
+}
+
+LogicalResult
+UntaggedUnionAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                          ArrayRef<TypedAttr> fragments,
+                          UntaggedUnionType type) {
+  for (TypedAttr fragment : fragments) {
+    if (isa<IntegerAttr>(fragment) && fragment.getType().isInteger(8))
+      continue;
+    if (isa<PointerType, FuncType>(fragment.getType()))
+      continue;
+    if (auto generator = dyn_cast<GeneratorType>(fragment.getType());
+        generator && isa<FuncType>(generator.getBody()))
+      continue;
+    return emitError()
+           << "union fragments must be bytes, pointers or function symbols";
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//
 
