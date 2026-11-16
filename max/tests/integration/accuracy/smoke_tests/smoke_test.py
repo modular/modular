@@ -94,7 +94,6 @@ def _metrics_url(framework: str) -> str:
 #   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
-    "LiquidAI/LFM3-1.7B": "max/pipelines/architectures/lfm3/recipes/lfm3_1_7b_bf16_1x_b200.yaml",
     "RecursiveSI/flint": "max/pipelines/architectures/flint/recipes/flint_bf16_1x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",

@@ -394,13 +394,13 @@ def test_merge_serve_extra_args_does_not_mutate_input() -> None:
 
 
 @pytest.mark.parametrize("framework", ["max", "max-ci"])
-@pytest.mark.parametrize("model", ["RecursiveSI/flint", "LiquidAI/LFM3-1.7B"])
-def test_artifact_smoke_uses_explicit_recipe(
-    monkeypatch: MonkeyPatch, framework: str, model: str
+def test_flint_smoke_uses_explicit_recipe(
+    monkeypatch: MonkeyPatch, framework: str
 ) -> None:
     monkeypatch.setattr(
         smoke_test, "_inside_bazel", lambda: framework == "max-ci"
     )
+    model = "RecursiveSI/flint"
     cmd, _ = smoke_test.get_server_cmd(
         framework, model, gpu_spec=("NVIDIA B200", 1)
     )
@@ -408,3 +408,27 @@ def test_artifact_smoke_uses_explicit_recipe(
     assert "--prefer-module-v3" in cmd
     recipe_path = cmd[cmd.index("--config-file") + 1]
     assert recipe_path == MODEL_RECIPES[model]
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_lfm3_smoke_uses_architecture_defaults(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, "LiquidAI/LFM3-1.7B", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert cmd[cmd.index("--model") + 1] == "LiquidAI/LFM3-1.7B"
+    assert "--config-file" not in cmd
+    assert not {
+        "--max-length",
+        "--max-batch-size",
+        "--max-batch-input-tokens",
+        "--device-graph-capture",
+        "--no-device-graph-capture",
+        "--enable-overlap-scheduler",
+        "--no-enable-overlap-scheduler",
+    }.intersection(cmd)
