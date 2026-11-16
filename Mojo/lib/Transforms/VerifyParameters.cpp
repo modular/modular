@@ -81,10 +81,7 @@ static void propagateTrivialParameters(Region *region,
         processOp(op, evaluator);
     } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       // If the value of the declared parameter is "trivial", i.e. a simple
-      // constant, then propagate it. We can only safely refine the attribute
-      // (interpret calls) if its type is not parametric. If the type is
-      // parametric, we risk creating unequal types across function calls if
-      // there are dependent parameters.
+      // constant, then propagate it.
       TypedAttr value = declare.getValue();
       if (!isa<DeferredAttr>(value))
         value = evaluator.getReboundAttribute(value);
@@ -184,9 +181,7 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
 
     LIT::LITSymTabEvaluationContext evaluationContext(module, sharedSymtabs);
 
-    // Because parameter simplification invokes the interpreter, we cannot
-    // simplify in parallel: functions may be modified as they are being
-    // interpreted. Save the use-def graphs from the verification pass here.
+    // Save the use-def graphs from the verification pass for simplification.
     std::vector<ParameterUseDefGraph> graphs;
     if (simplifyParameters) {
       graphs.reserve(declRegions.size());
@@ -219,13 +214,27 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     }
 
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
-    for (auto [declRegion, i] : declRegions) {
+    auto propagate = [&](std::pair<Region *, size_t> item) {
+      auto [declRegion, i] = item;
       ParameterUseDefGraph &graph = graphs[i];
       ParameterEvaluator evaluator;
       evaluator.setEvaluationContext(&evaluationContext);
       propagateTrivialParameters(declRegion, graph, graph,
                                  std::move(evaluator));
+    };
+
+    // Evaluation reads a function only through its top-level op, which
+    // simplification never changes, so function bodies run in parallel. Their
+    // nested scopes are comptime regions that no other declaration can name.
+    // Struct and trait bodies are read in full, so they run first, serially.
+    std::vector<std::pair<Region *, size_t>> functionRegions;
+    for (auto item : declRegions) {
+      if (isa<GeneratorOp>(item.first->getParentOp()))
+        functionRegions.push_back(item);
+      else
+        propagate(item);
     }
+    mlir::parallelForEach(&getContext(), functionRegions, propagate);
   }
 };
 } // namespace
