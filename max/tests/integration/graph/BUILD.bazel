@@ -841,14 +841,18 @@ modular_py_test(
         "conftest.py",
         "test_device_graph_side_stream_reclaim.py",
     ],
+    data = ["//max/tests/integration/graph/testdata/stream_workspace_ops"],
     env = {
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
         "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        "MODULAR_STREAM_WORKSPACE_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/stream_workspace_ops)",
     },
-    # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
-    # after capture; the fix this test covers is CUDA only.
-    gpu_constraints = ["//:nvidia_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        # Covers the CUDA and HIP stream views.
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     precompile_mefs = True,
     tags = [
         "gpu",

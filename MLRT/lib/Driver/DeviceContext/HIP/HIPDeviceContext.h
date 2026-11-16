@@ -391,6 +391,7 @@ public:
   ErrorOr<DeviceStreamRef> createStream(int priority = 0) override;
   ErrorOr<DeviceStreamRef> createExternalStream(void *externalStream) override;
   ErrorOr<DeviceContextRef> selectStream(unsigned streamId) override;
+  bool flushIdleStreamViews() override;
   ErrorOr<DeviceGraphBuilderRef>
   createGraphBuilder(DeviceGraphMemoryPoolRef pool) override;
 
@@ -445,6 +446,15 @@ private:
   // Cached handle of the base stream (streamPool_->get(0)). All enqueue/sync/
   // alloc operations submit to this stream.
   hipStream_t stream_;
+
+  // `selectStream` views by stream id, kept for this context's lifetime. A
+  // captured device graph keeps using the memory its side-stream ops allocated
+  // during capture, which lives in the view's `graphFreeList`; a view dropped
+  // after one execution would flush that memory to the root free list while
+  // the graph still references it. Ordinary frees stay reclaimable through
+  // `flushIdleStreamViews`.
+  std::mutex streamViewsMu_;
+  std::vector<DeviceContextRef> streamViews_;
 
   ErrorOrSuccess memAlloc(void **ptr, size_t byteSize,
                           Device::AllocMode mode) override;
