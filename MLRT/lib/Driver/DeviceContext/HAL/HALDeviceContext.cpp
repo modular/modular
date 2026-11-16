@@ -783,7 +783,9 @@ DeviceContext::memmapFile(const std::filesystem::path &filename) {
   if (const char *err = MojoHAL_DeviceContext_memmapFile(
           &buf, &ptr, &size, mojoCtx_, filename.c_str()))
     return takeError(err);
-  return DeviceBufferRef::take(new DeviceBuffer(buf, ptr, size, /*isHost=*/true,
+  // Like the legacy implementation, a mapping is not pinned (isHost=false).
+  return DeviceBufferRef::take(new DeviceBuffer(buf, ptr, size,
+                                                /*isHost=*/false,
                                                 DeviceBuffer::BoxKind::Mmap,
                                                 DeviceContextRef::copy(this)));
 }
