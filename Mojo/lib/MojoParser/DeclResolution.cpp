@@ -3656,60 +3656,6 @@ static auto silenceErrors(MLIRContext *ctx) {
   };
 }
 
-// True when the struct's own where-clause makes `condition` unsatisfiable.
-static bool conformancePrecluded(ArrayRef<TypedAttr> bodyPropositions,
-                                 TypedAttr condition) {
-  TypedAttr negated = ParamOperatorAttr::getNot(condition);
-  return isPropositionImplied(negated, bodyPropositions).isTrue();
-}
-
-// Returns the condition under which the struct conforms to the trait (a
-// trivially-true constraint for an unconditional conformance), or std::nullopt
-// when the struct does not conform to the trait at all (including if the
-// conformance condition is precluded by the struct's own body constraints).
-static std::optional<ConstraintAttr>
-getConformanceCondition(StructASTDecl &structDecl, StringRef traitName) {
-  StructDeclOp structOp = structDecl.getOp();
-  TraitType canonicalTrait = structOp.getCanonicalTrait();
-  ArrayRef<TraitSymbolAttr> symbols = canonicalTrait.getSymbols();
-  ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
-
-  SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
-      structOp.getSignature().getParamListAttrs().getBodyConstraints(),
-      [&](ConstraintAttr constraint) { return constraint.getProposition(); });
-  IndexRefRemapper remapper(structOp.getParamsAttr());
-
-  for (auto [i, symbol] : llvm::enumerate(symbols)) {
-    if (symbol.getSymbol().getLeafReference() != traitName)
-      continue;
-
-    MLIRContext *ctx = structDecl.getShared().getContext();
-
-    // An empty constraint array is the canonical form for a fully
-    // unconditional trait, so every slot is trivially true.
-    if (constraints.empty())
-      return getUnconditionalConstraint(ctx);
-
-    ConstraintAttr condition = constraints[i];
-    assert(!isTriviallyFalseConstraint(condition) &&
-           "trivially false conformance should have been erased during "
-           "canonical trait construction");
-
-    // A condition the struct's own trailing where-clause precludes is an
-    // opt-out.
-    if (!bodyPropositions.empty() &&
-        conformancePrecluded(bodyPropositions,
-                             remapper.replace(condition.getProposition())))
-      return std::nullopt;
-
-    return condition;
-  }
-
-  // This intentionally does not handle extension conformances as that feature
-  // is not stable yet.
-  return std::nullopt;
-}
-
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
 /// requires a string message argument, with a note suggesting the removal
 /// path. The caller marks the decl erroneous and returns failure. Shared by
@@ -4041,7 +3987,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
 
   if (std::optional<ConstraintAttr> deinitableConstraint =
-          getConformanceCondition(*this, "Deinitable")) {
+          getOp().getConformanceCondition("Deinitable")) {
     if (isTriviallyTrueConstraint(*deinitableConstraint)) {
       // Unconditional Deinitable cannot be combined with
       // @explicit_destroy.
@@ -4077,19 +4023,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
         setErroneous();
         return failure();
       }
-    } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
-      structOp.setLinearTypeErrorMsg(
-          "type '" + structOp.getDeclName().str() +
-          "' does not conditionally conform to 'Deinitable' "
-          "for these parameters");
     }
-  } else if (!structOp.getLinearTypeErrorMsg().has_value()) {
-    // Never Deinitable: the struct is linear.
-    // Synthesize a default message since the user didn't provide one.
-    structOp.setLinearTypeErrorMsg(
-        "type '" + structOp.getDeclName().str() +
-        "' does not conform to 'Deinitable' and must be explicitly "
-        "destroyed");
   }
 
   // Reaching here with the decorator means the struct explicitly mentions
@@ -4106,7 +4040,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   // leaves the struct as MemoryOnly at declaration time; the parametric
   // isMemoryOnly bit resolves per-instantiation during lowering.
   if (std::optional<ConstraintAttr> rpConstraint =
-          getConformanceCondition(*this, "RegisterPassable")) {
+          getOp().getConformanceCondition("RegisterPassable")) {
     if (isTriviallyTrueConstraint(*rpConstraint)) {
       structOp.setConvention(TypeConvention::RegisterPassable);
     } else {
@@ -4117,7 +4051,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   // TrivialRegisterPassable conforms to RegisterPassable, so should set this
   // after setting RegisterPassable.
   if (std::optional<ConstraintAttr> trpConstraint =
-          getConformanceCondition(*this, "TrivialRegisterPassable")) {
+          getOp().getConformanceCondition("TrivialRegisterPassable")) {
     // Check for unsupported conditional conformance to TrivialRegisterPassable.
     if (!isTriviallyTrueConstraint(*trpConstraint)) {
       shared.emitError(trpConstraint->getLoc())
@@ -4438,7 +4372,7 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
 
   // Determine if there is an explicit conformance to Deinitable.
   std::optional<ConstraintAttr> deinitableConstraint =
-      getConformanceCondition(*this, "Deinitable");
+      getOp().getConformanceCondition("Deinitable");
   DefASTDecl *synthesizedDtorDecl = nullptr;
   if (deinitableConstraint) {
     // Synthesize an empty __deinit__ when the type conforms to
@@ -4459,7 +4393,7 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
   // implementations of the corresponding methods, add signatures for them.
   // These can all be synthesized without resolving the members.
   if (std::optional<ConstraintAttr> movableConstraint =
-          getConformanceCondition(*this, "Movable")) {
+          getOp().getConformanceCondition("Movable")) {
     FnOp moveFn = lookupSpecialInit(*this, SpecialFunctionKind::kMoveCtor);
     if (!moveFn)
       moveFn = StructEmitter(*this).synthesizeEmptyMoveOrCopyInit(
@@ -4471,7 +4405,7 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
     }
   }
   if (std::optional<ConstraintAttr> copyableConstraint =
-          getConformanceCondition(*this, "Copyable")) {
+          getOp().getConformanceCondition("Copyable")) {
     FnOp copyFn = lookupSpecialInit(*this, SpecialFunctionKind::kCopyCtor);
     if (!copyFn)
       copyFn = StructEmitter(*this).synthesizeEmptyMoveOrCopyInit(
@@ -4545,8 +4479,9 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
     // A conformance whose condition the struct's own where-clause precludes is
     // an opt-out.
     if (hasConstraints && !bodyPropositions.empty() &&
-        conformancePrecluded(bodyPropositions,
-                             remapper.replace(constraints[i].getProposition())))
+        isPropositionPrecluded(
+            remapper.replace(constraints[i].getProposition()),
+            bodyPropositions))
       continue;
 
     TraitSymbolAttr traitSymbol = parent;
@@ -4843,7 +4778,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
   StringRef caseName = caseOp.getName();
   SmallVector<StringRef, 5> structMemberNames = {
       "__init__", "__deinit__", "__del__is_trivial", "__move_ctor_is_trivial"};
-  if (getConformanceCondition(enumDecl, "Copyable"))
+  if (enumDecl.getOp().getConformanceCondition("Copyable"))
     structMemberNames.push_back("__copy_ctor_is_trivial");
   if (llvm::is_contained(structMemberNames,
                          SpecialFunctionInfo::getCanonicalSpelling(caseName))) {
@@ -4881,7 +4816,7 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
       payloadRequirements;
   for (StringRef traitName : traitsRequiredOfPayloads) {
     std::optional<ConstraintAttr> whereClauseForTrait =
-        getConformanceCondition(enumDecl, traitName);
+        enumDecl.getOp().getConformanceCondition(traitName);
     if (!whereClauseForTrait)
       continue;
     SmallVector<ConstraintAttr> assumptions;

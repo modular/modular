@@ -548,6 +548,17 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Return the `@__annotation` values selected by `fieldIndex`.
     ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
 
+    /// Return the default linear type error message (for when the user didn't
+    /// write a custom message). `conditional` determines whether the struct may
+    /// conditionally conform to `Deinitable`.
+    static std::string getDefaultLinearTypeErrorMsg(StringRef structName,
+                                                    bool conditional);
+
+    /// Return the source constraint under which the struct conforms to the
+    /// trait named `traitName` (trivially true when always conforms), or
+    /// std::nullopt when it never conforms.
+    std::optional<ConstraintAttr> getConformanceCondition(StringRef traitName);
+
     /// Get a type expression after binding the parameter value to the struct
     /// decl.
     TypedAttr bindReference(ParameterEvaluationContext *evalCtx,

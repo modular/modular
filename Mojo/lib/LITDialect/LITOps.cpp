@@ -1271,6 +1271,64 @@ static void printStructParameterSpec(AsmPrinter &p, Operation *op,
 
 bool StructDeclOp::isSynthetic() { return getSynthetic(); }
 
+std::string StructDeclOp::getDefaultLinearTypeErrorMsg(StringRef structName,
+                                                       bool conditional) {
+  if (conditional)
+    return ("type '" + structName +
+            "' does not conditionally conform to 'Deinitable' for these "
+            "parameters")
+        .str();
+  return ("type '" + structName +
+          "' does not conform to 'Deinitable' and must be explicitly "
+          "destroyed")
+      .str();
+}
+
+std::optional<ConstraintAttr>
+StructDeclOp::getConformanceCondition(StringRef traitName) {
+  TraitType canonicalTrait = getCanonicalTrait();
+  ArrayRef<TraitSymbolAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
+
+  auto isTargetTrait = [&](TraitSymbolAttr symbol) {
+    return symbol.getSymbol().getLeafReference() == traitName;
+  };
+
+  // An empty constraint array is the canonical form for a fully
+  // unconditional trait, so every slot is trivially true.
+  if (constraints.empty()) {
+    if (llvm::any_of(symbols, isTargetTrait))
+      return getUnconditionalConstraint(getContext());
+    return std::nullopt;
+  }
+
+  for (auto [symbol, constraint] : llvm::zip_equal(symbols, constraints)) {
+    if (!isTargetTrait(symbol))
+      continue;
+
+    assert(!isTriviallyFalseConstraint(constraint) &&
+           "trivially false conformance should have been erased during "
+           "canonical trait construction");
+
+    // A constraint the struct's own trailing where-clause precludes is an
+    // opt-out.
+    SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
+        getSignature().getParamListAttrs().getBodyConstraints(),
+        [](ConstraintAttr c) { return c.getProposition(); });
+    if (!bodyPropositions.empty() &&
+        isPropositionPrecluded(IndexRefRemapper(getParamsAttr())
+                                   .replace(constraint.getProposition()),
+                               bodyPropositions))
+      return std::nullopt;
+
+    return constraint;
+  }
+
+  // This intentionally does not handle extension conformances as that feature
+  // is not stable yet.
+  return std::nullopt;
+}
+
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
 TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,

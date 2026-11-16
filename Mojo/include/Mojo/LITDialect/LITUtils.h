@@ -385,6 +385,10 @@ inline bool isImplicationProven(TypedAttr proposition, TypedAttr assumption) {
 TriBool isPropositionImplied(TypedAttr proposition,
                              ArrayRef<TypedAttr> assumptions);
 
+/// Returns true if `assumptions` prove that `proposition` cannot hold.
+bool isPropositionPrecluded(TypedAttr proposition,
+                            ArrayRef<TypedAttr> assumptions);
+
 /// Similar to isPropositionImplied but rebinds propositions using the
 /// evaluator prior to checking the constraint.
 TriBool isPropositionImplied(ConstraintAttr proposition,

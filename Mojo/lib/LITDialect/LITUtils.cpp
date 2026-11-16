@@ -1025,6 +1025,12 @@ static TypedAttr conjunctionOf(ArrayRef<TypedAttr> propositions,
   return ParamOperatorAttr::get(POC::And, propositions);
 }
 
+bool LIT::isPropositionPrecluded(TypedAttr proposition,
+                                 ArrayRef<TypedAttr> assumptions) {
+  TypedAttr negated = ParamOperatorAttr::getNot(proposition);
+  return isPropositionImplied(negated, assumptions).isTrue();
+}
+
 TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
   switch (
       testClause(getCanonicalAttr(assumption), getCanonicalAttr(proposition))) {

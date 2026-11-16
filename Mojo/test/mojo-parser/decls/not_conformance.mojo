@@ -59,7 +59,8 @@ struct WhereFalseSpelling(Movable where False):
 # `Deinitable` is injected unconditionally, so opting out makes the struct
 # linear -- the same outcome the `where False` spelling reaches.
 # CHECK-LABEL: lit.struct.decl @NotDeinitable
-# CHECK: } <{{.*}}does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK-SAME: (!AnyType_Movable)
+# CHECK-NOT: __deinit__
 struct NotDeinitable(not Deinitable):
     var x: Int
 

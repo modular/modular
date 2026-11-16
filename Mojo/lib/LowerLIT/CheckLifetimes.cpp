@@ -36,6 +36,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 #include <memory>
@@ -680,7 +681,14 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     // NOT Deinitable. We can improve this error message in the future.
     if (!isDeinitable.isTrue()) {
       StringAttr message = info.decl.getLinearTypeErrorMsgAttr();
-      assert(message && "should have a message");
+      if (!message) {
+        bool conditional =
+            info.decl.getConformanceCondition("Deinitable").has_value();
+        message =
+            StringAttr::get(info.decl.getContext(),
+                            StructDeclOp::getDefaultLinearTypeErrorMsg(
+                                info.decl.getDeclName().strref(), conditional));
+      }
       return SpecialMemberInfo::unavailable(message);
     }
 
@@ -3745,6 +3753,32 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
   return RebindOp::create(builder, destType, value);
 }
 
+/// Attach a note at each `deinit self` method of `structDecl`, which are the
+/// ways a value of a linear struct can be explicitly destroyed.
+static void attachDeinitMethodNotes(InFlightDiagnostic &diag,
+                                    StructDeclOp structDecl) {
+  llvm::StringSet<> seen;
+  for (FnOp fn : structDecl.getFields().getOps<FnOp>()) {
+    StringAttr name = fn.getDeclName();
+    // `__deinit__` is the implicit destructor of a conditionally Deinitable
+    // struct, written or synthesized, and is unavailable whenever this note
+    // is emitted.
+    if (!name || fn.getIsStatic() || name.strref() == "__deinit__")
+      continue;
+    ArrayRef<ArgConvention> convs =
+        fn.getFuncTypeGenerator().getArgConventions();
+    if (convs.empty() || convs.front() != ArgConvention::DeinitMem)
+      continue;
+    // Overloads share a name; note only the first.
+    if (!seen.insert(name.strref()).second)
+      continue;
+    diag.attachNote(fn.getLoc())
+        << "call '" << name.strref() << (convs.size() > 1 ? "(...)" : "()")
+        << "' to explicitly destroy '" << structDecl.getDeclName().strref()
+        << "'";
+  }
+}
+
 /// Emit one destructor call for one entire value or field.
 ///
 /// The 'opWithUse' value, if present, is the operation using the overall value
@@ -3778,6 +3812,15 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 
     diag << " abandoned without being explicitly destroyed: "
          << dtorInfo.getMessageIfUnavailable().strref();
+
+    // If the user didn't provide a custom linear type error message, attach
+    // a note for each deinit method.
+    if (auto structType = sugarDynCast<LIT::StructType>(destroyedType)) {
+      StructDeclOp structDecl =
+          valueSet.getTypeDeclInfo().getStructInfoForType(structType).decl;
+      if (!structDecl.getLinearTypeErrorMsgAttr())
+        attachDeinitMethodNotes(diag, structDecl);
+    }
 
     // If the insertion point is on a mark_consumed op inserted as part of an
     // exception throw, then add a note explaining this is due to a thrown

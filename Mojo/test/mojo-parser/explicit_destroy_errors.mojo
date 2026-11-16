@@ -300,6 +300,18 @@ def testNotDeinitableReason():
     _ = NotDeinitableReason()
 
 
+# Without a reason, `not Deinitable` gets the same default message as the
+# `where False` spelling.
+struct NotDeinitableLinear(not Deinitable, Movable where False):
+    def __init__(out self):
+        pass
+
+
+def testNotDeinitableLinear():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'NotDeinitableLinear' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    _ = NotDeinitableLinear()
+
+
 # The older `where False` spelling carries a reason the same way.
 struct WhereFalseReason(Deinitable where False else "use consume()"):
     def __init__(out self):
@@ -342,6 +354,93 @@ struct ContradictedLinear[n: Int](
 def testContradictedLinear():
     # expected-error @below {{abandoned without being explicitly destroyed: type 'ContradictedLinear' does not conform to 'Deinitable' and must be explicitly destroyed}}
     _ = ContradictedLinear[1]()
+
+
+# ===----------------------------------------------------------------------=== #
+# The synthesized message lists the `deinit self` methods (MOCO-4422)
+# ===----------------------------------------------------------------------=== #
+
+
+struct OneDeinitMethod(Deinitable where False):
+    # expected-note @+1 {{call 'close()' to explicitly destroy 'OneDeinitMethod'}}
+    def close(deinit self):
+        pass
+
+
+def testOneDeinitMethod(var l: OneDeinitMethod):
+    # expected-error @-1 {{'l' abandoned without being explicitly destroyed: type 'OneDeinitMethod' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    pass
+
+
+# A method that is not `deinit self`, a static method, and an overload of a
+# noted method are all left out. A method taking further arguments is shown
+# with `(...)`.
+struct TwoDeinitMethods(Deinitable where False):
+    def read(self) -> Int:
+        return 0
+
+    @staticmethod
+    def make() -> Self:
+        return Self()
+
+    def __init__(out self):
+        pass
+
+    # expected-note @+1 {{call 'close()' to explicitly destroy 'TwoDeinitMethods'}}
+    def close(deinit self):
+        pass
+
+    def close(deinit self, code: Int):
+        pass
+
+    # expected-note @+1 {{call 'close_with(...)' to explicitly destroy 'TwoDeinitMethods'}}
+    def close_with(deinit self, code: Int):
+        pass
+
+
+def testTwoDeinitMethods():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'TwoDeinitMethods' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    _ = TwoDeinitMethods()
+
+
+# `__deinit__` is the implicit destructor, so it is not listed.
+struct CondDeinitMethods[cond: Bool](Deinitable where cond):
+    def __init__(out self):
+        pass
+
+    def __deinit__(deinit self) where Self.cond:
+        pass
+
+    # expected-note @+1 {{call 'a()' to explicitly destroy 'CondDeinitMethods'}}
+    def a(deinit self):
+        pass
+
+    # expected-note @+1 {{call 'b()' to explicitly destroy 'CondDeinitMethods'}}
+    def b(deinit self):
+        pass
+
+    # expected-note @+1 {{call 'c()' to explicitly destroy 'CondDeinitMethods'}}
+    def c(deinit self):
+        pass
+
+
+def testCondDeinitMethods():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'CondDeinitMethods' does not conditionally conform to 'Deinitable' for these parameters}}
+    _ = CondDeinitMethods[False]()
+
+
+# A message the author wrote replaces the list.
+struct CustomMessageDeinitMethod(Deinitable where False else "use close()"):
+    def __init__(out self):
+        pass
+
+    def close(deinit self):
+        pass
+
+
+def testCustomMessageDeinitMethod():
+    # expected-error @below {{abandoned without being explicitly destroyed: use close()}}
+    _ = CustomMessageDeinitMethod()
 
 
 # ===----------------------------------------------------------------------=== #
