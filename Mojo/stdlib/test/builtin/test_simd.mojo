@@ -779,6 +779,10 @@ def test_round() raises:
     assert_equal(Int32.__round__(-1250, -2), -1200)
     assert_equal(UInt8.__round__(149, -1), 150)
     assert_equal(Int8.__round__(-115, -1), -120)
+    assert_equal(Int8.__round__(0, -3), 0)
+    assert_equal(Int8.__round__(-128, -3), 0)
+    assert_equal(UInt8.__round__(255, -3), 0)
+    assert_equal(Int64.__round__(123, -30), 0)
 
 
 def test_div() raises:
