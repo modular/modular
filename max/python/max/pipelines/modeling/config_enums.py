@@ -104,7 +104,7 @@ _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING: dict[
 _SUPPORTED_DEVICES: dict[SupportedEncoding, tuple[str, ...]] = {
     "float32": ("cpu", "gpu"),
     "float16": ("gpu",),
-    "bfloat16": ("gpu",),
+    "bfloat16": ("cpu", "gpu"),
     "float8_e4m3fn": ("gpu",),
     "float4_e2m1fnx2": ("gpu",),
     "float6_e2m3fn": ("gpu",),

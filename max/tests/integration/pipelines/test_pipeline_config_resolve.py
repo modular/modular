@@ -533,7 +533,8 @@ class TestEncodingValidation:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with _temp_repo_dir() as tmpdir:
             _make_local_repo(
-                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+                tmpdir,
+                safetensors_files={"model.safetensors": {"w": "F8_E4M3"}},
             )
             with pytest.raises(
                 ValueError,
@@ -542,8 +543,23 @@ class TestEncodingValidation:
                 _make_pipeline_config(
                     tmpdir,
                     device_specs=[CPU_DEVICE_SPEC],
-                    quantization_encoding="bfloat16",
+                    quantization_encoding="float8_e4m3fn",
                 )
+
+    @prepare_registry
+    def test_bfloat16_on_cpu_accepted(self) -> None:
+        """bfloat16 resolves on a CPU target."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(
+                tmpdir,
+                device_specs=[CPU_DEVICE_SPEC],
+                quantization_encoding="bfloat16",
+            )
+            assert _model(config).quantization_encoding == "bfloat16"
 
 
 # ---------------------------------------------------------------------------

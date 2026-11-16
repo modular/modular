@@ -1228,7 +1228,7 @@ def test_config__validates_supported_device(
                     "main": MAXModelConfig(
                         model_path=modular_ai_llama_3_1_local_path,
                         device_specs=[DeviceSpec.cpu()],
-                        quantization_encoding="bfloat16",
+                        quantization_encoding="float8_e4m3fn",
                         max_length=1,
                     )
                 }

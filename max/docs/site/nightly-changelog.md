@@ -516,6 +516,13 @@ This version is still a work in progress.
   memory used by other processes. Before, MAX could start a model that didn't
   fit in memory, which on macOS could exhaust swap and crash the machine.
 
+- `bfloat16` models now run on CPU, so `--devices=cpu` works with a model
+  whose default encoding is `bfloat16` without
+  `--quantization-encoding=float32`. Such a model used to fail at startup
+  with "The encoding 'bfloat16' is not compatible with the selected device
+  type 'cpu'"
+  ([#7611](https://github.com/modular/modular/issues/7611)).
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
