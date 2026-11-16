@@ -88,6 +88,7 @@
       mlir::ROCDL::SerializeGPUModuleBase::*;
       mlir::scf::populateSCFStructuralTypeConversionsAndLegality?*;
       mlir::scf::SCFDialect::*;
+      mlir::scf::populateSCFStructuralTypeConversionsAndLegality?*;
       mlir::ub::PoisonOp::*;
       mlir::ub::UBDialect::*;
       vtable?for?mlir::ROCDL::SerializeGPUModuleBase;

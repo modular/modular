@@ -168,7 +168,8 @@ def lit_tests(
         size = None,
         force_strip = False,
         exec_properties = {},
-        site_cfg_extensions = []):
+        site_cfg_extensions = [],
+        extra_lit_features = []):
     """Create test rules for all lit tests in the current directory.
 
     Args:
@@ -190,6 +191,7 @@ def lit_tests(
         force_strip: Whether binaries should be stripped via a transition, do not use, just here to workaround a bug
         exec_properties: Remote exec resources https://www.buildbuddy.io/docs/rbe-platforms/#runner-resource-allocation
         site_cfg_extensions: Python files appended to the generated site config, for lit features that a plugin detects when the test runs
+        extra_lit_features: Lit features these tests may name that the feature validator does not know, such as the ones `site_cfg_extensions` adds
     """
 
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
@@ -334,7 +336,8 @@ EOF
         data = srcs + extra_data,
         srcs = ["//bazel/internal/llvm-lit:validate_lit_features.py"],
         main = "//bazel/internal/llvm-lit:validate_lit_features.py",
-        args = [native.package_name()] + srcs,
+        args = ["--feature=" + feature for feature in extra_lit_features] +
+               [native.package_name()] + srcs,
         env = default_env | {"RUNS_ON_GPU": str("gpu" in tags)},
         toolchains = [
             "//bazel/internal:current_gpu_toolchain",
