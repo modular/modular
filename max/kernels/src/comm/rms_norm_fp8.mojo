@@ -36,6 +36,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from max.algorithm.functional import _index_coord, _start_indices_of_nth_element
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -222,25 +223,18 @@ def _rms_norm_fused_fp8_gpu[
     var rows = Int(shape.product()) // last_dim
     var cols = last_dim
 
-    # The closure reaches the GPU by value through `host_args`, so a captured
-    # `Coord` would lower to one scalar device `.param` per dynamic leaf while
-    # the host packs it as a single capture slot; that arity mismatch corrupts
-    # the launch (MOCO-4307). A `row_major` `Layout` keeps the capture a single
-    # aggregate `.param`, with the shape's static dims and all.
-    var shape_layout = row_major(shape)
-
-    # 2D input function (following the rms_norm_fused_residual_add pattern):
-    # `Layout.idx2crd` translates each flattened `(row, col)` back to the
-    # original n-D coordinate, the same decomposition the shared
-    # `_get_start_indices_of_nth_subvolume_static` helper performs for the `nn`
-    # kernels (which a `comm → nn` import cannot reach).
+    # Maps each flattened `(row, col)` back to the n-D coordinate. Static dims
+    # in `shape`'s type become compile-time divisors.
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var cols, var shape_layout, var input_fn} -> SIMD[
+    ](row: Int, col: Int) {var cols, var shape, var input_fn} -> SIMD[
         in_dtype, simd_width
     ]:
-        return input_fn[simd_width](shape_layout.idx2crd(row * cols + col))
+        var indices = _start_indices_of_nth_element[
+            rank, type_of(shape).element_types, use_32bit=False
+        ](row * cols + col, shape)
+        return input_fn[simd_width](_index_coord(indices))
 
     # Create 2D output TileTensor view
     var output_2d = output.reshape(row_major(rows, cols))

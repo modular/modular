@@ -59,8 +59,6 @@ from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.reflection import reflect
 from std.utils.coord import ComptimeInt, CoordLike
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
@@ -568,46 +566,6 @@ def rms_norm_gpu_warp_per_row[
                     col += stride
 
 
-# The warp-tiling kernel wants the row geometry as a typed `Coord` — its
-# `ComptimeInt` dims are what strength-reduce the per-thread row translation —
-# but it takes the shape as an explicit kernel argument, and a *bare* `Coord`
-# argument corrupts the launch: the param pack lowers to one scalar device
-# `.param` per dynamic leaf while the host packs the whole coord as a single
-# aggregate slot, and that arity mismatch makes the driver read undefined
-# parameter slots (MOCO-4307). Nesting the coord in a `DevicePassable` struct
-# keeps both sides at one aggregate slot, which is how `TileTensor` already
-# carries its `Layout`'s coords to a kernel;
-# `max/mojo/test/gpu/host/test_coord_device_launch.mojo` covers this path.
-#
-# `num_cols` rides along deliberately: a *single*-field struct is transparently
-# unwrapped to its field, which puts the bare param pack straight back on the
-# kernel boundary and reintroduces the mismatch. Two fields keep the struct a
-# struct, and the kernel needs both values anyway.
-# TODO(MOCO-4307): Remove this type and use a regular Coord
-@fieldwise_init
-struct _RowSpec[element_types: TypeList[Trait=CoordLike, ...]](
-    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
-):
-    var shape: Coord[*Self.element_types]
-    var num_cols: Int32
-
-    comptime device_type = Self
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        comptime assert (
-            reflect[Self].field_count() >= 2
-        ), "_RowSpec must keep >= 2 fields or it is unwrapped to a bare Coord"
-        encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return String(
-            "_RowSpec[", Coord[*Self.element_types].get_type_name(), "]"
-        )
-
-
 # SM100 (B200) primary target; portable (only uses `block_reduce`, warp
 # shuffle, and a per-thread grid-stride column loop — no arch intrinsics).
 #
@@ -658,7 +616,8 @@ def rms_norm_gpu_warp_tiling[
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
-    row_spec: _RowSpec[shape_types],
+    shape: Coord[*shape_types],
+    num_cols: Int32,
     gamma: TileTensor[dtype, LayoutType, origin, Engine=Engine],
     input_fn: InputFnType,
     output_fn: OutputFnType,
@@ -666,7 +625,7 @@ def rms_norm_gpu_warp_tiling[
     comptime assert (
         shape_types.length == rank
     ), "shape_types.length must be the same as rank"
-    var _num_cols = Int(row_spec.num_cols)
+    var _num_cols = Int(num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
 
@@ -681,7 +640,7 @@ def rms_norm_gpu_warp_tiling[
     var bdim = block_dim.x
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
-    var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
+    var base = _get_start_indices_of_nth_subvolume_static(row, shape)
 
     # Per-chunk register-cached input (in accum precision) and gamma weights,
     # carried across the reduction so the normalize pass needs no re-read.
@@ -721,7 +680,7 @@ def rms_norm_gpu_warp_tiling[
             thread_m2
         )
         var norm_factor = rsqrt(
-            (row_m2 / row_spec.num_cols.cast[accum_type]()) + eps_accum
+            (row_m2 / num_cols.cast[accum_type]()) + eps_accum
         )
 
         comptime for c in range(chunks_per_thread):
@@ -923,42 +882,28 @@ def rms_norm_gpu[
     # runtime leaf, so this path is behavior-identical to the pre-migration
     # `_get_start_indices_of_nth_subvolume` form for non-static shapes.
     #
-    # The wrappers copy-capture (`{var}`) `shape_layout` and the callbacks:
-    # they reach the GPU kernels by value through `host_args`, and a captured
-    # *local* `var` held by reference would be a host-stack pointer on device.
+    # The wrappers copy-capture (`{var}`) `shape` and the callbacks: they
+    # reach the GPU kernels by value through `host_args`, and a captured
+    # argument held by reference would be a host-stack pointer on device.
     # Without the copy the rank-N divmod reads garbage outer dims on device
     # (rank-2 is unaffected since its outer translation is trivial; rank>=3
     # produces wrong results / launch failures).
-    #
-    # The carrier is a `Layout`, not the `Coord` itself: a captured `Coord`
-    # lowers to one scalar device `.param` per dynamic leaf while the host packs
-    # it as a single capture slot, and that arity mismatch corrupts the launch
-    # (MOCO-4307). A `row_major` `Layout` is the one carrier that keeps the
-    # capture a single aggregate `.param`, so the typed `Coord` — static dims
-    # and all — arrives intact via `shape_coord()`.
-    var shape_layout = row_major(shape)
 
     @inline(.always)
     def output_fn_2d[
         simd_width: SIMDLength, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) {
-        var shape_layout, var output_fn
+        var shape, var output_fn
     } -> None:
-        var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_layout.shape_coord()
-        )
+        var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
         indices[rank - 1] = col
         output_fn[simd_width, alignment](Coord(indices), val)
 
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var shape_layout, var input_fn} -> SIMD[
-        dtype, simd_width
-    ]:
-        var indices = _get_start_indices_of_nth_subvolume_static(
-            row, shape_layout.shape_coord()
-        )
+    ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[dtype, simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume_static(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](Coord(indices))
 
@@ -1076,7 +1021,8 @@ def rms_norm_gpu[
                 pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
-                _RowSpec[type_of(shape).element_types](shape, Int32(cols)),
+                shape,
+                Int32(cols),
                 gamma,
                 host_args=(input_fn, output_fn),
                 grid_dim=rows,

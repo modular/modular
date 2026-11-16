@@ -119,14 +119,11 @@ def run_rms_norm_gpu_static_dims[
 ](ctx: DeviceContext, var shape: Coord, rtol: Float64 = 0.01) raises:
     """Drives `rms_norm_gpu` with a shape whose inner dims are `ComptimeInt`.
 
-    The dynamic-only shapes above (`Coord(IndexList)`) leave every leaf
-    runtime, but production reaches this kernel through
-    `TileTensor.shape_coord()`, which preserves static dims. Static inner dims
-    make `row_major(shape)`'s stride list all-`ComptimeInt` and therefore
-    zero-sized, which collapses the `Layout` capture carrier and the
-    `_RowSpec` kernel argument back to a bare `Coord` -- the MOCO-4307 arity
-    mismatch both types exist to avoid. Only a static-dim shape exercises
-    that collapse.
+    The dynamic-only shapes above leave every dimension a runtime value.
+    Callers that pass `TileTensor.shape_coord()`, such as the allreduce +
+    RMSNorm ops, keep static dims in the `Coord` type, and the kernels use
+    them as compile-time divisors in the row-to-index translation. Only a
+    static-dim shape reaches that path.
     """
     print("== run_rms_norm_gpu_static_dims")
 
@@ -272,7 +269,7 @@ def main() raises:
         run_rms_norm_gpu[.float32](ctx, Index(4, 1024, 2048))
         run_rms_norm_gpu[.bfloat16](ctx, Index(4, 1024, 4096), rtol=2e-2)
         # Rank 4 through the warp-tiling kernel: the widest coord that reached
-        # it was rank 3, leaving the `_RowSpec` argument untested past three
+        # it was rank 3, leaving the `Coord` argument untested past three
         # dynamic leaves. cols=2048 is an exact fit at bf16.
         run_rms_norm_gpu[.bfloat16](ctx, Index(2, 3, 4, 2048), rtol=2e-2)
 
@@ -286,12 +283,10 @@ def main() raises:
         run_rms_norm_gpu[.bfloat16](ctx, Index(8, 2048), rtol=2e-2)
         run_rms_norm_gpu[.float32](ctx, Index(8, 8193))
 
-        # Static-dim shapes: `row_major` derives an all-`ComptimeInt` stride
-        # list from these, so they are the only cases that exercise the
-        # zero-sized-stride collapse of the `Layout` capture carrier and the
-        # `_RowSpec` kernel argument (MOCO-4307). Rank 2 and rank 3 keep dim 0
-        # dynamic (the batch-dynamic production shape); the fully static rank-2
-        # case carries no dynamic leaf at all.
+        # Static-dim shapes: the only cases where the kernels divide by
+        # compile-time dims in the row-to-index translation. Rank 2 and rank 3
+        # keep dim 0 dynamic (the batch-dynamic production shape); the fully
+        # static rank-2 case carries no dynamic dim at all.
         run_rms_norm_gpu_static_dims[.bfloat16](
             ctx, Coord(Int64(2), Idx[4096]), rtol=2e-2
         )
