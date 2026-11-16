@@ -211,6 +211,16 @@ class K3DSparkProposer:
         whose SPMD reduction runs replicated); a sampling chain bridges the
         driver's per-position sampler through, as every tensor-parallel
         drafter's does.
+
+        Under ``draft_proposal="sampled"`` the driver hands its
+        :class:`~max.pipelines.speculative.block_driver.SampledDraftSampler`,
+        which draws each slot from the tempered full softmax of the biased
+        logits it is handed and records that same distribution as the slot's
+        ``q``. Because the chain biases slot ``k`` by slot ``k - 1``'s
+        *drawn* token, that ``q`` is exactly the distribution the slot's own
+        draw came from -- what the verifier's ``min(1, p / q)`` ratio test
+        needs. A temperature-0 row's softmax is one-hot at its argmax, so
+        greedy rows keep drafting exactly their argmax chain.
         """
         logits = self.draft.logits(
             _from_shards(block_hs, self.mesh), self.lm_head_weight

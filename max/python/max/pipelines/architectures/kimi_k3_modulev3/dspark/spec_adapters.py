@@ -473,6 +473,7 @@ def export_contract(
             f"The Inferact K3 signature must end with the host extent pair,"
             f" got {extent}"
         )
+    draft_proposal = speculative.draft_proposal
     return {
         "devices": devices,
         # The trace appends one signal buffer per device past every declared
@@ -499,10 +500,28 @@ def export_contract(
         "block_size": block,
         "verify_width": width + 1,
         "sample_from_anchor": anchor,
+        # The acceptance the built driver verifies with, which the sidecar's
+        # own top-level record must agree with: greedy rows on a greedy
+        # export, per-row sampled rows on a stochastic one.
+        "acceptance_mode": (
+            "greedy" if speculative.use_greedy_acceptance else "stochastic"
+        ),
+        # How the drafter proposes. ``sampled`` declares the draft
+        # distributions beside the drafts -- one ``[batch, K, vocab]``
+        # float32 input on device 0 -- and returns its own as the graph's
+        # fourth output, since a step verifies drafts the step before it
+        # drew: they cannot be produced and consumed in one fused step.
+        # ``vocab_size`` sizes them and is zero on an argmax export, which
+        # declares neither; the sidecar's own
+        # ``runtime_shapes.draft_proposal`` must agree with this record.
+        "draft_proposal": draft_proposal,
+        "vocab_size": (
+            draft_config.vocab_size if draft_proposal == "sampled" else 0
+        ),
         # What the frozen export pins off. Logit penalties and pipeline
         # stages are refused by the build itself (a block drafter takes no
         # penalties; this pairing answers no stage speculation), so they hold
-        # unconditionally; the other three follow the build.
+        # unconditionally; the other two follow the build.
         "refused": {
             "logit_penalties": True,
             "pipeline_stages": True,
@@ -511,7 +530,6 @@ def export_contract(
                 for t in input_types
             ),
             "structured_output": not structured_output,
-            "stochastic_acceptance": speculative.use_greedy_acceptance,
         },
     }
 

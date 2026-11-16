@@ -1695,6 +1695,7 @@ class SpecDecodePipelineModel(
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
+        self.export_acceptance_mode = spec.acceptance_mode
 
         self._maybe_release_host_weights(
             *(m for m in (model, self.replay_model) if m is not None)
@@ -1926,6 +1927,9 @@ class SpecGraph:
     export_contract: Mapping[str, object] | None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    acceptance_mode: str
+    """The acceptance the built driver verifies with, for the export's
+    sidecar cross-check."""
     input_tree: DecoderGraphInputs | None
     """The graph's inputs named by group, or ``None`` for a signature with
     inputs no group names."""
@@ -2024,6 +2028,7 @@ def build_spec_graph(
         input_spec=nn_model.input_spec,
         input_types=call.input_types,
         export_contract=call.export_contract,
+        acceptance_mode=call.acceptance_mode,
         input_tree=call.input_tree,
     )
 
@@ -2047,6 +2052,11 @@ class _DriverCall:
     """How many of the trailing inputs are a later pipeline stage's
     boundary, which end the graph's inputs."""
     export_contract: Mapping[str, object] | None
+    acceptance_mode: str = ""
+    """The acceptance the built driver verifies with, ``"greedy"`` or
+    ``"stochastic"``: what the export's sidecar records, read off the
+    driver's own sampler so a builder that pins a mode the flag disagrees
+    with fails the export's cross-check."""
     replay_count: int = 0
     """How many of the trailing inputs are the replay graph's own, which come
     after everything else."""
@@ -2480,6 +2490,14 @@ def _driver_call(
             input_types,
             structured_output,
         ),
+        # Read off the driver's own sampler, not the flag: a builder that
+        # pins an acceptance mode the flag disagrees with fails the export's
+        # cross-check rather than writing a sidecar that misrecords it.
+        acceptance_mode=(
+            "stochastic"
+            if nn_model.acceptance_sampler.use_stochastic
+            else "greedy"
+        ),
         replay_count=len(replay_types),
         ep_tree=ep_tree,
     )
@@ -2695,6 +2713,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
         self.export_contract = call.export_contract
+        self.export_acceptance_mode = call.acceptance_mode
         self.compiled_modules = {
             **self.compiled_modules,
             GraphRole.SPEC_DECODER: compiled,

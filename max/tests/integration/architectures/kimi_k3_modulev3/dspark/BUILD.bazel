@@ -1,6 +1,10 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
+# The chain tests realize the sampler's per-slot logits eagerly, so they
+# run interpreter-only over the CPU warm store; the head test's traced graph
+# compiles through InferenceSession as any exported graph does.
+
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
@@ -78,6 +82,26 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+    ],
+)
+
+modular_eager_py_test(
+    name = "sampled_chain_tests_cpu",
+    size = "large",
+    srcs = ["test_sampled_chain.py"],
+    cpu_only = True,
+    deps = [
+        ":dspark_test_data",
+        ":dspark_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3/dspark",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

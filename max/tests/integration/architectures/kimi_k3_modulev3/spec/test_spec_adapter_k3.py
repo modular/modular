@@ -370,14 +370,46 @@ def test_the_export_contract_records_the_frozen_geometry() -> None:
         "block_size": _DRAFT_WIDTH,
         "verify_width": _DRAFT_WIDTH + 1,
         "sample_from_anchor": True,
+        "acceptance_mode": "greedy",
+        "draft_proposal": "argmax",
+        "vocab_size": 0,
         "refused": {
             "logit_penalties": True,
             "pipeline_stages": True,
             "in_thinking_phase": True,
             "structured_output": True,
-            "stochastic_acceptance": True,
         },
     }
+
+
+def test_the_export_contract_records_the_draft_proposal_mode() -> None:
+    """The record names how the drafter proposes, and sizes its q.
+
+    A sampled export declares the ``[batch, K, vocab]`` draft-distribution
+    input beside the drafts and returns its own distributions as the
+    graph's fourth output, so the record carries the vocabulary that sizes
+    them; an argmax export declares neither and records a zero.
+    """
+    devices = [DeviceRef.CPU(0), DeviceRef.CPU(1)]
+    kv_params = _pairing_kv_tree(devices)
+    draft_config = parse_k3_dspark_config(TINY_DRAFT_CONFIG)
+    sampled = SpeculativeConfig(
+        speculative_method="dspark",
+        num_speculative_tokens=_DRAFT_WIDTH,
+        draft_proposal="sampled",
+    )
+    contract = export_contract(
+        sampled,
+        draft_config,
+        None,
+        kv_params,
+        _declared_signature(kv_params),
+        False,
+    )
+    assert contract is not None
+    assert contract["draft_proposal"] == "sampled"
+    assert contract["vocab_size"] == draft_config.vocab_size
+    assert contract["acceptance_mode"] == "stochastic"
 
 
 def test_the_export_contract_records_nothing_outside_the_frozen_contract() -> (
@@ -446,8 +478,9 @@ def test_the_export_contract_raises_only_on_unbuildable_states() -> None:
             signature[:-1],
             False,
         )
-    # A stochastic build is recorded as serving sampled acceptance, so the
-    # frozen contract's validator can refuse the sidecar.
+    # A stochastic build records the acceptance it verifies with, so the
+    # frozen contract's validator can cross-check the sidecar's own claim
+    # against it.
     stochastic = SpeculativeConfig(
         speculative_method="dspark",
         num_speculative_tokens=_DRAFT_WIDTH,
@@ -461,5 +494,4 @@ def test_the_export_contract_raises_only_on_unbuildable_states() -> None:
         False,
     )
     record = cast(dict[str, object], contract)
-    refused = cast(dict[str, bool], record["refused"])
-    assert refused["stochastic_acceptance"] is False
+    assert record["acceptance_mode"] == "stochastic"

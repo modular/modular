@@ -786,6 +786,15 @@ class AcceptanceSampler:
         )
 
     @property
+    def use_stochastic(self) -> bool:
+        """Whether the sampler was built to verify stochastically.
+
+        The acceptance mode an export records. A synthetic rate cannot
+        combine with greedy acceptance, so ``False`` always means greedy.
+        """
+        return self._use_stochastic
+
+    @property
     def acceptance_rule(self) -> Literal["synthetic", "stochastic", "greedy"]:
         """The rule :meth:`__call__` dispatches to, in its precedence order."""
         if self._base_rate is not None:
