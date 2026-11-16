@@ -400,7 +400,9 @@ def _ep_targets_amd() -> bool:
     otherwise the attached accelerator does.
     """
     if is_virtual_device_mode():
-        return get_virtual_device_api() == "hip"
+        # Callers may name the virtual API after the Mojo target vendor, as
+        # the precompile record run does with `--target-accelerator=amdgpu`.
+        return get_virtual_device_api() in ("hip", "amdgpu", "amd")
     return accelerator_api() == "hip"
 
 

@@ -111,11 +111,9 @@ modular_py_test(
     ignore_extra_deps = [
         "//max/python/max/pipelines/architectures/mtp_glm5_next",
     ],
-    # The MTP run's graphs compile in a CPU build action. The record stops
-    # where that run first needs a GPU, so the plain run compiles here.
+    # Both runs' graphs compile in a CPU build action.
     precompile_device_count = 2,
     precompile_mefs = True,
-    # About 10 GPU-minutes on 2xMI355 (306 s), past the presubmit budget.
     # The layer rollback and graph signature tests cover presubmit.
     tags = [
         "gpu",

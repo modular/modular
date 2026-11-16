@@ -594,7 +594,13 @@ def test_the_p2p_small_gate_matches_the_kernels_at_the_boundaries(
 
 @pytest.mark.parametrize(
     "virtual_api, host_api, amd",
-    [("hip", "cpu", True), ("hip", "cuda", True), ("cuda", "hip", False)],
+    [
+        ("hip", "cpu", True),
+        ("hip", "cuda", True),
+        ("amdgpu", "cpu", True),
+        ("cuda", "hip", False),
+        ("nvidia", "hip", False),
+    ],
 )
 def test_the_p2p_small_path_follows_the_virtual_target_not_the_host(
     monkeypatch: pytest.MonkeyPatch, virtual_api: str, host_api: str, amd: bool
@@ -602,9 +608,7 @@ def test_the_p2p_small_path_follows_the_virtual_target_not_the_host(
     """A compile-only export for MI355 opts in from a CPU or NVIDIA builder,
     and one for an NVIDIA target does not from an AMD builder."""
     set_virtual_device_api(virtual_api)
-    set_virtual_device_target_arch(
-        "gfx950" if virtual_api == "hip" else "sm_100a"
-    )
+    set_virtual_device_target_arch("gfx950" if amd else "sm_100a")
     set_virtual_device_count(4)
     try:
         monkeypatch.setattr(

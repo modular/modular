@@ -591,7 +591,10 @@ def _pipeline(
             quantization_encoding="float8_e4m3fn",
             max_length=1024,
             kv_cache=KVCacheConfig(
-                enable_prefix_caching=False, device_memory_utilization=0.3
+                enable_prefix_caching=False,
+                # The plain pipeline is built while the MTP one is resident,
+                # and the budget counts it, so the plain one gets more.
+                device_memory_utilization=0.3 if speculative else 0.6,
             ),
             runtime=PipelineRuntimeConfig(
                 ep_size=NUM_DEVICES,
@@ -637,11 +640,10 @@ class _CountingReplay:
 
 
 def _generate_with_mtp(
-    checkpoint: Path, monkeypatch: pytest.MonkeyPatch
+    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[list[list[int]], list[list[int]], int]:
     """Returns each row's new tokens, how many each step added per row, and
     how many steps replayed a captured graph."""
-    pipeline = _pipeline(checkpoint, monkeypatch, speculative=True)
     pipeline.warmup_graph_capture()
     runner = pipeline._graph_capture_runner
     assert runner is not None
@@ -660,10 +662,7 @@ def _generate_with_mtp(
             sequence[len(prompt) :]
             for sequence, prompt in zip(batch.sequences, prompts, strict=True)
         ]
-    # Nothing may hold the pipeline once the plain run needs its memory.
     monkeypatch.undo()
-    del pipeline, runner
-    gc.collect()
     return generated, per_step, replays.calls
 
 
@@ -725,7 +724,13 @@ def _divergences(
 def test_mtp_decodes_the_plain_models_greedy_tokens(
     checkpoint: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    generated, per_step, replays = _generate_with_mtp(checkpoint, monkeypatch)
+    # Both pipelines are built before either runs, so the precompile record,
+    # which stops at the first device execution, compiles both on CPU.
+    mtp_pipeline = _pipeline(checkpoint, monkeypatch, speculative=True)
+    pipeline = _pipeline(checkpoint, monkeypatch, speculative=False)
+    generated, per_step, replays = _generate_with_mtp(mtp_pipeline, monkeypatch)
+    del mtp_pipeline
+    gc.collect()
     assert replays > 0, "no step replayed a captured graph"
     assert all(len(tokens) == MAX_NEW_TOKENS for tokens in generated)
 
@@ -739,8 +744,6 @@ def test_mtp_decodes_the_plain_models_greedy_tokens(
         f" {accepted} drafts and rejected {rejected}"
     )
     assert accepted > 0 and rejected > 0, (accepted, rejected)
-
-    pipeline = _pipeline(checkpoint, monkeypatch, speculative=False)
 
     def greedy(prompt: list[int], n: int) -> tuple[list[int], np.ndarray]:
         return _greedy(pipeline, prompt, n)
