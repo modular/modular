@@ -84,8 +84,11 @@ struct SymbolicOptimizationPass
 
   LogicalResult applyCorePatterns() {
     // Split patterns must run before splits are lowered back to slices, or
-    // they would never match.
-    if (applyCorePatternsPlusExtraPatterns<SliceToSplitPattern<>>().failed())
+    // they would never match. The concat fold belongs to this stage for the
+    // same reason.
+    if (applyCorePatternsPlusExtraPatterns<SliceToSplitPattern<>,
+                                           ConcatOfSplitResultsPattern>()
+            .failed())
       return failure();
 
     return applyCorePatternsPlusExtraPatterns<SplitToSlicePattern<true>>();

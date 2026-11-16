@@ -182,7 +182,9 @@ def _load(session: InferenceSession, name: str) -> Model:
             for value in graph.inputs
         ]
         out = kda.kda_core(
-            qkv=F.concat([i[0], i[1], i[2]], axis=-1),
+            q=i[0],
+            k=i[1],
+            v=i[2],
             q_conv=i[3],
             k_conv=i[4],
             v_conv=i[5],

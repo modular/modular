@@ -157,21 +157,10 @@ def layer_rows(
 _chunk_predicate = F.functional(kda_chunk_predicate)
 
 
-def _qkv_projection(
-    x: Tensor, q_weight: Tensor, k_weight: Tensor, v_weight: Tensor
-) -> Tensor:
-    """Projects one device's q, k and v heads with one matmul.
-
-    Returns ``[total_tokens, 3 * local_heads * head_dim]`` in the conv's
-    channel order. Each weight holds only this device's head rows, so the
-    stack keeps the per-rank order.
-    """
-    weight = F.concat([q_weight, k_weight, v_weight])
-    return x.cast(weight.dtype) @ weight.T
-
-
 def kda_core(
-    qkv: Tensor,
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
     q_conv: Tensor,
     k_conv: Tensor,
     v_conv: Tensor,
@@ -201,18 +190,19 @@ def kda_core(
 
     Every tensor is one device's, so the recurrence reads that device's own
     pool rows and heads. Returns ``[total_tokens, local_heads * head_dim]`` in
-    ``qkv``'s dtype, the input of the row-parallel ``o_proj``. Both pools are
+    ``q``'s dtype, the input of the row-parallel ``o_proj``. Both pools are
     mutated in place, except under a verify (``verify_width`` set), which
     records the recurrence into ``ring_pool`` and appends its replay inputs
     to ``capture`` for the rollback. ``pin_decode_fma`` pins the decode
     kernel's fused multiply-adds, which only a test of decode against the
     verify ring needs: a speculative graph never takes the decode branch.
     """
-    dtype = qkv.dtype
-    qkv_dim = int(qkv.shape[-1]) // 3
+    dtype = q.dtype
+    qkv_dim = int(q.shape[-1])
     head_shape = [-1, qkv_dim // head_dim, head_dim]
 
-    qkv = qkv.cast(DType.float32)
+    # q, k, v in that order: the conv's channel layout.
+    qkv = F.concat([q, k, v], axis=-1).cast(DType.float32)
     # The module holds each conv weight as the checkpoint's depthwise
     # `[channels, 1, kernel]`.
     conv_weight = (
@@ -483,11 +473,10 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
             pin_decode_fma=self.pin_decode_fma,
             position=state.position,
         )
-        qkv = F.call_on_mesh(_qkv_projection, x.mesh, out_specs=head_split)(
-            x, self.q_proj.weight, self.k_proj.weight, self.v_proj.weight
-        )
         normed = F.call_on_mesh(core, x.mesh, out_specs=head_split)(
-            qkv,
+            self.q_proj(x),
+            self.k_proj(x),
+            self.v_proj(x),
             self.q_conv1d,
             self.k_conv1d,
             self.v_conv1d,

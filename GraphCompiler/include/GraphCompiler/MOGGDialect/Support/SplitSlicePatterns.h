@@ -269,6 +269,99 @@ struct SplitToSlicePattern
   }
 };
 
+/// Replaces a concat of a consecutive run of one split's results with the
+/// split's input, or with one slice over the run when the run is a subset:
+///
+///   %r:3 = mo.split(%x, [2, 3, 1]) [axis = 1]
+///   mo.concat[1](%r#0, %r#1)         =>  mo.slice(%x, 0, 5, 1)   [.., 5, ..]
+///   mo.concat[1](%r#0, %r#1, %r#2)   =>  %x
+///
+/// Must run where splits are still live: after `SplitToSlicePattern` the
+/// inputs are slices and there is nothing to match.
+struct ConcatOfSplitResultsPattern
+    : public DeviceAwareRewritePattern<OpRewritePattern, ConcatOp> {
+  ConcatOfSplitResultsPattern(MLIRContext *ctx)
+      : DeviceAwareRewritePattern(ctx, 2) {}
+
+  LogicalResult
+  deviceAwareMatchAndRewrite(ConcatOp op,
+                             DeviceAwareRewriter &rewriter) const override {
+    if (op.getInputs().size() < 2)
+      return rewriter.notifyMatchFailure(op, "No run of split results");
+
+    auto split = op.getInputs().front().getDefiningOp<SplitOp>();
+    if (!split)
+      return rewriter.notifyMatchFailure(op, "Input is not a split result");
+    rewriter.pushOp(split);
+
+    std::optional<size_t> first = resultIndex(split, op.getInputs().front());
+    if (!first)
+      return rewriter.notifyMatchFailure(op, "Input is not a split result");
+    for (auto [offset, input] : llvm::enumerate(op.getInputs())) {
+      std::optional<size_t> index = resultIndex(split, input);
+      if (!index || *index != *first + offset)
+        return rewriter.notifyMatchFailure(
+            op, "Inputs are not a run of split results");
+    }
+
+    auto splitType = cast<TensorType>(split.getInput().getType());
+    int64_t rank = splitType.getRank();
+    int64_t splitAxis = split.getAxisAttr().getInt();
+    int64_t concatAxis = op.getAxisAttr().getInt();
+    if (splitAxis < 0)
+      splitAxis += rank;
+    if (concatAxis < 0)
+      concatAxis += rank;
+    if (splitAxis != concatAxis)
+      return rewriter.notifyMatchFailure(op, "Split and concat axes differ");
+
+    std::optional<SmallVector<int64_t>> sizes =
+        tryGetConstantIntVector(split.getSplitSizes());
+    if (!sizes)
+      return rewriter.notifyMatchFailure(op, "Split sizes are not constant");
+
+    if (!rewriter.addOps())
+      return rewriter.notifyMatchFailure(
+          op, "matched ops have inconsistent devices");
+
+    // The run is every result, in order: the concat is the split's input.
+    if (*first == 0 && op.getInputs().size() == sizes->size()) {
+      rewriter.replaceOp(op, split.getInput());
+      return mlir::success();
+    }
+
+    int64_t start = 0;
+    for (size_t i = 0; i < *first; ++i)
+      start += (*sizes)[i];
+    int64_t stop = start;
+    for (size_t i = 0; i < op.getInputs().size(); ++i)
+      stop += (*sizes)[*first + i];
+
+    SmallVector<int64_t> sliceStart(rank, 0);
+    SmallVector<int64_t> sliceStop(rank, std::numeric_limits<int64_t>::max());
+    SmallVector<int64_t> step(rank, 1);
+    sliceStart[splitAxis] = start;
+    sliceStop[splitAxis] = stop;
+
+    Location loc = op.getLoc();
+    DeviceRefAttr host = getHostDevice(op);
+    Value stepValue = rewriter.create<ConstantOp>(loc, step, host);
+    Value startValue = rewriter.create<ConstantOp>(loc, sliceStart, host);
+    Value stopValue = rewriter.create<ConstantOp>(loc, sliceStop, host);
+    rewriter.replaceOpWithNewOp<SliceOp>(op, op.getType(), split.getInput(),
+                                         startValue, stopValue, stepValue);
+    return mlir::success();
+  }
+
+  /// The index of `value` among `split`'s results, or null for any other value.
+  static std::optional<size_t> resultIndex(SplitOp split, Value value) {
+    for (auto [index, result] : llvm::enumerate(split.getResults()))
+      if (result == value)
+        return index;
+    return std::nullopt;
+  }
+};
+
 } // namespace M::MO
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGSUPPORT_SPLITSLICEPATTERNS_H

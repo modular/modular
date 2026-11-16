@@ -21,6 +21,9 @@
 #include "GraphCompiler/Support/DataflowUtils.h"
 #include "Support/ML/Permutation.h"
 
+#include "mlir/IR/Dominance.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+
 using namespace M;
 using namespace MO;
 using namespace GraphCompiler::Matchers;
@@ -489,16 +492,140 @@ struct BroadcastReshapePattern
   }
 };
 
+/// True when `producer` and its producers are defined before `insertionPoint`,
+/// or can be moved there: same block, memory-effect free, built from
+/// constants only.
+static bool canHoistBeforeInsertionPoint(Operation *producer,
+                                         Operation *insertionPoint) {
+  if (!producer)
+    return true; // A block argument dominates every op in its block.
+  if (producer->getBlock() != insertionPoint->getBlock())
+    // Nothing moves across blocks: the producer is usable where it is or not
+    // at all, as when it sits in an enclosing region.
+    return mlir::DominanceInfo().properlyDominates(producer, insertionPoint);
+  if (!insertionPoint->isBeforeInBlock(producer))
+    return true;
+  if (!mlir::isMemoryEffectFree(producer) ||
+      !MOGG::dependsOnNoAliasConstantLikesOnly(producer))
+    return false;
+  return llvm::all_of(producer->getOperands(), [&](Value operand) {
+    return canHoistBeforeInsertionPoint(operand.getDefiningOp(),
+                                        insertionPoint);
+  });
+}
+
+/// Moves `producer` and its producers just before `insertionPoint`, for a
+/// producer `canHoistBeforeInsertionPoint` accepted.
+static void hoistBeforeInsertionPoint(Operation *producer,
+                                      Operation *insertionPoint) {
+  if (!producer || producer->getBlock() != insertionPoint->getBlock() ||
+      !insertionPoint->isBeforeInBlock(producer))
+    return;
+  for (Value operand : producer->getOperands())
+    hoistBeforeInsertionPoint(operand.getDefiningOp(), insertionPoint);
+  producer->moveBefore(insertionPoint);
+}
+
+/// Moves a concat of transposes before them, so one transpose covers the
+/// concatenated operands instead of one per operand:
+///
+///   transpose[1, 0](w1)      concat(w1, w2)      [sum(out), in]
+///   transpose[1, 0](w2)  =>  transpose[1, 0]     [in, sum(out)]
+///   concat
+///
+/// The axis follows the permutation: output dim `c` is input dim `perm[c]`,
+/// so concatenating output dim `c` is concatenating input dim `perm[c]`.
+struct MoveConcatBeforeTransposePattern
+    : public DeviceAwareRewritePattern<OpRewritePattern, ConcatOp> {
+  MoveConcatBeforeTransposePattern(MLIRContext *ctx)
+      : DeviceAwareRewritePattern(ctx, 2) {}
+
+  LogicalResult
+  deviceAwareMatchAndRewrite(ConcatOp op,
+                             DeviceAwareRewriter &rewriter) const override {
+    if (op.getInputs().size() < 2)
+      return rewriter.notifyMatchFailure(op, "No transposes to move");
+
+    SmallVector<Value> operands;
+    std::optional<SmallVector<int64_t>> permutation;
+    for (Value input : op.getInputs()) {
+      auto transpose = input.getDefiningOp<MO::TransposeOp>();
+      if (!transpose)
+        return rewriter.notifyMatchFailure(op, "Input is not a transpose");
+      rewriter.pushOp(transpose);
+
+      auto perm =
+          tryGetConstantIntVector(cast<MO::TensorValue>(transpose.getPerm()));
+      if (!perm)
+        return rewriter.notifyMatchFailure(op, "No constant permutation");
+      if (permutation && *permutation != *perm)
+        return rewriter.notifyMatchFailure(
+            op, "Inputs are transposed by different permutations");
+
+      permutation = perm;
+      operands.push_back(transpose.getInput());
+    }
+
+    int64_t rank = static_cast<int64_t>(permutation->size());
+    int64_t axis = op.getAxisAttr().getInt();
+    if (axis < 0)
+      axis += rank;
+    if (axis < 0 || axis >= rank)
+      return rewriter.notifyMatchFailure(op, "Concat axis is out of range");
+    int64_t operandAxis = (*permutation)[axis];
+
+    auto firstType = cast<TensorType>(operands.front().getType());
+    if (static_cast<int64_t>(firstType.getRank()) != rank)
+      return rewriter.notifyMatchFailure(op, "Ranks do not match");
+
+    int64_t total = 0;
+    for (Value operand : operands) {
+      auto type = cast<TensorType>(operand.getType());
+      if (static_cast<int64_t>(type.getRank()) != rank ||
+          mlir::ShapedType::isDynamic(type.getIntDim(operandAxis)))
+        return rewriter.notifyMatchFailure(op, "Concatenated dim is dynamic");
+      total += type.getIntDim(operandAxis);
+    }
+
+    if (!rewriter.addOps())
+      return rewriter.notifyMatchFailure(
+          op, "matched ops have inconsistent devices");
+
+    Location loc = op.getLoc();
+    Value concatenated =
+        rewriter
+            .create<ConcatOp>(loc,
+                              firstType.cloneWithNewDim(operandAxis, total),
+                              rewriter.getIndexAttr(operandAxis), operands)
+            .getResult();
+    rewriter.replaceOpWithNewOp<MO::TransposeOp>(
+        op, op.getType(), concatenated,
+        op.getInputs().front().getDefiningOp<MO::TransposeOp>().getPerm());
+    return mlir::success();
+  }
+};
+
 // clang-format off
 /// Merges matmuls that share activations to increase throughput.
+///
 /// BEFORE:
 /// matmul(A, B1) -> C1
 /// matmul(A, B2) -> C2
 /// matmul(A, B3) -> C3
+///
 /// AFTER:
 /// matmul(A, concat(B1, B2, B3)) -> C -> split -> C1
 ///                                            |-> C2
 ///                                            |-> C3
+///
+/// A transposed weight needs no special case: B is `[in, out]` either way, so
+/// the concat runs along the columns of the transpose's result.
+/// `MoveConcatBeforeTransposePattern` then folds the transposes it brings
+/// together into one.
+///
+/// A concat that reads a run of these results back folds to one slice in the
+/// split stage (`ConcatOfSplitResultsPattern`), so the merge leaves consumers
+/// alone.
 // clang-format on
 template <typename MatmulOpType>
 struct MergeParallelMatmulPattern
@@ -531,7 +658,18 @@ struct MergeParallelMatmulPattern
           op, "Matmuls are all feeding into output ops");
     }
 
-    auto oldMatmulType = cast<TensorType>(op.getType());
+    // Uses are stored last-in-first-out: sort so the merged columns, and the
+    // split results built from them, follow program order.
+    if (!llvm::all_of(matmulUsers, [&](MatmulOpType matmul) {
+          return matmul->getBlock() == op->getBlock();
+        }))
+      return rewriter.notifyMatchFailure(
+          op, "Parallel matmuls are in different blocks");
+    llvm::sort(matmulUsers, [](MatmulOpType a, MatmulOpType b) {
+      return a->isBeforeInBlock(b);
+    });
+
+    auto oldMatmulType = cast<TensorType>(matmulUsers.front().getType());
     TypedAttr expectedNumberOfRows =
         oldMatmulType.getDim(oldMatmulType.getRank() - 2);
     if (!llvm::all_of(matmulUsers, [&](MatmulOpType matmulOp) {
@@ -540,36 +678,24 @@ struct MergeParallelMatmulPattern
           if (!resultType.hasRank())
             return false;
 
-          if (resultType.getDim(0) != expectedNumberOfRows)
+          if (resultType.getRank() != oldMatmulType.getRank())
             return false;
 
-          if (mlir::ShapedType::isDynamic(resultType.getIntDim(1)))
+          if (resultType.getDim(resultType.getRank() - 2) !=
+              expectedNumberOfRows)
+            return false;
+
+          if (mlir::ShapedType::isDynamic(
+                  resultType.getIntDim(resultType.getRank() - 1)))
             return false;
 
           if (!MOGG::dependsOnNoAliasConstantLikesOnly(
                   matmulOp.getInputB().getDefiningOp()))
             return false;
 
-          // TODO(GEX-1978): Skipped to unblock GEX-1968, as it can forbid
-          // `ForceMatmulTransposeBForGPU`. Sink the transpose after the concat
-          // instead to enable both patterns:
-          //
-          // mo.transpose
-          // mo.matmul
-          // mo.transpose
-          // mo.matmul
-          // =>
-          // mo.concat
-          // mo.transpose
-          // mo.matmul
-          //
-          // rather than the current:
-          //
-          // mo.transpose
-          // mo.transpose
-          // mo.concat
-          // mo.matmul
-          if (isa<MO::TransposeOp>(matmulOp.getInputB().getDefiningOp()))
+          // A `transpose_b` weight is stored [N, K], so it concatenates on
+          // its other axis.
+          if (matmulOp.getTransposeB())
             return false;
 
           return true;
@@ -579,15 +705,7 @@ struct MergeParallelMatmulPattern
               "number of columns and constant weights");
     }
 
-    if (!rewriter.addOps()) {
-      return rewriter.notifyMatchFailure(
-          op, "matched ops have inconsistent devices");
-    }
-
-    // The last user is the earliest in the block.
-    auto firstMatmulIndex = matmulUsers.size() - 1;
-    Location loc = matmulUsers[firstMatmulIndex]->getLoc();
-    rewriter.setInsertionPoint(matmulUsers[firstMatmulIndex]);
+    int64_t innerDimIndex = oldMatmulType.getRank() - 1;
 
     SmallVector<Value> weightsToConcatenate;
     SmallVector<Type> matmulTypes;
@@ -595,19 +713,37 @@ struct MergeParallelMatmulPattern
     int64_t totalColumns = 0;
     for (MatmulOpType matmulOp : matmulUsers) {
       weightsToConcatenate.push_back(matmulOp.getInputB());
+
       TensorType matmulType = matmulOp.getType();
       matmulTypes.push_back(matmulType);
 
-      size_t matmulRank = matmulType.getRank();
-      columnsInEachMatmul.push_back(matmulType.getIntDim(matmulRank - 1));
-      totalColumns += columnsInEachMatmul.back();
+      int64_t columns = matmulType.getIntDim(matmulType.getRank() - 1);
+      columnsInEachMatmul.push_back(columns);
+      totalColumns += columns;
     }
 
-    auto concatType =
-        cast<TensorType>(op.getInputB().getType())
-            .cloneWithNewDim(oldMatmulType.getRank() - 1, totalColumns);
+    // The merged matmul goes before the earliest one, whose split results its
+    // later siblings may already consume, so its weights must move above that
+    // point rather than the matmul moving below it.
+    Operation *insertionPoint = matmulUsers.front();
+    for (Value weight : weightsToConcatenate)
+      if (!canHoistBeforeInsertionPoint(weight.getDefiningOp(), insertionPoint))
+        return rewriter.notifyMatchFailure(
+            op, "Weights are defined after the matmuls that read them");
 
-    int64_t innerDimIndex = oldMatmulType.getRank() - 1;
+    if (!rewriter.addOps()) {
+      return rewriter.notifyMatchFailure(
+          op, "matched ops have inconsistent devices");
+    }
+
+    for (Value weight : weightsToConcatenate)
+      hoistBeforeInsertionPoint(weight.getDefiningOp(), insertionPoint);
+
+    Location loc = insertionPoint->getLoc();
+    rewriter.setInsertionPoint(insertionPoint);
+
+    auto concatType = cast<TensorType>(weightsToConcatenate.front().getType())
+                          .cloneWithNewDim(innerDimIndex, totalColumns);
     Value concatenatedWeights =
         rewriter
             .create<ConcatOp>(loc, concatType,
@@ -615,23 +751,26 @@ struct MergeParallelMatmulPattern
                               weightsToConcatenate)
             .getResult();
 
-    auto newMatmulType = oldMatmulType.cloneWithNewDim(
-        oldMatmulType.getRank() - 1, totalColumns);
+    auto newMatmulType =
+        oldMatmulType.cloneWithNewDim(innerDimIndex, totalColumns);
     Value newMatmul = rewriter
                           .create<MatmulOpType>(loc, newMatmulType, activations,
                                                 concatenatedWeights)
                           .getResult();
 
-    Value splitSizes = rewriter.createHostConstant(loc, columnsInEachMatmul);
+    // One result per member. A concat that reads a run of them back folds to
+    // one slice in the split stage; the merge need not look at consumers.
+    Value splitSizesValue =
+        rewriter.createHostConstant(loc, columnsInEachMatmul);
     auto splitOp =
-        rewriter.create<SplitOp>(loc, matmulTypes, newMatmul, splitSizes,
+        rewriter.create<SplitOp>(loc, matmulTypes, newMatmul, splitSizesValue,
                                  llvm::APInt(64, innerDimIndex));
 
-    for (uint64_t idx = 0; idx < matmulUsers.size(); ++idx) {
-      rewriter.replaceAllUsesWith(matmulUsers[idx].getResult(),
-                                  splitOp.getResult(idx));
+    for (auto [index, matmulOp] : llvm::enumerate(matmulUsers)) {
+      rewriter.replaceAllUsesWith(matmulOp.getResult(),
+                                  splitOp.getResult(index));
       // Erase to avoid re-doing the same optimization on the other matmuls.
-      rewriter.eraseOp(matmulUsers[idx]);
+      rewriter.eraseOp(matmulOp);
     }
 
     return mlir::success();
@@ -2246,7 +2385,8 @@ void populateAlgebraicPatterns(mlir::RewritePatternSet &patterns,
   patterns.add<ConvertBatchMatmulToMatmulPattern,
                ConvertBatchMatmulBatchSizeOneToMatmulPattern,
                ConvToMatmulPattern, MergeParallelMatmulPattern<MatmulOp>,
-               MergeParallelMatmulPattern<BatchMatmulOp>>(context);
+               MergeParallelMatmulPattern<BatchMatmulOp>,
+               MoveConcatBeforeTransposePattern>(context);
 
   patterns.add<FlattenNestedConcatPattern, GathersToSplitPattern,
                SplitAndSqueezesPattern, PadConvPattern>(context);
