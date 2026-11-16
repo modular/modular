@@ -90,6 +90,12 @@ def gate_up(gate: Array, up: Array) -> Array:
     return np.concatenate([gate, up], axis=1)
 
 
+def interleaved_gate_up(gate: Array, up: Array) -> Array:
+    """Each expert's gate rows alternating with its up rows."""
+    experts, dim, cols = gate.shape
+    return np.stack([gate, up], axis=2).reshape([experts, 2 * dim, cols])
+
+
 def check_staged_expert_stacks(
     text: str, n_devices: int, expert_parallel: bool
 ) -> None:
@@ -98,9 +104,9 @@ def check_staged_expert_stacks(
     A device temporary freed around the persistent stacks strands allocator
     granules and shrinks the KV cache.
     """
-    # TODO(DISTINF-813): mo.shard_and_stack copies each device's slice
+    # TODO(DISTINF-813): gather_scatter.shard_and_stack copies each device's slice
     # serially, far slower than the host stack; drop this once it is fixed.
-    assert "mo.shard_and_stack" not in text
+    assert "gather_scatter.shard_and_stack" not in text
     local = EXPERTS // n_devices if expert_parallel else EXPERTS
     share = MOE_DIM if expert_parallel else MOE_DIM // n_devices
     # The scales go through device temporaries in the interleave by design,

@@ -108,6 +108,8 @@ def _first_wins_hits(code: Int) -> Int:
             hits += 1
         case value if value > 0:
             hits += 10
+        case _:
+            pass
     return hits
 
 
@@ -121,6 +123,8 @@ def _single_case_hits(code: Int) -> Int:
     match code:
         case 1:
             hits += 1
+        case _:
+            pass
     return hits
 
 

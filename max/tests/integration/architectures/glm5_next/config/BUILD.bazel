@@ -12,19 +12,21 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
 
 modular_py_test(
-    name = "test_vision_spec",
-    srcs = ["test_vision_spec.py"],
+    name = "test_initialize_guards",
+    srcs = ["test_initialize_guards.py"],
     deps = [
+        requirement("transformers"),
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/glm5_next",
-        requirement("numpy"),
+        "//max/python/max/pipelines/lib",
     ],
 )

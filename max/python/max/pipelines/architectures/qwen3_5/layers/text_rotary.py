@@ -17,10 +17,8 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.legacy.rotary_embedding import (
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-)
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.rope_scaling import Llama3RopeScalingParams
 
 
 def _axis_per_frequency(

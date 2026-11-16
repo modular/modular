@@ -389,16 +389,18 @@ def test_degenerate_rows_emit_zero_dist[
     )
 
 
-def test_tokens_match_without_dist(
+def test_token_in_its_distribution(
     ctx: DeviceContext, rows: Int, d: Int, *, k: Int, top_p: Float64
 ) raises:
-    """`emit_dist` must not change which token the sampler picks.
+    """Each drawn token carries mass in the distribution emitted with it, and
+    the same seeds draw the same tokens again.
 
-    The production sampler runs the same kernel with `emit_dist=False`, so
-    the extra output has to be inert.
+    Speculative decoding reads the drafted token's probability back out of
+    that distribution, so a token outside it would be a draft the verifier
+    can only reject.
     """
     var logits_host = fill_logits[.float32](ctx, rows, d)
-    var with_dist = run_sampling[.float32, emit_dist=True](
+    var first = run_sampling[.float32, emit_dist=True](
         ctx,
         logits_host,
         rows,
@@ -408,7 +410,7 @@ def test_tokens_match_without_dist(
         temperature=1.0,
         seed_base=99,
     )
-    var without_dist = run_sampling[.float32, emit_dist=False](
+    var again = run_sampling[.float32, emit_dist=True](
         ctx,
         logits_host,
         rows,
@@ -419,10 +421,15 @@ def test_tokens_match_without_dist(
         seed_base=99,
     )
     for row in range(rows):
+        var token = first.tokens[row]
+        assert_true(
+            first.dist[row * d + token] > 0,
+            String(t"row={row}: token {token} has no mass in its distribution"),
+        )
         assert_equal(
-            with_dist.tokens[row],
-            without_dist.tokens[row],
-            msg=String(t"row={row}: emit_dist changed the sampled token"),
+            token,
+            again.tokens[row],
+            msg=String(t"row={row}: the same seed drew a different token"),
         )
 
 
@@ -554,6 +561,9 @@ def main() raises:
             ctx, rows=4, d=1024, k=-1, top_p=0.9, temperature=1.0
         )
         test_dist_matches_reference(
+            ctx, rows=2, d=16384, k=-1, top_p=0.9, temperature=1.0
+        )
+        test_dist_matches_reference(
             ctx, rows=4, d=1024, k=64, top_p=0.8, temperature=0.7
         )
         # Greedy rows: temperature 0 is clamped and collapses to the argmax.
@@ -571,10 +581,10 @@ def main() raises:
         # A vocabulary whose per-CTA slice does not fit the shared-memory
         # budget: the launcher falls back to the single-block kernel and its
         # emit_dist tail, which are otherwise unexercised on cluster devices.
-        test_tokens_match_without_dist(ctx, rows=2, d=249856, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=249856, k=40, top_p=0.95)
         # Exercise two- and four-block row groups.
-        test_tokens_match_without_dist(ctx, rows=100, d=16384, k=40, top_p=0.95)
-        test_tokens_match_without_dist(ctx, rows=50, d=32768, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=100, d=16384, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=50, d=32768, k=40, top_p=0.95)
         # Vocabularies narrower than one block: under a cluster most CTAs own
         # no elements and contribute only reduction identities -- the shape
         # the rejection sampler reaches with its unit-test vocabularies.
@@ -668,12 +678,12 @@ def main() raises:
         test_degenerate_rows_emit_zero_dist(ctx)
         test_degenerate_rows_emit_zero_dist(ctx, single_block=True)
 
-        test_tokens_match_without_dist(ctx, rows=8, d=1024, k=32, top_p=0.9)
+        test_token_in_its_distribution(ctx, rows=8, d=1024, k=32, top_p=0.9)
         # Real Llama-3.1-8B vocabulary width.
-        test_tokens_match_without_dist(ctx, rows=2, d=128256, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=128256, k=40, top_p=0.95)
         # A vocabulary in the two-CTA window: too wide for one CTA's staging
         # budget, narrow enough to split across two.
-        test_tokens_match_without_dist(ctx, rows=2, d=98304, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=98304, k=40, top_p=0.95)
 
         test_empirical_distribution(ctx, rows=8192, d=64, k=8, top_p=1.0)
         test_empirical_distribution(ctx, rows=8192, d=128, k=-1, top_p=0.9)

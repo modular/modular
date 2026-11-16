@@ -101,18 +101,29 @@ void hoistChain(LoadOp loadOp, ArrayRef<IndexTransformOpInterface> chain,
 }
 
 // A fused elementwise producer shares its consumer's transformed index like a
-// fused load; rewire it the same way, with nothing to hoist.
-void rewireElementwiseIndices(Region &body) {
+// fused load; rewire it the same way, with nothing to hoist. Rewiring changes
+// the index the kernel sees, which is wrong for an index reader. Input fusion
+// does not fuse an index reader under a view, so this fails only on a fusion
+// bug.
+LogicalResult rewireElementwiseIndices(Region &body) {
   // Only operands change, so rewiring in-walk is safe.
-  body.walk([&](CallElementwiseOp call) {
+  WalkResult result = body.walk([&](CallElementwiseOp call) {
     SmallVector<IndexTransformOpInterface> chain =
         collectIndexTransformChain(call.getIndex());
     size_t prefix = hoistablePrefixLen(chain);
     if (prefix == 0)
-      return;
+      return WalkResult::advance();
+    if (call.readsIndex()) {
+      call.emitError() << "kernel '" << call.getCallee()
+                       << "' reads its element index but is fused under a "
+                          "view; input fusion should prevent this";
+      return WalkResult::interrupt();
+    }
     // The loop index, or the result of the first store-index transform.
     call.getIndexMutable().assign(chain[prefix - 1].getIndex());
+    return WalkResult::advance();
   });
+  return failure(result.wasInterrupted());
 }
 
 LogicalResult loopInvariantViewMotionInClosure(CapturingFusionClosure closure) {
@@ -139,7 +150,8 @@ LogicalResult loopInvariantViewMotionInClosure(CapturingFusionClosure closure) {
     hoistChain(loadOp, chain, builder, closure, outerValues);
   }
 
-  rewireElementwiseIndices(body);
+  if (failed(rewireElementwiseIndices(body)))
+    return failure();
 
   // Erase closest-to-load first so each outer hop is unused when reached.
   SmallVector<IndexTransformOpInterface> transforms;

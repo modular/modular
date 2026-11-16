@@ -20,10 +20,10 @@ from std.testing import TestSuite, assert_false, assert_true
 def _assert_ordered(text: String, first: String, second: String) raises:
     """Asserts that both substrings appear in `text` and that `first`
     occurs before `second`."""
-    var first_pos = text.find(first)
-    var second_pos = text.find(second)
-    assert_true(first_pos >= 0, String(t"expected to find {first}"))
-    assert_true(second_pos >= 0, String(t"expected to find {second}"))
+    __guard case .Some(first_pos) = text.find(first) else:
+        raise Error(t"expected to find {first}")
+    __guard case .Some(second_pos) = text.find(second) else:
+        raise Error(t"expected to find {second}")
     assert_true(
         first_pos < second_pos,
         String(t"{first} must precede {second}"),

@@ -32,6 +32,7 @@ from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits, RaggedBatch
 from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.lib import GraphRole, GraphSpec, compile_and_init_graphs
+from max.pipelines.lib.graph_specs import _EagerCallable
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding.types import as_layout
@@ -89,6 +90,13 @@ class ScaleV3(ModuleV3[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         return x * self.weight
+
+
+class Identity(ModuleV3[[Tensor], Tensor]):
+    """Returns its input as it gets it."""
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x
 
 
 def _v3_spec(name: str, value: float, group: str | None = None) -> GraphSpec:
@@ -337,3 +345,16 @@ def test_a_modulev3_graph_casts_its_weights_only_when_asked() -> None:
     assert set(spec(auto_cast=True).weights_registry()) == {"weight"}
     with pytest.raises(ValueError):
         spec(auto_cast=False).weights_registry()
+
+
+def test_an_eager_role_runs_forward_on_real_tensors() -> None:
+    run = _EagerCallable(GraphSpec(Identity(), "identity", [X]))
+    buffer = Buffer.from_numpy(np.ones(2, dtype=np.float32))
+
+    out = run(buffer)
+
+    assert out.real
+    assert out.driver_tensor is buffer
+    # It also runs on flat buffers, as a compiled callable does.
+    assert run.execute_raw(buffer) == [buffer]
+    assert len(run.out_layouts) == 1

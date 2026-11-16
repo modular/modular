@@ -144,16 +144,19 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
 
 
 def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
     var dst = TileTensor(
-        C.data.unsafe_ptr(),
+        C.data.unsafe_ptr().unsafe_origin_cast[origin_of(C.data)](),
         row_major[M, N](),
     )
     var lhs = TileTensor(
-        A.data.unsafe_ptr(),
+        A.data.unsafe_ptr().unsafe_origin_cast[origin_of(A.data)](),
         row_major[M, K](),
     )
     var rhs = TileTensor(
-        B.data.unsafe_ptr(),
+        B.data.unsafe_ptr().unsafe_origin_cast[origin_of(B.data)](),
         row_major[K, N](),
     )
 
@@ -204,16 +207,19 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
 
 
 def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
     var dst = TileTensor(
-        C.data.unsafe_ptr(),
+        C.data.unsafe_ptr().unsafe_origin_cast[origin_of(C.data)](),
         row_major[M, N](),
     )
     var lhs = TileTensor(
-        A.data.unsafe_ptr(),
+        A.data.unsafe_ptr().unsafe_origin_cast[origin_of(A.data)](),
         row_major[M, K](),
     )
     var rhs = TileTensor(
-        B.data.unsafe_ptr(),
+        B.data.unsafe_ptr().unsafe_origin_cast[origin_of(B.data)](),
         row_major[K, N](),
     )
 

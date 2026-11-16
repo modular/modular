@@ -102,15 +102,15 @@ No implicit numeric conversion: cast with `Float64(n)`, `Int(x)`,
 
 <Panel title="Operators" table="ops" summary="Common operators in Mojo.">
 
-| Op                    | Meaning                                           |
-|-----------------------|---------------------------------------------------|
-| + - * /               | add, subtract, multiply, divide                   |
-| //   %                | floor divide, modulo                              |
-| **                    | power (`2 ** 10`), also `pow(2, 10)`, but not `^` |
-| == !=                 | equality and inequality                           |
-| &lt; &lt;= &gt; &gt;= | comparisons (chainable)                           |
-| and or not            | logical, short-circuit                            |
-| += -=                 | compound assign (\*=, /=, …)                      |
+| Op                    | Meaning                         |
+|-----------------------|---------------------------------|
+| + - * /               | add, subtract, multiply, divide |
+| //   %                | floor divide, modulo            |
+| **                    | power (`2 ** 10`) and not `^`   |
+| == !=                 | equality and inequality         |
+| &lt; &lt;= &gt; &gt;= | comparisons (chainable)         |
+| and or not            | logical, short-circuit          |
+| += -=                 | compound assign (\*=, /=, …)    |
 
 ```mojo
 a < b <= c # chains to (a < b) and (b <= c)

@@ -42,8 +42,11 @@ def compile_split[
     comptime T3 = type_of(TileTensor(x_d, row_major(1, 1, 1)))
     comptime T1 = type_of(TileTensor(x_d, row_major(1)))
     comptime Pool = type_of(TileTensor(pool_d, row_major(1, 1, 1, 1)))
+    _ = pool_d
     comptime Qsl = type_of(TileTensor(i32_d, row_major(1)))
+    _ = i32_d
     comptime His = type_of(TileTensor(bool_d, row_major(1)))
+    _ = bool_d
     var x_t = TileTensor(x_d, row_major(1, 1, 1))
     var dt_t = TileTensor(x_d, row_major(1, 1))
     var slots_t = TileTensor(u32_d, row_major(1))

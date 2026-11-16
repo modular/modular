@@ -26,9 +26,6 @@ namespace M::MOGG {
 void hashModuleContents(mlir::ModuleOp module);
 void hashModuleContents(mlir::ModuleOp module, const mlir::SymbolTable &symtab);
 
-/// Get the semantic hash attached to the generator by `hashModuleContents`.
-std::string getSemanticHash(M::KGEN::GeneratorOp generator);
-
 /// Computes the semantic hash for each operation in the given module and then
 /// renames the `symbolsToRename` operations based on their semantic hash.
 llvm::DenseMap<mlir::StringAttr, KGEN::GeneratorOp> applySemanticNaming(

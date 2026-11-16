@@ -30,8 +30,8 @@ namespace M::MO {
 
 /// Lowers a single MO kernel op to MAP in place, as `mo-to-map` does. Returns
 /// the created `map.iter.opaque` on the opaque kernel path, null on the other
-/// successful paths and for an op with no kernel adaptor (left unchanged), or
-/// `failure()` on a lowering error.
+/// successful paths, or `failure()` after emitting an error, including for an
+/// op with no registered kernel.
 ///
 /// Exposed for `NanCheckPass`, which injects `mo.custom` check kernels after
 /// `mo-to-map` has run.

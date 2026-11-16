@@ -4,8 +4,8 @@ sidebar_label: Types and literals
 description: "Numbers, SIMD, conversions, and how to write values."
 hide_title: true
 hide_table_of_contents: true
-compiler_verified: "2026-10-01, Mojo 1.2.0.dev2026100105 (f262223d)"
-last_updated: "2026-10-01 (1.2.0.dev nightly update)"
+compiler_verified: "2026-11-09, repo build at 452685d2"
+last_updated: "2026-11-09 (if case Optional access)"
 ---
 
 import {
@@ -227,10 +227,10 @@ print(foo.or_else(0))
 print(bar.or_else(0))
 
 # Check then access the value
-if foo:
-    print(foo.value())
-if bar:
-    print(bar.value())
+if case .Some(value) = foo:
+    print(value)
+if case .Some(value) = bar:
+    print(value)
 ```
 
 </Panel>

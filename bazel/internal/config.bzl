@@ -148,55 +148,53 @@ def _format_tags_resources(resources):
         result.append("resources:memory:{}".format(resources["memory"]))
     return result
 
-def get_resources_exec_properties(name, test):
-    """Get cpu resource estimates for explicitly listed targets
+def get_resources_exec_properties(name):
+    """Get resource estimates for a test listed in TEST_RESOURCES
 
     Args:
-        name: The target's name
-        test: Whether the target is a test
+        name: The test's name
     Returns:
-        A dictionary of exec properties for remote execution
+        Exec properties for remote execution. A configuration the test isn't
+        listed for gets none, so BuildBuddy's measured sizing applies there.
     """
     resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name, {})
     if not resources:
         return {}
-    default_resources = resources.get("default", {})
+
+    # Each cap is the smallest executor in the pools that configuration runs
+    # on; BuildBuddy never schedules a request larger than every executor.
     return select({
-        "@@//:asan": _format_exec_properties_resources(resources.get("asan", {}) if "asan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan", {}) if "tsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan", {}) if "ubsan" in resources else default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
-        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200", {}) if "b200" in resources else default_resources, test, max_cpu = 32, max_memory = 150 * 1024 * 1024 * 1024),
-        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355", {}) if "mi355" in resources else default_resources, test, max_cpu = 11, max_memory = 150 * 1024 * 1024 * 1024),
-        "@platforms//os:macos": _format_exec_properties_resources(resources.get("macos", {}) if "macos" in resources else default_resources, test, max_cpu = 12, max_memory = 30 * 1024 * 1024 * 1024),
-        "//conditions:default": _format_exec_properties_resources(default_resources, test, max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:asan": _format_exec_properties_resources(resources.get("asan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:tsan": _format_exec_properties_resources(resources.get("tsan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:ubsan": _format_exec_properties_resources(resources.get("ubsan"), max_cpu = 60, max_memory = 100 * 1024 * 1024 * 1024),
+        "@@//:b200_gpu": _format_exec_properties_resources(resources.get("b200"), max_cpu = 32, max_memory = 150 * 1024 * 1024 * 1024),
+        "@@//:mi355_gpu": _format_exec_properties_resources(resources.get("mi355"), max_cpu = 11, max_memory = 150 * 1024 * 1024 * 1024),
+        "@platforms//os:macos": _format_exec_properties_resources(resources.get("macos"), max_cpu = 12, max_memory = 30 * 1024 * 1024 * 1024),
+        "//conditions:default": _format_exec_properties_resources(resources.get("default"), max_cpu = 60, max_memory = 90 * 1024 * 1024 * 1024),
     })
 
-def _format_exec_properties_resources(resources, test, max_cpu = None, max_memory = None):
-    """Format resources for the target
+def _format_exec_properties_resources(resources, max_cpu, max_memory):
+    """Format a test's resources for one configuration
 
     Args:
-        resources: The target's resources
-        test: Whether the target is a test
+        resources: The test's resources in this configuration, or None
         max_cpu: The maximum cpu resource
         max_memory: The maximum memory resource
     Returns:
-        A dictionary of exec properties for the target
+        A dictionary of exec properties for the test
     """
+    if not resources:
+        return {}
+
+    # A measured or predicted size would replace these estimates entirely.
     result = {
         "debug-disable-measured-task-size": "true",
         "debug-disable-predicted-task-size": "true",
     }
-
-    if test:
-        if "cpu" in resources:
-            result["test.EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
-        if "memory" in resources:
-            result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
-    else:
-        if "cpu" in resources:
-            result["EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
-        if "memory" in resources:
-            result["EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
+    if "cpu" in resources:
+        result["test.EstimatedCPU"] = str(min(int(resources["cpu"]), max_cpu))
+    if "memory" in resources:
+        result["test.EstimatedMemory"] = str(min(int(resources["memory"]), max_memory))
     return result
 
 def get_default_test_env(exec_properties):

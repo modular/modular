@@ -157,7 +157,7 @@ def run_group_norm_gpu[
     ](coords: Coord) {var beta} -> SIMD[dtype, width]:
         return beta.load[width=width](coords)
 
-    group_norm[dtype, rank, target="gpu"](
+    group_norm[dtype, rank](
         input_fn,
         gamma_scalar_fn,
         beta_scalar_fn,

@@ -20,9 +20,11 @@ from .model_config import (
     MuseSparkNVFP4,
     MuseSparkTextConfig,
 )
+from .modules import MuseSparkDecoder
 
 __all__ = [
     "MuseSparkConfig",
+    "MuseSparkDecoder",
     "MuseSparkModel",
     "MuseSparkNVFP4",
     "MuseSparkTextConfig",

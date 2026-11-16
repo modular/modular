@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
-import math
 import warnings
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from unittest.mock import Mock
 
 import pytest
 from _tiny_config import (
@@ -37,26 +35,23 @@ from max.driver import CPU
 from max.dtype import DType
 from max.functional import collective_ops
 from max.graph import DeviceRef, TensorValue
-from max.nn.legacy import kernels
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn import _graph_ops as kernels
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
-    CausalConv1d,
     NemotronHMamba2Mixer,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
     NemotronHMLP,
     NemotronHMoE,
+    _NVFP4Projection,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
     RowGroupedLinear,
     nvfp4_block_scale_shape,
-)
-from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
-    NemotronHMemoryPlanner,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     NemotronHConfig,
@@ -73,8 +68,9 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     plan_jenga_geometry,
 )
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.realization_context import ensure_context
@@ -89,6 +85,17 @@ MIB = 1024**2
 
 
 Scheme = Callable[[NemotronHConfig], NemotronHQuantScheme]
+
+
+def _trace(model: NemotronH, config: NemotronHConfig) -> None:
+    """Traces ``model`` as serving registers it, on its named inputs."""
+    _DecoderGraph(model).trace(
+        decoder_input_types(
+            config.kv_params,
+            config.devices[0],
+            input_layout=NemotronH.input_layout,
+        )
+    )
 
 
 def _model(config: NemotronHConfig) -> NemotronH:
@@ -170,11 +177,7 @@ def test_each_mamba_layer_reads_its_own_state_row(
         return original(value, dtype, *args, **kwargs)
 
     monkeypatch.setattr(F, "constant", record)
-    model.trace(
-        *modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=config.devices
-        )
-    )
+    _trace(model, config)
 
     # One index per Mamba layer, in order.
     assert layers == [0, 1, 2]
@@ -255,17 +258,16 @@ def _trace_on_devices(
         auto_reshard(mode="raise"),
     ):
         warnings.simplefilter("always")
-        model.trace(
-            *modulev3_ragged_kv_symbolic_inputs(
-                kv_params=config.kv_params, device_refs=config.devices
-            )
-        )
+        _trace(model, config)
     peer_copies = [
         str(m.message) for m in moves if "cross_mesh_transfer" in str(m.message)
     ]
     return broadcast, len(allreduces), peer_copies
 
 
+# The router's fused gate GEMV and top-k, the third of its three variants, is
+# not traced here: the op refuses a CPU mesh. `test_local_routing_ir` covers it
+# on virtual GPU devices, where it builds.
 @pytest.mark.parametrize("n", [2, 4, 8])
 def test_inputs_reach_the_other_devices_by_collective(
     monkeypatch: pytest.MonkeyPatch, n: int
@@ -274,12 +276,12 @@ def test_inputs_reach_the_other_devices_by_collective(
 
     A peer copy of the inputs makes one device's stream wait on another's,
     which invalidates the capture, so the tokens and row offsets reach the
-    other devices through the broadcast collective. Past two devices, so do
-    the MoE layer's expert ids and weights, which device 0 picks.
+    other devices through the broadcast collective, and nothing else does:
+    every device routes its own bit-identical replica of the router input, so
+    the MoE layer's expert ids and weights cost no broadcast at any width.
     """
     broadcast, _, _ = _trace_on_devices(monkeypatch, n, WIDE)
-    routing = [DType.int32, DType.float32] if n > 2 else []
-    assert broadcast == [DType.int64, DType.uint32, *routing]
+    assert broadcast == [DType.int64, DType.uint32]
 
 
 @pytest.mark.parametrize("n", [2, 4, 8])
@@ -379,27 +381,32 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
     with _built_on_devices(config) as model:
         moe = model.backbone.layers[1].mixer
         assert isinstance(moe, NemotronHMoE)
-        # Four experts of 32 channels, as stored.
-        stored = [moe.up_weight, moe.down_weight]
+        # Four experts of 32 channels, each stored on its own.
+        expert = moe.experts[0]
+        stored = [expert.up_proj.weight, expert.down_proj.weight]
         if w4a4:
+            up_proj, down_proj = expert.up_proj, expert.down_proj
+            assert isinstance(up_proj, _NVFP4Projection)
+            assert isinstance(down_proj, _NVFP4Projection)
             stored += [
-                moe.up_block_scale,
-                moe.down_block_scale,
-                moe.up_scale,
-                moe.down_scale,
+                up_proj.weight_scale,
+                down_proj.weight_scale,
+                up_proj.weight_scale_2,
+                down_proj.weight_scale_2,
             ]
             assert _shapes(stored) == [
-                (4, 32, 32),
-                (4, 64, 16),
-                (4, 32, 4),
-                (4, 64, 2),
-                (4,),
-                (4,),
+                (32, 32),
+                (64, 16),
+                (32, 4),
+                (64, 2),
+                (),
+                (),
             ]
         else:
-            assert _shapes(stored) == [(4, 32, 64), (4, 64, 32)]
-        for param in stored:
-            assert param.mesh.num_devices == 1
+            assert _shapes(stored) == [(32, 64), (64, 32)]
+        for routed in moe.experts:
+            for _, param in routed.parameters:
+                assert param.mesh.num_devices == 1
         # Sixteen channels per device, padded to 64.
         for up_d, down_d in zip(
             *(moe.device_params(proj, _mesh(2)) for proj in ("up", "down")),
@@ -420,14 +427,17 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
 
 
 @pytest.mark.parametrize("bf16_gate", [False, True])
-def test_router_gate_is_built_in_the_dtype_it_loads(bf16_gate: bool) -> None:
-    """The router's gate weight has the dtype that ``_prepare_state_dict``
-    casts the checkpoint's gate to."""
+def test_router_gate_loads_as_stored_and_routes_in_its_own_dtype(
+    bf16_gate: bool,
+) -> None:
+    """The router's gate weight has the dtype the checkpoint stores it in,
+    and the graph casts it to the router's own dtype."""
     config = model_config(TINY_LAYERS, TINY)
     config.bf16_router_gate = bf16_gate
     moe = _model(config).backbone.layers[1].mixer
     assert isinstance(moe, NemotronHMoE)
-    assert moe.gate.weight.dtype == config.router_gate_dtype
+    assert moe.gate.weight.dtype == config.router_gate_stored_dtype
+    assert moe.gate.gate_dtype == config.router_gate_dtype
     assert config.router_gate_dtype == (
         DType.bfloat16 if bf16_gate else DType.float32
     )
@@ -612,10 +622,13 @@ def test_nvfp4_shared_expert_runs_as_routed_experts(n: int) -> None:
                 assert (
                     weights[f"{shared}.{proj}.{suffix}"].mesh.num_devices == 1
                 )
+        # Each routed expert's tensors, as the checkpoint stores them.
+        for e in range(config.num_experts):
+            for proj in ("up_proj", "down_proj"):
+                for suffix in ("weight", "weight_scale", "weight_scale_2"):
+                    param = weights[f"{mixer}.experts.{e}.{proj}.{suffix}"]
+                    assert param.mesh.num_devices == 1
         for proj in ("up", "down"):
-            for suffix in ("weight", "block_scale", "scale"):
-                param = weights[f"{mixer}.{proj}_{suffix}"]
-                assert int(param.shape[0]) == config.num_experts
             stacked = config.num_experts + 2
             for params in moe.device_params(proj, _mesh(n)):
                 assert [s[0] for s in _shapes(params)] == [stacked] * 3
@@ -641,7 +654,7 @@ def test_loading_is_strict() -> None:
     weights = dict(model.parameters)
     names = set(weights)
 
-    missing = "backbone.layers.1.mixer.down_weight"
+    missing = "backbone.layers.1.mixer.experts.0.down_proj.weight"
     del weights[missing]
     with pytest.raises(KeyError, match=missing):
         model.compile(weights=weights)
@@ -714,130 +727,6 @@ def test_nvfp4_experts_split_between_blocks(
         return
     with pytest.raises(ValueError, match="not whole 16-channel blocks"):
         config.check_quantized_modules()
-
-
-def _on_every_device(param: Tensor, n: int) -> bool:
-    """Returns whether each of ``n`` devices holds a whole copy of ``param``.
-
-    The FP8 scales are pinned to the host, outside the model's mesh.
-    """
-    return param.mesh.num_devices == n and all(
-        isinstance(p, Replicated) for p in param.placements
-    )
-
-
-def _bytes_on_devices(config: NemotronHConfig) -> int:
-    """Sums the weight bytes on the devices, as the graph places them.
-
-    A weight the graph places as declared counts once if sharded and once
-    per device if replicated. A module that prepares its weights from their
-    host copies counts as the tensors it gives each device.
-    """
-    n = len(config.devices)
-    mesh = _mesh(n)
-    prepared: list[TensorValue | Tensor] = []
-    replaced: set[int] = set()
-    total = 0
-    with _built_on_devices(config) as model:
-        for _, module in model.descendants:
-            sources: list[Tensor] = []
-            if isinstance(module, NVFP4Linear):
-                for params in module.device_params(mesh):
-                    prepared.extend(params)
-                sources = [param for _, param in module.parameters]
-            elif isinstance(module, NemotronHMoE):
-                for proj in ("up", "down"):
-                    for expert_params in module.device_params(proj, mesh):
-                        prepared.extend(expert_params)
-                # The router and a shared expert run on its own are placed
-                # as declared.
-                runs_alone = isinstance(module.shared_experts, NemotronHMLP)
-                sources = [
-                    param
-                    for name, param in module.parameters
-                    if name.startswith(("up_", "down_"))
-                    or (name.startswith("shared_experts.") and not runs_alone)
-                ]
-            elif isinstance(module, RowGroupedLinear):
-                prepared.extend(module.placed_weight(mesh).local_shards)
-                sources = [module.weight]
-            elif isinstance(module, CausalConv1d) and module.segments:
-                for placed in module.placed(mesh):
-                    prepared.extend(placed.local_shards)
-                sources = [module.weight, module.bias]
-            elif (
-                isinstance(module, NemotronHAttention) and module.kv_repeats > 1
-            ):
-                prepared.extend(module.qkv_weight(mesh).local_shards)
-                qkv = module.qkv_proj
-                sources = [
-                    qkv.q_proj.weight,
-                    qkv.k_proj.weight,
-                    qkv.v_proj.weight,
-                ]
-            replaced.update(id(param) for param in sources)
-        for _, param in model.parameters:
-            if id(param) in replaced:
-                continue
-            total += (
-                math.prod(int(d) for d in param.shape)
-                * param.dtype.size_in_bytes
-                * (n if _on_every_device(param, n) else 1)
-            )
-        for value in prepared:
-            total += (
-                math.prod(int(d) for d in value.shape)
-                * value.dtype.size_in_bytes
-            )
-    return total
-
-
-W4A4_DIMS = WIDE | dict(hidden_size=64, moe_intermediate_size=128)
-
-
-def _scheme_with_w4a4_experts(config: NemotronHConfig) -> NemotronHQuantScheme:
-    return _with_w4a4_experts(config).quant_scheme
-
-
-@pytest.mark.parametrize(
-    "n, dims, scheme",
-    [
-        (2, WIDE, None),
-        (4, WIDE, None),
-        (8, WIDE, None),
-        (2, NVFP4_DIMS, lightning_scheme),
-        (2, NVFP4_DIMS, dense_nvfp4_scheme),
-        # Whole W4A4 scale atoms in both projections, and whole NVFP4 blocks
-        # on each of eight devices.
-        (2, W4A4_DIMS, _scheme_with_w4a4_experts),
-        (4, W4A4_DIMS, _scheme_with_w4a4_experts),
-        (8, W4A4_DIMS, _scheme_with_w4a4_experts),
-    ],
-)
-@pytest.mark.parametrize("bf16_gate", [False, True])
-def test_weights_are_planned_as_the_modules_place_them(
-    n: int, dims: dict[str, int], scheme: Scheme | None, bf16_gate: bool
-) -> None:
-    """Sharded weights are counted once, replicated ones per device, and a
-    repeated KV head once per device that holds it. Weights the graph
-    prepares are counted as each device holds them, padding included, and
-    the router gates in their dtype."""
-    pipeline = Mock()
-    pipeline.model.weights_size.return_value = 1000
-    one_config = model_config(TINY_LAYERS, dims)
-    config = model_config(TINY_LAYERS, dims, n_devices=n)
-    one_config.bf16_router_gate = bf16_gate
-    config.bf16_router_gate = bf16_gate
-    if scheme is not None:
-        one_config.quant_scheme = scheme(one_config)
-        config.quant_scheme = scheme(config)
-
-    one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
-    planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
-
-    placed = _bytes_on_devices(config)
-    assert planned - one == placed - _bytes_on_devices(one_config)
-    assert planned > one
 
 
 def test_per_device_hidden_states_are_refused() -> None:

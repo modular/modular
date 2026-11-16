@@ -30,6 +30,7 @@ from max_private.sys._hal import (
     Buffer,
     Bundle,
     Context,
+    Device,
     Driver,
     DType,
     Event,
@@ -79,8 +80,20 @@ def driver() -> Driver:
 
 
 @pytest.fixture(scope="module")
-def ctx(driver: Driver) -> Context:
-    return driver.get_device(0).get_context()
+def device(driver: Driver) -> Device:
+    return driver.get_device(0)
+
+
+@pytest.fixture(scope="module")
+def ctx(device: Device) -> Context:
+    return device.get_context()
+
+
+@pytest.fixture
+def two_queues(device: Device) -> None:
+    limit = device.max_queues_per_context
+    if limit is not None and limit < 2:
+        pytest.skip("the context holds one queue at a time")
 
 
 def test_driver_load(driver: Driver) -> None:
@@ -408,6 +421,7 @@ def test_stream_partial_copy_roundtrip(ctx: Context) -> None:
 # ----------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("two_queues")
 def test_queue_wait_for_events_single(ctx: Context) -> None:
     producer = ctx.create_queue()
     consumer = ctx.create_queue()
@@ -416,6 +430,7 @@ def test_queue_wait_for_events_single(ctx: Context) -> None:
     consumer.synchronize()
 
 
+@pytest.mark.usefixtures("two_queues")
 def test_stream_wait_for_events_single(ctx: Context) -> None:
     producer = ctx.create_stream()
     consumer = ctx.create_stream()
@@ -871,6 +886,9 @@ def test_array_async_ops(ctx: Context) -> None:
     with pytest.raises(ValueError, match="contiguous"):
         stream.array_from_numpy(host[:, ::2])
 
+
+# A separate test so the stream above is gone before the queue is created.
+def test_array_async_ops_on_queue(ctx: Context) -> None:
     # The same async ops are available on a Queue (identical primitive surface
     # to Stream). Keep the numpy source alive until synchronize().
     queue = ctx.create_queue()

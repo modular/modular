@@ -116,7 +116,7 @@ from std.utils import StaticTuple
 
 from layout import TensorEngine, TensorLayout, TileTensor
 from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout._utils import make_amd_buffer_resource
 
 from structured_kernels.amd_tile_io import (
@@ -2235,7 +2235,7 @@ def mla_prefill_v2_ragged[
     //,
     config: MlaConfigV2,
     compile_options: StaticString = (
-        DeviceContext.target.default_compile_options()
+        DeviceContext[].target.default_compile_options()
     ),
 ](
     q_ptr: ImmPointer[Scalar[qkv_dtype], ImmutAnyOrigin],

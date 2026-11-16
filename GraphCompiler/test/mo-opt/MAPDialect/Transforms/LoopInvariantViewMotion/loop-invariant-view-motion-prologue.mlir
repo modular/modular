@@ -12,7 +12,7 @@
 
 // map.call.opaque verifies that its callee resolves to a mogg.kernel.decl. The
 // pass never reads the signature, so an empty declaration is enough here.
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @prologueSliceHoist
 // CHECK:         [[RESULT:%[^ ]+]] = map.iter.opaque

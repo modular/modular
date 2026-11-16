@@ -35,13 +35,13 @@ namespace M::KGEN {
 /// Builds the module written to a `.mojoc` file from \p parsedModule, the
 /// parser's output for a package directory, and \p parsedPackage, the package
 /// op within it. The package was parsed under \p sourceName, its directory's
-/// name, and is renamed to \p outputName. Each of \p bitcodeLibs is an LLVM
-/// bitcode file embedded in the package.
-ErrorOr<mlir::OwningOpRef<mlir::ModuleOp>>
-buildPrecompiledPackage(mlir::ModuleOp parsedModule,
-                        LIT::PackageOp parsedPackage,
-                        llvm::StringRef sourceName, llvm::StringRef outputName,
-                        llvm::ArrayRef<std::string> bitcodeLibs);
+/// name, and is renamed to \p importPath, the absolute path it is imported by:
+/// any output namespace components, outermost first, then its output name.
+/// Each of \p bitcodeLibs is an LLVM bitcode file embedded in the package.
+ErrorOr<mlir::OwningOpRef<mlir::ModuleOp>> buildPrecompiledPackage(
+    mlir::ModuleOp parsedModule, LIT::PackageOp parsedPackage,
+    llvm::StringRef sourceName, llvm::ArrayRef<llvm::StringRef> importPath,
+    llvm::ArrayRef<std::string> bitcodeLibs);
 
 } // namespace M::KGEN
 

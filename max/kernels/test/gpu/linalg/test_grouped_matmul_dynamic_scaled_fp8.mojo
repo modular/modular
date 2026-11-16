@@ -82,7 +82,6 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -234,6 +233,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     num_experts: Int = 8,
     N: Int = 256,
     K: Int = 256,
+    tokens_per_expert: Int = 2,
+    pass_row_estimate: Bool = False,
 ](ctx: DeviceContext) raises:
     """Non-zero correctness case for grouped_matmul_dynamic_scaled_fp8.
 
@@ -246,12 +247,12 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     comptime in_type = DType.float8_e4m3fn
     comptime out_type = DType.bfloat16
     comptime BLOCK_SCALE_K = 128
-    comptime tokens_per_expert = 2
     comptime total_tokens = num_experts * tokens_per_expert
 
     print(
         t"== test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity num_experts:"
         t" {num_experts} N: {N} K: {K} tokens_per_expert: {tokens_per_expert}"
+        t" pass_row_estimate: {pass_row_estimate}"
     )
 
     var a_size = total_tokens * K
@@ -361,6 +362,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
         max_num_tokens_per_expert=tokens_per_expert,
         num_active_experts=num_experts,
         ctx=ctx,
+        estimated_total_m=total_tokens if pass_row_estimate else 0,
     )
 
     ctx.enqueue_copy(c_host_ptr, c_device_buffer)
@@ -467,5 +469,17 @@ def main() raises:
         # independent host reference (the cases above only exercise the
         # all-offsets-zero early return).
         test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity(ctx=ctx)
+
+        # A row estimate above 128 rows a group selects the SM100 128-row
+        # tile; 160 rows a group also leave a partial second tile.
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            tokens_per_expert=160, pass_row_estimate=True
+        ](ctx=ctx)
+
+        # A row estimate of a few rows a group selects the SM100 swapped-AB
+        # decode tile at the expert GEMM shapes it serves.
+        test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
+            num_experts=4, N=4096, K=2048, pass_row_estimate=True
+        ](ctx=ctx)
 
     print("\n✓ All edge case tests passed!")

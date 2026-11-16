@@ -25,7 +25,7 @@
 from std.reflection import reflect_fn
 from std.testing import TestSuite
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 comptime layout = row_major[128, 1]()
 

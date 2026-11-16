@@ -49,14 +49,13 @@ from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
-    Layout,
     DefaultEngine,
     TensorLayout,
     TensorEngine,
     TileTensor,
 )
+from layout.layout import row_major as tt_row_major
 
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -159,7 +158,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             the load warp waits for the predecessor grid immediately before
             its first TMA load of A and the A-scales, and the MMA warp
             releases dependent grids once its main loop is done (defaults to
-            `PDLLevel()`, which is off).
+            `PDLLevel.OVERLAP_AT_BEGINNING`).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -356,13 +355,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        IndexList[2](
-            Self.SmemType.Core.BM, Self.SmemType.Core.BK
-        ),  # A tile shape
-        IndexList[2](
-            Self.SmemType.Core.BN, Self.SmemType.Core.BK
-        ),  # B tile shape
-        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        (Self.SmemType.Core.BM, Self.SmemType.Core.BK),  # A tile shape
+        (Self.SmemType.Core.BN, Self.SmemType.Core.BK),  # B tile shape
+        (1, Self.SmemType.Core.BM),  # A-scales shape
         Self.SmemType.Core.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
@@ -383,9 +378,12 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for typed accumulator access
-    comptime tmem_accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
+    comptime tmem_accum_layout = tt_row_major[Self.MMA_M, Self.MMA_N]()
     comptime AccumTensor = TmemTensor[
-        Self.accum_type, Self.tmem_accum_layout, cta_group=Self.cta_group
+        Self.accum_type,
+        type_of(Self.tmem_accum_layout),
+        Self.tmem_accum_layout,
+        cta_group=Self.cta_group,
     ]
 
     # ========== Output Pipeline Type ==========

@@ -50,6 +50,7 @@ def match_trivial(i: Int):
     # CHECK:       } else {
     # CHECK:         hlcf.yield
     # CHECK:       }
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match i:
     case _ if i > 0:
         case_callee[1]()
@@ -209,6 +210,7 @@ def match_tuple_subject(point: Tuple[Int, Int]):
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 def match_initializer_list(value: InitPattern):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case == {}:
         case_callee[0]()
@@ -230,7 +232,7 @@ def match_initializer_fields(value: InitPattern):
 # Unparenthesized commas form tuples in both the subject and case patterns.
 # CHECK-LABEL: lit.fn @"match_comma_subject
 # CHECK:       lit.ref.pack.create
-# CHECK:       lit.call {{.*}}@"__init__[LITImmOrigin,::Origin[False, $2]](*$0)"
+# CHECK:       lit.call {{.*}}@"__init__[LITMutOrigin,::Origin[True, $2]](*$0)"
 # CHECK:       hlcf.match {
 # CHECK:         lit.call {{.*}}@"__getitem_param__
 # CHECK:         lit.call {{.*}}@"__eq__(::Bool,::Bool)"
@@ -283,6 +285,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
 def match_with_guard(x: Int, c: Int):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match x:
     case _ if c != 0:
         case_callee[0]()
@@ -453,10 +456,11 @@ __enum OpenColor(ImplicitlyCopyable):
     comptime _enum_is_exhaustive = False
 
 
-# An open enum does not require every known case to appear.
+# An open enum requires a catch-all for cases that may be added later.
 # CHECK-LABEL: lit.fn @"match_open_enum_partial
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
 def match_open_enum_partial(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         case_callee[0]()
@@ -569,6 +573,7 @@ def match_color(c: Color):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_color_complex(tc: Tuple[Color, Int]):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match tc:
     case (Color.red, 0):
         case_callee[0]()
@@ -637,6 +642,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[T:%.*]] = lit.var.decl "t" ref
     # CHECK:       lit.ref.store %value, [[T]]
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case "hello" as t:
         _ = t.byte_length()
@@ -660,6 +666,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.ref.store %point, [[P]]
     # CHECK:       lit.var.decl "x" var
     var point: Tuple[Int, Int] = (0, 0)
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, 0) as origin:
         _ = origin
@@ -680,6 +687,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE0]])
     # CHECK:       hlcf.if [[B0]] {
     # CHECK:       lit.call {{.*}}@"byte_length(
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match value:
     case _ as s if s.byte_length() != 0:
         _ = s.byte_length()
@@ -746,6 +754,7 @@ def match_as_pattern(value: String):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.match.complete
 def match_or_pattern_int(x: Int):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match x:
     case 0 | 1:
         case_callee[0]()
@@ -793,6 +802,7 @@ def match_or_pattern_int(x: Int):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:         hlcf.match.complete
 def match_or_pattern_tup(point: Tuple[Int, Int]):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, 0) | (1, 1):
         case_callee[2]()
@@ -807,6 +817,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[X]]
     # CHECK:       lit.var.decl "x" var
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (0, var x) | (var x, 1):
         _ = x
@@ -819,6 +830,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[RX]]
     # CHECK:       lit.var.decl "x" ref
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 4
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match point:
     case (2, ref x) | (ref x, 3):
         _ = x
@@ -887,6 +899,7 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       lit.ref.struct.ger {{.*}}[z]
     # CHECK:       lit.call {{.*}}@"__eq__(
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match v:
     case Vec3(x=0, y=0, z=0):
         case_callee[0]()
@@ -897,6 +910,7 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[X:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.ref.store {{.*}}, [[X]]
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match v:
     case Vec3(x=var x, y=0, z=_):
         _ = x
@@ -949,7 +963,11 @@ def match_optional_refined_payload(opt: Optional[Int]):
     # CHECK-NEXT:  [[IS_SOME:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[TAG]], [[SOME]])
     # CHECK-NEXT:  [[SOME_COND:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[IS_SOME]])
     # CHECK-NEXT:  hlcf.if [[SOME_COND]] {
-    # CHECK-NEXT:    [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
+    # CHECK-NEXT:    [[PAYLOAD_TUPLE:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
+    # CHECK-NEXT:    [[STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+    # CHECK-NEXT:    [[STORAGE_PTR:%.*]] = lit.ref.to_pointer [[STORAGE]]
+    # CHECK-NEXT:    [[ELEMENT_PTR:%.*]] = kgen.struct.gep [[STORAGE_PTR]][0]
+    # CHECK-NEXT:    [[PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[ELEMENT_PTR]] : <!Int> -> <!Int,
     # CHECK-NEXT:    [[VALUE:%.*]] = lit.ref.load [[PAYLOAD]]
     # CHECK-NEXT:    [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT:    [[IS_ZERO:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[VALUE]], [[ZERO]])
@@ -1001,12 +1019,15 @@ def make_linear_tuple() -> Tuple[SomeLinearType, SomeLinearType]:
 
 # CHECK-LABEL: lit.fn @"match_rvalue_tuple_var_binding
 # CHECK:          lit.ref.to_pointer
-# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          [[X:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ref.to_pointer
-# CHECK:          lit.ref.from_pointer {{.*}}end_uninit
+# CHECK:          [[UNBOUND:%.*]] = lit.ref.from_pointer {{.*}}end_uninit
 # CHECK:          lit.ownership.mark_destroyed
 # CHECK:          lit.var.decl "anonymous*" synth
-# CHECK:          lit.var.decl "x" var
+# CHECK-NOT:      lit.var.decl "x" var
+# CHECK:          {{.*}}@"__init__(move{{.*}}([[UNBOUND]]
+# CHECK:          lit.ownership.use [[X]]
+# CHECK:          {{.*}}@"consume{{.*}}([[X]])
 # CHECK-NOT:      lit.memcpy
 def match_rvalue_tuple_var_binding():
     match make_linear_tuple():
@@ -1024,11 +1045,8 @@ def match_rvalue_tuple_var_binding():
 # CHECK:           hlcf.match.complete
 # CHECK-NEXT:    }
 # CHECK-NEXT:    case {
-# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
-# CHECK-NOT:       lit.memcpy
-# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}(%arg, [[X]])
-# CHECK-NEXT:      lit.ownership.use [[X]]
-# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+# CHECK-NEXT:      lit.ownership.use %arg
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}(%arg)
 def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
     match arg^:
     case == a:
@@ -1053,16 +1071,20 @@ def match_rvalue_var_binding(var arg: SomeLinearType, a: SomeLinearType):
 # CHECK-NEXT:        hlcf.match.next
 # CHECK-NEXT:      }
 # CHECK-NEXT:      [[PAYLOAD_REF:%.*]] = lit.ref.immut [[SUBJECT]]
-# CHECK-NEXT:      [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[PAYLOAD_REF]])
-# CHECK-NEXT:      [[CONSUMING_REF:%.*]] = lit.ref.immut [[SUBJECT]]
-# CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[CONSUMING_REF]])
-# CHECK-NEXT:      [[PAYLOAD_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
-# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[PAYLOAD_PTR]] end_uninit
+# CHECK-NEXT:      [[PAYLOAD_TUPLE:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}([[PAYLOAD_REF]])
+# CHECK-NEXT:      [[STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+# CHECK-NEXT:      [[STORAGE_PTR:%.*]] = lit.ref.to_pointer [[STORAGE]]
+# CHECK-NEXT:      [[ELEMENT_PTR:%.*]] = kgen.struct.gep [[STORAGE_PTR]][0]
+# CHECK-NEXT:      [[PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[ELEMENT_PTR]]
+# CHECK-NEXT:      [[CONSUMING_STORAGE:%.*]] = lit.ref.struct.ger [[PAYLOAD_TUPLE]][_mlir_value]
+# CHECK-NEXT:      [[CONSUMING_STORAGE_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_STORAGE]]
+# CHECK-NEXT:      [[CONSUMING_ELEMENT_PTR:%.*]] = kgen.struct.gep [[CONSUMING_STORAGE_PTR]][0]
+# CHECK-NEXT:      [[CONSUMING_PAYLOAD:%.*]] = lit.ref.from_kgen_ptr [[CONSUMING_ELEMENT_PTR]]
+# CHECK-NEXT:      [[TRANSFER_PTR:%.*]] = lit.ref.to_pointer [[CONSUMING_PAYLOAD]]
+# CHECK-NEXT:      [[OWNED_PAYLOAD:%.*]] = lit.ref.from_pointer [[TRANSFER_PTR]] "(pattern child)" end_uninit
 # CHECK-NEXT:      lit.ownership.mark_destroyed [[SUBJECT]]
-# CHECK-NEXT:      [[X:%.*]] = lit.var.decl "x" var
-# CHECK-NEXT:      {{.*}}@"__init__(move{{.*}}([[OWNED_PAYLOAD]], [[X]])
-# CHECK-NEXT:      lit.ownership.use [[X]]
-# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[X]])
+# CHECK-NEXT:      lit.ownership.use [[OWNED_PAYLOAD]]
+# CHECK-NEXT:      {{.*}}@"consume{{.*}}([[OWNED_PAYLOAD]])
 # CHECK-NEXT:      hlcf.match.complete
 # CHECK-NEXT:    } else {
 # CHECK-NEXT:      hlcf.yield

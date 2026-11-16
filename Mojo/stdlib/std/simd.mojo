@@ -285,11 +285,6 @@ def _simd_construction_checks[dtype: DType, size: SIMDLength]():
 
 
 @inline(.nodebug)
-def _has_native_bf16_support() -> Bool:
-    return is_gpu()
-
-
-@inline(.nodebug)
 def _has_native_f8_support() -> Bool:
     return CurrentPlugin.has_native_float8
 
@@ -302,7 +297,7 @@ def _has_native_f8_support() -> Bool:
 def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
     """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         res[i] = (i + shift + size) % size
     return res
 
@@ -315,7 +310,7 @@ def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
     out-of-range lanes index `other`, which callers pass as zero.
     """
     var res = IndexList[size]()
-    comptime for i in range(size):
+    for i in range(size):
         var src = i + shift
         if 0 <= src < size:
             res[i] = src
@@ -330,7 +325,9 @@ def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
 
 
 @fieldwise_init
-struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
+struct FastMathFlag(
+    EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable, Writable
+):
     """Flags for controlling fast-math optimizations in floating-point operations.
 
     FastMathFlag provides compile-time controls for various floating-point math
@@ -404,7 +401,7 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)
@@ -430,6 +427,41 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
         """
         return self._value == other._value
 
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `FastMathFlag` to the provided writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        if self == FastMathFlag.NONE:
+            writer.write_string("NONE")
+        elif self == FastMathFlag.NNAN:
+            writer.write_string("NNAN")
+        elif self == FastMathFlag.NINF:
+            writer.write_string("NINF")
+        elif self == FastMathFlag.NSZ:
+            writer.write_string("NSZ")
+        elif self == FastMathFlag.ARCP:
+            writer.write_string("ARCP")
+        elif self == FastMathFlag.CONTRACT:
+            writer.write_string("CONTRACT")
+        elif self == FastMathFlag.AFN:
+            writer.write_string("AFN")
+        elif self == FastMathFlag.REASSOC:
+            writer.write_string("REASSOC")
+        elif self == FastMathFlag.FAST:
+            writer.write_string("FAST")
+        else:
+            writer.write_string("<<unknown>>")
+
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a repr string of the `FastMathFlag` to the provided writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write("FastMathFlag.", self)
+
     def _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         if self == FastMathFlag.NONE:
             return __mlir_attr.`#pop.fmf<none>`
@@ -451,6 +483,24 @@ struct FastMathFlag(EnumLike, Equatable, ImplicitlyCopyable, RegisterPassable):
             return __mlir_attr.`#pop.fmf<fast>`
 
         return __mlir_attr.`#pop.fmf<none>`
+
+
+# ===----------------------------------------------------------------------=== #
+# TryCastSIMDError
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct TryCastSIMDError(TrivialRegisterPassable, Writable):
+    """Signals that a value is out of range for a checked integer conversion."""
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a description of the error.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string("out of range integral type conversion attempted")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -618,6 +668,23 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Self.dtype._mlir_value,
         `>`,
     ]
+
+    comptime _storage_bit_width = size_of[Self.dtype]() * 8
+    """The number of bits used to store each element."""
+
+    comptime _to_int_vector = (
+        __mlir_deferred_type[
+            `i`, +Self._storage_bit_width.__mlir_index__()
+        ] if Self.length
+        == 1 else __mlir_deferred_type[
+            `vector<`,
+            +Self.length._mlir_value,
+            `xi`,
+            +Self._storage_bit_width.__mlir_index__(),
+            `>`,
+        ]
+    )
+    """The builtin integer MLIR type that represents this SIMD's storage."""
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the vector."""
@@ -928,10 +995,12 @@ struct SIMD[dtype: DType, length: SIMDLength](
             value._mlir_value
         )
 
+    # TODO(https://github.com/modular/modular/issues/7512):
+    # We need ensure the `len(elems) == Self.length` at compile
+    # time, however there is not yet a way to get the comptime size
+    # of a VariadicList.
     @inline(.nodebug)
-    def __init__(
-        out self, *elems: Scalar[Self.dtype], __list_literal__: NoneType = None
-    ):
+    def __init__(out self, *elems: Scalar[Self.dtype]):
         """Constructs a SIMD vector via a variadic list of elements.
 
         The input values are assigned to the corresponding elements of the SIMD
@@ -943,7 +1012,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Args:
             elems: The variadic list of elements from which the SIMD vector is
                    constructed.
-            __list_literal__: Tell Mojo to use this method for list literals.
         """
         _simd_construction_checks[Self.dtype, Self.length]()
 
@@ -951,6 +1019,44 @@ struct SIMD[dtype: DType, length: SIMDLength](
         assert Self.length == len(
             elems
         ), "mismatch in the number of elements in the SIMD variadic constructor"
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime for i in range(Self.length):
+            self[i] = elems[i]
+
+    @inline(.nodebug)
+    def __init__[
+        *, __literal_size__: Int
+    ](out self, *elems: Scalar[Self.dtype], __list_literal__: NoneType):
+        """Constructs a SIMD vector from a list literal.
+
+        The literal must have exactly one element per lane.
+
+        Parameters:
+            __literal_size__: Infer the literal size from the list-literal.
+
+        Constraints:
+            The number of literal elements equals the SIMD vector's length.
+
+        Args:
+            elems: The elements of the list literal.
+            __list_literal__: Tell Mojo to use this method for list literals.
+
+        Examples:
+
+        ```mojo
+        var v: SIMD[DType.float32, 4] = [1.0, 2.0, 3.0, 4.0]
+        ```
+        """
+        _simd_construction_checks[Self.dtype, Self.length]()
+        # A `where` clause would reject this at parse time, but it cannot prove
+        # the sizes match in generic code guarded by `comptime if`, and it
+        # forms a declaration cycle through `SIMDLength.__eq__` and `Bool`.
+        comptime assert __literal_size__ == Int(Self.length), String(
+            t"expected {Int(Self.length)} elements in the SIMD list literal,"
+            t" found {__literal_size__}"
+        )
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
@@ -1057,7 +1163,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
         return Scalar[Self.dtype](
             mlir_value=__mlir_op.`pop.simd.extractelement`(
-                self._mlir_value, idx.__mlir_index__()
+                self._mlir_value, idx._mlir_value
             )
         )
 
@@ -1070,7 +1176,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             val: The value to set.
         """
         self._mlir_value = __mlir_op.`pop.simd.insertelement`(
-            self._mlir_value, val._mlir_value, idx.__mlir_index__()
+            self._mlir_value, val._mlir_value, idx._mlir_value
         )
 
     def __contains__(self, value: Scalar[Self.dtype]) -> Bool:
@@ -2205,6 +2311,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
+    @stable(since="1.3")
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 
@@ -2425,8 +2532,70 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
+    # TODO: Raise `Never` when the conversion is lossless, as from `Int8` to
+    # `Int16`. A raises type that depends on the dtypes works at concrete call
+    # sites, but a generic caller then can't print the error or convert it to
+    # `Error`.
+    @inline(.always)
+    def try_cast[
+        target: DType, /
+    ](self) raises TryCastSIMDError -> SIMD[target, Self.length] where (
+        Self.dtype.is_integral() and target.is_integral()
+    ):
+        """Casts to the target dtype, raising if any element is out of range.
+
+        This is the checked counterpart of `cast()`. Where
+        `UInt8(200).cast[.int8]()` wraps to `-56`,
+        `UInt8(200).try_cast[.int8]()` raises.
+
+        Parameters:
+            target: The integral dtype to convert to.
+
+        Returns:
+            The cast SIMD value.
+
+        Raises:
+            TryCastSIMDError: If any element is outside the range of `target`.
+
+        Constraints:
+            The source and target dtypes must be integral.
+
+        Examples:
+
+        ```mojo
+        var count = Int64(300)
+        var low = count.try_cast[.uint16]()  # 300
+
+        try:
+            _ = SIMD[.int32, 4](1, 2, 3, 256).try_cast[.uint8]()
+        except e:
+            print(e)  # out of range integral type conversion attempted
+        ```
+        """
+        # TODO: Accept sub-byte dtypes once `cast` to them truncates. Until
+        # then the round trip can't detect an out-of-range value.
+        comptime sub_byte = (DType._uint1, DType._uint2, DType._uint4)
+        comptime assert (
+            Self.dtype not in sub_byte and target not in sub_byte
+        ), "`try_cast` doesn't support sub-byte dtypes"
+
+        var result = self.cast[target]()
+        var in_range = result.cast[Self.dtype]().eq(self)
+        # A signedness change can round-trip yet flip the sign, as in
+        # `Int8(-1)` -> `UInt16(65535)` -> `Int8(-1)`. Only the signed side
+        # can be negative, so it must not be.
+        comptime if Self.dtype.is_signed() and not target.is_signed():
+            in_range &= self.ge(0)
+        elif target.is_signed() and not Self.dtype.is_signed():
+            in_range &= result.ge(0)
+        if not in_range.reduce_and():
+            raise TryCastSIMDError()
+        return result
+
     @always_inline("builtin")
-    def is_power_of_two(self) -> SIMD[.bool, Self.length]:
+    def is_power_of_two(
+        self,
+    ) -> SIMD[.bool, Self.length] where Self.dtype.is_integral():
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
         Constraints:
@@ -2436,7 +2605,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A SIMD value where the element at position `i` is True if the integer at
             position `i` of the input value is a power of 2, False otherwise.
         """
-        comptime assert Self.dtype.is_integral(), "must be integral"
 
         return self.gt(0) & (self & (self - 1)).eq(0)
 
@@ -3795,7 +3963,7 @@ def _pow[
         result = {}
 
         comptime for i in range(width):
-            result[i] = _powi(base[i], exp[i].cast[DType.int32]())
+            result[i] = _powi(base[i], exp[i])
     elif base.dtype.is_integral() and exp.dtype.is_floating_point():
         comptime assert False, (
             "an integer cannot be raised to a floating point power; use a"
@@ -3851,7 +4019,11 @@ def _powf[
 
 
 @inline(.always)
-def _powi(base: Scalar, exp: Int32) -> type_of(base):
+def _powi(
+    base: Scalar, exp: Scalar
+) -> type_of(base) where (
+    exp.dtype.is_integral()
+) else "exponent must be integral":
     comptime if base.dtype.is_integral():
         if exp < 0:
             # Trap rather than return a truncated result, the way NumPy rejects
@@ -3862,7 +4034,10 @@ def _powi(base: Scalar, exp: Int32) -> type_of(base):
             )
 
     var a = base
-    var b = abs(exp) if base.dtype.is_floating_point() else exp
+    # Negating in the unsigned type gives `MIN` a magnitude too.
+    var b = exp.cast[_unsigned_integral_type_of[exp.dtype]()]()
+    if exp < 0:
+        b = 0 - b
     var res: Scalar[base.dtype] = 1
     while b > 0:
         if b & 1:

@@ -58,7 +58,7 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.memory_estimation import MemoryEstimator
+from .lib.memory_plan import plan_memory
 from .lib.pipeline_runtime_config import (
     EagerValidatorMode,
     PipelineRuntimeConfig,
@@ -96,7 +96,6 @@ __all__ = [
     "KVCacheConfig",
     "LoRAConfig",
     "MAXModelConfig",
-    "MemoryEstimator",
     "ModelInputs",
     "ModelOutputs",
     "PipelineArgs",
@@ -121,6 +120,7 @@ __all__ = [
     "eager_validator",
     "is_float4_encoding",
     "parse_supported_encoding_from_file_name",
+    "plan_memory",
     "supported_encoding_dtype",
     "supported_encoding_quantization",
     "supported_encoding_supported_devices",

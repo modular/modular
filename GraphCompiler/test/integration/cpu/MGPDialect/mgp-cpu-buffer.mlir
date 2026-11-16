@@ -18,7 +18,7 @@
 // CHECK-LABEL: --- Running 'constant'
 // CHECK-NEXT: tensor<1x4xui8> [255, 254, 253, 252]
 // CHECK-NEXT: , tensor<0xui8> []
-mgp.model @constant : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @constant devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -40,7 +40,7 @@ mgp.model @constant : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp
 // CHECK-LABEL: --- Running 'alloc'
 // CHECK-NEXT: tensor<1x4xui8> [{{.*}}]
 // CHECK-NEXT: , tensor<1x4xui8> [{{.*}}]
-mgp.model @alloc : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @alloc devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -62,7 +62,7 @@ mgp.model @alloc : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.op
 
 // CHECK-LABEL: --- Running 'cache'
 // CHECK-NEXT: tensor<4xui8> [255, 254, 253, 252]
-mgp.model @cache : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @cache devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -84,7 +84,7 @@ mgp.model @cache : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.op
 
 // CHECK-LABEL: --- Running 'cache_dense_array'
 // CHECK-NEXT: tensor<6xui8> [1, 2, 3, 4, 5, 6]
-mgp.model @cache_dense_array : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @cache_dense_array devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -109,7 +109,7 @@ mgp.model @cache_dense_array : mof devices [#M.device_ref<"cpu", 0>] init (%weig
 
 // CHECK-LABEL: --- Running 'device_to_device'
 // CHECK-NEXT: tensor<4xui8> [255, 254, 253, 252]
-mgp.model @device_to_device : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @device_to_device devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -130,7 +130,7 @@ mgp.model @device_to_device : mof devices [#M.device_ref<"cpu", 0>] init (%weigh
 
 // CHECK-LABEL: --- Running 'buffer_get_size'
 // CHECK-NEXT: tensor<1xsi64> [4]
-mgp.model @buffer_get_size : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_get_size devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -152,7 +152,7 @@ mgp.model @buffer_get_size : mof devices [#M.device_ref<"cpu", 0>] init (%weight
 
 // CHECK-LABEL: --- Running 'buffer_concat'
 // CHECK-NEXT: tensor<10xui8> [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-mgp.model @buffer_concat : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_concat devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -175,7 +175,7 @@ mgp.model @buffer_concat : mof devices [#M.device_ref<"cpu", 0>] init (%weights:
 // CHECK-LABEL: --- Running 'buffer_to_bool'
 // CHECK-NEXT: tensor<1xui32> [42]
 // CHECK-NEXT: , tensor<1xui32> [42]
-mgp.model @buffer_to_bool : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_to_bool devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -211,7 +211,7 @@ mgp.model @buffer_to_bool : mof devices [#M.device_ref<"cpu", 0>] init (%weights
 
 // CHECK-LABEL: --- Running 'buffer_set_with_index_si32'
 // CHECK-NEXT: tensor<3xsi32> [42, 17, 20]
-mgp.model @buffer_set_with_index_si32 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_set_with_index_si32 devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -230,7 +230,7 @@ mgp.model @buffer_set_with_index_si32 : mof devices [#M.device_ref<"cpu", 0>] in
 
 // CHECK-LABEL: --- Running 'buffer_set_with_index_si64'
 // CHECK-NEXT: tensor<2xsi64> [29, 13]
-mgp.model @buffer_set_with_index_si64 : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_set_with_index_si64 devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -248,7 +248,7 @@ mgp.model @buffer_set_with_index_si64 : mof devices [#M.device_ref<"cpu", 0>] in
 
 // CHECK-LABEL: --- Running 'buffer_slice'
 // CHECK-NEXT: tensor<3xsi32> [4, 5, 6]
-mgp.model @buffer_slice : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_slice devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -266,7 +266,7 @@ mgp.model @buffer_slice : mof devices [#M.device_ref<"cpu", 0>] init (%weights: 
 
 // CHECK-LABEL: --- Running 'buffer_cache_slice'
 // CHECK-NEXT: tensor<3xsi32> [4, 5, 6]
-mgp.model @buffer_cache_slice : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_cache_slice devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %arg0: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

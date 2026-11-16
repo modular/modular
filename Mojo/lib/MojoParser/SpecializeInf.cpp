@@ -22,7 +22,6 @@
 #include "ParamMatcher.h"
 
 #include "Mojo/LITDialect/LITOps.h"
-#include "Mojo/MojoParser/IRValues.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -74,6 +73,9 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
 
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:

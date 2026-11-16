@@ -595,7 +595,7 @@ class TCStreamingProtocol(BaseScenario):
                     "role": "user",
                     "content": (
                         "Look up 'alpha' with lookup_a AND 'beta' with lookup_b. "
-                        "You must call both tools."
+                        "Call both tools in parallel, in this one response."
                     ),
                 }
             ],

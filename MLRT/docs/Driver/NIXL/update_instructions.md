@@ -37,7 +37,7 @@ rebuild and re-test (see [Testing](#testing-after-an-update)).
 ## Bumping the Rust bindings in lockstep
 
 The Rust side consumes NIXL through the `nixl-sys` crate, pinned in
-`dkv/Cargo.toml` and locked in both `dkv/Cargo.lock` and `mach/Cargo.lock`.
+the root `Cargo.toml` and locked in the root `Cargo.lock`.
 Move it to the same version as `@nixl_upstream`, or the crate's headers and
 `libnixl.so` disagree at the symbol level.
 
@@ -51,7 +51,7 @@ and a copy carrying the generated file:
 
 ```bash
 cargo install bindgen-cli --version 0.71.1 --locked
-(cd dkv && cargo fetch)  # unpacks the crate into the registry
+cargo fetch  # from the repo root; unpacks the crate into the registry
 
 repo=$(git rev-parse --show-toplevel)
 work=$(mktemp -d)
@@ -116,7 +116,7 @@ pin-bump procedure and test list.
 
 The quickest path is the one-click GitHub Actions workflow, which runs the
 NIXL unit tests (Core/UCX on a B200) and dispatches the shared-pool tests,
-including the nightly's `nixl-validation-1p1d-*` Mammoth benchmarks:
+including the DI nightly's Mach 1P1D lane on B200:
 
 ```bash
 gh workflow run validateNIXLSync.yaml \
@@ -125,7 +125,7 @@ gh workflow run validateNIXLSync.yaml \
 ```
 
 Running from any branch — including `main` — auto-builds the MAX Serve images
-from that commit and passes them to the shared-pool tests — no manual image
-build step needed.
+and the Mach engine image and MEF set from that commit and passes them to the
+shared-pool tests — no manual image build step needed.
 
 As a final sanity check, also run `br //:install`.

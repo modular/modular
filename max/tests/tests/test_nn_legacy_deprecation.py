@@ -98,7 +98,7 @@ def test_importing_a_legacy_submodule_warns() -> None:
     _assert_one_warning_at_caller(
         _legacy_warnings("""
             import max.nn
-            from max.nn.legacy.kv_cache import KVCacheParams
+            from max.nn.legacy.linear import Linear
         """)
     )
 
@@ -108,7 +108,7 @@ def test_warns_once_per_process() -> None:
         _legacy_warnings("""
             import max.nn.legacy
             from max.nn.legacy import Linear, Module
-            from max.nn.legacy.kernels import rope_ragged
+            from max.nn.legacy.norm import RMSNorm
             max.nn.legacy.Sequential
         """)
     )

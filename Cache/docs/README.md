@@ -137,6 +137,58 @@ The `BlobCache` assumes overwrite semantics on `insert`, so it is incumbent on
 the user to provide a strong hash function - the transform cache uses a
 128-bit xxhash currently.
 
+### Filesystem version directories
+
+The filesystem backend keeps each compiler version's blobs in a directory named
+by the version string that `getFilesystemBackend()` receives. The Mojo
+compiler's version string joins the Mojo version, the build ID of the compiler
+binary and the build type. A cache with two versions looks like this.
+
+```text
+<cacheDir>/
+  1.3.0<buildID>-production/          version, build ID, build type
+    .owners                           <buildID>\t/env/bin/mojo
+    M2VmYTJjNmZmY2QwYTk3MWM4...       cached blobs, named by key
+  1.2.0<otherBuildID>-production/
+    .owners                           <otherBuildID>\t/other-env/bin/mojo
+    ...
+```
+
+Opening a backend prunes sibling directories of the same build type to keep
+disk use down. Without an owner, the backend deletes every such sibling.
+
+The Mojo compiler instead passes a `CacheOwner`, which holds the canonical path
+and build ID of the binary that opens the cache. The backend appends that owner
+to the `.owners` file in its own directory. The file holds one
+`<buildID>\t<path>` line per binary that uses the directory. Pruning keeps a
+sibling while any binary listed in its `.owners` may still use it.
+
+- A binary with the opener's path and build ID still uses it. That binary is
+  the opener under another version string, such as when
+  `MODULAR_NVPTX_COMPILER_PATH` is set.
+- A binary with the opener's path and another build ID stopped using it when
+  the opener replaced it.
+- A binary whose path is gone stopped using it when its install was deleted.
+- A binary at any other existing path may still use it.
+
+A directory without `.owners` came from an older compiler, and pruning
+deletes it as before.
+
+Identical installs in two environments produce the same version string, so
+they share one directory. Each install adds its own line to `.owners`, and the
+directory stays while either install exists.
+
+The backend records its owner and prunes while holding one lock file next to
+the cache directory. A concurrent pruner therefore either sees the new owner or
+has already finished deleting the directory.
+
+> [!CAUTION]
+> A process loses its cache if its binary is replaced while it runs. The new
+> binary has the same path but a different build ID, so it deletes the old
+> directory. Writes the old process still has in flight then fail. This happens
+> when you upgrade a Mojo install under a running process. It also happens when
+> you rebuild `mojo` with Bazel while an earlier build is still compiling.
+
 ## Transform Caching
 
 The principle behind transform caching is also quite simple - as long as the

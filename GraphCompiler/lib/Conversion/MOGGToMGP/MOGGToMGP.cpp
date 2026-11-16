@@ -22,6 +22,7 @@
 #include "GraphCompiler/MGPDialect/Dialect/MGPTypes.h"
 #include "GraphCompiler/MGPDialect/Dialect/MGPUtils.h"
 #include "GraphCompiler/MGPDialect/Transforms/FixupIsolatedFromAbove.h"
+#include "GraphCompiler/MODialect/Analysis/ParametricTopologyAnalysis.h"
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
@@ -117,11 +118,9 @@ struct IndexLowering {
 /// phase, and a model descriptor.
 class MOGraphLowering {
 public:
-  MOGraphLowering(MO::GraphOp graph, llvm::StringRef compiledFrameworkLabel,
-                  size_t minimumCpuAlignment,
+  MOGraphLowering(MO::GraphOp graph, size_t minimumCpuAlignment,
                   mlir::SymbolTable &moduleSymbolTable)
-      : loweringState(graph, compiledFrameworkLabel, minimumCpuAlignment,
-                      moduleSymbolTable) {}
+      : loweringState(graph, minimumCpuAlignment, moduleSymbolTable) {}
 
   /// Lower the mo.graph to mgp.model.
   LogicalResult run();
@@ -376,17 +375,16 @@ LogicalResult MOGraphLowering::createModelOp() {
   populateDeviceIndicesExtraAttr(kMgpModelResultDeviceIndices, outputTypes);
 
   b.setInsertionPoint(graph);
-  auto modelOp = MGP::ModelOp::create(
-      b, graph.getLoc(),
-      /*name=*/graph.getNameAttr(),
-      /*frameworkName=*/loweringState.getCompiledFrameworkLabel(),
-      /*devices=*/devices,
-      /*inputTypes=*/inputTypes,
-      /*outputTypes=*/outputTypes,
-      /*inputArgLocs=*/inputLocs,
-      /*isSubgraph=*/graph.getIsSubgraph(),
-      /*isDeviceGraph=*/graph.getIsDeviceGraph(),
-      /*extraAttrs=*/extraAttrs);
+  auto modelOp =
+      MGP::ModelOp::create(b, graph.getLoc(),
+                           /*name=*/graph.getNameAttr(),
+                           /*devices=*/devices,
+                           /*inputTypes=*/inputTypes,
+                           /*outputTypes=*/outputTypes,
+                           /*inputArgLocs=*/inputLocs,
+                           /*isSubgraph=*/graph.getIsSubgraph(),
+                           /*isDeviceGraph=*/graph.getIsDeviceGraph(),
+                           /*extraAttrs=*/extraAttrs);
 
   loweringState.setModelOp(modelOp);
 
@@ -471,7 +469,7 @@ LogicalResult MOGraphLowering::lower(MO::OutputOp output) {
 
   // Execute phase. Always returns a chain.
   SmallVector<Value> operands;
-  operands.push_back(loweringState.getCurrentExecuteChain());
+  operands.push_back(loweringState.joinControlFlowChains(output.getLoc()));
 
   for (auto [idx, operand] : llvm::enumerate(output.getOperands())) {
     Value loweredValue = loweringState.lookupExecuteLoweredValue(operand);
@@ -503,7 +501,7 @@ LogicalResult MOGraphLowering::lower(MO::OutputOp output) {
 LogicalResult MOGraphLowering::lower(MO::YieldOp yield) {
   // Always implicitly returns the current 'execute' block chain.
   SmallVector<Value> operands;
-  operands.push_back(loweringState.getCurrentExecuteChain());
+  operands.push_back(loweringState.joinControlFlowChains(yield.getLoc()));
 
   for (Value operand : yield.getOperands())
     operands.push_back(loweringState.lookupExecuteLoweredValue(operand));
@@ -524,7 +522,7 @@ LogicalResult MOGraphLowering::lower(MO::YieldOp yield) {
 LogicalResult MOGraphLowering::lower(MO::WhileConditionOp condition) {
   // Always implicitly returns the current 'execute' block chain.
   SmallVector<Value> operands;
-  operands.push_back(loweringState.getCurrentExecuteChain());
+  operands.push_back(loweringState.joinControlFlowChains(condition.getLoc()));
 
   for (Value operand : condition.getOperands())
     operands.push_back(loweringState.lookupExecuteLoweredValue(operand));
@@ -998,8 +996,9 @@ LogicalResult MOGraphLowering::lower(MO::DebugPrintOp printOp) {
   if (targetDevice != hostDevice)
     chain = opLoweringState.sync(chain);
 
-  loweringState.setCurrentExecuteChain(
-      cast<TypedValue<MEF::ChainType>>(outChain));
+  // Only the users of its MO out-chain, control flow, calls and the
+  // terminator wait on the print, as after a grt.if.
+  loweringState.addControlFlowChain(outChain);
 
   loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
   return success();
@@ -1025,8 +1024,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugTensorPrintOp printOp) {
     auto outChain = opLoweringState.debugTensorPrint(
         chain, buffer, tensorSpec, printOp.getLabelAttr(),
         printOp.getInput().getType());
-    loweringState.setCurrentExecuteChain(
-        cast<TypedValue<MEF::ChainType>>(outChain));
+    loweringState.addControlFlowChain(outChain);
 
     loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
     return success();
@@ -1048,8 +1046,7 @@ LogicalResult MOGraphLowering::lower(MO::DebugTensorPrintOp printOp) {
       moTensorType);
   auto outChain = opLoweringState.hostDebugTensorPrint(
       transferChain, hostBuffer, tensorSpec, printOp.getLabelAttr());
-  loweringState.setCurrentExecuteChain(
-      cast<TypedValue<MEF::ChainType>>(outChain));
+  loweringState.addControlFlowChain(outChain);
   loweringState.emplaceExecuteLoweredValue(printOp.getOutChain(), outChain);
   return success();
 }
@@ -1403,9 +1400,11 @@ LogicalResult MOGraphLowering::lower(MO::IfOp ifOp) {
   ASSERT_STREAM(MO::isOnHost(ifOp), << "mo.if is for host only");
   MGP::MOOpLoweringState opLoweringState(loweringState, ifOp);
 
-  // Thread the current 'execute' chain through both branches.
-  Value currentChain = loweringState.getCurrentExecuteChain();
-  currentChain = opLoweringState.getGuardChain(currentChain);
+  // Thread the current 'execute' chain, after any earlier control flow,
+  // through both branches. Later ops keep the chain from before the if.
+  Value outerChain = loweringState.getCurrentExecuteChain();
+  Value currentChain = opLoweringState.getGuardChain(
+      loweringState.joinControlFlowChains(ifOp.getLoc()));
 
   Value cond = ifOp.getCond();
 
@@ -1470,7 +1469,11 @@ LogicalResult MOGraphLowering::lower(MO::IfOp ifOp) {
 
   Value outChain = outputIf.getResult(0);
 
-  loweringState.setCurrentExecuteChain(outChain);
+  // Only users of the if's results, and later ops ordered against control
+  // flow, wait on its out-chain. Its chain results order the mutable ops
+  // that follow it.
+  loweringState.setCurrentExecuteChain(outerChain);
+  loweringState.addControlFlowChain(outChain);
 
   for (auto [origResult, loweredResult] :
        llvm::zip(ifOp.getResults(), llvm::drop_begin(outputIf.getResults()))) {
@@ -1480,6 +1483,8 @@ LogicalResult MOGraphLowering::lower(MO::IfOp ifOp) {
                                                      outChain);
     } else {
       loweringState.emplaceExecuteLoweredValue(origResult, loweredResult);
+      if (!isa<MEF::ChainType>(loweredResult.getType()))
+        loweringState.guardValueWithChain(origResult, outChain);
     }
   }
 
@@ -1492,9 +1497,12 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
   ASSERT_STREAM(MO::isOnHost(whileOp), << "mo.while is for host only");
   MGP::MOOpLoweringState opLoweringState(loweringState, whileOp);
 
-  // Thread the current 'execute' chain through 'cond' and 'body'.
+  // Thread the current 'execute' chain, after any earlier control flow,
+  // through 'cond' and 'body'. Later ops keep the chain from before the
+  // while, as after a grt.if.
   Value rootChain = loweringState.getExecuteChain();
-  Value currentChain = loweringState.getCurrentExecuteChain();
+  Value outerChain = loweringState.getCurrentExecuteChain();
+  Value currentChain = loweringState.joinControlFlowChains(whileOp.getLoc());
   bool currentIsRoot = currentChain == rootChain;
   currentChain = opLoweringState.getGuardChain(currentChain);
 
@@ -1609,8 +1617,11 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
 
   Value outChain = loweredWhileOp.getResult(0);
 
-  loweringState.setCurrentExecuteChain(outChain);
+  // Only users of the while's results, and later ops ordered against control
+  // flow, wait on its out-chain.
   loweringState.setRootExecuteChain(rootChain);
+  loweringState.setCurrentExecuteChain(outerChain);
+  loweringState.addControlFlowChain(outChain);
 
   for (auto [origResult, loweredResult] :
        llvm::zip(whileOp.getResults(),
@@ -1620,96 +1631,12 @@ LogicalResult MOGraphLowering::lower(MO::WhileOp whileOp) {
                                                      outChain);
     } else {
       loweringState.emplaceExecuteLoweredValue(origResult, loweredResult);
+      if (!isa<MEF::ChainType>(loweredResult.getType()))
+        loweringState.guardValueWithChain(origResult, outChain);
     }
   }
 
   opLoweringState.builder.setInsertionPointAfter(loweredWhileOp);
-
-  return success();
-}
-
-// level-wise topological sort
-static LogicalResult levelwiseTopologicalSort(Block *block) {
-  llvm::iterator_range<Block::iterator> ops = *block;
-  if (block->back().hasTrait<OpTrait::IsTerminator>())
-    ops = block->without_terminator();
-
-  if (ops.empty())
-    return success();
-
-  llvm::SmallVector<Operation *> allOps;
-  llvm::DenseMap<Operation *, unsigned> inDegree;
-  llvm::DenseMap<Operation *, llvm::SmallVector<Operation *>> dependents;
-
-  for (Operation &op : ops) {
-    allOps.push_back(&op);
-    inDegree[&op] = 0;
-  }
-
-  for (Operation *op : allOps) {
-    llvm::SetVector<Operation *> dependencies;
-
-    // Walk through operands of all nested operations to find dependencies
-    op->walk</*Order=*/mlir::WalkOrder::PreOrder>([&](Operation *nestedOp) {
-      for (Value operand : nestedOp->getOperands()) {
-        Operation *parent = operand.getDefiningOp();
-        if (!parent)
-          continue; // Block argument
-
-        while (parent->getParentOp() &&
-               parent->getParentOp() != block->getParentOp()) {
-          parent = parent->getParentOp();
-        }
-
-        if (parent->getBlock() == block && parent != op) {
-          dependencies.insert(parent);
-        }
-      }
-
-      if (nestedOp->hasTrait<mlir::OpTrait::IsIsolatedFromAbove>())
-        return WalkResult::skip();
-      return WalkResult::advance();
-    });
-
-    for (Operation *dep : dependencies) {
-      dependents[dep].push_back(op);
-      inDegree[op]++;
-    }
-  }
-
-  Block::iterator nextScheduledOp = block->begin();
-  [[maybe_unused]] unsigned sortedOps = 0;
-
-  llvm::SmallVector<Operation *> readyQueue;
-  for (Operation *op : allOps) {
-    if (inDegree[op] == 0) {
-      readyQueue.push_back(op);
-    }
-  }
-
-  while (!readyQueue.empty()) {
-    llvm::SmallVector<Operation *> currentLevel = std::move(readyQueue);
-    readyQueue.clear();
-
-    for (Operation *op : currentLevel) {
-      ++sortedOps;
-      op->moveBefore(block, nextScheduledOp);
-
-      if (op == &*nextScheduledOp) {
-        ++nextScheduledOp;
-      }
-
-      for (Operation *dependent : dependents[op]) {
-        inDegree[dependent]--;
-        if (inDegree[dependent] == 0) {
-          readyQueue.push_back(dependent);
-        }
-      }
-    }
-  }
-
-  ASSERT_STREAM(sortedOps == allOps.size(),
-                << "Failed to sort the MO operations topologically.");
 
   return success();
 }
@@ -1756,9 +1683,6 @@ LogicalResult MOGraphLowering::lowerOp(Operation &op, Region *parentRegion) {
 }
 
 LogicalResult MOGraphLowering::lowerBlock(Block *block) {
-  if (failed(levelwiseTopologicalSort(block)))
-    return failure();
-
   for (Operation &op : *block) {
     if (failed(lowerOp(op, block->getParent())))
       return failure();
@@ -1911,8 +1835,6 @@ LogicalResult MOGraphLowering::lower(MO::SequenceOp seq) {
 
   // Lower the body ops (excluding the yield terminator) in place; with the
   // overrides installed, getExecuteDevice routes them onto the side streams.
-  if (failed(levelwiseTopologicalSort(&body)))
-    return failure();
   for (Operation &op : body.without_terminator())
     if (failed(lowerOp(op, &seq.getBodyRegion())))
       return failure();
@@ -2322,9 +2244,12 @@ LogicalResult MOGraphLowering::lower(MO::CallOp callOp) {
     return callOp.emitError()
            << "Failed to find target model with name: " << targetModelName;
 
-  // Implicit args first: chain, context, weights registry, devices.
+  // Implicit args first: chain, context, weights registry, devices. The call
+  // runs after any earlier control flow; later ops keep the chain from before
+  // it, as after a grt.if.
+  Value outerChain = loweringState.getCurrentExecuteChain();
   SmallVector<Value> callOperands;
-  callOperands.push_back(loweringState.getCurrentExecuteChain());
+  callOperands.push_back(loweringState.joinControlFlowChains(callOp.getLoc()));
   callOperands.push_back(loweringState.getExecuteMgpContext());
   callOperands.push_back(loweringState.getExecuteWeightsRegistry());
 
@@ -2363,9 +2288,16 @@ LogicalResult MOGraphLowering::lower(MO::CallOp callOp) {
     loweringState.emplaceExecuteLoweredValue(callOp.getResult(i),
                                              mgpCallOp.getResult(i + 1));
     loweringState.guardValueWithChain(mgpCallOp.getResult(i + 1), callOutChain);
+    // An op lowered later looks its operands' guards up by their MO values.
+    if (!isa<MO::ChainType>(callOp.getResult(i).getType()))
+      loweringState.guardValueWithChain(callOp.getResult(i), callOutChain);
   }
 
-  loweringState.setCurrentExecuteChain(callOutChain);
+  // Only users of the call's results, which its chain guards, and later ops
+  // ordered against control flow wait on the call. Its out-chain already
+  // follows every earlier control flow op, so it stands in for them.
+  loweringState.setCurrentExecuteChain(outerChain);
+  loweringState.addControlFlowChain(callOutChain);
 
   return success();
 }
@@ -2443,6 +2375,13 @@ void MOGGToMGPPass::getDependentDialects(DialectRegistry &registry) const {
 void MOGGToMGPPass::runOnOperation() {
   ModuleOp theModule = getOperation();
 
+  // Lowering visits each block in order, so an op must follow both the ops
+  // that define its operands and the ops that declare the parameters it uses.
+  // The sort is stable: it moves an op only to satisfy one of those edges.
+  MO::ParametricTopologyAnalysis topology(theModule);
+  if (failed(topology.topologicallySortAllOpsWithin(&theModule.getRegion())))
+    return signalPassFailure();
+
   // Kernel stubs created during lowering are registered through the cached
   // `SymbolTableAnalysis`, which the pass manager never invalidates.
   SymbolTable &moduleSymbolTable =
@@ -2485,8 +2424,7 @@ void MOGGToMGPPass::runOnOperation() {
     }
 
     completedGraphs.insert(graph.getNameAttr());
-    if (failed(MOGraphLowering(graph, compiledFrameworkLabel.getValue(),
-                               minimumCpuAlignment.getValue(),
+    if (failed(MOGraphLowering(graph, minimumCpuAlignment.getValue(),
                                moduleSymbolTable)
                    .run()))
       return signalPassFailure();

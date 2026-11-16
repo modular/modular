@@ -13,7 +13,7 @@
 #
 # Fuzz target: MXFP8 dynamic block-scaled quantization
 # (`quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=32]`, the
-# `mo.quantize.dynamic.block.scaled` op). This is the BF16 -> fp8_e4m3fn + E8M0
+# `quantization.quantize.dynamic.block.scaled` op). This is the BF16 -> fp8_e4m3fn + E8M0
 # block-scale step that narrows MiniMax-M3-MXFP8 activations at every matmul
 # input boundary: per 32-element K block, compute one `float8_e8m0fnu` scale and
 # cast the scaled values to `float8_e4m3fn`.

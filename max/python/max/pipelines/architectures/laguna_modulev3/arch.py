@@ -49,4 +49,7 @@ laguna_modulev3_arch = SupportedArchitecture(
     reasoning_parser="laguna",
     tool_parser="laguna",
     format_spec=laguna_format_spec,
+    # The name Mach finds the fused DFlash graph by.
+    spec_decode_graph_names={"dflash": "unified_dflash_laguna"},
+    supports_spec_decode_mixed_batches=True,
 )

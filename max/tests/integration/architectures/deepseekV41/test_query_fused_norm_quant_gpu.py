@@ -36,7 +36,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn.legacy.kernels import quantize_dynamic_block_scaled
+from max.nn._graph_ops import quantize_dynamic_block_scaled
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm.rms_norm import RMSNorm
 from max.pipelines.architectures.deepseekV4.layers.rope import apply_rope_tail
@@ -343,17 +343,20 @@ def test_planted_faults_fail(
     device: DeviceRef,
     accel: Accelerator,
 ) -> None:
+    kv_fault = _build(session, device, kv_fault=True)
+    mxfp8_fault = _build(session, device, mxfp8_fault=True)
+    rope = _build_rope(session, device)
     with pytest.raises(AssertionError):
-        _check(_run(_build(session, device, kv_fault=True), accel, 129))
+        _check(_run(kv_fault, accel, 129))
     # A query row moved to its neighbor's place.
     outs = _run(model, accel, 129)
     outs[6] = outs[6].roll(1, dims=1)
     with pytest.raises(AssertionError):
         _check(outs)
     with pytest.raises(AssertionError):
-        _check_copy(_run(_build(session, device, mxfp8_fault=True), accel, 129))
+        _check_copy(_run(mxfp8_fault, accel, 129))
     # The fused query without its RoPE, never rotated.
-    outs = _run(_build_rope(session, device), accel, 129)
+    outs = _run(rope, accel, 129)
     outs[3] = outs[4]
     with pytest.raises(AssertionError):
         _check_rope(outs)

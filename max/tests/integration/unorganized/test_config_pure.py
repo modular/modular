@@ -59,7 +59,6 @@ from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_hf_repo_access,
     mock_pipeline_config_resolve,
-    mock_plan_from_sizes,
 )
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
@@ -696,7 +695,6 @@ class TestDraftModelQuantizationEncoding:
         mock_draft_arch_config.get_max_seq_len.return_value = draft_max_seq_len
 
         mock_arch = Mock()
-        mock_arch.pipeline_model.estimate_weights_size.return_value = 0
         mock_arch.config.initialize.return_value = mock_draft_arch_config
 
         # Encodings settle at construction, so set them up front.
@@ -868,8 +866,86 @@ class TestFloat32WeightFallbackScoping:
         assert config.quantization_encoding == "bfloat16"
 
 
+_BF16_SAFETENSORS = [Path("model-bf16.safetensors")]
+_F16_SAFETENSORS = [Path("model-f16.safetensors")]
+
+
+def _make_repo(files: dict[SupportedEncoding, list[Path]]) -> Mock:
+    """Build a fake ``HuggingFaceRepo`` with safetensors per encoding."""
+
+    def files_for_encoding(
+        encoding: SupportedEncoding,
+        weights_format: WeightsFormat | None = None,
+    ) -> dict[WeightsFormat, list[Path]]:
+        if encoding in files:
+            return {WeightsFormat.safetensors: list(files[encoding])}
+        return {}
+
+    repo = Mock()
+    repo.repo_id = "test/float-repo"
+    repo.repo_type = "online"
+    repo.supported_encodings = list(files)
+    repo.files_for_encoding = Mock(side_effect=files_for_encoding)
+    return repo
+
+
+class TestFloat16WeightCast:
+    """Load-time casts into a float16 model."""
+
+    @mock_hf_repo_access
+    def test_bfloat16_repo_casts_to_requested_float16(self) -> None:
+        config = MAXModelConfig(
+            model_path="test/float-repo", quantization_encoding="float16"
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=_make_repo({"bfloat16": _BF16_SAFETENSORS}),
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
+
+        assert encoding == "float16"
+        assert cast_from == "bfloat16"
+        assert cast_to == "float16"
+
+    @mock_hf_repo_access
+    def test_files_in_requested_encoding_win_over_cast(self) -> None:
+        # bfloat16 is listed first, so a first-match search would cast it.
+        config = MAXModelConfig(
+            model_path="test/float-repo", quantization_encoding="float16"
+        )
+        repo = _make_repo(
+            {"bfloat16": _BF16_SAFETENSORS, "float16": _F16_SAFETENSORS}
+        )
+        with (
+            patch.object(
+                MAXModelConfig,
+                "huggingface_weight_repo",
+                new_callable=PropertyMock,
+                return_value=repo,
+            ),
+            patch(
+                "max.pipelines.lib.config.model_config.supported_encoding_supported_on",
+                return_value=True,
+            ),
+        ):
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
+
+        assert encoding == "float16"
+        assert cast_from is None
+        assert cast_to is None
+
+
 @prepare_registry
-@mock_plan_from_sizes
 def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     # The config layer's model builder is what loads the repo; plain
@@ -913,7 +989,6 @@ def test_validate_model_path__correct_repo_id_provided(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -949,7 +1024,6 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting2(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -985,7 +1059,6 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_quantization_encoding_with_dtype_casting3(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1021,7 +1094,6 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
     "TODO: This test is failing due to some int vs. MagicMock mismatch"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__test_retrieve_factory_with_known_architecture(
     modular_ai_llama_3_1_local_path: str,
 ) -> None:
@@ -1206,7 +1278,6 @@ def test_config__validates_lora_configuration(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 def test_config__validates_lora_works_for_llama(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1241,7 +1312,6 @@ def test_config__validates_lora_works_for_llama(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
 @prepare_registry
-@mock_plan_from_sizes
 @pytest.mark.skipif(
     accelerator_count() < 2, reason="Test requires multiple GPUs"
 )
@@ -2266,6 +2336,14 @@ def test_config__fp4_kv_cache_needs_an_opted_in_architecture() -> None:
         _validate_kv_cache_format(
             KVCacheConfig(kv_cache_format=fmt), DUMMY_LLAMA_ARCH
         )
+
+
+def test_config__float16_kv_cache_format_overrides_encoding() -> None:
+    """A quantized checkpoint can keep its KV cache in float16."""
+    assert cache_dtype_for_encoding("float4_e2m1fnx2", None) == DType.bfloat16
+    assert (
+        cache_dtype_for_encoding("float4_e2m1fnx2", "float16") == DType.float16
+    )
 
 
 def test_config__fp4_kv_cache_format_maps_to_packed_uint8() -> None:

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input-prologue fusion for ``mo.fused_qk_rms_norm_rope.ragged.paged``.
+"""Input-prologue fusion for ``kv_cache.fused_qk_rms_norm_rope.ragged.paged``.
 
 The kernel reads Q through a ``FusedInputTensor`` load lambda. When Q is a view
 over a wider producer -- e.g. a ``slice`` + ``reshape`` that carves Q out of a
@@ -35,10 +35,10 @@ import pytest
 from max import tree
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn._graph_ops import fused_qk_rms_norm_rope_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
@@ -193,28 +193,16 @@ def _kv_params(dtype: DType) -> MHAKVCacheParams:
 
 
 def _run(
-    session: InferenceSession,
+    model: Model,
     device: Accelerator,
     dtype: DType,
     *,
-    interleaved: bool,
     rope_dim: int,
     q_np: np.ndarray,
     gamma: np.ndarray,
     combined_width: int | None,
     q_out_dtype: DType | None = None,
-    fold_cast: bool = True,
 ) -> np.ndarray:
-    graph = _build_graph(
-        dtype,
-        interleaved=interleaved,
-        rope_dim=rope_dim,
-        combined_width=combined_width,
-        q_out_dtype=q_out_dtype,
-        fold_cast=fold_cast,
-    )
-    model = session.load(graph)
-
     # Allocate the paged cache for the batch. Its contents are irrelevant to Q,
     # which is computed purely from the projection.
     kv_rt = paged_kv_cache_inputs(
@@ -272,22 +260,31 @@ def test_fused_matches_unfused(
     # Combined buffer is wider than Q on both sides (offset HEAD_DIM before,
     # HEAD_DIM after) to mimic a real fused `[IndexQ | Q | ...]` layout.
     combined_width = Q_WIDTH + 2 * HEAD_DIM
+    direct_model, fused_model = [
+        session.load(
+            _build_graph(
+                dtype,
+                interleaved=interleaved,
+                rope_dim=rope_dim,
+                combined_width=width,
+            )
+        )
+        for width in (None, combined_width)
+    ]
 
     direct = _run(
-        session,
+        direct_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
     )
     fused = _run(
-        session,
+        fused_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
@@ -321,30 +318,39 @@ def test_q_out_dtype_matches_separate_cast(
         np.float32
     )
     gamma = rng.standard_normal(HEAD_DIM).astype(np.float32)
+    folded_model, separate_model = [
+        session.load(
+            _build_graph(
+                dtype,
+                interleaved=interleaved,
+                rope_dim=rope_dim,
+                combined_width=None,
+                q_out_dtype=q_out_dtype,
+                fold_cast=fold_cast,
+            )
+        )
+        for fold_cast in (True, False)
+    ]
 
     folded = _run(
-        session,
+        folded_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
         q_out_dtype=q_out_dtype,
-        fold_cast=True,
     )
     separate = _run(
-        session,
+        separate_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
         q_out_dtype=q_out_dtype,
-        fold_cast=False,
     )
 
     # Both arms share the same `SIMD.cast`, so an out-of-range Q lands on the

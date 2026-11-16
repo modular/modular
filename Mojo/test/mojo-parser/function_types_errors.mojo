@@ -224,7 +224,7 @@ def main():
 # user hands in something of the wrong type.
 # TODO(MOCO-1106): This doesn't catch when the given argument type
 # (DeviceBuffer[Int]) mismatches the expected argument type
-# (UnsafePointer[Float32]) by only the input parameter (Int vs Float32), that's
+# (Pointer[Float32]) by only the input parameter (Int vs Float32), that's
 # only caught by elaborator for now and is tested elsewhere (search FTAGPUF).
 
 

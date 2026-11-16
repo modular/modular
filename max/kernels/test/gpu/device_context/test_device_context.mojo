@@ -43,6 +43,7 @@ def test_declared_arg_types(ctx: DeviceContext) raises:
         vec_func[ImmUntrackedOrigin, ImmUntrackedOrigin, MutUntrackedOrigin]
     ]()
     comptime arg_types = type_of(compiled).declared_arg_types
+    _ = compiled^
 
     # The list is always present and reports the kernel's arity.
     assert_equal(arg_types.length, 5)

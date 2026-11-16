@@ -15,7 +15,7 @@
 from collections.abc import Iterable
 from enum import Enum, IntEnum
 
-from max._core.dialects import builtin, kgen, mo, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 
 from ..dim import DimLike
@@ -145,7 +145,7 @@ def resize_linear(
     result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeLinearOp,
+        mo.ResizeLinearOp,
         result_type.to_mlir(),
         input,
         shape_to_tensor(size),
@@ -223,7 +223,7 @@ def resize_nearest(
     result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeNearestOp,
+        mo.ResizeNearestOp,
         result_type.to_mlir(),
         input,
         shape_to_tensor(size),
@@ -250,10 +250,11 @@ def resize_bicubic(
     ``antialias``, it is the ``a = -0.5`` cubic stretched by the downscale
     factor with its weights normalized, the filter of PyTorch's
     ``interpolate(mode="bicubic", antialias=True)`` and Pillow's ``BICUBIC``.
-    The antialiased resize runs on the CPU, in float32, and matches PyTorch
-    to float32 rounding. A uint8 ``input`` resizes to a uint8 output: the
-    float32 result rounded half to even and clamped to ``[0, 255]``, the same
-    bits as casting to float32, resizing, and then rounding and clamping.
+    The antialiased resize runs on the CPU. A float32 ``input`` resizes in
+    float32 and matches PyTorch to float32 rounding. A uint8 ``input``
+    resizes to a uint8 output as Pillow's ``BICUBIC`` resizes a uint8 image,
+    bit for bit: in fixed point, rounding and clamping to ``[0, 255]`` after
+    each of its two passes.
 
     .. code-block:: python
 
@@ -356,7 +357,7 @@ def resize_bicubic(
     )
 
     return Graph.current._add_op_generated(
-        rmo.MoResizeBicubicOp,
+        mo.ResizeBicubicOp,
         result_type.to_mlir(),
         input,
         size_operand,

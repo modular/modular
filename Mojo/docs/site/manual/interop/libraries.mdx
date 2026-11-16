@@ -1,0 +1,351 @@
+---
+title: Calling C ABI functions from Mojo
+description: >
+  Call C ABI functions in libraries already in your program, linked at build
+  time, or loaded while the program runs.
+---
+
+Mojo calls functions exported through the C Application Binary Interface
+(ABI). These functions might come from the C standard library, the math
+library (`libm`), a Rust crate with a C ABI interface, or a vendor SDK.
+
+The first example needs no setup. Later examples show how to link your own
+library or load one while the program runs.
+
+:::note
+For Python interoperability, use Mojo's `std.python` package. See
+[Calling Python from Mojo](/docs/manual/python/python-from-mojo).
+:::
+
+## Call a function already available to Mojo
+
+Every Mojo program has access to the C standard library (`libc`) and the
+math library (`libm`). Call their functions with
+[`external_call[]()`](/docs/std/ffi/external_call/). Supply the C symbol
+name, return type, and arguments using types from [`std.ffi`](/docs/std/ffi/):
+
+```mojo
+from std.ffi import external_call, c_int
+
+def main():
+    # abs is part of the C standard library (libc):
+    # int abs(int n);
+    # [name, return type](arguments)
+    var n = external_call["abs", c_int](c_int(-65))
+    print(t"Absolute value is 65: {n == 65}")  # True
+```
+
+`external_call[]()` resolves the named function from libraries available to
+the process. It doesn't load a library.
+
+## How libraries and functions become available
+
+When you launch a program, the operating system creates a *process* and
+loads its code and linked shared libraries. A Mojo process includes its
+own code, Mojo runtime libraries, `libc`, `libm`, and any other libraries
+linked into the program. Other automatically loaded libraries vary by
+platform and Mojo version.
+
+Libraries export *symbols*, the names of functions and global variables.
+Mojo needs both the library and the function's symbol to be available
+before it makes a call.
+
+You have two choices:
+
+- **Make the library available.** Use one already in the process, link it
+  when building, or load it at run time.
+- **Find the function.** Call a known symbol with `external_call[]()`, or
+  look it up by name with `OwnedDLHandle.get_function[]()`.
+
+A *linked library* is available when the program starts. A *dynamically
+loaded library* joins the process when the program opens it. Libraries
+loaded at run time don't need to be linked when building.
+
+{/* markdownlint-disable MD013 MD033 */}
+
+<figure>
+
+  <img src={require('../images/interop/process-contains-light.png').default}
+className="light" alt="A program's process contains its code, plus libc, libm,
+the Mojo runtime libraries, and linked libraries from launch. Loaded libraries
+join later through OwnedDLHandle." />
+
+  <img src={require('../images/interop/process-contains-dark.png').default}
+className="dark" alt="A program's process contains its code, plus libc, libm,
+the Mojo runtime libraries, and linked libraries from launch. Loaded libraries
+join later through OwnedDLHandle." />
+
+  <figcaption><b>Figure 1.</b> A linked library joins the process at launch. A loaded library joins when your code opens it.</figcaption>
+
+</figure>
+
+{/* markdownlint-enable MD013 MD033 */}
+
+### Function lookup APIs
+
+- [`external_call[]()`](/docs/std/ffi/external_call/) calls a function by
+  its symbol name and specified return type. It uses libraries already
+  available to the process.
+- [`OwnedDLHandle`](/docs/std/ffi/OwnedDLHandle/) loads a library at run
+  time when given a library name or path. It opens a handle to
+  libraries already in the process when called without a path.
+- [`get_function[]()`](/docs/std/ffi/OwnedDLHandle/#get_function) looks up a
+  function through a handle and returns a callable. Keep the handle alive
+  and unchanged while you use functions from it. Assigning a new value to
+  the handle closes its library, even while a callable from it is in use.
+
+## Build a library for the examples
+
+The remaining examples call `custom_abs()` from a one-function C library.
+Create `custom.c` in the directory where you will build and run the Mojo
+programs:
+
+```c title="custom.c"
+// int custom_abs(int x);
+int custom_abs(int x) {
+    return x < 0 ? -x : x;  // Like abs(), this overflows for INT_MIN
+}
+```
+
+Build a shared library in the same directory:
+
+```bash
+# macOS (needs the Xcode Command Line Tools)
+cc -dynamiclib custom.c -o libcustom.dylib \
+  -install_name @rpath/libcustom.dylib
+```
+
+```bash
+# Linux (needs a C compiler, such as gcc)
+cc -shared -fPIC custom.c -o libcustom.so
+```
+
+On macOS, `-install_name @rpath/libcustom.dylib` lets a linked program
+find the library through its configured run-time search path.
+
+## Call a library linked at build time
+
+Call a linked function with `external_call[]()`, just as you called
+`abs()`:
+
+```mojo title="main.mojo"
+from std.ffi import external_call, c_int
+
+def main():
+    # int custom_abs(int x);
+    var n = external_call["custom_abs", c_int](c_int(-65))
+    print(t"custom_abs returned 65: {n == 65}")  # True
+```
+
+Link the custom library with `mojo build`. Pass each linker option using
+its own `-Xlinker` flag:
+
+```bash
+# Link libcustom.dylib from the current directory (macOS)
+mojo build main.mojo -o main \
+  -Xlinker -L. -Xlinker -lcustom \
+  -Xlinker -rpath -Xlinker @loader_path
+```
+
+```bash
+# Link libcustom.so from the current directory (Linux)
+mojo build main.mojo -o main \
+  -Xlinker -L. -Xlinker -lcustom \
+  -Xlinker -rpath -Xlinker '$ORIGIN'
+```
+
+Here, `-L.` searches the current directory when linking, `-lcustom`
+selects the custom library, and `-rpath` records where to find it when
+the program starts. `@loader_path` on macOS and `$ORIGIN` on Linux refer
+to the directory containing the executable. `mojo run` also accepts
+`-Xlinker` options before the source filename.
+
+The library must be available when the program starts. A missing library
+prevents the build or launch. A missing symbol used by `external_call[]()`
+usually stops the build or `mojo run`. See
+[Handle missing functions](#handle-missing-functions-and-unsafe-signatures)
+for the exceptions.
+
+## Load a library as the program runs
+
+Use `OwnedDLHandle(path)` to load a library, then `get_function[]()` to
+retrieve a callable. Unlike a linked library, a missing file raises an
+error your code can catch, and so does a missing symbol in
+`get_function[]()`.
+
+### Choose a library path
+
+Library filenames differ by platform. Use
+[`platform_map()`](/docs/std/sys/info/#platform_map) to choose the
+appropriate filename at compile time. If the target has no matching
+entry, compilation fails.
+
+A path containing a slash, such as `./libcustom.so`, opens that file.
+Relative paths start from the working directory, not the executable's
+directory. With a bare name, such as `libm.so.6`, the system loader
+searches its library paths, including configured environment paths.
+Search behavior differs between Linux and macOS.
+
+On Linux, use a versioned name such as `libm.so.6` when loading system
+libraries by name. An unversioned name such as `libm.so` comes from the
+development package for the linker, and it can be a linker script that the
+loader can't open.
+
+### Load and call the custom library
+
+```mojo
+from std.ffi import OwnedDLHandle, c_int
+from std.sys.info import platform_map
+# Use the full or relative (to the working directory) path to
+# each library file
+comptime LIBCUSTOM = platform_map[
+    "libcustom", linux="./libcustom.so", macos="./libcustom.dylib"
+]()
+
+def main():
+    try:
+        var lib = OwnedDLHandle(LIBCUSTOM)  # returns the library handle
+        var custom_abs = lib.get_function[c_int]("custom_abs")
+        var n = custom_abs(c_int(-65))
+        print(t"custom_abs returned 65: {n == 65}")  # True
+    except:
+        print("Failed to load library or missing function")
+        return
+```
+
+You can test whether a symbol exists with
+[`check_symbol()`](/docs/std/ffi/OwnedDLHandle/#check_symbol) before
+retrieving it:
+
+```mojo
+if handle.check_symbol("custom_abs"):
+    var func = handle.get_function[c_int]("custom_abs")
+    # use the function
+```
+
+Here's an example with early return:
+
+```mojo
+from std.ffi import OwnedDLHandle, c_int
+from std.sys.info import platform_map
+
+comptime LIBCUSTOM = platform_map[
+    "libcustom", linux="./libcustom.so", macos="./libcustom.dylib"
+]()
+
+def main():
+    try:
+        var handle = OwnedDLHandle(LIBCUSTOM)  # returns the library handle
+        if not handle.check_symbol("custom_abs"): return  # early return
+
+        var custom_abs = handle.get_function[c_int]("custom_abs")
+        var n = custom_abs(c_int(-65))
+        print(t"custom_abs returned 65: {n == 65}")  # True
+
+    except:
+        print("Failed to load library or missing function")
+        return
+```
+
+## Look up functions in libraries already linked
+
+Sometimes a library must be present at startup, but the program chooses
+which function to call while it runs. Construct `OwnedDLHandle()` without
+a path to open a handle to the libraries already in the process. Then
+use `get_function[]()` to resolve the function name at run time.
+
+Build with the same linker flags shown earlier. On Linux, add
+`-Xlinker --no-as-needed` before `-Xlinker -lcustom` when no code directly
+references the library; otherwise the linker may omit it.
+
+```mojo
+from std.ffi import OwnedDLHandle, c_int
+
+def main():
+    try:
+        # No path: a handle to the libraries already in the process
+        var process = OwnedDLHandle()  # Open a handle to the process's libraries
+        var custom_abs = process.get_function[c_int]("custom_abs")  # Fetch by name
+        var n = custom_abs(c_int(-65))  # Call
+        print(t"custom_abs returned 65: {n == 65}")  # True
+    except:
+        print("Failed to find symbol 'custom_abs'")
+        return
+```
+
+A missing function raises an error, even though the library was linked
+at build time. This is useful for optional functions or names selected
+at run time. The library itself still has to be available at launch.
+
+## Call variadic C functions
+
+A *variadic* function accepts a variable number of arguments, such as
+`printf()` or `snprintf()`. With `external_call[]()`, set `num_fixed_args`
+to the number of arguments declared before the variadic arguments:
+
+```mojo
+from std.ffi import external_call, c_char, c_int, c_size_t
+
+def main():
+    # int snprintf(char *buf, size_t size, const char *fmt, ...);
+    # Three fixed arguments, so num_fixed_args=3.
+    var buf = Array[c_char, 64](uninitialized=True)
+    var written = external_call["snprintf", c_int, num_fixed_args=3](
+        buf.unsafe_ptr(),
+        c_size_t(64),
+        "score: %d/%d".as_c_string_span(), # third fixed argument
+        c_int(7),                          # first variadic argument
+        c_int(10),                         # second variadic argument
+    )
+    print(written, String(unsafe_from_utf8_ptr=buf.unsafe_ptr()))
+    # 11 score: 7/10
+```
+
+:::tip Worth knowing
+Without `num_fixed_args`, Mojo treats every argument as fixed. Some ABIs,
+including Apple's arm64 ABI, pass variadic arguments differently. A call
+that works on Linux may return incorrect results on macOS.
+
+Functions retrieved through `OwnedDLHandle` don't support
+`num_fixed_args`. Use `external_call[]()` for variadic C functions.
+:::
+
+## Choose an approach
+
+The options differ in when the library becomes available and when Mojo
+resolves the function name:
+
+{/* markdownlint-disable MD013 */}
+
+|                    | Global libraries                       | Build-time libraries                        | File-based libraries                                       | Runtime symbol lookup                       |
+|--------------------|----------------------------------------|---------------------------------------------|------------------------------------------------------------|---------------------------------------------|
+| Call               | `external_call[]()`                    | `external_call[]()`                         | `OwnedDLHandle(path)`, `get_function[]()`                  | `OwnedDLHandle()`, `get_function[]()`       |
+| Setup              | None                                   | `-Xlinker` options                          | A path or library name in your code                        | `-Xlinker` options                          |
+| Missing library    | Doesn't apply                          | The build fails, or the program won't start | An error your code can catch                               | The build fails, or the program won't start |
+| Missing function   | Usually, the build or `mojo run` fails | Usually, the build or `mojo run` fails      | An error your code can catch                               | An error your code can catch                |
+| Function name      | Fixed when you build                   | Fixed when you build                        | Can be chosen while the program runs                       | Can be chosen while the program runs        |
+| Library choice     | Fixed by the platform                  | Fixed when you build                        | Can depend on the platform, a setting, or what's installed | Fixed when you build                        |
+| Variadic functions | Supported                              | Supported                                   | Not supported                                              | Not supported                               |
+
+{/* markdownlint-enable MD013 */}
+
+### Handle missing functions and unsafe signatures
+
+A missing symbol in `get_function[]()` raises an error. Use
+`check_symbol()` when its presence is optional. A missing symbol used by
+`external_call[]()` stops `mojo build` or `mojo run`, with two exceptions:
+
+- Mojo checks only the functions your program calls. A function that
+  nothing calls can use a missing symbol, and the program still builds and
+  runs.
+- On Linux, `mojo build --emit shared-lib` builds a library that uses a
+  missing symbol. Loading that library fails.
+
+Neither approach protects against using the name of a different valid
+function.
+
+Neither API validates a foreign function's signature. Incorrect argument
+counts, types, or return types can cause undefined behavior, including
+incorrect results or crashes. See
+[Interop safety](/docs/manual/interop/safety)
+for the checks and responsibilities at the C ABI boundary.

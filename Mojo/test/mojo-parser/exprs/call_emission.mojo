@@ -253,12 +253,11 @@ def test_variadic_and_kw_only_params_indirect[x: Int,
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
 def initialize_in_addrspace(
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
 ):
 
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTR:%[0-9]+]] = kgen.rebind %ptr
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@Pointer::@"__getitem__{{.*}}([[PTR]])
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
 
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
 
@@ -282,11 +281,10 @@ def test_param_refitem[a: SomeRefItemStruct]():
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
 def mutate_in_addrspace(
     a: ExampleRegPassable,
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[PTR:%[0-9]+]] = kgen.rebind %ptr
-    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}([[PTR]])
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
 
     # Use a temporary to get an MLValue in the default address space.
     # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
@@ -330,10 +328,11 @@ def test_matrix_equal[
 # CHECK-LABEL: lit.fn @"partialBind
 def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
-    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"__call_result_tmp__`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, ".rows`2x": !Int, ".cols`2x1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "C.rows`": !Int, "C.cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
-    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int *(0,0), :!Int *(0,1)>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %exp)
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int *(0,0), :!Int *(0,1)>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %__call_result_tmp__)
     var exp = test_matrix_equal[matmul_unrolled[0]](C)
 
 
@@ -450,7 +449,7 @@ struct ThingWithParam[X: Int](Movable where False):
 
 def test_cond_conformance(exclude: Bool):
     comptime local_alias = 42
-    var ptr : UnsafePointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
+    var ptr : Pointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
     ptr[] = exclude
 
 
@@ -534,7 +533,7 @@ struct Value(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String) raises:
     # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
-    # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
+    # CHECK: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
     # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 12})>
     # CHECK-NEXT: lit.ref.store [[V3]], [[V2]]

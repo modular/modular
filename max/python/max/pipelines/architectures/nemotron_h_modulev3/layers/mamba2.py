@@ -23,12 +23,14 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
 from max.nn import Module
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
+    causal_conv1d_varlen_fwd_rows,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows,
 )
+from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -107,8 +109,72 @@ def _ssd_scan(
     )
 
 
+def _causal_conv1d_rows(
+    x: Tensor,
+    weight: Tensor,
+    bias: Tensor,
+    pool: Tensor,
+    rows: Tensor,
+    layer: Tensor,
+    query_start_loc: Tensor,
+    has_initial_state: Tensor,
+    update_state: Tensor,
+    verify_width: Tensor,
+) -> TensorValue:
+    return causal_conv1d_varlen_fwd_rows(
+        x=TensorValue(x),
+        weight=TensorValue(weight),
+        bias=TensorValue(bias),
+        conv_states=BufferValue(pool),
+        query_start_loc=TensorValue(query_start_loc),
+        cache_indices=_layer_rows(rows, layer),
+        has_initial_state=TensorValue(has_initial_state),
+        activation="silu",
+        channels_last=True,
+        update_state=TensorValue(update_state),
+        verify_width=TensorValue(verify_width),
+    )
+
+
+def _ssd_scan_rows(
+    x: Tensor,
+    dt: Tensor,
+    A: Tensor,
+    B: Tensor,
+    C: Tensor,
+    D: Tensor,
+    dt_bias: Tensor,
+    pool: Tensor,
+    rows: Tensor,
+    layer: Tensor,
+    query_start_loc: Tensor,
+    has_initial_state: Tensor,
+    update_state: Tensor,
+    xbc: Tensor,
+    verify_width: Tensor,
+) -> TensorValue:
+    return mamba2_ssd_chunk_scan_varlen_fwd_inplace_rows(
+        x=TensorValue(x),
+        dt=TensorValue(dt),
+        A=TensorValue(A),
+        B=TensorValue(B),
+        C=TensorValue(C),
+        D=TensorValue(D),
+        dt_bias=TensorValue(dt_bias),
+        ssm_pool=BufferValue(pool),
+        query_start_loc=TensorValue(query_start_loc),
+        has_initial_state=TensorValue(has_initial_state),
+        cache_indices=_layer_rows(rows, layer),
+        update_state=TensorValue(update_state),
+        xbc=TensorValue(xbc),
+        verify_width=TensorValue(verify_width),
+    )
+
+
 causal_conv1d = F.functional(_causal_conv1d)
+causal_conv1d_rows = F.functional(_causal_conv1d_rows)
 ssd_scan = F.functional(_ssd_scan)
+ssd_scan_rows = F.functional(_ssd_scan_rows)
 
 
 @tree.dataclass(frozen=True)
@@ -183,21 +249,26 @@ class CausalConv1d(
                 across devices, or none to split the channels as one part.
         """
         self.segments = tuple(segments)
+        # The checkpoint stores the depthwise window as [dim, 1, kernel];
+        # the graph reshapes it to the [dim, kernel] the conv kernel reads.
         if self.segments:
             # A plain split would give a device whole parts. The weights
             # stay on the host, for the graph to cut each device's share.
-            self.weight = Tensor.zeros([dim, kernel_size], device=CPU())
+            self.weight = Tensor.zeros([dim, 1, kernel_size], device=CPU())
             self.bias = Tensor.zeros([dim], device=CPU())
         else:
-            self.weight = shard_axis(Tensor.zeros([dim, kernel_size]))
+            self.weight = shard_axis(Tensor.zeros([dim, 1, kernel_size]))
             self.bias = shard_axis(Tensor.zeros([dim]))
 
     def placed(self, mesh: DeviceMesh) -> tuple[Tensor, Tensor]:
         """Returns the weight and bias, each device holding its channels."""
+        weight = F.reshape(
+            self.weight, [int(self.weight.shape[0]), int(self.weight.shape[2])]
+        )
         if not self.segments:
-            return self.weight, self.bias
+            return weight, self.bias
         return (
-            shard_segments(self.weight, self.segments, mesh),
+            shard_segments(weight, self.segments, mesh),
             shard_segments(self.bias, self.segments, mesh),
         )
 
@@ -223,6 +294,32 @@ class CausalConv1d(
             query_start_loc,
             has_initial_state,
             update_state,
+        )
+
+    def verify(
+        self,
+        x: Tensor,
+        pool: Tensor,
+        rows: Tensor,
+        layer: Tensor,
+        query_start_loc: Tensor,
+        has_initial_state: Tensor,
+        update_state: Tensor,
+        verify_width: Tensor,
+    ) -> Tensor:
+        """Runs the convolution, committing prefill rows in place."""
+        weight, bias = self.placed(x.mesh)
+        return causal_conv1d_rows(
+            x,
+            weight,
+            bias,
+            pool,
+            rows,
+            layer,
+            query_start_loc,
+            has_initial_state,
+            update_state,
+            verify_width,
         )
 
 
@@ -344,6 +441,7 @@ class NemotronHMamba2Mixer(
         has_initial_state: Tensor,
         update_state: Tensor,
         capture_rows: Tensor | None = None,
+        verify_width: Tensor | None = None,
     ) -> tuple[Tensor, MambaReplayCapture | None]:
         """Returns the mixer output and the inputs needed to replay its state.
 
@@ -356,22 +454,40 @@ class NemotronHMamba2Mixer(
                 its rows.
             capture_rows: The ``[captured]`` token rows to return the replay
                 inputs of, or ``None`` to return none.
+            verify_width: The verify's ``[K]`` width operand, which makes a
+                prefill row commit its state in place; required with
+                ``capture_rows``.
         """
+        assert (capture_rows is None) == (verify_width is None), (
+            "a verify passes both its capture rows and its verify width"
+        )
         projected = self.in_proj(x)
         gate, xbc, dt = F.split(
             projected,
             [self.intermediate, self.conv_dim, self.num_heads],
             axis=1,
         )
-        xbc = self.conv1d(
-            xbc,
-            state.conv_pool,
-            state.conv_rows,
-            state.layer,
-            query_start_loc,
-            has_initial_state,
-            update_state,
-        )
+        if verify_width is None:
+            xbc = self.conv1d(
+                xbc,
+                state.conv_pool,
+                state.conv_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+            )
+        else:
+            xbc = self.conv1d.verify(
+                xbc,
+                state.conv_pool,
+                state.conv_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                verify_width,
+            )
         # The conv, scan and norm kernels have no sharding rules. Each
         # device runs them on its own heads, so their outputs stay split on
         # the channel axis like their inputs.
@@ -385,22 +501,41 @@ class NemotronHMamba2Mixer(
         hidden = hidden.reshape([-1, self.num_heads, self.head_dim])
         B = B.reshape([-1, self.n_groups, self.state_size])
         C = C.reshape([-1, self.n_groups, self.state_size])
-        y = ssd_scan(
-            hidden,
-            dt,
-            A,
-            B,
-            C,
-            self.D,
-            self.dt_bias,
-            state.ssm_pool,
-            state.ssm_rows,
-            state.layer,
-            query_start_loc,
-            has_initial_state,
-            update_state,
-            convolved,
-        )
+        if verify_width is None:
+            y = ssd_scan(
+                hidden,
+                dt,
+                A,
+                B,
+                C,
+                self.D,
+                self.dt_bias,
+                state.ssm_pool,
+                state.ssm_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                convolved,
+            )
+        else:
+            y = ssd_scan_rows(
+                hidden,
+                dt,
+                A,
+                B,
+                C,
+                self.D,
+                self.dt_bias,
+                state.ssm_pool,
+                state.ssm_rows,
+                state.layer,
+                query_start_loc,
+                has_initial_state,
+                update_state,
+                convolved,
+                verify_width,
+            )
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP, None)))
         y = self.norm(y.reshape([-1, self.intermediate]), gate)
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP)))

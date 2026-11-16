@@ -15,7 +15,7 @@
 production dispatch path (split-K + combine kernel).
 
 This test exercises the complete production dispatch path:
-  flare_mla_decoding[per_token_scale_rope_aware=True]
+  flare_mla_decoding[per_token_scale_rope_aware=True, kernels=SM100MLA]
     -> flare_mla_decoding_dispatch[per_token_scale_rope_aware=True]
       -> mla_decode_sm100_dispatch[per_token_scale_rope_aware=True]
         -> _mla_decode_sm100_dispatch_impl
@@ -48,7 +48,7 @@ from kv_cache.types import (
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import NullMask
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -512,6 +512,7 @@ def run_test[
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,
@@ -1130,6 +1131,7 @@ def run_test_with_scales[
         config=MHAConfig[fp8_type](num_heads, LOGICAL_DEPTH),
         ragged=True,
         per_token_scale_rope_aware=True,
+        kernels=SM100MLA,
     ](
         out_tt,
         q_tt,

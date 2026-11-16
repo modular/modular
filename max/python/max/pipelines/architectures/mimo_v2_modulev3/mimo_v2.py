@@ -17,8 +17,10 @@ from __future__ import annotations
 import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from typing import ClassVar
 
 from max import functional as F
+from max import tree
 from max.dtype import DType
 from max.graph import TensorValue, ops
 from max.nn import (
@@ -28,26 +30,23 @@ from max.nn import (
     RMSNorm,
     as_subgraph,
 )
+from max.nn.common_layers.kv_cache import kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.ep_config import EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import rms_norm
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
-from ..deepseekV3_modulev3.deepseekV3 import (
-    split_replicated_batch,
-)
+from .batch_split import split_replicated_batch
 from .layers.attention import MiMoV2Attention
 from .layers.moe import (
     MiMoV2ExpertParallelMoE,
@@ -106,13 +105,29 @@ class MiMoV2RMSNorm(RMSNorm):
     """RMSNorm that scales in float32 before the cast, as the reference does.
 
     The reference casts to BF16 before it scales; scaling in float32 and
-    casting once is the order of the kernel that fuses a norm with the
-    allreduce and residual add in front of it.
+    casting once is the order the fused norm-and-quantize kernel takes, so the
+    unfused norm and that kernel multiply and cast at the same point. They
+    still reduce the sum of squares in their own order, so the two agree to
+    that reduction rather than bit for bit.
+    """
+
+    multiply_before_cast: bool = True
+    """Whether the scale multiplies in float32 before the cast to the input
+    dtype.
+
+    MiMo scales before the cast, and the attention's fused norm-and-quantize
+    path passes the same order to its own kernel, so ``forward`` and that
+    kernel agree.
     """
 
     def forward(self, x: Tensor) -> Tensor:
         """Normalizes ``x`` by its RMS, scaling by the weight."""
-        return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)
+        return rms_norm(
+            x,
+            self.weight,
+            self.eps,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
 
 class MiMoV2DecoderLayer(Module[..., Tensor]):
@@ -158,10 +173,11 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
             The layer's output, replicated.
         """
         h = h + self.self_attn(
-            self.input_layernorm(h),
+            h,
             kv_collections,
             freqs_cis,
             input_row_offsets,
+            norm=self.input_layernorm,
         ).to(h.mapping)
         mlp_out: Tensor
         if isinstance(self.mlp, MiMoV2ExpertParallelMoE):
@@ -182,7 +198,7 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
         return h + mlp_out.to(h.mapping)
 
 
-class MiMoV2(Module[..., ModuleV3Outputs]):
+class _MiMoV2(Module[..., ModuleV3Outputs]):
     """MiMo-V2.6-Flash: 48 hybrid SWA/full decoder layers and an untied head.
 
     Weight names are the checkpoint's without ``model.``, as the weight
@@ -219,6 +235,19 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
             len(config.devices),
             config.data_parallel_degree,
             config.ep_config,
+        )
+        # Local routing is sound only while every reduction feeding the router
+        # input is bit-identical across ranks. The allreduce kernels add peers
+        # in global rank order (`comm/allreduce.mojo`), which
+        # `test_allreduce_determinism` checks at 4 ranks on a 4-GPU host and at
+        # 8 on an 8-GPU host; a new allreduce path, NVLS multimem included,
+        # must keep that order or route through device 0. The collective
+        # backend does not enter into it: vendor CCL reduces each element once
+        # and forwards it, so the ranks receive the same bits. Nor does the
+        # width: a two-way sum is order-independent.
+        self.route_on_every_device = self.mode in (
+            ParallelismMode.TP_TP,
+            ParallelismMode.TP_EP,
         )
         # DP attention serves one-device replicas: the batch splits over
         # the mesh (one axis, named "dp") and each replica runs the full
@@ -348,6 +377,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                         norm_topk_prob=config.norm_topk_prob,
                         quant_config=config.quant.experts,
                         ep_batch_manager=ep_batch_manager,
+                        route_on_every_device=self.route_on_every_device,
                     )
                 else:
                     mlp = MiMoV2MoE(
@@ -357,6 +387,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
                         moe_dim=config.moe_intermediate_size,
                         norm_topk_prob=config.norm_topk_prob,
                         quant_config=config.quant.experts,
+                        route_on_every_device=self.route_on_every_device,
                     )
             else:
                 mlp = MiMoV2MLP(
@@ -490,7 +521,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         )
         return rows.rebind_mapping(h.mapping)
 
-    def forward(
+    def _forward(
         self,
         tokens: Tensor,
         return_n_logits: Tensor,
@@ -517,7 +548,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
             data_parallel_splits = kv_inputs[0]
             host_row_offsets = kv_inputs[1]
             kv_inputs = kv_inputs[2:]
-        kv_iter = iter(x._graph_value for x in kv_inputs)
+        kv_iter = iter(kv_input_values(kv_inputs))
         # One entry per device, in declaration order: sliding, then full.
         sliding_kv, full_kv = self.kv_params.unflatten_basic_kv_tree(kv_iter)
         # Whatever the KV tree left in the tail is the EP communication
@@ -593,7 +624,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         )
 
 
-class MiMoV2SpecTarget(MiMoV2):
+class _MiMoV2SpecTarget(_MiMoV2):
     """MiMo-V2 as a speculative target: a verify pass, not a forward.
 
     The base module returns neither variable logits nor hidden states: its
@@ -733,3 +764,56 @@ class MiMoV2SpecTarget(MiMoV2):
         """
         logits = self.lm_head(h)
         return F.allgather(logits, tensor_axis=-1).cast(DType.float32)
+
+
+class MiMoV2Decoder(_MiMoV2SpecTarget):
+    """MiMo-V2 registered through the shared decoder role.
+
+    The registered graph keeps the name the precompiled MEFs and Mach's
+    registry use, and the input order the existing graph declares: the
+    DP batch-split tensors between the batch inputs and the KV leaves,
+    with the EP tail last.
+    """
+
+    graph_name: ClassVar[str] = "MiMoV2"
+    supports_data_parallel: ClassVar[bool] = True
+    input_layout: ClassVar[tuple[str, ...]] = (
+        "tokens",
+        "return_n_logits",
+        "input_row_offsets",
+        "data_parallel_splits",
+        "host_input_row_offsets",
+        "kv",
+        "ep",
+    )
+
+    def __init__(self, config: MiMoV2Config) -> None:
+        manager = (
+            EPBatchManager(config.ep_config)
+            if config.ep_config is not None
+            else None
+        )
+        if config.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
+            super().__init__(config, manager)
+        else:
+            _MiMoV2.__init__(self, config, manager)
+
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the shared semantic batch in the existing physical order."""
+        ep_inputs = tree.leaves(inputs.ep) if inputs.ep is not None else ()
+        split_inputs: tuple[Tensor, ...] = ()
+        if self.dp_attention:
+            assert inputs.data_parallel_splits is not None
+            assert inputs.host_input_row_offsets is not None
+            split_inputs = (
+                inputs.data_parallel_splits,
+                inputs.host_input_row_offsets,
+            )
+        return self._forward(
+            inputs.tokens,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
+            *split_inputs,
+            *tree.leaves(inputs.kv),
+            *ep_inputs,
+        )

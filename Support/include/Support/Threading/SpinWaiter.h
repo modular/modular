@@ -15,6 +15,7 @@
 #define SUPPORT_THREADING_SPINWAITER_H
 
 #include "Support/PlatformUtils.h"
+#include "Support/SymbolExport.h"
 
 #include <chrono>
 #include <cstddef>
@@ -28,7 +29,7 @@ namespace M {
 
 namespace Detail {
 // This is the non-templated base class of SpinWaiter.
-class SpinWaiterBase {
+class MODULAR_CXX_EXPORT SpinWaiterBase {
 protected:
   enum {
     // This is the number of times we will spin without doing any system

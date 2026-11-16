@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// This class provides hooks for performing code completion and signature help
+// This file provides entry points for code completion and signature help
 // within a given Mojo source file.
 //
 //===----------------------------------------------------------------------===//
@@ -21,10 +21,20 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include <optional>
 #include <string>
+#include <vector>
 
-namespace M::KGEN::Mojo {
+namespace M::KGEN {
+class CompilationOptions;
+namespace LIT {
+class MojoParserContext;
+} // namespace LIT
+
+namespace Mojo {
 //===----------------------------------------------------------------------===//
 // CodeCompletionResult
 //===----------------------------------------------------------------------===//
@@ -91,6 +101,46 @@ struct SignatureHelpResult {
   /// The index of the active parameter.
   unsigned activeParameter = 0;
 };
-} // namespace M::KGEN::Mojo
+
+/// Returns code completion results for the given buffer and position.
+std::vector<CodeCompletionResult>
+codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+             MLIRContext *context, const CompilationOptions &options);
+
+/// Returns code completion results after invoking `parserCallback` to parse the
+/// completion buffer.
+std::vector<CodeCompletionResult> codeComplete(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, const CompilationOptions &options,
+    llvm::function_ref<void(LIT::MojoParserContext &, int)> parserCallback,
+    bool disableModuleCaching = false);
+
+/// Returns code completion results using an existing parser context.
+std::vector<CodeCompletionResult>
+codeCompleteInContext(LIT::MojoParserContext &context,
+                      llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+                      llvm::function_ref<void(int)> parserCallback);
+
+/// Returns signature help for the given buffer and position.
+std::optional<SignatureHelpResult>
+signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
+              MLIRContext *context, const CompilationOptions &options);
+
+/// Returns signature help after invoking `parserCallback` to parse the
+/// completion buffer.
+std::optional<SignatureHelpResult> signatureHelp(
+    llvm::MemoryBufferRef buffer, uint64_t position, MLIRContext *context,
+    const CompilationOptions &options,
+    llvm::function_ref<void(LIT::MojoParserContext &, int)> parserCallback,
+    bool disableModuleCaching = false);
+
+/// Returns signature help using an existing parser context.
+std::optional<SignatureHelpResult>
+signatureHelpInContext(LIT::MojoParserContext &context,
+                       llvm::MemoryBufferRef buffer, uint64_t position,
+                       llvm::function_ref<void(int)> parserCallback);
+
+} // namespace Mojo
+} // namespace M::KGEN
 
 #endif // KGEN_MOJOTOOLING_CODECOMPLETE_H

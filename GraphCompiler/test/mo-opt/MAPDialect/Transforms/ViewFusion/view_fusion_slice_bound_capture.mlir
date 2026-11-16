@@ -6,7 +6,7 @@
 // no load site to splice the producer into. ViewFuser must leave it alone
 // rather than assume the capture's sole user is a load (GEX-4229).
 
-mogg.kernel.decl @kernels.consumer registration = "kernels.consumer" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.consumer registration = "kernels.consumer" struct_params = [] is_user_defined = false
 
 // CHECK-LABEL: mo.graph @sliceBoundViewIntoPrologue_noFuse
 // The bound-vector view producer survives -- it is not fused into the prologue.

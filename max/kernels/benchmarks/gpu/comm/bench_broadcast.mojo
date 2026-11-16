@@ -89,7 +89,7 @@ def bench_broadcast[
     use_vendor_ccl: Bool = False,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     num_bytes: Int,
     root: Int,
     max_num_blocks: Optional[Int],
@@ -214,10 +214,10 @@ def bench_broadcast[
 
     @inline(.always)
     def bench_iter(
-        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
                 cb_in.offset_ptr(cache_iter), row_major(length)
             ).as_imm()
@@ -348,7 +348,7 @@ def main() raises:
     assert_true(root >= 0 and root < num_gpus, "root must be in [0, num_gpus)")
 
     # Create GPU context.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

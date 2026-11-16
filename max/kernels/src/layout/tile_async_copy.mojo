@@ -17,7 +17,7 @@ from std.sys import is_nvidia_gpu, size_of
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 from .tile_io import copy_dram_to_sram, copy_dram_to_sram_async
-from .tile_layout import Layout
+from .layout import Layout
 from .tile_tensor import TileTensor
 
 

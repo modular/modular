@@ -23,7 +23,6 @@
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/MojoDiags.h"
-#include "ParserEvaluationContext.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 #include <cstddef>

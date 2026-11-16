@@ -28,11 +28,11 @@ from layout.tensor_core import TensorCore
 from std.utils.coord import DynamicCoord
 
 comptime fp8_dtype = (
-    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    DType.float8_e4m3fnuz if DeviceContext[].default_device_info.compute
     <= MI300X.compute else DType.float8_e4m3fn
 )
 comptime bf8_dtype = (
-    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    DType.float8_e5m2fnuz if DeviceContext[].default_device_info.compute
     <= MI300X.compute else DType.float8_e5m2
 )
 

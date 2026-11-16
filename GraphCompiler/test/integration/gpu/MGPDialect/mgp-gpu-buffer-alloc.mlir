@@ -12,7 +12,7 @@
 // CHECK-LABEL: --- Running 'alloc'
 // CHECK-NEXT: tensor0 = tensor<1x4xui8> [123, 254, 253, 252]
 // CHECK-NEXT: tensor1 = tensor<1x4xui8> [123, 254, 253, 252]
-mgp.model @alloc : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @alloc devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 3
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

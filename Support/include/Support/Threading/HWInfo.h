@@ -17,6 +17,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MemoryBuffer.h"
 
@@ -48,7 +49,7 @@ constexpr size_t kNoAffinity = ~0;
 /// Describes the sockets, physical cores, and virtual cores in a CPU system
 /// when supported by the host os. However does not capture sharing of caches
 /// and plethora of other details. See https://www.open-mpi.org/projects/hwloc/
-struct CPUSystemInfo {
+struct MODULAR_CXX_EXPORT CPUSystemInfo {
   /// A 'virtual' core, generally without dedicated cache or ALU resources.
   /// Systems with hyperthreading can have multiple virtual cores per
   /// 'physical' core.
@@ -93,7 +94,7 @@ constexpr int kAnyNumaNode = -1;
 
 /// Describes the NUMA topology of the system, including NUMA nodes, CPU IDs
 /// per node, and PCI bus to NUMA node mappings.
-struct NUMATopology {
+struct MODULAR_CXX_EXPORT NUMATopology {
   std::vector<int> numaNodes;
   std::map<int, std::vector<size_t>> cpuIdsPerNumaNode;
   std::map<size_t, int> cpuIdToNumaNode;
@@ -129,18 +130,18 @@ inline raw_ostream &operator<<(raw_ostream &os, const CPUSystemInfo &info) {
 }
 
 /// Returns the number of physical cores across all CPU sockets
-size_t getNumPhysicalCores();
+MODULAR_CXX_EXPORT size_t getNumPhysicalCores();
 
 /// Returns the number of hardware threads, including hyperthreads across all
 /// CPU sockets
-size_t getNumLogicalCores();
+MODULAR_CXX_EXPORT size_t getNumLogicalCores();
 
 /// Returns the number of physical performance cores across all CPU sockets. If
 /// not known, will return the total number of physical cores.
-size_t getNumPerformanceCores();
+MODULAR_CXX_EXPORT size_t getNumPerformanceCores();
 
 /// Describes CPU limits in an OS-agnostic way.
-struct CPULimits {
+struct MODULAR_CXX_EXPORT CPULimits {
   /// Unfortunately, millicores are a canonical way of representing the limit,
   /// even though it has far more subtlety than this.
   std::optional<size_t> millicores;
@@ -156,7 +157,7 @@ struct CPULimits {
 namespace Detail {
 #if HAVE_LINUX_X86_SYSTEM_INFO
 /// Specifies CPU quota per period of CPU time allotted by the Linux CFS.
-struct linuxCPULimits {
+struct MODULAR_CXX_EXPORT linuxCPULimits {
   int quota_us = -1;
   int period_us = 100000;
 
@@ -165,20 +166,23 @@ struct linuxCPULimits {
 };
 
 /// Returns the cgroup v1 CPU membership from |buf|.
-ErrorOr<std::string> parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf);
-ErrorOr<linuxCPULimits> parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
-                                         const llvm::MemoryBuffer &periodBuf);
+MODULAR_CXX_EXPORT ErrorOr<std::string>
+parseV1CPUCgroupFile(const llvm::MemoryBuffer &buf);
+MODULAR_CXX_EXPORT ErrorOr<linuxCPULimits>
+parseV1CPULimits(const llvm::MemoryBuffer &quotaBuf,
+                 const llvm::MemoryBuffer &periodBuf);
 
 /// Returns the effective cgroup v2 CPU membership from |buf|. This is
 /// determined by searching /sys/fs/cgroup/ until a cpu.max file is found.
-ErrorOr<std::string>
+MODULAR_CXX_EXPORT ErrorOr<std::string>
 parseV2CPUCgroupFile(const llvm::MemoryBuffer &buf,
                      const std::function<bool(StringRef)> &exists);
-ErrorOr<linuxCPULimits> parseV2CPULimits(const llvm::MemoryBuffer &maxBuf);
+MODULAR_CXX_EXPORT ErrorOr<linuxCPULimits>
+parseV2CPULimits(const llvm::MemoryBuffer &maxBuf);
 
 linuxCPULimits getLinuxCPULimits();
 
-ErrorOr<CPUSystemInfo>
+MODULAR_CXX_EXPORT ErrorOr<CPUSystemInfo>
 getLinuxX86CPUSystemInfoImpl(const cpu_set_t &availableCpus,
                              std::unique_ptr<llvm::MemoryBuffer> buf);
 ErrorOr<CPUSystemInfo> getLinuxX86CPUSystemInfo();

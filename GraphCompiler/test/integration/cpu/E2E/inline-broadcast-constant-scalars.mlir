@@ -38,17 +38,17 @@ mo.graph @scalar_add_neg_inf() -> (!mo.tensor<[4], f32>) {
 // CHECK{LITERAL}: 'scalar_add_neg_inf' returned tensor<4xf32> [-INF, -INF, -INF, -INF]
 
 // A broadcast constant inlined inside an input (prologue) lambda must compile
-// and run. `mul(arg0, broadcast(0.5))` fuses as a prologue into softmax. With
-// all-ones input, every element becomes 0.5, so softmax over each row of 3
-// equal values yields 1/3.
-mo.graph @softmax_mul_const_prologue(%arg0: !mo.tensor<[2, 3], f32>) -> (!mo.tensor<[2, 3], f32>) {
+// and run. `mul(arg0, broadcast(0.5))` fuses as a prologue into the gather's
+// data. With all-ones inputs, every element becomes 0.5 and both rows gather
+// row 1.
+mo.graph @gather_mul_const_prologue(%arg0: !mo.tensor<[2, 3], f32>, %indices: !mo.tensor<[2], si32>) -> (!mo.tensor<[2, 3], f32>) {
   %s = mo.constant <#M.dense_array<5.000000e-01> : tensor<f32>> : !mo.tensor<[], f32>
   %b = mo.static.broadcast_to(%s) : !mo.tensor<[], f32> -> !mo.tensor<[2, 3], f32>
   %mul = mo.mul(%arg0, %b) : !mo.tensor<[2, 3], f32>
-  %sm = mo.reduce.softmax(%mul) [axis = 1] : (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
-  mo.output %sm : !mo.tensor<[2, 3], f32>
+  %g = mo.gather(%mul, %indices) [axis = 0] : (!mo.tensor<[2, 3], f32>, !mo.tensor<[2], si32>) -> !mo.tensor<[2, 3], f32>
+  mo.output %g : !mo.tensor<[2, 3], f32>
 }
-// CHECK{LITERAL}: 'softmax_mul_const_prologue' returned tensor<2x3xf32> [3.333333e-01, 3.333333e-01, 3.333333e-01, 3.333333e-01, 3.333333e-01, 3.333333e-01]
+// CHECK{LITERAL}: 'gather_mul_const_prologue' returned tensor<2x3xf32> [5.000000e-01, 5.000000e-01, 5.000000e-01, 5.000000e-01, 5.000000e-01, 5.000000e-01]
 
 // A broadcast constant inlined inside an output (epilogue) lambda must compile
 // and run. `mul(matmul(A, B), broadcast(0.25))` fuses as an epilogue on the

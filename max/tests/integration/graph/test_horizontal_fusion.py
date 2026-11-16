@@ -36,10 +36,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fusion_utils import run_and_verify_fusion
+from fusion_utils import execute, load_and_verify_fusion, run_and_verify_fusion
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
@@ -231,20 +231,6 @@ def test_two_adds_share_operand_dynamic(session: InferenceSession) -> None:
     np.testing.assert_allclose(out1, a + c, rtol=1e-5, atol=1e-5)
 
 
-def _execute(model: Model, *inputs: np.ndarray) -> tuple[np.ndarray, ...]:
-    # A 0-d bool predicate goes in as a plain bool, as in
-    # `run_and_verify_fusion`.
-    results = model.execute(
-        *(
-            bool(arr)
-            if arr.dtype == np.bool_ and arr.shape == ()
-            else Buffer.from_numpy(arr).to(model.input_devices[i])
-            for i, arr in enumerate(inputs)
-        )
-    )
-    return tuple(r.to_numpy() for r in results)
-
-
 def test_siblings_in_branch(session: InferenceSession) -> None:
     """Siblings inside a conditional's branch fuse there, in that branch.
 
@@ -283,7 +269,7 @@ def test_siblings_in_branch(session: InferenceSession) -> None:
         (np.array(True), (a + b, a + c)),
         (np.array(False), (a - b, a - c)),
     ):
-        out0, out1 = _execute(model, a, b, c, pred_np)
+        out0, out1 = execute(model, a, b, c, pred_np)
         np.testing.assert_allclose(out0, expected[0], rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(out1, expected[1], rtol=1e-5, atol=1e-5)
 
@@ -330,7 +316,7 @@ def test_reader_in_branch_between_siblings(session: InferenceSession) -> None:
         (np.array(True), (a + b) * c),
         (np.array(False), c),
     ):
-        out_t, out_r = _execute(model, a, b, c, d, pred_np)
+        out_t, out_r = execute(model, a, b, c, d, pred_np)
         np.testing.assert_allclose(out_t, a + d, rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(out_r, branch, rtol=1e-5, atol=1e-5)
 
@@ -498,13 +484,12 @@ def test_matmul_result_read_in_branch(session: InferenceSession) -> None:
     b_np = np.random.randn(8, 8).astype(np.float32)
     y_np = np.random.randn(8, 8).astype(np.float32)
     mm_np = a_np @ b_np
+    model = load_and_verify_fusion(session, graph)
     for pred_np, branch in (
         (np.array(True), mm_np * y_np),
         (np.array(False), mm_np - y_np),
     ):
-        (out,) = run_and_verify_fusion(
-            session, graph, a_np, b_np, y_np, pred_np
-        )
+        (out,) = execute(model, a_np, b_np, y_np, pred_np)
         np.testing.assert_allclose(out, mm_np + branch, rtol=1e-4, atol=1e-4)
 
 

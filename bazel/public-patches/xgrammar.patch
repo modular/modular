@@ -4664,8 +4664,18 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
      ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
    }
  
-@@ -1175,44 +3336,49 @@ void JSONSchemaConverter::AddBasicRules() {
-     indent_manager_ = IndentManager(std::nullopt, ", ", false, std::nullopt);
+@@ -1170,49 +3331,57 @@ void JSONSchemaConverter::AddBasicRules() {
+   // Create basic rules with a temporary indent manager for compact format
+   auto saved_indent_manager = indent_manager_;
++  // The cached free-form rules use the node's item separator and whitespace
++  // bound. A free-form value then accepts the same separators and whitespace
++  // as a typed value.
+   if (any_whitespace_) {
+-    indent_manager_ = IndentManager(std::nullopt, ",", true, std::nullopt);
++    indent_manager_ = IndentManager(std::nullopt, item_sep_, true, max_whitespace_cnt_);
+   } else {
+-    indent_manager_ = IndentManager(std::nullopt, ", ", false, std::nullopt);
++    indent_manager_ = IndentManager(std::nullopt, item_sep_, false, std::nullopt);
    }
  
 +  const GenerationContext value_ctx = MakeValueContext();
@@ -8762,15 +8772,15 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
 +          spec.property_names, value_rule, spec.min_properties, spec.max_properties
 +      );
 +    }
-+    if (xml_require_paired_tags_ &&
-+        spec.min_properties > static_cast<int>(spec.properties.size())) {
++    bool needs_undeclared = spec.min_properties > static_cast<int>(spec.properties.size());
++    if (xml_require_paired_tags_ && nested && needs_undeclared) {
 +      XGRAMMAR_LOG(FATAL)
 +          << "unsupported: XML object requires undeclared keys whose tags cannot be paired";
 +    }
 +    // Variable close tags cannot backreference their open key. The paired-tag
-+    // policy drops them; legacy mode keeps extras when minProperties needs them.
-+    bool keep_undeclared = !xml_require_paired_tags_ &&
-+                           spec.min_properties > static_cast<int>(spec.properties.size());
++    // policy drops them; legacy mode keeps extras when minProperties needs them,
++    // and so does a paired root, which has no tag to hold them as a JSON leaf.
++    bool keep_undeclared = needs_undeclared;
 +    ObjectSpec declared_only = spec;
 +    declared_only.allow_additional_properties = keep_undeclared && spec.allow_additional_properties;
 +    declared_only.allow_unevaluated_properties = keep_undeclared && spec.allow_unevaluated_properties;

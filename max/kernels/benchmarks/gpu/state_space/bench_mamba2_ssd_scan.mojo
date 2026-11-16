@@ -74,18 +74,18 @@ struct SSDSampling(SSDRunObserver):
 
     @staticmethod
     def observe[
-        Operation: def(DeviceContext, Int) raises -> None,
+        Operation: def(DeviceContext[], Int) raises -> None,
         //,
         grouped_pair: Bool,
         paired: Bool,
         grouped_mode: Int,
-    ](ctx: DeviceContext, operation: Operation) raises:
+    ](ctx: DeviceContext[], operation: Operation) raises:
         var report = Bench()
 
-        def baseline(lctx: DeviceContext) raises {imm operation}:
+        def baseline(lctx: DeviceContext[]) raises {imm operation}:
             operation(lctx, SSD_BASELINE)
 
-        def candidate(lctx: DeviceContext) raises {imm operation}:
+        def candidate(lctx: DeviceContext[]) raises {imm operation}:
             operation(lctx, SSD_CANDIDATE)
 
         comptime if grouped_pair:
@@ -258,7 +258,7 @@ def _bench_ssd[
     ngroups: Int,
     max_slots: Int,
     seq_lengths: List[Int],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     comptime dtype = DType.bfloat16
     comptime DSTATE = 128
@@ -373,7 +373,7 @@ def _bench_ssd[
 
 
 def _benchmark_ssd_shape(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     nheads: Int,
     head_dim: Int,
     ngroups: Int,

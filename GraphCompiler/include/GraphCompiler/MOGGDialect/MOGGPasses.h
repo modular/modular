@@ -55,16 +55,6 @@ inline bool hasDebuginfo(KernelBuildType kernelBuildType) {
          kernelBuildType == KernelBuildType::kDebug;
 }
 
-inline std::string buildTypeString(KernelBuildType bt) {
-  if (bt == KernelBuildType::kRelease)
-    return "release";
-  if (bt == KernelBuildType::kRelWithDebInfo)
-    return "relwithdebinfo";
-  if (bt == KernelBuildType::kDebug)
-    return "debug";
-  llvm_unreachable("All cases should be covered");
-}
-
 /// Thread-safe one-time LLVM initialization.
 void initLLVM();
 

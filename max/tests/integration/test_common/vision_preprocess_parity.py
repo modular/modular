@@ -14,17 +14,10 @@
 
 Each model family's test runs its exported preprocessing graph on what a
 serving engine passes and compares every output with what MAX serve feeds
-the vision tower. Outputs other than the pixels match bit for bit. The
-graph resizes uint8 pixels, accumulating in float32 and rounding once, to
-uint8, at the end. Where MAX serve resizes with Pillow, whose uint8 resize
-rounds and clamps between its two passes, the two land within a level or
-two of each other on smooth content, so the pixels of :func:`scene` and
-:func:`gradient` images match within :data:`MAX_LEVELS` levels and
-:data:`MEAN_LEVELS` on average. Where a hard edge near black or white
-overshoots [0, 255] between Pillow's passes, its clamp moves the pixels
-around the edge further, so :func:`chart` images, like the charts and text
-a model reads, match within the looser bounds of ``check``'s
-``hard_edges`` mode.
+the vision tower, bit for bit. The graph's uint8 resize is Pillow's, so the
+pixels match on smooth content such as :func:`scene` and :func:`gradient`
+images and on the hard edges of :func:`chart` images, which overshoot
+[0, 255] between Pillow's two passes.
 """
 
 from __future__ import annotations
@@ -37,36 +30,6 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.tensor.compilation import CompiledCallable
 from PIL import Image
-
-MAX_LEVELS = 2
-"""The most a resized pixel may differ from Pillow's, in uint8 levels."""
-
-MEAN_LEVELS = 0.3
-"""The most resized pixels may differ from Pillow's on average, in uint8
-levels. The cases differ by 0.21 at most."""
-
-EDGE_FRACTION = 0.05
-"""The most of a hard-edged image's resized pixels that may differ from
-Pillow's by more than :data:`MAX_LEVELS`.
-
-Pillow's clamp between its passes, not the graph, makes the difference:
-Pillow resizing the same images in float mode, rounding once, misses its
-own uint8 resize by about as much. On the chart cases, 1.4% to 2.2% of
-values differ by more than 2 levels, the 99.9th percentile is 5 to 16
-levels and the mean 0.15 to 0.21, so a bound of 99.9% within 2 levels
-cannot hold. 5% leaves more than twice the margin, and
-:data:`MEAN_LEVELS`, which a misplaced or mis-weighted resize fails at
-once, stays as strict as for smooth content."""
-
-EDGE_MAX_LEVELS = 47
-"""The most a hard-edged image's resized pixel may differ from Pillow's, in
-uint8 levels: the most Pillow's clamp can move one.
-
-Pillow's bicubic puts at most 0.135 of its weight on negative taps, so its
-first pass overshoots [0, 255] by at most 35 levels, and the second pass's
-weights, at most 1.27 in magnitude, carry that clamp into the result:
-1.27 * (35 + 0.5) + 1 < 47 with the roundings. The chart cases differ by 28
-at most."""
 
 
 def noise(
@@ -217,75 +180,25 @@ def bits(buffer: Buffer) -> npt.NDArray[Any]:
     return buffer.to_numpy()
 
 
-def _floats(buffer: Buffer) -> npt.NDArray[np.float64]:
-    """The buffer's values as float64, bfloat16 widened exactly."""
-    raw = bits(buffer)
-    if buffer.dtype == DType.bfloat16:
-        raw = (raw.astype(np.uint32) << 16).view(np.float32)
-    return raw.astype(np.float64)
-
-
-def _ulp(values: npt.NDArray[np.float64], dtype: DType) -> npt.NDArray[Any]:
-    """The spacing of ``dtype`` at each of ``values``."""
-    mantissa = 7 if dtype == DType.bfloat16 else 23
-    exponent = np.floor(np.log2(np.maximum(np.abs(values), 2.0**-126)))
-    return 2.0 ** (exponent - mantissa)
-
-
 def check(
     graph: CompiledCallable[..., Any],
     case: str,
     outputs: list[Buffer],
     served: list[Buffer],
-    level: float | npt.NDArray[np.float32] | None = None,
-    hard_edges: bool = False,
 ) -> None:
     """Asserts that the graph's outputs are what MAX serve feeds the tower,
-    naming the case and output path of any difference.
+    bit for bit, naming the case and output path of any difference.
 
     Args:
         graph: The compiled preprocessing graph.
         case: The case's name, for the failure message.
         outputs: The graph's outputs.
         served: What MAX serve feeds the tower, in the same order.
-        level: How far one uint8 level moves the first output, the pixels,
-            broadcast over its last axis: a scalar, or one value per
-            element of that axis. ``None`` compares the pixels bit for
-            bit, as every other output is; otherwise each pixel may differ
-            by :data:`MAX_LEVELS` levels plus an ulp of its dtype's
-            rounding, and all by :data:`MEAN_LEVELS` on average.
-        hard_edges: Whether the image has hard edges near black or white,
-            whose pixels may instead differ by :data:`EDGE_MAX_LEVELS`
-            levels, and :data:`EDGE_FRACTION` of them by more than
-            :data:`MAX_LEVELS`.
     """
     paths = graph.out_tree.leaf_paths
     assert len(outputs) == len(served) == len(paths), case
-    for i, (path, got, want) in enumerate(
-        zip(paths, outputs, served, strict=True)
-    ):
+    for path, got, want in zip(paths, outputs, served, strict=True):
         assert got.dtype == want.dtype, f"{case}: {path}"
-        if i == 0 and level is not None:
-            got_values, want_values = _floats(got), _floats(want)
-            assert got_values.shape == want_values.shape, f"{case}: {path}"
-            ulp = _ulp(np.maximum(abs(got_values), abs(want_values)), got.dtype)
-            diff = np.abs(got_values - want_values)
-            levels = np.maximum(diff - ulp, 0) / np.abs(level)
-            most = EDGE_MAX_LEVELS if hard_edges else MAX_LEVELS
-            assert levels.max(initial=0) <= most, (
-                f"{case}: {path} differs by {levels.max():.2f} levels"
-            )
-            if hard_edges:
-                beyond = (levels > MAX_LEVELS).mean() if levels.size else 0.0
-                assert beyond <= EDGE_FRACTION, (
-                    f"{case}: {path} differs by more than {MAX_LEVELS}"
-                    f" levels in {beyond:.2%} of its values"
-                )
-            mean = (diff / np.abs(level)).mean() if diff.size else 0.0
-            assert mean <= MEAN_LEVELS, (
-                f"{case}: {path} differs by {mean:.4f} levels on average"
-            )
-            continue
         np.testing.assert_array_equal(
             bits(got), bits(want), err_msg=f"{case}: {path}"
         )

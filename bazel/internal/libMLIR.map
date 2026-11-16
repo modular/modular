@@ -1,0 +1,214 @@
+# Exports of libMLIR on Linux, linked with --version-script.
+#
+# MLIR marks nothing for export, so libMLIR would export every symbol, and
+# --gc-sections keeps all code an exported symbol reaches. This script hides
+# the parts of MLIR that this repo doesn't use, which takes the production
+# library from about 105 MB to 26 MB.
+#
+# lld hides a symbol when it matches a `local` pattern and no `global` pattern
+# other than `*`. Write only patterns with a wildcard: a pattern without one
+# fails the link when MLIR removes or renames its symbol.
+#
+# A link that fails with an undefined MLIR symbol needs a `global` pattern for
+# its class or function, for example `mlir::LLVM::LLVMPointerType::*;`. An
+# unquoted pattern can't contain `(`, `<`, `>`, `,`, a space or a single `:`,
+# so write `?` in their place. Driver plugins link with unresolved symbols
+# allowed, so for them a missing symbol shows up when the plugin is loaded.
+{
+  global:
+    *;
+    extern "C++" {
+      # Ops of the dialects that are hidden below but that this repo uses.
+      mlir::LLVM::*Op::*;
+      mlir::arith::*Op::*;
+      mlir::func::*Op::*;
+      mlir::index::*Op::*;
+      mlir::scf::*Op::*;
+      mlir::math::FloorOp::*;
+      mlir::math::MathDialect::*;
+      mlir::memref::CastOp::*;
+      mlir::memref::DimOp::*;
+      mlir::memref::LoadOp::*;
+      mlir::memref::MemRefDialect::*;
+      mlir::vector::BroadcastOp::*;
+      mlir::vector::ExtractOp::*;
+      mlir::vector::VectorDialect::*;
+      mlir::vector::isBroadcastableTo?*;
+      # Other classes and functions this repo uses from the hidden dialects.
+      mlir::arith::ArithDialect::*;
+      mlir::async::AsyncDialect::*;
+      mlir::func::FuncDialect::*;
+      mlir::gpu::TargetOptions::*;
+      mlir::index::IndexDialect::*;
+      mlir::index::populateIndexToLLVMConversionPatterns?*;
+      mlir::irdl::IRDLDialect::*;
+      mlir::irdl::loadDialects?*;
+      mlir::irdl::symbolizeVariadicity?*;
+      mlir::irdl::VariadicityArrayAttr::*;
+      mlir::irdl::VariadicityAttr::*;
+      mlir::LLVM::AsmDialectAttr::*;
+      mlir::LLVM::BlockAddressAttr::*;
+      mlir::LLVM::DIAnnotationAttr::*;
+      mlir::LLVM::DIBasicTypeAttr::*;
+      mlir::LLVM::DICompileUnitAttr::*;
+      mlir::LLVM::DICompositeTypeAttr::*;
+      mlir::LLVM::DIDerivedTypeAttr::*;
+      mlir::LLVM::DIExpressionAttr::*;
+      mlir::LLVM::DIExpressionElemAttr::*;
+      mlir::LLVM::DIFileAttr::*;
+      mlir::LLVM::DILexicalBlockAttr::*;
+      mlir::LLVM::DILocalVariableAttr::*;
+      mlir::LLVM::DIScopeAttr::*;
+      mlir::LLVM::DISubprogramAttr::*;
+      mlir::LLVM::DISubrangeAttr::*;
+      mlir::LLVM::DISubroutineTypeAttr::*;
+      mlir::LLVM::FastmathFlagsAttr::*;
+      mlir::LLVM::framePointerKind::*;
+      mlir::LLVM::FramePointerKindAttr::*;
+      mlir::LLVM::FunctionEntryCountAttr::*;
+      mlir::LLVM::isCompatibleType?*;
+      mlir::LLVM::LLVMArrayType::*;
+      mlir::LLVM::LLVMDialect::*;
+      mlir::LLVM::LLVMFunctionType::*;
+      mlir::LLVM::LLVMPointerType::*;
+      mlir::LLVM::LLVMStructType::*;
+      mlir::LLVM::ModuleFlagAttr::*;
+      mlir::LLVM::ModuleToObject::*;
+      mlir::LLVM::registerInlinerInterface?*;
+      mlir::LLVM::vector_reduce_and::create?*;
+      mlir::LLVM::vector_reduce_or::create?*;
+      mlir::LLVM::VScaleRangeAttr::*;
+      mlir::NVVM::NVVMDialect::*;
+      mlir::quant::QuantDialect::*;
+      mlir::quant::QuantizedType::*;
+      mlir::quant::UniformQuantizedPerAxisType::*;
+      mlir::quant::UniformQuantizedType::*;
+      mlir::ROCDL::ROCDLDialect::*;
+      mlir::ROCDL::ROCDLTargetAttr::*;
+      mlir::ROCDL::SerializeGPUModuleBase::*;
+      mlir::scf::SCFDialect::*;
+      mlir::ub::PoisonOp::*;
+      mlir::ub::UBDialect::*;
+      vtable?for?mlir::ROCDL::SerializeGPUModuleBase;
+      # Pass constructors and registration functions this repo calls.
+      mlir::createAsyncFuncToAsyncRuntimePass?*;
+      mlir::createAsyncParallelForPass?*;
+      mlir::createAsyncRuntimePolicyBasedRefCountingPass?*;
+      mlir::createAsyncRuntimeRefCountingOptPass?*;
+      mlir::createAsyncRuntimeRefCountingPass?*;
+      mlir::createAsyncToAsyncRuntimePass?*;
+      mlir::createBubbleDownMemorySpaceCasts?*;
+      mlir::createCSEPass?*;
+      mlir::createCanonicalizerPass?*;
+      mlir::createCompositeFixedPointPass?*;
+      mlir::createControlFlowSinkPass?*;
+      mlir::createConvertIndexToLLVMPass?*;
+      mlir::createConvertNVVMToLLVMPass?*;
+      mlir::createGenerateRuntimeVerificationPass?*;
+      mlir::createInlinerPass?*;
+      mlir::createLocationSnapshot?*;
+      mlir::createLoopInvariantCodeMotionPass?*;
+      mlir::createLoopInvariantSubsetHoistingPass?*;
+      mlir::createMem2Reg?*;
+      mlir::createOutputStrategy?*;
+      mlir::createPrintIRPass?*;
+      mlir::createPrintOpStatsPass?*;
+      mlir::createReconcileUnrealizedCastsPass?*;
+      mlir::createRemoveDeadValuesPass?*;
+      mlir::createSCCPPass?*;
+      mlir::createSROA?*;
+      mlir::createStripDebugInfoPass?*;
+      mlir::createSymbolDCEPass?*;
+      mlir::createSymbolPrivatizePass?*;
+      mlir::createTopologicalSortPass?*;
+      mlir::createTrivialDeadCodeEliminationPass?*;
+      mlir::createViewOpGraphPass?*;
+      mlir::registerAndParseCLIOptions?abi?cxx11??*;
+      mlir::registerAsmPrinterCLOptions?*;
+      mlir::registerBuiltinDialectTranslation?*;
+      mlir::registerDefaultTimingManagerCLOptions?*;
+      mlir::registerLLVMDialectTranslation?*;
+      mlir::registerMLIRContextCLOptions?*;
+      mlir::registerNVVMDialectTranslation?*;
+      mlir::registerPass?*;
+      mlir::registerPassManagerCLOptions?*;
+      mlir::registerPassPipeline?*;
+      mlir::registerROCDLDialectTranslation?*;
+    };
+  local:
+    # C++ names outside any namespace: classes and functions that MLIR keeps
+    # private to one source file, such as rewrite patterns.
+    _Z[0-9]*;
+    _ZT[VIS][0-9]*;
+    _ZN[1-9][0-9]*;
+    _ZNK[1-9][0-9]*;
+    _ZN[1-35-9][A-Za-z_]*;
+    _ZNK[1-35-9][A-Za-z_]*;
+    extern "C++" {
+      # Pass constructors and registration functions. Each one keeps its
+      # passes and dialects alive.
+      mlir::create*;
+      mlir::register*;
+      mlir::populate*;
+      # Dialects and libraries this repo uses little or not at all. The leading
+      # `*` also hides templates instantiated for them, such as
+      # RegisteredOperationName::Model<mlir::spirv::...>.
+      *mlir::acc::*;
+      *mlir::accomp::*;
+      *mlir::affine::*;
+      *mlir::amdgpu::*;
+      *mlir::arith::*;
+      *mlir::arm_neon::*;
+      *mlir::arm_sme::*;
+      *mlir::arm_sve::*;
+      *mlir::async::*;
+      *mlir::bufferization::*;
+      *mlir::builtin::*;
+      *mlir::builtin_dialect_detail::*;
+      *mlir::bytecode::*;
+      *mlir::cf::*;
+      *mlir::complex::*;
+      *mlir::dlti::*;
+      *mlir::emitc::*;
+      *mlir::func::*;
+      *mlir::gpu::*;
+      *mlir::index::*;
+      *mlir::irdl::*;
+      *mlir::linalg::*;
+      *mlir::LLVM::*;
+      *mlir::matcher::*;
+      *mlir::math::*;
+      *mlir::memoryslot::*;
+      *mlir::memref::*;
+      *mlir::ml_program::*;
+      *mlir::mpi::*;
+      *mlir::nvgpu::*;
+      *mlir::NVVM::*;
+      *mlir::omp::*;
+      *mlir::op_definition_impl::*;
+      *mlir::pdl::*;
+      *mlir::pdl_interp::*;
+      *mlir::pdl_to_pdl_interp::*;
+      *mlir::presburger::*;
+      *mlir::ptr::*;
+      *mlir::quant::*;
+      *mlir::ROCDL::*;
+      *mlir::scf::*;
+      *mlir::shape::*;
+      *mlir::shard::*;
+      *mlir::sparse_tensor::*;
+      *mlir::spirv::*;
+      *mlir::tensor::*;
+      *mlir::tosa::*;
+      *mlir::tracing::*;
+      *mlir::transform::*;
+      *mlir::ub::*;
+      *mlir::utils::*;
+      *mlir::vcix::*;
+      *mlir::vector::*;
+      *mlir::wasmssa::*;
+      *mlir::x86::*;
+      *mlir::xegpu::*;
+      *mlir::xevm::*;
+    };
+};

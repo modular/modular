@@ -22,5 +22,9 @@ draft_model:
 speculative:
   speculative_method: dspark
   num_speculative_tokens: 7
+  num_speculative_tokens_per_batch_size:
+    - batch_start: 1
+      batch_end: 128
+      num_tokens: 5
 runtime:
   prefer_module_v3: true

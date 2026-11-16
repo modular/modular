@@ -52,7 +52,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
     row_major,
 )
 from layout.coord import DynamicCoord
@@ -1610,9 +1609,9 @@ def conv_transposed_cpu[
     def description_fn() {imm} -> String:
         # fmt: off
         return String(
-            trace_arg("input", coord_to_index_list(input.layout.shape_coord())),
-            ";", trace_arg("filter", coord_to_index_list(filter.layout.shape_coord())),
-            ";", trace_arg("output", coord_to_index_list(output.layout.shape_coord())),
+            trace_arg("input", input.layout.shape_coord()),
+            ";", trace_arg("filter", filter.layout.shape_coord()),
+            ";", trace_arg("output", output.layout.shape_coord()),
             ";group=1",
             ";stride=", stride,
             ";padding_d=", Index(0, 0),
@@ -1833,7 +1832,7 @@ def conv_transposed_gpu[
         var vec = output_tmp.load[width=_width, alignment=align](coords)
         elementwise_epilogue(coords, vec)
 
-    elementwise[simd_width_of[output_type](), target="gpu"](
+    elementwise[simd_width_of[output_type]()](
         epilogue_wrapper, output_layout.shape_coord(), ctx
     )
 

@@ -15,41 +15,28 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
 
 from max import tree
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Graph,
-    TensorType,
-    TensorValue,
-    Type,
-    Value,
-    Weight,
-    ops,
-)
-from max.graph import Module as GraphModule
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.graph_groups import ConvStates
-from max.nn.legacy.kv_cache import (
+from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
+from max.nn._graph_ops.state_space import causal_conv1d_varlen_fwd
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
-    KVCacheParamInterface,
     PagedCacheValues,
+    RecurrentStateInputsPerDevice,
 )
+from max.nn.legacy.embedding import Embedding
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.transformer import logits_postprocess
+from max.pipelines.lib.registration_graph_api import decoder_outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 
 from ..llama3.model_config import create_rope_embedding
 from .full_attention import LFM2FullAttention
-from .model_config import LFM2Config
+from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, LFM2Config
 
 
 class LFM2MLP(Module):
@@ -127,10 +114,18 @@ class LFM2ShortConv(Module):
     def __call__(
         self,
         x: TensorValue,
-        conv_state: TensorValue,
+        conv_pool: BufferValue,
+        conv_rows: TensorValue,
+        has_initial_state: TensorValue,
         input_row_offsets: TensorValue,
-    ) -> tuple[TensorValue, TensorValue]:
-        """Runs the short convolution over ``x``, advancing its state."""
+    ) -> TensorValue:
+        """Runs the gated short conv over a ragged batch.
+
+        The depthwise causal conv (no activation) resumes from each
+        request's window of past inputs at ``conv_pool[conv_rows[b]]`` and
+        writes the advanced window back in place, so a prefill chunk and a
+        decode step run the same op.
+        """
         bcx = self.in_proj(x)
         b, c, xv = ops.split(
             bcx,
@@ -138,97 +133,27 @@ class LFM2ShortConv(Module):
             axis=-1,
         )
         bx = b * xv
-        conv_w = self.conv_weight.reshape([self.hidden_size, self.kernel_size])
-        conv_w = ops.unsqueeze(conv_w, 0)
-        conv_b = self.conv_bias
-
-        out_init = bx * 0.0
-        t_init = ops.constant(0, DType.int32, device=DeviceRef.CPU())
-        seq_len = ops.cast(ops.shape_to_tensor(x.shape)[0], DType.int32).to(
-            DeviceRef.CPU()
-        )
-        positions = ops.range(
-            start=ops.constant(0, DType.int32, device=DeviceRef.CPU()),
-            stop=seq_len,
-            step=ops.constant(1, DType.int32, device=DeviceRef.CPU()),
-            out_dim=bx.shape[0],
-            dtype=DType.int32,
-            device=x.device,
-        )
-
-        # Map every token to its request index in the ragged batch by counting
-        # how many request end-offsets it is greater-than-or-equal to. The
-        # end-offsets are input_row_offsets[1:], one entry per request.
-        end_offsets = ops.cast(input_row_offsets[1:], positions.dtype).to(
-            x.device
-        )
-        pos_2d = ops.unsqueeze(positions, 1)
-        end_2d = ops.unsqueeze(end_offsets, 0)
-        cmp = ops.greater_equal(pos_2d, end_2d)
-        req_idx_per_token = ops.squeeze(
-            ops.sum(ops.cast(cmp, DType.int32), axis=1), -1
-        )
-
-        def pred(t: TensorValue, *_: TensorValue) -> TensorValue:
-            return t < seq_len
-
-        def body(
-            t: TensorValue,
-            state_stack: TensorValue,
-            out: TensorValue,
-            pos: TensorValue,
-            bx_full: TensorValue,
-            cw: TensorValue,
-            req_idx_full: TensorValue,
-        ) -> list[TensorValue]:
-            t_dev = t.to(x.device)
-            t_ix = t_dev.reshape([1])
-            r_ix = ops.gather(req_idx_full, t_ix, axis=0)
-
-            # Slice this request's [1, hidden, K] state out of the [N, ...]
-            # stack, slide in the new token, then scatter the result back.
-            state_r = ops.gather(state_stack, r_ix, axis=0)
-            bx_t = ops.gather(bx_full, t_ix, axis=0)
-            bx_t_k = ops.unsqueeze(ops.permute(bx_t, [1, 0]), 0)
-            state_r_next = ops.concat((state_r[:, :, 1:], bx_t_k), axis=2)
-
-            conv_out = ops.squeeze(ops.sum(state_r_next * cw, axis=2), -1)
-            if conv_b is not None:
-                conv_out = conv_out + conv_b
-
-            indices = ops.reshape(r_ix, [1, 1])
-            state_stack_next = ops.scatter_nd(
-                state_stack, state_r_next, indices
+        conv_b = (
+            self.conv_bias
+            if self.conv_bias is not None
+            else ops.constant(0.0, bx.dtype, device=bx.device).broadcast_to(
+                [self.hidden_size]
             )
-
-            eq = ops.equal(pos, t_ix)
-            mask = ops.unsqueeze(ops.cast(eq, out.dtype), -1)
-            out_next = out * (1.0 - mask) + conv_out * mask
-            return [
-                t + 1,
-                state_stack_next,
-                out_next,
-                pos,
-                bx_full,
-                cw,
-                req_idx_full,
-            ]
-
-        _, new_state, conv_out, *_ = ops.while_loop(
-            [
-                t_init,
-                conv_state,
-                out_init,
-                positions,
-                bx,
-                conv_w,
-                req_idx_per_token,
-            ],
-            pred,
-            body,
         )
-        y = c * conv_out
-        return self.out_proj(y), new_state
+        conv_out = causal_conv1d_varlen_fwd(
+            x=bx,
+            weight=self.conv_weight.reshape(
+                [self.hidden_size, self.kernel_size]
+            ),
+            bias=conv_b,
+            conv_states=conv_pool,
+            query_start_loc=ops.cast(input_row_offsets, DType.int32),
+            cache_indices=conv_rows,
+            has_initial_state=has_initial_state,
+            activation="none",
+            channels_last=True,
+        )
+        return self.out_proj(c * conv_out)
 
 
 class LFM2DecoderLayer(Module):
@@ -260,7 +185,7 @@ class LFM2DecoderLayer(Module):
                 num_attention_heads=config.num_attention_heads,
                 num_key_value_heads=config.num_key_value_heads,
                 hidden_size=config.hidden_size,
-                kv_params=config.kv_params,
+                kv_params=config.attn_kv_params,
                 layer_idx=kv_layer_idx,
                 dtype=config.dtype,
                 devices=config.devices,
@@ -282,12 +207,13 @@ class LFM2DecoderLayer(Module):
         kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
-        conv_state: TensorValue | None,
-    ) -> tuple[TensorValue, TensorValue | None]:
+        conv_pool: BufferValue | None = None,
+        conv_rows: TensorValue | None = None,
+        has_initial_state: TensorValue | None = None,
+    ) -> TensorValue:
         """Runs the layer's attention or short convolution, then its MLP."""
         residual = x
         normed = self.operator_norm(x)
-        new_conv_state = conv_state
         if self.self_attn is not None:
             kv_layer_idx = ops.constant(
                 self.kv_layer_idx, DType.uint32, device=DeviceRef.CPU()
@@ -300,30 +226,46 @@ class LFM2DecoderLayer(Module):
                 input_row_offsets=input_row_offsets,
             )
         else:
-            if self.conv is None or conv_state is None:
+            if (
+                self.conv is None
+                or conv_pool is None
+                or conv_rows is None
+                or has_initial_state is None
+            ):
                 raise ValueError(
-                    f"Layer {self.layer_type!r} requires conv and conv_state "
-                    "to be set, but one or both are None."
+                    f"Layer {self.layer_type!r} requires conv and its state "
+                    "rows to be set, but some are None."
                 )
-            op_out, new_conv_state = self.conv(
-                normed, conv_state, input_row_offsets
+            op_out = self.conv(
+                normed,
+                conv_pool,
+                conv_rows,
+                has_initial_state,
+                input_row_offsets,
             )
 
         h = residual + op_out
         h = h + self.feed_forward(self.ffn_norm(h))
-        return h, new_conv_state
+        return h
 
 
 class LFM2(Module):
-    """The LFM2 model."""
+    """The LFM2 model, registered for the ``DECODER`` role.
+
+    Its convolution layers keep each request's window of past inputs in the
+    KV cache's state leaf, beside the attention layers' KV.
+    """
+
+    graph_name = "lfm2"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
+
+    override_quantization_encoding = True
 
     def __init__(self, config: LFM2Config):
         super().__init__()
         assert len(config.devices) == 1
         self.config = config
-        self.num_conv_layers = sum(
-            1 for t in config.layer_types if t != "full_attention"
-        )
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,
             num_attention_heads=config.num_attention_heads,
@@ -367,135 +309,61 @@ class LFM2(Module):
         if config.tie_word_embeddings:
             self.lm_head.set_shared_weight("weight", self.embed_tokens.weight)
 
-    def input_types(
-        self, kv_params: KVCacheParamInterface
-    ) -> tuple[TensorType | BufferType, ...]:
-        """The graph's input types, in :meth:`__call__`'s order."""
-        device_ref = self.config.devices[0]
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        kv_inputs = kv_params.flattened_kv_inputs()
-        conv_state_types = [
-            TensorType(
-                self.config.dtype,
-                [
-                    "conv_batch",
-                    self.config.hidden_size,
-                    self.config.conv_L_cache,
-                ],
-                device=device_ref,
-            )
-            for _ in range(self.num_conv_layers)
-        ]
-        return (
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_inputs,
-            *conv_state_types,
-        )
-
-    def trace(
-        self,
-        *input_types: Type[Any],
-        name: str | None = None,
-        module: GraphModule | None = None,
-        custom_extensions: Iterable[Path] = (),
-        is_device_graph: bool = False,
-    ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types`.
-
-        Adapts the flat graph inputs to :meth:`__call__`: splits them into
-        the batch, the device's KV collection and the conv states.
-
-        Args:
-            *input_types: The graph's input types, as :meth:`input_types`
-                returns them.
-            name: The name of the graph. Defaults to the class's qualified
-                name.
-            module: The MLIR module to add the graph to. Defaults to a new
-                module.
-            custom_extensions: Paths to custom kernel libraries the graph
-                uses.
-            is_device_graph: Whether to build a device graph.
-
-        Returns:
-            The traced :class:`~max.graph.Graph`.
-        """
-        kv_params = self.config.kv_params
-        num_kv_inputs = len(kv_params.flattened_kv_inputs())
-
-        def forward(
-            tokens: Value[Any],
-            input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            *variadic: Value[Any],
-        ) -> DecoderOutputs:
-            kv_collections = tree.leaves(
-                kv_params.unflatten_kv_inputs(iter(variadic[:num_kv_inputs])),
-                leaf=KVCacheInputsPerDevice,
-            )
-            return self(
-                tokens=tokens.tensor,
-                kv_collection=kv_collections[0],
-                return_n_logits=return_n_logits.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                conv_states=[v.tensor for v in variadic[num_kv_inputs:]],
-            )
-
-        return Graph(
-            type(self).__qualname__ if name is None else name,
-            forward,
-            input_types=input_types,
-            custom_extensions=list(custom_extensions),
-            module=module,
-            is_device_graph=is_device_graph,
-        )
-
     def __call__(
-        self,
-        tokens: TensorValue,
-        kv_collection: PagedCacheValues,
-        return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
-        conv_states: list[TensorValue],
-    ) -> DecoderOutputs:
-        """Runs the model over the graph inputs."""
-        h = self.embed_tokens(tokens)
+        self, inputs: DecoderInputs[TensorValue]
+    ) -> DecoderOutputs[TensorValue]:
+        """Runs the model over the batch and returns the logits.
+
+        Each convolution layer advances its rows of the state leaf in place.
+        """
+        kv_tree = self.config.kv_params.unflatten_kv_inputs(
+            iter(tree.leaves(inputs.kv))
+        )
+        (kv_collection,) = tree.leaves(
+            kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+        )
+        (state,) = tree.leaves(
+            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+        )
+        (window,) = state.leaves
+        input_row_offsets = inputs.input_row_offsets
+        h = self.embed_tokens(inputs.tokens)
         freqs_cis = self.rope.freqs_cis.to(h.device)
+        # The KV cache manager zeroes a request's state rows before its first
+        # forward, so every request can resume from its rows.
+        has_initial_state = ops.broadcast_to(
+            ops.constant(True, DType.bool, device=h.device),
+            [window.live_row_ids.shape[1]],
+        )
         conv_idx = 0
-        new_states = []
         for layer in self.layers:
-            is_conv = layer.layer_type != "full_attention"
-            conv_state = conv_states[conv_idx] if is_conv else None
-            h, new_state = layer(
+            if layer.layer_type == "full_attention":
+                h = layer(
+                    h,
+                    kv_collection=kv_collection,
+                    freqs_cis=freqs_cis,
+                    input_row_offsets=input_row_offsets,
+                )
+                continue
+            h = layer(
                 h,
                 kv_collection=kv_collection,
                 freqs_cis=freqs_cis,
                 input_row_offsets=input_row_offsets,
-                conv_state=conv_state,
+                conv_pool=window.pool,
+                conv_rows=window.live_row_id(conv_idx),
+                has_initial_state=has_initial_state,
             )
-            if is_conv:
-                assert new_state is not None
-                new_states.append(new_state)
-                conv_idx += 1
+            conv_idx += 1
 
         outputs = logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets,
-            return_n_logits=return_n_logits,
+            return_n_logits=inputs.return_n_logits,
             norm=self.norm,
             lm_head=self.lm_head,
             return_logits=self.config.return_logits,
             return_hidden_states=self.config.return_hidden_states,
             logits_scaling=self.config.logits_scaling,
         )
-        outputs["conv_states"] = ConvStates(states=tuple(new_states))
-        return outputs
+        return decoder_outputs(outputs)

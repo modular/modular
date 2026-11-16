@@ -30,6 +30,8 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_ATTRDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/POPDialect/POPAttrs.h.inc"
+#pragma GCC visibility pop
 
 #endif // GEN_POPDIALECT_POPATTRS_H

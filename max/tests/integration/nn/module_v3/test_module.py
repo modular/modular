@@ -361,6 +361,31 @@ def test_load_state_dict_safe_cast_bfloat16_to_float32(
     assert "precision loss" not in logs[0].getMessage()
 
 
+def test_load_state_dict_safe_cast_bfloat16_to_float16(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """bfloat16 -> float16 auto-casts with a summary log flagged range loss."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.bfloat16)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    assert module.weight.dtype == DType.float16
+    assert module.weight[0, 0].item() == 1.0
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "range loss" in logs[0].getMessage()
+
+
 def test_load_state_dict_no_warning_when_dtypes_match(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

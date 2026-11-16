@@ -1,7 +1,7 @@
 // Just check we still parse it.
 // RUN: mo-opt %s --allow-unregistered-dialect
 
-mgp.model @upsideDown : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @upsideDown devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %2 = mgp.runtime.create %0, %1[1]
   %1 = mgp.context.create 1
   %0 = grt.chain.create ()
@@ -22,7 +22,7 @@ mgp.model @upsideDown : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !m
 }
 
 // Also check building a model op with a weights registry.
-mgp.model @external_weights : mof
+mgp.model @external_weights
   {argument_names = ["input0"], result_names = ["output0"]}
   devices [#M.device_ref<"cpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %cpu_ctx: !mgp.device_context<<"cpu", 0>>) {

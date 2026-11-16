@@ -21,8 +21,9 @@ batch's windows are laid end to end, request ``b`` owning output rows
 Window ``w`` pools ``coff * ratio`` positions: its own ``ratio`` and, when
 overlapping (``coff == 2``), its predecessor's. A position before ``P`` is read
 from the state leaf, which keeps every position's raw ``wkv`` (K) and
-``wgate`` (V) rows; one at or after it from the chunk's projections, clamped to
-the chunk's last row so a window still open reads finite rows. With ``m``
+``wgate`` (V) rows; one at or after it from the chunk's projections. A window
+still open after the chunk is written as zeros without being pooled: its zone
+slot is unread until the window closes and a later chunk rewrites it. With ``m``
 running over the pooled positions, output channel ``c`` is
 
     entry[c] = sum_m softmax_m(wgate[m, c'] + ape[m % ratio, c']) * wkv[m, c']
@@ -273,6 +274,12 @@ def compress_windows_ragged_paged[
             var start = align_down(cached, ratio) + ratio * (
                 w - Int(window_offsets.load((b,)))
             )
+            # A window still open after the chunk skips pooling: no query
+            # reads its zone slot until the window closes and a later chunk
+            # rewrites it.
+            if start + ratio > cached + last_row - first_row + 1:
+                output.store((w, c), SIMD[dtype, vec](0))
+                return
 
             comptime for half in range(coff):
                 var col = half * head_dim + c

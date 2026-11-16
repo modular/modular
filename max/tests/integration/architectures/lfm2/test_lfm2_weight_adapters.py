@@ -17,8 +17,10 @@ from typing import cast
 import numpy as np
 from max.graph.weights import WeightData, Weights
 from max.pipelines.architectures.lfm2.weight_adapters import (
-    convert_lfm2_safetensor_state_dict,
+    lfm2_weight_rules,
 )
+from max.pipelines.lib import WeightTransform
+from transformers import PretrainedConfig
 
 
 class _FakeWeights:
@@ -29,7 +31,7 @@ class _FakeWeights:
         return WeightData.from_numpy(self._tensor, "fake")
 
 
-def test_convert_lfm2_safetensor_state_dict_maps_attention_norm_names() -> None:
+def test_lfm2_weight_rules_map_attention_norm_names() -> None:
     state_dict = cast(
         dict[str, Weights],
         {
@@ -48,7 +50,7 @@ def test_convert_lfm2_safetensor_state_dict_maps_attention_norm_names() -> None:
         },
     )
 
-    mapped = convert_lfm2_safetensor_state_dict(state_dict)
+    mapped = WeightTransform(lfm2_weight_rules(PretrainedConfig()))(state_dict)
     assert "layers.0.self_attn.q_norm.weight" in mapped
     assert "layers.0.self_attn.k_norm.weight" in mapped
     assert "layers.0.self_attn.o_proj.weight" in mapped

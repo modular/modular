@@ -5,7 +5,8 @@ package(default_visibility = ["//visibility:private"])
 modular_cc_test(
     name = "GlobalsTest",
     srcs = ["GlobalsTest.cpp"],
+    dynamic_deps = ["//Mojo:CompilerRT"],
     deps = [
-        "//Mojo:CompilerRT",
+        "//Mojo:CompilerRT.static",
     ],
 )

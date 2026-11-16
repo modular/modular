@@ -132,7 +132,6 @@ def run_pathological_bscale[
         n_scale_granularity=1,
         k_scale_granularity=KType.static_value,
         transpose_b=transpose_b,
-        target="gpu",
     ](
         c_tile,
         a_tile,

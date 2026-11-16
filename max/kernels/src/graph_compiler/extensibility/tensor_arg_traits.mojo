@@ -38,9 +38,10 @@ device.
 `_LegacyComputeOutput` is the exception: it doesn't guarantee its capability
 `_LegacyComputable`, and the graph compiler may deliver `Storable` instead. It
 is legacy machinery; read its docstring before using it.
+
+The interim tile epilogue traits live in `legacy_tile_traits`.
 """
 
-from std.memory import AddressSpace
 from std.reflection import reflect
 
 from layout import (
@@ -95,10 +96,11 @@ trait UnsafeFusedView(Fused, TrivialRegisterPassable):
     it exists to keep that one host-built-closure construction compiling
     while kernels migrate. Prefer the supported pattern in new accelerator
     kernels: pass the fused trait arg straight through `enqueue_function`
-    to a device kernel parameterized by `XHost: DevicePassable`, where the
-    capability is reached via `downcast[XHost.device_type, ...]`. The
-    canonical exemplars in `GraphCompiler/test/kernels/testing_kernels.mojo`
-    follow that shape:
+    to a device kernel parameterized by `XHost: DevicePassable`. The kernel
+    takes the argument as `XHost.device_type` and starts its body with
+    `comptime assert conforms_to(XHost.device_type, ...)`, which checks the
+    capability and makes its methods available. The canonical exemplars in
+    `GraphCompiler/test/kernels/testing_kernels.mojo` follow that shape:
 
     - `TraitFusedLoadNegate` (`_gpu_fused_load_negate_kernel`).
     - `TraitFusedStoreDouble` (`_gpu_fused_store_double_kernel`).
@@ -362,7 +364,7 @@ trait TileTensorable(Tensor):
 
     comptime LayoutType: TensorLayout
     comptime alignment: Int
-    comptime Engine: TensorEngine = CurrentTensorEngine[AddressSpace.GENERIC]
+    comptime Engine: TensorEngine = CurrentTensorEngine[Self.LayoutType]
     """How the argument's backing memory is referenced.
 
     Per-target instantiation metadata like `alignment`, not part of the

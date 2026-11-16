@@ -14,7 +14,9 @@
 """Tests the ring rollback against the recurrence over the accepted tokens.
 
 The live pool must match the reference exactly. The state and the ring take
-different row tables, and ring rows no request claims are poisoned.
+different row tables, and ring rows no request claims are poisoned. A row
+longer than the verify window commits itself at its last real token,
+records nothing, and folds nothing.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     gated_delta_recurrence_fwd,
     gated_delta_recurrence_verify_ring_fwd,
     verify_width_operand,
@@ -43,7 +45,6 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
     linear_state_regions,
 )
 from max.pipelines.speculative.gated_delta_rollback import (
-    accepted_lengths,
     fold_state_pools,
 )
 
@@ -214,7 +215,9 @@ def _compile(
                 [state_rows_v],
                 [ring],
                 [ring_rows_v],
-                accepted_lengths(offsets_v, accepted_v, k_v),
+                offsets_v,
+                accepted_v,
+                k_v,
                 [],
                 verify_width
                 if rollback_width is None
@@ -297,6 +300,32 @@ def test_the_verify_leaves_the_live_pool_alone() -> None:
     np.testing.assert_array_equal(pools["live"], pools["init"])
 
 
+def test_a_long_row_verifies_onto_the_live_pool() -> None:
+    """Checks the verify's snapshot lands on the pool with no fold."""
+    pools = _compile([RING_LEN + 2], [0], num_drafts=2, rollback=False)()
+    np.testing.assert_array_equal(pools["live"], pools["reference"])
+
+
+def test_a_row_longer_than_the_ring_commits_itself() -> None:
+    """Checks a long row lands its real tokens and records nothing."""
+    pools = _compile([RING_LEN + 2], [0], num_drafts=2)()
+    np.testing.assert_array_equal(pools["live"], pools["reference"])
+    assert np.all(pools["ring"] == POISON), "a long row wrote ring records"
+
+
+def test_long_and_short_rows_share_a_batch() -> None:
+    """Checks a committed long row rides a short row's fold."""
+    pools = _compile([RING_LEN + 2, RING_LEN], [0, 2], num_drafts=3)()
+    np.testing.assert_array_equal(pools["live"], pools["reference"])
+    rows = pools["ring_rows"]
+    assert np.all(pools["ring"][rows[:, 0]] == POISON), (
+        "the long row wrote ring records"
+    )
+    assert not np.any(
+        pools["ring"][rows[:, 1]][..., :RECORD_ELEMENTS] == POISON
+    ), "the short row left a record unwritten"
+
+
 def test_a_stale_fold_length_is_detectable() -> None:
     """Checks folding a different accepted count changes the result."""
     # Compile both before running either: recording stops at the first execute.
@@ -323,7 +352,16 @@ def test_the_ring_is_addressed_by_its_own_row_table() -> None:
 
 
 @pytest.mark.parametrize(
-    "seq_lengths", [[1], [2], [3], [4], [5], [64], [1, 64]]
+    "seq_lengths",
+    [
+        pytest.param([1], id="one-token-row"),
+        pytest.param([2], id="row-past-the-one-token-clamp"),
+        pytest.param([3], id="three-token-row"),
+        pytest.param([4], id="row-at-the-ring"),
+        pytest.param([5], id="row-past-the-ring"),
+        pytest.param([64], id="long-prompt-row"),
+        pytest.param([1, 64], id="decode-row-riding-a-prompt"),
+    ],
 )
 def test_a_committed_window_lands_on_the_forward(
     seq_lengths: list[int],
@@ -335,11 +373,28 @@ def test_a_committed_window_lands_on_the_forward(
     assert np.all(pools["ring"] == POISON), "the ring was written at width 0"
 
 
-@pytest.mark.parametrize("length", [1, 2, 3, RING_LEN])
-def test_rolling_back_a_committed_window_is_detectable(length: int) -> None:
-    """Checks a fold that ignores the zero width advances the state twice."""
-    pools = _compile([length], [0], num_drafts=0, rollback_width=NUM_DRAFTS)()
+def test_rolling_back_a_committed_window_is_detectable() -> None:
+    """Checks a fold that ignores the zero width advances the state twice.
+
+    A committed row of one token is the only one the fold's clamp lets
+    through at the step's width; longer committed rows fold nothing.
+    """
+    pools = _compile([1], [0], num_drafts=0, rollback_width=NUM_DRAFTS)()
     assert not np.array_equal(pools["live"], pools["reference"])
+
+
+@pytest.mark.parametrize(
+    "length",
+    [
+        pytest.param(2, id="row-past-the-one-token-clamp"),
+        pytest.param(3, id="three-token-row-commits"),
+        pytest.param(RING_LEN, id="row-at-the-ring"),
+    ],
+)
+def test_a_left_enabled_fold_holds_a_committed_row(length: int) -> None:
+    """Checks the fold's clamp holds a committed row on the forward."""
+    pools = _compile([length], [0], num_drafts=0, rollback_width=NUM_DRAFTS)()
+    np.testing.assert_array_equal(pools["live"], pools["reference"])
 
 
 def test_a_window_longer_than_the_ring_is_refused() -> None:

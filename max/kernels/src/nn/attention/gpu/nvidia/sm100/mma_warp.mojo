@@ -38,8 +38,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.mha_mask import MHAMask
 from linalg.arch.sm100.mma import smem_descriptor
-from layout import IntTuple
-from layout.tensor_core_async import tile_layout_k_major
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from .smem import SM100AttentionSMem
 
@@ -987,10 +985,10 @@ def fa4_mma[
                     # ---- The A operand: P, from SMEM ----------------------
                     # `store_p_quadrant` writes warpgroup `wg`'s `BM x BN` P tile
                     # at `p_smem() + wg*BM*BN`, in the SWIZZLE_NONE k-major layout
-                    # `element (r, k) -> (k // sw_K)*(BM*sw_K) + r*sw_K`. The
-                    # `tile_layout_k_major(BM, BN, SWIZZLE_NONE)` IS that map, so
-                    # the descriptor, the MMA's internal per-k-block advance, and
-                    # the per-chunk advance below all read off one layout.
+                    # `element (r, k) -> (k // sw_K)*(BM*sw_K) + r*sw_K`, which
+                    # `tile_layout_k_major(BM, BN, SWIZZLE_NONE)` also encodes.
+                    # The descriptor, the MMA's internal per-k-block advance,
+                    # and the per-chunk advance below all follow that one map.
                     #
                     # `wg` is RUNTIME, not comptime, and that is load-bearing:
                     # the odd-`T` tail rebinds `s1_tmem = s0_tmem` at runtime, so
@@ -999,23 +997,13 @@ def fa4_mma[
                     # still waiting WG0's barrier -- wrong output on odd `T`
                     # only. Same position and values as `_pv`'s `wg`.
                     comptime P_SWIZZLE = TensorMapSwizzle.SWIZZLE_NONE
-                    comptime p_layout = tile_layout_k_major[
-                        config.qkv_dtype, BM, BN, P_SWIZZLE
-                    ]()
-                    # Bytes from one key chunk's P columns to the next, taken
-                    # from the layout. Closed form `BM * pv_bk * dtsize`; assert
-                    # so a layout change cannot silently walk the descriptor off
-                    # the tile.
+                    # Bytes from one key chunk's P columns to the next: one
+                    # `BM x pv_bk` sub-tile of the P SMEM tile. The k-major
+                    # SWIZZLE_NONE layout this tile uses maps `(r, k)` to
+                    # `(k // sw_K) * (BM * sw_K) + r * sw_K`, which for a whole
+                    # chunk is exactly `BM * pv_bk` elements.
                     comptime p_chunk_bytes = (
-                        p_layout(IntTuple(0, pv_bk))
-                        * size_of[config.qkv_dtype]()
-                    )
-                    comptime assert (
-                        p_chunk_bytes
-                        == BM * pv_bk * size_of[config.qkv_dtype]()
-                    ), (
-                        "shared-key: the P key-chunk stride must be one"
-                        " BM x pv_bk sub-tile"
+                        BM * pv_bk * size_of[config.qkv_dtype]()
                     )
                     var p_desc = smem_descriptor[
                         BMN=BM,

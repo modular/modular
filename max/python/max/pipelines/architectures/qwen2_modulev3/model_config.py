@@ -21,8 +21,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.outputs import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -82,7 +82,7 @@ class Qwen2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def devices(self) -> list[DeviceRef]:
-        """Returns the devices in :attr:`mesh`, for the memory planner."""
+        """Returns the devices in :attr:`mesh`."""
         return [DeviceRef.from_device(device) for device in self.mesh.devices]
 
     @override

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TypeVar
 
 from max.driver import (
@@ -23,15 +24,13 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorValue, ops
-
-from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import (
+from max.nn._graph_ops import (
     amd_mega_ffn_workspace_words,
     moe_create_indices,
     moe_fp8_host_usage_stats,
 )
-from .moe import MoE
-from .quant_strategy import (
+from max.nn._graph_ops.ep import fused_silu
+from max.nn._graph_ops.moe_quant import (
     BlockScaledStrategy,
     Fp8Strategy,
     Mxfp6Strategy,
@@ -39,6 +38,8 @@ from .quant_strategy import (
     NvMxf4f8Strategy,
     QuantStrategy,
 )
+
+from .moe import MoE
 
 _T = TypeVar("_T")
 
@@ -121,6 +122,7 @@ class MoEQuantized(MoE):
 
     def _collect_scale_2(self, proj_name: str) -> TensorValue:
         """Stacks per-expert secondary scales for NVFP4 kernels."""
+        assert self.quant_config is not None
         scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
         shared_scale = (
             getattr(self.shared_experts, proj_name).weight_scale_2
@@ -128,12 +130,13 @@ class MoEQuantized(MoE):
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
-        return ops.stack(scales, axis=0)
+        return self.quant_config.per_tensor_scale(ops.stack(scales, axis=0))
 
     def _collect_input_scale(
         self, proj_name: str, collect_all: bool = False
     ) -> TensorValue:
         """Stacks per-expert input scales for NVFP4 kernels."""
+        assert self.quant_config is not None
         expert_collect = self._all_experts if collect_all else self.experts
         scales = [getattr(e, proj_name).input_scale for e in expert_collect]
         shared_scale = (
@@ -142,7 +145,7 @@ class MoEQuantized(MoE):
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
-        return ops.stack(scales, axis=0)
+        return self.quant_config.per_tensor_scale(ops.stack(scales, axis=0))
 
     @property
     def gate_up_proj_scales(self) -> TensorValue:
@@ -368,6 +371,19 @@ class MoEQuantized(MoE):
             and self.quant_config.can_use_fused_swiglu
         )
 
+    def _can_fuse_swiglu_nvfp4_without_ep(self) -> bool:
+        """Whether the opt-in sigma-permuted layout feeds the TP expert path.
+
+        The gate-up weight and scales are permuted at graph build (see
+        ``fused_swiglu_layout_without_ep``), so the fused SwiGLU+quant matmul
+        reads them directly, as it does under EP.
+        """
+        return (
+            self._ep_batch_manager is None
+            and self._is_nvfp4
+            and self._can_fuse_swiglu_nvfp4()
+        )
+
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
         """Returns NVFP4 input scales for EP dispatch, or ``None``."""
         if self._is_nvfp4:
@@ -440,6 +456,7 @@ class MoEQuantized(MoE):
         x: TensorValue,
         topk_ids: TensorValue,
         router_weights: TensorValue,
+        layer_idx: TensorValue | None = None,
     ) -> TensorValue:
         """Routed-expert output of the one-launch fused EP MoE.
 
@@ -487,6 +504,7 @@ class MoEQuantized(MoE):
             down_expert_scales=down_expert_scales,
             c_input_scales=c_input_scales,
             activation=self.activation,
+            layer_idx=layer_idx,
         )
 
     def _local_ep_compute(
@@ -826,9 +844,17 @@ class MoEQuantized(MoE):
                 *expert_inputs[3:],
             )
 
-        if self._can_fuse_swiglu_interleaved():
+        if (
+            self._can_fuse_swiglu_interleaved()
+            or self._can_fuse_swiglu_nvfp4_without_ep()
+        ):
             assert isinstance(strategy, NvMxf4f8Strategy)
             assert nvfp4 is not None
+            activation = self.activation
+            if self._can_fuse_swiglu_nvfp4_without_ep():
+                # The unfused chain it replaces quantizes the activation after
+                # a BF16 round trip through its SwiGLU kernel's output.
+                activation = dataclasses.replace(activation, round_to_bf16=True)
             gate_up_quant, gate_up_scales = strategy.grouped_matmul_swiglu(
                 self.gate_up_proj,
                 gate_up_scales,
@@ -836,7 +862,9 @@ class MoEQuantized(MoE):
                 input_scales=nvfp4.down_input,
                 expert_inputs=expert_inputs,
                 estimated_total_m=total_m,
-                activation=self.activation,
+                activation=activation,
+                max_total_m=self.max_routed_rows,
+                prefill_dynamic_claim=self.megaffn_prefill_dynamic_claim,
             )
         else:
             gate_up = strategy.grouped_matmul(

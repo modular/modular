@@ -287,6 +287,30 @@ std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
   return maxAlign;
 }
 
+void UnionType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
+  if (!attr) {
+    p << '[';
+    printer.printParamValue(p, getVariadic());
+    p << ']';
+  } else if (!attr.getValues().empty()) {
+    SmallVector<Type> values;
+    for (TypedAttr value : attr.getValues())
+      values.push_back(ParamType::get(value));
+    printer.printParamTypes(p, values);
+  }
+  p << '>';
+}
+
+void POP::ArrayType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  printer.printParamValue(p, getSize());
+  p << ", ";
+  printer.printParamType(p, getElementType());
+  p << '>';
+}
+
 ErrorOrSuccess UnionType::writeTo(TypedAttr value, int64_t addr,
                                   InterpreterState &state) const {
   return state.writeAttributeToMemory(addr,
@@ -316,8 +340,8 @@ void POPDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicTypeWithoutParamPrinter<ArrayType>();
-  dialect->registerMnemonicTypeWithoutParamPrinter<UnionType>();
+  dialect->registerMnemonicType<ArrayType>();
+  dialect->registerMnemonicType<UnionType>();
 }
 
 //===----------------------------------------------------------------------===//

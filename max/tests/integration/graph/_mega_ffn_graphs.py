@@ -21,12 +21,12 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
+from max.nn.activation import GatedActivation
 
 # NVFP4 scale-tile geometry (mirrors kernels.py).
 NVFP4_SF_VECTOR_SIZE = 16
@@ -135,11 +135,11 @@ def build_np_inputs(
 
 def build_graph(
     E: int,
-    M: int,
+    M: int | str,
     D: int,
     K1: int,
     N2: int,
-    sf_dim_0: int,
+    sf_dim_0: int | str,
     device_ref: DeviceRef,
     cpu_ref: DeviceRef,
     clamp: bool = False,
@@ -147,6 +147,8 @@ def build_graph(
     keep_intermediate: bool = False,
     swiglu_alpha: float = 1.702,
     swiglu_limit: float = 7.0,
+    max_total_m: int = 0,
+    prefill_dynamic_claim: bool = False,
 ) -> Graph:
     """Build the chained L1 -> L2 NVFP4 MoE FFN graph.
 
@@ -252,6 +254,8 @@ def build_graph(
             if clamp
             else None,
             a_row_scales=row_scales_t,
+            max_total_m=max_total_m,
+            prefill_dynamic_claim=prefill_dynamic_claim,
         )
 
         # L2: down GEMM. Emits mo.composite.grouped_matmul_block_scaled.

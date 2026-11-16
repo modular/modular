@@ -115,7 +115,7 @@ def bench_allgather[
     cache_busting: Bool,
 ](
     mut b: Bench,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     lengths: Array[Int, ngpus],
     max_num_blocks: Optional[Int],
 ) raises:
@@ -218,11 +218,11 @@ def bench_allgather[
 
     @inline(.always)
     def bench_iter(
-        mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bencher: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut tt_in, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut tt_in, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
@@ -323,7 +323,7 @@ def main() raises:
     )
 
     # Create GPU contexts.
-    var ctx = List[DeviceContext]()
+    var ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 

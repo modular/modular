@@ -9,6 +9,6 @@
 // CHECK: note: constraint failed: Expected constraint failure for error message testing
 mo.graph @custom_op_failing_constraint() -> !mo.tensor<[1], si32> {
   %data = mo.constant <#M.dense_array<1> : tensor<1xsi32>> : !mo.tensor<[1], si32>
-  %0 = mo.custom [symbol = "mo.test.failing_constraint", device = #M.device_ref<"cpu", 0>](%data) : (!mo.tensor<[1], si32>) -> !mo.tensor<[1], si32>
+  %0 = mo.custom [symbol = "test.failing_constraint", device = #M.device_ref<"cpu", 0>](%data) : (!mo.tensor<[1], si32>) -> !mo.tensor<[1], si32>
   mo.output  %0 : !mo.tensor<[1], si32>
 }

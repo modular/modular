@@ -167,7 +167,7 @@ def _check_case[
     # Exercise the public launchers rather than private epilogue leaves.
     comptime if mode == 0:
         comptime assert input_dtype == output_dtype and with_bias
-        generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[target="gpu"](
+        generic_fused_qkv_matmul_kv_cache_paged_ragged_bias(
             hidden.device_tensor().as_imm().as_unsafe_any_origin(),
             offsets.device_tensor().as_imm().as_unsafe_any_origin(),
             weight.device_tensor().as_imm().as_unsafe_any_origin(),
@@ -197,7 +197,7 @@ def _check_case[
             == 2 else Coord[Int, Int, Int](1, 128, 128)
         )
         generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk=granularity, target="gpu"
+            scales_granularity_mnk=granularity,
         ](
             hidden.device_tensor().as_imm().as_unsafe_any_origin(),
             offsets.device_tensor().as_imm().as_unsafe_any_origin(),

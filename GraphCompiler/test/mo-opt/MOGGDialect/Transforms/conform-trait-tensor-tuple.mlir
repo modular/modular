@@ -38,7 +38,7 @@
 // MOJO: var [[OUT0:[a-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.OUTPUT
 // MOJO: var [[OUT1:[a-z0-9_]+]] = _MoggDenseTensorArg[{{.*}}_MoggTensorIO.OUTPUT
 // MOJO: var [[OUTS:[a-z0-9_]+]] = extensibility.TensorTuple[type_of([[OUT0]]), type_of([[OUT1]])]([[OUT0]], [[OUT1]])
-// MOJO: TraitTensorTupleAdd.execute[target = "cpu"]([[OUTS]], [[BIAS]], [[INS]], {{[a-z0-9_]+}})
+// MOJO: TraitTensorTupleAdd.execute([[OUTS]], [[BIAS]], [[INS]], {{[a-z0-9_]+}})
 mo.graph @trait_tensor_tuple_add_graph(%bias: !mo.tensor<[1], f32>, %a: !mo.tensor<[2], si32>, %b: !mo.tensor<[3], f64>) -> (!mo.tensor<[2], f32>, !mo.tensor<[3], si32>) {
   %z0, %z1 = mo.custom [symbol = "trait_tensor_tuple_add", device = #M.device_ref<"cpu", 0>] (%bias, %a, %b) : (
     !mo.tensor<[1], f32>,

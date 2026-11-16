@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 
 from max import functional as F
 from max.nn import Linear, Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn._graph_ops import flash_attention_gpu as _flash_attention_gpu
+from max.nn.attention_mask import MHAMaskVariant
 from max.tensor import Tensor
 
 if TYPE_CHECKING:

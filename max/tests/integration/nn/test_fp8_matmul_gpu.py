@@ -17,17 +17,17 @@ import triton
 import triton.language as tl
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine.api import InferenceSession
+from max.engine.api import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
+from max.nn._graph_ops import (
+    dynamic_scaled_matmul,
+    quantize_dynamic_scaled_float8,
+)
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
-)
-from max.nn.legacy.kernels import (
-    dynamic_scaled_matmul,
-    quantize_dynamic_scaled_float8,
 )
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
@@ -234,19 +234,15 @@ def create_triton_fp8_result(
     return result
 
 
-def create_max_fp8_result(
+def load_max_fp8_matmul(
     session: InferenceSession,
-    input_tensor: torch.Tensor,
-    weight_tensor: torch.Tensor,
-    weight_scales: torch.Tensor,
+    N: int,
+    K: int,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
-) -> torch.Tensor:
-    K = input_tensor.shape[-1]
-    N = weight_tensor.shape[0]
-
+) -> Model:
     def _build_graph():  # noqa: ANN202
         with Graph(
             "fp8_matmul",
@@ -283,9 +279,15 @@ def create_max_fp8_result(
             graph.output(result)
         return graph
 
-    graph = _build_graph()
-    compiled = session.load(graph)
+    return session.load(_build_graph())
 
+
+def create_max_fp8_result(
+    compiled: Model,
+    input_tensor: torch.Tensor,
+    weight_tensor: torch.Tensor,
+    weight_scales: torch.Tensor,
+) -> torch.Tensor:
     # we need to view the torch fp8 tensor as uint8, as torch.Tensor doesn't support
     # to_dlpack() for fp8 dtype.
     _weight_tensor = weight_tensor.view(torch.uint8)
@@ -380,6 +382,25 @@ def test_linear_gpu(
     assert a_tile_size[1] == b_tile_size[1], (
         "a and b must have the same tile size in the K dimension"
     )
+    compiled = load_max_fp8_matmul(
+        gpu_session,
+        N,
+        K,
+        a_tile_size,
+        b_tile_size,
+        input_scale_spec=InputScaleSpec(
+            granularity=input_scale_granularity,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=a_tile_size,
+        ),
+        weight_scale_spec=WeightScaleSpec(
+            granularity=weight_scale_granularity,
+            dtype=DType.float32,
+            block_size=b_tile_size,
+        ),
+    )
+
     torch.manual_seed(42)
 
     input_tensor = torch.randn(
@@ -415,23 +436,7 @@ def test_linear_gpu(
     )
 
     max_result = create_max_fp8_result(
-        gpu_session,
-        input_tensor,
-        weight_tensor,
-        weight_scales,
-        a_tile_size,
-        b_tile_size,
-        input_scale_spec=InputScaleSpec(
-            granularity=input_scale_granularity,
-            origin=ScaleOrigin.DYNAMIC,
-            dtype=DType.float32,
-            block_size=a_tile_size,
-        ),
-        weight_scale_spec=WeightScaleSpec(
-            granularity=weight_scale_granularity,
-            dtype=DType.float32,
-            block_size=b_tile_size,
-        ),
+        compiled, input_tensor, weight_tensor, weight_scales
     )
 
     torch.testing.assert_close(

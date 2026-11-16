@@ -36,7 +36,7 @@ from std.utils import StaticTuple
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import TileTensor
 from layout.coord import Coord, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     MhaConfigV2,

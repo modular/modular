@@ -10,58 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines `Defaultable`, `RegisterPassable`, and `TrivialRegisterPassable`,
-plus deprecated aliases for the value-semantics traits that used to live in
-this module.
-
-`Movable`, `Copyable`, and `ImplicitlyCopyable` have moved to `std.traits`.
-They're still exported from the prelude, so most code doesn't need to
-change; see the deprecated aliases below for the explicit import paths.
-"""
+"""Defines `Defaultable`, `RegisterPassable`, and `TrivialRegisterPassable`."""
 
 import std.traits
 
 from std.builtin.constrained import _field_conforms_to_error
-
-
-@deprecated(
-    "`Movable` has moved to `std.traits`. It's still exported from the"
-    " prelude, so most code needs no changes; for the explicit import path"
-    " use `std.traits.movable.Movable`."
-)
-comptime Movable = std.traits.Movable
-"""Deprecated: The trait for types whose value can be moved.
-
-This trait has moved to `std.traits.movable`. It's exported from the
-prelude, so most code doesn't need to change. This alias will be removed in
-a future version of Mojo."""
-
-
-@deprecated(
-    "`Copyable` has moved to `std.traits`. It's still exported from the"
-    " prelude, so most code needs no changes; for the explicit import path"
-    " use `std.traits.copyable.Copyable`."
-)
-comptime Copyable = std.traits.Copyable
-"""Deprecated: The trait for types whose value can be explicitly copied.
-
-This trait has moved to `std.traits.copyable`. It's exported from the
-prelude, so most code doesn't need to change. This alias will be removed in
-a future version of Mojo."""
-
-
-@deprecated(
-    "`ImplicitlyCopyable` has moved to `std.traits`. It's still exported"
-    " from the prelude, so most code needs no changes; for the explicit"
-    " import path use `std.traits.copyable.ImplicitlyCopyable`."
-)
-comptime ImplicitlyCopyable = std.traits.ImplicitlyCopyable
-"""Deprecated: A marker trait to permit the compiler to insert implicit
-copies.
-
-This trait has moved to `std.traits.copyable`. It's exported from the
-prelude, so most code doesn't need to change. This alias will be removed in
-a future version of Mojo."""
 
 
 def materialize[T: AnyType, //, value: T](out result: T):

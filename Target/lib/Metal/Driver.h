@@ -30,13 +30,6 @@ struct M_driver_driver {
   [[nodiscard]] static M_driver_driver_t create();
   static void destroy(M_driver_driver_t driver);
 
-  static void ensureThreadlocalAutoreleasePoolExists() {
-    thread_local NS::SharedPtr<NS::AutoreleasePool> autoreleasePool;
-    if (!autoreleasePool) {
-      autoreleasePool = NS::TransferPtr(NS::AutoreleasePool::alloc()->init());
-    }
-  }
-
   SmallVector<M_driver_device, 1> devices;
   CustomStatus status{M_DRIVER_NUM_CUSTOM_STATUS_CODES};
 };

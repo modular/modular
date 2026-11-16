@@ -55,29 +55,63 @@ bool isAMDGPU(TargetInfoAttr target,
   return llvm::is_contained(allowedGPUs, target.getArch());
 }
 
+LLVM::InlineAsmOp createInlineAsm(POPLoweringBuilder &builder, Location loc,
+                                  StringRef asmStr, StringRef asmConstraints,
+                                  Type resultType,
+                                  SmallVector<Value> operands) {
+  auto asmDialect =
+      LLVM::AsmDialectAttr::get(builder.getContext(), LLVM::AsmDialect::AD_ATT);
+  return LLVM::InlineAsmOp::create(
+      builder, loc, resultType, operands, asmStr, asmConstraints,
+      /*has_side_effects=*/false,
+      /*is_align_stack=*/false, LLVM::TailCallKind::None,
+      /*convergent=*/false, asmDialect,
+      /*operand_attrs=*/mlir::ArrayAttr());
+}
+
+template <typename IntType>
+Value createConstant(POPLoweringBuilder &builder, Location loc,
+                     uint64_t value) {
+  return LLVM::ConstantOp::create(
+      builder, loc, builder.getIntegerType(sizeof(IntType) * 8), value);
+}
+
+Value createConstant(POPLoweringBuilder &builder, Location loc,
+                     llvm::APFloat value) {
+  return LLVM::ConstantOp::create(builder, loc, builder.getF32Type(), value);
+}
+
+Value extractElement(POPLoweringBuilder &builder, Location loc, Type resultType,
+                     Value value, unsigned index) {
+  return LLVM::ExtractElementOp::create(
+      builder, loc, resultType, value,
+      createConstant<uint32_t>(builder, loc, index));
+}
+
 //===----------------------------------------------------------------------===//
 // AMDGPUCastToLLVM
 //===----------------------------------------------------------------------===//
 
 /// Lowers `pop.cast`s that have a faster AMDGPU-specific instruction sequence
-/// (f32->bf16 and f32<->f8 conversions). Registered with a higher benefit than
-/// the generic `ConvertPOPCast`, so it runs first; when the cast isn't one it
-/// handles, it fails and the generic pattern takes over.
-struct AMDGPUCastToLLVM : public ConvertPOPToLLVMPattern<POP::CastOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+/// (f32->bf16 and f32<->f8 conversions). Failure selects the generic
+/// `pop.cast` lowering.
+class AMDGPUCastToLLVM {
+public:
+  explicit AMDGPUCastToLLVM(POPToLLVMTypeConverter &converter)
+      : converter(converter) {}
 
-  LogicalResult matchAndRewrite(POP::CastOp op, POP::CastOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    TargetInfoAttr target = getTypeConverter()->getTarget();
+  LogicalResult lower(POP::CastOp op, Value input,
+                      POPLoweringBuilder &builder) const {
+    TargetInfoAttr target = converter.getTarget();
     if (!target || !target.getTriple().isAMDGPU())
       return failure();
 
-    return convertToTargetSpecificCast(rewriter, op, adaptor.getInput());
+    return convertToTargetSpecificCast(builder, op, input);
   }
 
 private:
   Type getConvertedScalarType(SIMDType simd) const {
-    return convertType(
+    return converter.convertType(
         SIMDType::get(simd.getContext(), /*size=*/1, *simd.getResolvedDType()));
   }
 
@@ -93,10 +127,10 @@ private:
   ///   - reduce compile time as stdlib's code won't be parsed and will simply
   ///   be represented by `pop.cast`
   LogicalResult
-  convertF32ToBF16OnAMDGPU(DirectRewriter &rewriter, POP::CastOp op,
+  convertF32ToBF16OnAMDGPU(POPLoweringBuilder &rewriter, POP::CastOp op,
                            Value value, APFloat::Semantics fromFloatSemantics,
                            APFloat::Semantics toFloatSemantics) const {
-    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+    assert(converter.getTarget().getTriple().isAMDGPU() &&
            "fast lowering of f32 to bf16 is only supported on AMDGPU");
     assert(POP::FastmathFlagsInterface(op).isFast() &&
            "fast lowering of f32 to bf16 requires `fast` on the cast");
@@ -123,7 +157,7 @@ private:
                           vecI64, {value})
               .getResult(0);
 
-      Type vecI32 = convertType(
+      Type vecI32 = converter.convertType(
           SIMDType::get(rewriter.getContext(), /*size=*/1, KGENDType::ui32));
       Value lsb = createInlineAsm(rewriter, loc, "v_bfe_u32 $0, $1, 16, 1",
                                   "=v,v", vecI32, {value})
@@ -177,7 +211,7 @@ private:
     return success();
   }
 
-  Value getClampedFloatValue(DirectRewriter &rewriter, Location loc,
+  Value getClampedFloatValue(POPLoweringBuilder &rewriter, Location loc,
                              Value value, APFloat::Semantics floatSemantics,
                              size_t size, Type outType) const {
     APFloat m = APFloat::getLargest(APFloat::EnumToSemantics(floatSemantics));
@@ -207,13 +241,13 @@ private:
     return clamped;
   }
 
-  Value getIsNaN(DirectRewriter &rewriter, Location loc, Value value,
+  Value getIsNaN(POPLoweringBuilder &rewriter, Location loc, Value value,
                  APFloat::Semantics floatSemantics, size_t size) const {
     // Using FCmp with predicate of FCMP_UNO to check nan
     // FCMP_UNO 	True if unordered: isnan(X) | isnan(Y)
     // https://llvm.org/doxygen/classllvm_1_1CmpInst.html#a2be3583dac92a031fa1458d4d992c78b
-    Type type = convertType(SIMDType::get(rewriter.getContext(), size,
-                                          KGENDType(DType(DType::ui1))));
+    Type type = converter.convertType(SIMDType::get(
+        rewriter.getContext(), size, KGENDType(DType(DType::ui1))));
     Value result = LLVM::FCmpOp::create(
         rewriter, loc, type, mlir::LLVM::FCmpPredicate::uno, value, value);
     return result;
@@ -222,11 +256,11 @@ private:
   /// Helper function to convert scalar of F32 to F8 (F8E4M3FNUZ or F8E5M2FNUZ)
   /// on AMDGPU without replacing the operation
   Value
-  convertF32ToF8OnAMDGPUHelper(DirectRewriter &rewriter, POP::CastOp op,
+  convertF32ToF8OnAMDGPUHelper(POPLoweringBuilder &rewriter, POP::CastOp op,
                                Value value, Type outType,
                                APFloat::Semantics fromFloatSemantics,
                                APFloat::Semantics toFloatSemantics) const {
-    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+    assert(converter.getTarget().getTriple().isAMDGPU() &&
            "fast lowering of f32 to f8 is only supported on AMDGPU");
 
     Location loc = op.getLoc();
@@ -331,11 +365,11 @@ private:
   }
 
   LogicalResult
-  convertF32ToF8OnAMDGPU(DirectRewriter &rewriter, POP::CastOp op, Value value,
-                         APFloat::Semantics fromFloatSemantics,
+  convertF32ToF8OnAMDGPU(POPLoweringBuilder &rewriter, POP::CastOp op,
+                         Value value, APFloat::Semantics fromFloatSemantics,
                          APFloat::Semantics toFloatSemantics) const {
     SmallVector<Type> types;
-    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+    if (failed(converter.convertTypes(op->getResultTypes(), types)))
       return failure();
 
     Value converted =
@@ -347,11 +381,11 @@ private:
   }
 
   Value
-  convertF8ToF32OnAMDGPUHelper(DirectRewriter &rewriter, POP::CastOp op,
+  convertF8ToF32OnAMDGPUHelper(POPLoweringBuilder &rewriter, POP::CastOp op,
                                Value value, Type outType,
                                APFloat::Semantics fromFloatSemantics,
                                APFloat::Semantics toFloatSemantics) const {
-    assert(getTypeConverter()->getTarget().getTriple().isAMDGPU() &&
+    assert(converter.getTarget().getTriple().isAMDGPU() &&
            "fast lowering of f32 to f8 is only supported on AMDGPU");
 
     Location loc = op.getLoc();
@@ -460,13 +494,13 @@ private:
   }
 
   LogicalResult
-  convertF8ToF32OnAMDGPU(DirectRewriter &rewriter, POP::CastOp op, Value value,
-                         APFloat::Semantics fromFloatSemantics,
+  convertF8ToF32OnAMDGPU(POPLoweringBuilder &rewriter, POP::CastOp op,
+                         Value value, APFloat::Semantics fromFloatSemantics,
                          APFloat::Semantics toFloatSemantics) const {
 
     Value converted = convertF8ToF32OnAMDGPUHelper(
-        rewriter, op, value, convertType(op.getType()), fromFloatSemantics,
-        toFloatSemantics);
+        rewriter, op, value, converter.convertType(op.getType()),
+        fromFloatSemantics, toFloatSemantics);
 
     rewriter.replaceOp(op, converted);
     return success();
@@ -475,10 +509,10 @@ private:
   /// Convert a `pop.cast` into optimized sequence of asm instructions that
   /// are known to be more efficient for a target than general LLVM's
   /// conversion.
-  LogicalResult convertToTargetSpecificCast(DirectRewriter &rewriter,
+  LogicalResult convertToTargetSpecificCast(POPLoweringBuilder &rewriter,
                                             POP::CastOp cast,
                                             Value value) const {
-    TargetInfoAttr target = getTypeConverter()->getTarget();
+    TargetInfoAttr target = converter.getTarget();
     if (!target)
       return failure();
 
@@ -569,6 +603,8 @@ private:
     }
     return failure();
   }
+
+  POPToLLVMTypeConverter &converter;
 };
 
 class AMDGPULowering final : public TargetLowering {
@@ -585,10 +621,16 @@ public:
     return verifyNoGPUHeapAllocation(op);
   }
 
-  void populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                      mlir::LLVMTypeConverter &converter,
-                                      TargetInfoAttr target) const override {
-    patterns.add<AMDGPUCastToLLVM>(converter, mlir::PatternBenefit(2));
+  LogicalResult
+  lowerFunctionLocalPOPToLLVM(Operation *op, ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const override {
+    auto cast = dyn_cast<POP::CastOp>(op);
+    if (!cast)
+      return failure();
+    auto &popConverter = static_cast<POPToLLVMTypeConverter &>(converter);
+    return AMDGPUCastToLLVM(popConverter)
+        .lower(cast, operands.front(), builder);
   }
 
   void markExportedKernel(mlir::Operation *func) const override {

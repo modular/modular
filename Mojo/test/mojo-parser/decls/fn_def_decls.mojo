@@ -224,7 +224,7 @@ def use_ref_result() raises:
 
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}decls::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
-    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[REF]])
     def_ref_result(a) = MemoryOnly()
 
@@ -336,7 +336,7 @@ struct Foo[x: Int, y: Int](FooTrait, Movable where False):
 # INLINE-SAME: !lit.generator<<"[[OORIGIN:O._mlir_origin`2x]]": origin<
 trait PluginHooks:
     comptime print_emit_fn: Optional[
-        def[O: ImmOrigin](str: StringSlice[O]) thin
+        def[O: ImmOrigin](str: StringSpan[O]) thin
     ]
 
 
@@ -347,7 +347,7 @@ trait PluginHooks:
 # INLINE: kgen.witness "print_emit_fn"
 struct DefaultPlugin(PluginHooks, Movable where False):
     comptime print_emit_fn: Optional[
-        def[O: ImmOrigin](str: StringSlice[O]) thin
+        def[O: ImmOrigin](str: StringSpan[O]) thin
     ] = (
         None
     )

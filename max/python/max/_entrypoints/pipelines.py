@@ -311,6 +311,16 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
         os.environ.setdefault(_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, "0")
 
 
+def _refuse_eager(eager: object, reason: str) -> None:
+    """Fails a command that can't run in eager mode.
+
+    Raises:
+        click.UsageError: If ``eager`` is set.
+    """
+    if eager:
+        raise click.UsageError(reason)
+
+
 def click_option_requires(
     requires: str,
 ) -> Callable[..., Callable[..., Any]]:
@@ -498,7 +508,15 @@ def cli_serve(
 
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
+    # The flag is checked before the merge, which can reach the network, and
+    # an eager set in a config file after it.
+    refusal = (
+        "--eager is for debugging with max generate or AutoModel, not max "
+        "serve."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
     if not pipeline_args.model_path:
         raise click.UsageError(
             "No model specified. Pass --model with a Hugging Face repo ID "
@@ -512,7 +530,13 @@ def cli_serve(
         from max.experimental.cascade.deployment.context_config import (
             ContextConfig,
         )
-        from max.experimental.cascade.serve.main import serve as cascade_serve
+        from max.experimental.cascade.serve.main import (
+            _serve_deployed as cascade_serve,
+        )
+
+        # ``from_flat_kwargs`` already built ``pipeline_args``.
+        # ``_serve_deployed`` uses it unchanged. Its docstring says why
+        # this skips ``serve``.
 
         # Build the Cascade deployment context from the cascade-only CLI
         # knobs. Unset values fall through to ContextConfig's defaults so
@@ -849,6 +873,19 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--error-report-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Measure each quantized weight's error against its native-precision"
+        " source inside the compiled graph, and write the per-layer report"
+        " (table on stdout, quant_error_report.json) to this directory."
+        " A format that cannot measure its error is rejected. Costs extra"
+        " memory while the graph runs. Rebuild a report later from the"
+        " directory with `max quantize-report`."
+    ),
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -858,7 +895,7 @@ def cli_pipeline(
     "--export-path",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="After generation, write an NVFP4 checkpoint to this directory.",
+    help="After generation, write a quantized checkpoint to this directory.",
 )
 @click.option(
     "--prompt",
@@ -916,6 +953,7 @@ def cli_pipeline(
 def quantize(
     targets: list[str],
     quantization_format: str,
+    error_report_dir: Path | None,
     verbose: bool,
     export_path: Path | None,
     prompt: str,
@@ -979,6 +1017,13 @@ def quantize(
     from max.pipelines.lib import MAXModelConfig
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    if error_report_dir is not None:
+        _refuse_eager(
+            pipeline_args.runtime.eager,
+            "--error-report-dir names each weight by its checkpoint path, "
+            "which only a compiled graph keeps, so it can't be combined with "
+            "--eager.",
+        )
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     quantize_pipeline(
         pipeline_args,
@@ -990,12 +1035,30 @@ def quantize(
         prompt=prompt,
         quantization_format=quantization_format,
         verbose=verbose,
+        error_report_dir=error_report_dir,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,
         profile_top_n=profile_top_n,
         export_path=export_path,
     )
+
+
+@main.command(name="quantize-report")
+@click.argument(
+    "directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+def quantize_report(directory: Path) -> None:
+    """Rebuild the quantization error report from a finished run.
+
+    Reads the dumps `max quantize --error-report-dir DIRECTORY` left behind,
+    prints the per-layer table and rewrites quant_error_report.json. Needs
+    neither the model nor a GPU.
+    """
+    from max._entrypoints.cli.quant_error_report import write_report
+
+    write_report(directory)
 
 
 @main.command(name="encode", cls=WithLazyPipelineOptions)
@@ -1051,7 +1114,14 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
+    refusal = (
+        "--eager runs the decoder without compiling it, so max warm-cache has "
+        "no decoder to warm. Drop --eager, or run max warm-interpreter-cache "
+        "to prepare the ops eager mode runs."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
     pipeline_config = PipelineConfig.from_args(pipeline_args)
     # Resolve the task rather than taking `retrieve`'s text-generation default,
     # which sends a diffusion pipeline down a branch that reads the main
@@ -1095,16 +1165,22 @@ def cli_export(
 
     Takes the same pipeline options as ``serve`` and ``generate`` and builds
     the pipeline the same way, so the artifact holds the graphs a served
-    pipeline compiles, keyed by role. For an architecture with weight rules,
-    it also holds the rules its checkpoint loads through.
+    pipeline compiles, keyed by role, and the overlap helper graphs a serving
+    engine may load. For an architecture with weight rules, it also holds the
+    rules its checkpoint loads through.
     """
     from max._artifact import ArtifactError
     from max._artifact.export import export_pipeline
     from max.pipelines import PipelineArgs, PipelineConfig
 
-    pipeline_config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(**config_kwargs)
+    refusal = (
+        "--eager runs the decoder without compiling it, so max export has "
+        "nothing to export. Drop --eager."
     )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
     try:
         dest = export_pipeline(pipeline_config, output, format_spec)
     except ArtifactError as e:

@@ -19,6 +19,10 @@ from typing import Any
 
 import pytest
 from max.pipelines.architectures import hf_config_shims
+from max.pipelines.architectures.dspark_muse_spark import (
+    MuseSparkDraftConfig,
+    check_pairing,
+)
 from transformers import AutoConfig, PretrainedConfig
 
 TESTDATA = Path(__file__).parent / "testdata"
@@ -190,3 +194,69 @@ def test_defaults_match_transformers_5_20() -> None:
         "full_attention" if (i + 1) % 4 == 0 or i == 49 else "window_attention"
         for i in range(50)
     ]
+
+
+def test_dspark_config_parses_to_the_published_drafter() -> None:
+    config = AutoConfig.from_pretrained(str(TESTDATA / "config_dspark.json"))
+    assert isinstance(config, hf_config_shims.MuseSparkDSparkHFConfig)
+    _assert_preserved(_raw("config_dspark.json"), config.to_dict(), config)
+
+    draft = MuseSparkDraftConfig.from_huggingface_config(config)
+    spec = draft.spec
+    # The published drafter's config.json.
+    assert spec.num_hidden_layers == 5
+    assert spec.hidden_size == 8192
+    assert (spec.num_attention_heads, spec.num_key_value_heads) == (128, 16)
+    assert spec.head_dim == 64
+    assert spec.intermediate_size == 16384
+    assert spec.sliding_window == 2048 and spec.causal
+    assert spec.rope_theta == 500000.0
+    assert spec.rms_norm_eps == 1e-5 and draft.post_norm_eps == 1e-8
+    assert spec.target_layer_ids == (13, 29, 45, 57, 61)
+    assert spec.num_context_features == 5
+    assert spec.block_size == 7 and spec.sample_from_anchor
+    assert spec.num_speculative_tokens == 7
+    assert spec.mask_token_id == 200018
+    assert (spec.markov_rank, spec.markov_head_type) == (512, "vanilla")
+    assert spec.draft_vocab_size == spec.vocab_size == 202048
+    assert draft.confidence_with_markov
+    assert draft.final_logit_softcapping == 20.0
+    assert draft.output_multiplier == pytest.approx(0.1767766952966369)
+    assert draft.qk_scale_factor == pytest.approx(5.4730064863875)
+    assert draft.target_num_hidden_layers == 62
+
+
+def test_dspark_pairing_refuses_another_target_depth() -> None:
+    target = AutoConfig.from_pretrained(str(TESTDATA / "config_nvfp4.json"))
+    raw = _raw("config_dspark.json")
+    check_pairing(
+        target.text_config,
+        MuseSparkDraftConfig.from_huggingface_config(
+            hf_config_shims.MuseSparkDSparkHFConfig(**raw)
+        ),
+    )
+    raw["target_num_hidden_layers"] = 8
+    draft = MuseSparkDraftConfig.from_huggingface_config(
+        hf_config_shims.MuseSparkDSparkHFConfig(**raw)
+    )
+    with pytest.raises(ValueError, match="62 layers"):
+        check_pairing(target.text_config, draft)
+
+
+def test_dspark_config_refuses_an_unknown_metap_mode() -> None:
+    raw = _raw("config_dspark.json")
+    raw["metap"]["metap_mode"] = "other"
+    with pytest.raises(ValueError, match="metap_mode 'other'"):
+        MuseSparkDraftConfig.from_huggingface_config(
+            hf_config_shims.MuseSparkDSparkHFConfig(**raw)
+        )
+
+
+def test_dspark_config_fills_missing_metap_keys() -> None:
+    raw = _raw("config_dspark.json")
+    raw["metap"] = {"use_metap": True, "metap_mode": "sp"}
+    draft = MuseSparkDraftConfig.from_huggingface_config(
+        hf_config_shims.MuseSparkDSparkHFConfig(**raw)
+    )
+    # vLLM's defaults: base_width 256, router_has_one_inf_dim on.
+    assert draft.output_multiplier == pytest.approx((8192 / 256) ** -0.5)

@@ -86,7 +86,6 @@ def rms_norm_fused_fp8[
     & RegisterPassable
     & def[width: Int](Coord) -> SIMD[in_dtype, width],
     /,
-    target: StaticString = "gpu",
     compile_only: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -113,7 +112,6 @@ def rms_norm_fused_fp8[
             float32).
         rank: Tensor rank.
         InputFnType: The type of `input_fn` (inferred).
-        target: Target device ("gpu" or "cpu").
         compile_only: If True, only compiles the kernel without executing it.
             Used to pre-compile kernels and avoid JIT compilation deadlocks
             in multi-GPU contexts.
@@ -160,12 +158,12 @@ def rms_norm_fused_fp8[
             + trace_arg("output", shape, out_dtype)
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=ctx.target.device_kind_label()](
         "rms_norm_fused_fp8",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.device().id),
     ):
-        if target == "gpu":
+        if ctx.target.is_gpu():
             _rms_norm_fused_fp8_gpu[
                 in_dtype,
                 out_dtype,

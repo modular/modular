@@ -317,3 +317,66 @@ mo.graph @caller_chains_non_trailing(%arg0: !mo.tensor<[4], f32>, %arg1: !mo.ten
 }
 
 } // module
+
+// -----
+
+// An invariant argument that nothing reads is still the only binding of the
+// subgraph parameter `rows`, so the pass must keep it.
+// CHECK-LABEL: module
+module {
+
+// CHECK-LABEL: mo.graph @param_only_carrier
+// CHECK-SAME: (%[[ARG0:.+]]: !mo.tensor<[4], f32>, %[[CARRIER:.+]]: !mo.tensor<[rows], ui8>, %[[HOISTED:.+]]: !mo.tensor<[4], f32>)
+mo.graph @param_only_carrier<rows>(%arg0: !mo.tensor<[4], f32>, %carrier: !mo.tensor<[rows], ui8>, %arg1_invariant: !mo.tensor<[4], f32>) -> (!mo.tensor<[4], f32>) isSubgraph {
+  %0 = mo.relu(%arg1_invariant) : !mo.tensor<[4], f32>
+  // CHECK: mo.add(%[[ARG0]], %[[HOISTED]])
+  %1 = mo.add(%arg0, %0) : !mo.tensor<[4], f32>
+  mo.output %1 : !mo.tensor<[4], f32>
+}
+
+// CHECK-LABEL: mo.graph @caller_param_only_carrier
+// CHECK-SAME: (%[[A0:.+]]: !mo.tensor<[4], f32>, %[[A1:.+]]: !mo.tensor<[4], f32>, %[[C:.+]]: !mo.tensor<[rows], ui8>)
+mo.graph @caller_param_only_carrier<rows>(%arg0: !mo.tensor<[4], f32>, %arg1: !mo.tensor<[4], f32>, %c: !mo.tensor<[rows], ui8>) -> (!mo.tensor<[4], f32>) {
+  %cst = mo.constant.external [name = "cst", align = 1, device = #M.device_ref<"cpu", 0>] : !mo.tensor<[4], f32>
+  // CHECK: mo.call @param_only_carrier(%[[A0]], %[[C]], %{{.+}})
+  %res1 = mo.call @param_only_carrier(%arg0, %c, %cst) : (!mo.tensor<[4], f32>, !mo.tensor<[rows], ui8>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+  // CHECK: mo.call @param_only_carrier(%[[A1]], %[[C]], %{{.+}})
+  %res2 = mo.call @param_only_carrier(%arg1, %c, %cst) : (!mo.tensor<[4], f32>, !mo.tensor<[rows], ui8>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+  %2 = mo.add(%res1, %res2) : !mo.tensor<[4], f32>
+  mo.output %2 : !mo.tensor<[4], f32>
+}
+
+} // module
+
+// -----
+
+// A hoisted boundary value of type `[rows]` becomes a new argument that binds
+// `rows`, so the unread invariant `[rows]` carrier is not needed and the pass
+// drops it.
+// CHECK-LABEL: module
+module {
+
+// CHECK-LABEL: mo.graph @param_bound_by_boundary
+// CHECK-SAME: (%[[START:[^:]+]]: !mo.tensor<[1], si64>, %[[HOISTED:[^:]+]]: !mo.tensor<[rows], f32>)
+mo.graph @param_bound_by_boundary<rows>(%start: !mo.tensor<[1], si64>, %carrier: !mo.tensor<[rows], ui8>, %x_invariant: !mo.tensor<[rows], f32>) -> (!mo.tensor<[1], f32>) isSubgraph {
+  %0 = mo.relu(%x_invariant) : !mo.tensor<[rows], f32>
+  // CHECK: mo.slice<() -> NEW_DIM>(%[[HOISTED]], %[[START]], %[[START]], %[[START]])
+  %1 = mo.slice<() -> NEW_DIM>(%0, %start, %start, %start) : (!mo.tensor<[rows], f32>, !mo.tensor<[1], si64>, !mo.tensor<[1], si64>, !mo.tensor<[1], si64>) -> !mo.tensor<[NEW_DIM], f32>
+  %2 = mo.reduce.add(%1) : (!mo.tensor<[NEW_DIM], f32>) -> !mo.tensor<[1], f32>
+  mo.output %2 : !mo.tensor<[1], f32>
+}
+
+// CHECK-LABEL: mo.graph @caller_param_bound_by_boundary
+// CHECK-SAME: (%[[S0:.+]]: !mo.tensor<[1], si64>, %[[S1:.+]]: !mo.tensor<[1], si64>, %[[C:.+]]: !mo.tensor<[rows], ui8>, %[[X:.+]]: !mo.tensor<[rows], f32>)
+mo.graph @caller_param_bound_by_boundary<rows>(%s0: !mo.tensor<[1], si64>, %s1: !mo.tensor<[1], si64>, %c: !mo.tensor<[rows], ui8>, %x: !mo.tensor<[rows], f32>) -> (!mo.tensor<[1], f32>) {
+  // CHECK: %[[R0:.+]] = mo.relu(%[[X]])
+  // CHECK: mo.call @param_bound_by_boundary(%[[S0]], %[[R0]])
+  %res1 = mo.call @param_bound_by_boundary(%s0, %c, %x) : (!mo.tensor<[1], si64>, !mo.tensor<[rows], ui8>, !mo.tensor<[rows], f32>) -> !mo.tensor<[1], f32>
+  // CHECK: %[[R1:.+]] = mo.relu(%[[X]])
+  // CHECK: mo.call @param_bound_by_boundary(%[[S1]], %[[R1]])
+  %res2 = mo.call @param_bound_by_boundary(%s1, %c, %x) : (!mo.tensor<[1], si64>, !mo.tensor<[rows], ui8>, !mo.tensor<[rows], f32>) -> !mo.tensor<[1], f32>
+  %2 = mo.add(%res1, %res2) : !mo.tensor<[1], f32>
+  mo.output %2 : !mo.tensor<[1], f32>
+}
+
+} // module

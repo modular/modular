@@ -23,8 +23,8 @@ def safe_add(a: Int, b: Int) raises Never -> Int:
 
 
 def get_value_or_panic(maybe: Optional[Int]) raises -> Int:
-    if maybe:
-        return maybe.value()
+    if case .Some(value) = maybe:
+        return value
     # Never substitutes for Int in this branch
     panic("value is missing")
 

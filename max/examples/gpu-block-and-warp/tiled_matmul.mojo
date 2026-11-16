@@ -40,7 +40,7 @@ from max.gpu import thread_idx, block_idx
 
 # TileTensor support from open source layout package
 from layout import TileTensor, stack_allocation
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 # Data type selection: float32 provides good balance of precision and performance
 comptime float_dtype = DType.float32

@@ -88,9 +88,9 @@ enum class KernelOutputFusionLambdaType {
   OutputLegacyForCompute, // Store lambda for mixed-precision
                           // (_FusedComputeOutputTensor).
   Compute,                // Return lambda (_FusedComputeOutputTensor).
-  ComputeTile, // TileTensor return lambda (_FusedComputeOutputTileTensor).
+  ComputeTile, // TileTensor return lambda (_LegacyTileComputeOutput).
   OutputTile,  // Tile store lambda; the fusion owns the store
-               // (_FusedOutputTileTensor).
+               // (_LegacyTileStoreAccess).
   // TODO(GEX-3912): SIMD reuses `Compute` for standalone and epilogue fusion,
   // but tile needs `ElementwiseTile` because standalone writes into `dst` while
   // the epilogue transforms `val`. An inout-`dst` tile compute interface would
@@ -98,9 +98,14 @@ enum class KernelOutputFusionLambdaType {
   ElementwiseTile, // Pure elementwise tile fusion writing into `dst`.
 };
 
-// Returns true if `op`'s device (from the enclosing kernel stub, else `op`) has
-// `tile_based_fusion = true` in `moduleOp`'s `mo.device_info_mapping`.
-bool isTileCodegenForOp(mlir::Operation *op, mlir::ModuleOp moduleOp);
+inline bool isTileFusionLambda(KernelOutputFusionLambdaType kind) {
+  return kind == KernelOutputFusionLambdaType::ComputeTile ||
+         kind == KernelOutputFusionLambdaType::OutputTile ||
+         kind == KernelOutputFusionLambdaType::ElementwiseTile;
+}
+
+// Whether `decl`'s `execute` takes a tile fused output.
+bool kernelDeclaresTileOutput(KernelDeclOp decl);
 
 } // namespace M::MOGG
 

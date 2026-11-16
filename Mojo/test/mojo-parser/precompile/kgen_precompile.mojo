@@ -49,8 +49,17 @@
 ## recorded as its link dependency.
 # RUN: %precompile-mojo-isolated -S -I %t.dir/deps %t.dir/user \
 # RUN:   | FileCheck %s --check-prefix=DEPS
-# DEPS: lit.package @user attributes {dependencies = #kgen<link.dependencies[@dep]>}
+# DEPS: lit.package @user {
+# DEPS: } <dependencies = [@dep]>
 
 # RUN: not kgen -precompile %t.dir/user/u.mojo 2>&1 \
 # RUN:   | FileCheck %s --check-prefix=NOT-PKG
 # NOT-PKG: '{{.*}}u.mojo' does not correspond to a Mojo package
+
+## Every dotted component of a namespace must be non-empty.
+# RUN: not %precompile-mojo-isolated %t.dir/pkg -namespace= 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-EMPTY
+# RUN: not %precompile-mojo-isolated %t.dir/pkg -namespace a..b 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-INNER
+# NS-EMPTY: invalid namespace ''
+# NS-INNER: invalid namespace 'a..b'

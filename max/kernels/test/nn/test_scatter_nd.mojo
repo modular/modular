@@ -223,7 +223,7 @@ def main() raises:
         ]
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[use_update]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(64):
@@ -256,7 +256,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[2, cols]())
 
         scatter_nd_generator(
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(cols):
@@ -292,7 +292,7 @@ def main() raises:
         var output = TileTensor(output_ptr, row_major[2, 3, cols]())
 
         scatter_nd_generator(
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(slice_len):
@@ -501,7 +501,7 @@ def main() raises:
             return v1 + v2
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(64):
@@ -713,7 +713,7 @@ def main() raises:
             return max(v1, v2)
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[_max]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(64):
@@ -925,7 +925,7 @@ def main() raises:
             return min(v1, v2)
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[_min]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(64):
@@ -1137,7 +1137,7 @@ def main() raises:
             return v1 * v2
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[_mul]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         for i in range(64):
@@ -1183,7 +1183,7 @@ def main() raises:
             return v1 + v2
 
         scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output, DeviceContext.cpu()
         )
 
         comptime dups_per_target = n_idx // n_targets

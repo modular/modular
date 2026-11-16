@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
@@ -20,7 +20,7 @@ from std.testing import assert_equal
 
 
 def test_native_vectorize_static() raises:
-    comptime flat_layout = TileLayout(
+    comptime flat_layout = Layout(
         Coord(Idx[16], Idx[32], Idx[4]),
         Coord(Idx[32], Idx[1], Idx[512]),
     )
@@ -29,7 +29,7 @@ def test_native_vectorize_static() raises:
     for i in range(2048):
         storage[i] = Float32(i)
 
-    comptime nested_layout = TileLayout(
+    comptime nested_layout = Layout(
         Coord(Coord(Idx[16], Idx[32]), Idx[4]),
         Coord(Coord(Idx[32], Idx[1]), Idx[512]),
     )
@@ -84,7 +84,7 @@ def test_native_vectorize_static() raises:
 
 def test_native_vectorize_dynamic[width: Int]() raises:
     var heap = unsafe_alloc[Int32](64, alignment=16)
-    var runtime_layout = TileLayout(
+    var runtime_layout = Layout(
         Coord(Int32(8), Int32(8)), Coord(Int32(8), Idx[1])
     )
     var tensor = TileTensor[linear_idx_type=.int32](heap, runtime_layout)

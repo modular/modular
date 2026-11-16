@@ -186,7 +186,6 @@ def test_grouped_blockwise_fp8_matmul_amd[
             k_scale_granularity=BLOCK_SCALE_K,
             transpose_b=transpose_b,
             static_grid_z=static_grid_z,
-            target="gpu",
         ](
             c_my_dev,
             a_dev,

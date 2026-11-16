@@ -57,7 +57,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.compute.mma import mma
-from max.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.intrinsics import ds_read_tr16_b64
 from max.gpu.memory import AddressSpace, external_memory
 from max.gpu.sync import barrier, s_waitcnt
@@ -85,15 +85,15 @@ comptime Frag = SIMD[DType.bfloat16, 8]
 comptime Acc = SIMD[DType.float32, 4]
 comptime F4 = SIMD[DType.float32, 4]
 
-comptime LPtr[T: AnyType] = Pointer[
-    T, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+comptime LPtr = Pointer[
+    _, MutUntrackedOrigin, address_space=AddressSpace.SHARED
 ]
 comptime Lds = LPtr[UInt8]
-comptime GPtr[T: AnyType] = Pointer[
-    T, ImmUntrackedOrigin, address_space=AddressSpace.GLOBAL
+comptime GPtr = Pointer[
+    _, ImmUntrackedOrigin, address_space=AddressSpace.GLOBAL
 ]
-comptime GMutPtr[T: AnyType] = Pointer[
-    T, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
+comptime GMutPtr = Pointer[
+    _, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
 ]
 comptime LdsAtomic = Atomic[UInt32, scope="workgroup"]
 
@@ -409,9 +409,10 @@ def resident_workgroups[
 ](ctx: DeviceContext, lds: Int) raises -> Int:
     """The workgroups of `kernel` the device holds at once."""
     var f = ctx.compile_function[kernel]()
-    return f.occupancy_max_active_blocks_per_multiprocessor(
-        THREADS, lds
-    ) * ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    return (
+        f.occupancy_max_active_blocks_per_multiprocessor(THREADS, lds)
+        * ctx.device().multiprocessor_count()
+    )
 
 
 # ===----------------------------------------------------------------------=== #

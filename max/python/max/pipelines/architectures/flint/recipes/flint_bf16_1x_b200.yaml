@@ -1,0 +1,27 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# Flint's ragged grouped matmul cannot run under device graph capture.
+model:
+  model_path: RecursiveSI/flint
+  device_specs: [0]
+  max_length: 8192
+  quantization_encoding: bfloat16
+  kv_cache:
+    kv_cache_format: bfloat16
+    kv_cache_page_size: 128
+
+runtime:
+  prefer_module_v3: true
+  max_batch_size: 1
+  device_graph_capture: false
+  enable_overlap_scheduler: false

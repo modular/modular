@@ -38,7 +38,7 @@ from typing import Any
 from max.dtype import DType
 from max.graph.weights import WeightData
 from max.nn.legacy.float8_scale_stacking import can_use_fused_mlp
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     NVFP4_BLOCK_SIZE,
     InputScaleSpec,
     QuantConfig,

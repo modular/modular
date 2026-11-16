@@ -20,6 +20,7 @@
 
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Support/SymbolExport.h"
 
 namespace M::KGEN {
 class ConstraintAttr;
@@ -34,7 +35,9 @@ class RefPackType;
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITTypes.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN::LIT {
 
@@ -184,7 +187,7 @@ public:
 //===----------------------------------------------------------------------===//
 // FnTypeGeneratorType
 //===----------------------------------------------------------------------===//
-class FnTypeGeneratorType
+class MODULAR_CXX_EXPORT FnTypeGeneratorType
     : public FnTypeWrapperGeneratorType<FnTypeGeneratorType,
                                         FuncTypeGeneratorType> {
 public:
@@ -312,12 +315,14 @@ public:
   }
 
   // Debug Util.
-  void dump() {
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+  LLVM_DUMP_METHOD void dump() {
     if (auto fnGen = getIfFnTypeGenerator())
       fnGen.dump();
 
     getIfFnLiteralTypeGenerator().dump();
   }
+#endif
 };
 
 //===----------------------------------------------------------------------===//
@@ -353,18 +358,7 @@ public:
   StructMetaType(Base base) : Base(base) {}
 
   SymbolRefAttr getSymbol() const;
-  TypeSignatureType getSignature() const;
   ArrayRef<TypedAttr> getParamValues() const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of param values. Only
-  /// positions that are currently unbound can be updated.
-  StructMetaType bindAll(ArrayRef<TypedAttr> values) const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of unbound parameters
-  /// in the current param values list.
-  StructMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
 class StructMetaMetaType : public MetaTypeOf<StructMetaType> {
@@ -378,18 +372,7 @@ public:
 
   StructMetaMetaType(Base base) : Base(base) {}
   SymbolRefAttr getSymbol() const;
-  TypeSignatureType getSignature() const;
   ArrayRef<TypedAttr> getParamValues() const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of param values. Only
-  /// positions that are currently unbound can be updated.
-  StructMetaMetaType bindAll(ArrayRef<TypedAttr> values) const;
-
-  /// Bind parameter values to the metatype, returning a new metatype.
-  /// Expects the number of values to match the number of unbound parameters
-  /// in the current param values list.
-  StructMetaMetaType bindUnbound(ArrayRef<TypedAttr> values) const;
 };
 
 class AnyTraitType : public MetaTypeOf<TraitType> {

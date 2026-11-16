@@ -1,0 +1,15 @@
+--- a/rust/private/rustc.bzl
++++ b/rust/private/rustc.bzl
+@@ -3369,6 +3369,12 @@
+                 "-Clink-arg=-l{}".format(get_lib_name(artifact)),
+             ]
+     elif _is_dylib(lib):
++        # `-ldylib=<name>` has the linker look for lib<name>.so, which an
++        # interface library (Bazel's .ifso) is not called, so the linker gets
++        # its file name. Not as `-ldylib:+verbatim=`: rustc rejects a library
++        # repeated with modifiers, and one reaches a binary through each dep.
++        if artifact.extension == "ifso":
++            return ["-Clink-arg=-l:%s" % artifact.basename]
+         return [
+             "-ldylib=%s" % get_lib_name(artifact),
+         ]

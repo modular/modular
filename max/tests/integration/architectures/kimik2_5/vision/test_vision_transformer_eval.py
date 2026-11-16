@@ -28,6 +28,7 @@ import itertools
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 
 import pytest
@@ -52,9 +53,9 @@ from max.pipelines.architectures.kimik2_5.vision_processor import (
     KimiK2_5VisionProcessor,
 )
 from max.pipelines.architectures.kimik2_5.weight_adapters import (
-    _ATTN_RENAME_PATTERNS,
-    KIMIK2_5_VISION_MAPPING,
+    KIMIK2_5_VISION_RENAMES,
 )
+from max.pipelines.lib import WeightRenaming
 from safetensors.torch import load_file
 from torch import nn
 
@@ -105,36 +106,32 @@ def _remap_hf_to_max(
 ) -> dict[str, torch.Tensor]:
     """Remaps HuggingFace checkpoint keys to MAX Transformer keys.
 
-    Applies the canonical ``KIMIK2_5_VISION_MAPPING`` (which produces
-    ``vision_encoder.*`` prefixed names) then strips the
-    ``vision_encoder.`` prefix so the keys match the Transformer module
-    directly (e.g. ``encoder.blocks.0.*``, ``patch_merger.linear1.*``).
+    Applies the architecture's vision renames, which produce
+    ``vision_encoder.*`` names, then strips the ``vision_encoder.`` prefix
+    so the keys match the Transformer module directly (e.g.
+    ``encoder.blocks.0.*``, ``patch_merger.linear1.*``).
     """
     remapped: dict[str, torch.Tensor] = {}
     for k, v in hf_state_dict.items():
         new_k = k
-        for before, after in KIMIK2_5_VISION_MAPPING.items():
-            new_k = new_k.replace(before, after)
-        for pattern, replacement in _ATTN_RENAME_PATTERNS:
-            new_k = pattern.sub(replacement, new_k)
-
-        new_k = new_k.removeprefix("vision_encoder.")
-        remapped[new_k] = v
+        for rule in KIMIK2_5_VISION_RENAMES:
+            assert isinstance(rule, WeightRenaming)
+            new_k = re.sub(rule.pattern, rule.replacement, new_k)
+        remapped[new_k.removeprefix("vision_encoder.")] = v
     return remapped
 
 
 def _remap_hf_to_torch(
     hf_state_dict: dict[str, torch.Tensor],
 ) -> dict[str, torch.Tensor]:
-    """Remaps HuggingFace checkpoint keys to TorchTransformer keys."""
-    remapped: dict[str, torch.Tensor] = {}
-    for k, v in hf_state_dict.items():
-        new_k = k
-        for before, after in KIMIK2_5_VISION_MAPPING.items():
-            new_k = new_k.replace(before, after)
-        new_k = new_k.removeprefix("vision_encoder.")
-        remapped[new_k] = v
-    return remapped
+    """Remaps HuggingFace checkpoint keys to TorchTransformer keys.
+
+    The reference holds each block's attention projections on the block.
+    """
+    return {
+        re.sub(r"(blocks\.\d+\.)attn\.", r"\1", k): v
+        for k, v in _remap_hf_to_max(hf_state_dict).items()
+    }
 
 
 def _torch_tpool_patch_merger(

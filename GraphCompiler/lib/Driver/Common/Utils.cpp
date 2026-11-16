@@ -37,9 +37,8 @@ M::ErrorOr<std::string> M::getFileContentIdentity(const BufferRef &file,
     if (failed(mefFileOr))
       return Error(mefFileOr.getError());
 
-    auto mefContents = mefFileOr.get()->sniffFileContents();
     return std::string("input is a MEF file containing a ") +
-           mefContents.getAsString();
+           mefFileOr.get()->sniffFileContents();
   }
   }
 }

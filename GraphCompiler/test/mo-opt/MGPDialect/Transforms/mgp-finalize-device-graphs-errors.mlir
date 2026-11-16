@@ -9,7 +9,7 @@
 // `Pure` yet records a device event, so it must not silently get the backing
 // context -- effect-freedom is not the criterion.
 
-mgp.model @dg_unsafe_context_user device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_unsafe_context_user device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1
@@ -32,7 +32,7 @@ mgp.model @dg_unsafe_context_user device_graph : mof devices [#M.device_ref<"gpu
 // not appear in the model's `devices` list leaves `collectDeviceContexts`
 // nothing to match against.
 
-mgp.model @dg_no_exec_device device_graph : mof devices [#M.device_ref<"gpu", 0>]
+mgp.model @dg_no_exec_device device_graph devices [#M.device_ref<"gpu", 0>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu: !mgp.device_context<<"gpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1

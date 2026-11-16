@@ -18,7 +18,7 @@ from std.testing import TestSuite
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-comptime EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
+comptime EVERY_CODEPOINT_LENGTH_STR = StringSpan("߷കൈ🔄!")
 """A string that contains at least one of 1-, 2-, 3-, and 4-byte UTF-8
 sequences.
 
@@ -48,13 +48,13 @@ For further visualization and analysis involving this sequence, see:
 
 def test_chars_iter() raises:
     # Test `for` loop iteration support
-    for char in StringSlice("abc").codepoints():
+    for char in StringSpan("abc").codepoints():
         assert_true(
             char in (Codepoint.ord("a"), Codepoint.ord("b"), Codepoint.ord("c"))
         )
 
     # Test empty string chars
-    var s0 = StringSlice("")
+    var s0 = StringSpan("")
     var s0_iter = s0.codepoints()
 
     with assert_raises():
@@ -63,7 +63,7 @@ def test_chars_iter() raises:
     assert_true(s0_iter.next() is None)
 
     # Test simple ASCII string chars
-    var s1 = StringSlice("abc")
+    var s1 = StringSpan("abc")
     var s1_iter = s1.codepoints()
 
     assert_equal(s1_iter.next(), Optional(Codepoint.ord("a")))
@@ -73,7 +73,7 @@ def test_chars_iter() raises:
 
     # Multibyte character decoding: A visual character composed of a combining
     # sequence of 2 codepoints.
-    var s2 = StringSlice("á")
+    var s2 = StringSpan("á")
     assert_equal(s2.byte_length(), 3)
     assert_equal(s2.count_codepoints(), 2)
 
@@ -151,7 +151,7 @@ def test_string_slice_codepoint_slices_reversed() raises:
 
 
 def test_bytes_iter_empty() raises:
-    var s = StringSlice("")
+    var s = StringSpan("")
     var bytes = s.bytes()
 
     assert_equal(len(bytes), 0)
@@ -160,7 +160,7 @@ def test_bytes_iter_empty() raises:
 
 
 def test_bytes_iter_ascii() raises:
-    var s = StringSlice("abc")
+    var s = StringSpan("abc")
     var collected = List[Byte](s.bytes())
     assert_equal(len(collected), 3)
     assert_equal(collected[0], s.as_bytes()[0])
@@ -179,7 +179,7 @@ def test_bytes_iter_ascii() raises:
 
 
 def test_bytes_iter_utf8() raises:
-    var s = StringSlice("é")
+    var s = StringSpan("é")
     assert_equal(s.byte_length(), 2)
 
     var bytes = s.bytes()
@@ -201,7 +201,7 @@ def test_bytes_iter_len() raises:
 
 
 def test_bytes_iter_bounds() raises:
-    var s = StringSlice("ab")
+    var s = StringSpan("ab")
     var it = s.bytes()
     assert_equal(it.bounds(), (2, Optional(2)))
     _ = next(it)

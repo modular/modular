@@ -79,10 +79,10 @@ comptime _COLS = 8
 comptime _NUM_ELEMENTS = _ROWS * _COLS
 
 # The device-pointer-backed tile the probe exercises.
-comptime _ProbeTile[LayoutType: TensorLayout, origin: MutOrigin] = TileTensor[
+comptime _ProbeTile = TileTensor[
     .float32,
-    LayoutType,
-    origin,
+    _,
+    _,
     Engine=DevicePointerEngine[element_width=1],
 ]
 

@@ -13,7 +13,7 @@
 """Tests coordinate offsets with static and dynamic tensor strides."""
 
 from layout import Coord, Idx, TileTensor, col_major, row_major
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from std.testing import TestSuite, assert_equal
 
 

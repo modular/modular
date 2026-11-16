@@ -17,9 +17,9 @@ kgen.func @trivial(%arg0: si32) -> si32 {
 
 // CHECK-LABEL: kgen.generator @generator_with_source_name
 // CHECk-SAME: attributes {sourceName = "some_func"}
-kgen.generator @generator_with_source_name(%arg0: si32) -> si32 attributes {sourceName = "some_func"} {
+kgen.generator @generator_with_source_name(%arg0: si32) -> si32 {
   hlcf.return %arg0 : si32
-}
+} <sourceName = "some_func">
 
 // This checks the generic (also ugly) parameter syntax.
 // CHECK-LABEL: kgen.generator @generic_parameter_syntax<p1, p2, ty: dtype>() {
@@ -621,8 +621,8 @@ kgen.generator @compile_offload_with_link_option() {
 kgen.generator @compile_offload_with_target_attrs() {
   kgen.param.declare tpu: target = <#kgen.target<triple = "tpu-google-xla", arch = "tpu-v6e", data_layout = "e-i64:64", simd_bit_width = 1024>>
 
-  // CHECK: %[[V0:.*]] = kgen.compile_offload<tpu, 0, "", "", :() -> () @kernel {target_attrs = {tpu.dimension_semantics = [0, 1], tpu.grid_dims = [2, 4]}}> : !kgen.none
-  %0 = kgen.compile_offload<tpu, 0, "", "", : ()->() @kernel {target_attrs = {"tpu.grid_dims" = [2, 4], "tpu.dimension_semantics" = [0, 1]}}> : !kgen.none
+  // CHECK: %[[V0:.*]] = kgen.compile_offload<tpu, 0, "", "", :() -> () @kernel> : !kgen.none <target_attrs = {tpu.dimension_semantics = [0, 1], tpu.grid_dims = [2, 4]}>
+  %0 = kgen.compile_offload<tpu, 0, "", "", : ()->() @kernel> : !kgen.none <target_attrs = {"tpu.grid_dims" = [2, 4], "tpu.dimension_semantics" = [0, 1]}>
 
   hlcf.return
 }

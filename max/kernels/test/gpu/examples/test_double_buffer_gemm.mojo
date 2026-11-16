@@ -285,7 +285,7 @@ def sgemm_double_buffer[
             )
 
 
-def test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext[]) raises:
     comptime NUM_THREADS = 256
     comptime M = 8192
     comptime N = 8192
@@ -340,7 +340,7 @@ def test(ctx: DeviceContext) raises:
     ]
 
     @inline(.always)
-    def run_func(ctx: DeviceContext) raises {imm}:
+    def run_func(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[gemm](
             c_tensor,
             a_tensor.as_imm(),

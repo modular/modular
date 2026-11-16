@@ -19,7 +19,6 @@ from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .decoder import GptOssDecoder
-from .memory_planner import GptOssMemoryPlanner
 from .model_config import GptOssConfig
 from .tokenizer import GptOssTokenizer
 
@@ -42,7 +41,6 @@ gpt_oss_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=GptOssConfig,
-    memory_planner=GptOssMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

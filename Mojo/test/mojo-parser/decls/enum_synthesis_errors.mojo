@@ -34,13 +34,6 @@ __enum Trivial(TrivialRegisterPassable):
     case b(NotAType)
 
 
-# TODO(MOCO-5080): `NoneType` is `EnumLike`'s "no payload" marker, so a case
-# cannot carry one; the rejection goes with the marker.
-__enum NonePayload:
-    # expected-error @+1 {{enum case payload must not be 'NoneType'; a case without a payload is written 'case nothing'}}
-    case nothing(NoneType)
-
-
 # An enum cannot hold itself by value.
 __enum Chain:
     case end

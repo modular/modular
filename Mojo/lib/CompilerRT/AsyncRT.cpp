@@ -25,24 +25,9 @@ using namespace M::AsyncRT;
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// An opaque wrapper around a pointer to a T.
-template <typename T>
-struct AsyncRTWrapper {
-  void *ptr;
-};
-
-template <typename T>
-T &unwrap(AsyncRTWrapper<T> ref) {
-  return *reinterpret_cast<T *>(ref.ptr);
-}
-template <typename T>
-AsyncRTWrapper<T> wrap(T *ptr) {
-  return AsyncRTWrapper<T>{ptr};
-}
-
-using AsyncRTRuntimeRef = AsyncRTWrapper<CPUDevice>;
-using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
-using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
+using AsyncRTRuntimeRef = CPUDevice *;
+using AsyncRTAsyncChainRef = AsyncValueRef<Chain> *;
+using AsyncRTSpinWaiterRef = SpinWaiter<true> *;
 
 //===----------------------------------------------------------------------===//
 // Chains
@@ -52,26 +37,25 @@ using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_InitializeChain(AsyncRTAsyncChainRef chain) {
   auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
-  new (&unwrap(chain))
-      AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(rt)));
+  new (chain) AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(rt)));
 }
 
 /// Destroys the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_DestroyChain(AsyncRTAsyncChainRef chain) {
-  unwrap(chain).~AsyncValueRef<Chain>();
+  chain->~AsyncValueRef<Chain>();
 }
 
 /// Emplaces the given chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Complete(AsyncRTAsyncChainRef chain) {
-  unwrap(chain).copy().emplace();
+  chain->copy().emplace();
 }
 
 /// Blocks until the given chain is ready.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Wait(AsyncRTAsyncChainRef chain) {
-  await(unwrap(chain));
+  await(*chain);
 }
 
 /// Blocks until the given chain is ready, or the given deadline is hit.
@@ -82,7 +66,7 @@ KGEN_CompilerRT_AsyncRT_Wait(AsyncRTAsyncChainRef chain) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
 KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
   static TimerHeap heap;
-  AsyncValueRef<Chain> &done = unwrap(chain);
+  AsyncValueRef<Chain> &done = *chain;
   AsyncValueRef<Chain> expired =
       AsyncValueRef<Chain>::allocate(done.getCPUDevice());
   AsyncValueRef<Chain> either =
@@ -135,7 +119,7 @@ KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
                                 AsyncRTAsyncChainRef chain, int8_t *hdl) {
-  unwrap(chain).andThenAsync([hdl, resume]() { resume(hdl); });
+  chain->andThenAsync([hdl, resume]() { resume(hdl); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -146,7 +130,7 @@ KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
 /// Take ownership into a temporary RCRef so its destructor drops the ref.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice(AsyncRTRuntimeRef rt) {
-  (void)CPUDeviceRef::take(&unwrap(rt));
+  (void)CPUDeviceRef::take(rt);
 }
 
 /// Returns the pointer to the cpuDevice to which the caller's thread is
@@ -154,7 +138,7 @@ KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice(AsyncRTRuntimeRef rt) {
 /// cpuDevice.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice() {
-  return wrap(CPUDevice::getCurrentCPUDeviceOrNull());
+  return CPUDevice::getCurrentCPUDeviceOrNull();
 }
 
 /// Get or create the AsyncRT cpuDevice and return its pointer.
@@ -162,7 +146,7 @@ COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
 KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice() {
   auto cpuDevice = getOrCreateCPUDevice(
       CPUDeviceSource::MojoStdlib, CPUDeviceOptions().withMainWillNotDonate());
-  return wrap(cpuDevice.release());
+  return cpuDevice.release();
 }
 
 /// Given a pointer to an AsyncRT cpuDevice, get the number of threads in it.
@@ -185,11 +169,11 @@ KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter() {
 /// Waits on the SpinWaiter
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait(AsyncRTSpinWaiterRef waiter) {
-  unwrap(waiter).wait();
+  waiter->wait();
 }
 
 /// Destroys the given SpinWaiter.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_DestroySpinWaiter(AsyncRTSpinWaiterRef waiter) {
-  delete (SpinWaiter<true> *)(waiter.ptr);
+  delete waiter;
 }

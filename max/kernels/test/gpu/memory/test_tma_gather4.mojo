@@ -41,7 +41,7 @@ from std.math import ceildiv
 from std.sys.info import size_of
 
 from max.gpu import block_dim, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
@@ -203,12 +203,10 @@ def _typed_row_major[
     return ConcLayout(shape_c, stride_c)
 
 
-comptime _PagedCollection[
-    dtype: DType, kv_params: KVCacheStaticParams, page_size: Int
-] = PagedKVCacheCollection[
-    dtype,
-    kv_params,
-    page_size,
+comptime _PagedCollection = PagedKVCacheCollection[
+    _,
+    _,
+    _,
     MutAnyOrigin,
     ImmutAnyOrigin,
     ImmutAnyOrigin,
@@ -271,10 +269,8 @@ def _paged_collection[
     )
 
 
-comptime _ContinuousCollection[
-    dtype: DType, kv_params: KVCacheStaticParams
-] = ContinuousBatchingKVCacheCollection[
-    dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+comptime _ContinuousCollection = ContinuousBatchingKVCacheCollection[
+    _, _, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
 ]
 
 
@@ -1650,9 +1646,6 @@ def test_gather4_tile_api[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1830,9 +1823,6 @@ def test_gather4_tile_api_paged[
         grid_dim=(1, 1),
         block_dim=num_threads,
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 

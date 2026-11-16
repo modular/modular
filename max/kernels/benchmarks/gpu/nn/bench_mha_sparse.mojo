@@ -141,7 +141,7 @@ def run_mha_sparse[
     tag_mag: Float64,
     bench: Bool,
     verify: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions. `scale` matches bench_mha.mojo (0.125). Note
     # this is 1/8, NOT 1/sqrt(depth=128)~=0.0884 -- the kernel's BLASST decision
@@ -219,7 +219,9 @@ def run_mha_sparse[
             mut b: Bencher,
         ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
                     cb_q.offset_ptr(iteration),

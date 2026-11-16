@@ -11,6 +11,6 @@
 
 // CHECK: 'trait_dup_operand_graph' returned tensor<4xf32> [2.000000e+00, 2.000000e+00, 2.000000e+00, 2.000000e+00]
 mo.graph @trait_dup_operand_graph(%x: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
-    %z = mo.custom [symbol = "trait_mixed_legacy_out_add", device = #M.device_ref<"cpu", 0>] (%x, %x) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+    %z = mo.custom [symbol = "trait_dense_add", device = #M.device_ref<"cpu", 0>] (%x, %x) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
     mo.output %z : !mo.tensor<[4], f32>
 }

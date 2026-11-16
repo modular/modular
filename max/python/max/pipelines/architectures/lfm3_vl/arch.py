@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -41,6 +40,5 @@ lfm3_vl_arch = SupportedArchitecture(
     },
     config=Lfm3VlConfig,
     batching=Lfm3VlModel.batch_processor_cls,
-    memory_planner=PagedMemoryPlanner.with_activation_reservation(10 * 1024**3),
     checkpoints_recurrent_state=True,
 )

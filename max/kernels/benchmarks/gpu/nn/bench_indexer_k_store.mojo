@@ -22,7 +22,7 @@ from nn.indexer_k_store import indexer_k_norm_rope_store
 
 def bench_store[
     fp4: Bool, ratio: Int
-](ctx: DeviceContext, mut bench: Bench, count: Int) raises:
+](ctx: DeviceContext[], mut bench: Bench, count: Int) raises:
     comptime page_size = 64
     comptime row_bytes = 68 if fp4 else 132
     var keys = ctx.enqueue_create_host_buffer[.bfloat16](count * 128)
@@ -61,7 +61,7 @@ def bench_store[
     # cache tensor an immutable origin.
     var cache = TileTensor(d_cache, row_major(pages, page_size * row_bytes))
 
-    def launch(c: DeviceContext) raises {imm}:
+    def launch(c: DeviceContext[]) raises {imm}:
         indexer_k_norm_rope_store[fp4, ratio](
             TileTensor(d_keys, row_major(count, 128)),
             TileTensor(d_positions, row_major(count)),

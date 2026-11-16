@@ -258,7 +258,7 @@ def badCalls(arg: Int):
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{invalid call to 'test': failed to infer parameter 'j'}}
-  TestTuple[Int, FloatLiteral]().test[1]()
+  TestTuple[Int, Bool]().test[1]()
 
 def badError(a: ParameterizedStruct[Int]):
   # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}
@@ -1092,30 +1092,29 @@ struct ShapeContainer(Movable where False):
 
 # MSTDL-2267: Structs with "AnyOrigin" fields stop keeping things alive when passed to a function
 struct SwallowAnyOrigin(Movable where False):
-    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'UnsafePointer[Int, MutAnyOrigin]'}}
-    # expected-note @below {{'UnsafePointer[Int, MutAnyOrigin]' is aka 'Pointer[Int, MutAnyOrigin]'}}
+    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'Pointer[Int, MutAnyOrigin]'}}
     # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
     # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
-    var foo: UnsafePointer[Int, MutAnyOrigin]
+    var foo: Pointer[Int, MutAnyOrigin]
 
 # A field that opts into the legacy behavior with the
 # @__allow_legacy_any_origin_fields decorator is accepted without error.
 struct AllowedLegacyAnyOrigin(Movable where False):
     @__allow_legacy_any_origin_fields
-    var foo: UnsafePointer[Int, MutAnyOrigin]
+    var foo: Pointer[Int, MutAnyOrigin]
 
 # A function-pointer field whose signature mentions AnyOrigin in an argument or
 # result position does not expose AnyOrigin in the struct's own storage (the
 # struct holds a function, not a reference into that memory), so it is accepted
 # without the decorator.
 struct FnPtrAnyOriginArg(Movable where False):
-    var cb_arg: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
-    var cb_ret: def() thin -> UnsafePointer[Int, MutAnyOrigin]
+    var cb_arg: def(Pointer[Int, MutAnyOrigin]) thin -> None
+    var cb_ret: def() thin -> Pointer[Int, MutAnyOrigin]
 
 # A struct parameter bound by a function type that mentions AnyOrigin, with a
 # field of that parameter type, is likewise accepted: the AnyOrigin lives in the
 # parameter's bound, not in the field's own storage type.
-struct FnTypeParamBound[T: def(UnsafePointer[Int, MutAnyOrigin])](Movable where False):
+struct FnTypeParamBound[T: def(Pointer[Int, MutAnyOrigin])](Movable where False):
     var t: Self.T
 
 ##===----------------------------------------------------------------------===##
@@ -1366,16 +1365,14 @@ def raises_int() raises Int:
   raise Error()
 
 def bad_raises_fn2() raises:
-  # expected-error @+1 {{cannot call function that may raise 'Int' in context that supports an error type of 'Error'}}
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Error'}}
   raises_int()
 
   # expected-error @+1 {{cannot implicitly convert 'FloatLiteral[4]' value to 'Error'}}
   raise 4.0
 
-  try:
+  try: # expected-error {{cannot find a unified error type for the try body: ::SIMD[DType.int, 1], ::Error}}
     raises_int()
-
-    # expected-error @+1 {{cannot implicitly convert 'Error' value to 'Int'}}
     raise Error()
   except e: # 'e' inferred to Int.
     var x: Int = e
@@ -1411,7 +1408,9 @@ def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
 
 
-# expected-error @+1 {{cannot construct a value with parametric type: 'Origin[mut=_]'}}
+# expected-note @below {{missing parameter 'mut'}}
+# expected-note @below {{missing parameter '_mlir_origin'}}
+# expected-error @+1 {{'Origin[mut=_]' is not concrete, use '[]' to bind missing parameters}}
 comptime A: Origin = AnyOrigin
 
 
@@ -1426,5 +1425,6 @@ def overload_on_arg_conv(mut x: Int):
 def overload_on_arg_conv(imm x: Int):
     pass
 
+# expected-note @below {{missing parameter 'T'}}
 # expected-error @+1 {{'List[_]' is not concrete, use '[]' to bind missing parameters}}
 comptime _list_eq_int = List == Int

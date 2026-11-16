@@ -19,7 +19,7 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.kernels import masked_flash_attention_gpu
+from max.nn._graph_ops import masked_flash_attention_gpu
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import RMSNorm

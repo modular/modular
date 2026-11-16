@@ -28,6 +28,7 @@
 #include <string>
 
 namespace M::KGEN::LIT {
+class ConformanceASTDecl;
 class DocString;
 class TypeScopeASTDecl;
 
@@ -78,6 +79,7 @@ public:
     StructField,
     Trait,
     Witness,
+    ConformanceMember,
   };
 
   virtual ~ASTDecl();
@@ -102,6 +104,7 @@ public:
 
   /// Return tooling information for this declaration.
   ASTType getToolingType();
+  StringRef getToolingKindName();
   std::optional<StringRef> getName();
   std::optional<StringRef> getDeprecationWarning();
 
@@ -113,9 +116,31 @@ public:
   /// Returns this parameter's number, or -1 for a non-parameter.
   virtual ssize_t getParamNumber() const { return -1; }
 
-  /// Returns this argument's ABI convention. Asserts if this is not an
-  /// argument declaration.
+  /// Return true if this declaration represents a function argument.
+  bool isArgumentDecl() const;
+
+  /// Return true if this declaration represents a compile-time parameter
+  /// declaration on a function or struct.
+  bool isParameterDecl() const;
+
+  /// Return true if this parameter appears in the user-visible signature.
+  bool isUserParameterDecl() const;
+
+  /// Return true if this declaration represents a variable.
+  bool isVariableDecl() const;
+
+  /// Returns this argument's effective ABI convention, including any variadic
+  /// convention. Asserts if this is not an argument declaration.
   ArgConvention getArgConvention() const;
+
+  /// Return the POG metadata for this argument or parameter declaration.
+  PogMetadataAttr getPogMetadata() const;
+
+  /// Return the variadic kind for this argument or parameter declaration.
+  VariadicKind getPogVariadicKind() const;
+
+  /// Return the default value for this argument or parameter, if present.
+  std::optional<TypedAttr> getPogDefault() const;
 
   /// Returns whether this argument appears in the user-visible signature.  This
   /// filters out implicitly declared error slots and result slots, but keeps
@@ -351,11 +376,6 @@ public:
   /// subexpressions but whose children will be inherited later by a decl being
   /// resolved.
   void takeDecls(ASTDecl &src);
-
-  /// Append the children decls of `src` into this scope (updating their
-  /// `parentDecl`), without replacing existing names already in this scope.
-  /// Used when promoting temporary pattern-binding scopes into a case scope.
-  void mergeDeclsFrom(ASTDecl &src);
 
   /// Anonymous origins, closure impl structs, and potentially other names are
   /// uniqued to avoid collisions. This returns an ID that is unique to this
@@ -786,6 +806,9 @@ public:
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
   ArrayRef<ASTDecl *> getArgDecls() const { return argDecls; }
 
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   /// Return a list of user-declared argument declarations that we'd want to
   /// show in document generation, for example.  This filters out implicitly
   /// declared error slots and result slots, but keeps user-declared "out"
@@ -961,14 +984,21 @@ public:
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveBody(Lexer &lexer) override;
 
-  /// Compute the `Self` type represented by a struct declaration operation.
-  static Type computeSelfType(StructDeclOp structOp);
+  /// Compute the `Self` type represented by this struct declaration.
+  Type computeSelfType() const;
 
   /// Return this struct's parameter declarations in signature order.
   ArrayRef<ASTDecl *> getParamDecls() const { return paramDecls; }
 
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   /// Return the parameter declaration with the given internal name, if any.
   ASTDecl *getParamByName(StringAttr name) const;
+
+  /// Return this struct's conformance to `traitSymbol`, or null when it
+  /// declares none.
+  ConformanceASTDecl *lookupConformance(TraitSymbolAttr traitSymbol) const;
 
 private:
   friend class M::BumpAllocator;
@@ -1018,6 +1048,11 @@ public:
   /// Return the alias operation represented by this declaration.
   AliasDeclOp getOp() const { return cast<AliasDeclOp>(getOperation()); }
   void setOp(AliasDeclOp op) { setOperation(*op.getOperation()); }
+  std::string getToolingValue();
+
+  /// Return the source-visible parameter declarations in signature order.
+  SmallVector<ASTDecl *> getUserParamDecls() const;
+
   LogicalResult resolveSignature(Lexer &lexer) override;
   LogicalResult resolveSyntheticSignature() override;
   LogicalResult resolveBody(Lexer &lexer) override;
@@ -1041,14 +1076,23 @@ public:
 
   ConformanceOp getOp() const { return cast<ConformanceOp>(getOperation()); }
   StructASTDecl &getStructDecl() const;
+  TraitASTDecl &getTraitDecl() const;
   LogicalResult resolveBody(Lexer &lexer) override;
   LogicalResult resolveSyntheticBody() override;
+
+  /// Extensions that may provide witnesses, found when the conformance is body
+  /// resolved.
+  ArrayRef<ASTDecl *> getRelevantExtensions() const {
+    return relevantExtensions;
+  }
 
 private:
   friend class M::BumpAllocator;
   friend class DeclResolver;
 
   LogicalResult resolveConformance();
+
+  SmallVector<ASTDecl *, 2> relevantExtensions;
 
   ConformanceASTDecl(SharedState &shared, ConformanceOp conformanceOp,
                      llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
@@ -1181,6 +1225,41 @@ private:
                  TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation);
+};
+
+/// One witness of a conformance declaration.
+class ConformanceWitnessASTDecl final : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::ConformanceMember;
+  }
+
+  ConformanceASTDecl &getConformanceDecl() const {
+    return cast<ConformanceASTDecl>(*getParentDecl());
+  }
+  /// The trait requirement this witness satisfies.
+  ASTDecl &getTraitMember() const { return traitMember; }
+  /// The name of the `WitnessOp` this member installs: the mangled symbol of
+  /// a method requirement, the declared name of an alias requirement.
+  StringAttr getWitnessName() const { return witnessName; }
+  /// The installed `WitnessOp`, null until the requirement is checked.
+  WitnessOp getWitness() const { return witness; }
+  void setWitness(WitnessOp op) { witness = op; }
+
+  LogicalResult resolveSyntheticSignature() override { return success(); }
+  LogicalResult resolveSyntheticBody() override;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  ConformanceWitnessASTDecl(SharedState &shared, ASTDecl &traitMember,
+                            StringAttr witnessName,
+                            ConformanceASTDecl &conformanceDecl);
+
+  ASTDecl &traitMember;
+  StringAttr witnessName;
+  WitnessOp witness;
 };
 
 } // namespace M::KGEN::LIT

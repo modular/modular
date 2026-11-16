@@ -15,12 +15,22 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/RWMutex.h"
 #include "llvm/Support/Threading.h"
+#include <concepts>
 #include <cstdint>
 
 #ifndef SUPPORT_THREADING_THREADLOCALCACHE_H
 #define SUPPORT_THREADING_THREADLOCALCACHE_H
 
 namespace M {
+
+/// A cache type can define `static CacheT makeThreadCache(const CacheT &)` to
+/// create the cache each thread of a `ThreadLocalCache` starts with, for
+/// example as a layer that reads through to the original. Otherwise each
+/// thread starts with a copy of the original.
+template <typename CacheT>
+concept HasThreadCacheFactory = requires(const CacheT &original) {
+  { CacheT::makeThreadCache(original) } -> std::same_as<CacheT>;
+};
 
 //===----------------------------------------------------------------------===//
 // ThreadLocalCache
@@ -29,8 +39,9 @@ namespace M {
 /// This class manages a set of thread-local caches. This class is useful when
 /// an in-memory analysis cache needs to be shared across multiple threads,
 /// where each thread needs to update the cache (deterministically), but it is
-/// more efficient to let threads mutate their own local copies of the cache
-/// which can be merged back into the main cache.
+/// more efficient to let threads mutate their own local caches, which can be
+/// merged back into the main cache. See `HasThreadCacheFactory` for how each
+/// thread's cache is created.
 template <typename CacheT>
 class ThreadLocalCache {
 public:
@@ -51,8 +62,8 @@ public:
         return it->second;
     }
     llvm::sys::SmartScopedWriter<true> lock(mutex);
-    // Each thread gets a copy of the saved cache.
-    return threadCaches.try_emplace(threadId, original).first->second;
+    return threadCaches.try_emplace(threadId, createThreadCache())
+        .first->second;
   }
 
   /// Consolidate the thread-local caches back into the main cache instance, if
@@ -63,7 +74,16 @@ public:
   }
 
 private:
-  /// The original cache to make copies from.
+  /// Returns the cache a thread starts with: `CacheT::makeThreadCache` if the
+  /// cache type defines it, otherwise a copy of `original`.
+  CacheT createThreadCache() const {
+    if constexpr (HasThreadCacheFactory<CacheT>)
+      return CacheT::makeThreadCache(original);
+    else
+      return original;
+  }
+
+  /// The original cache that each thread's cache starts from.
   CacheT &original;
   /// Thread-local instances of the cache.
   llvm::DenseMap<uint64_t, CacheT> threadCaches;

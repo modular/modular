@@ -15,7 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.speculative._dflash import dflash_draft_width
 
 from .model import DFlashKimiK25DraftArchConfig
@@ -40,5 +40,4 @@ dflash_kimi_k25_draft_arch = SupportedArchitecture(
     config=DFlashKimiK25DraftArchConfig,
     supports_device_graph_capture=False,
     checkpoint_draft_width=dflash_draft_width,
-    input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

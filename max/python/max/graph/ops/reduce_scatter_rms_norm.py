@@ -35,6 +35,7 @@ def reduce_scatter_rms_norm(
     residuals: Iterable[TensorValueLike] | None = None,
     weight_offset: float = 0.0,
     group_size: int | None = None,
+    quant_bits: int = 0,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Fused reduce-scatter sum + optional residual add + RMSNorm (bf16 in/out).
 
@@ -73,6 +74,12 @@ def reduce_scatter_rms_norm(
             reduce-scatter group. Defaults to all devices (a full-world
             collective). Under TP-within-DP this is the TP degree, so each
             replica reduces only within its own group.
+        quant_bits: ``4`` or ``8`` to send each device's contribution to its
+            peers quantized in groups of 32 elements (symmetric INT4 with a
+            bf16 scale, or MXFP8) whenever the shards are too large for the
+            fused kernel; ``0`` keeps the exact reduce-scatter. Quantizing is
+            lossy, and applies only to a full-world reduce-scatter whose column
+            count is a multiple of 32; other shapes stay exact.
 
     Returns:
         A tuple ``(normed, residual)`` of two lists, each with one tensor per
@@ -124,6 +131,10 @@ def reduce_scatter_rms_norm(
         raise ValueError(
             "reduce_scatter_rms_norm requires the same rank across all input "
             f"tensors. Got: {inputs=}"
+        )
+    if quant_bits not in (0, 4, 8):
+        raise ValueError(
+            f"reduce_scatter_rms_norm quant_bits must be 0, 4 or 8, got {quant_bits}"
         )
     group_size = group_size or num_devices
     if group_size < 2:
@@ -219,6 +230,7 @@ def reduce_scatter_rms_norm(
         _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
         BoolAttr(has_residual),
+        IntegerAttr(IntegerType(64), quant_bits),
     )
 
     graph._update_chain(out_chain)

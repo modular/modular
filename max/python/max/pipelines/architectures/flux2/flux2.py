@@ -27,8 +27,8 @@ from max.graph import (
 from max.nn.legacy.comm.allreduce import Allreduce
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer.transformer import forward_sharded_layers
+from max.nn.quant_config import QuantConfig
 
 from .layers.embeddings import TimestepEmbedding, Timesteps
 from .layers.flux2_attention import (

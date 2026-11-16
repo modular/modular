@@ -22,37 +22,66 @@ filegroup(
     ),
 )
 
+# Crash tests that time out in external CI after the crash handler prints its
+# trace. Temporary, until crash-test slowness is fixed.
+_SKIP_EXTERNAL_CI = [
+    "stack_trace_raising_main_terminated.mojo",
+    "stack_trace_terminated.mojo",
+]
+
+_TEST_MOJO_DEPS = [
+    "//max:layout",
+    "//max:max_mojo",
+    "@mojo//:std",
+]
+
+_TEST_TOOLS = [
+    "//Mojo/tools/kgen",
+    "//Mojo/tools/kgen-opt",
+    "//Mojo/tools/kgen-translate",
+    "//Mojo/tools/llvm-module-split",
+    "//Mojo/tools/mojo",
+    "@llvm-project//llvm:llvm-as",
+    "@llvm-project//llvm:llvm-dis",
+    "@llvm-project//llvm:llvm-nm",
+    "@llvm-project//llvm:llvm-objdump",
+]
+
+_TEST_SRCS = glob(
+    [
+        "**/*.mlir",
+        "**/*.mojo",
+    ],
+    exclude = _DATA,
+)
+
 lit_tests(
     name = "test",
-    srcs = glob(
-        [
-            "**/*.mlir",
-            "**/*.mojo",
-        ],
-        exclude = _DATA,
-    ),
+    srcs = [src for src in _TEST_SRCS if src not in _SKIP_EXTERNAL_CI],
     data = [":fixtures"],
-    mojo_deps = [
-        "//max:layout",
-        "//max:max_mojo",
-        "@mojo//:std",
-    ],
+    mojo_deps = _TEST_MOJO_DEPS,
     tags = ["gpu"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    tools = [
-        "//Mojo/tools/kgen",
-        "//Mojo/tools/kgen-opt",
-        "//Mojo/tools/kgen-translate",
-        "//Mojo/tools/llvm-module-split",
-        "//Mojo/tools/mojo",
-        "@llvm-project//llvm:llvm-as",
-        "@llvm-project//llvm:llvm-dis",
-        "@llvm-project//llvm:llvm-nm",
-        "@llvm-project//llvm:llvm-objdump",
+    tools = _TEST_TOOLS,
+)
+
+lit_tests(
+    name = "test_skip_external_ci",
+    srcs = _SKIP_EXTERNAL_CI,
+    data = [":fixtures"],
+    mojo_deps = _TEST_MOJO_DEPS,
+    tags = [
+        "gpu",
+        "skip-external-ci",
     ],
+    target_compatible_with = select({
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = _TEST_TOOLS,
 )
 
 lit_tests(

@@ -22,6 +22,26 @@ using namespace KGEN;
 
 ErrorOrSuccess
 PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
+  return configureWithTiming(pm, timingScope);
+}
+
+ErrorOrSuccess PassManagerConfigOptions::configurePassManager(
+    mlir::PassManager &pm, mlir::TimingScope &timing) const {
+  return configureWithTiming(pm, timing ? &timing : nullptr);
+}
+
+mlir::TimingScope
+PassManagerConfigOptions::nestTimingScope(llvm::StringRef name) const {
+  if (!timingScope)
+    return mlir::TimingScope();
+  mlir::TimingScope scope = timingScope->nest(name);
+  scope.hide();
+  return scope;
+}
+
+ErrorOrSuccess
+PassManagerConfigOptions::configureWithTiming(mlir::PassManager &pm,
+                                              mlir::TimingScope *timing) const {
   M::configurePassManager(pm);
 
   if (applyPassManagerCLOptions) {
@@ -29,8 +49,8 @@ PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
       return Error("applyPassManagerCLOptions failed during configuring");
   }
 
-  if (timingScope)
-    pm.enableTiming(*timingScope);
+  if (timing)
+    pm.enableTiming(*timing);
   else if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   else if (enableTiming)

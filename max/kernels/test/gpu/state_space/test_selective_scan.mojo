@@ -110,15 +110,10 @@ def run_selective_scan_gpu[
         delta_h.unsafe_store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
     # Allocate device memory
-    var output_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var output_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
-    var x_cpu_d = ctx.enqueue_create_buffer[dtype](
-        batch * dim * n_chunks * 2 * dstate
-    )
     var x_gpu_d = ctx.enqueue_create_buffer[dtype](
         batch * dim * n_chunks * 2 * dstate
     )
-    var out_z_cpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var out_z_gpu_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var u_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
     var delta_d = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)

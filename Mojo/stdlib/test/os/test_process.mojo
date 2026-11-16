@@ -93,6 +93,28 @@ def test_process_inherits_env() raises:
     assert_equal(status.exit_code, Optional(0))
 
 
+def test_process_run_runtime_args() raises:
+    # Arguments built at run time have no NUL terminator and live on the
+    # heap or in a string's inline buffer, unlike literals.
+    print("== test_process_run_runtime_args")
+    # CHECK-LABEL: == test_process_run_runtime_args
+    # CHECK-NEXT: a0 a1 a2
+    # CHECK-NEXT: argument-long-enough-for-the-heap-0 argument-long-enough-for-the-heap-1
+    var short_args = List[String]()
+    for i in range(3):
+        short_args.append(String("a") + String(i))
+    var short_run = Process.run("echo", short_args)
+    _ = short_run.wait()
+
+    var long_args = List[String]()
+    for i in range(2):
+        long_args.append(
+            String("argument-long-enough-for-the-heap-") + String(i)
+        )
+    var long_run = Process.run("echo", long_args)
+    _ = long_run.wait()
+
+
 def main() raises:
     test_process_run()
     test_process_run_missing()
@@ -100,3 +122,4 @@ def main() raises:
     test_process_kill()
     test_pipe()
     test_process_inherits_env()
+    test_process_run_runtime_args()

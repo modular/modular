@@ -64,6 +64,76 @@ void printAliasSignature(LIT::AliasASTDecl &decl, llvm::raw_string_ostream &os,
 void printTraitSignature(LIT::TraitASTDecl &decl, llvm::raw_string_ostream &os,
                          const SignatureOffsets &offsets = {});
 
+std::string getFunctionSignature(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr,
+    unsigned *returnOffset = nullptr);
+std::string getFunctionDeclarationSnippet(
+    LIT::DefASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
+        nullptr);
+std::string getStructSignature(
+    LIT::StructASTDecl &decl,
+    llvm::SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
+        nullptr);
+
+/// Return a source-facing declaration snippet for any supported declaration.
+///
+/// Unlike the signature-specific routines above, this includes declaration
+/// keywords and variable/field type annotations. It returns an empty string
+/// for declarations with no source-facing representation.
+std::string getDeclarationSnippet(LIT::ASTDecl &decl);
+
+/// Return the source-facing type for a parameter.
+std::string getParameterTypeString(LIT::ASTDecl &decl);
+
+/// Return the source-facing type and convention keyword for an argument.
+std::string getArgumentTypeString(LIT::ASTDecl &decl);
+llvm::StringRef getArgumentConventionString(LIT::ASTDecl &decl);
+
+/// Return this argument or parameter's default with parameter references
+/// rebound to their source-level names.
+mlir::TypedAttr getReboundPogDefault(LIT::ASTDecl &decl);
+
+/// Print one parameter or argument as it appears in a declaration signature.
+void printParameter(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+void printArgument(LIT::ASTDecl &decl, llvm::raw_ostream &os);
+
+/// Render a constraint proposition as Mojo source-level syntax.
+std::string renderConstraintProposition(mlir::TypedAttr proposition,
+                                        ParameterEvaluator *evaluator,
+                                        LIT::SharedState &shared);
+
+std::string generatePValueString(LIT::SharedState &shared, LIT::PValue value);
+std::string getSignatureOrigin(LIT::SharedState &shared, mlir::TypedAttr origin,
+                               LIT::FnTypeGeneratorType signature,
+                               bool isRefResult);
+std::string getRefPrefixAsString(LIT::SharedState &shared, LIT::RefType refType,
+                                 LIT::FnTypeGeneratorType signature,
+                                 bool isRefResult);
+std::string
+generateTypeString(LIT::SharedState &shared, LIT::ASTType type,
+                   VariadicKind varKind,
+                   std::optional<LIT::ASTType> selfType = std::nullopt,
+                   std::optional<ArgConvention> convention = std::nullopt);
+llvm::Twine prependVariadicIdentifiers(const llvm::Twine &identifier,
+                                       VariadicKind varKind);
+void dumpIdentifierWithType(llvm::raw_ostream &os, llvm::StringRef identifier,
+                            llvm::StringRef type,
+                            VariadicKind varKind = VariadicKind::None,
+                            bool elideType = false);
+std::string getDefaultValueString(mlir::TypedAttr defaultValue,
+                                  LIT::SharedState &shared);
+
+/// Remove implicit `argName.member` parameters from a rendered argument type.
+std::string stripImplicitArgParams(llvm::StringRef typeStr,
+                                   llvm::StringRef argName);
+
 //===----------------------------------------------------------------------===//
 // Diagnostic-oriented helpers
 //===----------------------------------------------------------------------===//

@@ -13,7 +13,7 @@
 """FLUX.2 ModuleV3 attention and feed-forward layers.
 
 Mojo kernels (``rope_ragged_with_position_ids``, ``flash_attention_gpu``) are
-reused from ``max.nn.legacy.kernels`` via :class:`~max.graph.TensorValue` unwrap;
+reused from ``max.nn._graph_ops`` via :class:`~max.graph.TensorValue` unwrap;
 they take graph values directly and the experimental ``Tensor`` exposes
 ``__tensorvalue__`` and :meth:`Tensor.from_graph_value` as the unwrap /
 rewrap pair.
@@ -24,11 +24,8 @@ from __future__ import annotations
 from max import functional as F
 from max.dtype import DType
 from max.nn import Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
-    flash_attention_gpu,
-    rope_ragged_with_position_ids,
-)
+from max.nn._graph_ops import flash_attention_gpu, rope_ragged_with_position_ids
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList

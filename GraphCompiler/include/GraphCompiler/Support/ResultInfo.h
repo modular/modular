@@ -22,6 +22,7 @@
 #include "GraphCompiler/Support/Value.h"
 #include "MLRT/Core/Tensor/Tensor.h"
 #include "Support/ML/TensorSpec.h"
+#include "Support/SymbolExport.h"
 #include <map>
 
 namespace M {
@@ -38,7 +39,7 @@ public:
   virtual void map(llvm::yaml::IO &io) = 0;
 };
 
-class TensorResultInfo : public ResultInfo {
+class MODULAR_CXX_EXPORT TensorResultInfo : public ResultInfo {
 public:
   TensorResultInfo() = default;
   TensorResultInfo(std::string name, std::string shape);
@@ -53,7 +54,7 @@ public:
   std::string shape;
 };
 
-class VariantResultInfo : public M::ResultInfo {
+class MODULAR_CXX_EXPORT VariantResultInfo : public M::ResultInfo {
 public:
   VariantResultInfo(std::string name, M::GML::Variant variant);
 
@@ -70,7 +71,7 @@ public:
 /// Per-output `ResultInfo`s plus a flat map of the unique tensors "unzipped"
 /// from nested (Dict, List, Tuple) model outputs for export. A tensor output
 /// keeps the output's name; a leaf tensor is assigned one.
-class ProcessedResults {
+class MODULAR_CXX_EXPORT ProcessedResults {
 public:
   ProcessedResults();
 

@@ -118,7 +118,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import (
     Coord,
-    IntTuple,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -156,7 +155,6 @@ from .conv_utils import (
     get_partition,
     no_conv_simd_compute_fn,
     no_conv_simd_epilogue_fn,
-    reorder_padding,
 )
 from .gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
@@ -389,7 +387,9 @@ def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
     return Index(n, ho, wo)
 
 
-# Reduce helper when the input channel dimension is partitioned.
+# Reduce helper when the input channel dimension is partitioned. Partition 0
+# accumulates in `output`, and `scratch` holds partitions 1 to
+# `num_partitions - 1`, so the reduction adds `scratch` into `output` in place.
 @inline(.always)
 def _reduce_output[
     dtype: DType,
@@ -422,19 +422,18 @@ def _reduce_output[
             width: Int
         ](offset: Int) {F, scratch, num_partitions, output, imm buf_size, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
-            var vec = scratch.load[width=width, alignment=align_of[dtype]()](
-                Coord(tid_output_offset)
+            var output_coord = output.layout.idx2crd(tid_output_offset)
+            var vec = output.load[width=width, alignment=align_of[dtype]()](
+                output_coord
             )
             # The number of partitions here is typically small.
             # There may not be much benefit from unrolling the reduction axis.
             # Only unroll the last dimension.
             for i in range(1, num_partitions):
                 vec += scratch.load[width=width, alignment=align_of[dtype]()](
-                    Coord(tid_output_offset + i * buf_size)
+                    Coord(tid_output_offset + (i - 1) * buf_size)
                 )
-            output.store[alignment=align_of[dtype]()](
-                output.layout.idx2crd(tid_output_offset), vec
-            )
+            output.store[alignment=align_of[dtype]()](output_coord, vec)
 
         vectorize[simd_size, unroll_factor=4](reduce_range[1] * F, sum)
 
@@ -633,17 +632,22 @@ struct ConvDirectNHWC[
         ](num_threads, conv_shape)
         var num_tasks = num_partitions.product()
 
-        # Safety: the scratch pointer below will alias the output_ptr, so cast to MutAnyOrigin
-        # here to turn off the check.
+        # Partition 0 of the input channels accumulates in `output`, and each
+        # other partition accumulates in its own slice of `scratch`.
+        # Safety: the task outputs alias `output`, so cast to an untracked
+        # origin here to turn off the check.
         var output_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
         var output_size = output.num_elements()
-        var scratch_size = num_partitions[1] * output_size
+        var scratch_size = (num_partitions[1] - 1) * output_size
+        var scratch_ptr = output_ptr
         if num_partitions[1] > 1:
-            output_ptr = alloc[Scalar[Self.output_type]](
+            scratch_ptr = alloc[Scalar[Self.output_type]](
                 {length = scratch_size}
             ).unsafe_leak()
-        # Wrap the pointer inside TileTensor so it can be properly captured by async closure.
-        var output_scratch = TileTensor(output_ptr, row_major(scratch_size))
+        # Wrap the pointers inside TileTensor so they can be properly captured
+        # by async closure.
+        var output_flat = TileTensor(output_ptr, row_major(output_size))
+        var output_scratch = TileTensor(scratch_ptr, row_major(scratch_size))
 
         @inline(.always)
         def task_func(
@@ -651,6 +655,7 @@ struct ConvDirectNHWC[
         ) {
             var num_partitions,
             var cf_tile_size,
+            var output_flat,
             var output_scratch,
             var output_size,
             imm,
@@ -672,12 +677,15 @@ struct ConvDirectNHWC[
 
             # TODO: Need to have a more robust way to compute task_id_c
             var task_id_c = (task_id // num_partitions[2]) % num_partitions[1]
+            var task_output_ptr = output_flat.unsafe_ptr()
+            if task_id_c > 0:
+                task_output_ptr = output_scratch.unsafe_ptr().unsafe_offset(
+                    (task_id_c - 1) * output_size
+                )
             var task_output = TileTensor[
                 Self.output_type, Self.output_layout, Self.output_origin
             ](
-                (
-                    output_scratch.ptr.unsafe_offset(task_id_c * output_size)
-                ).unsafe_origin_cast[Self.output_origin](),
+                task_output_ptr.unsafe_origin_cast[Self.output_origin](),
                 output.layout,
             )
 
@@ -723,7 +731,7 @@ struct ConvDirectNHWC[
                 ctx,
             )
             dealloc(
-                ThinAllocation(unsafe_owned_ptr=output_ptr).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=scratch_ptr).unsafe_with_layout(
                     {length = scratch_size}
                 )
             )
@@ -1450,6 +1458,8 @@ struct ConvDirectNHWC[
                     left_pad_impact_end,
                     right_pad_impact_start,
                 )
+            case _:
+                pass
 
     def output_space_loop_1d[
         micro_kernel_height: Int,
@@ -3002,12 +3012,12 @@ def pack_conv_filter_shape(
 @inline(.always)
 def pack_filter_shape[
     filter_type: DType,
-    input_shape: IntTuple,
-    filter_shape: IntTuple,
-    output_shape: IntTuple,
-    strides: IntTuple,
-    dilations: IntTuple,
-    paddings: IntTuple,
+    input_shape: Coord,
+    filter_shape: Coord,
+    output_shape: Coord,
+    strides: Coord,
+    dilations: Coord,
+    paddings: Coord,
     num_groups: Int,
 ](filter: TileTensor) -> IndexList[filter.flat_rank + 1]:
     """
@@ -3046,23 +3056,20 @@ def pack_filter_shape[
     var F_per_group = F // num_groups
 
     comptime conv_attr = ConvInfoStatic[filter.flat_rank - 2](
-        pad=reorder_padding[filter.flat_rank - 2](IntTuple(paddings)),
-        stride=IntTuple(strides),
-        dilation=IntTuple(dilations),
+        pad=paddings,
+        stride=strides,
+        dilation=dilations,
         num_groups=num_groups,
     )
 
     # TODO: extend to 1D/3D.
-    comptime WO = output_shape[
-        2
-    ].value() if filter.flat_rank == 4 and output_shape[
-        2
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
-    comptime F_NHWC = output_shape[
+    comptime WO = (
+        output_shape.element_types[2].static_value if filter.flat_rank
+        == 4 else UNKNOWN_VALUE
+    )
+    comptime F_NHWC = output_shape.element_types[
         filter.flat_rank - 1
-    ].value() if output_shape[
-        filter.flat_rank - 1
-    ].value() != UNKNOWN_VALUE else UNKNOWN_VALUE
+    ].static_value
     comptime micro_kernel_shape = get_micro_kernel_shape[
         filter.flat_rank - 2,
         WO,
@@ -3566,15 +3573,9 @@ def conv_nhwc_direct[
     def description_fn() {imm} -> String:
         return ";".join(
             [
-                trace_arg(
-                    "input", coord_to_index_list(input.layout.shape_coord())
-                ),
-                trace_arg(
-                    "filter", coord_to_index_list(filter.layout.shape_coord())
-                ),
-                trace_arg(
-                    "output", coord_to_index_list(output.layout.shape_coord())
-                ),
+                trace_arg("input", input.layout.shape_coord()),
+                trace_arg("filter", filter.layout.shape_coord()),
+                trace_arg("output", output.layout.shape_coord()),
                 String(t"group={num_groups}"),
                 "stride=" + "x".join([stride]),
                 "padding_h=" + "x".join([pad_h]),
@@ -3637,6 +3638,101 @@ def conv_nhwc_direct[
             elementwise_epilogue,
             ctx,
         )
+
+
+def conv_nhwc_direct[
+    conv_info_rank: Int,
+    EpilogueFnType: ConvSimdEpilogueFn,
+    OutputLayoutType: TensorLayout,
+    //,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    filter_packed: Bool,
+    conv_info_static: ConvInfoStatic[conv_info_rank],
+](
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output_layout: OutputLayoutType,
+    stride: IndexList[conv_info_rank],
+    dilation: IndexList[conv_info_rank],
+    pad_d: IndexList[2],
+    pad_h: IndexList[2],
+    pad_w: IndexList[2],
+    num_groups: Int,
+    elementwise_lambda: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Runs a direct (register-tiled) NHWC convolution on CPU and hands every
+    output vector to an elementwise epilogue.
+
+    The same convolution as the overload that takes `output`, for a caller
+    whose epilogue owns every write, such as a graph op whose output is fused.
+    The kernel keeps partial sums in memory between input-channel tiles, so
+    this overload accumulates in a temporary buffer with the output's shape
+    and gives each finished row to `elementwise_lambda`. The output is given
+    as a layout, so the kernel never sees a pointer it could write through.
+
+    Parameters:
+        conv_info_rank: Number of spatial dimensions in the convolution (1,
+            2, or 3) (inferred).
+        EpilogueFnType: Type of `elementwise_lambda` (inferred).
+        OutputLayoutType: Type of `output_layout` (inferred).
+        input_type: Element type of the input tensor.
+        filter_type: Element type of the filter tensor.
+        output_type: Element type of the output values.
+        filter_packed: True when the filter is prepacked for grouped
+            convolution.
+        conv_info_static: Statically known convolution attributes including
+            padding, stride, dilation, and group count.
+
+    Args:
+        input: Input activation TileTensor in NHWC or NDHWC layout.
+        filter: Filter weights TileTensor.
+        output_layout: Layout of the output in NHWC or NDHWC order; only its
+            shape is read.
+        stride: Stride along each spatial dimension.
+        dilation: Dilation factor along each spatial dimension.
+        pad_d: Padding before and after the depth dimension, stored as
+            `(before, after)`.
+        pad_h: Padding before and after the height dimension, stored as
+            `(before, after)`.
+        pad_w: Padding before and after the width dimension, stored as
+            `(before, after)`.
+        num_groups: Number of convolution groups for grouped convolution.
+        elementwise_lambda: Elementwise SIMD function that receives every
+            output vector.
+        ctx: Device context that allocates the accumulation buffer and
+            launches the parallel kernel.
+    """
+    # TODO(GEX-4431): let kernels declare scratch to the graph so this
+    # buffer is memory planned instead of allocated on every call.
+    var accum_buf = ctx.enqueue_create_buffer[output_type](
+        output_layout.product()
+    )
+    var accum = TileTensor(accum_buf, row_major(output_layout.shape_coord()))
+    conv_nhwc_direct[
+        input_type,
+        filter_type,
+        output_type,
+        filter_packed,
+        conv_info_static,
+        has_epilogue_fusion=True,
+    ](
+        input,
+        filter,
+        accum,
+        stride,
+        dilation,
+        pad_d,
+        pad_h,
+        pad_w,
+        num_groups,
+        elementwise_lambda,
+        Optional(ctx.assert_cpu_target()),
+    )
+    # The convolution is synchronous, so the buffer is free to release here.
+    _ = accum_buf^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3989,7 +4085,7 @@ def _get_cudnn_meta(
     new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4121,7 +4217,7 @@ def _get_cached_cudnn_meta_nhwc_full(
     new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4495,7 +4591,7 @@ def _get_cached_miopen_meta[
     new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4567,7 +4663,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_fcrs_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
         filter_shape[0] = UInt64(F_dim)
@@ -4602,7 +4698,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_rscf_to_frsc, (F_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4647,7 +4743,7 @@ def _conv_miopen[
             )
             filter_frsc_ptr.unsafe_store(out_idx, val)
 
-        elementwise[1, target="gpu"](
+        elementwise[1](
             transpose_qrscf_to_fqrsc, (F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
         )
 
@@ -4903,10 +4999,7 @@ def _conv_miopen[
                 output_tmp.load[width=_width](coords),
             )
 
-        elementwise[
-            simd_width_of[output_type, target=ctx.target](),
-            target="gpu",
-        ](
+        elementwise[simd_width_of[output_type, target=ctx.target](),](
             miopen_epilogue,
             output.layout.shape_coord(),
             ctx,
@@ -5000,7 +5093,7 @@ def _conv_compute_in_place[
             coords, compute_fn(coords, vec)
         )
 
-    elementwise[simd_width_of[output_type](), target="gpu"](
+    elementwise[simd_width_of[output_type]()](
         apply, output.layout.shape_coord(), ctx
     )
 
@@ -5649,25 +5742,25 @@ def conv_gpu[
 
             # Construct row-major TileTensors for cuDNN (shared by both
             # epilogue and non-epilogue paths).
-            var _in_s = coord_to_index_list(input.layout.shape_coord())
+            var _in_s = input.layout.shape_coord()
             var input_rm = input.reshape(
                 row_major(
                     (
-                        _in_s[0],
-                        _in_s[1],
-                        _in_s[2],
-                        _in_s[3],
+                        Int(_in_s[0]),
+                        Int(_in_s[1]),
+                        Int(_in_s[2]),
+                        Int(_in_s[3]),
                     )
                 )
             )
-            var _filt_s = coord_to_index_list(filter.layout.shape_coord())
+            var _filt_s = filter.layout.shape_coord()
             var filter_rm = filter.reshape(
                 row_major(
                     (
-                        _filt_s[0],
-                        _filt_s[1],
-                        _filt_s[2],
-                        _filt_s[3],
+                        Int(_filt_s[0]),
+                        Int(_filt_s[1]),
+                        Int(_filt_s[2]),
+                        Int(_filt_s[3]),
                     )
                 )
             )
@@ -5702,7 +5795,7 @@ def conv_gpu[
                     ](coords)
                     epilogue_fn(coords, vec)
 
-                elementwise[simd_width_of[output_type](), target="gpu"](
+                elementwise[simd_width_of[output_type]()](
                     epilogue_wrapper,
                     output.layout.shape_coord(),
                     ctx,
@@ -5711,14 +5804,14 @@ def conv_gpu[
                 _ = output_tmp_data^
 
             else:
-                var _out_s = coord_to_index_list(output.layout.shape_coord())
+                var _out_s = output.layout.shape_coord()
                 var output_rm = output.reshape(
                     row_major(
                         (
-                            _out_s[0],
-                            _out_s[1],
-                            _out_s[2],
-                            _out_s[3],
+                            Int(_out_s[0]),
+                            Int(_out_s[1]),
+                            Int(_out_s[2]),
+                            Int(_out_s[3]),
                         )
                     )
                 )
@@ -6914,7 +7007,7 @@ def _conv3d_cudnn[
             )
         )
         external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-            StringSlice(cache_key),
+            StringSpan(cache_key),
             ptr_entry.unsafe_bitcast[NoneType](),
         )
 
@@ -6992,7 +7085,7 @@ def _conv3d_cudnn[
                 )
             )
             external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-                StringSlice(cache_key),
+                StringSpan(cache_key),
                 retry_entry.unsafe_bitcast[NoneType](),
             )
 

@@ -1,0 +1,231 @@
+---
+title: Passing data to exported Mojo functions
+description: >
+  Examples of foreign code calling exported Mojo functions with handles,
+  structs, arrays, strings, and callbacks, and receiving errors.
+---
+
+{/* VERIFIED against these sources:
+  Mojo/stdlib/std/runtime/__init__.mojo (initialize_runtime)
+  Mojo/stdlib/std/memory/alloc.mojo (alloc, dealloc, Allocation, Layout,
+    unsafe_leak)
+  Mojo/stdlib/std/collections/span.mojo (Span(unsafe_ptr=, length=))
+  Mojo/stdlib/std/memory/pointer.mojo (OpaquePointer, unsafe_bitcast)
+  Mojo/docs/site/reference/decorators/export.mdx
+  Rust reference: #[repr(C)], unsafe extern "C"
+  C++ reference: std::unique_ptr custom deleter, std::vector::data()
+  Probes: ~/here/studio-claude/share-data/handles/
+  Tests: Mojo/docs/site/code/manual/interop/passing-data-to-mojo/
+    (exports_c_host.mojo, c_host.c) */}
+{/* Compiler verified: 2026-11-12, repo build at c3da0ac4bbf (bazel
+    //Mojo:mojo) and Mojo 1.3.0.dev2026111105 (d00b2893), macOS ARM64.
+    Linux not yet checked: see the test suite. */}
+{/* Last updated: 2026-11-12 (Point drops RegisterPassable, rms caller
+    skips empty vectors) */}
+
+A Mojo library exports functions with `@export` and `abi("C")`, and foreign
+code calls them like any other C function. These examples show the Mojo
+side in full, with a short C, C++, or Rust caller. [C-compatible data
+types](/docs/manual/interop/data-types) explains the types and ownership
+rules they use. To build the library and link a caller, see [Example: Call
+Mojo from
+C](/docs/manual/interop/interoperability#example-call-mojo-from-c).
+
+Every exported function in these examples calls `initialize_runtime()`
+first. Code that uses the Mojo runtime crashes under a foreign host without
+it. [Callbacks and
+exports](/docs/manual/interop/safety#callbacks-and-exports) explains why.
+
+## Opaque handles
+
+Foreign code holds a handle and passes it back.
+Export one function that creates a value and one that destroys it. In
+this example, `Stats` is an ordinary Mojo struct that keeps a running count
+and mean:
+
+```mojo
+from std.memory.alloc import alloc, dealloc, Allocation, Layout
+from std.runtime import initialize_runtime
+
+@fieldwise_init
+struct Stats:
+    var count: Int
+    var mean: Float64
+
+comptime Handle = MutOpaquePointer[MutUntrackedOrigin]
+
+@export("stats_new")
+def stats_new() abi("C") -> Handle:
+    initialize_runtime()
+    var stats = alloc(Layout[Stats].single()).unsafe_leak()
+    stats.write(Stats(count=0, mean=0.0))
+    return stats.unsafe_bitcast[NoneType]()
+
+@export("stats_free")
+def stats_free(handle: Handle) abi("C"):
+    initialize_runtime()
+    dealloc(Allocation(
+        unsafe_owned_ptr=handle.unsafe_bitcast[Stats](),
+        layout=Layout[Stats].single(),
+    ))
+```
+
+`alloc()` returns an `Allocation`. Mojo makes you dispose of an
+`Allocation` explicitly, so its memory can't leak by accident.
+`unsafe_leak()` disposes of it by handing the memory to the foreign caller.
+`stats_free()` takes ownership back by rebuilding the `Allocation`, and
+`dealloc()` frees the memory.
+
+Other exports, such as a `stats_add()` that records a value, turn the
+handle back into a `Stats` pointer with `unsafe_bitcast[Stats]()`. Nothing
+checks that the handle really points to a `Stats`.
+
+A C++ caller declares `Stats` without defining it, so it can't see inside.
+It lets `unique_ptr` call `stats_free()` when the handle goes out of scope:
+
+```cpp
+extern "C" {
+struct Stats;
+Stats *stats_new(void);
+double stats_add(Stats *stats, double value);
+void stats_free(Stats *stats);
+}
+
+std::unique_ptr<Stats, decltype(&stats_free)> stats(stats_new(), stats_free);
+```
+
+Foreign code frees the handle with your exported function, never with its
+own `free()` or `delete`. Those don't know how Mojo allocated the memory.
+
+## Structs
+
+The Mojo side declares the fields in C order and exports a function that
+takes the struct:
+
+```mojo
+from std.math import sqrt
+from std.runtime import initialize_runtime
+
+@fieldwise_init
+struct Point:
+    var x: Float64
+    var y: Float64
+
+@export("distance")
+def distance(a: Point, b: Point) abi("C") -> Float64:
+    initialize_runtime()
+    return sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
+```
+
+Rust gives a struct C's layout with `#[repr(C)]`:
+
+```rust
+#[repr(C)]
+struct Point { x: f64, y: f64 }
+
+unsafe extern "C" {
+    fn distance(a: Point, b: Point) -> f64;
+}
+```
+
+The two struct definitions form the contract. Nothing compares them. If a
+field changes on one side and not the other, you get wrong values, not an
+error.
+
+## Arrays
+
+The Mojo side views the elements as a `Span` for the length of the call:
+
+```mojo
+from std.ffi import c_size_t
+from std.math import sqrt
+from std.runtime import initialize_runtime
+
+@export("rms")
+def rms(
+    samples: Pointer[Float32, ImmUntrackedOrigin], count: c_size_t
+) abi("C") -> Float64:
+    initialize_runtime()
+    var total: Float64 = 0
+    for sample in Span(unsafe_ptr=samples, length=Int(count)):
+        total += Float64(sample) ** 2
+    return sqrt(total / Float64(count))
+```
+
+A C++ caller passes a `std::vector`'s `data()` and `size()`:
+
+```cpp
+extern "C" double rms(const float *samples, size_t count);
+
+std::vector<float> samples = {3.0f, -4.0f, 3.0f, -4.0f};
+// An empty vector's data() can be null, and rms() takes a non-null pointer.
+double level = samples.empty() ? 0.0 : rms(samples.data(), samples.size());
+```
+
+The caller owns the samples. Read them during the call, and don't keep the
+pointer or the span after `rms()` returns. Once the call ends, the caller
+can grow the vector or destroy it.
+
+## Strings
+
+An exported function that takes a `const char*` receives a view that the
+caller owns. Read it during the call, and copy anything you need to keep.
+
+An exported function that returns a new string allocates it with
+`alloc()`, copies in the bytes and a terminating zero, and returns the
+pointer from `unsafe_leak()`. Foreign code can't release that memory with
+its own `free()`, so export a matching free function for it to call once
+per string. `dealloc()` needs the allocation's length, and the free
+function recovers it by counting up to the terminating zero.
+
+## Callbacks
+
+A Mojo library that accepts a callback follows C's convention: it takes a
+`void*` context with the callback and passes the context back unchanged.
+This exported function runs a computation in steps and reports its
+progress after each one:
+
+```mojo
+from std.ffi import c_double, c_int
+from std.math import pi, sin
+from std.runtime import initialize_runtime
+
+comptime Context = MutOpaquePointer[MutUntrackedOrigin]
+comptime Progress = def(c_double, Context) thin abi("C")
+
+@export("integrate_sin")
+def integrate_sin(
+    steps: c_int, progress: Progress, context: Context
+) abi("C") -> c_double:
+    initialize_runtime()
+    var width = pi / Float64(steps)
+    var area: Float64 = 0
+    for i in range(Int(steps)):
+        area += sin((Float64(i) + 0.5) * width) * width
+        progress(Float64(i + 1) / Float64(steps), context)
+    return area
+```
+
+A C caller passes its callback and a pointer to its own state:
+
+```c
+static void report(double fraction, void *context) {
+    int *calls = context;
+    ++*calls;
+    printf("%.0f%%\n", fraction * 100);
+}
+
+int calls = 0;
+double area = integrate_sin(4, report, &calls);
+```
+
+The caller owns the context. Mojo never reads it, and hands it back only
+during the call to `integrate_sin()`. Nothing checks that the callback's
+signature in C matches `Progress` in Mojo. A mismatch produces undefined
+behavior, not an error.
+
+## Errors
+
+An exported function marked `abi("C")` can't raise. Handle errors inside
+the function, and report them the C way: return a status code, return a
+null pointer, or send the details through a C-style out argument.

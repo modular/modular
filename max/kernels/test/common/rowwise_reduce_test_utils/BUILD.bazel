@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "mojo_library")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "rowwise_reduce_test_utils",
+    srcs = glob(["*.mojo"]),
+    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
+    validate_missing_docs = False,
+    deps = [
+        "//max:algorithm",
+        "//max:builtin_kernels",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

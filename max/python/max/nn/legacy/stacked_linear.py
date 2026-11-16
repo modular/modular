@@ -19,12 +19,12 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn._graph_ops import convert_weights_to_fp8_fnuz_if_needed
+from max.nn._graph_ops.quant import quantize_static_scaled_float8
 from max.nn.legacy.clamp import clamp
-from max.nn.legacy.kernels import convert_weights_to_fp8_fnuz_if_needed
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear, linear
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.quant_ops import quantize_static_scaled_float8
+from max.nn.quant_config import QuantConfig
 
 
 class StackedLinear(Module):
@@ -253,7 +253,8 @@ class StackedLinear(Module):
             s = self._child(n).input_scale
             assert s is not None
             scales.append(s.reshape((1,)))
-        return ops.max(ops.concat(scales)).reshape(())
+        stacked = self._quant_config.per_tensor_scale(ops.concat(scales))
+        return ops.max(stacked).reshape(())
 
     @property
     def stacked_weight_scale(self) -> TensorValue | None:
@@ -315,7 +316,8 @@ class StackedLinear(Module):
             s = self._child(n).weight_scale_2
             assert s is not None
             scales.append(s.reshape((1,)))
-        return ops.max(ops.concat(scales)).reshape(())
+        stacked = self._quant_config.per_tensor_scale(ops.concat(scales))
+        return ops.max(stacked).reshape(())
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

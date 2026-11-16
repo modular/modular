@@ -588,9 +588,14 @@ def MO_ConstantLike : MO_TensorOpInterfaceBase<"ConstantLike"> {
 
 def MO_PreservedDuringKernelLowering : OpInterface<"PreservedDuringKernelLowering"> {
   let description = [{
-    An MO op that must be lowered to a kernel implementation.
+    An MO op that is not lowered to a kernel implementation.
   }];
   let cppNamespace = "::M::MO";
+
+  let methods = [
+    InterfaceMethod<"Returns true if any data type may pass through this op.",
+      "bool", "isDataTypeAgnostic", (ins), [{}], [{ return true; }]>,
+  ];
 }
 
 // Bundled collectives (e.g. `mo.bundled.expand`, `mo.bundled.allreduce.sum`)
@@ -611,6 +616,36 @@ def MO_BundledCollectiveInterface
 }
 
 def MO_BundledCollective : TraitList<[MO_BundledCollectiveInterface]>;
+
+// Distributed collectives with a per-device bundled form. A device graph
+// records one launch per device, while a distributed collective launches on
+// every device from a single host entry point, so each op that implements this
+// interface is replaced by one bundled op per participating device before
+// device-graph lowering.
+def MO_DistributedExpansionInterface
+    : OpInterface<"MODistributedExpansionInterface"> {
+  let description = [{
+    A distributed collective that expands into per-device bundled ops.
+
+    `replaceWithBundledOps` rewrites the op in place: it creates the bundled
+    ops, replaces every use of this op's results, and erases the op. Every copy
+    takes this op's in-chain, since serializing a collective's launches would
+    make one rank wait on another.
+  }];
+  let cppNamespace = "::M::MO";
+
+  let methods = [
+    InterfaceMethod<[{
+      Replaces this op with one bundled op per participating device, at the
+      rewriter's insertion point.
+    }], "LogicalResult", "replaceWithBundledOps",
+         (ins "IRRewriter &":$rewriter)>,
+  ];
+}
+
+def MO_DistributedExpansion : TraitList<[
+  DeclareOpInterfaceMethods<MO_DistributedExpansionInterface>,
+]>;
 
 def MO_ViewLike : OpInterface<"ViewLike"> {
   let description = [{

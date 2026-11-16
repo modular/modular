@@ -22,7 +22,6 @@ import dataclasses
 import json
 import logging
 import os
-import pickle
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -32,13 +31,11 @@ from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec
-from max.graph import DeviceRef
 from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import KVCacheConfig
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.config.model_config import (
     _device_specs_for_encoding,
@@ -46,10 +43,10 @@ from max.pipelines.lib.config.model_config import (
     _select_dtype_cast,
     _select_quantization_encoding,
 )
-from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from test_common.fake_weights import (
@@ -163,21 +160,15 @@ def _make_local_repo(
 @contextmanager
 def _pipeline_resolve_mocks(
     weight_path_return: tuple[list[Path], str | None] = ([], None),
-    num_devices: int = 1,
 ) -> Iterator[None]:
     """Patches external dependencies for the full config resolution flow.
 
     Mocks external I/O and hardware while leaving the real resolution
     logic intact:
-    - load_devices — avoid GPU probes
     - WeightPathParser.parse — avoid network
     - validate_hf_repo_access — avoid network
-    - MemoryEstimator — avoid real memory estimation
     - accelerator_api — avoid CUDA probes
-    - PagedMemoryPlanner — avoid activation memory estimation
     """
-    mock_devices = [DeviceRef.GPU()] * num_devices
-
     with (
         patch(
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
@@ -185,30 +176,8 @@ def _pipeline_resolve_mocks(
         ),
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch(
-            "max.pipelines.lib.memory_estimation.load_devices",
-            return_value=mock_devices,
-        ),
-        patch.object(
-            MemoryEstimator,
-            "plan_from_sizes",
-            side_effect=lambda pipeline_config, model_config, *a, **kw: (
-                MemoryPlan(
-                    planned_max_batch_size=1,
-                    footprint=0,
-                    planned_max_length=model_config.max_length,
-                    device_specs=tuple(model_config.device_specs),
-                    planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
-                )
-            ),
-        ),
-        patch(
             "max.pipelines.lib.config.config.accelerator_api",
             return_value="cpu",
-        ),
-        patch.object(
-            PagedMemoryPlanner,
-            "estimate_activation_memory",
-            return_value=0,
         ),
     ):
         yield
@@ -220,12 +189,12 @@ def _model(config: PipelineConfig) -> MAXModelConfig:
     return config.model
 
 
-def _plan_memory(config: PipelineConfig) -> PipelineConfig:
-    """Run the registry's memory-planning step against the config.
+def _resolve_against_arch(config: PipelineConfig) -> PipelineConfig:
+    """Resolve the config's architecture and effective encoding.
 
-    Convenience wrapper for tests that exercise planning directly rather
+    Convenience wrapper for tests that exercise resolution directly rather
     than going through PIPELINE_REGISTRY.retrieve_factory(). Returns the
-    config that planning ran against.
+    resolved config.
     """
     task = (
         config.task
@@ -259,7 +228,6 @@ def _plan_memory(config: PipelineConfig) -> PipelineConfig:
                 )
             }
         )
-    MemoryEstimator.plan(config, arch)
     return config
 
 
@@ -313,7 +281,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "bfloat16"
             assert any(
                 "model.safetensors" in str(p)
@@ -330,7 +298,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "q4_0"
             assert any(
                 "model-Q4_0.gguf" in str(p) for p in _model(config).weight_path
@@ -347,7 +315,7 @@ class TestArchitectureEncodingResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "float8_e4m3fn"
 
     @prepare_registry
@@ -367,7 +335,7 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[GPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             # The encoding should be resolved (either float32 or bfloat16)
             # and must be in the architecture's supported_encodings.
             model = _model(config)
@@ -388,8 +356,81 @@ class TestArchitectureEncodingResolution:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "float32"
+
+
+class TestModuleV3EncodingFallback:
+    """``prefer_module_v3`` falls back when ModuleV3 cannot serve the encoding.
+
+    A ModuleV3 architecture is often brought up on bfloat16 before its
+    quantized encodings, so preferring it unconditionally would reject
+    checkpoints the graph API architecture still serves.
+    """
+
+    @staticmethod
+    def _modulev3_arch(
+        supported_encodings: set[SupportedEncoding],
+    ) -> SupportedArchitecture:
+        return SupportedArchitecture(
+            name="LlamaForCausalLM_ModuleV3",
+            task=PipelineTask.TEXT_GENERATION,
+            example_repo_ids=["test/model"],
+            default_encoding="bfloat16",
+            supported_encodings=supported_encodings,
+            pipeline_model=DummyLlamaPipelineModel,
+            tokenizer=DummyTextTokenizer,
+            context_type=TextContext,
+            multi_gpu_supported=True,
+            default_weights_format=DUMMY_LLAMA_ARCH.default_weights_format,
+            config=DummyLlamaArchConfig,
+        )
+
+    @prepare_registry
+    def test_fp8_checkpoint_falls_back_to_graph_api_arch(self) -> None:
+        """An FP8 checkpoint resolves against the graph API architecture."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(self._modulev3_arch({"bfloat16"}))
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                safetensors_files={"model.safetensors": {"w": "F8_E4M3"}},
+            )
+            config = _make_pipeline_config(tmpdir)
+            assert _model(config).quantization_encoding == "float8_e4m3fn"
+            # Cleared on the frozen config, so the registry's own lookup
+            # selects the same architecture construction resolved against.
+            assert config.runtime.prefer_module_v3 is False
+            arch = PIPELINE_REGISTRY.architecture_for_config(config)
+            assert arch is not None
+            assert arch.name == "LlamaForCausalLM"
+
+    @prepare_registry
+    def test_bf16_checkpoint_keeps_modulev3(self) -> None:
+        """An encoding ModuleV3 serves keeps the preference."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(self._modulev3_arch({"bfloat16"}))
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(tmpdir)
+            assert config.runtime.prefer_module_v3 is True
+            arch = PIPELINE_REGISTRY.architecture_for_config(config)
+            assert arch is not None
+            assert arch.name == "LlamaForCausalLM_ModuleV3"
+
+    @prepare_registry
+    def test_encoding_neither_arch_serves_still_raises(self) -> None:
+        """No fallback target means the unsupported-encoding error survives."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        PIPELINE_REGISTRY.register(
+            self._modulev3_arch({"bfloat16", "float8_e4m3fn"})
+        )
+        with _temp_repo_dir() as tmpdir:
+            _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
+            with pytest.raises(ValueError, match="not supported by MAX engine"):
+                _make_pipeline_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +486,7 @@ class TestDefaultEncodingFallback:
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "float32"
 
 
@@ -543,7 +584,7 @@ class TestArchitectureNotFound:
             write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks(), pytest.raises(Exception):
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +612,7 @@ class TestMultiGPUValidation:
             ]
             # Multi-GPU support is validated at construction.
             with (
-                _pipeline_resolve_mocks(num_devices=2),
+                _pipeline_resolve_mocks(),
                 pytest.raises(
                     ValueError,
                     match="Multiple GPU inference is currently not supported",
@@ -594,8 +635,8 @@ class TestMultiGPUValidation:
                 DeviceSpec(id=1, device_type="gpu"),
             ]
             config = _make_pipeline_config(tmpdir, device_specs=two_gpus)
-            with _pipeline_resolve_mocks(num_devices=2):
-                config = _plan_memory(config)
+            with _pipeline_resolve_mocks():
+                config = _resolve_against_arch(config)
             assert _model(config).quantization_encoding == "bfloat16"
 
 
@@ -625,7 +666,7 @@ class TestRopeTypeResolution:
             )
             config = _make_pipeline_config(tmpdir, rope_type="neox")
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).rope_type == "neox"
 
     @prepare_registry
@@ -640,7 +681,7 @@ class TestRopeTypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).rope_type is None
 
 
@@ -662,7 +703,7 @@ class TestStructuredOutputBackendResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert config.sampling.structured_output_backend == "xgrammar"
 
     @prepare_registry
@@ -688,7 +729,7 @@ class TestStructuredOutputBackendResolution:
                 sampling=SamplingConfig(structured_output_backend="xgrammar"),
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert config.sampling.structured_output_backend == "xgrammar"
 
 
@@ -710,7 +751,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert config.sampling.structured_output_any_whitespace is True
 
     @prepare_registry
@@ -731,7 +772,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
                 sampling=SamplingConfig(structured_output_any_whitespace=False),
             )
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert config.sampling.structured_output_any_whitespace is False
 
     @prepare_registry
@@ -750,7 +791,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert config.sampling.structured_output_any_whitespace is False
 
 
@@ -776,7 +817,7 @@ class TestCacheDtypeResolution:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert (
                 cache_dtype_for_encoding(
                     _model(config).quantization_encoding,
@@ -808,7 +849,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             paths = sorted(str(p) for p in _model(config).weight_path)
             assert paths == [
                 "model-00001-of-00002.safetensors",
@@ -827,7 +868,7 @@ class TestWeightPathDiscovery:
             )
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             paths = [str(p) for p in _model(config).weight_path]
             assert paths == ["model.safetensors"]
 
@@ -874,7 +915,7 @@ class TestRequiredArguments:
             )
             assert _model(config).kv_cache.enable_prefix_caching is False
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             # Registry-phase resolution must not undo the construction-time
             # override.
             assert _model(config).kv_cache.enable_prefix_caching is False
@@ -1032,7 +1073,7 @@ class TestChatTemplateWiring:
             config = _make_pipeline_config(tmpdir, chat_template=template_file)
 
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
                 PIPELINE_REGISTRY.retrieve_tokenizer(config)
 
         assert DummyTextTokenizer.init_kwargs["chat_template"] == (
@@ -1067,7 +1108,7 @@ class TestCpuOnlyEncodingDeviceHandling:
             assert model.device_specs == [GPU_DEVICE_SPEC]
 
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
 
             assert _model(config).quantization_encoding == "q4_0"
             # Directly-constructed configs skip construction-time resolution;
@@ -1085,7 +1126,7 @@ class TestCpuOnlyEncodingDeviceHandling:
             # from_args applies the CPU downcast at construction.
             assert _model(config).device_specs == [DeviceSpec.cpu()]
             with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
+                config = _resolve_against_arch(config)
             assert _model(config).device_specs == [DeviceSpec.cpu()]
 
 
@@ -1132,50 +1173,6 @@ def test_construction_downcast_warns_once(
         assert not [
             r for r in caplog.records if "Switching device_specs" in r.message
         ]
-
-
-class TestMemoryPlanDevices:
-    """The memory plan carries the resolved devices it was computed against."""
-
-    def _retrieve_arch(self, config: PipelineConfig) -> Any:
-        arch = PIPELINE_REGISTRY.retrieve_architecture(
-            architecture_name=config.models.main_architecture_name,
-            prefer_module_v3=config.runtime.prefer_module_v3,
-            task=PipelineTask.TEXT_GENERATION,
-        )
-        assert arch is not None
-        return arch
-
-    @prepare_registry
-    def test_memory_plan_carries_resolved_devices(self) -> None:
-        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with _temp_repo_dir() as tmpdir:
-            _make_local_repo(
-                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
-            )
-            config = _make_pipeline_config(tmpdir)
-            with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
-                plan = MemoryEstimator.plan(config, self._retrieve_arch(config))
-            assert plan.device_specs == (GPU_DEVICE_SPEC,)
-            # The plan crosses the model-worker process boundary inside the
-            # pipeline factory; it must stay picklable.
-            pickle.dumps(plan)
-
-    @prepare_registry
-    def test_memory_plan_devices_reflect_cpu_downcast(self) -> None:
-        """For a q4 GGUF model the plan carries the construction-downcast
-        CPU set."""
-        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with _temp_repo_dir() as tmpdir:
-            _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
-            config = _make_pipeline_config(
-                tmpdir, device_specs=[GPU_DEVICE_SPEC]
-            )
-            with _pipeline_resolve_mocks():
-                config = _plan_memory(config)
-                plan = MemoryEstimator.plan(config, self._retrieve_arch(config))
-            assert plan.device_specs == (DeviceSpec.cpu(),)
 
 
 # ---------------------------------------------------------------------------

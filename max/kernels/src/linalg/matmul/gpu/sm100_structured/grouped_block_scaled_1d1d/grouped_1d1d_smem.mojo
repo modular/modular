@@ -67,7 +67,6 @@ struct SchedulerSmem:
     """
 
     comptime NUM_SLOTS = 2  # 2-slot ProducerConsumer
-    comptime MAX_TILES = Self.NUM_SLOTS  # backward compat alias
     # Group cache sized to fit the B200 SMEM limit under worst-case MXFP8
     # 2SM configs (base SMEM is already ~232.5 KB, leaving <1 KB for us).
     # 32 covers the common MoE decode regime and the larger Kimi-style 49

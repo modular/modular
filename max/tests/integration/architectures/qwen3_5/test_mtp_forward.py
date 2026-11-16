@@ -41,11 +41,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-)
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.mtp import Qwen3_5MTP
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -87,15 +84,11 @@ def _config(device: DeviceRef) -> Qwen3_5Config:
         vocab_size=VOCAB,
         dtype=DType.bfloat16,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=kv_params,
         norm_dtype=DType.bfloat16,
         rms_norm_eps=EPS,
         attention_multiplier=float(HEAD_DIM) ** -0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=["full_attention"],
         partial_rotary_factor=0.25,
         use_subgraphs=False,

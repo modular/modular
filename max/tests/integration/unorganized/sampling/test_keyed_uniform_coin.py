@@ -33,7 +33,7 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import keyed_uniform
+from max.nn._graph_ops import keyed_uniform
 
 # Rows per setting: 1/sqrt(16384) puts the 4-sigma band near +/-1.6pp at
 # p=0.5, tight enough that a coin off its analytic rate cannot hide in it.
@@ -216,20 +216,24 @@ def test_cpu_draws_the_same_values_as_the_gpu(
     """
     seeds = np.array([0, 1, 42, 0xDEADBEEF, 999], dtype=np.uint64)
 
-    def draw_on(device: Device) -> npt.NDArray[np.float32]:
-        device_session = InferenceSession(devices=[device])
+    def load_on(device: Device) -> Model:
         device_ref = DeviceRef.from_device(device)
         seed_type = TensorType(DType.uint64, ["rows"], device=device_ref)
         with Graph("keyed_uniform_only", input_types=(seed_type,)) as graph:
             graph.output(keyed_uniform(graph.inputs[0].tensor))
-        drawn = device_session.load(graph).execute(
-            Buffer.from_numpy(seeds).to(device)
+        return InferenceSession(devices=[device]).load(graph)
+
+    def draw(model: Model) -> npt.NDArray[np.float32]:
+        drawn = model.execute(
+            Buffer.from_numpy(seeds).to(model.input_devices[0])
         )[0]
         assert isinstance(drawn, Buffer)
         return drawn.to_numpy()
 
-    on_cpu = draw_on(CPU())
-    on_gpu = draw_on(session.devices[0])
+    cpu_model = load_on(CPU())
+    gpu_model = load_on(session.devices[0])
+    on_cpu = draw(cpu_model)
+    on_gpu = draw(gpu_model)
     assert np.array_equal(on_cpu, on_gpu), (
         f"CPU drew {on_cpu} where the GPU drew {on_gpu}"
     )

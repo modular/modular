@@ -43,13 +43,12 @@ def fn_bare_stable():
 
 # @stable(since=) also works on structs and their members.
 # CHECK: lit.struct.decl @StableStruct
-# CHECK-SAME: hasStableDecorator
-# CHECK-SAME: stableSinceVersion = "1.0"
 @stable(since="1.0")
 struct StableStruct(Movable where False):
     # CHECK: lit.fn @"method{{.*}}StableStruct)"
     # CHECK-SAME: hasStableDecorator
     # CHECK-SAME: stableSinceVersion = "1.1"
+    # CHECK: } <hasStableDecorator, stableSinceVersion = "1.0"
     @stable(since="1.1")
     def method(self):
         pass

@@ -18,10 +18,7 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.rotary_embedding import (
-    Llama3RopeScalingParams,
-    LongRoPEScalingParams,
-)
+from max.nn.rope_scaling import Llama3RopeScalingParams, LongRoPEScalingParams
 from max.tensor import Tensor
 
 

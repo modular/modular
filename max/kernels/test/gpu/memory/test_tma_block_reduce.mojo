@@ -178,7 +178,7 @@ def tma_reduction_kernel[
 
 def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
-](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
+](ctx: DeviceContext[], rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
     comptime warp_size = ctx.default_device_info.warp_size
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
@@ -207,7 +207,7 @@ def test_tma_block_reduce[
     # Define the kernel launch function for benchmarking
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut d_data, mut d_out, imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype](

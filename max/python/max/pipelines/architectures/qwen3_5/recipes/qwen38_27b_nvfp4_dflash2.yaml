@@ -28,6 +28,7 @@ draft_model:
   quantization_encoding: bfloat16
 
 runtime:
+  prefer_module_v3: false
   max_batch_size: 16
   max_batch_input_tokens: 8192
 

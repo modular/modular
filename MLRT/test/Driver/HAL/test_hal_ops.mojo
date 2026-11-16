@@ -157,8 +157,8 @@ def main() raises:
         raise Error("MODULAR_DRIVER_PLUGINS not set")
 
     var driver = Driver.create(plugin_spec)
-    print("Driver:", driver[].get_name())
-    print("Devices:", driver[].get_device_count())
+    print("Driver:", driver[].name())
+    print("Devices:", driver[].device_count())
 
     do_invalid_device_test(driver[])
 
@@ -166,6 +166,10 @@ def main() raises:
     var ctx = device[].get_context()
 
     do_queue_stream_sync_test(ctx[])
-    do_event_ordering_test(ctx[])
+    var max_queues = device[].max_queues_per_context()
+    if max_queues and max_queues.value() < 2:
+        print("Skipping event ordering: the context holds one queue at a time")
+    else:
+        do_event_ordering_test(ctx[])
     do_copy_overflow_test(ctx[])
     print("All HAL ops tests OK")

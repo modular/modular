@@ -14,9 +14,9 @@
 
 The graph does for one image what ``Gemma4ImageProcessor`` and
 ``pack_vision_buffers`` do: it composites the image on white, resizes it
-with Pillow's antialiased bicubic filter, accumulating in float32 and
-rounding once to uint8, rescales and patchifies it, and computes the
-tower's patch positions, segment bounds and pooling gather table.
+with Pillow's antialiased bicubic filter, bit for bit, rescales and
+patchifies it, and computes the tower's patch positions, segment bounds
+and pooling gather table.
 """
 
 from __future__ import annotations

@@ -34,13 +34,13 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.attention import (
     AttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
 )
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import MLP, GPTQLinear, Linear
 from max.nn.legacy.norm import ConstantLayerNorm, RMSNorm

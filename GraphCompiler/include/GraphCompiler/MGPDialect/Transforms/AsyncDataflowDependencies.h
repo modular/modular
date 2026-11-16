@@ -106,8 +106,6 @@ public:
 
   /// What aspects of the analysis are required.
   enum AnalysisLevel {
-    /// sameAs, maybeSameAs, isAlwaysReady, impliesReady
-    kImpliesReady,
     /// areDisjoint
     kDisjoint,
     /// exclusiveSet, isNonSelfOverlapping
@@ -138,9 +136,6 @@ public:
   /// Note that we need the 'lifetime extends' property to support the
   /// 'exclusive' relation below.
   bool maybeSameAs(Value lhs, Value rhs) const;
-
-  /// Returns the set { %rhs | maybeSameAs(%lhs, %rhs) }.
-  ValueSet maybeSameAsSet(Value lhs) const;
 
   /// The isAlwaysReady(%value) predicate is true only if at runtime
   ///   valueOf(%value)->isReady()

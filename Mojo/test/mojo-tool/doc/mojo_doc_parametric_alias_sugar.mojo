@@ -111,8 +111,8 @@ def take_scalar[dtype: DType](x: Scalar[dtype], y: Float32):
     pass
 
 
-# CHECK-DAG: "signature": "def take_pointer[T: AnyType](p: UnsafePointer[T, MutAnyOrigin])"
-def take_pointer[T: AnyType](p: UnsafePointer[T, MutAnyOrigin]):
+# CHECK-DAG: "signature": "def take_pointer[T: AnyType](p: MutPointer[T, MutAnyOrigin])"
+def take_pointer[T: AnyType](p: MutPointer[T, MutAnyOrigin]):
     pass
 
 
@@ -129,8 +129,8 @@ def take_nested(p: Pair[Doubled[Int], IntPair]):
 
 
 # A `_` binds to an implicit parameter, so the type keeps its alias.
-# CHECK-DAG: "signature": "def take_partial(p: UnsafePointer[Int])"
-def take_partial(p: UnsafePointer[mut=True, Int, _]):
+# CHECK-DAG: "signature": "def take_partial(p: MutPointer[Int])"
+def take_partial(p: MutPointer[Int, _]):
     pass
 
 

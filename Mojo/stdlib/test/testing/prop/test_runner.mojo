@@ -28,7 +28,7 @@ def test_prop_test_runner_propagates_error() raises:
         raise Error("prop test error 123")
 
     with assert_raises(contains="prop test error 123"):
-        PropTest().test[properties](SimpleStrategy())
+        PropTest().test(SimpleStrategy(), properties)
 
 
 @fieldwise_init
@@ -50,7 +50,7 @@ def test_prop_test_runner_executes_specified_number_of_runs() raises:
     var list = List[Int]()
     var strategy = RecordingStrategy(Pointer(to=list))
 
-    PropTest(config=PropTestConfig(runs=10)).test[properties](strategy^)
+    PropTest(config=PropTestConfig(runs=10)).test(strategy^, properties)
     assert_equal(10, len(list))
 
 
@@ -61,16 +61,26 @@ def test_prop_test_runner_using_same_seed_produces_deterministic_results() raise
     var config = PropTestConfig(runs=5, seed=1234)
 
     var initial_list = List[Int]()
-    PropTest(config=config.copy()).test[properties](
-        RecordingStrategy(Pointer(to=initial_list))
+    PropTest(config=config.copy()).test(
+        RecordingStrategy(Pointer(to=initial_list)), properties
     )
 
     var second_list = List[Int]()
-    PropTest(config=config^).test[properties](
-        RecordingStrategy(Pointer(to=second_list))
+    PropTest(config=config^).test(
+        RecordingStrategy(Pointer(to=second_list)), properties
     )
 
     assert_equal(initial_list, second_list)
+
+
+def test_prop_test_runner_accepts_capturing_closure() raises:
+    var total = 0
+
+    def properties(n: Int) raises {mut total}:
+        total += n
+
+    PropTest(config=PropTestConfig(runs=3)).test(SimpleStrategy(), properties)
+    assert_equal(total, 3 * 42)
 
 
 def main() raises:

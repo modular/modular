@@ -24,11 +24,12 @@ modular_py_library(
     name = "context_config",
     srcs = ["context_config.py"],
     deps = [
-        requirement("pydantic"),
         ":routing",
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/grpc_runtime",
         "//max/python/max/experimental/cascade/http_runtime",
         "//max/python/max/experimental/cascade/telemetry",
+        requirement("cyclopts"),
+        requirement("pydantic"),
     ],
 )

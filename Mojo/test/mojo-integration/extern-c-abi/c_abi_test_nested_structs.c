@@ -36,3 +36,30 @@ struct Outer c_func_nested_float_12byte(struct Outer s) {
   s.z += 1.0f;
   return s;
 }
+
+typedef int int2 __attribute__((vector_size(8)));
+
+// 16 bytes: v (eightbyte 0) + Inner (eightbyte 1), both SSE on x86-64.
+struct VecInner {
+  int2 v;
+  struct Inner inner;
+};
+
+struct VecInner c_func_vec_inner_16byte(struct VecInner s) {
+  s.v += 1;
+  s.inner.x += 1.0f;
+  s.inner.y += 1.0f;
+  return s;
+}
+
+// 12 bytes: SSEPair on x86-64, the array classified per element.
+struct FloatArray3 {
+  float v[3];
+};
+
+struct FloatArray3 c_func_float_array_12byte(struct FloatArray3 s) {
+  s.v[0] += 1.0f;
+  s.v[1] += 1.0f;
+  s.v[2] += 1.0f;
+  return s;
+}

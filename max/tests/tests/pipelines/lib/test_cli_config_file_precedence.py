@@ -28,7 +28,7 @@ from max._entrypoints.cli.config import config_to_flag, pipeline_config_options
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache.cache_params import KVConnectorType
+from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib import PipelineArgs, PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
@@ -412,6 +412,22 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
     assert result.output.strip() == "rust_tiered|0.8|False"
 
 
+def test_the_hisparse_export_flag_is_not_exposed() -> None:
+    """``--sparse-offload`` must not be a pipeline flag.
+
+    Only gen-mef's ``--hisparse`` sets it: the graph it builds takes host
+    and hot tables MAX's pipeline never fills, so a request would fail at
+    its first execute.
+    """
+    flags = {
+        option
+        for param in _make_pipeline_cli().params
+        for option in (*param.opts, *param.secondary_opts)
+    }
+    assert "--kv-cache-page-size" in flags
+    assert "--sparse-offload" not in flags
+
+
 def test_speculative_flag_preserves_yaml_recipe_speculative_fields(
     tmp_path: Path,
 ) -> None:
@@ -652,7 +668,7 @@ def test_kv_cache_flags_without_recipe_apply_to_defaults() -> None:
     kv = config.models["main"].kv_cache
     assert kv.kv_connector_config.host_offload_max_gb == 50
     assert kv.kv_connector_config.type is KVConnectorType.null
-    assert kv.device_memory_utilization == 0.9
+    assert kv.device_memory_utilization == 0.95
 
 
 def test_recipe_kv_cache_intact_without_kv_flags(tmp_path: Path) -> None:
@@ -712,3 +728,25 @@ def test_synthetic_acceptance_rejected_with_constrained_decoding() -> None:
     validate(SimpleNamespace(speculative=None))  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="synthetic_acceptance_rate"):
         validate(_cfg(0.8, True))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_recipe_execution_flags_survive_pipeline_resolution(
+    tmp_path: Path, enabled: bool
+) -> None:
+    """The shared config-file loader must preserve explicit false flags."""
+    config_path = tmp_path / "recipe.yaml"
+    value = str(enabled).lower()
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "runtime:\n"
+        f"  device_graph_capture: {value}\n"
+        f"  enable_overlap_scheduler: {value}\n",
+        encoding="utf-8",
+    )
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(config_file=str(config_path))
+    )
+    assert config.runtime.device_graph_capture is enabled
+    assert config.runtime.enable_overlap_scheduler is enabled

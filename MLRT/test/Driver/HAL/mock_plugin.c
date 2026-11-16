@@ -24,6 +24,7 @@
 #include "HAL/M_driver_api.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +39,7 @@
 
 static int g_driver_sentinel;
 static int g_device_sentinels[MOCK_MAX_DEVICE_COUNT];
-static int g_context_sentinel;
+static int g_context_sentinels[MOCK_MAX_DEVICE_COUNT];
 static int g_queue_sentinel;
 static int g_event_sentinel;
 static int g_bundle_sentinel;
@@ -268,6 +269,13 @@ M_driver_status_t M_driver_device_property(M_driver_device_t device,
     *(int64_t *)value = 0;
     return M_DRIVER_STATUS_SUCCESS;
   }
+  // Opt-in, so tests that expect no arch from the mock keep getting none.
+  const char *arch = getenv("MOCK_DEVICE_ARCH");
+  if (arch && strcmp(property_name, M_DRIVER_DEVICE_PROPERTY_ARCH) == 0 &&
+      strlen(arch) <= M_DRIVER_DEVICE_PROPERTY_MAX_LEN) {
+    strcpy((char *)value, arch);
+    return M_DRIVER_STATUS_SUCCESS;
+  }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
 }
 
@@ -306,10 +314,14 @@ M_DRIVER_API_EXPORT
 M_driver_status_t M_driver_context_create(M_driver_device_t device,
                                           M_driver_context_t *context) {
   mock_maybe_stall(__func__);
-  (void)device;
   if (!context)
     return M_DRIVER_STATUS_INVALID_ARG;
-  *context = (M_driver_context_t)&g_context_sentinel;
+  // One handle per device, so tests can tell contexts on different devices
+  // apart.
+  ptrdiff_t device_id = (int *)device - g_device_sentinels;
+  if (device_id < 0 || device_id >= MOCK_MAX_DEVICE_COUNT)
+    return M_DRIVER_STATUS_BAD_DEVICE;
+  *context = (M_driver_context_t)&g_context_sentinels[device_id];
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -798,20 +810,6 @@ M_driver_status_t M_driver_queue_launch_host_func(M_driver_queue_t queue,
     return M_DRIVER_STATUS_INVALID_ARG;
   // The mock queue is synchronous: run the callback inline.
   fn(user_data);
-  return M_DRIVER_STATUS_SUCCESS;
-}
-
-M_DRIVER_API_EXPORT
-M_driver_status_t M_driver_queue_wait_value64(M_driver_queue_t queue,
-                                              uint64_t device_address,
-                                              uint64_t value) {
-  mock_maybe_stall(__func__);
-  if (!queue)
-    return M_DRIVER_STATUS_BAD_QUEUE;
-  // The mock queue is synchronous, so the wait cannot be satisfied later:
-  // check once instead of blocking.
-  if (*(const uint64_t *)(uintptr_t)device_address != value)
-    return M_DRIVER_STATUS_UNKNOWN_ERROR;
   return M_DRIVER_STATUS_SUCCESS;
 }
 

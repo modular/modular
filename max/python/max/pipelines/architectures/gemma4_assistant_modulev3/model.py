@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from max import functional as F
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.tensor import default_device, default_dtype

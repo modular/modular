@@ -37,14 +37,6 @@ private:
       cache;
 };
 
-/// Options for MultiHeadAttention pattern matching.
-struct MHAOptions {
-  bool enable = false;
-  bool allowUnsafeBCast = false;
-  bool allowInternalReshape = false;
-  bool debug = false;
-};
-
 /// Fuses `mo.allreduce.sum` + add + rms_norm + optional quantize_fp8 into a
 /// single op; no-op if the chain does not match.
 void applyFuseAllReduceAddRMSNormQuantFP8(MO::AllReduceSumOp allReduceOp,
@@ -57,11 +49,10 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
     MO::BundledAllReduceSumOp bundledAllReduceOp);
 
 /// Adds the main fusion rewrite patterns (LayerNorm, RMSNorm fusions,
-/// Matmul folds, RoPE, Conv-const, attention, etc.).
+/// Matmul folds, RoPE, Conv-const, etc.).
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const MHAOptions &mhaOpts,
                             const DeviceInfoMapping &deviceInfoMapping);
 
 /// Adds `MatmulAddPattern`, which the driver pass enables only on SM100-class

@@ -39,7 +39,6 @@ from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 def grouped_matmul_swiglu_nvfp4_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     # When True (default), the in-tile fused epilogue casts fp32 -> bf16
     # -> fp32 in the SMEM scatter so its output is byte-identical to the
@@ -91,7 +90,6 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     Parameters:
         transpose_b: Whether to transpose the `B` weight in the matmul
             (defaults to True).
-        target: Compilation target backend string (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level controlling the
             kernel's PDL launch attributes (defaults to `PDLLevel.ON`).
         match_bf16: When True (default), the in-tile fused epilogue casts
@@ -191,7 +189,6 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
 
     grouped_matmul_nvfp4_dispatch[
         transpose_b=transpose_b,
-        target=target,
         pdl_level=pdl_level,
         fuse_swiglu=True,
         SwiGLUOutputT=type_of(swiglu_out),

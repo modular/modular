@@ -23,15 +23,15 @@ from dataclasses import dataclass
 from max import functional as F
 from max.graph import BufferValue, TensorValue
 from max.nn import Module
+from max.nn._graph_ops import flash_attention_ragged
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import (
     RowParallelLinear,
     col_parallel,
 )
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import MHAKVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues as PagedCacheGraphValues
+from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import PagedCacheValues as PagedCacheGraphValues
 from max.nn.linear import Linear
 from max.tensor import Tensor
 

@@ -260,50 +260,6 @@ TextViewer::FindWordEnd(const Coordinates &aFrom) const {
   return Coordinates(aFrom.mLine, GetCharacterColumn(aFrom.mLine, cindex));
 }
 
-TextViewer::Coordinates
-TextViewer::FindNextWord(const Coordinates &aFrom) const {
-  Coordinates at = aFrom;
-  if (at.mLine >= (int)mLines.size())
-    return at;
-
-  // skip to the next non-word character
-  auto cindex = GetCharacterIndex(aFrom);
-  bool isword = false;
-  bool skip = false;
-  if (cindex < (int)mLines[at.mLine].size()) {
-    auto &line = mLines[at.mLine];
-    isword = isalnum(line[cindex].mChar);
-    skip = isword;
-  }
-
-  while (!isword || skip) {
-    if (at.mLine >= (int)mLines.size()) {
-      auto l = std::max(0, (int)mLines.size() - 1);
-      return Coordinates(l, GetLineMaxColumn(l));
-    }
-
-    auto &line = mLines[at.mLine];
-    if (cindex < (int)line.size()) {
-      isword = isalnum(line[cindex].mChar);
-
-      if (isword && !skip)
-        return Coordinates(at.mLine, GetCharacterColumn(at.mLine, cindex));
-
-      if (!isword)
-        skip = false;
-
-      cindex++;
-    } else {
-      cindex = 0;
-      ++at.mLine;
-      skip = false;
-      isword = false;
-    }
-  }
-
-  return at;
-}
-
 int TextViewer::GetCharacterIndex(const Coordinates &aCoordinates) const {
   if (aCoordinates.mLine >= (int)mLines.size())
     return -1;

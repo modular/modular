@@ -39,6 +39,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Target/TargetTraits.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -183,13 +184,13 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int
-executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
-              MLIRContext &context, const CompilationOptions &options,
-              OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-              ArrayRef<const char *> arguments, M::Context &maxContext,
-              ArrayRef<std::string> additionalLibraries,
-              MLIRPassTiming &mlirTiming, LLVMPassTiming &llvmTiming) {
+static int executeModule(
+    const State &state, AsyncRT::CPUDevice &cpuDevice, MLIRContext &context,
+    const CompilationOptions &options, OwningOpRef<ModuleOp> module,
+    TargetInfoAttr target, ArrayRef<const char *> arguments,
+    M::Context &maxContext, ArrayRef<std::string> additionalLibraries,
+    MLIRPassTiming &mlirTiming, ElaborationStatsReport &elaborationStats,
+    LLVMPassTiming &llvmTiming) {
   PassManagerConfigOptions pmOptions = mlirTiming.passManagerOptions();
 
   // Compile the Mojo module to the end of the KGEN pipeline.
@@ -246,6 +247,7 @@ executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
   // Compilation is over, so report the pass timings now: the program below
   // may run for a long time, and may never return here at all.
   mlirTiming.finish();
+  elaborationStats.finish();
   llvmTiming.finish();
 
   // Finally, execute the 'main' function of the Mojo program.
@@ -274,6 +276,7 @@ static int run(const State &subcommandState) {
   CompilationOptions options;
   FrontendOptions frontendOptions;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
+  configureKGENContext(&mlirCtx);
   TargetInfoAttr target;
   if (std::optional<int> exitCode =
           parseArgs(state, args, sourceManager, driverOptions, options,
@@ -299,6 +302,9 @@ static int run(const State &subcommandState) {
   // before the MLIR timing, so the MLIR report comes out first.
   LLVMPassTiming llvmTiming;
   llvmTiming.configure(driverOptions, options, timingReport);
+
+  ElaborationStatsReport elaborationStats;
+  elaborationStats.configure(options, timingReport);
 
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
@@ -363,6 +369,8 @@ static int run(const State &subcommandState) {
     }
   }
   llvm::append_range(linkerArgs, args.getAllArgValues(options::OPT_Xlinker));
+  KGEN::TargetTraitsRegistry::get().appendHostLinkArgs(
+      options.targetAccelerator, linkerArgs);
 
   SmallVector<std::string> additionalLibraries =
       resolveXlinkerLibraries(state, linkerArgs);
@@ -374,7 +382,7 @@ static int run(const State &subcommandState) {
   int result = executeModule(
       state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
-      *ctx, additionalLibraries, timing, llvmTiming);
+      *ctx, additionalLibraries, timing, elaborationStats, llvmTiming);
   if (result != EXIT_SUCCESS)
     return result;
 

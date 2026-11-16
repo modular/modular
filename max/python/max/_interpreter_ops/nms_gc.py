@@ -36,7 +36,7 @@ dry run is unavoidable; eager now simply pays the same double-suppression
 cost the compiled graph path already paid.
 
 The three thresholds are already tensor operands on the public op, so no direct
-``rmo`` emission is needed here; the handler normalises them to the dtypes the
+emission is needed here; the handler normalises them to the dtypes the
 graph declares.
 """
 

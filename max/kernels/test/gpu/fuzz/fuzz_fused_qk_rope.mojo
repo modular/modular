@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Per-kernel fuzz target: fused_qk_rope_ragged
-# (the MiniMax-M3 ragged paged-KV RoPE op `mo.fused_qk_rope.ragged.paged`;
+# (the MiniMax-M3 ragged paged-KV RoPE op `kv_cache.fused_qk_rope.ragged.paged`;
 #  kernel in nn/fused_qk_rope.mojo). Distinct from the MLA combined
 #  `fused_rope_rmsnorm` kernel: this applies *only* RoPE to Q (-> output) and to
 #  the newly-written K rows of a standard MHA-style paged cache, in place.
@@ -504,7 +504,8 @@ def run_one_case(
 
     # === Kernel under test ===================================================
     fused_qk_rope_ragged[
-        kv_collection.CacheType, interleaved=INTERLEAVED, target="gpu"
+        kv_collection.CacheType,
+        interleaved=INTERLEAVED,
     ](
         q_proj=q_proj,
         input_row_offsets=row_offsets.as_imm(),

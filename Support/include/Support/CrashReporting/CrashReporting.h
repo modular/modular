@@ -23,6 +23,7 @@
 #include "Support/Configuration.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include <filesystem>
 
 namespace M {
@@ -34,12 +35,13 @@ class Config;
 /// If specified in the configuration, that takes precedence.  Otherwise, we
 /// look alongside the running executable, or failing that, anywhere on the
 /// PATH.
-ErrorOr<std::filesystem::path> getCrashpadHandlerPath(Config *settings);
+MODULAR_CXX_EXPORT ErrorOr<std::filesystem::path>
+getCrashpadHandlerPath(Config *settings);
 
 /// Pick a location to store crash data in.
 ///
 /// Returns the "crashdb" directory inside of the modular passed dataPath
-std::filesystem::path
+MODULAR_CXX_EXPORT std::filesystem::path
 getCrashDatabasePath(const std::filesystem::path &dataPath);
 
 /// Initialize crash reporting for currently running executable.
@@ -65,7 +67,7 @@ void initCrashpadForProgram(StringRef program, StringRef machineID,
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.
 /// initCrashpadForProgram must have been previously called.
-void generateNonFatalDump();
+MODULAR_CXX_EXPORT void generateNonFatalDump();
 
 } // namespace M
 

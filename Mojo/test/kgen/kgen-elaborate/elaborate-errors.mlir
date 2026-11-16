@@ -27,7 +27,7 @@ kgen.generator @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 
@@ -241,9 +241,9 @@ kgen.generator export @gen_structs() {
 
 // expected-note @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>() attributes {fnAttrs = [
+kgen.generator export @metadata<x>() <fnAttrs = [
   #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]}{
+]> {
   hlcf.return
 }
 
@@ -445,14 +445,14 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> !kgen.scalar<bool> {
 // Two generators with the same linkage name should report a clash error.
 
 // expected-remark @below {{existing function here}}
-kgen.generator @"clash::a"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::a"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // expected-error @below {{duplicate functions named "foo"}}
-kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>} {
+kgen.generator @"clash::b"() {
   hlcf.return
-}
+} <linkageName = #kgen.linkage_name<"foo" : !kgen.string, false>>
 
 // -----
 
@@ -460,8 +460,8 @@ kgen.generator @"clash::b"() attributes {linkageName = #kgen.linkage_name<"foo" 
 
 // expected-note @below {{failed to interpret function @negative_alloc_size}}
 kgen.generator @negative_alloc_size() -> !kgen.pointer<index> {
-  %idx8 = index.constant 8
-  %idx_neg = index.constant -1
+  %idx8 = kgen.param.constant: scalar<index> = <8>
+  %idx_neg = kgen.param.constant: scalar<index> = <-1>
   // expected-note @below {{failed to interpret operation pop.aligned_alloc}}
   // expected-note @below {{alloc has negative size}}
   %0 = pop.aligned_alloc %idx8, %idx_neg : <index>
@@ -570,4 +570,19 @@ kgen.generator @shift_out_of_range_shr() {
   // expected-note @below {{shift amount 9 is outside the valid range 0..7 for scalar<ui8>}}
   %0 = kgen.param.constant: !kgen.scalar<ui8> = <shr(1, 9)>
   hlcf.return
+}
+
+// -----
+
+// Test that the shift diagnostic uses the target's index bit width for
+// scalar<index> operands. With a 32-bit index target, shifting by 32 is out of
+// range.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// expected-error @below {{function instantiation failed}}
+kgen.generator @shift_out_of_range_shr_index_32bit() {
+  // expected-note @below {{shift amount 32 is outside the valid range 0..31 for scalar<index>}}
+  %0 = kgen.param.constant: !kgen.scalar<index> = <shr(1, 32)>
+  hlcf.return
+}
 }

@@ -62,7 +62,7 @@ from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import Idx, TileTensor, row_major
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -133,7 +133,7 @@ def _run_mla_decode_fold[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime config = MHAConfig[q_type](num_heads, depth)
-    flare_mla_decoding[config=config](
+    flare_mla_decoding[config=config, kernels=SM100MLA](
         out_tt.as_unsafe_any_origin(),
         q_tt,
         k_tt,

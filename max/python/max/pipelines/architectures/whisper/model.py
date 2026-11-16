@@ -23,7 +23,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -31,7 +31,7 @@ from max.pipelines.lib import (
     PipelineModel,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 
 from .encoder import WhisperEncoder
 

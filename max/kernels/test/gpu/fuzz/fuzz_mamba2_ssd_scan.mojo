@@ -95,6 +95,7 @@ def _scan_cpu[
 
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
         Int(B.dim[1]()),
+        Int32(0),
         A,
         D,
         dt_bias,
@@ -348,6 +349,7 @@ def run_one_case(
     ]
     ctx.enqueue_function[kernel](
         Int32(NGROUPS),
+        Int32(0),
         A_g,
         D_g,
         dt_bias_g,

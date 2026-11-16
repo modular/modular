@@ -342,43 +342,37 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal, unless the
-  // expected function is variadic.
+  // expected function has a pack vararg and the actual function doesn't. In
+  // that case, the actual arguments at the position of the pack go into the
+  // pack, and the last actual arguments match the keyword-only arguments
+  // following the pack.
   // TODO: Consider default argument values.
-  std::optional<size_t> expectedVariadicArgIndexOpt =
-      expectedFnTp.findPackVarArgIndex();
-  if (expectedVariadicArgIndexOpt.has_value()) {
-    size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
-    if (actualPositionalArgCount < expectedVariadicArgIndex) {
-      // Caller didn't supply enough arguments.
-      return error(MatchFailure::Unclassified{});
-    }
-  } else { // No variadic
-    if (actualPositionalArgCount != expectedPositionalArgCount) {
-      // Caller didn't supply the expected number of arguments.
-      return error(MatchFailure::Unclassified{});
-    }
-  }
-
-  bool expectedHasVariadic = expectedVariadicArgIndexOpt.has_value();
-  bool actualHasVariadic = actualFnTp.findPackVarArgIndex().has_value();
-  // If this is true, then we need to collect a bunch of `actual`'s args into a
-  // variadic for `expected`.
-  bool collectIntoVariadic = expectedHasVariadic && !actualHasVariadic;
-
-  // "Normal" here means it won't be received by a variadic arg in the expected
-  // function.
-  size_t numNormalArgs = actualPositionalArgCount;
+  std::optional<size_t> expectedPackIndex = expectedFnTp.findPackVarArgIndex();
+  std::optional<size_t> actualPackIndex = actualFnTp.findPackVarArgIndex();
+  bool collectIntoVariadic = expectedPackIndex && !actualPackIndex;
+  // The actual arguments in [packBegin, packEnd) go into the pack.
+  size_t packBegin = actualPositionalArgCount;
+  size_t packEnd = actualPositionalArgCount;
   if (collectIntoVariadic) {
-    numNormalArgs = expectedVariadicArgIndexOpt.value();
+    size_t numArgsAfterPack =
+        expectedPositionalArgCount - *expectedPackIndex - 1;
+    if (actualPositionalArgCount < *expectedPackIndex + numArgsAfterPack)
+      return error(MatchFailure::Unclassified{});
+    packBegin = *expectedPackIndex;
+    packEnd = actualPositionalArgCount - numArgsAfterPack;
+  } else if (actualPositionalArgCount != expectedPositionalArgCount ||
+             actualPackIndex != expectedPackIndex) {
+    return error(MatchFailure::Unclassified{});
   }
 
-  // Check all the normal args (which aren't going into a variadic arg).
-  for (size_t actualArgIndex = 0; actualArgIndex < numNormalArgs;
-       ++actualArgIndex) {
+  // Check an actual argument that the pack does not receive.
+  auto matchArg = [&](size_t actualArgIndex,
+                      size_t expectedArgIndex) -> LogicalResult {
     auto actualConv = actualFnTp.getArgConvention(actualArgIndex);
-    ArgConvention expectedConv = expectedFnTp.getArgConvention(actualArgIndex);
+    ArgConvention expectedConv =
+        expectedFnTp.getArgConvention(expectedArgIndex);
     ASTType actualAstType = actualArgTypes[actualArgIndex];
-    ASTType expectedAstType = expectedArgTypes[actualArgIndex];
+    ASTType expectedAstType = expectedArgTypes[expectedArgIndex];
 
     if (!checkConventionsConvertible(expectedConv, actualConv))
       return error(MatchFailure::Unclassified{});
@@ -393,25 +387,27 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // If the argument has a required keyword, then the two must match names.
     if (actualFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
             PassingKind::KwOnly ||
-        expectedFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
+        expectedFnTp.getArgListAttrs().getPassingKind(expectedArgIndex) ==
             PassingKind::KwOnly) {
       if (actualFnTp.getArgName(actualArgIndex) !=
-          expectedFnTp.getArgName(actualArgIndex))
+          expectedFnTp.getArgName(expectedArgIndex))
         return error(MatchFailure::Unclassified{});
     }
-  }
+    return success();
+  };
+
+  for (size_t actualArgIndex = 0; actualArgIndex != packBegin; ++actualArgIndex)
+    PROP(matchArg(actualArgIndex, actualArgIndex));
 
   // If the expected def has a variadic arg, check all the actual args that will
   // go into it.
   if (collectIntoVariadic) {
-    auto expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
-
     ArgConvention expectedConv =
-        expectedFnTp.getArgConvention(expectedVariadicArgIndex);
+        expectedFnTp.getArgConvention(*expectedPackIndex);
 
     // Get the variadic pack's element trait.
     ASTType expectedArgVariadicPackType =
-        expectedFnTp.getIfVariadicListOrPack(expectedVariadicArgIndex);
+        expectedFnTp.getIfVariadicListOrPack(*expectedPackIndex);
     RefPackType refPackType =
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getParamListElementType();
@@ -420,12 +416,17 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // As we do our checks, we'll also be calculating the actual kgen.variadic
     // parameter value.
     SmallVector<TypedAttr> elements;
-    for (size_t actualArgIndex = numNormalArgs, e = actualPositionalArgCount;
-         actualArgIndex < e; ++actualArgIndex) {
+    for (size_t actualArgIndex = packBegin; actualArgIndex != packEnd;
+         ++actualArgIndex) {
       auto actualConv = actualFnTp.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
+        return error(MatchFailure::Unclassified{});
+
+      // The pack passes its elements by position.
+      if (actualFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
+          PassingKind::KwOnly)
         return error(MatchFailure::Unclassified{});
 
       Type actualValueAstType =
@@ -459,6 +460,12 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     auto typeListType = state.evaluator.getReboundType(typeListParam.getType());
     PROP(matchParams(LIT::getEmptyStructValue(typeListType), typeListParam));
   }
+
+  // The expected arguments after the pack are keyword-only, so they match
+  // according to their position and require that the keyword names to be equal.
+  for (size_t actualArgIndex = packEnd;
+       actualArgIndex != actualPositionalArgCount; ++actualArgIndex)
+    PROP(matchArg(actualArgIndex, actualArgIndex - packEnd + packBegin + 1));
 
   // Match the result. When implicit conversions are allowed we allow them here.
   {
@@ -1230,8 +1237,7 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       // parameters, so do a full conversion check.
 
       // Convert Origin[*(0, 0)] to Origin[?] so we can infer the parameter(s).
-      auto nonParamDRT =
-          ASTType(expDRT).getWithUnknownParametersReplaced(shared);
+      auto nonParamDRT = ASTType(expDRT).extractAndRelinkParamRef(shared);
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, expr,
                                 EC_TypeParamValue, {{actual, expr}});
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(

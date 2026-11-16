@@ -17,8 +17,9 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import numpy as np
 from max import functional as F
@@ -26,28 +27,15 @@ from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import (
-    EPBatchManager,
-    EPCommInitializer,
-    EPConfig,
-    EPInit,
-    calculate_ep_max_tokens_per_rank,
-)
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPInit
 
 # The export's ep_init graph declares its counter buffers by the same word
 # count EPCommInitializer allocates at runtime, so the engine introspects
 # from the MEF the size it must zero-fill at boot.
 from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,
@@ -68,7 +56,7 @@ from transformers import AutoTokenizer
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from max.pipelines.lib.memory_estimation import MemoryPlan
+    from max.pipelines.lib.memory_plan import MemoryPlan
 
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
@@ -78,8 +66,13 @@ from .layers.engram_token_map import (
     check_map_digest,
     compressed_token_map_array,
 )
-from .model_config import DeepseekV41Config
-from .weight_adapters import AdapterResult, EngramTable, engram_embed_tables
+from .model_config import DeepseekV41Config, RoutedExpertFormat, dispatch_rows
+from .weight_adapters import (
+    AdapterResult,
+    EngramTable,
+    engram_embed_tables,
+    unpack_e2m1_to_e4m3,
+)
 
 logger = logging.getLogger("max.pipelines")
 _TABLE_WEIGHT_COLS = 256
@@ -88,6 +81,10 @@ _TABLE_SCALE_COLS = 8
 # Bounded by total RAM as well as what is free now, so an undersized host
 # fails fast -- the same bound the V2 loader uses.
 _ENGRAM_HOST_RAM_MAX_FRACTION_OF_TOTAL = 0.8
+# Row chunks a table is pinned in, on this many threads: numpy copies
+# release the GIL, and a production table runs to tens of gigabytes.
+_PIN_CHUNK_BYTES = 64 << 20
+_PIN_THREADS = 16
 
 
 @dataclass
@@ -113,10 +110,45 @@ class _PinnedTable:
 _PINNED_TABLES: dict[tuple[str, int, str, int, int], list[_PinnedTable]] = {}
 
 
-def _table_digest(codes: np.ndarray) -> bytes:
-    """One table's content identity, hashed in place (no copy)."""
-    # ``ndarray.data`` is the zero-copy memoryview of the array's storage.
-    return hashlib.blake2b(codes.data, digest_size=16).digest()
+def _table_digest(codes: np.ndarray, width: int) -> bytes:
+    """One table's content identity as pinned ``width`` bytes wide.
+
+    Packed codes hash as their unpacked rows, a chunk at a time, so they
+    match the pinned copy of the same table.
+    """
+    if codes.shape[-1] == width:
+        # ``ndarray.data`` is the zero-copy memoryview of the array's storage.
+        return hashlib.blake2b(codes.data, digest_size=16).digest()
+    digest = hashlib.blake2b(digest_size=16)
+    rows = max(1, _PIN_CHUNK_BYTES // width)
+    chunk = np.empty((rows, width), np.uint8)
+    for start in range(0, len(codes), rows):
+        source = codes[start : start + rows]
+        unpacked = chunk[: len(source)]
+        unpack_e2m1_to_e4m3(source, unpacked)
+        digest.update(unpacked.data)
+    return digest.digest()
+
+
+def _fill_pinned(codes: np.ndarray, destination: np.ndarray) -> None:
+    """Copies ``codes`` into ``destination`` in row chunks on many threads.
+
+    Codes half as wide as ``destination`` are packed E2M1 pairs, unpacked to
+    E4M3 (:func:`~.weight_adapters.unpack_e2m1_to_e4m3`).
+    """
+    unpack = codes.shape != destination.shape
+    rows = max(1, _PIN_CHUNK_BYTES // max(1, destination[:1].nbytes))
+
+    def fill(start: int) -> None:
+        source = codes[start : start + rows]
+        target = destination[start : start + len(source)]
+        if unpack:
+            unpack_e2m1_to_e4m3(source, target)
+        else:
+            np.copyto(target, source)
+
+    with ThreadPoolExecutor(_PIN_THREADS) as pool:
+        list(pool.map(fill, range(0, len(codes), rows)))
 
 
 def _check_engram_host_ram(name: str, byte_count: int) -> None:
@@ -188,22 +220,33 @@ def _pinned_table(
         rows: Rows in the table.
         width: Bytes per row, the ABI's column count.
         codes: The checkpoint's table bytes, as a uint8 ``[rows, width]``
-            view of its mapping.
+            view of its mapping, or for E4M3 codes the MXFP4-packed
+            ``[rows, width / 2]`` E2M1 pairs, unpacked as they are pinned.
         dtype: The ABI dtype the bytes relabel to (E4M3 codes or E8M0
             scales).
 
     Returns:
         The pinned buffer, shared with every earlier caller that asked for
         the same bytes on the same device.
+
+    Raises:
+        ValueError: If ``codes`` is neither shape.
     """
+    if codes.shape != (rows, width) and not (
+        dtype == DType.float8_e4m3fn and codes.shape == (rows, width // 2)
+    ):
+        raise ValueError(
+            f"{name}: expected [{rows}, {width}] codes, or for E4M3 codes "
+            f"MXFP4 pairs [{rows}, {width // 2}]; got {list(codes.shape)}"
+        )
     key = (device.label, device.id, name, rows, width)
     entries = _PINNED_TABLES.get(key, [])
     # Content identity for the reload dedupe, hashed only when a same-shaped
     # table is already pinned to compare against: a first load pays nothing.
-    digest = _table_digest(codes) if entries else None
+    digest = _table_digest(codes, width) if entries else None
     for entry in entries:
         if entry.digest is None:
-            entry.digest = _table_digest(entry.buffer.to_numpy())
+            entry.digest = _table_digest(entry.buffer.to_numpy(), width)
         if entry.digest == digest:
             return entry.buffer.view(dtype)
     _check_engram_host_ram(name, rows * width)
@@ -225,76 +268,67 @@ def _pinned_table(
     # host-sized copy of a table that reaches tens of gigabytes.
     view = buffer.to_numpy()
     assert not view.flags.owndata, "staging to_numpy must alias the buffer"
-    np.copyto(view, codes)
+    _fill_pinned(codes, view)
     _PINNED_TABLES.setdefault(key, []).append(_PinnedTable(digest, buffer))
     # The kernel consumes the raw bytes as E4M3 codes / E8M0 scales:
     # a bit-preserving view, no value conversion.
     return buffer.view(dtype)
 
 
+class _EPTextConfig(Protocol):
+    """The text-config fields :func:`build_ep_config` reads.
+
+    Structural and read-only, so the trunk's ``DeepseekV41Config`` and the
+    HF ``text_config`` the memory planner holds both feed it.
+    """
+
+    @property
+    def hidden_size(self) -> int: ...
+
+    @property
+    def num_hidden_layers(self) -> int: ...
+
+    @property
+    def num_experts_per_tok(self) -> int: ...
+
+    @property
+    def n_routed_experts(self) -> int: ...
+
+    @property
+    def moe_intermediate_size(self) -> int: ...
+
+
 def build_ep_config(
-    pipeline_config: PipelineConfig, text: Any, n_devices: int
+    pipeline_config: PipelineConfig,
+    text: _EPTextConfig,
+    n_devices: int,
+    expert_format: RoutedExpertFormat,
 ) -> EPConfig:
     """Builds the ModuleV3 EP config from the pipeline ``ep_size``.
 
     A module-level function so the memory planner sizes the same buffers
-    the model allocates: ``text`` is any config view carrying
-    ``hidden_size``, ``num_hidden_layers``, ``num_experts_per_tok``,
-    ``n_routed_experts`` and ``moe_intermediate_size`` (the frozen
-    ``DeepseekV41Config`` or the HF ``text_config``).
+    the model allocates.
 
-    NVFP4 dispatch matches both the experts' W4A4 grouped chain (the
-    dispatch quantizes with the checkpoint's static per-expert
-    ``input_scale``, the same scale the tensor-parallel path quantizes
-    with) and vLLM's dispatch cost (about 2.9 KB per routed row). The
-    combine returns bf16, as vLLM's does.
+    The dispatch quantizes rows to the experts' activation format
+    (:meth:`RoutedExpertFormat.dispatch_quant_config`): NVFP4 matches both
+    the W4A4 grouped chain and vLLM's dispatch cost (about 2.9 KB per
+    routed row), and MXFP8 the W4A8 chain (about 5.3 KB). The combine
+    returns bf16, as vLLM's does.
 
     Raises:
         ValueError: If DSpark is on without ``max_batch_size``, which
-            bounds the draft rows the dispatch buffers must also hold.
+            bounds the draft rows the dispatch buffers must also hold
+            (:func:`..model_config.draft_rows` refuses it on every path).
     """
     runtime = pipeline_config.runtime
     ep_size = runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
-    rows = runtime.max_batch_input_tokens
-    speculative = pipeline_config.speculative
-    if speculative is not None and speculative.speculative_method == "dspark":
-        # Verification runs each request's drafts beside its active tokens,
-        # and the scheduler's token budget counts only the active tokens.
-        if runtime.max_batch_size is None:
-            raise ValueError(
-                "DeepSeek-V4.1 DSpark with expert parallelism needs "
-                "max_batch_size, which bounds the draft rows a verification "
-                "step adds to max_batch_input_tokens"
-            )
-        rows += runtime.max_batch_size * (
-            speculative.num_speculative_tokens or 0
-        )
-    n_layers = int(text.num_hidden_layers)
-    # The routed experts' storage quantization, which the dispatch
-    # token format and the fused SwiGLU kernel read: modelopt NVFP4
-    # (16-value E2M1 blocks, E4M3 per-block scales, static fp32
-    # input scales).
-    dispatch_quant_config = QuantConfig(
-        format=QuantFormat.NVFP4,
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.STATIC,
-            dtype=DType.float32,
-            block_size=(1, 16),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float8_e4m3fn,
-            block_size=(1, 16),
-        ),
-        mlp_quantized_layers=set(range(n_layers)),
-        attn_quantized_layers=set(),
-        can_use_fused_swiglu=True,
-    )
+    rows = dispatch_rows(pipeline_config)
     return EPConfig(
-        dispatch_dtype=DType.uint8,
-        dispatch_quant_config=dispatch_quant_config,
+        dispatch_dtype=expert_format.dispatch_dtype,
+        dispatch_quant_config=expert_format.dispatch_quant_config(
+            int(text.num_hidden_layers)
+        ),
         combine_dtype=DType.bfloat16,
         hidden_size=text.hidden_size,
         top_k=int(text.num_experts_per_tok),
@@ -408,6 +442,10 @@ def engram_static_inputs(
 
     Pinned against ``device``, the pipeline's first.
     """
+    if is_virtual_device_mode():
+        # Compile-only: a virtual device cannot allocate, and nothing ever
+        # feeds these inputs. The ModuleV2 model skips the same work.
+        return {}
     static: dict[str, Buffer] = {}
     for ordinal, table in enumerate(tables):
         weight_name, scale_name = table.table_names(ordinal)
@@ -546,7 +584,12 @@ class DeepseekV41Model(
         self, model_config: DeepseekV41Config, n_devices: int
     ) -> EPConfig:
         """Builds the ModuleV3 EP config from the pipeline ``ep_size``."""
-        return build_ep_config(self.pipeline_config, model_config, n_devices)
+        return build_ep_config(
+            self.pipeline_config,
+            model_config,
+            n_devices,
+            model_config.routed_expert_format,
+        )
 
     @override
     def _init_distributed_runtime(
@@ -572,8 +615,9 @@ class DeepseekV41Model(
             # the batch processor, so every forward's input tail carries
             # them. The export leaves them to the engine's handshake,
             # which owns the counters the compiled forward shares.
-            self.ep_comm_initializer = EPCommInitializer(ep_config)
-            self.ep_comm_initializer.ep_init(self.session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                self.session, ep_config
+            )
             # run_init already wrote node_id through the shared config;
             # restate it like the deepseekV3 pattern does.
             ep_config.node_id = self.ep_comm_initializer.config.node_id
@@ -593,7 +637,11 @@ class DeepseekV41Model(
         specs = super().graph_specs(model_config)
         ep_batch_manager = getattr(self, "_ep_batch_manager", None)
         ep_config = ep_batch_manager.config if ep_batch_manager else None
-        if ep_config is not None:
+        # A build on devices already keeps the init graph it ran.
+        if (
+            ep_config is not None
+            and GraphRole.EP_INIT not in self.compiled_modules
+        ):
             counter_shape = [
                 _ep_counter_words(
                     ep_config.n_experts,
@@ -662,7 +710,12 @@ class DeepseekV41Model(
         )
         ep_batch_manager: EPBatchManager | None = None
         if pipeline_config.runtime.ep_size > 1:
-            ep_config = build_ep_config(pipeline_config, config, len(devices))
+            ep_config = build_ep_config(
+                pipeline_config,
+                config,
+                len(devices),
+                config.routed_expert_format,
+            )
             context.start_ep(ep_config)
             ep_batch_manager = EPBatchManager(ep_config)
         axis = "dp" if dp > 1 else "tp"

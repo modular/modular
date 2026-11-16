@@ -76,8 +76,8 @@ def _abort_hung(name: StaticString) -> Never:
 def _open_collective[
     *, hold_window: Bool
 ](
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     start_ns: Int,
     label: StaticString,
 ) raises:
@@ -100,8 +100,8 @@ def _open_collective[
 def _run_scenario[
     tag: Int, *, inner_collective: Bool = False
 ](
-    ctx0: DeviceContext,
-    ctx1: DeviceContext,
+    ctx0: DeviceContext[],
+    ctx1: DeviceContext[],
     opener_worker: Int,
     loader_worker: Int,
     name: StaticString,

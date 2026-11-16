@@ -24,7 +24,7 @@ from std.testing import assert_false
 from std.utils.numerics import isnan
 
 
-def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext[]) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -63,7 +63,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     comptime kernel = gemv_kernel[.float32, .bfloat16, .bfloat16]
 
     @inline(.always)
-    def run_func_gemv(ctx: DeviceContext) raises {imm}:
+    def run_func_gemv(ctx: DeviceContext[]) raises {imm}:
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
@@ -115,7 +115,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     )
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {imm}:
+    def run_func_naive(ctx: DeviceContext[]) raises {imm}:
         comptime kernel = matmul_kernel_naive[
             .float32,
             .float32,

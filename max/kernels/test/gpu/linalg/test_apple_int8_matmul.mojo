@@ -41,7 +41,7 @@ from max.gpu.host import DeviceContext, HostBuffer
 from std.math import round
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu.apple.int8_matmul import (
     enqueue_apple_int8_matmul,

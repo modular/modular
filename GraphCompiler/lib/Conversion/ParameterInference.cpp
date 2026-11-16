@@ -74,7 +74,7 @@ DictionaryAttr inferParameters(Operation *op, OpBuilder &builder) {
     if (isa<M::DeviceRefAttr, KGEN::ParamDeclArrayAttr>(value))
       continue;
     // An all-integer `ArrayAttr` (e.g. a fused slice's `static_starts`) is not
-    // a `TypedAttr`, but is a valid comptime `IntTuple` kernel parameter.
+    // a `TypedAttr`, but is a valid comptime `Coord` kernel parameter.
     if (auto arrayAttr = dyn_cast<ArrayAttr>(value)) {
       if (llvm::all_of(arrayAttr,
                        [](Attribute a) { return isa<IntegerAttr>(a); }))

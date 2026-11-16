@@ -20,12 +20,13 @@
 #define GENERICML_SUPPORT_QUANTSPEC_H
 
 #include "Support/ML/TensorSpec.h"
+#include "Support/SymbolExport.h"
 
 namespace M {
 class MEFType;
 
 /// Framework-independent quantization info for a single tensor.
-class QuantSpec {
+class MODULAR_CXX_EXPORT QuantSpec {
 public:
   enum Kind : uint8_t {
     invalid,
@@ -93,7 +94,7 @@ inline raw_ostream &operator<<(raw_ostream &os, const QuantSpec &value) {
 }
 
 /// TensorSpec plus quantization info, which may be notQuantized.
-class QuantTensorSpec : public TensorSpec {
+class MODULAR_CXX_EXPORT QuantTensorSpec : public TensorSpec {
 private:
   QuantTensorSpec(const QuantTensorSpec &spec, const TensorShape &newShape)
       : TensorSpec(newShape, spec.getEltType()),

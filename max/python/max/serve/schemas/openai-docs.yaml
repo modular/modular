@@ -1479,16 +1479,21 @@ components:
             `reasoning.effort`, this field takes precedence.
         thinking:
           type: object
-          required:
-            - type
           description: |
             Controls model reasoning. Useful if the model expects `thinking`
-            rather than `reasoning` parameters.
+            rather than `reasoning` parameters. Other members, such as
+            `budget_tokens`, are accepted and ignored.
           properties:
             type:
               type: string
               enum: [enabled, disabled, adaptive]
-              description: The reasoning mode.
+              default: adaptive
+              description: |
+                The reasoning mode. If you omit it, the mode is `adaptive`,
+                and the model decides whether to reason. `enabled` and
+                `disabled` also set `thinking_mode` in
+                `chat_template_kwargs` unless the request already sets a
+                thinking switch there.
         reasoning:
           type: object
           description: |

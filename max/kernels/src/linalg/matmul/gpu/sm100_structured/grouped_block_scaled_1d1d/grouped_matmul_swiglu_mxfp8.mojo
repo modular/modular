@@ -38,7 +38,6 @@ from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 def grouped_matmul_swiglu_mxfp8_dispatch[
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
     # When True (default), the in-tile fused epilogue rounds through
     # bf16 in the SMEM scatter so its output matches the chained
@@ -85,8 +84,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     Parameters:
         transpose_b: Transpose the B weight in the matmul (defaults to
             True).
-        target: Target backend selector forwarded to the inner
-            dispatch as a `StaticString` (defaults to `"cpu"`).
         pdl_level: Program-Dependent Launch level forwarded to the
             grid controls (defaults to `PDLLevel.ON`).
         match_bf16: Round the in-tile fused epilogue through `bf16`
@@ -167,7 +164,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     grouped_matmul_mxfp8_dispatch[
         transpose_b=transpose_b,
-        target=target,
         pdl_level=pdl_level,
         fuse_swiglu=True,
         SwiGLUOutputT=type_of(swiglu_out),

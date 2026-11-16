@@ -35,14 +35,15 @@ from max.benchmark.benchmark_shared.datasets.distribution import (
 # ---------------------------------------------------------------------------
 
 
-def test_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter(42.0)
-    assert isinstance(dist, ConstantDistribution)
-    assert dist.value == 42.0
-
-
-def test_str_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter("42.0")
+@pytest.mark.parametrize(
+    "param",
+    [
+        pytest.param(42.0, id="float"),
+        pytest.param("42.0", id="str_float"),
+    ],
+)
+def test_float_returns_constant(param: float | str) -> None:
+    dist = BaseDistribution.from_distribution_parameter(param)
     assert isinstance(dist, ConstantDistribution)
     assert dist.value == 42.0
 
@@ -378,19 +379,19 @@ def test_unrecognized_string_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_burr12_non_positive_c_raises() -> None:
-    with pytest.raises(ValueError, match="c"):
-        Burr12Distribution(c=0.0, d=1.0, scale=1.0)
-
-
-def test_burr12_non_positive_d_raises() -> None:
-    with pytest.raises(ValueError, match="d"):
-        Burr12Distribution(c=1.0, d=-0.5, scale=1.0)
-
-
-def test_burr12_non_positive_scale_raises() -> None:
-    with pytest.raises(ValueError, match="scale"):
-        Burr12Distribution(c=1.0, d=1.0, scale=0.0)
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param(dict(c=0.0, d=1.0, scale=1.0), "c", id="c"),
+        pytest.param(dict(c=1.0, d=-0.5, scale=1.0), "d", id="d"),
+        pytest.param(dict(c=1.0, d=1.0, scale=0.0), "scale", id="scale"),
+    ],
+)
+def test_burr12_non_positive_param_raises(
+    kwargs: dict[str, float], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        Burr12Distribution(**kwargs)
 
 
 def test_burr12_string() -> None:

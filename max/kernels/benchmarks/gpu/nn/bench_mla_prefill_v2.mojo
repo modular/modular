@@ -172,7 +172,7 @@ def run_mla_prefill_v2[
     cache_seq_len: Int,
     batch_size: Int,
     bench: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Run `MlaPrefillV2` over `CacheBustingBuffer`-backed Q/K/V/O.
 
@@ -348,7 +348,9 @@ def run_mla_prefill_v2[
             imm,
         }:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).unsafe_bitcast[
                     Scalar[qkv_type]
                 ]()

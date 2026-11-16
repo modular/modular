@@ -14,6 +14,7 @@
 #ifndef KGEN_ELABORATOR_ELABORATOR_H
 #define KGEN_ELABORATOR_ELABORATOR_H
 
+#include "ElaboratorHelper.h"
 #include "IREvaluator.h"
 #include "InterpreterCache.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -110,7 +111,8 @@ public:
   /// Lookup an existing concrete function.
   InstantiatedOpInterface lookupInstantiatedOp(SymbolRefAttr symbol) {
     StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
-    InstantiatedOpInterface localResult = (*tlInsts)[name];
+    // This has to be a reference because it is reassigned below.
+    InstantiatedOpInterface &localResult = (*tlInsts)[name];
     if (!localResult) {
       localResult =
           concreteNodes.read([name](auto &map) { return map.at(name)->inst; });
@@ -173,6 +175,30 @@ public:
     }
     return tlValue;
   }
+  /// Records an interpreter call for `--elaboration-stats`: one that spent
+  /// `cpuNanos` interpreting `func`, or a cache hit without them. Appends to
+  /// this thread's buffer; `flushInterpreterCalls` moves it to the shared
+  /// vector, so recording takes no lock.
+  void recordInterpreterCall(Location loc, FuncOp func,
+                             std::optional<int64_t> cpuNanos) {
+    if (!config.printStats)
+      return;
+    tlInterpreterCalls.get().push_back({loc, func.getSymNameAttr(), cpuNanos});
+  }
+  /// Moves this thread's buffered interpreter calls to the shared vector.
+  /// Called where a unit of elaboration work ends, so every buffer is empty
+  /// by the time the report prints.
+  void flushInterpreterCalls() {
+    if (!config.printStats)
+      return;
+    std::vector<InterpreterCallRecord> &buffer = tlInterpreterCalls.get();
+    if (buffer.empty())
+      return;
+    interpreterCalls.modify([&](auto &calls) {
+      calls.insert(calls.end(), buffer.begin(), buffer.end());
+    });
+    buffer.clear();
+  }
   /// Write a cached interpreter result to the global cache if it does not
   /// already exist. Always returns the value that is in the cache.
   TypedAttr writeGlobalCachedInterpretation(FuncOp func,
@@ -192,11 +218,41 @@ public:
       llvm::errs() << "value: " << value << "\n";
       llvm::errs() << "operands: " << operands << "\n";
       llvm::errs() << "\n";
-      func.dump();
+      func->print(llvm::errs());
+      llvm::errs() << "\n";
     }
 
     assert(result == value && "non-deterministic interpreter results");
     return result;
+  }
+  /// Interpret `func` on `operands` through the interpreter result cache.
+  /// `interpret` runs on a miss and may replace `operands` (e.g. by
+  /// concretizing symbols within it); the global cache is keyed on the final
+  /// value. It returns the interpreted value, a null value to return
+  /// uncached, or an error to propagate. Only successes are cached.
+  ErrorTreeOr<TypedAttr> interpretWithCache(
+      Location loc, FuncOp func, ParameterExprArrayAttr &operands,
+      function_ref<ErrorTreeOr<TypedAttr>(ParameterExprArrayAttr &)>
+          interpret) {
+    ParameterExprArrayAttr lookupKey = operands;
+    TypedAttr &cached = lookupCachedInterpretation(func, lookupKey);
+    if (cached) {
+      recordInterpreterCall(loc, func, /*cpuNanos=*/std::nullopt);
+      return cached;
+    }
+
+    ErrorTreeOr<TypedAttr> result = interpret(operands);
+    if (result.isError())
+      return result.takeError();
+    TypedAttr value = result.takeValue();
+    if (!value)
+      return TypedAttr();
+    value = writeGlobalCachedInterpretation(func, operands, value);
+
+    // Re-look up the slot: `interpret` may have run nested interpretations
+    // that rehashed the thread-local cache, dangling the reference above.
+    (*tlInterp)[{func, lookupKey}] = value;
+    return value;
   }
 
   //===--------------------------------------------------------------------===//
@@ -369,6 +425,14 @@ private:
 
   /// The elaborator config.
   ElaborateGeneratorsOptions config;
+
+  /// What each `comptime for` produced, when `config.printStats` is set.
+  Shared<std::vector<ComptimeForRecord>> comptimeForStats;
+  /// Every interpreter call, when `config.printStats` is set.
+  Shared<std::vector<InterpreterCallRecord>> interpreterCalls;
+  /// This thread's buffered interpreter calls, drained by
+  /// `flushInterpreterCalls`.
+  mlir::ThreadLocalCache<std::vector<InterpreterCallRecord>> tlInterpreterCalls;
 
   /// This is the symbol table of the new module.
   /// Map from name to op + concrete function to implementation node.

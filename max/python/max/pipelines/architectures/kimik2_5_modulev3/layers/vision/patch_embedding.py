@@ -30,10 +30,10 @@ import numpy as np
 from max import functional as F
 from max.dtype import DType
 from max.nn import Module
-from max.nn.conv import Conv2d
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     learnable_2d_interp_pos_emb as _learnable_2d_interp_pos_emb,
 )
+from max.nn.conv import Conv2d
 from max.tensor import Tensor
 from max.tensor.sharding import AxisAssignment, replicated_rows
 from max.tensor.sharding.types import TensorLayout

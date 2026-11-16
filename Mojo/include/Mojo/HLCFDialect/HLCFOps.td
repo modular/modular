@@ -156,7 +156,8 @@ def HLCF_ForOp : HLCFParentOp<"for"> {
                                             $upperBound, type($upperBound),
                                             $step, type($step))
     enum($cmpPredicateType) enum($indVarComputeType) `]` ``
-    custom<Loop>($iterArgs, type($iterArgs), type($results), $body) attr-dict
+    custom<Loop>($iterArgs, type($iterArgs), type($results), $body) prop-dict
+    attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -254,7 +255,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 
   let assemblyFormat = [{
     ($label^)? ``
-    custom<Loop>($operands, type($operands), type($results), $body) attr-dict
+    custom<Loop>($operands, type($operands), type($results), $body) prop-dict
+    attr-dict
   }];
 
   let builders = [
@@ -838,7 +840,7 @@ def HLCF_ComptimeForOp : HLCFParentOp<"comptime.for", [
     `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
     `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
     custom<Loop>($operands, type($operands), type($results), $body)
-    `else` custom<RegionWithArgs>($elseRegion) attr-dict
+    `else` custom<RegionWithArgs>($elseRegion) prop-dict attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -1002,7 +1004,7 @@ def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
   }];
 
   let assemblyFormat = [{
-    custom<ComptimeIf>($conds, type($results), $regions) attr-dict
+    custom<ComptimeIf>($conds, type($results), $regions) prop-dict attr-dict
   }];
 
   let builders = [
@@ -1110,6 +1112,11 @@ def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
     the previous operations cannot continue control flow.  This is used after
     infinite loops and no-return functions to simplify dataflow analysis.
 
+    `fallthroughError` makes the operation a semantic assertion that control
+    must not reach this point. LowerSemanticCF emits its message if preceding
+    control flow falls through to the operation. An empty message disables the
+    assertion.
+
     Example:
 
     ```mlir
@@ -1121,10 +1128,12 @@ def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
     ```
   }];
 
-  let arguments =
-   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
+  let arguments = (ins
+    DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall,
+    DefaultValuedOptionalAttr<StrAttr, "\"\"">:$fallthroughError
+  );
 
-  let assemblyFormat = "attr-dict";
+  let assemblyFormat = "prop-dict attr-dict";
 }
 
 #endif // HLCFOPS_TD

@@ -2,7 +2,7 @@
 
 // Test basic memory planning with non-overlapping lifetimes
 // CHECK-LABEL: mgp.model @basic_memory_planning
-mgp.model @basic_memory_planning : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @basic_memory_planning devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
@@ -29,7 +29,7 @@ mgp.model @basic_memory_planning : mof devices [#M.device_ref<"gpu", 0>] init (%
 
 // Test that CPU allocations are ignored
 // CHECK-LABEL: mgp.model @cpu_allocations_ignored
-mgp.model @cpu_allocations_ignored : mof devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @cpu_allocations_ignored devices [#M.device_ref<"cpu", 0>, #M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>, %arg2: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1, %arg2 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>, !mgp.device_context<<"gpu", 0>>
@@ -58,7 +58,7 @@ mgp.model @cpu_allocations_ignored : mof devices [#M.device_ref<"cpu", 0>, #M.de
 
 // Test single allocation is not planned
 // CHECK-LABEL: mgp.model @single_allocation_not_planned
-mgp.model @single_allocation_not_planned : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @single_allocation_not_planned devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
@@ -78,7 +78,7 @@ mgp.model @single_allocation_not_planned : mof devices [#M.device_ref<"gpu", 0>]
 
 // Test different alignments
 // CHECK-LABEL: mgp.model @different_alignments
-mgp.model @different_alignments : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @different_alignments devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
@@ -104,7 +104,7 @@ mgp.model @different_alignments : mof devices [#M.device_ref<"gpu", 0>] init (%a
 
 // Test multiple devices are handled separately
 // CHECK-LABEL: mgp.model @multiple_devices
-mgp.model @multiple_devices : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>, %arg2: !mgp.device_context<<"gpu", 1>>) {
+mgp.model @multiple_devices devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>, %arg2: !mgp.device_context<<"gpu", 1>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1, %arg2 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>, !mgp.device_context<<"gpu", 1>>
@@ -142,7 +142,7 @@ mgp.model @multiple_devices : mof devices [#M.device_ref<"gpu", 0>, #M.device_re
 // use (%ch1), so their lifetimes overlap and the planner must not share their
 // slot: canShare stays all-zero.
 // CHECK-LABEL: mgp.model @tensor_view_extends_lifetime
-mgp.model @tensor_view_extends_lifetime : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @tensor_view_extends_lifetime devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

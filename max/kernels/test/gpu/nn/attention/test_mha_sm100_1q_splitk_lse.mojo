@@ -581,7 +581,7 @@ def main() raises:
     assert_equal(_auto_p[SM_COUNT, False](8, 48), 3)
     assert_equal(_auto_p[SM_COUNT, False](8, 96), 1)
     # An unbounded mask keeps the 8 the ramp asks for at every one of them.
-    comptime for rg in [12, 24, 48, 96]:
+    for rg in [12, 24, 48, 96]:
         assert_equal(_auto_p[SM_COUNT, True](8, rg), 8)
 
     with DeviceContext() as ctx:

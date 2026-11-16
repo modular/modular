@@ -27,13 +27,13 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn._graph_ops import flash_attention_gpu
+from max.nn.attention_mask import MHAMaskVariant
 
 from ..comm import Allreduce
 from ..layer import Module
 from ..linear import Linear
 from ..stacked_linear import StackedLinear
-from .mask_config import MHAMaskVariant
 
 
 def num_heads_for_device(

@@ -681,13 +681,11 @@ struct PythonTypeBuilder(Copyable):
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
-            slots.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+            slots.unsafe_ptr(),
         )
 
         # Construct a Python 'type' object from our type spec.
-        var type_obj_ptr = cpython.PyType_FromSpec(
-            Pointer(to=type_spec).as_unsafe_any_origin()
-        )
+        var type_obj_ptr = cpython.PyType_FromSpec(Pointer(to=type_spec))
 
         if not type_obj_ptr:
             raise cpython.get_error()
@@ -1192,7 +1190,7 @@ def _set_python_error(
     var error_type = cpython.get_error_global(exc_type.global_name)
     cpython.PyErr_SetString(
         error_type,
-        error_message.as_c_string_span().ptr().as_unsafe_any_origin(),
+        error_message.as_c_string_span().ptr(),
     )
 
 
@@ -1245,13 +1243,11 @@ def _py_init_function_nonregistered(
 ) abi("C") -> c_int:
     ref cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
-    cpython.PyErr_SetString(
-        error_type,
+    comptime message = (
         "No initializer registered for this type. Use def_py_init() or"
-        " def_init_defaultable() to register an initializer.".as_c_string_span()
-        .ptr()
-        .as_unsafe_any_origin(),
+        " def_init_defaultable() to register an initializer."
     )
+    cpython.PyErr_SetString(error_type, message.as_c_string_span().ptr())
     return -1
 
 
@@ -1767,7 +1763,7 @@ def check_arguments_arity(
     # (`_py_kwargs_function_wrapper`, `_py_function_fastcall_wrapper`) decay to
     # `thin -> ...` C function pointers for CPython's `PyMethodDef`
     # table, which means they cannot capture any runtime state - so a
-    # runtime `func_name: StringSlice` cannot be threaded down to the
+    # runtime `func_name: StringSpan` cannot be threaded down to the
     # dispatch site. Threading it as a `comptime` parameter would force
     # `func_name` to be `comptime` on `def_function` / `def_method` /
     # `def_staticmethod`, a breaking change for thousands of callers.
@@ -1781,7 +1777,7 @@ def check_arguments_arity(
 def check_arguments_arity(
     arity: Int,
     args: PythonObject,
-    func_name: StringSlice,
+    func_name: StringSpan,
 ) raises:
     """Validate that the provided arguments match the expected function arity.
 
@@ -1834,7 +1830,7 @@ def check_arguments_arity(
 def check_arguments_arity(
     arity: Int,
     arg_count: Int,
-    func_name: StringSlice,
+    func_name: StringSpan,
 ) raises:
     """Validate that the provided argument count matches the expected arity.
 
@@ -1906,7 +1902,7 @@ def check_and_get_arg[
 def _try_convert_arg[
     T: ConvertibleFromPython
 ](
-    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
+    func_name: StringSpan, py_args: PythonObject, argidx: Int, out result: T
 ) raises:
     try:
         result = T(py=py_args[argidx])

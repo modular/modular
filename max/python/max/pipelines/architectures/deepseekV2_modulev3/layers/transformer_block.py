@@ -18,7 +18,7 @@ from max.nn import Module
 from max.nn.common_layers.multi_latent_attention import (
     LatentAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 

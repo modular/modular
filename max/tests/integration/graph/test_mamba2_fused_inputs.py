@@ -45,7 +45,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.state_space import (
+from max.nn._graph_ops.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
@@ -616,10 +616,12 @@ def test_layer_rows_sliced_in_subgraph(session: InferenceSession) -> None:
         s["conv_rows"],
         s["ssm_rows"],
     ]
+    models = {
+        inside: session.load(_layers_graph(inside)) for inside in (False, True)
+    }
     results = {}
     launches = {}
-    for inside in (False, True):
-        model = session.load(_layers_graph(inside))
+    for inside, model in models.items():
         buffers = _to_device(tensors, model.input_devices)
         outputs = model.execute(*buffers)
         results[inside] = [torch.from_dlpack(o).cpu() for o in outputs] + [
@@ -884,30 +886,6 @@ def test_non_contiguous_operands_match_contiguous(
             )
         return graph
 
-    tail = [
-        s["A"],
-        s["D"],
-        s["dt_bias"],
-        s["ssm_pool"],
-        s["query_start_loc"],
-        s["has_initial_state"],
-        s["ssm_rows"][_LAYER],
-    ]
-    strided = session.load(ssd_graph(True))
-    plain = session.load(ssd_graph(False))
-    y_s, pool_s = _run(
-        strided,
-        [_storage(operands[k], kind) for k in dims] + tail,
-        pool_index=7,
-    )
-    y_p, pool_p = _run(plain, [operands[k] for k in dims] + tail, pool_index=7)
-    assert torch.isfinite(y_s.float()).all()
-    assert torch.equal(y_s, y_p)
-    assert torch.equal(pool_s, pool_p)
-
-    # Conv input.
-    conv_x = torch.randn(n, _CONV_DIM, generator=gen).to(torch.bfloat16)
-
     def conv_graph(strided: bool) -> Graph:
         x_type = (
             _storage_type([_CONV_DIM], kind)
@@ -940,30 +918,6 @@ def test_non_contiguous_operands_match_contiguous(
             )
         return graph
 
-    conv_tail = [
-        s["conv_weight"],
-        s["conv_bias"],
-        s["conv_pool"],
-        s["query_start_loc"],
-        s["conv_rows"][_LAYER],
-        s["has_initial_state"],
-    ]
-    xs, cp_s = _run(
-        session.load(conv_graph(True)),
-        [_storage(conv_x, kind), *conv_tail],
-        pool_index=3,
-    )
-    xp, cp_p = _run(
-        session.load(conv_graph(False)), [conv_x, *conv_tail], pool_index=3
-    )
-    assert torch.equal(xs, xp)
-    assert torch.equal(cp_s, cp_p)
-
-    # Gate.
-    rows_n = n
-    y = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
-    gate = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
-    weight = torch.rand(_INTERMEDIATE, generator=gen) + 0.5
     with Graph(
         "gate_strided",
         input_types=[
@@ -982,8 +936,53 @@ def test_non_contiguous_operands_match_contiguous(
                 group_size=_INTERMEDIATE // _GROUPS,
             )
         )
+
+    strided = session.load(ssd_graph(True))
+    plain = session.load(ssd_graph(False))
+    conv_s = session.load(conv_graph(True))
+    conv_p = session.load(conv_graph(False))
     gs = session.load(gate_graph)
     gp = session.load(_gate_graph(fused=False))
+
+    tail = [
+        s["A"],
+        s["D"],
+        s["dt_bias"],
+        s["ssm_pool"],
+        s["query_start_loc"],
+        s["has_initial_state"],
+        s["ssm_rows"][_LAYER],
+    ]
+    y_s, pool_s = _run(
+        strided,
+        [_storage(operands[k], kind) for k in dims] + tail,
+        pool_index=7,
+    )
+    y_p, pool_p = _run(plain, [operands[k] for k in dims] + tail, pool_index=7)
+    assert torch.isfinite(y_s.float()).all()
+    assert torch.equal(y_s, y_p)
+    assert torch.equal(pool_s, pool_p)
+
+    # Conv input.
+    conv_x = torch.randn(n, _CONV_DIM, generator=gen).to(torch.bfloat16)
+    conv_tail = [
+        s["conv_weight"],
+        s["conv_bias"],
+        s["conv_pool"],
+        s["query_start_loc"],
+        s["conv_rows"][_LAYER],
+        s["has_initial_state"],
+    ]
+    xs, cp_s = _run(conv_s, [_storage(conv_x, kind), *conv_tail], pool_index=3)
+    xp, cp_p = _run(conv_p, [conv_x, *conv_tail], pool_index=3)
+    assert torch.equal(xs, xp)
+    assert torch.equal(cp_s, cp_p)
+
+    # Gate.
+    rows_n = n
+    y = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    gate = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    weight = torch.rand(_INTERMEDIATE, generator=gen) + 0.5
     (go_s,) = gs.execute(
         *_to_device([y, _storage(gate, kind), weight], gs.input_devices)
     )

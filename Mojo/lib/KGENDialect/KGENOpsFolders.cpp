@@ -881,6 +881,49 @@ StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// StructConcatOp
+//===----------------------------------------------------------------------===//
+
+static StructAttr foldStructConcatConstant(StructType resultType,
+                                           ArrayRef<Attribute> operands) {
+  SmallVector<TypedAttr> values;
+  for (Attribute operand : operands) {
+    auto value = dyn_cast_if_present<StructAttr>(operand);
+    if (!value)
+      return {};
+    llvm::append_range(values, value.getValues());
+  }
+  return StructAttr::get(values, resultType);
+}
+
+OpFoldResult StructConcatOp::fold(FoldAdaptor adaptor) {
+  if (getNumOperands() == 1 && getStructs().front().getType() == getType()) {
+    if (Attribute operand = adaptor.getStructs().front())
+      return operand;
+    return getStructs().front();
+  }
+  if (!getType().getVariadicIfResolved())
+    return {};
+  return foldStructConcatConstant(getType(), adaptor.getOperands());
+}
+
+ErrorTreeOrSuccess StructConcatOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  return state.interpretOpWithFolder(this->getOperation(), operands);
+}
+
+ErrorTreeOrSuccess
+StructConcatOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                     ParametricInterpreterState &state) {
+  auto resultType = cast<StructType>(state.getReboundType(getType()));
+  if (resultType.getVariadicIfResolved()) {
+    if (StructAttr cst = foldStructConcatConstant(resultType, operands))
+      return state.mapResults(cst);
+  }
+  return ErrorTree(getLoc(), "can't interpret KGEN::StructConcatOp");
+}
+
+//===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 

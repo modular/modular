@@ -275,19 +275,6 @@ void HostMachineInfo::print(HostProperty property,
   os << "\n";
 }
 
-void HostMachineInfo::printStaticInfo(raw_ostream &os) const {
-  print(HostProperty::TargetTriple, os);
-  print(HostProperty::OS, os);
-  print(HostProperty::Arch, os);
-  print(HostProperty::CPUModel, os);
-  print(HostProperty::SIMDBitWidth, os);
-  print(HostProperty::Features, os);
-  print(HostProperty::L1CacheSize, os);
-  print(HostProperty::L2CacheSize, os);
-  print(HostProperty::L3CacheSize, os);
-  print(HostProperty::L4CacheSize, os);
-}
-
 HostMachineInfo HostMachineInfo::fromTargetInfo(const TargetInfo &targetInfo) {
   HostMachineInfo result;
   result.triple = targetInfo.triple.str();

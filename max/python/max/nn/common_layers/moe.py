@@ -24,15 +24,14 @@ from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn import Linear
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers._sharding import shard_and_stack, stack_device_shards
+from max.nn.common_layers.mlp import MLP
+from max.nn.kernels import (
     fused_silu,
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
-    shard_and_stack,
-    stack_device_shards,
 )
-from max.nn.common_layers.mlp import MLP
 from max.nn.module import Module
 from max.nn.sequential import ModuleList
 from max.tensor import (

@@ -33,7 +33,7 @@
 # Step 3: Verify the package was created and contains bitcode modules
 # RUN: kgen-opt %t.pkg/bitcode_package.mojoc | FileCheck %s --check-prefix=CHECK-PACKAGE
 # CHECK-PACKAGE: lit.package
-# CHECK-PACKAGE-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
+# CHECK-PACKAGE: } <{{.*}}externLLVMBitcodeModules = [dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
 # CHECK-PACKAGE: dialect_resources:
 # CHECK-PACKAGE: [[LLVM_BITCODE_NAME]]
 

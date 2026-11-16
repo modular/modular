@@ -33,11 +33,10 @@ from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.intrinsics import ds_read_tr8_b64
 from std.math import exp2 as math_exp2
 from std.sys import size_of
-from std.utils import IndexList
 
 from layout import Coord, TensorLayout
 from layout.coord import crd2idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from structured_kernels.amd_tile_io import (
     RegTile,
@@ -836,9 +835,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
         comptime if Self.T == .bfloat16:
             comptime subtiles_per_row = width
-            comptime mma_shape = IndexList[3](
-                Self.MMA_M, Self.MMA_N, Self.MMA_K
-            )
+            comptime mma_shape = (Self.MMA_M, Self.MMA_N, Self.MMA_K)
 
             comptime for i in range(height):
                 comptime for j in range(width):

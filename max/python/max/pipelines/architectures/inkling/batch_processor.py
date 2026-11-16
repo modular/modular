@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -23,9 +24,9 @@ from max import tree
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.graph_input_stager import InputDescriptor
+from max.pipelines.lib.input_binding import _flatten_role_inputs
 from max.pipelines.lib.interfaces.batch_processor import (
     RAGGED_INPUT_ROW_OFFSETS,
     RAGGED_INPUT_TOKENS,
@@ -34,6 +35,8 @@ from max.pipelines.lib.interfaces.batch_processor import (
     single_replica_context_batch,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+from max.pipelines.lib.registration_graph_api import _decoder_input_fields
+from max.pipelines.lib.role_contracts import DecoderInputs, VisionInputs
 from max.pipelines.lib.vision_batching import (
     create_empty_image_embeddings_single,
     create_empty_image_token_indices_single,
@@ -42,9 +45,6 @@ from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 
 from .model_config import InklingConfig
 
-_TOKEN_POSITIONS = "token_positions"
-"""Device input holding each token's position within its own sequence."""
-
 
 @dataclass
 class InklingInputs(ModelInputs):
@@ -52,7 +52,6 @@ class InklingInputs(ModelInputs):
 
     tokens: Buffer
     input_row_offsets: Buffer
-    positions: Buffer
     return_n_logits: Buffer
 
     image_embeddings: Buffer
@@ -60,15 +59,35 @@ class InklingInputs(ModelInputs):
     """Token-stream row each vision row replaces; negative entries are skipped."""
 
     signal_buffers: list[Buffer]
+    input_tree_def: tree.TreeDef | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The step's buffers, in the graph's input order."""
         assert self.kv_cache_inputs is not None
+        if self.input_tree_def is not None:
+            inputs: DecoderInputs[tree.Tree[Buffer], Buffer] = DecoderInputs(
+                tokens=self.tokens,
+                input_row_offsets=self.input_row_offsets,
+                return_n_logits=self.return_n_logits,
+                vision=VisionInputs(
+                    embeddings=(self.image_embeddings,),
+                    scatter_indices=(self.image_indices,),
+                ),
+                signals=tuple(self.signal_buffers),
+                kv=self.kv_cache_inputs,
+            )
+            values = _flatten_role_inputs(
+                self.input_tree_def, inputs, strict=True
+            )
+            buffers: list[Buffer] = []
+            for value in values:
+                assert isinstance(value, Buffer)
+                buffers.append(value)
+            return tuple(buffers)
         return (
             self.tokens,
             self.input_row_offsets,
-            self.positions,
             self.return_n_logits,
             self.image_embeddings,
             self.image_indices,
@@ -92,19 +111,7 @@ class InklingBatchProcessor(
     def __init__(
         self, config: InklingConfig, runtime: BatchProcessorRuntime
     ) -> None:
-        super().__init__(
-            config,
-            runtime,
-            # One position per token, so the token stream's bound covers it.
-            [
-                InputDescriptor(
-                    name=_TOKEN_POSITIONS,
-                    dtype=DType.uint32,
-                    max_shape=(runtime.max_batch_active_tokens,),
-                    destinations=[runtime.devices[0]],
-                )
-            ],
-        )
+        super().__init__(config, runtime)
         self._hidden_size = config.text_config.hidden_size
         self._dtype = config.dtype
         self._vision_model: Model | None = None
@@ -119,6 +126,13 @@ class InklingBatchProcessor(
         del session
         self._vision_model = vision_model
 
+    def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
+        """Binds the same semantic tree the decoder exports."""
+        super().bind_input_tree(input_tree)
+        self._input_tree_def = tree.flatten(_decoder_input_fields(input_tree))[
+            1
+        ]
+
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
@@ -129,9 +143,7 @@ class InklingBatchProcessor(
         context_batch = single_replica_context_batch(
             replica_batches, processor_name=type(self).__qualname__
         )
-        tokens, input_row_offsets, positions = self._stage_token_inputs(
-            context_batch
-        )
+        tokens, input_row_offsets = self._stage_token_inputs(context_batch)
 
         # Reusing one buffer per distinct value keeps graph-capture replay
         # from recopying an input that never changes.
@@ -152,7 +164,6 @@ class InklingBatchProcessor(
             context_batch=context_batch,
             tokens=tokens,
             input_row_offsets=input_row_offsets,
-            positions=positions,
             return_n_logits=return_n_logits_buffer,
             image_embeddings=image_embeddings,
             image_indices=image_indices,
@@ -166,7 +177,6 @@ class InklingBatchProcessor(
         context_batch: Sequence[TextAndVisionContext],
         tokens: Buffer,
         input_row_offsets: Buffer,
-        positions: Buffer,
         return_n_logits: Buffer,
         image_embeddings: Buffer,
         image_indices: Buffer,
@@ -177,24 +187,23 @@ class InklingBatchProcessor(
         return InklingInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
-            positions=positions,
             return_n_logits=return_n_logits,
             image_embeddings=image_embeddings,
             image_indices=image_indices,
             signal_buffers=signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
+            input_tree_def=getattr(self, "_input_tree_def", None),
         )
 
     def _stage_token_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> tuple[Buffer, Buffer, Buffer]:
+    ) -> tuple[Buffer, Buffer]:
         lengths = np.fromiter(
             (context.tokens.active_length for context in context_batch),
             dtype=np.int64,
             count=len(context_batch),
         )
         total_seq_len = int(lengths.sum())
-
         with self._stager.stage() as staging:
             host_tokens, (device_tokens,) = staging.get(
                 RAGGED_INPUT_TOKENS, (total_seq_len,)
@@ -202,34 +211,15 @@ class InklingBatchProcessor(
             host_row_offsets, (device_row_offsets,) = staging.get(
                 RAGGED_INPUT_ROW_OFFSETS, (len(context_batch) + 1,)
             )
-            host_positions, (device_positions,) = staging.get(
-                _TOKEN_POSITIONS, (total_seq_len,)
+            host_row_offsets.to_numpy()[:] = np.cumsum(
+                [0, *lengths], dtype=np.int64
             )
-
-            offsets = np.cumsum([0, *lengths], dtype=np.int64)
-            host_row_offsets.to_numpy()[:] = offsets
             if total_seq_len:
                 np.concatenate(
                     [context.tokens.active for context in context_batch],
                     out=host_tokens.to_numpy(),
                 )
-            # One ramp shifted per sequence covers the whole ragged batch.
-            first_positions = (
-                np.fromiter(
-                    (
-                        context.tokens.current_position
-                        for context in context_batch
-                    ),
-                    dtype=np.int64,
-                    count=len(context_batch),
-                )
-                - lengths
-            )
-            host_positions.to_numpy()[:] = np.arange(
-                total_seq_len, dtype=np.int64
-            ) + np.repeat(first_positions - offsets[:-1], lengths)
-
-        return device_tokens, device_row_offsets, device_positions
+        return device_tokens, device_row_offsets
 
     def _empty_image_operands(self) -> tuple[Buffer, Buffer]:
         """Zero-row operands for a batch with no images to encode."""
@@ -260,7 +250,7 @@ class InklingBatchProcessor(
             for image in context.images
         ]
         device0 = self.runtime.devices[0]
-        pixels = _pinned_copy(blocks, device0)
+        pixels = _pinned_copy(blocks, device0, dtype=DType.int32)
         embeddings = self._encode_images(pixels)
         return embeddings, _pinned_copy([indices], device0)
 
@@ -273,7 +263,10 @@ class InklingBatchProcessor(
 
 
 def _pinned_copy(
-    arrays: Sequence[npt.NDArray[np.generic]], device: Device
+    arrays: Sequence[npt.NDArray[np.generic]],
+    device: Device,
+    *,
+    dtype: DType | None = None,
 ) -> Buffer:
     """Stacks arrays along their first axis into a copy on device.
 
@@ -283,7 +276,7 @@ def _pinned_copy(
     """
     host = Buffer(
         shape=(sum(len(array) for array in arrays), *arrays[0].shape[1:]),
-        dtype=DType.from_numpy(arrays[0].dtype),
+        dtype=dtype or DType.from_numpy(arrays[0].dtype),
         device=device,
         usage=Usage.STAGING | Usage.UNTRACKED,
     )

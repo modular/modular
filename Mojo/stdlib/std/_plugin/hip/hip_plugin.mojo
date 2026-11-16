@@ -211,7 +211,7 @@ struct HIPPlugin(StdPlugin):
     """`PluginHooks` implementation for AMD HIP backends."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["hip"]()
-    comptime HookFor[target: CompilationTarget] = HIPPluginHooks[target]
+    comptime HookFor = HIPPluginHooks[_]
 
 
 struct HIPPluginHooks[target: CompilationTarget](PluginHooks):

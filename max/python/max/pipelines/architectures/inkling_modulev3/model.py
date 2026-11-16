@@ -23,7 +23,7 @@ from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,
@@ -36,7 +36,7 @@ from max.pipelines.lib import (
     SupportsSSMStateWarmup,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from typing_extensions import override

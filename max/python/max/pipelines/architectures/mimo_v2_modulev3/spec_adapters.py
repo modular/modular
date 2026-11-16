@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Block spec-decode adapters for a ModuleV3 MiMo-V2 target.
 
-It also holds the DFlash drafter's proposer. The target verifies through :class:`~.mimo_v2.MiMoV2SpecTarget`'s own pass.
+It also holds the DFlash drafter's proposer. The target verifies through :class:`~.mimo_v2.MiMoV2Decoder`'s own pass.
 The drafter embeds and projects through the target's embedding and head, so
 its proposer lives here, beside the target it reads. Both run on ``Tensor``
 values.
@@ -26,15 +26,14 @@ one-device replicas, and each replica's full drafter drafts its own rows.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from max import functional as F
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn.common_layers.mesh_axis import DP
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommBuffers
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,
@@ -49,6 +48,7 @@ from max.pipelines.speculative.block_driver import (
 from max.pipelines.speculative.driver import SequentialBatch, TensorAdapter
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
@@ -62,7 +62,7 @@ from max.tensor.sharding import (
 )
 
 from ..dflash_mimo_v2_modulev3 import DFlashMiMoV2
-from .mimo_v2 import MiMoV2SpecTarget
+from .mimo_v2 import MiMoV2Decoder
 from .model_config import FULL, SLIDING
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ class MiMoV2BlockTarget:
 
     def __init__(
         self,
-        target: MiMoV2SpecTarget,
+        target: MiMoV2Decoder,
         *,
         vocab_size: int,
         sampleable_vocab_size: int,
@@ -180,7 +180,7 @@ class DFlashMiMoV2Proposer(TensorAdapter):
     def __init__(
         self,
         drafter: DFlashMiMoV2,
-        target: MiMoV2SpecTarget,
+        target: MiMoV2Decoder,
         *,
         num_speculative_tokens: int,
         sampleable_vocab_size: int,
@@ -409,7 +409,7 @@ def verify(
             "A ModuleV3 MiMo-V2 target verifies only for block drafts, which"
             f" read selected layers. Got {hidden_states.value}."
         )
-    assert isinstance(target, MiMoV2SpecTarget)
+    assert isinstance(target, MiMoV2Decoder)
     return MiMoV2BlockTarget(
         target,
         vocab_size=target_config.vocab_size,
@@ -417,12 +417,12 @@ def verify(
     )
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the EP buffers a target built with expert parallelism takes."""
-    assert isinstance(target, MiMoV2SpecTarget)
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP buffers, if EP is on."""
+    assert isinstance(target, MiMoV2Decoder)
     if target.ep_batch_manager is None:
-        return ()
-    return tuple(target.ep_batch_manager.input_types())
+        return None
+    return target.ep_batch_manager.input_tree()
 
 
 def block_proposer(
@@ -449,7 +449,8 @@ ADAPTER = TargetAdapter(
     primary_kv=FULL,
     verify=verify,
     block_proposer=block_proposer,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
     # Where Mach binds them for the graph-API pairing's export too.
     signal_buffer_index=_SIGNAL_BUFFER_INDEX,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
 )

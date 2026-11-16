@@ -44,14 +44,12 @@ from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import (
-    QuantConfig,
-)
+from max.nn.quant_config import QuantConfig
 
 if TYPE_CHECKING:
     from ..model_config import DeepseekV4Config
@@ -290,7 +288,7 @@ class DeepseekV4Fp8Linear(Linear):
     ``fast_round_scale``), and the checkpoint was trained that way. So this
     quantizes with e8m0 scales -- the kernel's e8m0 branch is exactly
     ``2 ** ceil(log2(amax / 448))`` and divides by the (exact) power of two --
-    then widens the scales to float32 for ``mo.matmul_dynamic_scaled_fp8``,
+    then widens the scales to float32 for ``matmul.dynamic_scaled_fp8``,
     which accepts nothing else. Verified bit-identical to the reference
     ``act_quant`` on the G4 experiment (PROGRESS-194-QUANT §1).
 

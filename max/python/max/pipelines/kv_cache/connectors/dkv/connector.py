@@ -31,15 +31,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from max.driver import Buffer, Device
-from max.nn.legacy.kv_cache import KVCacheGroupId
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache import KVCacheGroupId
+from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     SUPPORTED_NIXL_BACKENDS,
@@ -99,6 +99,17 @@ class _DkvPresence(Protocol):
     def masks(self) -> Sequence[Sequence[bool]] | None: ...
 
 
+class _DkvLoadTransfer(KVTransfer, Protocol):
+    """A load's ``dkv_connector.DkvTransfer``, which names what a peer filled.
+
+    ``peer_block_ids`` are the device blocks of the load that a hinted peer
+    filled rather than the co-located dKV, fixed when the load posted.
+    """
+
+    @property
+    def peer_block_ids(self) -> Sequence[int]: ...
+
+
 class _DkvClient(Protocol):
     """The ``dkv_connector.DkvConnector`` surface this shim drives.
 
@@ -124,7 +135,7 @@ class _DkvClient(Protocol):
         block_ids: Sequence[int],
         end: int,
         num_blocks: int,
-    ) -> tuple[int, KVTransfer]: ...
+    ) -> tuple[int, _DkvLoadTransfer]: ...
 
     def abandon_prepared(self) -> None: ...
 
@@ -145,7 +156,7 @@ class _DkvClient(Protocol):
         block_ids: Sequence[int],
         end: int,
         num_blocks: int,
-    ) -> tuple[int, KVTransfer]: ...
+    ) -> tuple[int, _DkvLoadTransfer]: ...
 
     def abandon_lookup(self, *, lookup: _DkvLookup) -> None: ...
 
@@ -472,6 +483,25 @@ _HEARTBEAT_ENV_KWARGS = {
 }
 
 
+def _env_truthy(name: str) -> bool:
+    """Returns whether the switch ``name`` is set to 1, true, yes or y.
+
+    The connector's on/off switches all read this one set, any case, so they
+    cannot drift apart. Unset reads as off.
+    """
+    return os.getenv(name, "0").lower() in ("1", "true", "yes", "y")
+
+
+def _writeback_supported(extension: object) -> bool:
+    """Returns whether ``extension``'s load transfer names peer-filled blocks.
+
+    An extension predating ``DkvTransfer.peer_block_ids`` raises out of every
+    load that posted once write-back reads it, so it is checked for once, at
+    construction, rather than on every load.
+    """
+    return hasattr(getattr(extension, "DkvTransfer", None), "peer_block_ids")
+
+
 def _heartbeat_overrides() -> dict[str, int]:
     """Collects the heartbeat-poller overrides set in the environment.
 
@@ -494,21 +524,68 @@ def _heartbeat_overrides() -> dict[str, int]:
     """
     overrides: dict[str, int] = {}
     for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
-        raw = os.getenv(env_var, "").strip()
-        if not raw:
-            continue
-        try:
-            value = int(raw)
-        except ValueError as exc:
-            raise ValueError(
-                f"{env_var} must be an integer number, got {raw!r}"
-            ) from exc
-        if value < 0:
-            raise ValueError(f"{env_var} must not be negative, got {value}")
-
-        overrides[keyword] = value
+        value = _env_non_negative_int(env_var)
+        if value is not None:
+            overrides[keyword] = value
 
     return overrides
+
+
+def _env_non_negative_int(env_var: str) -> int | None:
+    """Reads ``env_var`` as a non-negative integer.
+
+    Returns:
+        The value, or ``None`` when the variable is unset or blank.
+
+    Raises:
+        ValueError: If the variable is set to something other than a
+            non-negative integer.
+    """
+    raw = os.getenv(env_var, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{env_var} must be an integer number, got {raw!r}"
+        ) from exc
+    if value < 0:
+        raise ValueError(f"{env_var} must not be negative, got {value}")
+    return value
+
+
+_PEER_ATTACH_WAIT_ENV_VAR = "MODULAR_DKV_PEER_ATTACH_WAIT_MS"
+
+# The block manager gives up on a connector lookup after 5 s and serves the
+# whole request as a miss, which loses its co-located hits too. A wait near
+# that bound makes a slow attach cost more than no wait, so it stops at half
+# of it. Fixed rather than read from `_CONNECTOR_LOOKUP_TIMEOUT_S`, because
+# this module cannot import the block manager without a dependency cycle.
+_PEER_ATTACH_WAIT_MAX_MS = 2000
+
+
+def _peer_attach_wait_ms() -> int:
+    """Reads ``MODULAR_DKV_PEER_ATTACH_WAIT_MS``, 0 when unset.
+
+    Returns:
+        How long, in ms, an async lookup waits for a peer attach its hint
+        needs. 0 never waits.
+
+    Raises:
+        ValueError: If the variable is not a non-negative integer, or exceeds
+            :data:`_PEER_ATTACH_WAIT_MAX_MS`.
+    """
+    value = _env_non_negative_int(_PEER_ATTACH_WAIT_ENV_VAR)
+    if value is None:
+        return 0
+    if value > _PEER_ATTACH_WAIT_MAX_MS:
+        raise ValueError(
+            f"{_PEER_ATTACH_WAIT_ENV_VAR} must be at most "
+            f"{_PEER_ATTACH_WAIT_MAX_MS} ms, half of MAX's dKV lookup "
+            f"timeout, got {value}"
+        )
+    return value
 
 
 def _required_nixl_backend() -> NixlBackendType:
@@ -931,17 +1008,23 @@ class _DkvBatchTransfer:
     the copy drains.
 
     ``g0_blocks_per_leaf`` is what an offload took; a load is handed the exact
-    blocks to fill and reports nothing back.
+    blocks to fill. ``writeback_blocks_per_leaf`` is which of those a hinted
+    peer filled, listed for write-back only with
+    ``MODULAR_DKV_OFFLOAD_PEER_LOADS`` on.
     """
 
     def __init__(
         self,
         transfers: Sequence[KVTransfer],
         g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
+        writeback_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
     ) -> None:
         self._pending = list(transfers)
         self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
             g0_blocks_per_leaf or {}
+        )
+        self._writeback_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            writeback_blocks_per_leaf or {}
         )
         # A terminal failure, kept so every later poll reports it too. The
         # scheduler's cordon sweep and the block manager poll the SAME object,
@@ -954,6 +1037,11 @@ class _DkvBatchTransfer:
     def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
         """The device blocks this transfer pins until it completes, per leaf."""
         return self._g0_blocks_per_leaf
+
+    @property
+    def writeback_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """Blocks a hinted peer filled, to write back, per leaf."""
+        return self._writeback_blocks_per_leaf
 
     def is_complete(self) -> bool:
         """Whether every leaf's copy has landed. Never blocks.
@@ -1228,7 +1316,9 @@ class DKVConnector(KVConnector):
         # Deferred so importing this module (e.g. by a non-dKV pipeline) does
         # not require the optional, runtime-provided dkv_connector extension to
         # be installed.
-        from dkv_connector import DkvConnector as _DkvConnectorClient
+        import dkv_connector as _dkv_extension
+
+        _DkvConnectorClient = _dkv_extension.DkvConnector
 
         # The Rust client creates a NIXL agent, which dlopens the transport
         # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
@@ -1264,26 +1354,31 @@ class DKVConnector(KVConnector):
         # revert. Read once here (not per call); BlockManager always calls
         # touch, the connector decides. Same truthy convention as block_manager's
         # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag.
-        self._g0_touch_disabled = os.getenv(
-            "MODULAR_DKV_DISABLE_G0_TOUCH", "0"
-        ).lower() in (
-            "1",
-            "true",
-            "yes",
-            "y",
-        )
+        self._g0_touch_disabled = _env_truthy("MODULAR_DKV_DISABLE_G0_TOUCH")
         # Opt-in (CLIN-2163): a hinted lookup asks its first peer while the
         # co-located dKV is still answering. Read once here like the touch
         # kill-switch above, with the same truthy set, because MAX takes
         # connector settings from engine-pod env rather than CLI flags.
-        overlap_peer_lookups = os.getenv(
-            "MODULAR_DKV_OVERLAP_PEER_LOOKUPS", "0"
-        ).lower() in (
-            "1",
-            "true",
-            "yes",
-            "y",
-        )
+        overlap_peer_lookups = _env_truthy("MODULAR_DKV_OVERLAP_PEER_LOOKUPS")
+        # Opt-in (CLIN-2228): an async lookup whose hint names a peer not yet
+        # attached, past what the co-located dKV holds, waits this long for
+        # the attach, so the first request naming a peer can load from it.
+        # The scheduler holds the prompts queued behind that request for as
+        # long, so keep it to about one attach.
+        peer_attach_wait_ms = _peer_attach_wait_ms()
+        if peer_attach_wait_ms:
+            _logger.warning(
+                "%s=%d: a hinted dKV lookup may wait up to %d ms for a peer "
+                "attach, holding the prompts queued behind it on this replica "
+                "for as long",
+                _PEER_ATTACH_WAIT_ENV_VAR,
+                peer_attach_wait_ms,
+                peer_attach_wait_ms,
+            )
+        # Opt-in: a load reports the blocks a hinted peer filled, so the block
+        # manager writes them back to the co-located dKV at release. Read once
+        # here with the same truthy set as the switches above.
+        self._offload_peer_loads = _env_truthy("MODULAR_DKV_OFFLOAD_PEER_LOADS")
 
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
@@ -1415,6 +1510,7 @@ class DKVConnector(KVConnector):
                     tenant_gpu_device_ids=tenant_gpu_device_ids,
                     heartbeat_overrides=heartbeat_overrides,
                     overlap_peer_lookups=overlap_peer_lookups,
+                    peer_attach_wait_ms=peer_attach_wait_ms,
                     admission_timeout_s=admission_timeout_s,
                 )
             self._clients.append(clients_for_replica)
@@ -1434,6 +1530,13 @@ class DKVConnector(KVConnector):
             }
         )
         self._detect_client_entries()
+        if self._offload_peer_loads and not _writeback_supported(
+            _dkv_extension
+        ):
+            _logger.warning(
+                "MODULAR_DKV_OFFLOAD_PEER_LOADS is set, but this dkv_connector extension does not report which load blocks a peer filled, so peer-loaded blocks are not written back. Install the dkv_connector wheel built with this MAX to write them back."
+            )
+            self._offload_peer_loads = False
 
         # Surface the Rust connector's MLA NVLink-broadcast status to the serve
         # process: the Rust side logs it through ``tracing`` at ``info``, and the
@@ -1513,6 +1616,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
         overlap_peer_lookups: bool,
+        peer_attach_wait_ms: int,
         admission_timeout_s: float,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
@@ -1564,30 +1668,50 @@ class DKVConnector(KVConnector):
         # unaffected since the null page is last and is never transferred.
         total_num_pages = kv_memory[0].total_num_pages
 
-        return client_cls(
-            local_block_store_endpoint,
-            shards,
-            0,  # page_size (tokens): unused by the Rust client
-            total_num_pages,
-            len(shards),
-            # the client's parameter is still named ``is_mla``, but
-            # replication is not MLA-specific: M3's index-K cache replicates.
-            shards_are_identical,
-            listen_port=listen_port,
-            backend=backend,
-            compute_streams=compute_streams,
-            groups=list(groups),
-            owner_group_id=owner_group_id,
-            tenant_id=tenant_id,
-            kv_config_hash=kv_config_hash,
-            kv_shard_id=kv_shard_id,
-            replica_id=replica_id,
-            tenant_gpu_count=tenant_gpu_count,
-            tenant_gpu_device_ids=list(tenant_gpu_device_ids),
-            overlap_peer_lookups=overlap_peer_lookups,
-            admission_timeout_s=admission_timeout_s,
-            **heartbeat_overrides,
-        )
+        try:
+            return client_cls(
+                local_block_store_endpoint,
+                shards,
+                0,  # page_size (tokens): unused by the Rust client
+                total_num_pages,
+                len(shards),
+                # the client's parameter is still named ``is_mla``, but
+                # replication is not MLA-specific: M3's index-K cache
+                # replicates.
+                shards_are_identical,
+                listen_port=listen_port,
+                backend=backend,
+                compute_streams=compute_streams,
+                groups=list(groups),
+                owner_group_id=owner_group_id,
+                tenant_id=tenant_id,
+                kv_config_hash=kv_config_hash,
+                kv_shard_id=kv_shard_id,
+                replica_id=replica_id,
+                tenant_gpu_count=tenant_gpu_count,
+                tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+                overlap_peer_lookups=overlap_peer_lookups,
+                admission_timeout_s=admission_timeout_s,
+                # passed only when set, so an extension that predates the
+                # keyword still builds with the wait off
+                **(
+                    {"peer_attach_wait_ms": peer_attach_wait_ms}
+                    if peer_attach_wait_ms
+                    else {}
+                ),
+                **heartbeat_overrides,
+            )
+        except TypeError as exc:
+            # The wait was asked for explicitly, so an extension without it
+            # fails model load rather than serving with the wait silently off.
+            if peer_attach_wait_ms and "peer_attach_wait_ms" in str(exc):
+                raise RuntimeError(
+                    f"{_PEER_ATTACH_WAIT_ENV_VAR} is set, but the installed "
+                    "dkv_connector extension predates it. Install the "
+                    "dkv_connector wheel built with this MAX, or unset "
+                    f"{_PEER_ATTACH_WAIT_ENV_VAR}."
+                ) from exc
+            raise
 
     @property
     def name(self) -> str:
@@ -2043,6 +2167,10 @@ class DKVConnector(KVConnector):
         """
         return None if self._sliding_leaf_ids else hint
 
+    def routes_hint(self, hint: bytes) -> bool:
+        """Returns whether ``hint`` reaches the wire, per :meth:`_usable_hint`."""
+        return self._usable_hint(hint) is not None
+
     @staticmethod
     def _leased_end(
         depths: Mapping[int, int],
@@ -2116,7 +2244,7 @@ class DKVConnector(KVConnector):
 
         def post(
             leaf_id: str, bids: list[int], end: int, share: int
-        ) -> tuple[int, KVTransfer]:
+        ) -> tuple[int, _DkvLoadTransfer]:
             return clients[leaf_id].load_prepared(
                 group_id=self._wire_ids[leaf_id],
                 block_ids=bids,
@@ -2258,7 +2386,7 @@ class DKVConnector(KVConnector):
 
         def post(
             leaf_id: str, bids: list[int], end: int, share: int
-        ) -> tuple[int, KVTransfer]:
+        ) -> tuple[int, _DkvLoadTransfer]:
             return clients[leaf_id].load_lookup(
                 lookup=handles[leaf_id],
                 group_id=self._wire_ids[leaf_id],
@@ -2314,7 +2442,9 @@ class DKVConnector(KVConnector):
         block_hashes: Mapping[str, Sequence[bytes]],
         depths: Mapping[int, int] | None,
         *,
-        post: Callable[[str, list[int], int, int], tuple[int, KVTransfer]],
+        post: Callable[
+            [str, list[int], int, int], tuple[int, _DkvLoadTransfer]
+        ],
         abandon_leaf: Callable[[str], None],
         abandon_all: Callable[[], None],
     ) -> KVTransfer:
@@ -2330,6 +2460,7 @@ class DKVConnector(KVConnector):
         # Filled as it goes, because an H2D landing in a staging row the caller
         # is about to free has to be waited on however this returns.
         posted_transfers: list[KVTransfer] = []
+        writeback_blocks: dict[str, Sequence[int]] = {}
         try:
             wanted = {
                 leaf_id: len(hashes) for leaf_id, hashes in block_hashes.items()
@@ -2371,6 +2502,10 @@ class DKVConnector(KVConnector):
                 # collecting it would only cost a poll per scheduler iteration.
                 if posted[leaf_id]:
                     posted_transfers.append(transfer)
+                    if self._offload_peer_loads and (
+                        filled := transfer.peer_block_ids
+                    ):
+                        writeback_blocks[leaf_id] = filled
             if posted != wanted:
                 short_leaves = [
                     leaf_id
@@ -2395,7 +2530,9 @@ class DKVConnector(KVConnector):
                     "connector degraded, the lease expired mid-request, or a "
                     "hinted peer left the table."
                 )
-            return _DkvBatchTransfer(posted_transfers)
+            return _DkvBatchTransfer(
+                posted_transfers, writeback_blocks_per_leaf=writeback_blocks
+            )
         except BaseException as err:
             # Every leaf leased before anything was decided, so any raise
             # above has to hand those pins back rather than wait for the TTL.
@@ -2684,6 +2821,10 @@ class DKVConnector(KVConnector):
                     dkv_hints_unused_by_reason=dict(
                         m.get("hints_unused_by_reason", {})
                     ),
+                    dkv_hints_received=m.get("hints_received", 0),
+                    dkv_hint_blocks_forgone_by_reason=dict(
+                        m.get("hint_blocks_forgone_by_reason", {})
+                    ),
                     # A per-window delta like its neighbours. An extension
                     # predating it reports none, which folds as nothing
                     # dropped rather than as a missing key.
@@ -2705,6 +2846,13 @@ class DKVConnector(KVConnector):
                     dkv_own_runs_short_of_hint=m.get(
                         "own_runs_short_of_hint", 0
                     ),
+                    dkv_own_run_blocks_short_of_hint=m.get(
+                        "own_run_blocks_short_of_hint", 0
+                    ),
+                    dkv_peer_blocks_short_of_hint=m.get(
+                        "peer_blocks_short_of_hint", 0
+                    ),
+                    dkv_hint_blocks_unserved=m.get("hint_blocks_unserved", 0),
                     dkv_split_loads=m.get("split_loads", 0),
                     dkv_overlapped_peer_lookups=m.get(
                         "overlapped_peer_lookups", 0
@@ -2712,6 +2860,15 @@ class DKVConnector(KVConnector):
                     dkv_hinted_lookups=m.get("hinted_lookups", 0),
                     dkv_hinted_lookup_ms_total=m.get(
                         "hinted_lookup_ms_total", 0.0
+                    ),
+                    # The peer attach wait (MODULAR_DKV_PEER_ATTACH_WAIT_MS).
+                    # An extension predating it reports none, read as no wait.
+                    dkv_hinted_attach_waits=m.get("hinted_attach_waits", 0),
+                    dkv_hinted_attach_wait_ms_total=m.get(
+                        "hinted_attach_wait_ms_total", 0.0
+                    ),
+                    dkv_hinted_attach_wait_timeouts=m.get(
+                        "hinted_attach_wait_timeouts", 0
                     ),
                     # The orphan queue, folded per leaf client like the settle
                     # worker below: per-window outcome counts and a depth

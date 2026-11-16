@@ -35,7 +35,7 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
             span[Int(idx[0])] = 42
 
         elementwise[simd_width=simd_width_of[DType.int]()](
-            func, Coord(IndexList[1](n)), DeviceContext(api="cpu")
+            func, Coord(IndexList[1](n)), DeviceContext.cpu()
         )
 
     b.iter(call_fn)

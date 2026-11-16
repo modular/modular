@@ -249,12 +249,10 @@ private:
         newOperands.push_back(operand);
       }
     }
-    auto symbol = FuncSymbolGenerator::get(
-        flatSym,
-        newFunc.getFuncTypeGenerator().getSpecializedGenerator(
-            newParams, &*evaluationContext, oldCall.getLoc()),
-        newParams);
-
+    auto sig = newFunc.getFuncTypeGenerator();
+    auto func = FuncSymbolGenerator::getUnbound(flatSym, sig);
+    auto symbol = BindParamsAttr::get(sig.getContext(), func, newParams,
+                                      &*evaluationContext);
     auto newCall =
         CallOp::create(builder, oldCall.getLoc(), symbol, newOperands);
 

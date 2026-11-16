@@ -26,6 +26,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV41_modulev3.layers.router import (
     Router,
+    gate_logits,
 )
 from max.tensor import Tensor
 
@@ -47,7 +48,9 @@ def _to_bf16(x: np.ndarray) -> np.ndarray:
 
 def _sqrt_softplus_oracle(logits: np.ndarray) -> np.ndarray:
     logits = logits.astype(np.float32)
-    softplus = np.maximum(logits, 0.0) + np.log1p(np.exp(-np.abs(logits)))
+    softplus = np.maximum(logits, 0.0) + np.log(
+        np.float32(1.0) + np.exp(-np.abs(logits))
+    )
     return np.sqrt(softplus).astype(np.float32)
 
 
@@ -184,8 +187,27 @@ def test_router_all_zero_row_ties_to_lowest_ids() -> None:
     )
 
 
+def test_router_saturating_negative_row_scores_flat_to_zero() -> None:
+    weight = np.zeros((_EXPERTS, _HIDDEN), dtype=np.float32)
+    weight[np.arange(_EXPERTS), np.arange(_EXPERTS)] = 1.0
+    bias = np.zeros(_EXPERTS, dtype=np.float32)
+    x = np.zeros((1, _HIDDEN), dtype=np.float32)
+    x[0, :_EXPERTS] = -20.0
+
+    router = _make_router(_to_bf16(weight), bias)
+    got_ids, got_weights = _route(router, x)
+
+    scores = _sqrt_softplus_oracle(x[:, :_EXPERTS])
+    np.testing.assert_array_equal(scores, np.zeros_like(scores))
+    np.testing.assert_array_equal(
+        got_ids, np.arange(_TOPK, dtype=np.int32)[None, :]
+    )
+    np.testing.assert_array_equal(
+        got_weights, np.zeros((1, _TOPK), dtype=np.float32)
+    )
+
+
 def test_router_image_rows_swap_bias_vl() -> None:
-    """Image rows select with ``bias_vl``; text rows keep ``bias``."""
     rng = np.random.default_rng(15)
     weight = (rng.standard_normal((_EXPERTS, _HIDDEN)) * 0.02).astype(
         np.float32
@@ -245,4 +267,39 @@ def test_router_ties_and_nan_rows_match_the_stable_loop_exactly() -> None:
         _weights_oracle(scores, want_ids)[live],
         rtol=1e-5,
         atol=1e-6,
+    )
+
+
+def test_router_bf16_input_runs_the_bf16_gemm_and_routes_like_the_oracle() -> (
+    None
+):
+    rng = np.random.default_rng(17)
+    rows = 8
+    weight_bf = _to_bf16(
+        (rng.standard_normal((_EXPERTS, _HIDDEN)) * 0.02).astype(np.float32)
+    )
+    bias = (rng.standard_normal(_EXPERTS) * 0.5).astype(np.float32)
+    x_bf = _to_bf16(
+        (rng.standard_normal((rows, _HIDDEN)) * 0.5).astype(np.float32)
+    )
+
+    router = _make_router(weight_bf, bias)
+    x = _gpu(x_bf, DType.bfloat16)
+    logits = gate_logits(x, router.weight)
+    assert logits.dtype == DType.float32
+    got_logits = logits.to_numpy()
+    np.testing.assert_allclose(
+        got_logits,
+        x_bf.astype(np.float64) @ weight_bf.astype(np.float64).T,
+        rtol=1e-4,
+        atol=1e-4,
+    )
+
+    ids, weights = router(x, None)
+    got_ids, got_weights = ids.to_numpy(), weights.to_numpy()
+    scores = _sqrt_softplus_oracle(got_logits)
+    expected_ids, _ = _select_oracle(scores, bias, _TOPK)
+    np.testing.assert_array_equal(got_ids, expected_ids)
+    np.testing.assert_allclose(
+        got_weights, _weights_oracle(scores, expected_ids), rtol=1e-5, atol=1e-6
     )

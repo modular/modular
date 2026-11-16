@@ -14,6 +14,7 @@
 
 from std.math import ceildiv
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 from std.algorithm.backend.vectorize import vectorize
 
@@ -40,17 +41,15 @@ def _stencil_impl_cpu[
         IndexList[stencil_rank],
     ],
     map_strides: def(dim: Int) -> Int,
-    load_fn: def[simd_width: Int, dtype: DType](
-        IndexList[rank, element_type=_]
-    ) -> SIMD[dtype, simd_width],
+    load_fn: def[simd_width: Int, dtype: DType](Coord) -> SIMD[
+        dtype, simd_width
+    ],
     compute_init_fn: def[simd_width: Int]() -> SIMD[dtype, simd_width],
     compute_fn: def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_],
-        SIMD[dtype, simd_width],
-        SIMD[dtype, simd_width],
+        Coord, SIMD[dtype, simd_width], SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width],
     compute_finalize_fn: def[simd_width: SIMDLength](
-        IndexList[rank, element_type=_], SIMD[dtype, simd_width]
+        Coord, SIMD[dtype, simd_width]
     ) -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
@@ -201,16 +200,16 @@ def _stencil_impl_cpu[
                         min(input_width, upper_bound[1]),
                         step_j,
                     ):
-                        var point_idx = IndexList[
-                            rank, element_type=shape_element_type
-                        ](indices[0], i, j, indices[3])
+                        var point_idx = Coord(indices[0], i, j, indices[3])
 
                         var val = load_fn_closure[simd_width, dtype](point_idx)
                         result = compute_fn_closure[simd_width](
                             point_idx, result, val
                         )
 
-                compute_finalize_fn_closure[simd_width](indices, result)
+                compute_finalize_fn_closure[simd_width](
+                    Coord(indices[0], indices[1], indices[2], idx), result
+                )
 
             vectorize[simd_width, unroll_factor=unroll_factor](
                 shape[rank - 1], func_wrapper

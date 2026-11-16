@@ -39,7 +39,8 @@ dispatch's `(mma_bn=8, cta_group=1)` regime and, by default, the
 in-place register epilogue; prefill cases take the cooperative
 `(mma_bn=64 or 128, cta_group=2)` regimes. One case pins
 `use_inplace=False` to cover the cooperative epilogue on the decode
-config as well.
+config as well. The 32x4096x6144 cases are the exception: their decode
+row is a 32-token tile with the cooperative epilogue.
 """
 from std.math import align_up, ceildiv
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -47,6 +48,7 @@ from std.memory import alloc
 from std.memory.unsafe import bitcast
 from std.memory.alloc import unsafe_alloc
 from std.random import seed, rand
+from std.testing import assert_equal, assert_true
 
 from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -69,6 +71,12 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
+
+
+comptime E4M3_FINITE_MASK = UInt8(0xBF)
+"""Clears the top exponent bit of an E4M3 byte: no NaN, magnitude below 2.
+Raw random bytes include NaN, and one NaN in a K-long dot product makes the
+whole output row NaN on both paths."""
 
 
 @inline(.always)
@@ -167,7 +175,11 @@ def _build_shared_b[
 
     # Deterministic fill on the raw byte stream; the kernel interprets
     # bytes per the E4M3 (or two E2M1) / E8M0 encodings respectively.
-    rand(b_host_ptr.unsafe_bitcast[UInt8](), b_size, min=0, max=255)
+    var b_bytes = b_host_ptr.unsafe_bitcast[UInt8]()
+    rand(b_bytes, b_size, min=0, max=255)
+    comptime if b_type == DType.float8_e4m3fn:
+        for i in range(b_size):
+            b_bytes[i] &= E4M3_FINITE_MASK
     # Small power-of-2 scale (2^-7) keeps matmul outputs inside the
     # +-448 E4M3 representable range so we don't saturate to NaN.
     var sf_small = e8m0(Float32(0.0078125))
@@ -431,7 +443,10 @@ def _test_swiglu_mxfp8_dispatch[
     var S_test_tensor = TileTensor(S_test_device, swiglu_scales_shape)
 
     # ---- Init A + A-scales ----
-    rand(a_host_ptr.unsafe_bitcast[UInt8](), a_size, min=0, max=255)
+    var a_bytes = a_host_ptr.unsafe_bitcast[UInt8]()
+    rand(a_bytes, a_size, min=0, max=255)
+    for i in range(a_size):
+        a_bytes[i] &= E4M3_FINITE_MASK
 
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var sf_zero = e8m0(Float32(0.0))
@@ -581,8 +596,13 @@ def _test_swiglu_mxfp8_dispatch[
 
     var O_mismatch = 0
     var first_bad_O = -1
+    var ref_bytes = O_ref_host_ptr.unsafe_bitcast[UInt8]()
+    var ref_nan = 0
+    var ref_varies = False
     for i in range(O_size):
         var ref_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_ref_host_ptr[i]))[0]
+        ref_nan += Int((ref_b & 0x7F) == 0x7F)
+        ref_varies = ref_varies or ref_b != ref_bytes[0]
         var test_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_test_host_ptr[i]))[
             0
         ]
@@ -615,6 +635,9 @@ def _test_swiglu_mxfp8_dispatch[
     S_ref_host_ptr.unsafe_free()
     S_test_host_ptr.unsafe_free()
 
+    # A reference of NaNs or one clamped value would match any expert choice.
+    assert_equal(ref_nan, 0, "reference output holds NaN")
+    assert_true(O_size == 0 or ref_varies, "reference output is constant")
     if O_mismatch != 0 or S_mismatch != 0:
         print(
             t"    OUT mismatch = {O_mismatch} / {O_size}  first @ idx="
@@ -926,3 +949,47 @@ def main() raises:
         print("\nALL W4A8 SWIGLU DISPATCH TESTS PASSED!")
 
         _ = w4a8^
+
+        # One EP8 rank of a 256-expert MoE with hidden 6144 and moe_dim 2048:
+        # its decode row takes 32-token tiles (cooperative epilogue), the chain's
+        # matmul 8-token ones.
+        comptime H_E = 32
+        comptime H_N = 4096
+        comptime H_K = 6144
+        var hy = _build_shared_b[H_E, H_N, H_K](ctx)
+
+        print("=== 32x4096x6144 grouped_matmul_swiglu_mxfp8_dispatch ===")
+        print("  decode: 1 active, [1], silu limit 10")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [1], [5], hy, ctx
+        )
+        print("  decode ragged: [1, 2, 3, 5, 7, 9, 8]")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [1, 2, 3, 5, 7, 9, 8], [0, 3, 7, 12, 20, 31, 16], hy, ctx
+        )
+        # Zero-row slots keep the decode estimate (8 rows a slot) while one
+        # expert takes most rows: one full token tile, then two.
+        print("  decode piled: [30, 1, 0, 0], ids [4, 9, -1, -1]")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [30, 1, 0, 0], [4, 9, -1, -1], hy, ctx
+        )
+        print("  decode piled: [33, 0, 0, 0, 0], ids [2, -1, -1, -1, -1]")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [33, 0, 0, 0, 0], [2, -1, -1, -1, -1], hy, ctx
+        )
+        print("  decode masked: [4, 0, 1], ids [0, -1, 1]")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [4, 0, 1], [0, -1, 1], hy, ctx
+        )
+        print("  decode: 32 active, [2] x 32 via selector")
+        _test_swiglu_mxfp8_dispatch[
+            H_E, H_N, H_K, via_selector=True, activation=silu10
+        ](_make_uniform(2, 32), _make_range(32), hy, ctx)
+        print("  decode: 1 active, [3], estimated_total_m=0")
+        _test_swiglu_mxfp8_dispatch[H_E, H_N, H_K, activation=silu10](
+            [3], [31], hy, ctx, est_m_override=0
+        )
+
+        print("\nALL 32x4096x6144 SWIGLU DISPATCH TESTS PASSED!")
+
+        _ = hy^

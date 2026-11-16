@@ -23,7 +23,6 @@ from std.utils.coord import Coord
 def random_uniform[
     dtype: DType,
     //,
-    target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
@@ -41,7 +40,6 @@ def random_uniform[
 
     Parameters:
         dtype: The data type to generate.
-        target: The target to run on.
         OutputFn: The type of the function which stores the generated values.
 
     Args:
@@ -77,12 +75,10 @@ def random_uniform[
 
         output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 
-    elementwise[simd_width=4, target=target](generate, shape, ctx)
+    elementwise[simd_width=4](generate, shape, ctx)
 
 
-def keyed_uniform[
-    target: StaticString,
-](
+def keyed_uniform(
     output: TileTensor[mut=True, .float32, ...],
     seed: TileTensor[mut=False, .uint64, ...],
     ctx: DeviceContext,
@@ -96,9 +92,6 @@ def keyed_uniform[
     a row's draw never depends on how many rows share the launch or on where
     it sits among them. Speculative decoding keys its accept coin per
     (request, draft position) this way.
-
-    Parameters:
-        target: The target to run on.
 
     Args:
         output: The drawn values, one per row.
@@ -123,4 +116,4 @@ def keyed_uniform[
         var generator = Random(seed=rebind[UInt64](seed.load((row,))))
         output.store((row,), generator.step_uniform()[0])
 
-    elementwise[simd_width=1, target=target](draw, (rows,), ctx)
+    elementwise[simd_width=1](draw, (rows,), ctx)

@@ -34,21 +34,23 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.legacy.graph_groups import HiddenStates
-from max.nn.legacy.kv_cache import (
+from max.nn.activation import GatedActivation
+from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.graph_groups import HiddenStates
 from max.nn.legacy.layer import LayerList, MissingLayer, Module
 from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.moe import GatedActivation, MoE, MoEQuantized
+from max.nn.legacy.moe import MoE, MoEQuantized
 from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import DecoderOutputs, ReturnHiddenStates
+from max.nn.legacy.transformer import DecoderOutputs
 from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )
@@ -633,18 +635,19 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         global_kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
-        image_embeddings: Sequence[TensorValue],
-        image_token_indices: Sequence[TensorValue],
+        image_embeddings: Sequence[TensorValue] | None,
+        image_token_indices: Sequence[TensorValue] | None,
         *,
         boundary_inputs: Sequence[TensorValue] | None = None,
         **kwargs: object,
     ) -> DecoderOutputs:
         """Runs this model's decoder layers.
 
-        A pipeline stage after the first starts from ``boundary_inputs``,
-        the hidden states per device the previous stage returned, and
-        ignores the tokens and image inputs. A stage before the last returns
-        its hidden states per device instead of logits.
+        The image inputs are ``None`` in a graph that takes none. A pipeline
+        stage after the first starts from ``boundary_inputs``, the hidden
+        states per device the previous stage returned, and ignores the tokens
+        and image inputs. A stage before the last returns its hidden states
+        per device instead of logits.
         """
         kv_collections_by_type = {
             "sliding_attention": sliding_kv_collections,
@@ -652,19 +655,18 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         }
 
         if self.holds_first:
-            h = [
-                merge_multimodal_embeddings(
-                    inputs_embeds=h_device,
-                    multimodal_embeddings=img_embed,
-                    image_token_indices=img_tok_indices,
-                )
-                for h_device, img_embed, img_tok_indices in zip(
-                    self.embed_tokens(tokens, signal_buffers),
-                    image_embeddings,
-                    image_token_indices,
-                    strict=True,
-                )
-            ]
+            h = list(self.embed_tokens(tokens, signal_buffers))
+            if image_embeddings is not None and image_token_indices is not None:
+                h = [
+                    merge_multimodal_embeddings(
+                        inputs_embeds=h_device,
+                        multimodal_embeddings=img_embed,
+                        image_token_indices=img_tok_indices,
+                    )
+                    for h_device, img_embed, img_tok_indices in zip(
+                        h, image_embeddings, image_token_indices, strict=True
+                    )
+                ]
         else:
             assert boundary_inputs is not None, (
                 "A pipeline stage after the first takes the previous stage's"

@@ -247,7 +247,8 @@ def run(ctx: DeviceContext) raises:
 
     # Reference: plain stream order on the final inputs.
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu", multiply_before_cast=True, interleaved=False
+        multiply_before_cast=True,
+        interleaved=False,
     ](
         ref_collection,
         ref_q_fn,
@@ -300,7 +301,8 @@ def run(ctx: DeviceContext) raises:
             attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_END),
         )
         fused_qk_rms_norm_rope_ragged_paged[
-            target="gpu", multiply_before_cast=True, interleaved=False
+            multiply_before_cast=True,
+            interleaved=False,
         ](
             work_collection,
             work_q_fn,

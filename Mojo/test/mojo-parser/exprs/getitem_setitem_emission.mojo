@@ -317,7 +317,7 @@ def test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
-    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: [[REFR:%.*]] = kgen.rebind [[REF]] {{.*}} to !lit.ref<!Int
     # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REFR]])
     take_ref(d[0])

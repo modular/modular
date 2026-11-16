@@ -546,7 +546,7 @@ def DeviceGraphStableGetOp : MGP_DeviceGraphOp<"stable.get", [
     graph. `mgp.device_graph.stable.tensor` turns the slot back into the
     `!mgp.tensor<..., stable>` consumers were lowered against, whose data
     pointer is the slot address; the kernel then reads through it via a
-    `stable`-marked `!mo.tensor` built by `mogg.tensor.__init__`.
+    `Stable` tensor trait argument.
 
     The result is a `stable` `!mgp.device_tensor` whose shape/device come from
     the slot's element type `T`, since the slot provides its backing address.
@@ -636,9 +636,9 @@ def DeviceGraphStableTensorOp : MGP_DeviceGraphOp<"stable.tensor", [
     type with its `stable` flag set, shaped by `$spec`. The tensor's data
     pointer is the slot's address rather than the pointer the slot holds, so a
     kernel recorded against it extracts the buffer as for any other tensor and
-    dereferences the slot when it runs, through a `stable`-marked `!mo.tensor`
-    built by `mogg.tensor.__init__`, instead of baking in whatever the slot
-    pointed at during recording.
+    dereferences the slot when it runs, through a `Stable` tensor trait
+    argument, instead of baking in whatever the slot pointed at during
+    recording.
 
     `mgp-partition-device-graph-collective` uses this to reproduce a
     `mgp.device_graph.stable.create` result inside each collective region:

@@ -519,4 +519,13 @@ kgen.func @codegen_reachable() {
   hlcf.return
 }
 
+// A concat of one struct of the same type as the result folds to that struct.
+// CHECK-LABEL: @struct_concat_one_operand
+kgen.func @struct_concat_one_operand(%a: !kgen.struct<(index, f32)>) -> !kgen.struct<(index, f32)> {
+  // CHECK-NOT: kgen.struct.concat
+  // CHECK: hlcf.return %arg0
+  %0 = kgen.struct.concat(%a) : !kgen.struct<(index, f32)> -> !kgen.struct<(index, f32)>
+  hlcf.return %0 : !kgen.struct<(index, f32)>
+}
+
 }

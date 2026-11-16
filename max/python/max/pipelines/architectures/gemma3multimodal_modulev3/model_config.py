@@ -14,15 +14,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.legacy.quant_config import QuantConfig
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.outputs import ReturnLogits
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.gemma3_modulev3.model_config import (
     Gemma3Config,
 )
@@ -37,12 +38,14 @@ from max.pipelines.lib.config.model_config import (
     _interleaved_rope_weights,
     _select_quantization_encoding,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
     ModelOutputConfig,
 )
+from max.pipelines.lib.registration_runtime import DeploymentConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -128,12 +131,18 @@ class Gemma3ForConditionalGenerationConfig(
     ArchVLConfigWithTextSubconfig,
     ArchConfigWithStoredKVParams,
     ArchConfigWithKVCache,
+    DeploymentConfig,
 ):
     """Base configuration for Gemma 3 models.
 
     Contains parameters specific to the Gemma 3 architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = {
+        GraphRole.DECODER: "decoder.",
+        GraphRole.VISION: "vision.",
+    }
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
@@ -355,16 +364,28 @@ class Gemma3ForConditionalGenerationConfig(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
     ) -> None:
         """Finalize the Gemma3ForConditionalGenerationConfig instance with state_dict dependent fields.
 
         Args:
             huggingface_config: HuggingFace model configuration.
             state_dict: Model weights dictionary.
-            return_logits: Return logits configuration.
+            outputs: Requested decoder outputs.
         """
+        # Quantization metadata uses the original checkpoint's text prefix.
+        state_dict = {
+            (
+                name
+                if name.startswith("language_model.lm_head.")
+                else name.replace("language_model.", "language_model.model.", 1)
+            ): value
+            for key, value in state_dict.items()
+            if key.startswith("decoder.")
+            for name in (key.removeprefix("decoder."),)
+        }
+        return_logits = outputs.return_logits
         # Parse the float8 config from compressed-tensors
         layer_name_prefix = "language_model.model."
         quant_config = parse_quant_config(

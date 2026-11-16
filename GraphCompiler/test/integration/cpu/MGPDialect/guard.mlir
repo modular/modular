@@ -4,7 +4,7 @@
 // CHECK-LABEL: --- Running 'basic_test':
 // CHECK: 'basic_test' returned tensor<2xsi64> [29, 13]
 // CHECK: , tensor<2x2xui8> [1, 1, 1, 1]
-mgp.model @basic_test : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @basic_test devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

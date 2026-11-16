@@ -85,7 +85,7 @@ def ternary_refines_type_value_binding[T: AnyType]() -> Int:
 # not leak to the unrelated `T` use after the ternary.
 # CHECK-LABEL: lit.fn @"ternary_refinement_preserves_and_scopes
 # CHECK: lit.call tail @{{.*}}@"accepts_refined_param{{.*}}<:!AnyType_RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!AnyType_OriginalParam T))>
-# CHECK: } {elseIsolated}
+# CHECK: } <elseIsolated>
 # CHECK-NOT: downcast
 # CHECK: lit.call tail @{{.*}}@"accepts_original_param{{.*}}<:!AnyType_OriginalParam T>
 def ternary_refinement_preserves_and_scopes[T: OriginalParam]() -> Int:

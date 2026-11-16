@@ -37,7 +37,7 @@ from std.utils.numerics import get_accum_type
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 
 from std.bit import log2_floor
 
@@ -691,6 +691,8 @@ struct AMDPingPongMatmul[
                     s_setprio[Int16(entry.op.wait_value)]()
                 case .SCHEDULE_BARRIER:
                     schedule_barrier()
+                case _:
+                    pass
 
         # Prologue.
         comptime for i in range(schedule.warp_stagger_index):

@@ -166,11 +166,9 @@ ModuleLoader::resolveModulePath(StringRef moduleName, StringRef includeDir,
   return bestMatch;
 }
 
-std::optional<ModuleSpec> ModuleLoader::resolveModulePath(StringRef moduleName,
-                                                          SMLoc includeLoc) {
-  unsigned includeBufferId =
-      shared.getSourceMgr().FindBufferContainingLoc(includeLoc);
-
+std::optional<ModuleSpec>
+ModuleLoader::resolveModulePath(StringRef moduleName,
+                                const std::filesystem::path &workingDir) {
   // A closed (non-directory) candidate in the earliest directory wins
   // outright. Plain directories are namespace portions: they only name the
   // namespace when no closed candidate exists anywhere on the path, and the
@@ -178,7 +176,7 @@ std::optional<ModuleSpec> ModuleLoader::resolveModulePath(StringRef moduleName,
   // re-derives the full portion set from the spec's namespace components.
   std::optional<ModuleSpec> result;
   std::optional<ModuleSpec> firstPortion;
-  traverseImportDirectories(includeBufferId, [&](StringRef dir) {
+  traverseImportDirectories(workingDir, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
     if (Filesystem::isMojoSourcePackagePath(dir.str())) {
       // TODO: It'd be nice to emit a list of potential modules that the
@@ -205,13 +203,12 @@ std::optional<ModuleSpec> ModuleLoader::resolveModulePath(StringRef moduleName,
   return result ? result : firstPortion;
 }
 
-SmallVector<std::string>
-ModuleLoader::collectNamespacePortions(const ModuleSpec &parentSpec,
-                                       unsigned importBufferFileId) {
+SmallVector<std::string> ModuleLoader::collectNamespacePortions(
+    const ModuleSpec &parentSpec, const std::filesystem::path &workingDir) {
   assert(parentSpec.isNamespace() && "expected a namespace spec");
   SmallVector<std::string> portions;
   llvm::StringSet<> seenPortions;
-  traverseImportDirectories(importBufferFileId, [&](StringRef dir) {
+  traverseImportDirectories(workingDir, [&](StringRef dir) {
     if (Filesystem::isMojoSourcePackagePath(dir.str()))
       return WalkResult::advance();
     std::filesystem::path portion(dir.str());
@@ -234,8 +231,8 @@ ModuleLoader::collectNamespacePortions(const ModuleSpec &parentSpec,
         return WalkResult::advance();
       portion = std::move(*child);
     }
-    // Deduplicate: the buffer-derived working directory may coincide with an
-    // include directory, and a duplicate portion must not fake an ambiguity.
+    // Deduplicate: the working directory may coincide with an include
+    // directory, and a duplicate portion must not fake an ambiguity.
     std::error_code ec;
     std::filesystem::path canonical =
         std::filesystem::weakly_canonical(portion, ec);
@@ -247,10 +244,9 @@ ModuleLoader::collectNamespacePortions(const ModuleSpec &parentSpec,
   return portions;
 }
 
-SmallVector<ModuleSpec>
-ModuleLoader::resolveNamespaceSubModule(StringRef moduleName,
-                                        const ModuleSpec &parentSpec,
-                                        unsigned importBufferFileId) {
+SmallVector<ModuleSpec> ModuleLoader::resolveNamespaceSubModule(
+    StringRef moduleName, const ModuleSpec &parentSpec,
+    const std::filesystem::path &workingDir) {
   // Per portion, in-directory precedence picks one candidate. Across
   // portions, closed candidates win over directory candidates (plain
   // directories carry no marker, so a stray non-Mojo directory must not
@@ -260,7 +256,7 @@ ModuleLoader::resolveNamespaceSubModule(StringRef moduleName,
   SmallVector<ModuleSpec> closed;
   std::optional<ModuleSpec> firstDir;
   for (const std::string &portion :
-       collectNamespacePortions(parentSpec, importBufferFileId)) {
+       collectNamespacePortions(parentSpec, workingDir)) {
     std::optional<ModuleSpec> candidate = resolveModulePath(
         moduleName, portion, shared.arePrebuiltPackagesDisabled(),
         /*isInsideSourcePackage=*/false);
@@ -281,6 +277,13 @@ ModuleLoader::resolveNamespaceSubModule(StringRef moduleName,
   firstDir->namespaceComponents = parentSpec.namespaceComponents;
   firstDir->namespaceComponents.push_back(moduleName.str());
   return {std::move(*firstDir)};
+}
+
+/// Walks `dir` up to the top-most directory that is not a source package.
+static std::filesystem::path outsideSourcePackages(std::filesystem::path dir) {
+  while (Filesystem::isMojoSourcePackagePath(dir))
+    dir = dir.parent_path();
+  return dir;
 }
 
 /// Return the directory to use as the "working directory" for relative-ish
@@ -320,44 +323,40 @@ deriveWorkingDirectory(const llvm::SourceMgr &sourceMgr,
 
   // The buffer's identifier names a file path - real, or a synthetic wrapper
   // name in an existing directory - so step up to its containing directory.
-  // The process-CWD fallback is already the directory to search. Either way,
-  // work back up to the top-most non-package directory.
+  // The process-CWD fallback is already the directory to search.
   if (pathFromBuffer)
     path = path->parent_path();
-  while (Filesystem::isMojoSourcePackagePath(*path))
-    path = path->parent_path();
-  return *path;
+  return outsideSourcePackages(std::move(*path));
+}
+
+std::filesystem::path
+ModuleLoader::workingDirectoryFor(unsigned importBufferFileId) const {
+  if (!importBufferFileId)
+    return {};
+  const llvm::SourceMgr &sourceMgr = shared.getSourceMgr();
+  return deriveWorkingDirectory(sourceMgr, sourceMgr.getMainFileID());
 }
 
 void ModuleLoader::traverseImportDirectories(
-    unsigned importBufferFileId,
+    const std::filesystem::path &workingDir,
     function_ref<WalkResult(StringRef)> callback) const {
   // Python has lots of magic rules surrounding how modules get resolved. For
-  // now, we search the auto-import directories, the working directory derived
-  // from the importing buffer, and the source manager's include directories,
-  // in that order.
+  // now, we search the auto-import directories, the working directory, and the
+  // source manager's include directories, in that order.
   // Check the auto import directories.
   for (auto &rawPath : autoImportDirs) {
     if (callback(rawPath).wasInterrupted())
       return;
   }
 
-  llvm::SourceMgr &sourceMgr = shared.getSourceMgr();
-
-  // Check the working directory: the entry point's directory, derived once
-  // from the main buffer and visible to every import site alike. No import site
-  // sees its own file's directory, meaning that resolution is stable and cannot
-  // depend on which file triggered it. A null buffer id requests no working
-  // directory at all.
-  if (importBufferFileId) {
-    std::filesystem::path cwd =
-        deriveWorkingDirectory(sourceMgr, sourceMgr.getMainFileID());
-    if (!cwd.empty() && callback(cwd.string()).wasInterrupted())
-      return;
-  }
+  // Check the working directory: the entry point's directory, the same for
+  // every import site. No import site sees its own file's directory, meaning
+  // that resolution is stable and cannot depend on which file triggered it.
+  if (!workingDir.empty() && callback(workingDir.string()).wasInterrupted())
+    return;
 
   // Check the include directories.
-  for (StringRef includeDir : sourceMgr.getIncludeDirs()) {
+  for (StringRef includeDir : shared.getSourceMgr().getIncludeDirs()) {
     if (callback(includeDir).wasInterrupted())
       return;
   }
@@ -471,6 +470,70 @@ void ModuleLoader::initializeTopLevel(TopLevelModuleASTDecl &topLevelDecl) {
 ModuleState &ModuleLoader::getTopLevelState() const {
   assert(store->topLevelModuleState && "loader has not been initialized");
   return *store->topLevelModuleState;
+}
+
+LogicalResult
+ModuleLoader::bindPrecompiledPackage(ModuleState &packageState,
+                                     ArrayRef<StringRef> importPath) {
+  assert(!importPath.empty() && "expected the package's output name");
+  ArrayRef<StringRef> namespacePath = importPath.drop_back();
+  // Search what the package's own imports will, but no buffer is loaded yet to
+  // derive the working directory from; derive it from the package instead,
+  // as from any of its files.
+  SmallString<256> packageDir(packageState.spec->path.string());
+  std::filesystem::path workingDir;
+  if (!llvm::sys::fs::make_absolute(packageDir))
+    workingDir = outsideSourcePackages(packageDir.str().str());
+  ModuleState *scope = &getTopLevelState();
+  std::vector<std::string> components;
+  for (StringRef component : namespacePath) {
+    components.push_back(component.str());
+    auto name = StringAttr::get(getContext(), component);
+    ModuleState *child = scope->nestedModules.lookup(name);
+    // A namespace sharing the package's source directory name is shadowed by
+    // the package while parsing, so the path can't be spelled until then.
+    if (child == &packageState)
+      return success();
+    std::optional<ModuleSpec> spec;
+    if (child) {
+      spec = child->spec;
+    } else if (scope == &getTopLevelState()) {
+      spec = resolveModulePath(component, workingDir);
+    } else {
+      // Several candidates are closed ones, none of them a namespace.
+      SmallVector<ModuleSpec> candidates =
+          resolveNamespaceSubModule(component, *scope->spec, workingDir);
+      if (!candidates.empty())
+        spec = std::move(candidates.front());
+    }
+    // The namespace may be getting its first package, so no import root need
+    // have a directory for it yet. With none, it has no portion to record as
+    // its path.
+    if (!child && !spec) {
+      spec = ModuleSpec{component.str(), /*path=*/{},
+                        ModuleSpec::Kind::SourceDir, components};
+    }
+    if (!spec || !spec->isNamespace()) {
+      std::string found = spec && !spec->path.empty()
+                              ? " names '" + spec->path.string() + "'"
+                              : std::string(" is");
+      return emitError(
+          cast<PackageASTDecl>(packageState.decl)->getOp().getLoc(),
+          "cannot precompile into namespace '" +
+              llvm::join(namespacePath, ".") + "': '" +
+              llvm::join(components, ".") + "'" + found + ", not a namespace");
+    }
+    if (!child)
+      child = &createPackageState(*spec, *scope, /*importLoc=*/{});
+    scope = child;
+  }
+
+  // An invalid import location: nothing asked for this second name, so the
+  // alias it makes goes unreported.
+  (void)resolveModuleBinding(*packageState.spec,
+                             StringAttr::get(getContext(), importPath.back()),
+                             *scope, /*importLoc=*/{});
+  return success();
 }
 
 ModuleState *ModuleLoader::lookupState(ASTDecl *decl) const {
@@ -689,7 +752,7 @@ ModuleState *ModuleLoader::importSubModuleStateImpl(StringRef name,
       // resolved through.
       SmallVector<ModuleSpec> candidates = resolveNamespaceSubModule(
           name, *parentState->spec,
-          getSourceMgr().FindBufferContainingLoc(loc));
+          workingDirectoryFor(getSourceMgr().FindBufferContainingLoc(loc)));
       if (candidates.size() > 1) {
         std::string paths;
         for (const ModuleSpec &candidate : candidates) {
@@ -710,7 +773,8 @@ ModuleState *ModuleLoader::importSubModuleStateImpl(StringRef name,
     }
   } else {
     // Otherwise, go through the normal import path.
-    modulePath = resolveModulePath(name, loc);
+    modulePath = resolveModulePath(
+        name, workingDirectoryFor(getSourceMgr().FindBufferContainingLoc(loc)));
   }
 
   if (!modulePath)
@@ -903,7 +967,8 @@ void ModuleLoader::registerSourcePackageChildren(PackageASTDecl &packageDecl) {
   } else {
     unsigned bufferId =
         getSourceMgr().FindBufferContainingLoc(parentState->importLoc);
-    directories = collectNamespacePortions(*parentState->spec, bufferId);
+    directories = collectNamespacePortions(*parentState->spec,
+                                           workingDirectoryFor(bufferId));
   }
 
   // Collect the directory entries and sort them, so children are registered in
@@ -1142,16 +1207,16 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
     return createErrorModuleState(loc, declNameAttr, *parentState.decl, msg);
   };
 
-  // Symbol references recorded in the artifact are rooted at its compiled
-  // name, which resolves only for a top-level binding of that name; mounted
-  // below the top level, every type escaping the package is unresolvable.
-  // TODO(MOCO-4487): lift this once loading re-anchors recorded roots to the
-  // mount point.
-  if (parentState.decl != &shared.getTopLevelDecl()) {
+  // Symbol references recorded in the artifact are rooted at its import path:
+  // an import root, or the output namespace it was precompiled under (checked
+  // once it is read). A directory inside a source package is neither.
+  std::string mountPath = mountPathFor(spec.name, *parentState.decl);
+  bool isTopLevel = parentState.decl == &shared.getTopLevelDecl();
+  if (!isTopLevel && !(parentState.spec && parentState.spec->isNamespace())) {
     return makeError("precompiled package '" + pathStr +
                      "' must be imported directly from an import root, not "
                      "as '" +
-                     mountPathFor(spec.name, *parentState.decl) + "'");
+                     mountPath + "'");
   }
 
   // One artifact bound under two names is one package under two names. Aliasing
@@ -1166,9 +1231,10 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   if (!packageBuffer)
     return makeError("unable to open package file '" + pathStr + "'");
 
-  // Read the cached package.
+  // Read the cached package. The temporary module lives at the top level
+  // whatever the mount, since a package's body admits no module.
   OpBuilder builder = parentState.decl->getDeclEndBuilder();
-  Block *block = builder.getBlock();
+  Block *block = shared.getTopLevelDecl().getOp().getBody();
   // bytecodeReader refers to sourceMgr by reference,
   // so sourceMgr lifetime must be same or longer.
   auto sourceMgr = std::make_shared<llvm::SourceMgr>();
@@ -1209,8 +1275,56 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   if (failed(bytecodeReader->materialize(tmpModule)))
     return makeError("failed to materialize top-level module");
 
+  // A package precompiled under an output namespace arrives nested in one
+  // namespace per component, and binds only where those components match the
+  // mount path: its recorded references are rooted there.
+  auto artifactPackage = cast<PackageOp>(tmpModule.getBody()->front());
+  auto unwrap = [&](PackageOp wrapper) -> PackageOp {
+    if (!wrapper.getIsNamespace())
+      return {};
+    if (bytecodeReader->isMaterializable(wrapper) &&
+        failed(bytecodeReader->materialize(wrapper)))
+      return {};
+    Block *body = wrapper.getBody();
+    if (!llvm::hasSingleElement(*body))
+      return {};
+    return dyn_cast<PackageOp>(body->front());
+  };
+  ArrayRef<std::string> mountNamespace;
+  if (!isTopLevel)
+    mountNamespace = parentState.spec->namespaceComponents;
+  PackageOp packageOp = artifactPackage;
+  for (const std::string &component : mountNamespace) {
+    packageOp =
+        packageOp.getSymName() == component ? unwrap(packageOp) : PackageOp();
+    if (!packageOp)
+      break;
+  }
+  if (!packageOp || packageOp.getIsNamespace() ||
+      (!isTopLevel && packageOp.getSymName() != spec.name)) {
+    // Recover the path the artifact was built for to report it.
+    std::string builtPath;
+    for (PackageOp op = artifactPackage; op; op = unwrap(op)) {
+      if (!builtPath.empty())
+        builtPath += ".";
+      builtPath += op.getSymName();
+    }
+    std::string message =
+        builtPath == spec.name
+            ? "precompiled package '" + pathStr +
+                  "' must be imported directly from an import root, not as '" +
+                  mountPath + "'"
+            : "precompiled package '" + pathStr +
+                  "' was built to be imported as '" + builtPath +
+                  "', not as '" + mountPath + "'";
+    // Nothing of the artifact is bound, so drop it whole, lazy ops included:
+    // a reader destroyed with ops still lazy asserts.
+    (void)bytecodeReader->finalize([](Operation *) { return false; });
+    tmpModule.erase();
+    return makeError(message);
+  }
+
   // Move the package into the current decl.
-  auto packageOp = cast<PackageOp>(tmpModule.getBody()->front());
   packageOp->remove();
   builder.insert(packageOp);
 
@@ -1248,7 +1362,7 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
           cast<StructASTDecl>(shared.declResolver->addBytecodeDecl(
               &*structOp, structOp.getSymNameAttr(), &shared.getTopLevelDecl(),
               DeclResolvedness::body));
-      structDecl.setSelfType(StructASTDecl::computeSelfType(structOp));
+      structDecl.setSelfType(structDecl.computeSelfType());
       for (auto fn : structOp.getOps<FnOp>()) {
         auto &fnDecl = cast<DefASTDecl>(shared.declResolver->addBytecodeDecl(
             fn, fn.getSourceNameAttr(), &structDecl, DeclResolvedness::body));

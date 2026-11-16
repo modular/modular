@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -23,6 +24,10 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+
+#include <algorithm>
+#include <limits>
+#include <optional>
 
 using namespace M;
 using namespace M::KGEN;
@@ -123,18 +128,24 @@ void KGEN::collectParameterReferences(
   c.collectUsesFromType(type, results, hasCtxEvalExpr, requiredSignatureDepth);
 }
 
-/// Return true if the specified type contains parameter references, e.g.
-/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
-///
-/// TODO: This isn't an efficient method, it walks the entire type graph without
-/// caching.
-bool KGEN::isParameterizedType(Type type) {
+static bool isParameterizedTypeUncached(Type type) {
   SmallVector<ParamDeclRefAttr> paramDecls;
   bool hasCtxEvalExpr = false;
   size_t requiredSignatureDepth = 0;
   collectParameterReferences(type, paramDecls, hasCtxEvalExpr,
                              requiredSignatureDepth);
   return !paramDecls.empty() || hasCtxEvalExpr || requiredSignatureDepth != 0;
+}
+
+/// Return true if the specified type contains parameter references, e.g.
+/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
+bool KGEN::isParameterizedType(Type type) {
+  // The walk visits the whole type graph, and constant checks in parameter
+  // comparators repeat it for the same type many times.
+  return CompilerCaches::getOrCompute(
+      type.getContext(), &CompilerCaches::parameterized,
+      type.getAsOpaquePointer(),
+      [&] { return isParameterizedTypeUncached(type); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -188,7 +199,8 @@ bool ParameterEvaluationContext::isMaterializationContext() const {
 }
 
 Operation *ParameterEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol,
+    StringAttr /*witnessName*/) {
   Operation *ret = nullptr;
   withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
                 [&](ParameterEvaluator &evaluator) {
@@ -368,7 +380,99 @@ std::pair<IntegerAttr, bool> ParameterEvaluator::narrowCondOp(Attribute attr,
   return {nullptr, false};
 }
 
+static EvaluatorValueFacts getEvaluatorFacts(Attribute attr,
+                                             CompilerCaches &caches);
+static EvaluatorValueFacts getEvaluatorFacts(Type type, CompilerCaches &caches);
+
+/// Merges the facts of the sub-elements of `value`, as seen from `value`.
+template <typename T>
+static EvaluatorValueFacts getSubElementFacts(T value, bool isParameterScope,
+                                              CompilerCaches &caches) {
+  EvaluatorValueFacts result;
+  auto merge = [&](auto subElement) {
+    EvaluatorValueFacts facts = getEvaluatorFacts(subElement, caches);
+    result.isRewritable |= facts.isRewritable;
+    result.hasContextualExpr |= facts.hasContextualExpr;
+    if (facts.freeIndexDepth)
+      result.freeIndexDepth =
+          std::max(result.freeIndexDepth.value_or(0), *facts.freeIndexDepth);
+  };
+  value.walkImmediateSubElements([&](Attribute attr) { merge(attr); },
+                                 [&](Type type) { merge(type); });
+  if (isParameterScope && result.freeIndexDepth) {
+    if (*result.freeIndexDepth == 0)
+      result.freeIndexDepth.reset();
+    else
+      --*result.freeIndexDepth;
+  }
+  return result;
+}
+
+static EvaluatorValueFacts computeEvaluatorFacts(Attribute attr,
+                                                 CompilerCaches &caches) {
+  if (isa<ContextuallyEvaluatedAttrInterface>(attr))
+    return {std::nullopt, /*isRewritable=*/true, /*hasContextualExpr=*/true};
+  if (isa<MLIROpAttr>(attr))
+    return {};
+  EvaluatorValueFacts result =
+      getSubElementFacts(attr, isa<ParameterScopeAttrInterface>(attr), caches);
+  if (isa<ParamDeclRefAttr>(attr))
+    result.isRewritable = true;
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr))
+    result.freeIndexDepth = std::max(result.freeIndexDepth.value_or(0),
+                                     static_cast<int32_t>(indexRef.getDepth()));
+  return result;
+}
+
+static EvaluatorValueFacts computeEvaluatorFacts(Type type,
+                                                 CompilerCaches &caches) {
+  if (isa<MLIRDeferredType, ContextuallyEvaluatedTypeInterface>(type))
+    return {std::nullopt, /*isRewritable=*/true, /*hasContextualExpr=*/true};
+  return getSubElementFacts(type, isa<ParameterScopeTypeInterface>(type),
+                            caches);
+}
+
+template <typename T>
+static EvaluatorValueFacts getEvaluatorFactsImpl(T value,
+                                                 CompilerCaches &caches) {
+  const void *key = value.getAsOpaquePointer();
+  if (std::optional<EvaluatorValueFacts> known =
+          caches.evaluatorFacts.lookup(key))
+    return *known;
+  return caches.evaluatorFacts.insert(key,
+                                      computeEvaluatorFacts(value, caches));
+}
+
+static EvaluatorValueFacts getEvaluatorFacts(Attribute attr,
+                                             CompilerCaches &caches) {
+  return getEvaluatorFactsImpl(attr, caches);
+}
+
+static EvaluatorValueFacts getEvaluatorFacts(Type type,
+                                             CompilerCaches &caches) {
+  return getEvaluatorFactsImpl(type, caches);
+}
+
+/// Returns true if an evaluator entering `value` at `depth` returns `value`
+/// for all bindings. An index reference is rewritten only at its exact depth,
+/// so all free references below `depth` are out of reach.
+template <typename T>
+static bool isEvaluatorFixedPoint(T value, size_t depth) {
+  // Only cache owners get this path: without a cache the analysis repeats
+  // the walk that it is meant to avoid.
+  CompilerCaches *caches = CompilerCaches::get(value.getContext());
+  if (!caches)
+    return false;
+  EvaluatorValueFacts facts = getEvaluatorFacts(value, *caches);
+  return !facts.isRewritable &&
+         (!facts.freeIndexDepth ||
+          static_cast<size_t>(*facts.freeIndexDepth) < depth);
+}
+
 Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
+  if (isEvaluatorFixedPoint(attr, depth))
+    return attr;
+
   if (isa<ParameterScopeAttrInterface>(attr))
     ++depth;
 
@@ -524,6 +628,9 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
 }
 
 Type ParameterEvaluator::doReplace(Type type, size_t depth) {
+  if (isEvaluatorFixedPoint(type, depth))
+    return type;
+
   Type result = type;
 
   if (isa<ParameterScopeTypeInterface>(type))
@@ -638,6 +745,9 @@ PartiallySpecializedInputParams::from(
     if (::isa<UnboundAttr>(value)) {
       // An unbound parameter stays a parameter of the specialized generator:
       // bind it to that generator's own variable at its new index.
+      //
+      // NOTE: we don't do depth adjustment here because the conversion since we
+      // view every unbound attr as quoted.
       auto value = ParamIndexRefAttr::get(
           /*depth=*/0, unboundParamTypes.size(), remappedDeclType);
       unboundParamTypes.push_back(remappedDeclType);
@@ -646,7 +756,15 @@ PartiallySpecializedInputParams::from(
       // The value comes from the caller, one scope out, and may refer to
       // outer-context indexed parameters. Increase depth by one when pushing
       // into the current scope.
-      auto inScope = addOneAdjuster.replace(value);
+      TypedAttr inScope = [&]() {
+        // A quoted value already lives in the generator's own scope (e.g. an
+        // in-scope parameter default). Its references to earlier parameters
+        // are still numbered in the original generator's parameter space.
+        if (auto quote = sugarDynCast<QuoteAttr>(value))
+          return evaluator.getReboundAttribute(quote.getQuotedParam());
+        return addOneAdjuster.replace(value);
+      }();
+
       auto inScopeType = inScope.getType();
       if (inScopeType != remappedDeclType &&
           !isEqualCanon(inScopeType, remappedDeclType)) {

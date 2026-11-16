@@ -27,19 +27,6 @@ Submodules
    pipelines.kv_cache.checkpoint
    pipelines.kv_cache.paged_kv_cache
 
-Memory planning
----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   MemoryPlanner
-   ModelConfig
-   ModelConfigWithKVCache
-   PagedMemoryPlanner
-
 Configuration
 -------------
 

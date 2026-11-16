@@ -14,7 +14,7 @@
 """Regression tests for per-request enable_thinking on Qwen3.5.
 
 These exercise the chat_template_options plumbing fixed in commit 96bdd6e102f.
-Before that fix, ``Qwen3VLTokenizer.new_context`` dropped
+Before that fix, ``Qwen3_5Tokenizer.new_context`` dropped
 ``request.chat_template_options`` on the floor, so OpenAI-style
 ``chat_template_kwargs`` overrides like ``{"enable_thinking": false}`` were
 silently ignored.
@@ -53,7 +53,7 @@ _MODEL_PATHS = [
 def _mock_pipeline_config(model_path: str) -> MagicMock:
     """Build a PipelineConfig stand-in around the real HF config.
 
-    The real HF config is needed because Qwen3VLTokenizer pulls vision config
+    The real HF config is needed because Qwen3_5Tokenizer pulls vision config
     fields (spatial_merge_size, num_position_embeddings, image / vision token
     IDs) directly off it. Everything outside ``model.huggingface_config`` and
     ``model.kv_cache.enable_prefix_caching`` is mocked.
@@ -169,7 +169,7 @@ def test_new_context_default_enables_thinking(
 def test_new_context_forwards_logprobs(tokenizer: Qwen3_5Tokenizer) -> None:
     """``request.logprobs``/``request.echo`` reach the context.
 
-    Regression test: ``Qwen3VLTokenizer.new_context`` (and several sibling
+    Regression test: ``Qwen3_5Tokenizer.new_context`` (and several sibling
     multimodal tokenizers) dropped both fields, so
     ``TextGenerationInputs.enable_log_probs`` stayed ``False`` and logprob
     responses came back empty.
@@ -196,7 +196,7 @@ def test_new_context_forwards_response_format_enforcement(
 ) -> None:
     """A json_schema ``response_format`` turns on grammar enforcement.
 
-    Regression test: ``Qwen3VLTokenizer.new_context`` forwarded the schema but
+    Regression test: ``Qwen3_5Tokenizer.new_context`` forwarded the schema but
     not the grammar enforcement state, so ``grammar_enforced`` stayed ``False``,
     the bitmask was never applied, and structured output was silently ignored.
     """

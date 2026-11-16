@@ -350,11 +350,11 @@ def _run_shaped[
 
     var coord = Coord(shape)
     if op == OP_ARGMAX:
-        reduce_argmax[dtype, target="gpu", reduce_dim=dim](
+        reduce_argmax[dtype, reduce_dim=dim](
             input_fn, idx_output_fn, coord, ctx
         )
     else:
-        reduce_argmin[dtype, target="gpu", reduce_dim=dim](
+        reduce_argmin[dtype, reduce_dim=dim](
             input_fn, idx_output_fn, coord, ctx
         )
     ctx.synchronize()

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Unified gfx950 MHA prefill kernel.
 
-Handles BF16+FP8, any mask, depth∈{64,80,128,256,512}, with and without sink.
+Handles any mask, with and without sink. BF16 supports
+depth∈{64,72,80,128,256,512}; FP8 supports depth∈{128,256}.
 Consolidates the two older kernels (pipelined `mha_prefill` and
 non-pipelined `mha_prefill_gfx950`) into one, matching `amd/mha.mojo`
 from main but built on `KVBuffer` (our version of KVBuffer).
@@ -36,6 +37,7 @@ from max.gpu.intrinsics import readfirstlane
 from max.gpu import warp_id as get_warp_id
 from max.gpu.sync import s_waitcnt
 from layout.swizzle import Swizzle
+from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
 from std.memory import bitcast
 from std.utils.numerics import get_accum_type
@@ -72,29 +74,33 @@ def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
 
 __extension Attention:
     def mha_prefill(mut self):
-        """Unified gfx950 MHA prefill: BF16+FP8, any mask, depth∈{64,80,128,256,512}.
+        """Runs gfx950 MHA prefill for any mask.
 
-        See module docstring for the recipe.
+        BF16 supports depth∈{64,72,80,128,256,512}; FP8 supports
+        depth∈{128,256}. See module docstring for the recipe.
         """
 
         # --- Assertions ---
         comptime assert (
             Self.BK == 32 or Self.BK == 64 or Self.BK == 128
         ), "BK must be 32, 64, or 128"
-        comptime assert (
-            Self.depth == 64
-            or Self.depth == 80
-            or Self.depth == 128
-            or Self.depth == 256
-            or Self.depth == 512
-        ), "depth must be 64, 80, 128, 256, or 512"
+        comptime assert Self.depth in (
+            64,
+            72,
+            80,
+            128,
+            256,
+            512,
+        ), "depth must be 64, 72, 80, 128, 256, or 512"
         comptime assert not Self.q_type.is_float8() or (
             Self.depth == 128 or Self.depth == 256
         ), "fp8 only supports depth=128 or 256"
         comptime assert (
-            Self.depth % Self.BK == 0
-            or Self.depth % Self.BK % Self.mma_shape[2] == 0
-        ), "depth % BK must be a multiple of the MFMA K dimension"
+            Self.depth
+            % Self.BK
+            % num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+            == 0
+        ), "depth % BK must not split a lane's MMA fragment"
         comptime assert Self.BN % Self.BK == 0, "BN must be a multiple of BK"
         # `mha_prefill` hard-codes `full_kv=True` for both K and V buffers, so
         # trap any caller that instantiates it with the windowed-KV config.
@@ -296,6 +302,12 @@ __extension Attention:
                     return
 
             k_buffer.load_from_shared(slot)
+            # When depth % BK % MMA_K != 0 (for example, depth 72), one
+            # MMA K-step reads valid and pad columns. The pad columns
+            # contain data from other rows. Set them to zero before the QK
+            # MMA. At other depths, the QK MMA does not read the pad.
+            comptime if Self.depth % Self.BK % Self.mma_shape[2] != 0:
+                k_buffer.zero_partial_tile_pad()
             mma_qk()
 
             # Prefetch next tile before softmax to hide DRAM latency under

@@ -24,9 +24,9 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -43,7 +43,7 @@ from max.pipelines.lib.graph_specs import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.profiler import traced
 
 from .batch_processor import Llama3BatchProcessor
@@ -282,10 +282,11 @@ class LlamaModelBase(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(model_config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
+            compiled = compile_and_init_graphs(session, specs)
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
         models = {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
+            role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         self._wire_batch_processor(models[GraphRole.DECODER], model_config)

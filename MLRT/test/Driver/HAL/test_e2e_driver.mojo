@@ -284,8 +284,8 @@ def main() raises:
         driver = Driver.create(plugin_spec)
     except e:
         raise Error(e)
-    print("Driver:", driver[].get_name())
-    print("Devices:", driver[].get_device_count())
+    print("Driver:", driver[].name())
+    print("Devices:", driver[].device_count())
 
     var device: ArcPointer[Device[get_device_spec[0]()]]
     try:

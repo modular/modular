@@ -34,7 +34,7 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from layout.tile_layout import Layout as _StaticLayout, _RowMajor
+from layout.layout import Layout as _StaticLayout, _RowMajor
 from std.utils.coord import Coord, _IntToComptimeInt
 from std.bit import log2_floor
 
@@ -159,7 +159,7 @@ struct ReductionMode(EnumLike, TrivialRegisterPassable):
     ].values
 
     comptime _enum_case_types = TypeList.splat[
-        ParameterList[Self._enum_case_names].length, NoneType
+        ParameterList[Self._enum_case_names].length, Tuple[]
     ].values
 
     @inline(.always)

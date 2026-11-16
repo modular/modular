@@ -44,7 +44,7 @@ covered by `test_mla_decode_sparse_kv_fp8.mojo` and friends.
 from std.math import ceildiv, exp, isnan
 from std.memory import bitcast
 
-from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
+from max.gpu.host import DeviceContext, default_accelerator
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -53,11 +53,15 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_decode_num_partitions,
 )
-from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_decoding_rows
+from nn.attention.gpu.mla import (
+    AMDMLA,
+    flare_mla_decoding,
+    flare_mla_decoding_rows,
+)
 from nn.attention.gpu.mla_graph import (
     _AMD_SPARSE_MLA_GATHER_VEC,
     _AMD_SPARSE_MLA_ROW_VALID_LENGTHS_THREADS,
@@ -65,6 +69,7 @@ from nn.attention.gpu.mla_graph import (
     _amd_sparse_mla_gather_kv_rows_and_lengths,
     _amd_sparse_mla_row_valid_lengths,
     mla_decode_branch_fp8,
+    AMDMLAGraph,
 )
 from nn.attention.mha_mask import NullMask, PaddingMask
 from nn.attention.mha_operand import KVCacheMHAOperand, SparseRowsMHAOperand
@@ -321,7 +326,7 @@ def _run_case[
 
     var q_padded = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 Idx[num_heads * K_CACHE_DIM],
@@ -333,7 +338,7 @@ def _run_case[
     )
     var out_padded = TileTensor(
         out_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -419,6 +424,7 @@ def _run_case[
         flare_mla_decoding[
             config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_padded,
             q_padded,
@@ -439,6 +445,7 @@ def _run_case[
         flare_mla_decoding[
             config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_padded,
             q_padded,
@@ -831,9 +838,9 @@ def _check_s_gt_1_guard(ctx: DeviceContext) raises:
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             mask_str="causal",
-            target="gpu",
             sparse_mla=True,
             fp8_q=True,
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,
@@ -1109,9 +1116,9 @@ def _run_lagged_decode[
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             mask_str="causal",
-            target="gpu",
             sparse_mla=True,
             fp8_q=True,
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,
@@ -1141,9 +1148,9 @@ def _run_lagged_decode[
             n_scale_granularity=n_scale_gran,
             k_scale_granularity=k_scale_gran,
             mask_str="causal",
-            target="gpu",
             sparse_mla=True,
             fp8_q=True,
+            kernels=AMDMLAGraph,
         ](
             out_tt,
             q_tt,
@@ -1480,7 +1487,7 @@ def _run_sentinel_case[
 
     var q_padded = TileTensor(
         q_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[K_CACHE_DIM]),
             (
                 Idx[num_heads * K_CACHE_DIM],
@@ -1492,7 +1499,7 @@ def _run_sentinel_case[
     )
     var out_padded = TileTensor(
         out_device.unsafe_ptr(),
-        TileLayout(
+        Layout(
             (batch_size, Idx[1], Idx[num_heads], Idx[KV_LATENT_DIM]),
             (
                 Idx[num_heads * KV_LATENT_DIM],
@@ -1586,6 +1593,7 @@ def _run_sentinel_case[
         flare_mla_decoding[
             config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_padded,
             q_padded,
@@ -1604,6 +1612,7 @@ def _run_sentinel_case[
         flare_mla_decoding[
             config=MHAConfig[dtype](num_heads, K_CACHE_DIM),
             decoding_warp_split_k=False,
+            kernels=AMDMLA,
         ](
             out_padded,
             q_padded,
@@ -2035,9 +2044,7 @@ def main() raises:
             # The production split, `amd_sparse_mla_decode_num_partitions`:
             # 16 splits of 128 rows, so the 1200- and 530-row tokens leave 6
             # and 11 splits wholly past their valid length.
-            var sm_count = ctx.device().get_attribute(
-                DeviceAttribute.MULTIPROCESSOR_COUNT
-            )
+            var sm_count = ctx.device().multiprocessor_count()
             var topk_split = amd_sparse_mla_decode_num_partitions(
                 3, 2048, 8, sm_count
             )

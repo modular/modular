@@ -16,7 +16,7 @@
 from std.math import ceildiv, exp
 from std.testing import assert_almost_equal, assert_equal
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.attention.gpu.mla import mla_prefill_single_batch
 from nn.attention.mha_mask import NullMask
@@ -176,9 +176,6 @@ def _check_mla_prefill[
         grid_dim=(ceildiv(queries, config.block_m()), heads, 1),
         block_dim=config.num_threads(),
         shared_mem_bytes=smem,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem)
-        ),
     )
     ctx.enqueue_copy(out_host, out_buffer)
     ctx.synchronize()

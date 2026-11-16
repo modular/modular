@@ -39,6 +39,7 @@
 #include <string>
 
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 namespace M::Profiling {
 
@@ -56,7 +57,7 @@ namespace Detail {
 // copy is immediately visible to every other copy's hot path — coherence
 // needs no per-copy registration or mirroring (the plugin ABI's
 // registerShim still registers gate addresses; see PluginABI.h).
-std::atomic<bool> &getEnabledGate() noexcept;
+MODULAR_CXX_EXPORT std::atomic<bool> &getEnabledGate() noexcept;
 } // namespace Detail
 
 // Cheap read-only query: returns true while the profiler is enabled. Single
@@ -72,7 +73,7 @@ namespace Detail {
 // Distinct from getEnabledGate(), which tracks only the explicit enable
 // intent and stays false during externally driven traces. Same
 // process-global storage story as getEnabledGate().
-std::atomic<bool> &getRecordingGate() noexcept;
+MODULAR_CXX_EXPORT std::atomic<bool> &getRecordingGate() noexcept;
 } // namespace Detail
 
 // True while a trace of either origin is live and rangeBegin/rangeEnd record
@@ -88,11 +89,11 @@ namespace Detail {
 // registerCurrentThreadSlow(). Per copy (unlike the gates, which are
 // process-global): re-running the registration once per copy per thread is
 // harmless (it is idempotent on the profiler side).
-extern thread_local bool gThreadRegistered;
+extern MODULAR_CXX_EXPORT thread_local bool gThreadRegistered;
 
 // Slow path of registerCurrentThreadIfEnabled: registers the calling thread
 // with the profiler and sets gThreadRegistered.
-void registerCurrentThreadSlow();
+MODULAR_CXX_EXPORT void registerCurrentThreadSlow();
 
 // The optional profiler integration, as a function table. All entries have
 // the exact semantics of the same-named public functions below; strings
@@ -172,8 +173,8 @@ inline void registerCurrentThreadIfEnabled() noexcept {
 // annotation span correlated to the GPU kernels launched inside it; pairs
 // still open when the trace stops are dropped. Outside a live trace both
 // calls reduce to one predicted branch.
-void rangeBegin(StringRef name, uint32_t color);
-void rangeEnd();
+MODULAR_CXX_EXPORT void rangeBegin(StringRef name, uint32_t color);
+MODULAR_CXX_EXPORT void rangeEnd();
 
 // As rangeBegin, but with a CALLER-SUPPLIED user correlation id instead of an
 // internally generated one. An external consumer that stamps the same id on
@@ -183,19 +184,20 @@ void rangeEnd();
 // name or a time-window heuristic. The id is truncated to 32 bits by the
 // trace format, so keep it under 2^31 to avoid aliasing. The matching
 // rangeEnd() is shared with rangeBegin (per-thread LIFO).
-void rangeBeginWithId(uint64_t correlationId, StringRef name, uint32_t color);
+MODULAR_CXX_EXPORT void rangeBeginWithId(uint64_t correlationId, StringRef name,
+                                         uint32_t color);
 
 // Attach a top-level metadata field to the live trace, if any. The first value
 // set for a key in a trace wins and later calls for it are cheap, so callers
 // may set it on every occurrence of the event it describes. `value` is
 // inserted into the trace JSON verbatim: it must be valid JSON containing no
 // backslashes or newlines. Outside a live trace this is one predicted branch.
-void setTraceMetadata(StringRef key, StringRef value);
+MODULAR_CXX_EXPORT void setTraceMetadata(StringRef key, StringRef value);
 
 // Advance the step counter. Drives the warmup/active state machine for
 // fixed-window profiling. MAX calls this internally at the end of
 // Model::execute(); user code should not call it directly.
-void step();
+MODULAR_CXX_EXPORT void step();
 
 // Enable / disable the profiler. enable() attaches the profiler integration
 // on first use (see the file header); when none is available the enable
@@ -204,8 +206,8 @@ void step();
 // cannot record.  Both calls are process-local.  In a multi-process
 // multi-rank deployment (one OS process per rank) each rank enables itself
 // independently.
-void enable();
-void disable();
+MODULAR_CXX_EXPORT void enable();
+MODULAR_CXX_EXPORT void disable();
 
 // Activate a deferred trace subscription: enable() only records intent,
 // because the profiler backend has a vendor-specific readiness ordering that
@@ -220,11 +222,11 @@ void disable();
 // even when profiling was never enabled (SinkRequest::DeviceInit);
 // otherwise this is a no-op when profiling is disabled, already active, or
 // the backend is not yet ready.
-void activatePendingTrace();
+MODULAR_CXX_EXPORT void activatePendingTrace();
 
 // Block until the most recent disable()'s trace has been serialized, along
 // with any step-window burst still being written in the background.
-void waitForTrace();
+MODULAR_CXX_EXPORT void waitForTrace();
 
 // Asks a repeating step-window capture for an extra burst, opened now, for
 // an event the periodic schedule would likely miss (`reason` labels it in
@@ -232,7 +234,7 @@ void waitForTrace();
 // honored only between bursts, after the first scheduled one, at most once
 // per gap, and only when the burst can close before the next scheduled one
 // is prepared. A single predicted branch when profiling is disabled.
-bool requestBurst(StringRef reason);
+MODULAR_CXX_EXPORT bool requestBurst(StringRef reason);
 
 // Returns the message recorded by the most recent trace stop — disable() or
 // a daemon-driven stop — or empty when the trace was written successfully
@@ -241,33 +243,33 @@ bool requestBurst(StringRef reason);
 // here too; the message says how many spans were dropped and what the cap
 // is.  Cleared by enable() (even when no trace actually starts) and by a
 // daemon-driven trace start.
-std::string lastTraceError();
+MODULAR_CXX_EXPORT std::string lastTraceError();
 
 // Runtime predicate: true iff a profiler integration is attached to this
 // copy (i.e. the recording paths in enable()/disable() are real, not
 // no-ops). Calling it attempts the attachment, so it can be used as an
 // explicit warm-up.
-bool haveProfiler() noexcept;
+MODULAR_CXX_EXPORT bool haveProfiler() noexcept;
 
 // Runtime predicate: true iff this process can actually record a trace right
 // now.  Stricter than ``haveProfiler()``: the profiler backend must also be
 // able to attach (for GPU backends, a live device context on the calling
 // thread).  Tests that assert on a produced trace must skip when this
 // returns false.
-bool canRecord();
+MODULAR_CXX_EXPORT bool canRecord();
 
 // Profiler lifecycle state, returned by state() and named by stateName().
 enum class ProfilerState { Idle, Warmup, Active, Flushing };
 
 // Returns the current profiler lifecycle state.
-ProfilerState state();
+MODULAR_CXX_EXPORT ProfilerState state();
 
 // Maps a ProfilerState to a stable lowercase string view:
 //   "idle"     — not enabled, no pending trace
 //   "warmup"   — enabled, skipping the configured warmup steps
 //   "active"   — enabled, recording
 //   "flushing" — disabled, trace still being serialized
-StringRef stateName(ProfilerState s);
+MODULAR_CXX_EXPORT StringRef stateName(ProfilerState s);
 
 // RAII helper. Disabled scopes pay one predicted branch in the constructor
 // (and zero in the destructor when no begin happened).
@@ -278,7 +280,7 @@ StringRef stateName(ProfilerState s);
 // between a begin and its end). That is what lets a span close correctly
 // after ``disable()`` raced in, and keeps raw FFI callers balanced without
 // their own latch.
-struct RangeScope {
+struct MODULAR_CXX_EXPORT RangeScope {
   explicit RangeScope(StringRef name, uint32_t color = 0);
   ~RangeScope();
 

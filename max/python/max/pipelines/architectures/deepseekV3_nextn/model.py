@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
@@ -35,7 +35,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.graph_specs import GraphRole
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from typing_extensions import override
 
 from ..deepseekV2.model import DeepseekV2Model
@@ -197,8 +197,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
             logger.info("Reusing target model's EP communication buffers.")
         else:
-            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            self.ep_comm_initializer = self._init_ep_comm(
+                session, model_config.ep_config
+            )
         if model_config.ep_config.node_id == -1:
             raise ValueError(
                 "EP node ID is not set. Please check if the EP initialization is successful."

@@ -17,10 +17,10 @@ from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
+    WeightTransform,
 )
 from max.pipelines.modeling.types import PipelineTask
 
-from ..llama3 import weight_adapters
 from .model import DFlash2Qwen3_5ArchConfig
 from .model_config import dflash2_draft_width
 
@@ -43,9 +43,8 @@ dflash2_qwen3_5_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     # The draft body is single-device; DFlash2Qwen3_5 enforces that.
     multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    # The checkpoint names its tensors as the draft's module does.
+    weight_adapters={WeightsFormat.safetensors: WeightTransform(())},
     task=PipelineTask.TEXT_GENERATION,
     config=DFlash2Qwen3_5ArchConfig,
     supports_overlap_scheduler=False,

@@ -14,6 +14,7 @@
 #ifndef SUPPORT_THREADING_SIGNALALTSTACK_H
 #define SUPPORT_THREADING_SIGNALALTSTACK_H
 
+#include "Support/SymbolExport.h"
 #include <cstddef>
 
 namespace M {
@@ -34,7 +35,7 @@ namespace M {
 ///
 /// Does nothing when the thread already has an alternate stack, on platforms
 /// without `sigaltstack()`, or on sanitizer builds.
-class ScopedSignalAltStack {
+class MODULAR_CXX_EXPORT ScopedSignalAltStack {
 public:
   ScopedSignalAltStack();
   ~ScopedSignalAltStack();
@@ -51,12 +52,12 @@ private:
 
 /// Returns true if the calling thread has an alternate signal stack installed,
 /// no matter if installed by us or by any other tool (e.g. ASAN).
-bool hasSignalAltStack();
+MODULAR_CXX_EXPORT bool hasSignalAltStack();
 
 /// Returns true if `ScopedSignalAltStack` installs anything on this build.
 /// Returns false in sanitizer builds, whose runtimes own the crash-reporting
 /// path, and on platforms without `sigaltstack()`.
-bool signalAltStackEnabled();
+MODULAR_CXX_EXPORT bool signalAltStackEnabled();
 
 } // namespace M
 

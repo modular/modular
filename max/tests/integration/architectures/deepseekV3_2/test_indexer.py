@@ -27,7 +27,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn.legacy import (
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -35,15 +38,7 @@ from max.nn.legacy import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kv_cache import (
-    KVCacheQuantizationConfig,
-    MHAKVCacheParams,
-)
-from max.nn.legacy.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
 from max.pipelines.architectures.deepseekV3_2.layers import Indexer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -172,7 +167,7 @@ def run_max_indexer(
     qr: torch.Tensor,
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
-    mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+    mask_variant: MHAMaskVariant,
     *,
     slice_freqs_cis: bool = False,
 ) -> torch.Tensor:
@@ -414,7 +409,9 @@ def test_indexer_no_mask(
 ) -> None:
     total_seq_len = batch_size * seq_len
     torch_output = run_torch_indexer(x, qr, state_dict)
-    max_output = run_max_indexer(x, qr, input_row_offsets, state_dict)
+    max_output = run_max_indexer(
+        x, qr, input_row_offsets, state_dict, MHAMaskVariant.NULL_MASK
+    )
 
     assert max_output.shape[0] == total_seq_len, (
         f"Expected first dimension {total_seq_len}, got {max_output.shape[0]}"
@@ -537,6 +534,11 @@ def test_indexer_race_demo(
 ) -> None:
     """Manual repro for the rope-slice fusion race (see comment above)."""
     out = run_max_indexer(
-        x, qr, input_row_offsets, state_dict, slice_freqs_cis=True
+        x,
+        qr,
+        input_row_offsets,
+        state_dict,
+        MHAMaskVariant.NULL_MASK,
+        slice_freqs_cis=True,
     )
     assert out.shape[0] == batch_size * seq_len

@@ -110,7 +110,7 @@ def _segmented_gather_matmul(
     Only the first ``end_idx`` rows are produced; the kernel is GPU-only.
     """
     return F.custom(
-        "mo.lora_sgmv.ragged",
+        "matmul.lora_sgmv.ragged",
         device=x.device,
         values=[
             x,
@@ -145,7 +145,7 @@ def _qkv_shrink(
     projection ``t``). GPU-only.
     """
     return F.custom(
-        "mo.lora_sgmv.qkv_shrink.ragged",
+        "matmul.lora_sgmv.qkv_shrink.ragged",
         device=x.device,
         values=[
             x,
@@ -182,7 +182,7 @@ def _qkv_expand(
     """
     m = routing.end_idx.shape[0]
     outputs = F.custom(
-        "mo.lora_sgmv.qkv_expand.ragged",
+        "matmul.lora_sgmv.qkv_expand.ragged",
         device=planar.device,
         values=[
             planar,
@@ -202,7 +202,7 @@ def _qkv_expand(
 def _sliced_add(x: Tensor, y: Tensor, end_idx: Tensor) -> Tensor:
     """Adds ``y`` into the first ``end_idx`` rows of ``x``; the rest pass through."""
     return F.custom(
-        "mo.sliced.add.ragged",
+        "ragged.sliced.add",
         device=x.device,
         values=[x, y, end_idx],
         out_types=[TensorType(x.dtype, x.shape, device=x.device)],

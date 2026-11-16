@@ -41,10 +41,10 @@ from layout import TensorLayout, TileTensor
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
-from layout.tile_layout import (
+from layout.layout import (
     ComptimeInt,
     Idx,
-    Layout as TileLayout,
+    Layout,
     col_major,
     row_major,
 )
@@ -340,7 +340,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     # bounding `_get_bounds(tile)` is `(KV_BLOCK - 1) *
     # _KV_ROW_STRIDE_MLA + CACHE_DEPTH` bytes, comfortably under the
     # 32-bit `num_records` cap.
-    comptime _KFullPerTileLayoutT = TileLayout[
+    comptime _KFullPerTileLayoutT = Layout[
         Coord[
             ComptimeInt[Self.KV_BLOCK], ComptimeInt[Self.CACHE_DEPTH]
         ].element_types,
@@ -353,7 +353,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     # at columns `[0, D_NOPE)` of the latent cache — the nope segment
     # is reinterpreted as V at the consumer (PV matmul). The MHAOperand
     # passed for V should anchor at `head_dim_idx=0`.
-    comptime _VPerTileLayoutT = TileLayout[
+    comptime _VPerTileLayoutT = Layout[
         Coord[
             ComptimeInt[Self.KV_BLOCK], ComptimeInt[Self.DEPTH]
         ].element_types,
@@ -513,14 +513,14 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     # per-segment warp partition + sub-tile addressing.
 
     # ---- Per-tile layout types for Q (d_qk wide) --------------------
-    comptime _QPerHeadLayoutT = TileLayout[
+    comptime _QPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.D_QK]].element_types,
         Coord[ComptimeInt[Self._Q_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
 
     # Per-(batch, head) 2D layout for the output. O is at d_pv (same as
     # the MHA path) because V is not RoPE'd.
-    comptime _OPerHeadLayoutT = TileLayout[
+    comptime _OPerHeadLayoutT = Layout[
         Coord[Int32, ComptimeInt[Self.DEPTH]].element_types,
         Coord[
             ComptimeInt[Self.NUM_HEADS * Self.DEPTH], ComptimeInt[1]

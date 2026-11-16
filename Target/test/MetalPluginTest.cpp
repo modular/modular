@@ -22,6 +22,7 @@
 #include "HAL/M_driver_common.h"
 #include "Target/lib/Support/HostMemory.h"
 #include <chrono>
+#include <cstring>
 #include <map>
 #include <string>
 #include <thread>
@@ -193,6 +194,92 @@ TEST_F(DriverPluginContextTest, MaxAllocationSizeMatchesAllocGuard) {
   }
 }
 
+// A wrapped sub-range's host address and synchronous transfers start at the
+// sub-range, not at the base of the buffer that contains it.
+TEST_F(DriverPluginContextTest, WrappedSubRangeHostAccessHonorsOffset) {
+  constexpr uint64_t kSize = 256;
+  constexpr uint64_t kOffset = 64;
+  for (M_driver_context_t context : contexts) {
+    M_driver_memory_t base = nullptr;
+    ASSERT_SUCCESS(memory_alloc_sync(context, kSize, &base));
+    auto freeBase = llvm::scope_exit([&] { memory_free_sync(context, base); });
+    uint64_t address = 0;
+    ASSERT_SUCCESS(
+        memory_property(base, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &address));
+    uint8_t *baseHost = nullptr;
+    ASSERT_SUCCESS(memory_property(base, M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS,
+                                   &baseHost));
+    std::memset(baseHost, 0, kSize);
+
+    M_driver_memory_t sub = nullptr;
+    ASSERT_SUCCESS(memory_wrap(context, address + kOffset, kSize - kOffset,
+                               /*owning=*/false, &sub));
+    auto freeSub = llvm::scope_exit([&] { memory_free_sync(context, sub); });
+    uint8_t *subHost = nullptr;
+    ASSERT_SUCCESS(
+        memory_property(sub, M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS, &subHost));
+    EXPECT_EQ(subHost, baseHost + kOffset);
+
+    M_driver_memory_view view{sub, /*offset=*/0, /*size=*/4};
+    uint8_t written[4] = {1, 2, 3, 4};
+    ASSERT_SUCCESS(copy_to_device_sync(context, &view, written));
+    EXPECT_EQ(baseHost[0], 0u);
+    EXPECT_EQ(baseHost[kOffset], 1u);
+    uint8_t read[4] = {};
+    ASSERT_SUCCESS(copy_from_device_sync(context, read, &view));
+    EXPECT_EQ(read[3], 4u);
+    ASSERT_SUCCESS(set_memory_sync(context, &view, uint8_t(9)));
+    EXPECT_EQ(baseHost[0], 0u);
+    EXPECT_EQ(baseHost[kOffset], 9u);
+  }
+}
+
+// The synchronous paths are host memcpy/memset, so a range past the end of the
+// buffer would touch host memory outside the allocation rather than fault.
+TEST_F(DriverPluginContextTest, SyncHostAccessRejectsOutOfRange) {
+  constexpr uint64_t kSize = 256;
+  constexpr uint64_t kOffset = 64;
+  for (M_driver_context_t context : contexts) {
+    M_driver_memory_t base = nullptr;
+    ASSERT_SUCCESS(memory_alloc_sync(context, kSize, &base));
+    auto freeBase = llvm::scope_exit([&] { memory_free_sync(context, base); });
+    uint64_t address = 0;
+    ASSERT_SUCCESS(
+        memory_property(base, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &address));
+    M_driver_memory_t sub = nullptr;
+    ASSERT_SUCCESS(memory_wrap(context, address + kOffset, kSize - kOffset,
+                               /*owning=*/false, &sub));
+    auto freeSub = llvm::scope_exit([&] { memory_free_sync(context, sub); });
+
+    // In range for the base buffer, past its end once the sub-range offset is
+    // added.
+    M_driver_memory_view past{sub, /*offset=*/kSize - kOffset - 4,
+                              /*size=*/8};
+    M_driver_memory_view wrapping{sub, /*offset=*/UINT64_MAX - 3, /*size=*/8};
+    M_driver_memory_view inRange{base, /*offset=*/0, /*size=*/8};
+    uint8_t host[8] = {};
+    for (M_driver_memory_view *view : {&past, &wrapping}) {
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_to_device_sync(context, view, host));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_from_device_sync(context, host, view));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_intra_device_sync(context, view, &inRange));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                copy_intra_device_sync(context, &inRange, view));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                set_memory_sync(context, view, uint8_t(1)));
+      EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+                fill_sync(context, view, uint32_t(1), sizeof(uint32_t)));
+    }
+
+    M_driver_memory_view last{sub, /*offset=*/kSize - kOffset - 8,
+                              /*size=*/8};
+    EXPECT_SUCCESS(copy_to_device_sync(context, &last, host));
+    EXPECT_SUCCESS(fill_sync(context, &last, uint32_t(1), sizeof(uint32_t)));
+  }
+}
+
 TEST_F(DriverPluginContextTest, MemoryInfoCappedAtHostAvailability) {
   // The working-set budget ignores other processes, which share the unified
   // memory, so free memory must not exceed what the host has left. Other
@@ -205,6 +292,23 @@ TEST_F(DriverPluginContextTest, MemoryInfoCappedAtHostAvailability) {
     auto host = M::Target::queryHostMemory();
     ASSERT_TRUE(bool(host)) << llvm::toString(host.takeError());
     EXPECT_LE(freeBytes, host->available + drift);
+  }
+}
+
+// Metal has no thread-current context, so the saved and active handles are
+// both null.
+TEST_F(DriverPluginContextTest, CurrentContextIsANullNoOp) {
+  for (M_driver_context_t context : contexts) {
+    M_driver_native_handle_t saved = 1;
+    ASSERT_SUCCESS(context_get_current_driver_context(context, &saved));
+    EXPECT_EQ(saved, 0u);
+    ASSERT_SUCCESS(context_set_current(context));
+    M_driver_native_handle_t active = 1;
+    ASSERT_SUCCESS(context_get_current_driver_context(context, &active));
+    EXPECT_EQ(active, 0u);
+    ASSERT_SUCCESS(context_set_current_driver_context(context, saved));
+    EXPECT_NE(M_DRIVER_STATUS_SUCCESS,
+              context_get_current_driver_context(context, nullptr));
   }
 }
 
@@ -378,6 +482,37 @@ TEST_F(DriverMetalPluginFunctionTest, QueueExecuteRejectsInvalidArgs) {
     // The queue must still be usable afterwards: no encoder was leaked and no
     // command buffer was dropped with work pending.
     EXPECT_SUCCESS(queue_synchronize(queue));
+  }
+}
+
+TEST_F(DriverMetalPluginFunctionTest, QueueExecuteRejectsLaunchAttributes) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    uint64_t attribute[8] = {};
+    M_driver_queue_execute_config_t config = {
+        .mode = M_DRIVER_QUEUE_EXECUTE_MODE_GPU,
+        .config = {.gpu = {
+                       .grid = {1, 1, 1},
+                       .block = {32, 1, 1},
+                       .shared_mem_bytes = 0,
+                       .attributes = attribute,
+                       .num_attributes = 1,
+                   }}};
+    EXPECT_EQ(
+        M_DRIVER_STATUS_UNSUPPORTED,
+        queue_execute(queues[i], functions[i], &config, nullptr, nullptr, 0));
+    EXPECT_EQ(
+        M_DRIVER_STATUS_INVALID_ARG,
+        queue_execute(queues[i], functions[i], nullptr, nullptr, nullptr, 0));
+  }
+}
+
+TEST_F(DriverMetalPluginFunctionTest, OccupancyIsUnsupported) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    int32_t numBlocks = -1;
+    EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+              function_occupancy_max_active_blocks(contexts[i], functions[i],
+                                                   32, 0, &numBlocks));
+    EXPECT_EQ(numBlocks, -1);
   }
 }
 
@@ -1203,4 +1338,55 @@ TEST_F(DriverMetalPluginEventTest, PageableCopiesWaitForPriorWork) {
     EXPECT_EQ(pageable[0], 2u);
     EXPECT_EQ(pageable[kLength - 1], 2u);
   }
+}
+
+TEST_F(DriverPluginQueueTest, AsyncAllocNullArgs) {
+  EXPECT_SUCCESS(memory_free_async(queues[0], nullptr));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE, memory_free_async(nullptr, nullptr));
+  M_driver_memory_t unused = nullptr;
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE, memory_alloc_async(nullptr, 8, &unused));
+}
+
+// free_async is queue-ordered: it returns while a launch that reads the buffer
+// is still running, and that launch still completes.
+TEST_F(DriverMetalPluginEventTest, FreeAsyncWaitsForPriorWork) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queue = queues[i];
+
+    M_driver_memory_t out;
+    volatile uint32_t *outHost;
+    allocWords(context, &out, &outHost);
+
+    M_driver_memory_t iters = nullptr;
+    ASSERT_SUCCESS(
+        memory_alloc_async(queue, kLength * sizeof(uint32_t), &iters));
+    void *itersHost = nullptr;
+    ASSERT_SUCCESS(memory_property(iters, "host_address", &itersHost));
+    fillIters(static_cast<volatile uint32_t *>(itersHost), kLongIters);
+
+    launchStore(queue, functions[i], out, iters, /*marker=*/5);
+    ASSERT_SUCCESS(memory_free_async(queue, iters));
+    EXPECT_NE(outHost[0], 5u) << "free_async must not drain the queue";
+
+    ASSERT_SUCCESS(queue_synchronize(queue));
+    EXPECT_EQ(outHost[0], 5u);
+    EXPECT_EQ(outHost[kLength - 1], 5u);
+  }
+}
+
+// There is never a second Apple GPU to copy from.
+TEST_F(DriverPluginQueueTest, PeerCopyIsUnsupported) {
+  M_driver_memory_t memory = nullptr;
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], 64, &memory));
+  auto defer = llvm::scope_exit([&] { memory_free_sync(contexts[0], memory); });
+  M_driver_memory_view view{memory, /*offset=*/0, 64};
+  EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+            copy_inter_device_sync(contexts[0], &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_UNSUPPORTED,
+            queue_copy_inter_device(queues[0], &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_QUEUE,
+            queue_copy_inter_device(nullptr, &view, &view, contexts[0]));
+  EXPECT_EQ(M_DRIVER_STATUS_BAD_CONTEXT,
+            copy_inter_device_sync(nullptr, &view, &view, contexts[0]));
 }

@@ -119,6 +119,45 @@ def test_allocation_unsafe_span_covers_layout_count() raises:
     assert_equal(last, 20)
 
 
+def test_allocation_views_coexist() raises:
+    var a = alloc(Layout[Int](length=2))
+    var ptr = a.unsafe_ptr()
+    var span = a.unsafe_span()
+    var storage = a.storage()
+    var ptr_again = a.unsafe_ptr()
+    ptr.write(1)
+    span[1] = 2
+    var first = ptr_again[]
+    var second = span[1]
+    var storage_len = len(storage)
+    dealloc(a^)
+    assert_equal(first, 1)
+    assert_equal(second, 2)
+    assert_equal(storage_len, 2)
+
+
+def test_managed_allocation_views_coexist() raises:
+    var managed = alloc(Layout[Int](length=2)).into_managed()
+    var ptr = managed.unsafe_ptr()
+    var span = managed.unsafe_span()
+    var ptr_again = managed.unsafe_ptr()
+    ptr.write(1)
+    span[1] = 2
+    assert_equal(ptr_again[], 1)
+    assert_equal(span[1], 2)
+
+
+def test_thin_allocation_views_coexist() raises:
+    var layout = Layout[Int].single()
+    var thin = alloc(layout).into_thin()
+    var first = thin.unsafe_ptr()
+    var second = thin.unsafe_ptr()
+    first.write(7)
+    var value = second[]
+    dealloc(thin^.unsafe_with_layout(layout))
+    assert_equal(value, 7)
+
+
 def test_allocation_count_matches_layout() raises:
     var a = alloc(Layout[Int32](length=7))
     var element_count = len(a.layout())
@@ -325,7 +364,9 @@ def test_allocation_niche() raises:
     # each one and destroy it before asserting.
     var some = Optional(alloc(Layout[Int64](length=4)))
     var some_engaged = Bool(some)
-    var some_length = len(some.value())
+    var some_length = 0
+    if case .Some(allocation) = some:
+        some_length = len(allocation)
     some^.deinit_with(_dealloc)
     assert_true(some_engaged)
     assert_equal(some_length, 4)

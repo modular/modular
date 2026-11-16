@@ -76,7 +76,7 @@ def test_sink_gate_router[
     ctx.enqueue_copy(bias_dev, bias_host)
     ctx.enqueue_copy(gscale_dev, gscale_host)
 
-    sink_gate_router[n_routed, topk, n_shared, "gpu"](
+    sink_gate_router[n_routed, topk, n_shared](
         TileTensor(idx_dev, row_major(num_tokens, Idx[topk])),
         TileTensor(w_dev, row_major(num_tokens, Idx[topk])),
         TileTensor(sink_dev, row_major(num_tokens, Idx[n_shared])),

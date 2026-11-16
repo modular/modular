@@ -17,20 +17,19 @@ from __future__ import annotations
 import functools
 
 from max import functional as F
-from max import tree
 from max.dtype import DType
 from max.graph import ops
 from max.nn import Module
+from max.nn.common_layers.kv_cache import per_device_caches
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
-from max.nn.legacy.kv_cache import (
-    KVCacheInputsPerDevice,
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
@@ -204,11 +203,7 @@ class Olmo2(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Unflattens the KV inputs, then runs the text model."""
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
-        kv_collections = tree.leaves(
-            self.kv_params.unflatten_kv_inputs(kv_inputs),
-            leaf=KVCacheInputsPerDevice,
-        )
+        kv_collections = per_device_caches(self.kv_params, inputs.kv)
         return self.language_model(
             inputs.tokens,
             kv_collections[0],

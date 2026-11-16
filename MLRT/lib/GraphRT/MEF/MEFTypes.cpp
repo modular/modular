@@ -124,15 +124,6 @@ static size_t decodeTensorType(const uint8_t *pointer, const uint8_t *attrEnd,
   return dataPtr - pointer;
 }
 
-MEFType MEFTensorType::decodeStatic(SmallVectorImpl<int64_t> &dims) const {
-  bool hasRank;
-  MEFType elementType = decode(hasRank, dims);
-  assert(hasRank && "concrete tensor types must have statically known ranks");
-  assert(llvm::all_of(dims, [](int64_t dim) { return dim >= 0; }) &&
-         "concrete tensor types must have statically known dimensions");
-  return elementType;
-}
-
 MEFType MEFTensorType::decode(bool &hasRank,
                               SmallVectorImpl<int64_t> &dims) const {
   MEFType elementType(nullptr, nullptr);

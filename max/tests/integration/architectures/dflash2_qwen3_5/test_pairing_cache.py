@@ -36,17 +36,10 @@ from dflash2_pairing_harness import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
-    MHAKVCacheParams,
-    MultiKVCacheParams,
-    recurrent_leaf,
-)
+from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams, recurrent_leaf
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,
-)
-from max.pipelines.architectures.qwen3_5.memory_planner import (
-    Qwen3_5MemoryPlanner,
 )
 from max.pipelines.architectures.qwen3_5.state_cache import (
     ATTN_CACHE_KEY,
@@ -58,9 +51,8 @@ from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _kv_tree,
     _Pairing,
-    _without_tail,
 )
-from max.pipelines.speculative import SpeculativeConfig, spec_adapters
+from max.pipelines.speculative import SpeculativeConfig
 
 BLOCK = 8
 DRAFT_LAYERS = 5
@@ -122,8 +114,8 @@ def _target_leaf(dtype: DType = DType.bfloat16) -> MHAKVCacheParams:
 def test_the_served_cache_holds_the_state_and_its_ring() -> None:
     """Checks the allocated cache carries the state child, ring included.
 
-    MAX serves this graph from that cache, and the graph's signature drops
-    the child because its tail declares the state instead.
+    MAX serves this graph from that cache, and the graph declares the child
+    among its KV inputs.
     """
     tree = kv_tree(Geometry(), target_config(Geometry()))
     assert set(tree.children) == {"target", "draft"}
@@ -134,14 +126,6 @@ def test_the_served_cache_holds_the_state_and_its_ring() -> None:
     assert state is not None
     (ring,) = (r for r in state.regions if r.leaf_id == RING_LEAF_ID)
     assert ring.scratch and ring.row_shape[1] == ring_len_for_window(BLOCK)
-
-    tail = spec_adapters.tail_kv(TARGET_ARCH)
-    assert tail == STATE_CACHE_KEY
-    declared = _without_tail(tree, tail)
-    declared_target = declared.children["target"]
-    assert isinstance(declared_target, MultiKVCacheParams)
-    assert set(declared_target.children) == {ATTN_CACHE_KEY}
-    assert set(declared.children) == {"target", "draft"}
 
 
 def test_the_draft_leaf_is_the_drafters_own_windowed_geometry() -> None:
@@ -201,17 +185,12 @@ def test_the_draft_leaf_reserves_the_targets_draft_width() -> None:
     assert draft.page_size == target_kv.page_size
 
 
-def test_a_request_is_priced_its_block_long_ring() -> None:
-    """Checks the planner prices the ring the served cache holds."""
+def test_a_request_holds_a_block_long_ring() -> None:
+    """Checks the served cache holds a block-long ring as a scratch leaf."""
     config = target_config(Geometry())
-    planner = Qwen3_5MemoryPlanner(config)
-    pipeline_config = cast(
-        "PipelineConfig", SimpleNamespace(speculative=_speculative())
-    )
 
     ring_bytes = config._per_request_ring_bytes(ring_len_for_window(BLOCK))
     assert ring_bytes > 0
-    assert planner.spec_state_bytes(pipeline_config) == ring_bytes
     assert {r.leaf_id for r in state_regions(config) if r.scratch} == {
         RING_LEAF_ID
     }

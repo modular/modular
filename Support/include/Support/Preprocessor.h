@@ -23,7 +23,6 @@
 
 #define CONCAT(a, b) CONCAT_INNER(a, b)
 #define CONCAT_INNER(a, b) a##b
-#define M_UNIQUE_NAME(base) CONCAT(base, __COUNTER__)
 
 // Macros to determine the number of arguments in __VA_ARGS__. For example if
 // there's one argument in the __VA_ARGS__, it will end up taking the _1

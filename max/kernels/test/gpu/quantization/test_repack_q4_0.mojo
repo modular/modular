@@ -56,7 +56,7 @@ def test_repack_q4_0[N: Int, K: Int](ctx: DeviceContext) raises:
     )
     ctx.enqueue_copy(input_device, input_host)
     ctx.enqueue_copy(output_device, output_host)
-    gpu_qint4_repack_Q4_0["gpu"](
+    gpu_qint4_repack_Q4_0(
         TileTensor(input_device, row_major[N, groups * group_bytes]()).as_imm(),
         TileTensor(output_device, row_major[N, groups * group_bytes]()),
         ctx,

@@ -161,6 +161,7 @@ def test_case_sampling[
     var p_threshold = test_case.p_threshold
 
     var m = Bench()
+    _ = m
 
     # Create input tensors
     var in_logits_ptr = List(

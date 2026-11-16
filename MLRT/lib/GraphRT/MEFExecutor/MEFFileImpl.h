@@ -45,14 +45,6 @@ public:
   // Everything in this class is public because the entire class is private to
   // the MEFExecutor library implementation.
 public:
-  // This struct describes one invokable in the InvokableIndex section.
-  struct InvokableIndex {
-    uint32_t offsetInInvokableBodiesSection;
-    uint32_t offsetOfNameInStringSection;
-    uint32_t offsetOfLocation;
-    uint16_t numArgs, numResults;
-  };
-
   /// Backing storage for the sections below.
   BufferRef buffer;
 

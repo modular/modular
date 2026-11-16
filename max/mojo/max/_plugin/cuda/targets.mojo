@@ -52,6 +52,7 @@ struct CudaTargets(TargetAcceleratorCollection):
         A100      ._with_cli_values[["sm_80"]],
         OrinNano  ._with_cli_values[["sm_87"]],
         L4        ._with_cli_values[["sm_89"]],
+        RTX4080SUPER._with_cli_values[[]     ], # Could be ["sm_89"], but `sm_89` resolves to L4.
         RTX4090m  ._with_cli_values[[]       ], # Could be ["sm_89"], but `sm_89` resolves to L4.
         RTX4090   ._with_cli_values[[]       ], # Could be ["sm_89"], but `sm_89` resolves to L4.
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
@@ -436,6 +437,45 @@ comptime L4 = TargetAccelerator[
     _l4_target,
 ]()
 """NVIDIA L4 GPU configuration."""
+
+# ===-----------------------------------------------------------------------===#
+# RTX 4080 SUPER
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _rtx4080super_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `stdlib_plugin = "cuda", `,
+        `opaque_plugin = `,
+        CUDA_PLUGINS,
+        `,`,
+        `arch = "sm_89", `,
+        `features = "+ptx81,+sm_89", `,
+        `tune_cpu = "sm_90a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-p101:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+]()
+"""Target configuration for NVIDIA RTX 4080 SUPER."""
+
+
+comptime RTX4080SUPER = TargetAccelerator[
+    GPUInfo.from_family(
+        family=NvidiaAdaFamily,
+        name="RTX4080SUPER",
+        api="cuda",
+        arch_name="ada lovelace",
+        compute=8.9,
+        version="sm_89",
+        sm_count=80,
+    ),
+    _rtx4080super_target,
+]()
+"""NVIDIA RTX 4080 SUPER GPU configuration."""
+
 
 # ===-----------------------------------------------------------------------===#
 # RTX 4090 M

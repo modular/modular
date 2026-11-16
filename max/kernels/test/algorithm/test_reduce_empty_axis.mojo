@@ -51,7 +51,7 @@ def _run_reduce_argmax_inner[
     ](coords: Coord, val: SIMD[.int64, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](Int(coords[0]), val)
 
-    reduce_argmax[dtype, target="cpu", reduce_dim=1](
+    reduce_argmax[dtype, reduce_dim=1](
         input_fn, output_fn, Coord(num_rows, axis_size)
     )
     return output_buf^

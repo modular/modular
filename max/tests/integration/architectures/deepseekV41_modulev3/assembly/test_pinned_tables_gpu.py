@@ -30,6 +30,9 @@ import pytest
 from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV41_modulev3.model import _pinned_table
+from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
+    unpack_e2m1_to_e4m3,
+)
 
 ROWS = 5
 
@@ -82,3 +85,22 @@ def test_pinned_table_dedupes_reloads_lazily(
     )
     assert third._data_ptr() != first._data_ptr()
     np.testing.assert_array_equal(third.view(DType.uint8).to_numpy(), codes + 1)
+
+
+def test_packed_table_pins_unpacked_and_dedupes_its_fp8_twin() -> None:
+    """MXFP4 codes pin as the E4M3 rows an FP8 table of them holds.
+
+    A reload of those rows as FP8 codes is the same table, so it shares
+    the pin rather than page-locking a second copy.
+    """
+    device = Accelerator()
+    name = f"engram_test_{uuid4().hex}_weight"
+    packed = _codes()[:, :128]
+    fp8 = np.empty((ROWS, 256), np.uint8)
+    unpack_e2m1_to_e4m3(packed, fp8)
+    table = _pinned_table(device, name, ROWS, 256, packed, DType.float8_e4m3fn)
+    assert table.pinned
+    assert [int(dim) for dim in table.shape] == [ROWS, 256]
+    np.testing.assert_array_equal(table.view(DType.uint8).to_numpy(), fp8)
+    twin = _pinned_table(device, name, ROWS, 256, fp8, DType.float8_e4m3fn)
+    assert twin._data_ptr() == table._data_ptr()

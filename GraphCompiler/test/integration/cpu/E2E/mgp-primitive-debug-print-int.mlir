@@ -4,7 +4,7 @@
 // CHECK-LABEL: --- Running 'debug_print_int'
 // CHECK-NEXT: 42
 // CHECK-NEXT: [myval] 99
-mgp.model @debug_print_int : mof devices [#M.device_ref<"cpu", 0>]
+mgp.model @debug_print_int devices [#M.device_ref<"cpu", 0>]
     init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 1

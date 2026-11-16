@@ -155,4 +155,34 @@ TEST_F(GPUMemoryManagerFallthroughTest,
   }
 }
 
+// A request past the cache goes to the driver. The memory ledgers add these
+// bytes to the measured peak, so each one is counted until a reset.
+TEST_F(GPUMemoryManagerFallthroughTest, FallthroughIsCountedUntilAReset) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, createTestDeviceContext());
+  MemoryManagerFreeList &freeList = ctx->freeList();
+  // 8MB exceeds the 4MB maxCacheSize configured in BUILD.
+  const size_t allocSize = 8 * 1024 * 1024;
+
+  ctx->resetMemoryManagerPeaks();
+  DeviceContext::MemoryManagerStats stats = ctx->getMemoryManagerStats();
+  EXPECT_EQ(stats.driverFallbacks, 0u);
+  EXPECT_EQ(stats.driverFallbackBytes, 0u);
+
+  ASSIGN_NO_ERR(void *, ptr,
+                freeList.allocate(allocSize, Device::AllocMode::SYNC));
+  EXPECT_NE(ptr, nullptr);
+  stats = ctx->getMemoryManagerStats();
+  EXPECT_EQ(stats.driverFallbacks, 1u);
+  EXPECT_GE(stats.driverFallbackBytes, allocSize);
+
+  // A free keeps the count; a reset clears it.
+  EXPECT_NO_ERR(freeList.free(ptr));
+  EXPECT_NO_ERR(ctx->synchronize());
+  EXPECT_EQ(ctx->getMemoryManagerStats().driverFallbacks, 1u);
+  ctx->resetMemoryManagerPeaks();
+  stats = ctx->getMemoryManagerStats();
+  EXPECT_EQ(stats.driverFallbacks, 0u);
+  EXPECT_EQ(stats.driverFallbackBytes, 0u);
+}
+
 } // namespace

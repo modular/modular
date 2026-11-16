@@ -260,7 +260,7 @@ struct MyMemoryStruct(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"create_pack_direct
 def create_pack_direct(x: MyMemoryStruct, y: String):
     # Create Tuple
-    var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
+    var ptr_tuple = Tuple(Pointer(to=x), Pointer(to=y))
     comptime PackType = VariadicPack[
         origin=origin_of(x, y),
         element_trait=AnyType,
@@ -281,7 +281,7 @@ def create_pack_direct(x: MyMemoryStruct, y: String):
 # CHECK-LABEL: lit.fn @"create_pack_indirect
 def create_pack_indirect(x: MyMemoryStruct, y: String):
     # Create Tuple
-    var ptr_tuple = Tuple(UnsafePointer(to=x), UnsafePointer(to=y))
+    var ptr_tuple = Tuple(Pointer(to=x), Pointer(to=y))
     comptime PackType = VariadicPack[
         origin=origin_of(x, y),
         element_trait=AnyType,

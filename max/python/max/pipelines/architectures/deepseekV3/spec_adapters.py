@@ -14,13 +14,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from max.graph import BufferType, TensorType, TensorValue
+from max.graph import TensorValue
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
 from max.nn.legacy.transformer.transformer import captures_by_device
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
@@ -32,11 +31,11 @@ if TYPE_CHECKING:
 PRIMARY_KV = ""
 
 
-def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
-    """Returns the target's expert-parallel inputs, empty when EP is off."""
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the target's EP inputs, if EP is on."""
     if target.ep_manager is None:
-        return ()
-    return target.ep_manager.input_types()
+        return None
+    return target.ep_manager.input_tree()
 
 
 def verify(
@@ -98,5 +97,5 @@ def _verify(
 ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
-    ep_input_types=ep_input_types,
+    ep_input_tree=ep_input_tree,
 )

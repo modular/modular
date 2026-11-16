@@ -24,7 +24,7 @@ kgen.generator export @use_Itf3two() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant: index = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: scalar<index> = <get_sizeof(!opaque<"type">, #target)>
   hlcf.return
 }
 
@@ -244,9 +244,9 @@ kgen.generator export @gen_structs() {
 // -----
 // expected-error @below {{function instantiation failed}}
 // expected-note @below {{cannot concretize name in 'llvm_metadata'}}
-kgen.generator export @metadata<x>() attributes {fnAttrs = [
+kgen.generator export @metadata<x>() <fnAttrs = [
   #pop.array<x> : !pop.array<1, index>,  #pop.array<x> : !pop.array<1, index>
-]}{
+]> {
   hlcf.return
 }
 

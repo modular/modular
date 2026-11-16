@@ -21,6 +21,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/Twine.h"
 
 #include <cassert>
@@ -40,7 +41,7 @@ namespace M {
 /// By convention, error strings do not include a trailing \n in the string,
 /// but do include a trailing period or other terminator.
 ///
-class [[nodiscard]] Error final {
+class [[nodiscard]] MODULAR_CXX_EXPORT Error final {
   enum StorageMode : uint8_t {
     kStaticError, // This contains a pointer to static data.  No allocation.
     kMallocError, // This contains a malloc'd string.
@@ -136,14 +137,14 @@ private:
   StorageMode storageMode : 2;
 };
 
-bool operator==(const Error &, const Error &);
+MODULAR_CXX_EXPORT bool operator==(const Error &, const Error &);
 inline bool operator!=(const Error &a, const Error &b) { return !(a == b); }
 
 /// Convert an LLVM error (which must be in error state) to a Modular error.
 /// Note that while llvm::Error has a "success"/"no-error" state, M::Error does
 /// not.  If you are unsure whether or not the llvm::Error is in error state,
 /// use toModularErrorOr to get an M::ErrorOrSuccess instead.
-Error toModularError(llvm::Error llvmError);
+MODULAR_CXX_EXPORT Error toModularError(llvm::Error llvmError);
 
 } // namespace M
 

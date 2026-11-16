@@ -30,7 +30,7 @@ from max.driver import Accelerator, Buffer, DeviceEvent
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from test_chunked_qkv_rope_store_gpu import (
     _bits,
     _CompiledFixture,
@@ -67,7 +67,9 @@ def compiled(request: pytest.FixtureRequest) -> _CompiledFixture:
     params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=layout.num_kv_heads,
-        head_dim=256,
+        # The ModuleV3 cache geometry: K and V unpadded, packed per head.
+        head_dim=layout.qk_head_dim,
+        v_head_dim=layout.v_head_dim,
         num_layers=2,
         page_size=128,
         devices=[DeviceRef.GPU()],

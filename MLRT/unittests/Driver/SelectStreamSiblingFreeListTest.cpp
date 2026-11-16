@@ -119,7 +119,7 @@ TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
   ASSIGN_NO_ERR(CompletionFlagRef, flag, base->allocateCompletionFlag());
   ASSIGN_NO_ERR(DeviceBufferRef, readback, base->createHostBuffer(64));
   flag->reset();
-  EXPECT_NO_ERR(baseStream->enqueueWaitOnHostValue(*flag, 1));
+  EXPECT_NO_ERR(baseStream->enqueueWaitOnFlag(*flag, 1));
   EXPECT_NO_ERR(base->enqueueCopyFromDevice(readback->ptr(), ptrs[0], 64));
   // The first free queues a deferred flush; the rest land behind no event.
   for (void *ptr : ptrs)

@@ -144,9 +144,9 @@ def test_all() raises:
     assert_true(all(List[Int]()))
 
     var l = [1, 2, 3]
-    assert_true(all(map[lambda (x: Int) -> Bool: x > 0](l)))
+    assert_true(all(map(l, lambda (x: Int) -> Bool: x > 0)))
     var l2 = [-1, 2, 3]
-    assert_false(all(map[lambda (x: Int) -> Bool: x > 0](l2)))
+    assert_false(all(map(l2, lambda (x: Int) -> Bool: x > 0)))
 
 
 def test_any() raises:
@@ -160,9 +160,9 @@ def test_any() raises:
         return x > 0
 
     var l = [1, 2, 3]
-    assert_true(any(map[gt0](l)))
+    assert_true(any(map(l, gt0)))
     var l2 = [-1, -2, -3]
-    assert_false(any(map[gt0](l2)))
+    assert_false(any(map(l2, gt0)))
 
 
 def test_convertible_to_python() raises:

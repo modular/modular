@@ -562,6 +562,8 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Set max_length after delegate is created (like parent class)
         self.max_length = max_length or self.delegate.model_max_length
+        # The vision batch processor encodes one image per request.
+        self.max_images_per_request = 1
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config: Any = pipeline_config.model.huggingface_config

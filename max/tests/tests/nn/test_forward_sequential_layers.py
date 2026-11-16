@@ -30,7 +30,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     PagedCacheValues,
     packed_page_stride,

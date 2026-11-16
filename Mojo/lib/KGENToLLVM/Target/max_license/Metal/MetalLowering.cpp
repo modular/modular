@@ -148,26 +148,22 @@ bool doesMetalRequireAIRIntrinsicForCast(POP::CastOp cast) {
 /// the GPU machine code with XPC_ERROR_CONNECTION_INTERRUPTED. It does support
 /// `llvm.rint`, which rounds using the current FP rounding mode --
 /// round-to-nearest-even by default, matching `pop.round`'s documented
-/// banker's-rounding semantics, so the result is numerically identical.
-/// Registered with a higher benefit than the generic `ConvertPOPRound` so it
-/// wins on Metal.
-struct MetalRoundToLLVM : public ConvertPOPToLLVMPattern<POP::RoundOp> {
-  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
-
-  LogicalResult matchAndRewrite(POP::RoundOp op, POP::RoundOpAdaptor adaptor,
-                                DirectRewriter &rewriter) const override {
-    KGENDType dtype = *op.getType().getResolvedDType();
-    if (!dtype.isFloat()) {
-      rewriter.replaceOp(op, adaptor.getOperand());
-      return success();
-    }
-    Type type = this->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-        op, type, rewriter.getStringAttr("llvm.rint"),
-        SmallVector<Value>{adaptor.getOperand()});
+/// banker's-rounding semantics, so the result is numerically identical. This
+/// is the explicit Metal override for the generic `pop.round` lowering.
+LogicalResult lowerMetalRound(POP::RoundOp op, Value operand,
+                              POPToLLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) {
+  KGENDType dtype = *op.getType().getResolvedDType();
+  if (!dtype.isFloat()) {
+    builder.replaceOp(op, operand);
     return success();
   }
-};
+  Type type = converter.convertType(op.getType());
+  builder.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+      op, type, builder.getStringAttr("llvm.rint"),
+      SmallVector<Value>{operand});
+  return success();
+}
 
 /// Takes both spellings: `llvm.air.wg.barrier` and `air.wg.barrier`.
 static bool isAIRBarrierName(StringRef name) {
@@ -642,28 +638,48 @@ LogicalResult checkAtomicWidth(mlir::Operation *op, KGENDType dtype,
   return success();
 }
 
-// AIR only exposes `relax`; the remaining orderings have no AIR equivalent.
-LogicalResult checkAtomicOrdering(mlir::Operation *op,
-                                  POP::AtomicOrdering ordering) {
+// Apple's `metal` compiler's `__METAL_MEMORY_ORDER_*` values, numbered like C++
+// `std::memory_order`; 1 (`consume`) has no MSL spelling.
+enum class AIRMemoryOrder : int32_t {
+  Relaxed = 0,
+  Acquire = 2,
+  Release = 3,
+  AcqRel = 4,
+  SeqCst = 5,
+};
+
+AIRMemoryOrder toAIRMemoryOrder(POP::AtomicOrdering ordering) {
   switch (ordering) {
   case POP::AtomicOrdering::NOT_ATOMIC:
   case POP::AtomicOrdering::UNORDERED:
   case POP::AtomicOrdering::MONOTONIC:
-    return success();
-  case POP::AtomicOrdering::RELEASE:
-    return op->emitError(
-        "Apple GPU does not support `release` atomic ordering");
+    return AIRMemoryOrder::Relaxed;
   case POP::AtomicOrdering::ACQUIRE:
-    return op->emitError(
-        "Apple GPU does not support `acquire` atomic ordering");
+    return AIRMemoryOrder::Acquire;
+  case POP::AtomicOrdering::RELEASE:
+    return AIRMemoryOrder::Release;
   case POP::AtomicOrdering::ACQUIRE_RELEASE:
-    return op->emitError(
-        "Apple GPU does not support `acquire_release` atomic ordering");
+    return AIRMemoryOrder::AcqRel;
   case POP::AtomicOrdering::SEQUENTIALLY_CONSISTENT:
-    return op->emitError(
-        "Apple GPU does not support `seq_cst` atomic ordering");
+    return AIRMemoryOrder::SeqCst;
   }
   llvm_unreachable("unknown atomic ordering");
+}
+
+// Gated on `metal4_0`, not 4.1: the backend already honors these orders there.
+// Load/store are not gated; their seq_cst default predates Metal 4.
+FailureOr<AIRMemoryOrder> mapAtomicOrdering(mlir::Operation *op,
+                                            POP::AtomicOrdering ordering,
+                                            TargetInfoAttr target) {
+  AIRMemoryOrder order = toAIRMemoryOrder(ordering);
+  if (order != AIRMemoryOrder::Relaxed && !target.hasFeature("metal4_0")) {
+    op->emitError("Apple GPU supports `")
+        << POP::stringifyAtomicOrdering(ordering)
+        << "` atomic ordering only with a Metal 4 deployment target; use "
+           "`monotonic` or raise the deployment target";
+    return failure();
+  }
+  return order;
 }
 
 // AIR atomics only support threadgroup and device memory; address space 4
@@ -726,7 +742,9 @@ public:
              << op.getBinOp() << " is not supported on Apple GPU";
     }
 
-    if (failed(checkAtomicOrdering(op, op.getOrdering())))
+    FailureOr<AIRMemoryOrder> order =
+        mapAtomicOrdering(op, op.getOrdering(), target);
+    if (failed(order))
       return failure();
 
     FailureOr<int64_t> addressSpaceOr =
@@ -757,16 +775,13 @@ public:
 
     funcName += '.' + opStr + '.' + mangleType(types[0], dtype);
 
-    Value zeroInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
-    Value twoInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(), 2));
+    Value orderInt = createConstant<int32_t>(rewriter, op.getLoc(),
+                                             static_cast<int32_t>(*order));
+    Value twoInt = createConstant<int32_t>(rewriter, op.getLoc(), 2);
     Value trueVal = LLVM::ConstantOp::create(
         rewriter, op.getLoc(),
         rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
-    operands.push_back(zeroInt);
+    operands.push_back(orderInt);
     operands.push_back(twoInt);
     operands.push_back(trueVal);
 
@@ -843,10 +858,19 @@ public:
           "strong compare-exchange primitive");
     }
 
-    for (POP::AtomicOrdering ordering :
-         {op.getSuccessOrdering(), op.getFailureOrdering()}) {
-      if (failed(checkAtomicOrdering(op, ordering)))
-        return failure();
+    FailureOr<AIRMemoryOrder> successOrder =
+        mapAtomicOrdering(op, op.getSuccessOrdering(), target);
+    if (failed(successOrder))
+      return failure();
+    FailureOr<AIRMemoryOrder> failureOrder =
+        mapAtomicOrdering(op, op.getFailureOrdering(), target);
+    if (failed(failureOrder))
+      return failure();
+    // Matches LLVM's cmpxchg rule; Apple's compiler never emits these.
+    if (*failureOrder == AIRMemoryOrder::Release ||
+        *failureOrder == AIRMemoryOrder::AcqRel) {
+      return op.emitError("compare-exchange failure ordering cannot be `")
+             << POP::stringifyAtomicOrdering(op.getFailureOrdering()) << "`";
     }
 
     FailureOr<int64_t> addressSpaceOr =
@@ -874,19 +898,18 @@ public:
         LLVM::LLVMPointerType::get(rewriter.getContext()), valueType, one);
     LLVM::StoreOp::create(rewriter, op.getLoc(), adaptor.getCmp(), expectedPtr);
 
-    Value zeroInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
-    Value scopeInt = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(),
-        rewriter.getIntegerAttr(rewriter.getI32Type(), scope));
+    Value successOrderInt = createConstant<int32_t>(
+        rewriter, op.getLoc(), static_cast<int32_t>(*successOrder));
+    Value failureOrderInt = createConstant<int32_t>(
+        rewriter, op.getLoc(), static_cast<int32_t>(*failureOrder));
+    Value scopeInt = createConstant<int32_t>(rewriter, op.getLoc(), scope);
     Value trueVal = LLVM::ConstantOp::create(
         rewriter, op.getLoc(),
         rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
 
     SmallVector<Value> operands = {
-        adaptor.getPtr(), expectedPtr, adaptor.getVal(), zeroInt,
-        zeroInt,          scopeInt,    trueVal};
+        adaptor.getPtr(), expectedPtr, adaptor.getVal(), successOrderInt,
+        failureOrderInt,  scopeInt,    trueVal};
 
     AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
     LLVM::LLVMFuncOp func = createAIRFunction(
@@ -914,19 +937,12 @@ public:
 //===----------------------------------------------------------------------===//
 
 // air.atomic.fence(i32 mem_flags, i32 memory_order, i32 thread_scope), per
-// Apple's `metal` compiler output; orders use C++ std::memory_order values.
+// Apple's `metal` compiler output.
 
 enum class AIRFenceMemFlags : int32_t {
   Device = 1,
   Threadgroup = 2,
   All = 3, // Device | Threadgroup
-};
-
-enum class AIRMemoryOrder : int32_t {
-  Acquire = 2,
-  Release = 3,
-  AcqRel = 4,
-  SeqCst = 5,
 };
 
 enum class AIRThreadScope : int32_t {
@@ -1021,15 +1037,13 @@ public:
     if (failed(threadScope))
       return failure();
 
-    auto i32Const = [&](int32_t value) {
-      return LLVM::ConstantOp::create(
-          rewriter, op.getLoc(),
-          rewriter.getIntegerAttr(rewriter.getI32Type(), value));
-    };
     SmallVector<Value> operands = {
-        i32Const(static_cast<int32_t>(AIRFenceMemFlags::All)),
-        i32Const(static_cast<int32_t>(*order)),
-        i32Const(static_cast<int32_t>(*threadScope))};
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(AIRFenceMemFlags::All)),
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(*order)),
+        createConstant<int32_t>(rewriter, op.getLoc(),
+                                static_cast<int32_t>(*threadScope))};
 
     AIRIntrinsicName airFunctionName("air.atomic.fence",
                                      /*requiresMangling=*/false);
@@ -1079,10 +1093,15 @@ public:
                mlir::cast<mlir::StringAttr>(intrinsic.getIntrin()).getValue());
   }
 
-  void populateLowerPOPToLLVMPatterns(mlir::RewritePatternSet &patterns,
-                                      mlir::LLVMTypeConverter &converter,
-                                      TargetInfoAttr target) const override {
-    patterns.add<MetalRoundToLLVM>(converter, mlir::PatternBenefit(2));
+  LogicalResult
+  lowerFunctionLocalPOPToLLVM(Operation *op, ValueRange operands,
+                              mlir::LLVMTypeConverter &converter,
+                              POPLoweringBuilder &builder) const override {
+    auto round = dyn_cast<POP::RoundOp>(op);
+    if (!round)
+      return failure();
+    auto &popConverter = static_cast<POPToLLVMTypeConverter &>(converter);
+    return lowerMetalRound(round, operands.front(), popConverter, builder);
   }
 
   void populateLowerGlobalPOPToLLVMPatterns(
@@ -1162,6 +1181,19 @@ public:
       return false;
     KGENDType floatDType = fromDType.isFloat() ? fromDType : toDType;
     return floatDType.getWidthInBits() > 8;
+  }
+
+  /// Apple's GPU compiler rejects `i128`, failing at pipeline creation with
+  /// "Compiler encountered an internal error", and Apple GPUs have no native
+  /// 64-bit float arithmetic.
+  bool supportsDType(KGENDType dtype) const override {
+    // Both 128-bit integer dtypes lower to `i128`, and `f64` has no arithmetic
+    // on the device; every other dtype is supported. The lowerings only ask
+    // about the 2W-bit widening in floor division by a constant, which reaches
+    // `i128` from a 64-bit signed dividend.
+    static constexpr KGENDType kUnsupported[] = {
+        KGENDType::si128, KGENDType::ui128, KGENDType::f64};
+    return !llvm::is_contained(kUnsupported, dtype);
   }
 
   // This is max only target

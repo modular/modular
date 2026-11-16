@@ -10,33 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps LFM2 checkpoint names onto the MAX tree."""
+"""Maps LFM2 checkpoints onto the graph-API module tree."""
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from collections.abc import Sequence
 
-LFM2_SAFETENSOR_MAPPING = (
-    ("model.embed_tokens", "embed_tokens"),
-    ("model.embedding_norm", "norm"),
-    ("model.layers", "layers"),
-    ("self_attn.out_proj", "self_attn.o_proj"),
-    ("self_attn.q_layernorm", "self_attn.q_norm"),
-    ("self_attn.k_layernorm", "self_attn.k_norm"),
-    ("conv.conv.weight", "conv.conv_weight"),
-    ("conv.conv.bias", "conv.conv_bias"),
-)
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
 
 
-def convert_lfm2_safetensor_state_dict(
-    state_dict: dict[str, Weights],
-    **unused_kwargs,
-) -> dict[str, WeightData]:
-    """Maps the checkpoint's tensor names onto the MAX tree."""
-    mapped: dict[str, WeightData] = {}
-    for name, value in state_dict.items():
-        max_name = name
-        for before, after in LFM2_SAFETENSOR_MAPPING:
-            max_name = max_name.replace(before, after)
-        mapped[max_name] = value.data()
-    return mapped
+def lfm2_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map an LFM2 checkpoint onto the decoder.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+    """
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.embedding_norm\.", "norm."),
+        WeightRenaming(r"^model\.", ""),
+        WeightRenaming(r"\.self_attn\.out_proj\.", ".self_attn.o_proj."),
+        WeightRenaming(
+            r"\.self_attn\.(q|k)_layernorm\.", r".self_attn.\1_norm."
+        ),
+        WeightRenaming(r"\.conv\.conv\.(weight|bias)$", r".conv.conv_\1"),
+    )

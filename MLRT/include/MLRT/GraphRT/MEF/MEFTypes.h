@@ -21,6 +21,7 @@
 #define MLRT_GRAPHRT_MEF_MEFTYPES_H
 
 #include "MLRT/GraphRT/MEF/MEFEncoding.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/Builders.h"
 
 namespace M {
@@ -99,7 +100,7 @@ using MEFF64Type = MEFScalarType<double>;
 // MEFFunctionType
 //===----------------------------------------------------------------------===//
 
-class MEFFunctionType : public MEFType {
+class MODULAR_CXX_EXPORT MEFFunctionType : public MEFType {
 public:
   MEFFunctionType(const uint8_t *pointer, const uint8_t *attrEnd)
       : MEFType(pointer, attrEnd) {}
@@ -122,15 +123,10 @@ public:
 // MEFTensorType
 //===----------------------------------------------------------------------===//
 
-class MEFTensorType : public MEFType {
+class MODULAR_CXX_EXPORT MEFTensorType : public MEFType {
 public:
   MEFTensorType(const uint8_t *pointer, const uint8_t *attrEnd)
       : MEFType(pointer, attrEnd) {}
-
-  /// Decode the rank and dimensions and return the element type for the tensor.
-  /// This will assert fail if the tensor is dynamically ranked or has an
-  /// unknown dimension.
-  MEFType decodeStatic(SmallVectorImpl<int64_t> &dims) const;
 
   /// Decode the rank and dimensions and return the element type for the tensor.
   /// If the tensor is dynamically ranked then hasRank will be false and dims
@@ -150,7 +146,7 @@ public:
 // MEFQuantizedType
 //===----------------------------------------------------------------------===//
 
-class MEFQuantizedType : public MEFType {
+class MODULAR_CXX_EXPORT MEFQuantizedType : public MEFType {
 public:
   MEFQuantizedType(const uint8_t *pointer, const uint8_t *attrEnd)
       : MEFType(pointer, attrEnd) {}
@@ -172,7 +168,7 @@ public:
 // MEFQuantizedPerAxisType
 //===----------------------------------------------------------------------===//
 
-class MEFQuantizedPerAxisType : public MEFType {
+class MODULAR_CXX_EXPORT MEFQuantizedPerAxisType : public MEFType {
 public:
   MEFQuantizedPerAxisType(const uint8_t *pointer, const uint8_t *attrEnd)
       : MEFType(pointer, attrEnd) {}

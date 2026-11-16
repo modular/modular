@@ -26,7 +26,7 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
 from layout import Coord, TensorEngine, TileTensor
-from layout.tile_layout import TensorLayout, row_major
+from layout.layout import TensorLayout, row_major
 from std.collections import Array
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu import (
@@ -128,7 +128,8 @@ def scatter[
     in_layout: TensorLayout,
     in_origin: Origin,
     in_engine: TensorEngine,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = PDLLevel.ON if ngpus <= 2 else PDLLevel.OFF,
 ](
     input_buffers: Array[
         TileTensor[dtype, in_layout, in_origin, Engine=in_engine], dp_size

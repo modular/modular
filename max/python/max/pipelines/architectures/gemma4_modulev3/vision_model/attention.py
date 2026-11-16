@@ -17,10 +17,8 @@ from __future__ import annotations
 
 from max import functional as F
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged_gpu,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope as _apply_multidimensional_rope,

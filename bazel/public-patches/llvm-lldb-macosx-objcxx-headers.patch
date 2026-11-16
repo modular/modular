@@ -1,0 +1,17 @@
+diff --git a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
+@@ -480,10 +480,11 @@
+ objc_library(
+     name = "HostMacOSXObjCXX",
+     copts = OBJCPP_COPTS,
+-    non_arc_srcs = glob([
+-        "source/Host/macosx/objcxx/*.mm",
++    srcs = glob([
+         "source/Host/macosx/objcxx/*.h",
++        "source/Host/macosx/cfcpp/*.h",
+     ]),
++    non_arc_srcs = glob(["source/Host/macosx/objcxx/*.mm"]),
+     tags = ["nobuildkite"],
+     target_compatible_with = select({
+         "@platforms//os:macos": [],

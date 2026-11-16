@@ -19,6 +19,8 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/OpDefinition.h"
 
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LITInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_LITDIALECT_LITINTERFACES_H

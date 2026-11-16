@@ -16,12 +16,13 @@
 
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "GraphCompiler/Support/Value.h"
+#include "Support/SymbolExport.h"
 #include <cstdint>
 
 namespace M::GML {
 
 /// Base class for `List` and `Tuple` containers with `vector` implementation.
-class ListLike : public Container {
+class MODULAR_CXX_EXPORT ListLike : public Container {
 public:
   ListLike() = default;
   ListLike(const ListLike &other);
@@ -43,7 +44,7 @@ protected:
 };
 
 /// `Tuple`-like (pythonic) container class with `vector` implementation.
-class Tuple : public ListLike {
+class MODULAR_CXX_EXPORT Tuple : public ListLike {
 public:
   Tuple() = default;
   Tuple(const Tuple &other) = default;
@@ -57,16 +58,16 @@ public:
 };
 
 /// Compares vector contents.
-bool operator==(const Tuple &lhs, const Tuple &rhs);
+MODULAR_CXX_EXPORT bool operator==(const Tuple &lhs, const Tuple &rhs);
 
 /// Compares vector contents.
-bool operator!=(const Tuple &lhs, const Tuple &rhs);
+MODULAR_CXX_EXPORT bool operator!=(const Tuple &lhs, const Tuple &rhs);
 
 /// Compares vector contents.
 bool operator<(const Tuple &lhs, const Tuple &rhs);
 
 /// `List`-like (pythonic) container class with `vector` implementation.
-class List : public ListLike {
+class MODULAR_CXX_EXPORT List : public ListLike {
 public:
   List() = default;
   List(const List &other) = default;
@@ -83,26 +84,28 @@ public:
 };
 
 /// Compares vector contents.
-bool operator==(const List &lhs, const List &rhs);
+MODULAR_CXX_EXPORT bool operator==(const List &lhs, const List &rhs);
 
 /// Compares vector contents.
-bool operator!=(const List &lhs, const List &rhs);
+MODULAR_CXX_EXPORT bool operator!=(const List &lhs, const List &rhs);
 
 /// Compares vector contents.
 bool operator<(const List &lhs, const List &rhs);
 
-raw_ostream &operator<<(raw_ostream &os, const ListLike &list);
-std::ostream &operator<<(std::ostream &os, const ListLike &list);
+MODULAR_CXX_EXPORT raw_ostream &operator<<(raw_ostream &os,
+                                           const ListLike &list);
+MODULAR_CXX_EXPORT std::ostream &operator<<(std::ostream &os,
+                                            const ListLike &list);
 
 } // namespace M::GML
 
 namespace std {
 
 /// Returns the string representation.
-std::string to_string(const M::GML::List &list);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::List &list);
 
 /// Returns the string representation.
-std::string to_string(const M::GML::Tuple &tuple);
+MODULAR_CXX_EXPORT std::string to_string(const M::GML::Tuple &tuple);
 
 /// Hashes the vector contents.
 template <>

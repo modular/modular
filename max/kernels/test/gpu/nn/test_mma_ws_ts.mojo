@@ -36,7 +36,7 @@ from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,
@@ -728,9 +728,6 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         grid_dim=(1, 1),
         block_dim=(NUM_THREADS),
         shared_mem_bytes=TOTAL_SMEM_BYTES,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(TOTAL_SMEM_BYTES)
-        ),
     )
     ctx.synchronize()
 
@@ -983,9 +980,6 @@ def test_sparse_mma_ws_ts[
         grid_dim=(1, 1),
         block_dim=(num_threads),
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 
@@ -1318,9 +1312,6 @@ def test_sparse_paged_mma_ws_ts[
         grid_dim=(1, 1),
         block_dim=(num_threads),
         shared_mem_bytes=total_smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(total_smem_bytes)
-        ),
     )
     ctx.synchronize()
 

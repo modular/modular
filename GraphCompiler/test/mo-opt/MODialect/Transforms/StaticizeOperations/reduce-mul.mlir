@@ -9,7 +9,7 @@ mo.graph @reduce_mul<N1, N2 -> out>(
 ) -> !mo.tensor<[out], si64> {
 
   %dummy_shape = mo.shape_of(%dummy) : (!mo.tensor<[N1, 10, N2], f32>) -> !mo.tensor<[3], si64>
-  %shape = mo.reduce.mul(%dummy_shape) [axis = 0] : (
+  %shape = mo.reduce.mul(%dummy_shape) : (
     !mo.tensor<[3], si64>
   ) -> !mo.tensor<[1], si64>
 

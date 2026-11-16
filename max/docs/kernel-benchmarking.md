@@ -27,10 +27,6 @@ performance of Mojo kernels in MAX.
   - [Output files](#output-files)
   - [Compile-time parameters vs. runtime variables](#compile-time-parameters-vs-runtime-variables)
   - [Running Python benchmarks](#running-python-benchmarks)
-  - [FAQ](#faq)
-    - [Why is `kbench` written in Python?](#why-is-kbench-written-in-python)
-    - [Do I have to use Bazel?](#do-i-have-to-use-bazel)
-  - [Modular internal workflow](#modular-internal-workflow)
 
 ## Prerequisites
 
@@ -512,47 +508,3 @@ To run Python benchmarks with `kbench`:
     ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \
       max/kernels/benchmarks/autotune/test_python.yaml --dryrun
     ```
-
-## FAQ
-
-Common questions about `kbench` design decisions and usage.
-
-### Why is `kbench` written in Python?
-
-Running the benchmarking driver in a separate process from the code being
-autotuned provides two key benefits:
-
-- **Fault isolation**: Invalid autotuning parameters can crash the process.
-Running `kbench` separately prevents crashes from bringing down the driver.
-
-- **Rich ecosystem**: Python provides useful libraries for data analysis and
-visualization (Pandas, Plotly, Rich) that simplify development.
-
-This approach prioritizes simplicity and reliability over a more complex
-integrated solution.
-
-### Do I have to use Bazel?
-
-We recommend using Bazel for a consistent build environment and reproducible
-results. However, you can also use `uv` if you have Mojo installed via the
-`modular` package.
-
-For `uv` setup instructions, see the
-[MAX quickstart](https://max.modular.com/get-started#set-up-your-project).
-
-After setup, verify your environment:
-
-```bash
-uv run kbench --help
-```
-
-## Modular internal workflow
-
-If you are a Modular employee, you can use the following command to set up
-autotuning before running through the quickstart:
-
-```bash
-br //:install --config=production
-```
-
-Additionally, all `./bazelw run` commands can be shortened to `br`.

@@ -9,7 +9,7 @@
 
 module {
   // CHECK-LABEL: mgp.model @sel
-  mgp.model @sel : mof devices [#M.device_ref<"gpu", 0>] init (%wr: !mgp.opaque<"weights_registry">, %dc: !mgp.device_context<<"gpu", 0>>) {
+  mgp.model @sel devices [#M.device_ref<"gpu", 0>] init (%wr: !mgp.opaque<"weights_registry">, %dc: !mgp.device_context<<"gpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 2
     %2 = mgp.runtime.create %0, %1[1]

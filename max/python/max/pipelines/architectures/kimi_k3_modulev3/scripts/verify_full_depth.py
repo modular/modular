@@ -66,7 +66,7 @@ from max import tree
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -188,6 +188,11 @@ def main() -> int:
             state_pool=state_pool,
             recurrent_row_id=slot_idx,
             input_row_offsets=input_row_offsets,
+        )
+        # Only a latent-MoE layer defers its residual add, so a dense layer
+        # hands back a plain Tensor. Fail loudly if the fold's scope widens.
+        assert isinstance(layer0_out, Tensor), (
+            "layer 0 is dense: its residual add is not deferred"
         )
         all_ok &= _check_finite("layer0_out", layer0_out.to_numpy())
 

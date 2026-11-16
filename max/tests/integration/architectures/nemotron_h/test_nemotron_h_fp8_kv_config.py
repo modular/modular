@@ -29,7 +29,9 @@ from typing import cast
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h.model_config import (
+    ATTN_CACHE_KEY,
     NemotronHConfig,
 )
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
@@ -48,6 +50,11 @@ def _hf_config() -> SimpleNamespace:
         hybrid_override_pattern=_HYBRID_PATTERN,
         num_key_value_heads=_NUM_KV_HEADS,
         head_dim=_HEAD_DIM,
+        mamba_num_heads=4,
+        mamba_head_dim=8,
+        n_groups=1,
+        ssm_state_size=8,
+        conv_kernel=4,
     )
 
 
@@ -77,10 +84,10 @@ def _construct(
     from the encoding / explicit override by ``cache_dtype_for_encoding``).
     """
     kv_cache_config = KVCacheConfig(kv_cache_format=kv_cache_format)
-    # ``construct_kv_params`` only reads ``hybrid_override_pattern`` /
-    # ``num_key_value_heads`` / ``head_dim`` off the HF config and resolves the
-    # effective encoding (plus ``model.data_parallel_degree``) off the pipeline
-    # config; lightweight ``SimpleNamespace`` stubs cover those.
+    # ``construct_kv_params`` only reads the layer pattern and the attention
+    # and Mamba geometry off the HF config and resolves the effective encoding
+    # (plus ``model.data_parallel_degree``) off the pipeline config;
+    # lightweight ``SimpleNamespace`` stubs cover those.
     # ``cast`` adapts the stubs to the annotated parameter types (no real
     # ``PipelineConfig`` / ``AutoConfig`` is needed for dtype selection).
     params = NemotronHConfig.construct_kv_params(
@@ -92,7 +99,7 @@ def _construct(
         kv_cache_config=kv_cache_config,
         cache_dtype=cache_dtype,
     )
-    return params.dtype
+    return params.child(ATTN_CACHE_KEY, MHAKVCacheParams).dtype
 
 
 def test_fp8_model_defaults_to_fp8_kv() -> None:

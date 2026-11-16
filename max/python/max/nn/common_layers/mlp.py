@@ -43,6 +43,7 @@ class MLP(Module[[Tensor], Tensor]):
         feed_forward_length: int,
         bias: bool = False,
         activation_function: str = "silu",
+        up_scale: float = 1.0,
     ) -> None:
         """Initializes the MLP layer.
 
@@ -59,11 +60,16 @@ class MLP(Module[[Tensor], Tensor]):
                 - ``tanh``
                 - ``sigmoid``
 
+            up_scale: Factor applied to the up projection before the gated
+                product, which scales the output by the same factor. A power
+                of two keeps it exact in reduced precision.
+
         """
         super().__init__()
         self.hidden_dim = hidden_dim
         self.feed_forward_length = feed_forward_length
         self.has_bias = bias
+        self.up_scale = up_scale
         self.gate_proj = ColumnParallelLinear(
             in_dim=hidden_dim,
             out_dim=feed_forward_length,
@@ -127,6 +133,8 @@ class MLP(Module[[Tensor], Tensor]):
         )
         assert isinstance(gate_out, Tensor)
         assert isinstance(up_out, Tensor)
+        if self.up_scale != 1.0:
+            up_out = up_out * self.up_scale
 
         hidden = F.mul(self.activation_function(gate_out), up_out)
         return self.down_proj(hidden)

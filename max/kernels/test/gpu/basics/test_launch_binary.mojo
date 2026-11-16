@@ -39,7 +39,7 @@ def test_vec_add(ctx: DeviceContext) raises:
     var in1_device = ctx.enqueue_create_buffer[.float32](length)
     var out_device = ctx.enqueue_create_buffer[.float32](length)
 
-    with in0_device.map_to_host() as in0_host, in1_device.map_to_host() as in1_host, out_device.map_to_host() as out_host:
+    with in0_device.map_to_host() as in0_host, in1_device.map_to_host() as in1_host, out_device.map_to_host():
         for i in range(length):
             in0_host[i] = Float32(i)
             in1_host[i] = 2

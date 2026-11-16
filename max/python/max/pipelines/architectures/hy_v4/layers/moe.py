@@ -25,14 +25,16 @@ from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.nn import Module
+from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import MXFP8Activation, MXFP8Tensor
+from max.nn.kernels import (
+    grouped_quantize_dynamic_block_scaled,
     moe_create_indices,
     moe_finalize,
     moe_router_group_limited,
 )
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.common_layers.quant_tensor import MXFP8Tensor
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )
@@ -102,7 +104,7 @@ class HYV4Experts(Module[..., Tensor]):
     ) -> None:
         super().__init__()
         self.swiglu_limit = swiglu_limit
-        # Gate rows [0, moe_dim) then up rows, as the checkpoint stores them.
+        # Gate rows then up rows, as the checkpoint stores them.
         self.gate_up_proj = MXFP8Tensor.zeros(
             (num_experts, 2 * moe_dim, hidden_dim)
         )
@@ -118,32 +120,67 @@ class HYV4Experts(Module[..., Tensor]):
     def forward(
         self,
         x: Tensor,
+        token_order: Tensor,
+        top_k: int,
         expert_start_indices: Tensor,
         expert_ids: Tensor,
         scales_offset: Tensor,
+        estimated_total_m: Tensor,
     ) -> Tensor:
-        """Runs the routed experts over the rows the router sent each token to."""
-        # The block-scaled kernels pick their tile regime from the row count.
-        rows = F.shape_to_tensor(x.shape)[0].cast(DType.uint32)
+        """Runs the routed experts over the rows the router sent each token to.
 
-        def matmul(tokens: Tensor, weight: MXFP8Tensor) -> Tensor:
-            return quant_ops.grouped_matmul(
-                tokens,
-                weight,
-                expert_start_indices,
-                expert_ids,
-                None,
-                scales_offset=scales_offset,
-                estimated_total_m=rows,
-            )
-
-        hidden = quant_ops.grouped_silu(
-            matmul(x, self.gate_up_proj),
-            expert_start_indices,
-            swiglu_limit=self.swiglu_limit,
+        Slot ``i`` of ``token_order`` reads token row ``token_order[i] //
+        top_k`` of ``x``; the quantize does that gather in its loads.
+        """
+        unit_scales = F.broadcast_to(
+            F.constant(1.0, DType.float32, device=expert_ids.device),
+            expert_ids.shape,
         )
-        assert isinstance(hidden, Tensor)
-        return matmul(hidden, self.down_proj)
+        data, scales = grouped_quantize_dynamic_block_scaled(
+            x,
+            row_offsets=expert_start_indices,
+            scales_offsets=scales_offset,
+            expert_ids=expert_ids,
+            sf_tensor=unit_scales,
+            sf_vector_size=self.gate_up_proj.block_size[1],
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+            indices=token_order,
+            indices_divisor=top_k,
+        )
+        tokens = MXFP8Activation(
+            data=data, scales=scales, scales_offset=scales_offset
+        )
+        # One kernel runs the gate/up matmul, the clamped SwiGLU and the down
+        # input's MXFP8 quantize. Rounding the SwiGLU to bfloat16 first
+        # quantizes the values a separate SwiGLU kernel would write. The
+        # kernel reads gate and up rows interleaved; init runs this
+        # weight-only permute once, so loading makes no host copy. Freeing
+        # the checkpoint-order copy fragments 256 MB memory-manager pages,
+        # so launches set MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB=32
+        # (see the recipe).
+        # TODO: drop the env once the driver can permute in place at load or
+        # copy host-to-device with strides; Mach launches do not set it yet.
+        gate_up = quant_ops.sigma_permute_gate_up(self.gate_up_proj)
+        assert isinstance(gate_up, MXFP8Tensor)
+        hidden = quant_ops.grouped_matmul_swiglu_mx_ep(
+            tokens,
+            gate_up,
+            expert_start_indices,
+            expert_ids,
+            estimated_total_m=estimated_total_m,
+            activation=GatedActivation(
+                "silu", limit=self.swiglu_limit, round_to_bf16=True
+            ),
+        )
+        return quant_ops.grouped_matmul(
+            hidden,
+            self.down_proj,
+            expert_start_indices,
+            expert_ids,
+            None,
+            estimated_total_m=estimated_total_m,
+        )
 
 
 class HYV4MoE(Module[[Tensor], Tensor]):
@@ -199,9 +236,9 @@ class HYV4MoE(Module[[Tensor], Tensor]):
 
         # Every device holds all tokens; each runs only its own experts, so
         # the per-device sums add up to the full one.
-        # TODO: an all-to-all dispatch would spare each device the
-        # gather and quantize of the rows it skips; it pays off once batches
-        # are large enough for that traffic to show.
+        # TODO: an all-to-all dispatch would spare each device the router
+        # and the all-reduce over every token; it pays off once batches are
+        # large enough for that traffic to show.
         def local(
             x: Tensor, topk_idx: Tensor, topk_weight: Tensor, rank: int
         ) -> Tensor:
@@ -230,8 +267,9 @@ class HYV4MoE(Module[[Tensor], Tensor]):
 
         ``first_expert`` is the global id of ``experts``' first expert under
         expert parallelism. ``moe_create_indices`` leaves an id outside the
-        local range out of every group, and the order and restore entries it
-        would have used unwritten, so those are masked here.
+        local range out of every group, and the restore entries it would
+        have used unwritten, so those are masked here. The grouped kernels
+        read only the grouped rows, so the order needs no mask.
         """
         ids = F.reshape(topk_idx, [-1])
         if first_expert is not None:
@@ -240,29 +278,35 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         order, start, restore, expert_ids, _, scales_offset = (
             moe_create_indices(ids, num_local, needs_scales_offset=True)
         )
-        valid_rows: Tensor | None = None
+        slots = F.shape_to_tensor(ids.shape)[0]
+        down = experts(
+            x,
+            order,
+            self.top_k,
+            start,
+            expert_ids,
+            scales_offset,
+            estimated_total_m=slots.cast(DType.uint32),
+        )
         if first_expert is not None:
-            valid_rows = (
+            foreign = (ids < 0) | (ids >= num_local)
+            restore = F.where(foreign, 0, restore)
+            topk_weight = F.where(
+                foreign.reshape(topk_weight.shape), 0.0, topk_weight
+            )
+            # A where, not a zero weight: rows past the local ones are never
+            # written and may hold NaN.
+            local_rows = (
                 F.arange(
                     0,
-                    F.shape_to_tensor(ids.shape)[0],
+                    slots,
                     out_dim=ids.shape[0],
                     dtype=DType.uint32,
                     device=ids.device,
                 )
                 < start[num_local]
             )
-            order = F.where(valid_rows, order, 0)
-            foreign = (ids < 0) | (ids >= num_local)
-            restore = F.where(foreign, 0, restore)
-            topk_weight = F.where(
-                foreign.reshape(topk_weight.shape), 0.0, topk_weight
-            )
-        permuted = F.gather(x, F.cast(order // self.top_k, DType.int32), axis=0)
-        down = experts(permuted, start, expert_ids, scales_offset)
-        if valid_rows is not None:
-            # Rows past the local ones are never written by the matmuls.
-            down = F.where(valid_rows.unsqueeze(1), down, 0.0)
+            down = F.where(local_rows.unsqueeze(1), down, 0.0)
         return moe_finalize(down, restore, topk_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:

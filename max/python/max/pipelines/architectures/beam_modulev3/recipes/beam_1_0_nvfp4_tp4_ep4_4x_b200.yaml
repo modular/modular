@@ -1,0 +1,25 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 4x B200 recipe for Beam-1.0 NVFP4: attention tensor parallel over all four
+# GPUs and the routed experts expert parallel over the same GPUs. Beam rejects
+# any other EP size on more than one device.
+model:
+  model_path: reflection/Beam-1.0-501B-A23B-NVFP4
+  device_specs: [0, 1, 2, 3]
+
+runtime:
+  prefer_module_v3: true
+  ep_size: 4
+  # The EP dispatch buffers are sized to max_batch_input_tokens, which only
+  # chunked prefill enforces.
+  enable_chunked_prefill: true

@@ -65,7 +65,6 @@ namespace MGP {
 class SimpleBufferReusePass
     : public impl::SimpleBufferReusePassBase<SimpleBufferReusePass> {
   using SimpleBufferReusePassBase::SimpleBufferReusePassBase;
-  using LifetimeRange = std::pair<int, int>;
 
   struct AllocInfo {
     MGP::BufferAllocOp alloc;

@@ -21,6 +21,7 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallSet.h"
@@ -49,7 +50,7 @@ class TargetBackend;
 
 /// The purpose of this class is to provide methods to lower concrete KGEN
 /// functions to LLVM, and then to objects.
-class ObjectCompiler {
+class MODULAR_CXX_EXPORT ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<std::unique_ptr<ObjectCompiler>>
@@ -122,6 +123,11 @@ private:
       const TargetBackend &backend, bool isJIT, MLIRContext &context,
       const std::string &linker,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
+
+  /// Lower the given module to the LLVM dialect, reporting pass times into
+  /// `timing`.
+  ErrorOrSuccess lowerAllFuncsToLLVMDialect(ModuleOp module,
+                                            mlir::TimingScope &timing);
 
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).

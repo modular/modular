@@ -23,7 +23,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <string>
+#include <system_error>
+#include <utility>
 
 #if defined(__APPLE__)
 #include <dlfcn.h>
@@ -45,9 +48,6 @@ inline size_t RoundUpTo(size_t size, size_t boundary) {
 }
 
 std::string M::getBinaryID() {
-  std::string str;
-  llvm::raw_string_ostream os(str);
-
   std::string postfix = "";
   // This env var is used to override the CUDA toolchain location.
   // Compiler-generated binaries depend on the toolchain,
@@ -60,12 +60,18 @@ std::string M::getBinaryID() {
     memcpy(&bytes[8], &digest.high64, 8);
     postfix = "-" + llvm::toHex(bytes, /*LowerCase=*/true);
   }
+  return getBinaryBuildID() + postfix;
+}
+
+std::string M::getBinaryBuildID() {
+  std::string str;
+  llvm::raw_string_ostream os(str);
 
 #if defined(__APPLE__)
   // note: This code can run in a dylib or executable, we need to fetch the
   // address of whichever one it comes from
   Dl_info info;
-  if (dladdr((void *)&getBinaryID, &info) == 0)
+  if (dladdr((void *)&getBinaryBuildID, &info) == 0)
     llvm_unreachable("dladdr failed");
 
   auto *execHeader = (const struct mach_header_64 *)info.dli_fbase;
@@ -78,7 +84,7 @@ std::string M::getBinaryID() {
       const struct uuid_command *cmd = (const struct uuid_command *)command;
       for (unsigned char i : cmd->uuid)
         os << llvm::format("%02x", i);
-      return str + postfix;
+      return str;
     } else {
       command += ((const struct load_command *)command)->cmdsize;
     }
@@ -113,7 +119,7 @@ std::string M::getBinaryID() {
         const char *s = (const char *)(note) + payload;
         for (ElfW(Word) i = 0; i < note->n_descsz; ++s, ++i)
           os << llvm::format("%02hhx", *s);
-        return str + postfix;
+        return str;
       }
 
       size_t noteEndOffset = RoundUpTo(note->n_descsz, 4);
@@ -124,4 +130,46 @@ std::string M::getBinaryID() {
 #endif // __APPLE__
 
   llvm_unreachable("No build id note found");
+}
+
+std::string M::getBinaryPath() {
+  std::string path;
+#if defined(__APPLE__)
+  Dl_info info;
+  if (dladdr((void *)&getBinaryPath, &info) != 0 && info.dli_fname)
+    path = info.dli_fname;
+#else
+  // dladdr reports the main executable as argv[0], which may be relative or
+  // bare. Find the object holding this code, and read the executable's path
+  // from /proc.
+  struct Search {
+    uintptr_t addr;
+    std::string path;
+  } search{(uintptr_t)&__ehdr_start, ""};
+  dl_iterate_phdr(
+      [](struct dl_phdr_info *info, size_t, void *data) -> int {
+        auto *search = static_cast<Search *>(data);
+        for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
+          const ElfW(Phdr) &phdr = info->dlpi_phdr[i];
+          uintptr_t start = info->dlpi_addr + phdr.p_vaddr;
+          if (phdr.p_type != PT_LOAD || search->addr < start ||
+              search->addr >= start + phdr.p_memsz)
+            continue;
+          bool isExecutable = !info->dlpi_name || !info->dlpi_name[0];
+          search->path = isExecutable ? "/proc/self/exe" : info->dlpi_name;
+          return 1;
+        }
+        return 0;
+      },
+      &search);
+  path = std::move(search.path);
+#endif // __APPLE__
+
+  if (path.empty())
+    return "";
+  std::error_code ec;
+  std::filesystem::path canonical = std::filesystem::canonical(path, ec);
+  if (ec)
+    return "";
+  return canonical.string();
 }

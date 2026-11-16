@@ -37,6 +37,7 @@ def _export_args(output: Path) -> list[str]:
         "--model-path",
         _env("TEST_LLAMA_REPO"),
         f"--custom-architectures={_env('PIPELINES_CUSTOM_ARCHITECTURE')}",
+        "--no-prefer-module-v3",
         "--devices=cpu",
         "--quantization-encoding=float32",
         "--max-length=128",
@@ -56,6 +57,8 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
 
     sections = json.loads((dest / "artifact.json").read_text())
     assert "format_spec" not in sections
+    # A host-only artifact cannot overlap, so it ships no overlap helpers.
+    assert "overlap_helpers" not in sections
     section = sections["model"]
     assert set(section) == {"decoder", "sampler"}
     assert section["decoder"]["mef"] == {"$file": "decoder/model.mef"}

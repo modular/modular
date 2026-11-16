@@ -28,21 +28,21 @@ from max.graph import (
     Weight,
     ops,
 )
-
-from ..comm import Allreduce
-from ..kernels import (
+from max.nn._graph_ops import (
     flare_mla_prefill_plan,
     mla_decode_graph,
     mla_prefill_decode_graph,
     mla_prefill_graph,
 )
-from ..kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import QuantConfig
+
+from ..comm import Allreduce
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..quant_config import QuantConfig
 from ..rotary_embedding import RotaryEmbedding
-from .mask_config import MHAMaskVariant
 
 
 @dataclass

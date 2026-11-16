@@ -681,7 +681,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         One entry per clip, not per run: the encoder consumes a clip as a
         single ``(grid_t, h, w)`` grid item, so splitting it would change what
-        ``mo.spatial_merge`` and the per-frame attention segments see. The
+        ``vision.spatial_merge`` and the per-frame attention segments see. The
         entry's span therefore covers all ``grid_t`` runs AND the timestamp
         text between them, and ``num_embedding_rows`` records that the encoder
         emits fewer rows than that span is wide.

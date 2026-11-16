@@ -17,6 +17,7 @@
 #include "GraphCompiler/MODialect/MOInterfaces.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
+#include "GraphCompiler/MOGGDialect/Analysis/LegacyTileTraits.h"
 #include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/MojoParameters.h"
@@ -91,13 +92,16 @@ bool dependsOnNoAliasConstantLikesOnly(mlir::Operation *operation) {
               .wasInterrupted();
 }
 
-bool isTileCodegenForOp(mlir::Operation *op, mlir::ModuleOp moduleOp) {
-  auto kernelStubOp = op->getParentOfType<MOGG::FuncOp>();
-  StringRef deviceLabel = kernelStubOp
-                              ? kernelStubOp.getDevice()
-                              : MO::getDeviceOrDefaultAny(op).getLabel();
-  auto deviceRef = M::DeviceRefAttr::get(op->getContext(), deviceLabel, 0);
-  return MO::DeviceInfoMapping(moduleOp).get(deviceRef).getTileBasedFusion();
+bool kernelDeclaresTileOutput(KernelDeclOp decl) {
+  KernelDeclAdaptor adaptor(decl);
+  if (!adaptor.executeFunction.has_value())
+    return false;
+  return llvm::any_of(adaptor.executeFunction->outputArguments,
+                      [](const auto &arg) {
+                        // TODO(GEX-4340): the legacy tile traits are the only
+                        // tile output form until GEX-4467.
+                        return isLegacyTileFusedOutput(arg);
+                      });
 }
 
 } // namespace M::MOGG

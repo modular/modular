@@ -93,19 +93,28 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
             length=num_copies * input_alloc_size
         )
     ).into_managed()
-    var input_ptr = input_alloc.unsafe_ptr()
+    # TODO(https://github.com/modular/modular/issues/7552): Drop the origin
+    # casts once a closure can pass a captured interior-origin pointer to a
+    # generic function.
+    var input_ptr = input_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(input_alloc)
+    ]()
     var filter_alloc = alloc(
         AllocLayout[Scalar[filter_type], alignment=.of_bytes[alignment]()](
             length=num_copies * filter_alloc_size
         )
     ).into_managed()
-    var filter_ptr = filter_alloc.unsafe_ptr()
+    var filter_ptr = filter_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(filter_alloc)
+    ]()
     var output_alloc = alloc(
         AllocLayout[Scalar[output_type], alignment=.of_bytes[alignment]()](
             length=num_copies * output_alloc_size
         )
     ).into_managed()
-    var output_ptr = output_alloc.unsafe_ptr()
+    var output_ptr = output_alloc.unsafe_ptr().unsafe_origin_cast[
+        origin_of(output_alloc)
+    ]()
 
     rand(input_alloc.unsafe_span())
     rand(filter_alloc.unsafe_span())

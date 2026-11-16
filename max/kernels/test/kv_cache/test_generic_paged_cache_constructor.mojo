@@ -47,13 +47,11 @@ def _graph_input[
 
 
 def _view[
-    dtype: DType, rank: Int
-](
-    ptr: MutPointer[Scalar[dtype], MutAnyOrigin], shape: IndexList[rank]
-) -> TileTensor[
+    dtype: DType, rank: Int, origin: MutOrigin
+](ptr: MutPointer[Scalar[dtype], origin], shape: IndexList[rank]) -> TileTensor[
     dtype,
     RowMajorLayout[*DynamicCoord[.int64, rank].element_types],
-    MutAnyOrigin,
+    origin,
 ]:
     var coord = DynamicCoord[.int64, rank]()
     comptime for i in range(rank):
@@ -64,16 +62,17 @@ def _view[
 def _check[
     is_mla: Bool, padded: Bool, scaled: Bool, separate_lut: Bool
 ](
+    # `scales` must not alias the collection's storage: pass a copy taken
+    # before the collection borrows it.
     collection: PagedKVCacheCollection[DType.float32, ...],
-    values: List[Float32],
     scales: List[Float32],
-) raises:
+) raises -> List[Float32]:
     comptime kv_dim = 1 if is_mla else 2
     comptime value_page = kv_dim * 2 * 2 * 4 + (8 if padded else 0)
     comptime scale_page = kv_dim * 2 * 2 + (4 if padded else 0)
     assert_equal(collection.max_seq_length, UInt32(3))
     assert_equal(collection.max_cache_length, UInt32(4))
-    var expected = List(length=len(values), fill=Float32(-77))
+    var expected = List(length=4 * value_page, fill=Float32(-77))
     for layer in range(2):
         var key = collection.get_key_cache(layer)
         assert_equal(key.cache_length(0), 1)
@@ -107,9 +106,7 @@ def _check[
                         Float32(val_cache.load_scale[1](0, 0, tok, 0)),
                         scales[scale_offset + 4],
                     )
-    # Checks every K/V region, unused page, and physical page padding.
-    for i in range(len(values)):
-        assert_equal(values[i], expected[i])
+    return expected^
 
 
 def _run[
@@ -137,42 +134,43 @@ def _run[
                         1000 + page * 100 + kv * 20 + layer * 10 + tok * 2
                     )
     var lens: List[UInt32] = [1]
-    var lut: List[UInt32] = [2, 0]
-    var scale_lut: List[UInt32] = [1, 3]
+    # The values' and scales' lookup tables are views into one buffer: the
+    # collection's type carries a single lookup-table origin.
+    var luts: List[UInt32] = [2, 0, 1, 3]
     var prompt: List[UInt32] = [3]
     var maximum: List[UInt32] = [4]
     var page_stride: List[Int64] = [Int64(value_page if padded else -1)]
     var scales_page_stride: List[Int64] = [Int64(scale_page if padded else -1)]
     var blocks = _view[.float32, 6](
-        values.unsafe_ptr().as_unsafe_any_origin(),
+        values.unsafe_ptr(),
         IndexList[6](4, kv_dim, 2, 2, 1, 4),
     )
-    var lengths = _view[.uint32, 1](
-        lens.unsafe_ptr().as_unsafe_any_origin(), IndexList[1](1)
-    ).as_imm()
+    var lengths = _view[.uint32, 1](lens.unsafe_ptr(), IndexList[1](1)).as_imm()
     var table = _view[.uint32, 2](
-        lut.unsafe_ptr().as_unsafe_any_origin(), IndexList[2](1, 2)
+        luts.unsafe_ptr(), IndexList[2](1, 2)
     ).as_imm()
     var max_prompt = _view[.uint32, 1](
-        prompt.unsafe_ptr().as_unsafe_any_origin(), IndexList[1](1)
+        prompt.unsafe_ptr(), IndexList[1](1)
     ).as_imm()
     var max_cache = _view[.uint32, 1](
-        maximum.unsafe_ptr().as_unsafe_any_origin(), IndexList[1](1)
+        maximum.unsafe_ptr(), IndexList[1](1)
     ).as_imm()
     var value_stride = _view[.int64, 1](
-        page_stride.unsafe_ptr().as_unsafe_any_origin(), IndexList[1](1)
+        page_stride.unsafe_ptr(), IndexList[1](1)
     ).as_imm()
+    var expected: List[Float32]
     comptime if scaled:
+        var scales_snapshot = List(copy=scales)
         var scale_blocks = _view[.float32, 6](
-            scales.unsafe_ptr().as_unsafe_any_origin(),
+            scales.unsafe_ptr(),
             IndexList[6](4, kv_dim, 2, 2, 1, 1),
         )
         var scale_stride = _view[.int64, 1](
-            scales_page_stride.unsafe_ptr().as_unsafe_any_origin(),
+            scales_page_stride.unsafe_ptr(),
             IndexList[1](1),
         ).as_imm()
         var scale_table = _view[.uint32, 2](
-            scale_lut.unsafe_ptr().as_unsafe_any_origin(), IndexList[2](1, 2)
+            luts.unsafe_ptr().unsafe_offset(2), IndexList[2](1, 2)
         ).as_imm()
         # The scales resolve their pages through `table` itself while they
         # share the values' block-id space, and through their own LUT when
@@ -191,7 +189,9 @@ def _run[
             scale_stride,
             scales_table,
         )
-        _check[is_mla, padded, scaled, separate_lut](collection, values, scales)
+        expected = _check[is_mla, padded, scaled, separate_lut](
+            collection, scales_snapshot
+        )
     elif graph_wrapper:
         # Graph cache views historically use packed logical shapes even when
         # runtime metadata carries a different physical page pitch.
@@ -212,7 +212,7 @@ def _run[
         )
         var graph_stride = _graph_input[.int64, 1, 1](page_stride)
         var graph_lengths = _graph_input[.uint32, 1, 1](lens)
-        var graph_lookup = _graph_input[.uint32, 2, 1, 2](lut)
+        var graph_lookup = _graph_input[.uint32, 2, 1, 2](luts)
         var graph_prompt = _graph_input[.uint32, 1, 1](prompt)
         var graph_maximum = _graph_input[.uint32, 1, 1](maximum)
         var collection = generic_get_paged_cache(
@@ -223,7 +223,9 @@ def _run[
             graph_prompt,
             graph_maximum,
         )
-        _check[is_mla, padded, scaled, separate_lut](collection, values, scales)
+        expected = _check[is_mla, padded, scaled, separate_lut](
+            collection, scales
+        )
     else:
         var collection = generic_get_paged_cache[.float32, params, 2](
             blocks,
@@ -233,12 +235,18 @@ def _run[
             max_prompt,
             max_cache,
         )
-        _check[is_mla, padded, scaled, separate_lut](collection, values, scales)
+        expected = _check[is_mla, padded, scaled, separate_lut](
+            collection, scales
+        )
 
-    # Any-origin cache metadata views must not outlive their owning Lists.
+    # Checks every K/V region, unused page, and physical page padding.
+    for i in range(len(values)):
+        assert_equal(values[i], expected[i])
+
+    # The graph wrapper's collection carries untracked origins, so its
+    # metadata views must not outlive their owning Lists.
     _ = lens
-    _ = lut
-    _ = scale_lut
+    _ = luts
     _ = prompt
     _ = maximum
     _ = page_stride

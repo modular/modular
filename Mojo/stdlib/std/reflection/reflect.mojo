@@ -225,7 +225,7 @@ def _field_annotations_tuple[
 # ===----------------------------------------------------------------------=== #
 
 
-comptime reflect[T: AnyType] = Reflected[T]
+comptime reflect = Reflected[_]
 """A compile-time alias for the reflection handle type of `T`.
 
 Resolves to `Reflected[T]`, whose static methods expose introspection of `T`.

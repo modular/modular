@@ -96,6 +96,18 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "collections/bench_optional_fields_compiletime.py.bench",
+    srcs = ["collections/bench_optional_fields_compiletime.py"],
+    main = "collections/bench_optional_fields_compiletime.py",
+    mojo_deps = ["@mojo//:std"],
+    tags = [
+        "manual",
+        "stdlib-benchmark",
+    ],
+    target_compatible_with = _TARGET_COMPATIBLE_WITH,
+)
+
+modular_py_binary(
     name = "format/bench_tstring_compiletime.py.bench",
     srcs = ["format/bench_tstring_compiletime.py"],
     main = "format/bench_tstring_compiletime.py",

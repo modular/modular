@@ -20,12 +20,10 @@ from max.gpu.host import DeviceContext
 
 import extensibility
 from extensibility import (
-    Fused,
     Input,
     InputTensor,
     Output,
     OutputTensor,
-    StoreAccess,
     Tensor,
     TileTensorable,
 )
@@ -88,20 +86,6 @@ struct LegacyTensorOperand:
         pass
 
 
-@extensibility.register("declarative_fused_operand")
-struct FusedOperand:
-    @staticmethod
-    def execute_configuration(res: Some[Tensor], a: Some[Tensor]) -> Int:
-        return 0
-
-    @staticmethod
-    def execute_device(
-        res: Some[Output & Fused & StoreAccess],
-        a: Some[Input & TileTensorable],
-    ):
-        pass
-
-
 @extensibility.register("declarative_operand_kinds")
 struct OperandKindMismatch:
     @staticmethod
@@ -118,9 +102,11 @@ struct OperandKindMismatch:
 @extensibility.register("declarative_execute_and_execute_device")
 struct ExecuteAndExecuteDevice:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
+    def execute(
+        res: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
         pass
 
     @staticmethod

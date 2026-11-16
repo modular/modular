@@ -35,17 +35,6 @@ from .shmem_api import SHMEMScope
 # ===-----------------------------------------------------------------------===#
 
 
-struct NVSHMEMIVersion(RegisterPassable):
-    var major: c_int
-    var minor: c_int
-    var patch: c_int
-
-    def __init__(out self):
-        self.major = 3
-        self.minor = 4
-        self.patch = 5
-
-
 comptime NVSHMEM_LIBRARY = _Global["NVSHMEM_LIBRARY", _init_nvshmem_dylib]
 
 

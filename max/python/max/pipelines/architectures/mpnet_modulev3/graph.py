@@ -24,6 +24,7 @@ from max.nn import Embedding, LayerNorm, Linear, Module, ModuleList
 from max.nn.common_layers.activation import (
     activation_function_from_name,
 )
+from max.pipelines.lib.registration_encoder import EncoderInputs
 from max.tensor import Tensor
 
 from .model_config import MPNetConfig
@@ -326,11 +327,15 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         return ret
 
 
-class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
-    """The MPNet encoder model.
+class MPNetModel(Module[[EncoderInputs], Tensor]):
+    """The MPNet encoder, registered for the ``ENCODER`` role.
 
     Based on the MPNetModel transformers implementation.
     """
+
+    graph_name = "MPNetModel"
+    """The name the graph compiled under before registration, which keys
+    precompiled MEFs."""
 
     def __init__(self, config: MPNetConfig) -> None:
         super().__init__()
@@ -338,11 +343,11 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         self.encoder = MPNetEncoder(config)
         self.pool_outputs = config.pool_embeddings
 
-    def forward(
-        self, input_ids: Tensor, attention_mask: Tensor
-    ) -> tuple[Tensor, ...]:
-        """Runs the encoder over ``input_ids`` and the mask."""
-        embedding_output = self.embeddings(input_ids)
+    def forward(self, inputs: EncoderInputs) -> Tensor:
+        """Runs the encoder over the padded tokens and their mask."""
+        attention_mask = inputs.attention_mask
+        assert attention_mask is not None
+        embedding_output = self.embeddings(inputs.tokens)
         extended_attention_mask = F.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
@@ -352,17 +357,16 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         encoded_results = self.encoder(
             embedding_output, extended_attention_mask
         )
-        if self.pool_outputs:
-            # Pool the embeddings.
-            encoded_results = F.transpose(encoded_results, 1, 2)
-            input_mask_expanded = F.broadcast_to(
-                F.unsqueeze(attention_mask, 1),
-                ("batch_size", encoded_results.shape[1], "seq_len"),
-            )
-            input_lengths = F.max(F.sum(input_mask_expanded), 1e-9)
-            pooled_output = (
-                F.sum(encoded_results * input_mask_expanded) / input_lengths
-            )
-            return (F.squeeze(pooled_output, 2),)
-        else:
-            return (encoded_results,)
+        if not self.pool_outputs:
+            return encoded_results
+        # Pool the embeddings.
+        encoded_results = F.transpose(encoded_results, 1, 2)
+        input_mask_expanded = F.broadcast_to(
+            F.unsqueeze(attention_mask, 1),
+            ("batch_size", encoded_results.shape[1], "seq_len"),
+        )
+        input_lengths = F.max(F.sum(input_mask_expanded), 1e-9)
+        pooled_output = (
+            F.sum(encoded_results * input_mask_expanded) / input_lengths
+        )
+        return F.squeeze(pooled_output, 2)

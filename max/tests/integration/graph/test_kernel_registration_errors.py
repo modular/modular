@@ -67,9 +67,7 @@ def test_bad_registrations_fail_at_load(bad_kernel_ops_path: Path) -> None:
         message,
     )
     _assert_points_at(message, "ctx: DeviceContext,")
-    _assert_points_at(
-        message, "output: OutputTensor[dtype=x.dtype, rank=x.rank, ...],"
-    )
+    _assert_points_at(message, "output: Some[Output & Tensor],")
 
 
 def test_failed_package_does_not_break_later_loads(

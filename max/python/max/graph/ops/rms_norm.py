@@ -140,7 +140,7 @@ def rms_norm(
         )
 
     return Graph.current._add_op_generated(
-        mo.ReduceRmsNormOp,
+        mo.CompositeReduceRmsNormOp,
         result=TensorType(
             dtype=input.dtype, shape=input.shape, device=input.device
         ),

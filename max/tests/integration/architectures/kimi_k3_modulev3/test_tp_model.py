@@ -20,13 +20,14 @@ model. Not a checkpoint parity test.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from _tp_model_test_utils import (
-    kv_params_and_inputs,
+    kv_cache_inputs,
+    kv_params_only,
     random_weights,
     rel_error,
     tiny_model_config,
 )
+from max import functional as F
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -47,6 +48,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
     tensor_parallel_kimi_k3_model,
 )
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    fuse_qkv_a_g_for_tp,
     interleave_for_tp,
 )
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -65,7 +67,6 @@ def _assign_weights(
     Fused weights are interleaved per TP rank, as the weight adapter writes
     them for a ``tp_size``-way TP model.
     """
-    config = model.config
     model.embed_tokens.weight = Tensor(
         raw["embed_tokens.weight"], dtype=DType.float32
     )
@@ -103,12 +104,14 @@ def _assign_weights(
         ap = f"{p}.self_attn"
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.qkv_proj.weight = Tensor(
+            attn.qkvg_proj.weight = Tensor(
                 interleave_for_tp(
                     [
                         raw[f"{ap}.q_proj.weight"],
                         raw[f"{ap}.k_proj.weight"],
                         raw[f"{ap}.v_proj.weight"],
+                        raw[f"{ap}.g_proj.weight"],
+                        raw[f"{ap}.b_proj.weight"],
                     ],
                     tp_size,
                 ),
@@ -119,12 +122,6 @@ def _assign_weights(
             )
             attn.f_b_proj.weight = Tensor(
                 raw[f"{ap}.f_b_proj.weight"], dtype=DType.float32
-            )
-            attn.b_proj.weight = Tensor(
-                raw[f"{ap}.b_proj.weight"], dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                raw[f"{ap}.g_proj.weight"], dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 raw[f"{ap}.o_proj.weight"], dtype=DType.float32
@@ -142,8 +139,14 @@ def _assign_weights(
             attn.dt_bias = Tensor(raw[f"{ap}.dt_bias"], dtype=DType.float32)
         else:
             assert isinstance(attn, KimiK3MLAAttention)
-            attn.q_a_proj.weight = Tensor(
-                raw[f"{ap}.q_a_proj.weight"], dtype=DType.float32
+            attn.qkv_a_g_proj.weight = Tensor(
+                fuse_qkv_a_g_for_tp(
+                    raw[f"{ap}.q_a_proj.weight"],
+                    raw[f"{ap}.kv_a_proj_with_mqa.weight"],
+                    raw[f"{ap}.g_proj.weight"],
+                    tp_size,
+                ),
+                dtype=DType.float32,
             )
             attn.q_a_layernorm.weight = Tensor(
                 raw[f"{ap}.q_a_layernorm.weight"], dtype=DType.float32
@@ -151,17 +154,11 @@ def _assign_weights(
             attn.q_b_proj.weight = Tensor(
                 raw[f"{ap}.q_b_proj.weight"], dtype=DType.float32
             )
-            attn.kv_a_proj_with_mqa.weight = Tensor(
-                raw[f"{ap}.kv_a_proj_with_mqa.weight"], dtype=DType.float32
-            )
             attn.kv_a_layernorm.weight = Tensor(
                 raw[f"{ap}.kv_a_layernorm.weight"], dtype=DType.float32
             )
             attn.kv_b_proj.weight = Tensor(
                 raw[f"{ap}.kv_b_proj.weight"], dtype=DType.float32
-            )
-            attn.g_proj.weight = Tensor(
-                raw[f"{ap}.g_proj.weight"], dtype=DType.float32
             )
             attn.o_proj.weight = Tensor(
                 raw[f"{ap}.o_proj.weight"], dtype=DType.float32
@@ -201,28 +198,14 @@ def _assign_weights(
             ffn.routed_expert_norm.weight = Tensor(
                 raw[f"{mp}.routed_expert_norm.weight"], dtype=DType.float32
             )
-            gate_up = np.stack(
-                [
-                    interleave_for_tp(
-                        [
-                            raw[f"{mp}.experts.{e}.w1.weight"],
-                            raw[f"{mp}.experts.{e}.w3.weight"],
-                        ],
-                        tp_size,
+            for e, expert in enumerate(ffn.experts):
+                for w in ("w1", "w2", "w3"):
+                    projection = getattr(expert, w)
+                    projection.weight = Tensor(
+                        raw[f"{mp}.experts.{e}.{w}.weight"],
+                        dtype=DType.float32,
+                        device=projection.weight.device,
                     )
-                    for e in range(config.num_experts)
-                ],
-                axis=0,
-            )
-            down = np.stack(
-                [
-                    raw[f"{mp}.experts.{e}.w2.weight"]
-                    for e in range(config.num_experts)
-                ],
-                axis=0,
-            )
-            ffn.experts_gate_up_proj = Tensor(gate_up, dtype=DType.float32)
-            ffn.experts_down_proj = Tensor(down, dtype=DType.float32)
             ffn.shared_experts.gate_up_proj.weight = Tensor(
                 interleave_for_tp(
                     [
@@ -239,10 +222,6 @@ def _assign_weights(
             )
 
 
-@pytest.mark.compile_on_gpu(
-    "mo.mha.no_cache and gated_delta_conv1d_fwd are both staged as undeclared"
-    " custom ops the interpreter can't bind"
-)
 def test_model_tp1_matches_tp2() -> None:
     hidden, vocab = 32, 40
     config = tiny_model_config(hidden, vocab)
@@ -257,49 +236,56 @@ def test_model_tp1_matches_tp2() -> None:
     prompt_lens = [total_seq_len // batch_size] * batch_size
     return_n_logits_np = np.array([1], dtype=np.int64)
 
+    # Both graphs compile before either runs or any cache buffer exists, and
+    # the weights realize when each compiled model binds them, so a
+    # precompile-mefs record run captures both.
     device0 = Accelerator(0)
     with default_device(device0):
-        kv_params1, kv_inputs1 = kv_params_and_inputs(
-            config, [device0], prompt_lens
-        )
-        model1 = KimiK3Model(config, kv_params=kv_params1)
-        _assign_weights(model1, raw, 1)
+        kv_params1 = kv_params_only(config, [device0])
+        with F.lazy():
+            model1 = KimiK3Model(config, kv_params=kv_params1)
+            _assign_weights(model1, raw, 1)
         run1 = model1.compile(
             *modulev3_ragged_kv_symbolic_inputs(
                 kv_params=kv_params1,
                 device_refs=[DeviceRef.from_device(device0)],
             )
         )
-        outputs1 = run1(
-            Tensor(input_ids_np, dtype=DType.int64),
-            Tensor(return_n_logits_np, dtype=DType.int64, device=CPU()),
-            Tensor(input_row_offsets_np, dtype=DType.uint32),
-            *kv_inputs1,
-        )
-        out1 = outputs1.next_token_logits.to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
     mesh = DeviceMesh(
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        kv_params2, kv_inputs2 = kv_params_and_inputs(
-            config, devices, prompt_lens
-        )
-        model2 = KimiK3Model(config, kv_params=kv_params2)
-        _assign_weights(model2, raw, len(devices))
-        tensor_parallel_kimi_k3_model(model2, mesh)
+        kv_params2 = kv_params_only(config, devices)
+        with F.lazy():
+            model2 = KimiK3Model(
+                config, kv_params=kv_params2, tp_size=len(devices)
+            )
+            _assign_weights(model2, raw, len(devices))
+            tensor_parallel_kimi_k3_model(model2, mesh)
         run2 = model2.compile(
             *modulev3_ragged_kv_symbolic_inputs(
                 kv_params=kv_params2,
                 device_refs=[DeviceRef.from_device(d) for d in devices],
             )
         )
+
+    with default_device(device0):
+        outputs1 = run1(
+            Tensor(input_ids_np, dtype=DType.int64),
+            Tensor(return_n_logits_np, dtype=DType.int64, device=CPU()),
+            Tensor(input_row_offsets_np, dtype=DType.uint32),
+            *kv_cache_inputs(config, kv_params1, [device0], prompt_lens),
+        )
+        out1 = outputs1.next_token_logits.to_numpy()
+
+    with default_device(mesh):
         outputs2 = run2(
             Tensor(input_ids_np, dtype=DType.int64, device=devices[0]),
             Tensor(return_n_logits_np, dtype=DType.int64, device=CPU()),
             Tensor(input_row_offsets_np, dtype=DType.uint32, device=devices[0]),
-            *kv_inputs2,
+            *kv_cache_inputs(config, kv_params2, devices, prompt_lens),
         )
         out2 = outputs2.next_token_logits.to_numpy()
 

@@ -107,11 +107,9 @@ Let's inspect the struct and function signatures:
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         # See below for the rest
@@ -124,55 +122,80 @@ is the name we'll use to call the op from Python.
 
 The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
-function must include `target` as the first compile-time parameter and `output`
-as the first runtime argument; the graph compiler uses this order to identify
-the op's hardware target and output slots:
+function must take `output` as the first runtime argument; the graph compiler
+uses this order to identify the op's output slots:
 
-- There's one [compile-time
-parameter](https://mojolang.org/docs/manual/parameters/#parameters-and-generics),
-`target`, which tells the function what kind of hardware it's being compiled for
-(either `"cpu"` or `"gpu"`; we'll use the parameter in the next example).
+- This op has no [compile-time
+parameters](https://mojolang.org/docs/manual/parameters/#parameters-and-generics).
+An op declares them when it needs values fixed at compile time, as later
+examples do. The kind of hardware the function is compiled for comes from the
+`ctx` argument instead (we'll use it in the next example).
 
-- The runtime arguments include the op's inputs and outputs, which take the form
-of [`InputTensor`](/api/mojo/extensibility/managed_tensor_slice/#inputtensor)
-and
-[`OutputTensor`](/api/mojo/extensibility/managed_tensor_slice/#outputtensor),
-respectively. These are specialized versions of the
-[`ManagedTensorSlice`](/api/mojo/extensibility/managed_tensor_slice/ManagedTensorSlice/)
-type, which represents a tensor of a specific rank and datatype whose memory is
-managed outside of the operation.
+- The runtime arguments are the op's inputs and outputs. Each argument's type
+is a generic parameter bounded by
+[tensor traits](/api/mojo/extensibility/tensor_arg_traits/): `Input` or
+`Output` marks its role, and
+[`Tensor`](/api/mojo/extensibility/tensor_arg_traits/Tensor/) exposes its
+dtype, rank, and shape. `Some[Output & Tensor]` is shorthand for declaring that
+parameter inline, the same as writing `[O: Output & Tensor](output: O)`. The
+graph compiler supplies the concrete tensor type for each argument, whose memory
+is managed outside of the operation.
 
 Now let's look at the body of the `execute()` function. It adds `1` to each
 element inside the `elementwise_add_one()` closure.
 
-```mojo title="kernels/add_one.mojo" {11-17}
+```mojo title="kernels/add_one.mojo" {11-33}
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime output_alignment = type_of(output).alignment
+        comptime assert type_of(x).rank == type_of(output).rank
+        var output_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
+
         @inline(.always)
         def elementwise_add_one[
-            width: Int
-        ](idx: Coord) {var} -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + 1
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
+            var result = (
+                x_tile.load[width=width, alignment=align_of[dtype]()](idx) + 1
+            )
+            output_tile.store[
+                width=width,
+                alignment=min(output_alignment, alignment * align_of[dtype]()),
+            ](idx, result)
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            elementwise_add_one, output.shape(), ctx
+        )
 ```
 
-We call `elementwise_add_one()` using
-[`foreach()`](/api/mojo/extensibility/managed_tensor_slice/foreach/),
-which distributes an elementwise computation in parallel across all elements in
-the output tensor. At compile time, `foreach()` specializes the computation for
-the target hardware, so the same code runs on CPU or GPU with no changes.
+The body first checks that both arguments conform to
+[`TileTensorable`](/api/mojo/extensibility/tensor_arg_traits/TileTensorable/),
+then projects each one to a
+[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/) view over its memory
+with `to_tile_tensor()`. The input's view is immutable (`as_imm()`).
 
-The `target` parameter tells `foreach()` which device to specialize for. The
-[next example](#example-2-write-device-specific-kernels) sets it explicitly.
+We call `elementwise_add_one()` using
+[`elementwise()`](/api/mojo/max/algorithm/functional/elementwise/),
+which distributes an elementwise computation in parallel across all elements of
+the output's shape. Each call loads and stores a SIMD vector of `width`
+elements, and `alignment` tells the closure how far its index is aligned, in
+elements. At compile time, `elementwise()` specializes the computation for the
+device behind `ctx`, so the same code runs on CPU or GPU with no changes.
+
+`get_kernel_simd_width()` picks the SIMD width for the device that
+`ctx.target` names. The
+[next example](#example-2-write-device-specific-kernels) branches on
+`ctx.target` explicitly.
 
 ### Declare the output shape
 
@@ -403,14 +426,14 @@ Run it the same way as the first example:
 pixi run python elementwise_addition.py
 ```
 
-An op that defines `execute()` with `InputTensor` and `OutputTensor` arguments
-runs as its own kernel, including when it uses `foreach()`. Use `execute()`
-when an output element depends on input elements at other positions, or when
-the op needs control over device dispatch.
+An op that defines `execute()` with `Input` and `Output` tensor arguments runs
+as its own kernel, including when it uses `elementwise()`. Use `execute()` when
+an output element depends on input elements at other positions, or when the op
+needs control over device dispatch.
 
 ## Example 2: Write device-specific kernels
 
-[`foreach()`](/api/mojo/extensibility/managed_tensor_slice/foreach/)
+[`elementwise()`](/api/mojo/max/algorithm/functional/elementwise/)
 is a device-independent abstraction for elementwise computation: it handles
 hardware dispatch and covers a range of CPUs and GPUs. The `add_one` custom op
 uses it to run its computation. When you need direct control over thread
@@ -432,20 +455,29 @@ The vector addition op in `kernels/vector_addition.mojo` looks like this:
 @extensibility.register("vector_addition")
 struct VectorAddition:
     @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor[rank=1, ...],
-        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime if target == "cpu":
-            _vector_addition_cpu(output, lhs, rhs, ctx)
-        elif target == "gpu":
-            _vector_addition_gpu(output, lhs, rhs, ctx)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lhs), TileTensorable)
+        comptime assert conforms_to(type_of(rhs), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 1
+        comptime assert type_of(lhs).rank == 1
+        comptime assert type_of(rhs).rank == 1
+        var output_tile = output.to_tile_tensor[dtype]()
+        var lhs_tile = lhs.to_tile_tensor[dtype]().as_imm()
+        var rhs_tile = rhs.to_tile_tensor[dtype]().as_imm()
+
+        comptime if ctx.target.is_cpu():
+            _vector_addition_cpu(output_tile, lhs_tile, rhs_tile, ctx)
+        elif ctx.target.is_gpu():
+            _vector_addition_gpu(output_tile, lhs_tile, rhs_tile, ctx)
         else:
-            raise Error("No known target:", target)
+            raise Error("No known target:", ctx.target.device_kind_label())
 ```
 
 Using the
@@ -459,22 +491,23 @@ The `_vector_addition_gpu()` function looks like this:
 
 ```mojo title="kernels/vector_addition.mojo"
 def _vector_addition_gpu(
-    output: ManagedTensorSlice[mut=True, ...],
-    lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
+    output: TileTensor[mut=True, ...],
+    lhs: TileTensor[output.dtype, ...],
+    rhs: TileTensor[output.dtype, ...],
     ctx: DeviceContext,
 ) raises:
     comptime BLOCK_SIZE = 16
-    var vector_length = output.dim_size(0)
+    var vector_length = Int(output.dim[0]())
     var length_dev = Int32(vector_length)
 
     def vector_addition_gpu_kernel() {var output, var lhs, var rhs, var length_dev}:
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x
         if tid < length:
-            var idx = IndexList[output.rank](tid)
-            var result = lhs.load[1](idx) + rhs.load[1](idx)
-            output.store[1](idx, result)
+            var result = lhs.load[width=1](Coord(tid)) + rhs.load[width=1](
+                Coord(tid)
+            )
+            output.store[width=1](Coord(tid), result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
     ctx.enqueue_function(
@@ -489,10 +522,9 @@ vector. The closure copies the tensors and the length into its captures
 (`{var ...}`), so `enqueue_function()` can launch the closure itself as the
 kernel across a grid of `BLOCK_SIZE` blocks of threads.
 
-`BLOCK_SIZE` is untuned for this device. `foreach()` picks the launch parameters
-for the target, including the SIMD width, and is the better choice for a simple
-elementwise op. This kernel shows the thread-level mapping that `foreach()`
-hides.
+`BLOCK_SIZE` is untuned for this device. `elementwise()` picks the launch
+parameters for the target and is the better choice for a simple elementwise op.
+This kernel shows the thread-level mapping that `elementwise()` hides.
 
 You can execute this one in the same manner as the previous example, by running
 the Python-based graph that uses the custom op:
@@ -505,13 +537,13 @@ pixi run python vector_addition.py
 
 You wrote custom ops and integrated them into MAX graphs:
 
-- `AddOne`, which uses `foreach()` for automatic device dispatch
+- `AddOne`, which uses `elementwise()` for automatic device dispatch
 - `AddOneElementwise`, which the graph compiler can fuse with neighboring ops
 - `VectorAddition`, which uses `comptime if` to dispatch separate CPU and GPU
   implementations
 
-Define `elementwise()` for elementwise ops you want the compiler to fuse.
-Use `foreach()` inside `execute()` for other ops where device-specific tuning
+Define `elementwise()` for elementwise ops you want the compiler to fuse. Use
+`elementwise()` inside `execute()` for other ops where device-specific tuning
 isn't needed. Write device-specific kernels when you need direct control over
 thread layout and memory access patterns.
 

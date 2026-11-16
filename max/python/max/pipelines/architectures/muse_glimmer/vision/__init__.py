@@ -14,11 +14,16 @@
 """Muse Glimmer vision encoder (ModuleV3 API)."""
 
 from .data_processing import VisionInputs, vision_inputs
-from .vision_model import MuseGlimmerVisionModel, vision_input_types
+from .vision_model import (
+    MuseGlimmerVisionModel,
+    vision_input_tree,
+    vision_input_types,
+)
 
 __all__ = [
     "MuseGlimmerVisionModel",
     "VisionInputs",
+    "vision_input_tree",
     "vision_input_types",
     "vision_inputs",
 ]

@@ -680,7 +680,10 @@ def strided_load[
             dtype
         ]()
 
-    comptime if not CurrentPlugin.has_generic_address_space:
+    comptime if not CurrentPlugin.has_generic_address_space or (
+        type_of(addr).address_space != .GENERIC
+        and type_of(addr).address_space != .GLOBAL
+    ):
         # The `gather` path below rebuilds lane pointers from `Int(addr)`,
         # which loses the address space, so load through `addr` instead.
         var result = SIMD[dtype, simd_width]()
@@ -732,7 +735,10 @@ def strided_store[
             addr.unsafe_store(value[0])
         return
 
-    comptime if not CurrentPlugin.has_generic_address_space:
+    comptime if not CurrentPlugin.has_generic_address_space or (
+        type_of(addr).address_space != .GENERIC
+        and type_of(addr).address_space != .GLOBAL
+    ):
         # The `scatter` path below rebuilds lane pointers from `Int(addr)`,
         # which loses the address space, so store through `addr` instead.
         comptime for i in range(simd_width):

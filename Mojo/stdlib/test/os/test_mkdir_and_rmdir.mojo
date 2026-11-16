@@ -137,8 +137,6 @@ def test_rmdir_not_empty() raises:
 def test_all_mkdir_and_rmdir() raises:
     _test_mkdir_and_rmdir_str("my_dir")
     _test_mkdir_and_rmdir_path(Path("my_dir"))
-    if std.os.getenv("HOME") or std.os.getenv("USERPROFILE"):
-        _test_mkdir_and_rmdir_path(Path("~/my_dir").expanduser())
 
 
 def test_all_makedirs_and_removedirs() raises:

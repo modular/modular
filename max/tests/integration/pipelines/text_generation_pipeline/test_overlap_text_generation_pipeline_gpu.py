@@ -39,8 +39,8 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.context import (
     EOSTracker,
     SamplingParams,

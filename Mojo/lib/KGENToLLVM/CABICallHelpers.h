@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Shared C ABI call-lowering helpers used by ConvertPOPExternalCall
-// (LowerPOPToLLVMExternalCalls.cpp) and CallIndirectOpConversion /
+// (LowerPOPToLLVMExternalCalls.cpp) and ConvertKGENCallIndirect /
 // ConvertKGENCall (LowerKGENToLLVM.cpp) to apply C ABI struct coercion.
 //
 //===----------------------------------------------------------------------===//
@@ -32,7 +32,7 @@ namespace M::KGEN {
 
 /// Apply the tail-call kind from a kgen.call / kgen.call_indirect to the
 /// already-created llvm.call.  Extracted here so both ConvertKGENCall and
-/// CallIndirectOpConversion share a single copy.
+/// ConvertKGENCallIndirect share a single copy.
 inline void applyTailKind(mlir::LLVM::CallOp call, TailKind kind) {
   switch (kind) {
   case TailKind::MustTail:
@@ -53,6 +53,40 @@ inline void applyTailKind(mlir::LLVM::CallOp call, TailKind kind) {
 /// integers are signless, so this is the only source of the sign for a C ABI
 /// integer extension.
 bool isSignedIntegerScalar(mlir::Type type);
+
+//===----------------------------------------------------------------------===//
+// Coercion through memory
+//===----------------------------------------------------------------------===//
+
+/// Return the type of the one LLVM value that holds a register coercion: the
+/// coerced type, or a literal struct of the two registers.
+mlir::Type getCoercedValueType(const CoercionInfo &coercion,
+                               mlir::MLIRContext *ctx);
+
+/// Create a stack slot at the top of the entry block of `func` that can hold
+/// a value of `mojoType` and its C ABI form `coercedType`. A slot in the entry
+/// block does not grow the stack when the coercion is in a loop.
+mlir::Value createCoercionSlot(mlir::OpBuilder &b, mlir::Location loc,
+                               mlir::LLVM::LLVMFuncOp func, mlir::Type mojoType,
+                               mlir::Type coercedType,
+                               const LLVMDataLayout &dataLayout);
+
+/// Return `value` as `destType`: store it to `slot` and load it back.
+mlir::Value coerceThroughSlot(mlir::OpBuilder &b, mlir::Location loc,
+                              mlir::Value value, mlir::Type destType,
+                              mlir::Value slot);
+
+/// Return the Mojo `value` in its C ABI form `coercedType`, through a new slot
+/// in `func`.
+mlir::Value coerceToC(mlir::OpBuilder &b, mlir::Location loc,
+                      mlir::LLVM::LLVMFuncOp func, mlir::Value value,
+                      mlir::Type coercedType, const LLVMDataLayout &dataLayout);
+
+/// Return the C ABI `value` as a value of `mojoType`, through a new slot in
+/// `func`.
+mlir::Value coerceFromC(mlir::OpBuilder &b, mlir::Location loc,
+                        mlir::LLVM::LLVMFuncOp func, mlir::Value value,
+                        mlir::Type mojoType, const LLVMDataLayout &dataLayout);
 
 /// Result of CABICallHelper::prepareCall().  Bundles everything computed
 /// during the classify/build phase that callers need to emit the actual call.
@@ -95,37 +129,8 @@ struct CABICallHelper {
                                      mlir::Location loc,
                                      mlir::Type elemType) const;
 
-  /// Bitcast a value by storing to stack and loading as a different type.
-  /// This is the standard LLVM pattern for struct<->scalar bitcasts.
-  ///
-  /// The allocation is sized to `allocType` which should be the larger of
-  /// sourceValue's type and destType to prevent undefined behavior when
-  /// coercion rounds up (e.g., 3-byte struct -> i32 = 4 bytes).
-  mlir::Value bitcastViaMemory(mlir::Value src, mlir::Type destType,
-                               mlir::Type allocType, mlir::Location loc,
-                               M::DirectRewriter &rewriter) const;
-
-  /// Create a GEP to access memory at a byte offset from a pointer.
-  /// Used for accessing the second register in two-register struct coercion.
-  mlir::Value createOffsetGEP(mlir::Value basePtr, int64_t byteOffset,
-                              mlir::Location loc,
-                              M::DirectRewriter &rewriter) const;
-
-  /// Prepare a two-register argument for C ABI calling convention.
-  /// Allocates a struct of both types, stores the original value, then loads
-  /// both registers at the correct offsets.
-  llvm::SmallVector<mlir::Value>
-  prepareTwoRegisterArgument(mlir::Value orig, mlir::Type firstTy,
-                             mlir::Type secondTy, mlir::Location loc,
-                             M::DirectRewriter &rewriter) const;
-
-  /// Handle a two-register return value from C ABI call.
-  /// Extracts both values from the call result, stores them at the correct
-  /// offsets, then loads as the original struct type.
-  mlir::Value handleTwoRegisterReturn(mlir::Value callResult,
-                                      mlir::Type firstTy, mlir::Type secondTy,
-                                      mlir::Type origRetTy, mlir::Location loc,
-                                      M::DirectRewriter &rewriter) const;
+  /// The LLVM function that contains the call.
+  mlir::LLVM::LLVMFuncOp getParentFunc() const;
 
   /// Coerce a single argument and return the LLVM value(s) to pass.
   llvm::SmallVector<mlir::Value> prepareArg(const CoercionInfo &coercion,

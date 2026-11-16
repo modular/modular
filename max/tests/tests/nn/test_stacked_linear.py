@@ -29,8 +29,8 @@ from max.graph import (
 )
 from max.graph.weights import WeightData
 from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.stacked_linear import StackedLinear
+from max.nn.quant_config import QuantConfig
 
 
 class SimpleModel(Module):

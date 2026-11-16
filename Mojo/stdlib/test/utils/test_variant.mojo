@@ -191,6 +191,13 @@ def test_get_returns_mutable_reference() raises:
     assert_equal(v2[String], "something else")
 
 
+def test_unsafe_get_references_coexist() raises:
+    var v = Variant[Int, String](String("hello"))
+    ref a = v.unsafe_get[String]()
+    ref b = v.unsafe_get[String]()
+    assert_equal(a, b)
+
+
 def test_is_type_supported() raises:
     var _x: Variant[Float64, Int32]
     assert_equal(_x.is_type_supported[Float64](), True)

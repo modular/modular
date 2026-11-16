@@ -14,6 +14,7 @@
 #include "Memory.h"
 #include "Context.h"
 #include "HAL/M_driver_memory.h"
+#include "Queue.h"
 
 M_driver_status_t M_driver_memory::getProperty(llvm::StringRef name,
                                                void *value) {
@@ -24,9 +25,7 @@ M_driver_status_t M_driver_memory::getProperty(llvm::StringRef name,
     return M_DRIVER_STATUS_SUCCESS;
   }
   if (name == M_DRIVER_MEMORY_PROPERTY_HOST_ADDRESS) {
-    // Metal allocations use shared storage; contents() is the CPU-visible
-    // address (gpuAddress() is not host-dereferenceable).
-    *static_cast<void **>(value) = mBuffer->contents();
+    *static_cast<void **>(value) = hostAddress();
     return M_DRIVER_STATUS_SUCCESS;
   }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
@@ -115,17 +114,23 @@ M_driver_status_t M_driver_memory_unwrap(M_driver_context_t context,
   return context->memoryUnwrap(memory);
 }
 
-M_driver_status_t
-M_driver_memory_alloc_async([[maybe_unused]] M_driver_queue_t queue,
-                            [[maybe_unused]] uint64_t size,
-                            [[maybe_unused]] M_driver_memory_t *memory) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+// A shared-storage buffer is usable as soon as newBuffer returns, so the
+// allocation needs no queue ordering; only the free waits for prior work.
+M_driver_status_t M_driver_memory_alloc_async(M_driver_queue_t queue,
+                                              uint64_t size,
+                                              M_driver_memory_t *memory) {
+  if (!queue)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  return M_driver_memory_alloc_sync(queue->context, size, memory);
 }
 
-M_driver_status_t
-M_driver_memory_free_async([[maybe_unused]] M_driver_queue_t queue,
-                           [[maybe_unused]] M_driver_memory_t memory) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+M_driver_status_t M_driver_memory_free_async(M_driver_queue_t queue,
+                                             M_driver_memory_t memory) {
+  if (!queue)
+    return M_DRIVER_STATUS_BAD_QUEUE;
+  if (!memory)
+    return M_DRIVER_STATUS_SUCCESS;
+  return queue->freeAsync(memory);
 }
 
 M_driver_status_t M_driver_memory_property(M_driver_memory_t memory,

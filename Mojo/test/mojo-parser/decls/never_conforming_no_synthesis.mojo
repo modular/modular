@@ -138,17 +138,17 @@ struct GreeterAmbient[T: AnyType](
 # --- Deinitable: struct becomes linear, same message per spelling --
 
 # CHECK-LABEL: lit.struct.decl @IDLiteral
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK: } <{{.*}}does not conform to 'Deinitable' and must be explicitly destroyed
 struct IDLiteral(Deinitable where False):
     pass
 
 # CHECK-LABEL: lit.struct.decl @IDNot
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK: } <{{.*}}does not conform to 'Deinitable' and must be explicitly destroyed
 struct IDNot(not Deinitable):
     pass
 
 # CHECK-LABEL: lit.struct.decl @IDArith
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK: } <{{.*}}does not conform to 'Deinitable' and must be explicitly destroyed
 struct IDArith[n: Int](Deinitable where not (n > 0)) where n > 0:
     pass
 

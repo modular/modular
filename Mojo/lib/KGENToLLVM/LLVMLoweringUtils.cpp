@@ -15,6 +15,7 @@
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
@@ -48,6 +49,22 @@ static Type getLLVMTypeForKGENStringType(MLIRContext *ctx, Type strSizeType) {
 // LLVMDataLayout
 //===----------------------------------------------------------------------===//
 
+/// Lay out the fields of `type` in order, each at the next offset aligned for
+/// it. The fields of a packed struct are not aligned: each starts where the
+/// field before it ends. Append the offset of each field to `offsets`, and
+/// return the end of the last one.
+static int64_t layOutFields(const LLVMDataLayout &dataLayout,
+                            LLVM::LLVMStructType type,
+                            SmallVectorImpl<int64_t> &offsets) {
+  int64_t end = 0;
+  for (Type field : type.getBody()) {
+    int64_t align = type.isPacked() ? 1 : dataLayout.getTypeABIAlign(field);
+    offsets.push_back(llvm::alignTo(end, align));
+    end = offsets.back() + dataLayout.getTypeAllocSize(field);
+  }
+  return end;
+}
+
 int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
   if (type.isIntOrFloat())
     return type.getIntOrFloatBitWidth();
@@ -67,16 +84,23 @@ int64_t LLVMDataLayout::getTypeSizeInBits(Type type) const {
            getTypeStoreSize(arrayType.getElementType()) * CHAR_BIT;
   }
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
-    int64_t size = 0;
+    SmallVector<int64_t> offsets;
+    int64_t size = layOutFields(*this, structType, offsets);
+    if (structType.isPacked())
+      return size * CHAR_BIT;
     int64_t strictest = 1;
-    for (Type type : structType.getBody()) {
-      int64_t eltABIAlign = getTypeABIAlign(type);
-      size = llvm::alignTo(size, eltABIAlign) + getTypeAllocSize(type);
-      strictest = std::max(strictest, eltABIAlign);
-    }
+    for (Type field : structType.getBody())
+      strictest = std::max(strictest, getTypeABIAlign(field));
     return llvm::alignTo(size, strictest) * CHAR_BIT;
   }
   llvm::report_fatal_error("unsupported LLVM dialect type");
+}
+
+SmallVector<int64_t>
+LLVMDataLayout::getStructFieldOffsets(LLVM::LLVMStructType type) const {
+  SmallVector<int64_t> offsets;
+  layOutFields(*this, type, offsets);
+  return offsets;
 }
 
 std::pair<int64_t, Type>
@@ -100,6 +124,11 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(type))
     return getTypeABIAlignAndType(arrayType.getElementType());
   if (auto structType = dyn_cast<LLVM::LLVMStructType>(type)) {
+    // As in LLVM, a packed struct is byte aligned, whatever the data layout
+    // gives for aggregates.
+    if (structType.isPacked())
+      return {1, nullptr};
+
     std::pair<int64_t, Type> strictestPair(1, nullptr);
     for (Type type : structType.getBody()) {
       auto cur = getTypeABIAlignAndType(type);
@@ -154,7 +183,7 @@ static int64_t getUnionPayloadSize(const LLVMDataLayout &dl,
 
 /// The type heading the lowered struct, chosen to carry the union's alignment.
 /// It is sized independently of the payload: whatever it does not cover is
-/// made up by the trailing byte array.
+/// made up by the trailing storage array.
 static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
                              POP::UnionType unionType,
                              ArrayRef<UnionMember> members) {
@@ -340,7 +369,9 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   addConversion([this](StructType structType) -> std::optional<Type> {
     std::optional<SmallVector<Type>> elementTypes =
         structType.getElementTypes();
-    if (!elementTypes)
+    std::optional<SmallVector<int64_t>> kgenOffsets =
+        structType.getElementOffsets(getTarget());
+    if (!elementTypes || !kgenOffsets)
       return {};
 
     SmallVector<Type> llvmTypes;
@@ -352,24 +383,18 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       if (!llvmType)
         return {};
 
-      // Get alignment and size from KGEN type (respects @align decorator).
-      std::optional<int64_t> kgenAlign =
-          DataLayoutInterface::getTypeABIAlign(getTarget(), kgenType);
+      // Get the size from KGEN type (respects @align decorator).
       std::optional<int64_t> kgenAllocSize =
           DataLayoutInterface::getTypeAllocSize(getTarget(), kgenType);
-      if (!kgenAlign || !kgenAllocSize)
+      if (!kgenAllocSize)
         return {};
 
-      // Get LLVM's natural alignment for this type.
-      // We always use LLVM's actual alignment to compare against KGEN's
-      // alignment, since LLVM doesn't know about KGEN's @align decorators
-      // or alignment inheritance from fields.
       int64_t llvmNaturalAlign = getTypeABIAlign(llvmType);
 
       // Compute where LLVM would naturally place this field and where KGEN
       // requires it.
       int64_t llvmOffset = llvm::alignTo(offset, llvmNaturalAlign);
-      int64_t kgenOffset = llvm::alignTo(offset, *kgenAlign);
+      int64_t kgenOffset = (*kgenOffsets)[logicalIdx];
 
       // Only add explicit padding if KGEN requires stricter alignment than
       // LLVM's natural alignment.
@@ -445,9 +470,6 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // They are resolved during monomorphization in the KGEN elaboration pass.
     assert(unionType.isResolved() &&
            "cannot lower unresolved union type to LLVM");
-    // TODO: The generated assembly is sensitive to the content type of the
-    // union type. This needs to be optimized. For now, use an array of
-    // word-size integers.
     SmallVector<UnionMember> members;
     members.reserve(unionType.getNumTypes());
     for (Type memberType : unionType.getTypes()) {
@@ -461,9 +483,8 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     if (payloadSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {repr, [(payloadSize - sizeof(repr)) x i8]}. The
-    // representative gives the whole structure its alignment, the trailing
-    // array covers the payload it does not span.
+    // Lower union to {repr, tail}. The representative gives the structure its
+    // alignment, and the trailing array covers the payload it does not span.
     Type reprType = getUnionReprType(*this, getTarget(), unionType, members);
 
     SmallVector<Type, 2> structElemTp;
@@ -471,8 +492,23 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
 
     if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
         tailLen != 0) {
-      structElemTp.push_back(LLVM::LLVMArrayType::get(
-          IntegerType::get(&getContext(), 8), tailLen));
+      // Choose integer storage that preserves the tail's size, offset, and
+      // alignment, falling back to bytes when necessary. Cap the element width
+      // at the pointer width to avoid introducing i64 tails on 32-bit targets.
+      // LLVM's SROA may scalarize byte arrays into individual byte accesses,
+      // making large union copies expensive to optimize and select.
+      unsigned tailBitWidth = std::min<unsigned>(
+          64, getTarget().getDataLayout().getPointerBitWidth());
+      Type tailType = IntegerType::get(&getContext(), tailBitWidth);
+      int64_t elementSize = getTypeAllocSize(tailType);
+      if (tailLen % elementSize != 0 ||
+          getTypeABIAlign(tailType) > getTypeABIAlign(reprType) ||
+          getTypeStoreSize(tailType) != elementSize) {
+        tailType = IntegerType::get(&getContext(), 8);
+        elementSize = 1;
+      }
+      structElemTp.push_back(
+          LLVM::LLVMArrayType::get(tailType, tailLen / elementSize));
     }
 
     auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);
@@ -829,10 +865,13 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
           {idx, Value(LLVM::BitcastOp::create(b, ptrType, ptr))});
 
     } else {
+      auto indexTy = SIMDType::getScalarIndexType(b.getContext());
       popAlloc = POP::AlignedAllocOp::create(
           b, PointerType::get(b.getI8Type()),
-          mlir::index::ConstantOp::create(b, hdl.getAlign()),
-          mlir::index::ConstantOp::create(b, hdl.getSize()));
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getAlign()), indexTy)),
+          ParamConstantOp::create(
+              b, SIMDAttr::get(uint64_t(hdl.getSize()), indexTy)));
 
       Value ptr = mlir::UnrealizedConversionCastOp::create(b, ptrType, popAlloc)
                       .getResult(0);
@@ -1306,7 +1345,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // If this is an param attribute that refused to fold, see if we're able to
   // get a custom error message from it to explain what is going on.
   if (auto itf = ::dyn_cast<ParameterAttr>(attr)) {
-    auto errorMessage = itf.validateForElaborator();
+    auto errorMessage = itf.validateForElaborator(tc.getTarget());
     if (errorMessage.isError())
       return errorMessage.takeError();
   }

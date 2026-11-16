@@ -1,7 +1,7 @@
 // RUN: mo-opt %s --allow-unregistered-dialect --mgp-async-dataflow-dependencies-test --mgp-simplify-chains --cse --mlir-disable-threading | FileCheck %s
 
-// CHECK-LABEL: mgp.model @chains : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque{{.*}}
-mgp.model @chains : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+// CHECK-LABEL: mgp.model @chains devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque{{.*}}
+mgp.model @chains devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -48,7 +48,7 @@ mgp.model @chains : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.o
 }
 
 // CHECK-LABEL: mgp.model @arg0_not_always_ready
-mgp.model @arg0_not_always_ready : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @arg0_not_always_ready devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   %2 = "some.op" (%0) : (!mef.chain) -> !mef.chain
@@ -62,7 +62,7 @@ mgp.model @arg0_not_always_ready : mof devices [#M.device_ref<"cpu", 0>] init (%
 
 
 // CHECK-LABEL: mgp.model @chain_merge_canonicalized
-mgp.model @chain_merge_canonicalized : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_merge_canonicalized devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -84,7 +84,7 @@ mgp.model @chain_merge_canonicalized : mof devices [#M.device_ref<"cpu", 0>] ini
 }
 
 // CHECK-LABEL: mgp.model @chain_merge_fold_empty_operands
-mgp.model @chain_merge_fold_empty_operands : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_merge_fold_empty_operands devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -97,7 +97,7 @@ mgp.model @chain_merge_fold_empty_operands : mof devices [#M.device_ref<"cpu", 0
 }
 
 // CHECK-LABEL: mgp.model @chain_merge_fold_consecutive
-mgp.model @chain_merge_fold_consecutive : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_merge_fold_consecutive devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -119,7 +119,7 @@ mgp.model @chain_merge_fold_consecutive : mof devices [#M.device_ref<"cpu", 0>] 
 }
 
 // CHECK-LABEL: mgp.model @chain_merge_fold_operands_uniqued
-mgp.model @chain_merge_fold_operands_uniqued : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_merge_fold_operands_uniqued devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -136,7 +136,7 @@ mgp.model @chain_merge_fold_operands_uniqued : mof devices [#M.device_ref<"cpu",
 }
 
 // CHECK-LABEL: mgp.model @chain_singletons
-mgp.model @chain_singletons : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @chain_singletons devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>

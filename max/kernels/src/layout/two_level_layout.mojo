@@ -52,7 +52,7 @@ from .coord import (
     _NestedDynamicCoord,
 )
 from .swizzle import Swizzle
-from .tile_layout import Layout, TensorLayout
+from .layout import Layout, TensorLayout
 
 
 # ===----------------------------------------------------------------------=== #

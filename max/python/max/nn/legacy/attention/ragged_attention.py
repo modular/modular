@@ -20,21 +20,17 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-
-from ..kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from ..kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
+
 from ..layer import Module
 from ..linear import Linear
 from ..stacked_linear import StackedLinear
-from .mask_config import MHAMaskVariant
 
 
 @dataclass

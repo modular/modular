@@ -19,14 +19,17 @@
 #define MLRT_LIB_DRIVER_DEVICECONTEXT_MEMORYMANAGER_H
 
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MathExtras.h"
 
 #include <atomic>
 #include <cstdint>
+#include <list>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -37,13 +40,28 @@ namespace M::Driver {
 
 class MemoryManagerFreeList;
 
+// Child-owned free bytes grouped by the free list that holds them. A desc walk
+// alone cannot say which free list a pending byte sits in, and the allocating
+// list named in the error is often not the holder, so the breakdown is what
+// turns "50GB is pending" into "50GB is in graphFreeList".
+struct VmmPendingOwner {
+  std::string label;
+  size_t bytes = 0;
+  size_t blocks = 0;
+  // The list never migrates its frees to its parent (`disableFlush`), so its
+  // bytes come back only when the list itself is destroyed. Graph-capture
+  // pools are built this way so a replay cannot read memory a later
+  // allocation owns.
+  bool neverFlushes = false;
+};
+
 // Physical/VA accounting captured when a VMM allocation fails, used to classify
 // the failure and build an accurate diagnostic. The granule-state counts
 // partition the budget's whole pages: a budget that is not a whole multiple of
 // the page size leaves its trailing partial page outside the partition, so the
 // counts sum to `budget / pageSize` pages rather than to `budget` bytes. The
 // derived accessors form the "lever" partition (used / available /
-// sync-recoverable / trapped) the category is built from.
+// sync-recoverable / retained / trapped) the category is built from.
 struct VmmOomSnapshot {
   size_t pageSize = 0;
   size_t budget = 0; // maxCacheSize_
@@ -79,6 +97,25 @@ struct VmmOomSnapshot {
   // granules that keep other child-owned bytes releases none.
   size_t drainableGranules = 0;
 
+  // The part of the pending total that no wait reaches: bytes on free lists
+  // that never migrate to their parent. Counted apart from the rest because
+  // the two want opposite advice -- one asks the caller to wait, the other to
+  // hold less. Granules, as elsewhere, because only a whole page is allocatable
+  // again; a retained byte sharing a granule with an ordinary pending one
+  // pins the granule all the same, so it counts here rather than there.
+  size_t retainedGranules = 0;
+  size_t retainedBytes = 0;
+  // The rest of `retainedBytes`: the part lying on granules a live allocation
+  // also occupies, which `retainedGranules` cannot count because those
+  // granules stay pinned. Tracked because `trapped()` would otherwise sweep
+  // them up and offer the page-size lever for them. A smaller page does
+  // separate them from the live allocation, but it leaves them retained, so
+  // neither lever frees them on its own.
+  size_t retainedTrappedBytes = 0;
+
+  // Pending bytes by holder, largest first. Empty when nothing is pending.
+  llvm::SmallVector<VmmPendingOwner, 4> pendingOwners;
+
   // Free descs seen in the walk, root-owned and child-owned. freeCount_ is not
   // maintained in VMM mode, so this is the free-block count the diagnostics
   // report.
@@ -110,13 +147,35 @@ struct VmmOomSnapshot {
   }
   // Would become allocatable after a synchronize. Whole granules only, so a
   // pending byte sharing a granule with an in-use desc does not count: that
-  // granule stays pinned.
-  size_t recoverableBySync() const { return pendingGranules * pageSize; }
-  // Free/pending bytes stuck inside in-use granules; only a smaller page size
-  // recovers them.
+  // granule stays pinned. Retained granules are excluded for the same reason
+  // one step further out: their holder returns nothing when the device goes
+  // idle, so offering a synchronize for them sends the reader after memory no
+  // wait can free.
+  size_t recoverableBySync() const {
+    return pendingGranules > retainedGranules
+               ? (pendingGranules - retainedGranules) * pageSize
+               : 0;
+  }
+  // Held by a free list that never releases it. Recovered by holding fewer of
+  // whatever the list caches -- captured graphs, today -- not by waiting.
+  size_t retained() const { return retainedGranules * pageSize; }
+  // The pending bytes a wait really is waiting on. `pendingTotalBytes` counts
+  // the retained ones too, so quoting it beside a synchronize overstates what
+  // the synchronize will produce.
+  size_t syncPendingBytes() const {
+    return pendingTotalBytes > retainedBytes ? pendingTotalBytes - retainedBytes
+                                             : 0;
+  }
+  // Free/pending bytes stuck inside in-use granules that a smaller page size
+  // recovers. Retained bytes sharing those granules are excluded: a smaller
+  // page would hand them to their holder rather than to the allocator, so
+  // counting them here would offer the page-size lever for memory it cannot
+  // free -- the same mistake, one bucket over, that keeping them out of
+  // `recoverableBySync()` avoids.
   size_t trapped() const {
     const size_t inUseBytes = inUseGranules * pageSize;
-    return inUseBytes > usedBytes ? inUseBytes - usedBytes : 0;
+    const size_t free = inUseBytes > usedBytes ? inUseBytes - usedBytes : 0;
+    return free > retainedTrappedBytes ? free - retainedTrappedBytes : 0;
   }
 };
 
@@ -140,6 +199,11 @@ enum class VmmOomCategory {
   // partially-used pages. One category, not one per lever: the message reports
   // both figures and leaves the choice to the caller.
   Avoidable,
+  // Also not an exhaustion, but no wait and no page size reaches it: the
+  // shortfall is covered by memory on a free list that never returns what it
+  // holds. Separate from `Avoidable` because the advice inverts -- nothing the
+  // allocator does recovers this, only holding fewer captured graphs.
+  Retained,
   // The accounting shows no shortfall, yet the allocation was refused: the
   // physical is held somewhere this manager does not account for.
   Unaccounted,
@@ -159,28 +223,55 @@ enum class VmmOomCategory {
 // Requiring a shortfall on the axis being tested keeps a miss with neither
 // short (physical held outside this manager) from buying a stall nothing here
 // can resolve. Pure.
-bool pendingRetryWorthwhile(const VmmOomSnapshot &snapshot);
+MODULAR_CXX_EXPORT bool pendingRetryWorthwhile(const VmmOomSnapshot &snapshot);
 
 // Classify a failure from the snapshot and (if known) why backing failed.
 // `duringCapture` says whether a graph capture was in progress when the
 // backing step failed; it only changes the verdict for a refused map, which is
 // illegal mid-capture. Pure.
-VmmOomCategory classifyVmmOom(const VmmOomSnapshot &snapshot,
-                              VmmBackingFailure backingFailure,
-                              bool duringCapture = false);
+MODULAR_CXX_EXPORT VmmOomCategory
+classifyVmmOom(const VmmOomSnapshot &snapshot, VmmBackingFailure backingFailure,
+               bool duringCapture = false);
 
 // One-line human-readable summary naming the category and the recovery lever.
 // Levers are phrased as bounded suggestions. Pure.
-std::string describeVmmOom(const VmmOomSnapshot &snapshot,
-                           VmmOomCategory category);
+MODULAR_CXX_EXPORT std::string describeVmmOom(const VmmOomSnapshot &snapshot,
+                                              VmmOomCategory category);
 
 // Full multi-field dump of the snapshot for the verbose log. Pure.
-std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
+MODULAR_CXX_EXPORT std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
 
-class MemoryManager {
+class MODULAR_CXX_EXPORT MemoryManager {
 public:
   class Chunk;
   class Desc;
+
+  // ---- Allocation statistics (mach and MAX Serve memory ledgers) ----
+  //
+  // Live bytes are the descriptors handed to callers and not yet freed, at
+  // their aligned size; a block a stream freed but still caches is not live.
+  // Peaks run from construction or the last resetAllocationPeaks(). Driver
+  // fallbacks are allocations the manager missed and the device driver served
+  // past the budget; their bytes only add up between resets, since the manager
+  // does not track their frees.
+  struct AllocationStats {
+    uint64_t liveBytes = 0;
+    uint64_t peakLiveBytes = 0;
+    uint64_t maxRequestBytes = 0;
+    uint64_t driverFallbacks = 0;
+    uint64_t driverFallbackBytes = 0;
+    // Distinct sizes of requests of at least kTrackedRequestMinBytes since the
+    // last reset, ascending, at most kMaxTrackedRequestSizes of the largest.
+    std::vector<uint64_t> requestSizes;
+  };
+  static constexpr size_t kTrackedRequestMinBytes = size_t(256) << 20;
+  static constexpr size_t kMaxTrackedRequestSizes = 64;
+  AllocationStats getAllocationStats() const;
+  // Restarts the peaks from the current live bytes and clears the request
+  // sizes, the largest request and the fallback counts.
+  void resetAllocationPeaks();
+  // Records a request the device driver served past the budget.
+  void noteDriverFallback(size_t bytes);
 
   class DescMap {
   public:
@@ -266,6 +357,21 @@ public:
   // full-budget allocation. Must NOT be called while already capturing.
   ErrorOrSuccess preBackForCapture();
 
+  // Allocation misses served by remapping the allocating stream's own free
+  // blocks into a fresh VA range (see remapOwnFreeBlocks), and the bytes of
+  // their physical pages that were reused rather than taken from the root.
+  size_t streamRemaps() const {
+    return streamRemaps_.load(std::memory_order_relaxed);
+  }
+  size_t streamRemapReusedBytes() const {
+    return streamRemapReusedBytes_.load(std::memory_order_relaxed);
+  }
+  // Test-only, take `mu_`: physical pages created so far, counting a page
+  // mapped at two addresses once (mapped + pooled - aliased), and the number
+  // of remapped ranges whose old addresses are not yet retired.
+  size_t createdPhysicalBytesForTesting() const;
+  size_t retiringRangesForTesting() const;
+
   // Allocation misses that retried after a drain, and those the retry served.
   size_t drainRetryAttempts() const {
     return drainRetryAttempts_.load(std::memory_order_relaxed);
@@ -319,7 +425,6 @@ private:
                             const std::string *backdoorError = nullptr,
                             bool duringCapture = false) const;
   bool allocateChunk();
-  bool freeLocked(void *buf);
 
   // ---- VMM (defragmenting allocator) ----
   //
@@ -377,6 +482,70 @@ private:
   // referenced by in-flight GPU work; unmapping it could fault a live kernel.
   // Caller holds `mu_`.
   void computeUnreclaimableGranules(const Chunk *c, llvm::BitVector &out) const;
+  // ---- Stream-ordered reuse (MAX-1123) ----
+  //
+  // A stream frees a block onto its own free list, and the block migrates to
+  // the root only after an event recorded at the free has fired. Until then
+  // only the same stream may reuse it, and only for requests that fit inside
+  // it. A larger request on that stream misses even when the stream's own
+  // free blocks plus what the root can supply would cover it, because the
+  // bytes are not contiguous. That is the DCP OOM: per-layer pools grow from
+  // 9.2 to 13.7 GiB, and a larger layer misses the block a smaller one freed.
+  //
+  // On such a miss, remapOwnFreeBlocks() takes the pages lying wholly under
+  // `fl`'s free blocks, maps their physical handles a second time into a
+  // fresh, granule-aligned range carved from the root's unbacked VA, backs
+  // the rest of the range from the pool, new pages or reclaimed root pages
+  // (ensureRegionBacked), and hands that range out. A stream is ordered, so
+  // its new work on the pages runs after its old work on them: no host
+  // synchronize and no unmap of a page queued work may still touch. Pages a
+  // side-stream view freed may still be read by its base stream, so the view
+  // gets a stream-side wait on a base-stream event. The old ranges become
+  // retired descs (in use, owned by no free list), recorded with an event on
+  // the stream (and its base); retireCompletedRanges() unmaps them and
+  // returns their VA to the root once that event fires. Returns nullptr when
+  // `fl` holds no reusable page or the request cannot be covered; nothing is
+  // changed then. Caller holds `mu_`; `fl` has a context that is not
+  // capturing.
+  Desc *remapOwnFreeBlocks(MemoryManagerFreeList *fl, size_t size);
+  // Retire every remapped range whose event has fired, or every range after
+  // synchronizing on its events when `wait` (teardown only). Called from
+  // drainCompletedFrees, so the regular flush path retires ranges. Caller
+  // must NOT hold `mu_`.
+  ErrorOrSuccess retireCompletedRanges(bool wait);
+  // Physical pages created so far, a page mapped at two addresses counted
+  // once. Budget checks use this instead of cacheSize_, which counts mapped
+  // slots. Caller holds `mu_`.
+  size_t createdPhysicalBytes() const;
+
+  // One remapped stream's old ranges, waiting for the stream to run past
+  // them.
+  struct RetiringRange {
+    uint64_t seq = 0;
+    llvm::SmallVector<DeviceEventRef, 2> events;
+    // Retired descs over the old VA: in use so nothing allocates or reclaims
+    // them, and skipped by the in-use physical accounting.
+    llvm::SmallVector<Desc *, 4> descs;
+    // Old slots still mapped to a handle that a new slot also maps.
+    llvm::SmallVector<size_t, 8> granules;
+  };
+  // A list: a range holds move-only event refs and is never relocated.
+  std::list<RetiringRange> retiring_;
+  uint64_t nextRetiringSeq_ = 0;
+  // Unmap a retiring range's old slots and return its descs to the root.
+  // Caller holds `mu_`.
+  void retireRange(RetiringRange &range);
+  // drainCompletedFrees' pending-free half. Caller must NOT hold `mu_`.
+  ErrorOrSuccess drainPendingFrees(const MemoryManagerFreeList *only);
+  std::atomic<size_t> retiringCount_ = {0};
+  // Bytes of slots that alias a handle another slot also maps: counted twice
+  // in cacheSize_, once in createdPhysicalBytes().
+  size_t aliasedBytes_ = 0;
+  std::atomic<size_t> streamRemaps_ = {0};
+  std::atomic<size_t> streamRemapReusedBytes_ = {0};
+  // Time spent unmapping retired ranges under `mu_`, for the remap log line.
+  std::atomic<int64_t> retireMicros_ = {0};
+
   // Single-arena VMM (Stage 2): unmap up to `count` mapped granules that are
   // safe to reclaim (see computeUnreclaimableGranules), returning their handles
   // to the free-granule pool for remapping elsewhere. Returns the number
@@ -539,6 +708,14 @@ private:
   static constexpr size_t kLargeAllocSizeFactor = 32;
 
   mutable std::mutex mu_;
+
+  // See AllocationStats. Guarded by `mu_`, except the fallback counters.
+  AllocationStats allocStats_;
+  std::atomic<uint64_t> driverFallbacks_ = {0};
+  std::atomic<uint64_t> driverFallbackBytes_ = {0};
+  // Called with `mu_` held as a descriptor enters or leaves `allocatedMap_`.
+  void noteAllocated(const Desc *desc);
+  void noteFreed(const Desc *desc);
   // List of all chunks allocated from the driver and their total size.
   size_t cacheSize_ = 0;
   std::unique_ptr<Chunk> chunks_ = nullptr;
@@ -572,7 +749,7 @@ private:
   mutable std::string deviceDescription_;
 };
 
-class MemoryManagerFreeList {
+class MODULAR_CXX_EXPORT MemoryManagerFreeList {
 public:
   MemoryManagerFreeList(DeviceContext *context, MemoryManager &memoryManager,
                         MemoryManagerFreeList *parent,
@@ -626,6 +803,11 @@ private:
   // MemoryManagerFreeList. The oldest list will be flushed to the parent once
   // the pending event handler fires.
   static constexpr int kNumFreeBufferLists = 2;
+  // A free block at least this large is kept whole for requests under
+  // 1/kKeepWholeRatio of it while the root can serve them; see
+  // allocateDescAligned.
+  static constexpr size_t kKeepWholeMinBytes = size_t(1) << 30;
+  static constexpr size_t kKeepWholeRatio = 4;
   static_assert(llvm::isPowerOf2_64(kNumFreeBufferLists),
                 "Must be a non-zero power of two.");
 

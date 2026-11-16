@@ -20,21 +20,37 @@
 #ifndef KGEN_LIB_KGENTOLLVM_LOWERKGENTOLLVMREWRITECABIFNS_H
 #define KGEN_LIB_KGENTOLLVM_LOWERKGENTOLLVMREWRITECABIFNS_H
 
+#include "CABILowering.h"
+#include "mlir/IR/Value.h"
+
 namespace mlir::LLVM {
 class LLVMFuncOp;
+class ReturnOp;
 } // namespace mlir::LLVM
 
 namespace M::KGEN {
-class CABIInfo;
 
-/// Rewrite a abi("C") LLVM function definition to use the platform C ABI.
-/// Applies entry-block argument coercion (register/indirect/two-register) and
-/// return-value coercion (register/sret) in place, then updates the function
-/// type signature. No-ops for external declarations and identity-ABI functions.
-/// Mojo direct callers are already patched by ConvertKGENCall.
-/// `isResultSigned` selects signext over zeroext for a narrow integer result.
-void processCABIFunctionDefinition(mlir::LLVM::LLVMFuncOp func,
-                                   CABIInfo &abiInfo, bool isResultSigned);
+/// The C ABI form of the result of an abi("C") function definition. Its
+/// returns use this to give the result in that form.
+struct CABIDefinition {
+  CoercionInfo ret;
+  /// The sret pointer, or the memory through which a register result is
+  /// coerced. Null if the result needs no coercion.
+  mlir::Value retSlot;
+  /// The type of a register result. Null for sret.
+  mlir::Type coercedRetType;
+};
+
+/// Give an abi("C") LLVM function its C ABI signature and attributes. In a
+/// definition, also make the C ABI entry block arguments and rebuild the
+/// Mojo arguments from them at the top of the entry block. Mojo direct
+/// callers are patched by ConvertKGENCall. `isResultSigned` selects signext
+/// over zeroext for a narrow integer result.
+CABIDefinition rewriteCABIFunctionEntry(mlir::LLVM::LLVMFuncOp func,
+                                        CABIInfo &abiInfo, bool isResultSigned);
+
+/// Make `ret` give its result in the C ABI form that `def` describes.
+void rewriteCABIReturn(mlir::LLVM::ReturnOp ret, const CABIDefinition &def);
 
 } // namespace M::KGEN
 

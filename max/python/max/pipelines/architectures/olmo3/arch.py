@@ -14,13 +14,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
 from .model_config import Olmo3Config
 from .olmo3 import Olmo3
+from .weight_adapters import olmo3_weight_rules
 
 olmo3_arch = SupportedArchitecture(
     name="Olmo3ForCausalLM",
@@ -35,11 +34,9 @@ olmo3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=olmo3_weight_rules,
+    use_weight_rules=True,
     config=Olmo3Config,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

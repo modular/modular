@@ -22,12 +22,7 @@
 #include "Mojo/MojoParser/CallOperands.h"
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
-#include "Mojo/KGENDialect/KGENEnums.h"
 #include "Mojo/MojoParser/MojoDiags.h"
-
-namespace M::KGEN {
-class PogListAttr;
-}
 
 namespace M::KGEN::LIT {
 class CallOperands;

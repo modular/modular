@@ -22,7 +22,7 @@ from max.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import TensorLayout, Coord, Idx, TileTensor, row_major, col_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -209,7 +209,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float32, M, BK=8]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[4], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[32]), Idx[4]),
     )
@@ -335,13 +335,13 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-A.png
-    comptime a_smem_layout = TileLayout(
+    comptime a_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[8]), Coord(Idx[4], Idx[2])),
         Coord(Coord(Idx[4], Idx[32]), Coord(Idx[1], Idx[256])),
     )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[4], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[32]), Idx[4]),
     )
@@ -1197,7 +1197,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float16, BM=64, BK=16]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[64]), Idx[8]),
     )
@@ -1324,7 +1324,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     comptime a_smem_layout = tile_layout_k_major_typed[.float16, BM=64, BK=16]
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-core-matrices-B.png
-    comptime b_smem_layout = TileLayout(
+    comptime b_smem_layout = Layout(
         Coord(Coord(Idx[8], Idx[2]), Idx[8]),
         Coord(Coord(Idx[1], Idx[64]), Idx[8]),
     )
@@ -1368,9 +1368,9 @@ def wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: TileLayout,
-    b_layout: TileLayout,
-    c_layout: TileLayout,
+    a_layout: Layout,
+    b_layout: Layout,
+    c_layout: Layout,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,

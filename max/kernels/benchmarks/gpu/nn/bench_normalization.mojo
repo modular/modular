@@ -45,7 +45,7 @@ def bench_layer_norm_gpu[
     shape: IndexList[rank],
     static_shape: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     fn_name: String,
     shape_coord: Coord,
@@ -102,10 +102,10 @@ def bench_layer_norm_gpu[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {imm}:
         comptime if static_shape:
-            layer_norm[dtype, rank, target="gpu"](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 shape_coord,
@@ -116,7 +116,7 @@ def bench_layer_norm_gpu[
                 ctx,
             )
         else:
-            layer_norm[dtype, rank, target="gpu"](
+            layer_norm[dtype, rank](
                 input_fn,
                 output_fn,
                 shape_coord,
@@ -153,7 +153,7 @@ def bench_layer_norm_gpu[
 
 def bench_rms_norm_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
@@ -199,7 +199,7 @@ def bench_rms_norm_gpu[
         data_buf.store[alignment=alignment](coords, val)
 
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {imm}:
+    def kernel_launch(ctx: DeviceContext[]) raises {imm}:
         rms_norm_gpu[
             rank,
             epsilon=epsilon,

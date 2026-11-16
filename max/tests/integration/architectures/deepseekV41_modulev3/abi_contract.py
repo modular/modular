@@ -41,7 +41,7 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import load_weights
-from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import MultiKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     ExpertForm,
     ParamSpec,

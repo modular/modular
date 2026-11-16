@@ -131,10 +131,10 @@ required member is `warp_size`, which `WARP_SIZE` reads. A GPU plugin must
 also lower `shuffle_idx_fn`: the other shuffles default to it, and a target
 that leaves it out rejects every shuffle at compile time.
 
-The layout library adds `LayoutPluginHooks`, which picks, for each address
-space, the `TensorEngine` that tiles use to address their storage, such as a
-memref handle in place of a raw pointer. The target doesn't select it: a
-vendor registers it in the layout library's `_overlay.mojo`.
+The layout library adds `LayoutPluginHooks`, which picks, for each address space
+and tile layout, the `TensorEngine` that tiles use to address their storage,
+such as a memref handle in place of a raw pointer. The target doesn't select it:
+a vendor registers it in the layout library's `_overlay.mojo`.
 
 ## Codegen backend plugin
 

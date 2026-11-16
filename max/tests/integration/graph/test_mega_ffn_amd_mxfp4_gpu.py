@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Graph-level A/B of the AMD MoE FFN op (`mo.grouped.ffn.block.scaled.amd`)
+"""Graph-level A/B of the AMD MoE FFN op (`moe.grouped.ffn.block.scaled.amd`)
 at MXFP4, MiniMax-M3's expert shape, against the three-op chain it replaces:
 gate/up into bf16 (W1 split `[gate | up]`), `ep.fused_silu.mxfp4`, down,
 byte for byte.
@@ -35,8 +35,7 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     amd_mega_ffn_workspace_words,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,
@@ -44,6 +43,7 @@ from max.nn.legacy.kernels import (
     preshuffle_block_scaled_b,
     preshuffle_block_scaled_b_scales,
 )
+from max.nn.activation import GatedActivation
 
 H = 6144
 I = 3072

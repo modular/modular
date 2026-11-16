@@ -64,16 +64,16 @@ latency_bucket{le="0.1"} 50.0
 latency_bucket{le="+Inf"} 100.0
 latency_sum 25.0
 latency_count 100.0
-# HELP maxserve_batch_execution_time_milliseconds Batch execution time
-# TYPE maxserve_batch_execution_time_milliseconds histogram
-maxserve_batch_execution_time_milliseconds_bucket{batch_type="CE",le="100"} 10.0
-maxserve_batch_execution_time_milliseconds_bucket{batch_type="CE",le="+Inf"} 15.0
-maxserve_batch_execution_time_milliseconds_sum{batch_type="CE"} 900.0
-maxserve_batch_execution_time_milliseconds_count{batch_type="CE"} 15.0
-maxserve_batch_execution_time_milliseconds_bucket{batch_type="TG",le="100"} 80.0
-maxserve_batch_execution_time_milliseconds_bucket{batch_type="TG",le="+Inf"} 100.0
-maxserve_batch_execution_time_milliseconds_sum{batch_type="TG"} 2000.0
-maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
+# HELP max_batch_execution_time_milliseconds Batch execution time
+# TYPE max_batch_execution_time_milliseconds histogram
+max_batch_execution_time_milliseconds_bucket{batch_type="CE",le="100"} 10.0
+max_batch_execution_time_milliseconds_bucket{batch_type="CE",le="+Inf"} 15.0
+max_batch_execution_time_milliseconds_sum{batch_type="CE"} 900.0
+max_batch_execution_time_milliseconds_count{batch_type="CE"} 15.0
+max_batch_execution_time_milliseconds_bucket{batch_type="TG",le="100"} 80.0
+max_batch_execution_time_milliseconds_bucket{batch_type="TG",le="+Inf"} 100.0
+max_batch_execution_time_milliseconds_sum{batch_type="TG"} 2000.0
+max_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 """
 
 
@@ -146,11 +146,11 @@ def test_get_metrics_url_supported_backends() -> None:
 
 
 def test_get_metrics_url_mach_uses_engine_metrics_port() -> None:
-    """The mach backend scrapes the engine's Prometheus endpoint, which the
-    CI launch exposes on the same dedicated port MAX Serve uses, not the
-    orchestrator's HTTP port the base URL points at."""
+    """The mach backend scrapes the engine's Prometheus endpoint on the
+    engine-cli ``--metrics-address`` default, not the orchestrator's HTTP
+    port the base URL points at."""
     url = get_metrics_url("mach", "http://localhost:8091")
-    assert url == "http://localhost:8001/metrics"
+    assert url == "http://localhost:9090/metrics"
 
 
 def test_get_metrics_url_ipv6() -> None:
@@ -338,23 +338,23 @@ def test_parse_metrics_with_labeled_histogram(sample_metrics: str) -> None:
 
     # Should create separate histogram for each label value
     assert (
-        'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+        'max_batch_execution_time_milliseconds{batch_type="CE"}'
         in metrics.histograms
     )
     assert (
-        'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+        'max_batch_execution_time_milliseconds{batch_type="TG"}'
         in metrics.histograms
     )
 
     prefill = metrics.histograms[
-        'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+        'max_batch_execution_time_milliseconds{batch_type="CE"}'
     ]
     assert prefill.count == 15.0
     assert prefill.sum == 900.0
     assert prefill.mean == 60.0
 
     decode = metrics.histograms[
-        'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+        'max_batch_execution_time_milliseconds{batch_type="TG"}'
     ]
     assert decode.count == 100.0
     assert decode.sum == 2000.0
@@ -371,28 +371,28 @@ def test_get_histogram_helper() -> None:
         counters={},
         gauges={},
         histograms={
-            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}': prefill_hist,
-            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}': decode_hist,
+            'max_batch_execution_time_milliseconds{batch_type="CE"}': prefill_hist,
+            'max_batch_execution_time_milliseconds{batch_type="TG"}': decode_hist,
         },
         raw_text="",
     )
 
     # Test accessing with labels
     result_prefill = metrics.get_histogram(
-        "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+        "max_batch_execution_time_milliseconds", {"batch_type": "CE"}
     )
     assert result_prefill is not None
     assert result_prefill.mean == 60.0
 
     result_decode = metrics.get_histogram(
-        "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+        "max_batch_execution_time_milliseconds", {"batch_type": "TG"}
     )
     assert result_decode is not None
     assert result_decode.mean == 20.0
 
     # Test accessing non-existent metric returns None
     result_missing = metrics.get_histogram(
-        "maxserve_batch_execution_time_milliseconds", {"batch_type": "missing"}
+        "max_batch_execution_time_milliseconds", {"batch_type": "missing"}
     )
     assert result_missing is None
 
@@ -510,8 +510,8 @@ def test_batch_histograms_found_on_non_first_endpoint() -> None:
         counters={},
         gauges={},
         histograms={
-            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}': engine_prefill,
-            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}': engine_decode,
+            'max_batch_execution_time_milliseconds{batch_type="CE"}': engine_prefill,
+            'max_batch_execution_time_milliseconds{batch_type="TG"}': engine_decode,
         },
         raw_text="",
     )
@@ -640,14 +640,14 @@ def test_parse_spec_decode_metrics_returns_none_when_absent() -> None:
     assert parsed is None
 
 
-def test_parse_spec_decode_metrics_handles_maxserve_histogram() -> None:
-    """MAX Serve's per-position acceptance histogram is parsed into running sums/counts."""
-    metrics_text = """# HELP maxserve_spec_decode_acceptance_rate_per_position Per-position acceptance.
-# TYPE maxserve_spec_decode_acceptance_rate_per_position histogram
-maxserve_spec_decode_acceptance_rate_per_position_sum{position="0"} 8400.0
-maxserve_spec_decode_acceptance_rate_per_position_count{position="0"} 100
-maxserve_spec_decode_acceptance_rate_per_position_sum{position="1"} 5000.0
-maxserve_spec_decode_acceptance_rate_per_position_count{position="1"} 100
+def test_parse_spec_decode_metrics_handles_per_position_histogram() -> None:
+    """The per-position acceptance histogram is parsed into running sums/counts."""
+    metrics_text = """# HELP max_spec_decode_acceptance_rate_per_position Per-position acceptance.
+# TYPE max_spec_decode_acceptance_rate_per_position histogram
+max_spec_decode_acceptance_rate_per_position_sum{position="0"} 8400.0
+max_spec_decode_acceptance_rate_per_position_count{position="0"} 100
+max_spec_decode_acceptance_rate_per_position_sum{position="1"} 5000.0
+max_spec_decode_acceptance_rate_per_position_count{position="1"} 100
 """
 
     parsed = parse_spec_decode_metrics(metrics_text)
@@ -659,14 +659,12 @@ maxserve_spec_decode_acceptance_rate_per_position_count{position="1"} 100
     assert parsed.per_pos_rate_count == {0: 100, 1: 100}
 
 
-def test_parse_spec_decode_metrics_handles_maxserve_avg_acceptance_length() -> (
-    None
-):
-    """MAX Serve's avg acceptance length histogram is parsed for bench deltas."""
-    metrics_text = """# HELP maxserve_spec_decode_avg_acceptance_length Avg len.
-# TYPE maxserve_spec_decode_avg_acceptance_length histogram
-maxserve_spec_decode_avg_acceptance_length_sum 25.0
-maxserve_spec_decode_avg_acceptance_length_count 5
+def test_parse_spec_decode_metrics_handles_avg_acceptance_length() -> None:
+    """The avg acceptance length histogram is parsed for bench deltas."""
+    metrics_text = """# HELP max_spec_decode_avg_acceptance_length Avg len.
+# TYPE max_spec_decode_avg_acceptance_length histogram
+max_spec_decode_avg_acceptance_length_sum 25.0
+max_spec_decode_avg_acceptance_length_count 5
 """
 
     parsed = parse_spec_decode_metrics(metrics_text)
@@ -676,9 +674,7 @@ maxserve_spec_decode_avg_acceptance_length_count 5
     assert parsed.avg_acceptance_length_count == 5.0
 
 
-def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
-    None
-):
+def test_calculate_spec_decode_stats_from_avg_length_histogram_only() -> None:
     """Acceptance length adds the bonus token to the histogram delta mean.
 
     The histogram records accepted drafts per verification, so a window mean
@@ -726,7 +722,7 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
     )
 
 
-def test_calculate_spec_decode_stats_from_maxserve_histogram_only() -> None:
+def test_calculate_spec_decode_stats_from_per_position_histogram_only() -> None:
     """Without aggregate counters, per-position rates surface from histogram deltas."""
     before = SpecDecodeMetrics(
         per_pos_rate_sum={0: 8000.0, 1: 4000.0},
@@ -829,26 +825,26 @@ def _endpoint_with_batch_histograms() -> ParsedMetrics:
         counters={},
         gauges={},
         histograms={
-            'maxserve_batch_context_tokens{batch_type="CE"}': _hist(300.0, 3.0),
-            'maxserve_batch_context_tokens{batch_type="TG"}': _hist(20.0, 2.0),
-            'maxserve_batch_creation_time_milliseconds{batch_type="CE"}': _hist(
+            'max_batch_context_tokens{batch_type="CE"}': _hist(300.0, 3.0),
+            'max_batch_context_tokens{batch_type="TG"}': _hist(20.0, 2.0),
+            'max_batch_creation_time_milliseconds{batch_type="CE"}': _hist(
                 50.0, 5.0
             ),
-            'maxserve_batch_creation_time_milliseconds{batch_type="TG"}': _hist(
+            'max_batch_creation_time_milliseconds{batch_type="TG"}': _hist(
                 80.0, 4.0
             ),
-            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="CE"}': _hist(
+            'max_batch_prompt_throughput_tokens_per_second{batch_type="CE"}': _hist(
                 4000.0, 2.0
             ),
-            'maxserve_batch_prompt_throughput_tokens_per_second{batch_type="TG"}': _hist(
+            'max_batch_prompt_throughput_tokens_per_second{batch_type="TG"}': _hist(
                 300.0, 3.0
             ),
-            'maxserve_batch_input_tokens{batch_type="CE"}': _hist(600.0, 3.0),
-            'maxserve_batch_input_tokens{batch_type="TG"}': _hist(40.0, 2.0),
-            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="CE"}': _hist(
+            'max_batch_input_tokens{batch_type="CE"}': _hist(600.0, 3.0),
+            'max_batch_input_tokens{batch_type="TG"}': _hist(40.0, 2.0),
+            'max_batch_generation_throughput_tokens_per_second{batch_type="CE"}': _hist(
                 150.0, 3.0
             ),
-            'maxserve_batch_generation_throughput_tokens_per_second{batch_type="TG"}': _hist(
+            'max_batch_generation_throughput_tokens_per_second{batch_type="TG"}': _hist(
                 900.0, 3.0
             ),
         },
@@ -1034,77 +1030,77 @@ def test_to_result_dict_omits_prefill_decode_stats_when_absent() -> None:
 # Per-backend metric names: MAX Serve vs the mach engine
 
 
-MACH_ENGINE_METRICS = """# HELP mach_scheduler_num_requests_queued Gauge
-# TYPE mach_scheduler_num_requests_queued gauge
-mach_scheduler_num_requests_queued 1
-# HELP mach_batch_size Rows per constructed batch
-# TYPE mach_batch_size histogram
-mach_batch_size_bucket{batch_type="prefill",le="10.0"} 3.0
-mach_batch_size_bucket{batch_type="prefill",le="+Inf"} 4.0
-mach_batch_size_sum{batch_type="prefill"} 12.0
-mach_batch_size_count{batch_type="prefill"} 4.0
-mach_batch_size_bucket{batch_type="decode",le="10.0"} 90.0
-mach_batch_size_bucket{batch_type="decode",le="+Inf"} 96.0
-mach_batch_size_sum{batch_type="decode"} 480.0
-mach_batch_size_count{batch_type="decode"} 96.0
-mach_batch_size_bucket{batch_type="mixed",le="+Inf"} 2.0
-mach_batch_size_sum{batch_type="mixed"} 8.0
-mach_batch_size_count{batch_type="mixed"} 2.0
-# HELP mach_batch_execution_time_milliseconds Forward time per batch
-# TYPE mach_batch_execution_time_milliseconds histogram
-mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="200.0"} 4.0
-mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 4.0
-mach_batch_execution_time_milliseconds_sum{batch_type="prefill"} 400.0
-mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 4.0
-mach_batch_execution_time_milliseconds_bucket{batch_type="decode",le="50.0"} 96.0
-mach_batch_execution_time_milliseconds_bucket{batch_type="decode",le="+Inf"} 96.0
-mach_batch_execution_time_milliseconds_sum{batch_type="decode"} 1920.0
-mach_batch_execution_time_milliseconds_count{batch_type="decode"} 96.0
-mach_batch_execution_time_milliseconds_bucket{batch_type="mixed",le="+Inf"} 2.0
-mach_batch_execution_time_milliseconds_sum{batch_type="mixed"} 60.0
-mach_batch_execution_time_milliseconds_count{batch_type="mixed"} 2.0
+MACH_ENGINE_METRICS = """# HELP max_scheduler_num_requests_queued Gauge
+# TYPE max_scheduler_num_requests_queued gauge
+max_scheduler_num_requests_queued 1
+# HELP max_batch_size Rows per constructed batch
+# TYPE max_batch_size histogram
+max_batch_size_bucket{batch_type="prefill",le="10.0"} 3.0
+max_batch_size_bucket{batch_type="prefill",le="+Inf"} 4.0
+max_batch_size_sum{batch_type="prefill"} 12.0
+max_batch_size_count{batch_type="prefill"} 4.0
+max_batch_size_bucket{batch_type="decode",le="10.0"} 90.0
+max_batch_size_bucket{batch_type="decode",le="+Inf"} 96.0
+max_batch_size_sum{batch_type="decode"} 480.0
+max_batch_size_count{batch_type="decode"} 96.0
+max_batch_size_bucket{batch_type="mixed",le="+Inf"} 2.0
+max_batch_size_sum{batch_type="mixed"} 8.0
+max_batch_size_count{batch_type="mixed"} 2.0
+# HELP max_batch_execution_time_milliseconds Forward time per batch
+# TYPE max_batch_execution_time_milliseconds histogram
+max_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="200.0"} 4.0
+max_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 4.0
+max_batch_execution_time_milliseconds_sum{batch_type="prefill"} 400.0
+max_batch_execution_time_milliseconds_count{batch_type="prefill"} 4.0
+max_batch_execution_time_milliseconds_bucket{batch_type="decode",le="50.0"} 96.0
+max_batch_execution_time_milliseconds_bucket{batch_type="decode",le="+Inf"} 96.0
+max_batch_execution_time_milliseconds_sum{batch_type="decode"} 1920.0
+max_batch_execution_time_milliseconds_count{batch_type="decode"} 96.0
+max_batch_execution_time_milliseconds_bucket{batch_type="mixed",le="+Inf"} 2.0
+max_batch_execution_time_milliseconds_sum{batch_type="mixed"} 60.0
+max_batch_execution_time_milliseconds_count{batch_type="mixed"} 2.0
 # The five batch histograms mach records without a batch_type label
 # (engine-telemetry/src/metrics.rs: record_constructed / record_executed).
-# TYPE mach_batch_input_tokens histogram
-mach_batch_input_tokens_bucket{le="+Inf"} 4.0
-mach_batch_input_tokens_sum 1200.0
-mach_batch_input_tokens_count 4.0
-# TYPE mach_batch_context_tokens histogram
-mach_batch_context_tokens_bucket{le="+Inf"} 4.0
-mach_batch_context_tokens_sum 2400.0
-mach_batch_context_tokens_count 4.0
-# TYPE mach_batch_creation_time_milliseconds histogram
-mach_batch_creation_time_milliseconds_bucket{le="+Inf"} 4.0
-mach_batch_creation_time_milliseconds_sum 40.0
-mach_batch_creation_time_milliseconds_count 4.0
-# TYPE mach_batch_generation_throughput_per_second histogram
-mach_batch_generation_throughput_per_second_bucket{le="+Inf"} 96.0
-mach_batch_generation_throughput_per_second_sum 48000.0
-mach_batch_generation_throughput_per_second_count 96.0
-# TYPE mach_batch_prompt_throughput_per_second histogram
-mach_batch_prompt_throughput_per_second_bucket{le="+Inf"} 4.0
-mach_batch_prompt_throughput_per_second_sum 16000.0
-mach_batch_prompt_throughput_per_second_count 4.0
+# TYPE max_batch_input_tokens histogram
+max_batch_input_tokens_bucket{le="+Inf"} 4.0
+max_batch_input_tokens_sum 1200.0
+max_batch_input_tokens_count 4.0
+# TYPE max_batch_context_tokens histogram
+max_batch_context_tokens_bucket{le="+Inf"} 4.0
+max_batch_context_tokens_sum 2400.0
+max_batch_context_tokens_count 4.0
+# TYPE max_batch_creation_time_milliseconds histogram
+max_batch_creation_time_milliseconds_bucket{le="+Inf"} 4.0
+max_batch_creation_time_milliseconds_sum 40.0
+max_batch_creation_time_milliseconds_count 4.0
+# TYPE max_batch_generation_throughput_per_second histogram
+max_batch_generation_throughput_per_second_bucket{le="+Inf"} 96.0
+max_batch_generation_throughput_per_second_sum 48000.0
+max_batch_generation_throughput_per_second_count 96.0
+# TYPE max_batch_prompt_throughput_per_second histogram
+max_batch_prompt_throughput_per_second_bucket{le="+Inf"} 4.0
+max_batch_prompt_throughput_per_second_sum 16000.0
+max_batch_prompt_throughput_per_second_count 4.0
 """
 
-MACH_SPEC_DECODE_METRICS_BEFORE = """# TYPE mach_spec_decode_acceptance_rate_per_position histogram
-mach_spec_decode_acceptance_rate_per_position_sum{position="0"} 8000.0
-mach_spec_decode_acceptance_rate_per_position_count{position="0"} 100
-mach_spec_decode_acceptance_rate_per_position_sum{position="1"} 6000.0
-mach_spec_decode_acceptance_rate_per_position_count{position="1"} 100
-# TYPE mach_spec_decode_avg_acceptance_length histogram
-mach_spec_decode_avg_acceptance_length_sum 80.0
-mach_spec_decode_avg_acceptance_length_count 40
+MACH_SPEC_DECODE_METRICS_BEFORE = """# TYPE max_spec_decode_acceptance_rate_per_position histogram
+max_spec_decode_acceptance_rate_per_position_sum{position="0"} 8000.0
+max_spec_decode_acceptance_rate_per_position_count{position="0"} 100
+max_spec_decode_acceptance_rate_per_position_sum{position="1"} 6000.0
+max_spec_decode_acceptance_rate_per_position_count{position="1"} 100
+# TYPE max_spec_decode_avg_acceptance_length histogram
+max_spec_decode_avg_acceptance_length_sum 80.0
+max_spec_decode_avg_acceptance_length_count 40
 """
 
-MACH_SPEC_DECODE_METRICS_AFTER = """# TYPE mach_spec_decode_acceptance_rate_per_position histogram
-mach_spec_decode_acceptance_rate_per_position_sum{position="0"} 17000.0
-mach_spec_decode_acceptance_rate_per_position_count{position="0"} 200
-mach_spec_decode_acceptance_rate_per_position_sum{position="1"} 13500.0
-mach_spec_decode_acceptance_rate_per_position_count{position="1"} 200
-# TYPE mach_spec_decode_avg_acceptance_length histogram
-mach_spec_decode_avg_acceptance_length_sum 330.0
-mach_spec_decode_avg_acceptance_length_count 90
+MACH_SPEC_DECODE_METRICS_AFTER = """# TYPE max_spec_decode_acceptance_rate_per_position histogram
+max_spec_decode_acceptance_rate_per_position_sum{position="0"} 17000.0
+max_spec_decode_acceptance_rate_per_position_count{position="0"} 200
+max_spec_decode_acceptance_rate_per_position_sum{position="1"} 13500.0
+max_spec_decode_acceptance_rate_per_position_count{position="1"} 200
+# TYPE max_spec_decode_avg_acceptance_length histogram
+max_spec_decode_avg_acceptance_length_sum 330.0
+max_spec_decode_avg_acceptance_length_count 90
 """
 
 
@@ -1117,7 +1113,7 @@ def _mach_endpoint() -> ParsedMetrics:
 
 def test_mach_engine_fills_prefill_decode_batch_time_fields() -> None:
     """The mach engine fills the same batch-time fields MAX Serve does:
-    mach_batch_execution_time_milliseconds{batch_type="prefill"} is the CE
+    max_batch_execution_time_milliseconds{batch_type="prefill"} is the CE
     (prefill) batch-time histogram and {batch_type="decode"} the TG (decode)
     one, so a mach run stops reporting null for every engine-side field."""
     result = _make_metrics({"engine-0": _mach_endpoint()})
@@ -1165,10 +1161,10 @@ def test_modular_backend_stamp_leaves_max_serve_output_unchanged() -> None:
         pm = _endpoint_with_batch_histograms()
         pm.backend = backend
         pm.histograms[
-            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+            'max_batch_execution_time_milliseconds{batch_type="CE"}'
         ] = _hist(400.0, 4.0)
         pm.histograms[
-            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+            'max_batch_execution_time_milliseconds{batch_type="TG"}'
         ] = _hist(1920.0, 96.0)
         return _make_metrics({"server": pm})
 
@@ -1181,8 +1177,8 @@ def test_modular_backend_stamp_leaves_max_serve_output_unchanged() -> None:
 
 
 class TestMachSpecDecode:
-    """Mach's spec-decode families are the same shapes MAX Serve exposes,
-    under the mach_ prefix; the vLLM-style draft counters are unavailable."""
+    """Mach exposes the same spec-decode shapes as MAX Serve under the
+    unified ``max_`` names; the vLLM-style draft counters are unavailable."""
 
     def test_parse_mach_histograms(self) -> None:
         parsed = parse_spec_decode_metrics(
@@ -1197,11 +1193,6 @@ class TestMachSpecDecode:
         # Draft counters are vLLM's shape and declared unavailable for mach.
         assert parsed.num_drafts == 0
         assert parsed.num_draft_tokens == 0
-
-    def test_mach_names_need_mach_backend(self) -> None:
-        """backend=None keeps the MAX Serve names, so mach families are not
-        picked up without the backend stamped on the scrape."""
-        assert parse_spec_decode_metrics(MACH_SPEC_DECODE_METRICS_AFTER) is None
 
     def test_calculate_stats_from_mach_histograms(self) -> None:
         before = parse_spec_decode_metrics(
@@ -1236,12 +1227,12 @@ def test_collect_benchmark_metrics_stamps_backend_and_mach_url(
         urls={}, backend="mach", base_url="http://localhost:8091"
     )
 
-    mock_fetch.assert_called_once_with("http://localhost:8001/metrics")
+    mock_fetch.assert_called_once_with("http://localhost:9090/metrics")
     pm = final["server"]
     assert pm.backend == "mach"
     assert (
         pm.get_histogram(
-            "mach_batch_execution_time_milliseconds", {"batch_type": "prefill"}
+            "max_batch_execution_time_milliseconds", {"batch_type": "prefill"}
         )
         is not None
     )
@@ -1260,7 +1251,7 @@ def test_collect_benchmark_metrics_stamps_backend_and_mach_url(
     )
     assert delta["server"].backend == "mach"
     delta_hist = delta["server"].get_histogram(
-        "mach_batch_execution_time_milliseconds", {"batch_type": "prefill"}
+        "max_batch_execution_time_milliseconds", {"batch_type": "prefill"}
     )
     assert delta_hist is not None
     assert delta_hist.sum == 400.0
@@ -1290,7 +1281,7 @@ class TestVerifyAlwaysEmittedMetrics:
 
         with pytest.raises(
             MissingEngineMetricsError,
-            match=r"mach_batch_size.*http://localhost:8001/metrics",
+            match=r"max_batch_size.*http://localhost:9090/metrics",
         ) as excinfo:
             collect_benchmark_metrics(
                 urls={},
@@ -1300,18 +1291,18 @@ class TestVerifyAlwaysEmittedMetrics:
             )
         # Every always-emitted metric that is missing is named, not just the
         # first one the validator reached.
-        assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
+        assert "max_batch_execution_time_milliseconds" in str(excinfo.value)
         assert "backend 'mach'" in str(excinfo.value)
 
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_partial_absence_still_raises(self, mock_fetch: MagicMock) -> None:
-        """mach_batch_size present but the executed-batch histogram missing
+        """max_batch_size present but the executed-batch histogram missing
         (an engine that never executed a batch) still raises."""
         mock_fetch.return_value = """
-# TYPE mach_batch_size histogram
-mach_batch_size_bucket{batch_type="decode",le="+Inf"} 1.0
-mach_batch_size_sum{batch_type="decode"} 1.0
-mach_batch_size_count{batch_type="decode"} 1.0
+# TYPE max_batch_size histogram
+max_batch_size_bucket{batch_type="decode",le="+Inf"} 1.0
+max_batch_size_sum{batch_type="decode"} 1.0
+max_batch_size_count{batch_type="decode"} 1.0
 """
 
         with pytest.raises(MissingEngineMetricsError) as excinfo:
@@ -1321,22 +1312,19 @@ mach_batch_size_count{batch_type="decode"} 1.0
                 base_url="http://localhost:8091",
                 verify_required_metrics=True,
             )
-        assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
+        assert "max_batch_execution_time_milliseconds" in str(excinfo.value)
 
-    @pytest.mark.parametrize(
-        "gauge", ["mach_pipeline_held_seats", "max_pipeline_held_seats"]
-    )
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_pipeline_engine_without_batch_metrics_does_not_raise(
-        self, mock_fetch: MagicMock, gauge: str
+        self, mock_fetch: MagicMock
     ) -> None:
         """A Mach PP prefill runs the pipeline loop, which records no batch
         histograms; its scrape is still the engine's, so it must pass."""
-        mock_fetch.return_value = f"""
-# TYPE {gauge} gauge
-{gauge} 0.0
-# TYPE mach_request_count counter
-mach_request_count_total 12.0
+        mock_fetch.return_value = """
+# TYPE max_pipeline_held_seats gauge
+max_pipeline_held_seats 0.0
+# TYPE max_request_count counter
+max_request_count_total 12.0
 """
 
         result = collect_benchmark_metrics(
@@ -1370,7 +1358,7 @@ mach_request_count_total 12.0
     ) -> None:
         """Mach exports through the OpenTelemetry Prometheus exporter, which
         omits a histogram until its first data point: a fresh idle engine has
-        no mach_batch_* families yet. The baseline collection must not raise
+        no max_batch_* families yet. The baseline collection must not raise
         against that payload; the final one (after the benchmark ran batches)
         must."""
         mock_fetch.return_value = ORCHESTRATOR_METRICS.replace(
@@ -1414,14 +1402,14 @@ mach_request_count_total 12.0
         absent from the payload; only the two always-emitted labeled
         families need to be there."""
         mock_fetch.return_value = """
-# TYPE mach_batch_size histogram
-mach_batch_size_bucket{batch_type="prefill",le="+Inf"} 1.0
-mach_batch_size_sum{batch_type="prefill"} 1.0
-mach_batch_size_count{batch_type="prefill"} 1.0
-# TYPE mach_batch_execution_time_milliseconds histogram
-mach_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 1.0
-mach_batch_execution_time_milliseconds_sum{batch_type="prefill"} 10.0
-mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
+# TYPE max_batch_size histogram
+max_batch_size_bucket{batch_type="prefill",le="+Inf"} 1.0
+max_batch_size_sum{batch_type="prefill"} 1.0
+max_batch_size_count{batch_type="prefill"} 1.0
+# TYPE max_batch_execution_time_milliseconds histogram
+max_batch_execution_time_milliseconds_bucket{batch_type="prefill",le="+Inf"} 1.0
+max_batch_execution_time_milliseconds_sum{batch_type="prefill"} 10.0
+max_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
 """
 
         result = collect_benchmark_metrics(
@@ -1436,7 +1424,7 @@ mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_other_backends_never_enforce(self, mock_fetch: MagicMock) -> None:
         """MAX Serve's families are not declared always-emitted, so a
-        modular scrape missing every maxserve_batch_* histogram keeps the
+        modular scrape missing every max_batch_* histogram keeps the
         historical silent-null behavior (no run failures for other
         backends)."""
         mock_fetch.return_value = "# TYPE other counter\nother 1\n"
@@ -1469,64 +1457,75 @@ mach_batch_execution_time_milliseconds_count{batch_type="prefill"} 1.0
         assert result == {}
 
 
-@pytest.mark.parametrize(
-    "backend,legacy", [("mach", "mach_"), ("modular", "maxserve_")]
-)
-def test_unified_namespace_preserves_batch_results(
-    backend: Backend, legacy: str
+@pytest.mark.parametrize("prefix", ["maxserve_", "mach_"])
+def test_batch_histograms_under_retired_prefixes_fill_nothing(
+    prefix: str,
 ) -> None:
-    old = (
-        _mach_endpoint()
-        if backend == "mach"
-        else _endpoint_with_batch_histograms()
-    )
-    old.backend = backend
-    new = ParsedMetrics(
+    """A scrape spelled with a retired engine prefix reads as absent: no
+    batch field is populated from it."""
+    endpoint = _endpoint_with_batch_histograms()
+    renamed = ParsedMetrics(
         counters={},
         gauges={},
         histograms={
-            key.replace(legacy, "max_", 1): value
-            for key, value in old.histograms.items()
+            key.replace("max_", prefix, 1): hist
+            for key, hist in endpoint.histograms.items()
         },
         raw_text="",
-        backend=backend,
     )
-    verify_always_emitted_metrics(backend, new, "http://engine/metrics")
-    before, after = (
-        _make_metrics({"engine": old}),
-        _make_metrics({"engine": new}),
+    assert endpoint.get_histogram(
+        "max_batch_input_tokens", {"batch_type": "CE"}
     )
-    assert before.mean_prefill_batch_time_ms == after.mean_prefill_batch_time_ms
-    assert before.mean_decode_batch_time_ms == after.mean_decode_batch_time_ms
-    assert before.prefill_batch_count == after.prefill_batch_count
-    assert before.decode_batch_count == after.decode_batch_count
+    assert (
+        renamed.get_histogram("max_batch_input_tokens", {"batch_type": "CE"})
+        is None
+    )
+    d = _make_metrics({"engine-0": renamed}).to_result_dict()
+    for key in ("prefill_stats", "decode_stats"):
+        stats = d.get(key)
+        if stats is not None:
+            assert isinstance(stats, dict)
+            assert all(value is None for value in stats.values())
 
 
-def test_unified_histogram_alias_is_not_counted_twice() -> None:
+def test_mach_scrape_under_retired_prefix_fails_required_metrics() -> None:
+    """A Mach scrape that spells its always-emitted histograms with the
+    retired prefix is rejected, naming the max_ names the engine must emit."""
+    parsed = parse_metrics(MACH_ENGINE_METRICS.replace("max_", "mach_"))
+    parsed.backend = "mach"
+    with pytest.raises(MissingEngineMetricsError, match="max_batch_size"):
+        verify_always_emitted_metrics("mach", parsed, "http://engine/metrics")
+
+
+def test_histogram_family_returns_one_spelling_not_both() -> None:
+    """A family exposed under both the unit-suffixed and the unsuffixed
+    spelling is read once: ``histogram_family`` stops at the first spelling
+    that matches instead of pooling both."""
     parsed = ParsedMetrics(
         {},
         {},
         {
-            'max_spec_decode_acceptance_rate_per_position{position="0"}': _hist(
+            'max_spec_decode_acceptance_rate_per_position_percent{position="0"}': _hist(
                 80, 1
             ),
-            'mach_spec_decode_acceptance_rate_per_position{position="0"}': _hist(
+            'max_spec_decode_acceptance_rate_per_position{position="0"}': _hist(
                 20, 1
             ),
         },
         "",
     )
     family = parsed.histogram_family(
-        "mach_spec_decode_acceptance_rate_per_position"
+        "max_spec_decode_acceptance_rate_per_position"
     )
-    assert len(family) == 1
+    assert set(family) == {
+        'max_spec_decode_acceptance_rate_per_position_percent{position="0"}'
+    }
     assert next(iter(family.values())).sum == 80
 
 
-@pytest.mark.parametrize("prefix", ["maxserve_", "max_"])
-def test_real_spec_decode_exporter_unit_suffixes(prefix: str) -> None:
-    rate = f"{prefix}spec_decode_acceptance_rate_per_position_percent"
-    length = f"{prefix}spec_decode_avg_acceptance_length_tokens"
+def test_real_spec_decode_exporter_unit_suffixes() -> None:
+    rate = "max_spec_decode_acceptance_rate_per_position_percent"
+    length = "max_spec_decode_avg_acceptance_length_tokens"
     parsed = parse_spec_decode_metrics(
         f"# TYPE {rate} histogram\n"
         f'{rate}_sum{{position="0"}} 8400\n'
@@ -1560,17 +1559,3 @@ def test_unified_required_metrics_reject_wrong_backend_labels(
     )
     with pytest.raises(MissingEngineMetricsError, match="wrong-endpoint"):
         verify_always_emitted_metrics("mach", parsed, "http://engine/metrics")
-
-
-@pytest.mark.parametrize("legacy", ["mach_", "maxserve_"])
-@pytest.mark.parametrize("reverse", [False, True])
-def test_delta_rejects_metric_generation_change(
-    legacy: str, reverse: bool
-) -> None:
-    old = ParsedMetrics({}, {}, {f"{legacy}batch_size": _hist(100, 10)}, "")
-    new = ParsedMetrics({}, {}, {"max_batch_size": _hist(400, 20)}, "")
-    baseline, final = (new, old) if reverse else (old, new)
-    with pytest.raises(
-        MissingEngineMetricsError, match="naming generation changed"
-    ):
-        compute_metrics_delta(baseline, final)

@@ -10,32 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GLM-5.3-Flash with MTP decodes the tokens greedy decoding without it does.
+"""GLM-5.3-Flash with MTP on ModuleV3 decodes the tokens greedy decoding
+without it does.
 
 A random-weight checkpoint, four layers deep, is served through the pipeline
-registry twice on two GPUs, laid out as the MI355 recipe is: tensor-parallel
-attention at the 8xB200 recipe's per-device head counts, and an expert-parallel
-MoE. First with MTP at three drafts and device graph capture, then plainly.
-Every verify, acceptance, state roll-forward and draft step runs in the first
-only. A wiring bug there lands a state on the wrong prefix, which changes later
-logits but raises nothing.
-
-Each token the MTP run emits must be the plain model's greedy choice given the
-MTP run's own prefix. The two runs' matmuls see different row counts and so
-round differently, so a token may also differ where the plain model's top
-logit is within :data:`NEAR_TIE_ULPS` of the MTP run's token; the check then
-resumes from the MTP run's token. The router's bias fixes which experts every
-token reaches, since a routing tie would turn that rounding into a different
-expert and a logit change no tolerance could separate from a bug.
-
-The draft is built to agree with the target often but not always: its
-``eh_proj`` passes the token embedding through, and the target's layers add a
-context-dependent perturbation to an embedding-dominated residual. So steps
-both accept and reject drafts, and the rows run across many k-pool boundaries.
-The KDA layers write the largest part of that perturbation from a state that
-holds only a few recent tokens, so a state landed on the wrong prefix moves
-the logits by more than the tolerance: folding one rejected record per verify
-fails this test.
+registry twice on two GPUs, with tensor-parallel attention and an
+expert-parallel MoE: first with MTP at three drafts and device graph capture,
+then plainly. Each token the MTP run emits must be the plain model's greedy
+choice given the MTP run's own prefix, up to a near-tie of
+:data:`NEAR_TIE_ULPS`, after which the check resumes from the MTP run's token.
+The draft agrees with the target often but not always, so steps both accept
+and reject drafts, and a KDA state landed on the wrong prefix moves the logits
+past the tolerance.
 """
 
 from __future__ import annotations
@@ -45,29 +31,39 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from typing import Any
+from unittest.mock import Mock, NonCallableMock
 
 import numpy as np
 import pytest
 import torch
-from max.driver import DeviceSpec
+from max import functional as F
+from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import MultiKVCacheParams
-from max.nn.legacy.layer import Module
-from max.nn.legacy.quant_config import QuantConfig
+from max.graph.weights import WeightData, Weights
+from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures import register_all_models
+from max.pipelines.architectures.glm5_next import hybrid_layout
 from max.pipelines.architectures.glm5_next.glm5_next import Glm5Next
 from max.pipelines.architectures.glm5_next.model_config import (
     Glm5NextConfig,
-    Glm5NextVisionConfig,
 )
 from max.pipelines.architectures.glm5_next.mtp import Glm5NextMTP
-from max.pipelines.architectures.glm5_next.nn.visual_transformer import (
-    Glm5NextVisionTransformer,
-)
 from max.pipelines.architectures.glm5_next.quantization import (
     Glm5NextQuantScheme,
+)
+from max.pipelines.architectures.glm5_next.vision.config import (
+    Glm5NextVisionConfig,
+)
+from max.pipelines.architectures.glm5_next.vision.tower import (
+    Glm5NextVisionTransformer,
+)
+from max.pipelines.architectures.glm5_next.weight_adapters import (
+    VISION_WEIGHT_PREFIX,
+    glm5_next_mtp_weight_rules,
+    glm5_next_weight_rules,
 )
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -78,10 +74,14 @@ from max.pipelines.lib import (
     PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
+    WeightTransform,
     _hf_config,
 )
 from max.pipelines.lib.generate import GenerateIterator
 from max.pipelines.speculative import SpeculativeConfig
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
+from safetensors import safe_open
 from safetensors.torch import save_file
 
 Pipeline = OverlapTextGenerationPipeline[TextContext]
@@ -110,7 +110,8 @@ RESIDUAL_GAIN = 0.1
 KDA_GAIN = 0.5
 """The KDA layers' output scale, larger so their state shows in the logits."""
 KDA_OUTPUTS = {
-    f"layers.{i}.self_attn.o_proj.weight" for i in range(NUM_LAYERS - 1)
+    f"language_model.layers.{i}.self_attn.o_proj.weight"
+    for i in range(NUM_LAYERS - 1)
 }
 
 TEXT_CONFIG: dict[str, object] = {
@@ -188,8 +189,8 @@ VISION_CONFIG: dict[str, object] = {
     "temporal_patch_size": 2,
     "spatial_merge_size": 2,
 }
-"""A one-block tower. The pairing compiles the target's, so the checkpoint
-ships one, though no prompt holds an image."""
+"""The checkpoint's tower config. The prompts carry no images, so the tower's
+weights only have to load."""
 
 MEDIA_TOKENS = {
     name: VOCAB + i
@@ -207,27 +208,56 @@ MEDIA_TOKENS = {
 """The media token ids GLM's tokenizer reads off the config, past the
 vocabulary, since no prompt holds media."""
 
+QUANTIZATION_CONFIG = {
+    "quant_method": "fp8",
+    "fmt": "e4m3",
+    "activation_scheme": "dynamic",
+    "weight_block_size": [128, 128],
+    # As in the published checkpoint, the bfloat16 `kv_b_proj`s are listed:
+    # the rules read which MLA projections stay unquantized off this list.
+    "modules_to_not_convert": [
+        "lm_head",
+        "model.embed_tokens",
+        *(
+            f"model.layers.{i}.self_attn.kv_b_proj"
+            for i in (NUM_LAYERS - 1, NUM_LAYERS)
+        ),
+    ],
+}
+"""The checkpoint's FP8 config."""
 
-def _quant_config() -> QuantConfig:
+_MLA_RAW = ("q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj")
+
+
+def _quant_scheme() -> Glm5NextQuantScheme:
     """The checkpoint's FP8 map: every MLP, and the sparse and MTP layers'
     attention projections."""
-    return QuantConfig.blockscaled_fp8(
-        mlp_quantized_layers=frozenset(range(NUM_LAYERS + 1)),
-        attn_quantized_layers=frozenset({NUM_LAYERS - 1, NUM_LAYERS}),
+    mlp_layers = frozenset(range(NUM_LAYERS + 1))
+    attn_layers = frozenset({NUM_LAYERS - 1, NUM_LAYERS})
+    quant = QuantConfig.blockscaled_fp8(
+        mlp_quantized_layers=mlp_layers,
+        attn_quantized_layers=attn_layers,
         embedding_output_dtype=DType.bfloat16,
+    )
+    return Glm5NextQuantScheme(
+        config=quant,
+        mlp_layers=mlp_layers,
+        attn_layers=attn_layers,
+        compute_dtype=DType.bfloat16,
     )
 
 
-def _modules() -> tuple[Glm5Next, Glm5NextMTP]:
-    """Builds the target and its MTP layer, whose weights the checkpoint
-    holds under their post-adapter names."""
+def _shapes() -> tuple[
+    dict[str, tuple[DType, list[int]]], dict[str, tuple[DType, list[int]]]
+]:
+    """Returns the target's and the draft's parameters, by module name."""
     text_config = SimpleNamespace(**TEXT_CONFIG)
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.speculative = SpeculativeConfig(
         speculative_method="mtp", num_speculative_tokens=NUM_DRAFTS
     )
-    kv_params = Glm5NextConfig.construct_kv_params(
+    kv_params = hybrid_layout.construct_kv_params(
         huggingface_config=SimpleNamespace(text_config=text_config),
         pipeline_config=pipeline_config,
         devices=[DeviceRef.GPU()],
@@ -235,7 +265,8 @@ def _modules() -> tuple[Glm5Next, Glm5NextMTP]:
         cache_dtype=DType.bfloat16,
     )
     assert isinstance(kv_params, MultiKVCacheParams)
-    quant = _quant_config()
+    scheme = _quant_scheme()
+    mesh = DeviceMesh((CPU(),), (1,), ("tp",))
     config = Glm5NextConfig(
         dtype=DType.float8_e4m3fn,
         kv_params=kv_params,
@@ -263,6 +294,7 @@ def _modules() -> tuple[Glm5Next, Glm5NextMTP]:
         num_experts_per_tok=2,
         first_k_dense_replace=1,
         correction_bias_dtype=DType.float32,
+        graph_mode="decode",
         index_head_dim=128,
         index_n_heads=32,
         index_topk=2048,
@@ -272,64 +304,79 @@ def _modules() -> tuple[Glm5Next, Glm5NextMTP]:
         linear_head_dim=128,
         linear_conv_kernel_dim=4,
         mla_latent_pad_to=576,
-        kv_b_proj_dtype=DType.bfloat16,
         declared_dtype=DType.bfloat16,
-        quant_config=quant,
-        quant_scheme=Glm5NextQuantScheme(
-            config=quant,
-            mlp_layers=frozenset(range(NUM_LAYERS + 1)),
-            attn_layers=frozenset({NUM_LAYERS - 1, NUM_LAYERS}),
-            compute_dtype=DType.bfloat16,
-        ),
+        quant_config=scheme.config,
+        quant_scheme=scheme,
+        mesh=mesh,
     )
-    target = Glm5Next(config, kv_params=kv_params)
-    target.attach_layers(target.build_layers())
-    return target, Glm5NextMTP(config)
+    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+        target = Glm5Next(config, kv_params)
+        draft = Glm5NextMTP(config)
 
+    def shapes(module: Any) -> dict[str, tuple[DType, list[int]]]:
+        return {
+            name: (t.dtype, [int(d) for d in t.shape])
+            for name, t in module.parameters
+        }
 
-def _tower_weights() -> dict[str, torch.Tensor]:
-    """Random tower weights under the checkpoint's names."""
-    config = Glm5NextVisionConfig.initialize_from_config(
-        SimpleNamespace(**VISION_CONFIG), dtype=DType.bfloat16
-    )
-    generator = torch.Generator().manual_seed(0)
-    tower = Glm5NextVisionTransformer(config, DeviceRef.CPU())
-    weights: dict[str, torch.Tensor] = {}
-    for name, (_, shape) in _shapes(tower).items():
-        if name == "patch_embed.proj.weight":
-            # The checkpoint stores the projection as its Conv3d.
-            shape = [
-                shape[0],
-                config.in_channels,
-                config.temporal_patch_size,
-                config.patch_size,
-                config.patch_size,
-            ]
-        checkpoint_name = "model.visual." + name.replace(
-            "attn.qkv_proj.", "attn.qkv."
-        )
-        weights[checkpoint_name] = (
-            0.02 * torch.randn(shape, generator=generator)
-        ).to(torch.bfloat16)
-    return weights
+    return shapes(target), shapes(draft)
 
 
 def _checkpoint_name(name: str) -> str:
-    """Undoes the one adapter rename a post-adapter name does not survive."""
-    return name.replace(
+    """Returns a target parameter's checkpoint name, the one the ModuleV3
+    adapter renames to ``name``."""
+    if name == "language_model.lm_head.weight":
+        return "lm_head.weight"
+    assert name.startswith("language_model."), name
+    rest = name.removeprefix("language_model.")
+    for site in ("hc_attn", "hc_ffn"):
+        for part in ("fn", "base", "scale"):
+            rest = rest.replace(f".{site}.hc_{part}", f".{site}_{part}")
+    rest = rest.replace("mlp.gate.gate_score.weight", "mlp.gate.weight")
+    rest = rest.replace(
+        "self_attn.kv_a_proj_layernorm", "self_attn.kv_a_layernorm.weight"
+    )
+    rest = rest.replace(
         "indexer.index_kpool_compress_gate.weight",
         "indexer.index_kpool_compress_gate",
     )
+    last = rest.rsplit(".", 1)[-1]
+    if last.endswith("_conv1d") or last in _MLA_RAW:
+        rest += ".weight"
+    return "model.language_model." + rest
+
+
+def _vision_config() -> Glm5NextVisionConfig:
+    return Glm5NextVisionConfig.initialize_from_config(
+        SimpleNamespace(**VISION_CONFIG), dtype=DType.bfloat16
+    )
+
+
+def _tower_shapes() -> dict[str, tuple[DType, list[int]]]:
+    """The tower's parameters, by the names its module gives them."""
+    with F.lazy(), default_dtype(DType.bfloat16):
+        tower = Glm5NextVisionTransformer(_vision_config())
+    return {
+        name: (t.dtype, [int(d) for d in t.shape])
+        for name, t in tower.parameters
+    }
+
+
+def _tower_checkpoint_name(name: str) -> str:
+    """Returns a tower parameter's checkpoint name."""
+    return "model.visual." + name.replace("attn.qkv_proj.", "attn.qkv.")
 
 
 def _draft_checkpoint_name(name: str) -> str:
-    """Places a draft module's weight under the checkpoint's MTP layer."""
+    """Places a draft parameter under the checkpoint's MTP layer."""
     prefix = f"layers.{NUM_LAYERS}."
     if name.startswith("decoder_layer."):
-        return _checkpoint_name(prefix + name[len("decoder_layer.") :])
+        return _checkpoint_name(
+            "language_model." + prefix + name.removeprefix("decoder_layer.")
+        )
     if name.startswith("shared_head_norm."):
-        return prefix + "shared_head.norm." + name[len("shared_head_norm.") :]
-    return prefix + name
+        name = "shared_head.norm." + name.removeprefix("shared_head_norm.")
+    return "model.language_model." + prefix + name
 
 
 def _random_weights(
@@ -339,7 +386,7 @@ def _random_weights(
     against a unit-RMS residual."""
     out: dict[str, torch.Tensor] = {}
     for name, (dtype, shape) in shapes.items():
-        if name.endswith(".weight_scale"):
+        if name.endswith(".weight_scale_inv"):
             continue
         last = name.rsplit(".", 1)[-1]
         fan_in = shape[-1] if len(shape) > 1 else 1
@@ -370,12 +417,12 @@ def _random_weights(
             value = np.full(shape, -1.8)
         elif name.endswith("_fn"):
             value = rng.normal(0.0, 0.01, shape)
-        elif name == "embed_tokens.weight":
+        elif name.endswith("embed_tokens.weight"):
             value = rng.normal(0.0, 1.0, shape)
         elif dtype == DType.float8_e4m3fn:
             value = np.clip(rng.normal(0.0, 1.0, shape), -4.0, 4.0)
-            scale_shape = shapes[name + "_scale"][1]
-            out[name + "_scale"] = torch.full(
+            scale_shape = shapes[name + "_scale_inv"][1]
+            out[name + "_scale_inv"] = torch.full(
                 scale_shape, gain / np.sqrt(fan_in), dtype=torch.float32
             )
             out[name] = torch.from_numpy(value.astype(np.float32)).to(
@@ -388,13 +435,6 @@ def _random_weights(
             torch.float32 if dtype == DType.float32 else torch.bfloat16
         )
     return out
-
-
-def _shapes(module: Module) -> dict[str, tuple[DType, list[int]]]:
-    return {
-        name: (w.dtype, [int(d) for d in w.shape.static_dims])
-        for name, w in module.raw_state_dict().items()
-    }
 
 
 def _write_tokenizer(path: Path) -> None:
@@ -448,28 +488,44 @@ def _write_tokenizer(path: Path) -> None:
 def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("glm53_flash_tiny")
     rng = np.random.default_rng(0)
-    target, draft = _modules()
-    weights = {
-        _checkpoint_name(name): value
-        for name, value in _random_weights(_shapes(target), rng).items()
-    }
+    target_shapes, draft_shapes = _shapes()
+    target_weights = _random_weights(target_shapes, rng)
     # No random logit row loses to a zero row, so every row runs to its
     # token budget without a reasoning delimiter.
     for token_id in SPECIAL_TOKENS.values():
-        weights["lm_head.weight"][token_id] = 0
-    draft_weights = _random_weights(_shapes(draft), rng)
+        target_weights["language_model.lm_head.weight"][token_id] = 0
+    draft_weights = _random_weights(draft_shapes, rng)
     # The draft reads only its token: `eh_proj` passes the normalized
     # embedding through and drops the target's hidden state.
     draft_weights["eh_proj.weight"] = torch.cat(
         [torch.eye(HIDDEN), torch.zeros(HIDDEN, HIDDEN)], dim=1
     ).to(torch.bfloat16)
+    weights = {
+        _checkpoint_name(name): value for name, value in target_weights.items()
+    }
     weights.update(
         {
             _draft_checkpoint_name(name): value
             for name, value in draft_weights.items()
         }
     )
-    weights.update(_tower_weights())
+    tower_weights = _random_weights(_tower_shapes(), rng)
+    # The checkpoint keeps the patch embedding as its Conv3d kernel.
+    vision_config = _vision_config()
+    patch = tower_weights["patch_embed.proj.weight"]
+    tower_weights["patch_embed.proj.weight"] = patch.reshape(
+        patch.shape[0],
+        vision_config.in_channels,
+        vision_config.temporal_patch_size,
+        vision_config.patch_size,
+        vision_config.patch_size,
+    )
+    weights.update(
+        {
+            _tower_checkpoint_name(name): value
+            for name, value in tower_weights.items()
+        }
+    )
     save_file(weights, str(path / "model.safetensors"))
     (path / "config.json").write_text(
         json.dumps(
@@ -480,18 +536,41 @@ def checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 "vision_config": VISION_CONFIG,
                 **MEDIA_TOKENS,
                 "tie_word_embeddings": False,
-                "quantization_config": {
-                    "quant_method": "fp8",
-                    "fmt": "e4m3",
-                    "activation_scheme": "dynamic",
-                    "weight_block_size": [128, 128],
-                    "modules_to_not_convert": ["lm_head", "model.embed_tokens"],
-                },
+                "quantization_config": QUANTIZATION_CONFIG,
             }
         )
     )
     _write_tokenizer(path)
     return path
+
+
+def test_the_checkpoint_round_trips_through_the_rules(
+    checkpoint: Path,
+) -> None:
+    """Checks the generated names are the ones the rules read, so every
+    parameter loads from the weight written for it."""
+    target_shapes, draft_shapes = _shapes()
+    with safe_open(str(checkpoint / "model.safetensors"), "np") as f:
+        names = set(f.keys())
+    stub = {name: _name_only(name) for name in names}
+    hf_config = SimpleNamespace(
+        num_hidden_layers=NUM_LAYERS, quantization_config=QUANTIZATION_CONFIG
+    )
+    target = WeightTransform(glm5_next_weight_rules(hf_config))(stub)
+    assert set(target) == set(target_shapes) | {
+        VISION_WEIGHT_PREFIX + name for name in _tower_shapes()
+    }
+    draft = WeightTransform(glm5_next_mtp_weight_rules(hf_config))(stub)
+    assert set(draft) == set(draft_shapes)
+
+
+def _name_only(name: str) -> Weights:
+    """A checkpoint weight the rules only rename."""
+    weight = NonCallableMock()
+    weight.data.return_value = WeightData.from_numpy(
+        np.zeros((2, 2), np.float32), name
+    )
+    return weight
 
 
 def _pipeline(
@@ -511,15 +590,12 @@ def _pipeline(
             ],
             quantization_encoding="float8_e4m3fn",
             max_length=1024,
-            # Subgraphs stage the plain graph's token-shard dims as
-            # parameters, which its compile cannot serialize; the fused
-            # graph never uses them.
-            use_subgraphs=False,
             kv_cache=KVCacheConfig(
                 enable_prefix_caching=False, device_memory_utilization=0.3
             ),
             runtime=PipelineRuntimeConfig(
                 ep_size=NUM_DEVICES,
+                prefer_module_v3=True,
                 max_batch_size=len(PROMPT_LENGTHS),
                 device_graph_capture=speculative,
                 # The plain run reports the logits behind each token.

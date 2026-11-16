@@ -1,0 +1,22 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# Graph-building kernel ops over TensorValue, shared by max.nn (through the
+# max.nn.kernels wrappers) and max.nn.legacy. Both depend on this target, so
+# it must import neither of them.
+modular_py_library(
+    name = "_graph_ops",
+    srcs = glob(["**/*.py"]),
+    docstring_example_deps = ["//max/python/max/engine"],
+    test_docstring_examples = True,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+    ],
+)

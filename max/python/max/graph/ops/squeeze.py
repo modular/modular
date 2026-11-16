@@ -57,7 +57,7 @@ def squeeze(x: TensorValueLike, axis: int) -> TensorValue:
             input.
     """
     v = TensorValue(x)
-    # TODO (MSDK-655): Probably want to add rmo.mo_squeeze_shape here
+    # TODO (MSDK-655): Probably want to add mo.squeeze_shape here
     shape = Shape(v.shape)
     if shape[axis] != 1:
         raise ValueError(f"Squeeze dim must be 1, got {axis=}, {shape=}")

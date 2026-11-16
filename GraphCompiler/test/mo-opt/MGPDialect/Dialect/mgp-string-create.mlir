@@ -26,7 +26,7 @@ func.func @string_create_special_chars() -> !mgp.opaque<"mojo_string"> {
 }
 
 // CHECK-LABEL: @string_create_in_model
-mgp.model @string_create_in_model : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @string_create_in_model devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %chain = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %chain, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -74,7 +74,7 @@ func.func @string_concat_empty_end() -> !mgp.opaque<"mojo_string"> {
 }
 
 // CHECK-LABEL: @string_concat_in_model
-mgp.model @string_concat_in_model : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @string_concat_in_model devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %chain = grt.chain.create ()
   %ctx = mgp.context.create 1
   mef.output %chain, %ctx, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>

@@ -54,7 +54,7 @@ struct _NoMaxPlugin(MaxPlugin):
     """
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["<none>"]()
-    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks[target]
+    comptime HookFor = DefaultMaxPluginHooks[_]
 
 
 comptime _BUILTIN_MAX_PLUGINS = PluginSelector[

@@ -26,12 +26,14 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/DeclSignaturePrinter.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/Lexer.h"
+#include "Mojo/MojoREPL/REPL.h"
+#include "Mojo/MojoREPL/REPLPythonExprUtils.h"
 #include "Mojo/MojoTooling/CodeComplete.h"
+#include "Mojo/MojoTooling/DeclRendering.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
-#include "Mojo/MojoTooling/REPLPythonExprUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
@@ -116,8 +118,7 @@ struct SymbolRef;
 
 struct Symbol {
   Symbol(ASTDecl *decl, StringRef identifier, SMLoc identifierLoc)
-      : identifier(identifier), decl(decl),
-        approximateViewKind(getApproximatePublicDeclKind(decl)) {
+      : identifier(identifier), decl(decl) {
     // Modules/Packages (and Import access gates over them) just point to the
     // direct location; their own decl location isn't a source identifier we can
     // size. Their per-segment source range is supplied via `onModuleImport`.
@@ -139,10 +140,6 @@ struct Symbol {
   /// The declaration represented by this symbol.
   ASTDecl *decl;
 
-  /// The approximate view kind for the decl of this symbol. This can provide a
-  /// rough estimate for what kind of decl this is.
-  std::optional<PublicDeclKind> approximateViewKind;
-
   /// The location of the identifier of this symbol.
   SMRange range;
 
@@ -150,13 +147,6 @@ struct Symbol {
   llvm::SetVector<SymbolRef *> symbolRefs;
 };
 } // namespace
-
-/// Return if the given view kind should be included in the markdown
-/// declaration.
-static bool shouldIncludeViewKindInMarkdown(PublicDeclKind kind) {
-  return kind != PublicDeclKind::DK_PublicAliasDecl &&
-         kind != PublicDeclKind::DK_PublicStructDecl;
-}
 
 std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
   auto processDecl = [&](StringRef kind, StringRef snippet, StringRef docString,
@@ -189,17 +179,10 @@ std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
     return buff;
   };
 
-  if (auto *function = dyn_cast<DefASTDecl>(decl)) {
-    std::string snippet = getFunctionDeclarationSnippet(*function, ctx);
-    std::string docString = getFunctionMarkdownDocString(*function);
-    return processDecl("function", snippet, docString,
-                       /*includeKindInSnippet=*/true);
-  }
-  if (auto view = getPublicDecl(decl))
-    return processDecl(view->getKindAsString(),
-                       view->getDeclarationSnippet(ctx),
-                       view->getMarkdownDocString(),
-                       shouldIncludeViewKindInMarkdown(view->getKind()));
+  if (StringRef kind = decl->getToolingKindName(); !kind.empty())
+    return processDecl(kind, getDeclDeclarationSnippet(*decl),
+                       getDeclMarkdownDocString(*decl),
+                       !isa<AliasASTDecl, StructASTDecl>(decl));
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
   if (auto name = decl->getName())
@@ -416,8 +399,7 @@ Symbol *SymbolIndex::registerSymbol(ASTDecl *decl,
     // would assert in IntervalMap). This also prevents crashes when a REPL
     // docstring imports the module being parsed (a self-import), which causes
     // PackageOp symbols with locations in the main doc to reach this path.
-    if (!isa_and_nonnull<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(
-            decl))
+    if (!isa<FileModuleASTDecl, PackageASTDecl, ImportASTDecl>(decl))
       insertRangeInMainDoc({symbol, symbol.range});
   }
   return &symbol;
@@ -447,8 +429,7 @@ void SymbolIndex::registerRef(ArrayRef<ASTDecl *> decls, SMRange range,
       // a reference to an argument which could manifest while type checking
       // the signature (so the normal way of computing the name isn't ready
       // yet).
-      if (getApproximatePublicDeclKind(decl) ==
-          PublicDeclKind::DK_PublicArgumentDecl)
+      if (decl->isArgumentDecl())
         symName = spelling;
     }
 
@@ -722,7 +703,7 @@ void LSPParserListener::onMatchMissingCases(llvm::SMRange matchRange,
 namespace {
 /// This class implements a parser listener that communicates between the Mojo
 /// parser and the LSP.
-class LSPMojoREPLListener : public MojoParserREPLListener {
+class LSPMojoREPLListener : public MojoREPLListener {
 public:
   LSPMojoREPLListener(
       llvm::SourceMgr &sourceMgr,
@@ -747,7 +728,7 @@ public:
 
   bool shouldPersistVariable(StringRef name, Type type) override {
     // Ignore non-user variables.
-    if (MojoParserContext::isHiddenPersistentVariable(name))
+    if (MojoREPLContext::isHiddenPersistentVariable(name))
       return false;
 
     auto [it, inserted] =
@@ -785,9 +766,11 @@ struct MojoDocument::Context {
     DialectRegistry registry;
     registerAllKGENDialects(registry);
     mlirContext.appendDialectRegistry(registry);
+    configureKGENContext(&mlirContext);
 
     parserContext = std::make_unique<MojoParserContext>(
         mainDoc.sourceMgr, &mlirContext, compilationOptions, frontendOptions);
+    replContext = std::make_unique<MojoREPLContext>(*parserContext);
   }
 
   KGEN::CompilationOptions compilationOptions;
@@ -796,6 +779,7 @@ struct MojoDocument::Context {
   SymbolIndex symbolIndex;
   LSPParserListener parserListener;
   std::unique_ptr<MojoParserContext> parserContext;
+  std::unique_ptr<MojoREPLContext> replContext;
 };
 
 //===----------------------------------------------------------------------===//
@@ -946,6 +930,10 @@ const KGEN::CompilationOptions &MojoDocument::getCompilationOptions() const {
 
 MojoParserContext &MojoDocument::getParserContext() const {
   return *context->parserContext;
+}
+
+MojoREPLContext &MojoDocument::getREPLContext() const {
+  return *context->replContext;
 }
 
 void MojoDocument::invalidate() {
@@ -1379,8 +1367,7 @@ void MojoDocument::getDocumentSymbols(
   StringRef declBufferRef = declBuffer->getBuffer();
   getDocumentSymbols(decl, symbols, [declBufferRef](ASTDecl *decl) {
     // We do not want to traverse into module imports at all.
-    if (getApproximatePublicDeclKind(decl) ==
-        PublicDeclKind::DK_PublicModuleDecl)
+    if (isa<FileModuleASTDecl, ImportASTDecl>(decl))
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
@@ -1441,19 +1428,18 @@ void MojoDocument::getDocumentSymbols(
     } else if (auto *alias = dyn_cast<AliasASTDecl>(decl)) {
       if (isGlobalAliasDecl(*alias))
         addSymbol(alias->getName().value_or(StringRef{}),
-                  lsp::SymbolKind::Property, range,
-                  getToolingAliasValue(*alias));
+                  lsp::SymbolKind::Property, range, alias->getToolingValue());
     } else if (auto *trait = dyn_cast<TraitASTDecl>(decl)) {
       addSymbol(trait->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Interface, range);
     } else if (auto *structDecl = dyn_cast<StructASTDecl>(decl)) {
       addSymbol(structDecl->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Struct, range,
-                getStructSignature(*structDecl));
+                KGEN::getStructSignature(*structDecl));
     } else if (auto *function = dyn_cast<DefASTDecl>(decl)) {
       addSymbol(function->getName().value_or(StringRef{}),
                 lsp::SymbolKind::Function, range,
-                getFunctionSignature(*function, *context->parserContext));
+                KGEN::getFunctionSignature(*function));
     }
   }
 
@@ -1517,8 +1503,7 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings, ASTDecl *decl,
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
   auto processFn = [declBufferRef](ASTDecl *decl) {
     // We do not want to traverse into module imports at all.
-    if (getApproximatePublicDeclKind(decl) ==
-        PublicDeclKind::DK_PublicModuleDecl)
+    if (isa<FileModuleASTDecl, ImportASTDecl>(decl))
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
@@ -1666,18 +1651,12 @@ static bool isSelfArgument(ASTDecl *decl) {
 }
 
 /// Return a semantic token kind for the given ast decl.
-static SemanticTokenKind
-getSemanticTokenKind(ASTDecl *symDecl, std::optional<PublicDeclKind> declKind) {
+static SemanticTokenKind getSemanticTokenKind(ASTDecl *symDecl) {
   if (symDecl->isCallableDecl())
     return SemanticTokenKind::kFunction;
 
-  // If we can't decipher the kind, it's nearly always a variable.
-  if (!declKind)
-    return SemanticTokenKind::kVariable;
-
-  switch (*declKind) {
-  case PublicDeclKind::DK_PublicAliasDecl: {
-    AliasDeclOp aliasOp = cast<AliasASTDecl>(symDecl)->getOp();
+  if (auto *alias = dyn_cast<AliasASTDecl>(symDecl)) {
+    AliasDeclOp aliasOp = alias->getOp();
     if (Attribute aliasValue = aliasOp.getValueAttr()) {
       // Try to decipher a token kind from the alias value.
       if (isa<ModuleAttr>(aliasValue))
@@ -1687,25 +1666,25 @@ getSemanticTokenKind(ASTDecl *symDecl, std::optional<PublicDeclKind> declKind) {
     }
     return SemanticTokenKind::kVariable;
   }
-  case PublicDeclKind::DK_PublicArgumentDecl:
+  if (symDecl->isArgumentDecl()) {
     if (isSelfArgument(symDecl))
       return SemanticTokenKind::kSpecialVariable;
     return SemanticTokenKind::kVariable;
-  case PublicDeclKind::DK_PublicModuleDecl:
-  case PublicDeclKind::DK_PublicPackageDecl:
-    return SemanticTokenKind::kModule;
-  case PublicDeclKind::DK_PublicParameterDecl:
-    return SemanticTokenKind::kParameter;
-  case PublicDeclKind::DK_PublicStructDecl:
-    return SemanticTokenKind::kClass;
-  case PublicDeclKind::DK_PublicStructFieldDecl:
-    return SemanticTokenKind::kField;
-  case PublicDeclKind::DK_PublicTraitDecl:
-    return SemanticTokenKind::kTrait;
-  case PublicDeclKind::DK_PublicVariableDecl:
-    return SemanticTokenKind::kVariable;
   }
-  llvm_unreachable("invalid decl kind");
+  if (isa<ModuleASTDecl>(symDecl))
+    return SemanticTokenKind::kModule;
+  if (auto *import = dyn_cast<ImportASTDecl>(symDecl);
+      import && import->isResolved())
+    return SemanticTokenKind::kModule;
+  if (symDecl->isParameterDecl())
+    return SemanticTokenKind::kParameter;
+  if (isa<StructASTDecl>(symDecl))
+    return SemanticTokenKind::kClass;
+  if (isa<StructFieldASTDecl>(symDecl))
+    return SemanticTokenKind::kField;
+  if (isa<TraitASTDecl>(symDecl))
+    return SemanticTokenKind::kTrait;
+  return SemanticTokenKind::kVariable;
 }
 
 /// Fold an address space value down to its integer, if it is concrete. This
@@ -1780,20 +1759,12 @@ static std::optional<int64_t> findAddressSpace(Type type) {
 
 /// Return the address space of the given symbol, if it has one. This is the
 /// address space of the reference that holds the value or the address space
-/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// parameter of its type (e.g. `Pointer[..., address_space=SHARED]`),
 /// including one nested in a type parameter such as an array's element type.
 static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
-  if (!symbol.approximateViewKind)
+  if (!symbol.decl->isArgumentDecl() && !symbol.decl->isParameterDecl() &&
+      !isa<StructFieldASTDecl>(symbol.decl) && !symbol.decl->isVariableDecl())
     return std::nullopt;
-  switch (*symbol.approximateViewKind) {
-  case PublicDeclKind::DK_PublicArgumentDecl:
-  case PublicDeclKind::DK_PublicParameterDecl:
-  case PublicDeclKind::DK_PublicStructFieldDecl:
-  case PublicDeclKind::DK_PublicVariableDecl:
-    break;
-  default:
-    return std::nullopt;
-  }
 
   ASTType type;
   if (Operation *op = symbol.decl->getIfOperation()) {
@@ -1837,8 +1808,8 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
       return;
 
     const Symbol *symbol = ref.symbols.front();
-    SemanticToken &token = tokens.emplace_back(
-        getSemanticTokenKind(symbol->decl, symbol->approximateViewKind), range);
+    SemanticToken &token =
+        tokens.emplace_back(getSemanticTokenKind(symbol->decl), range);
 
     auto [it, inserted] = addressSpaces.try_emplace(symbol);
     if (inserted)
@@ -1940,7 +1911,7 @@ void MojoDocument::onRename(const lsp::URIForFile &uri,
 }
 
 static bool isLocalVariable(const Symbol &symbol) {
-  if (symbol.approximateViewKind != PublicDeclKind::DK_PublicVariableDecl)
+  if (!symbol.decl->isVariableDecl())
     return false;
 
   auto *varDecl = dyn_cast<VarASTDecl>(symbol.decl);
@@ -2066,7 +2037,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, ASTDecl *decl,
 
   // Process the code blocks in the doc string.
   SmallVector<std::pair<StringRef, Type>> persistentVariables;
-  MojoParserContext &ctx = mainDoc.getParserContext();
+  MojoREPLContext &replContext = mainDoc.getREPLContext();
   ASTDecl *prevDecl = curReplDecl;
   LSPMojoREPLListener listener(sourceMgr, persistentVariables);
   for (const auto &block : docString->getCodeBlocks()) {
@@ -2093,7 +2064,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, ASTDecl *decl,
             mainDocContents, persistentVariables, block.getRawIndentLevel()));
 
     // Parse the code block.
-    auto [moduleDecl, exprFnDecl] = ctx.parseREPLExpression(
+    auto [moduleDecl, exprFnDecl] = replContext.parseExpression(
         listener, bufferId, contents, "__mojo_repl_lsp_main",
         persistentVariables, prevDecl,
         /*parseForLSP=*/true);
@@ -2127,18 +2098,17 @@ void MojoDocStrings::getFoldingRanges(SourceMgr &sourceMgr,
 
 std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoDocStrings::CodeBlock::onCodeCompletion(llvm::SMLoc completeLoc,
-                                            MojoParserContext &ctx) {
+                                            MojoREPLContext &replContext) {
   uint64_t rawCompletePos = completeLoc.getPointer() - contents.data();
-  return ctx.codeCompleteREPLExpression(contents, rawCompletePos,
-                                        persistentVariables, decl);
+  return replContext.codeComplete(contents, rawCompletePos, persistentVariables,
+                                  decl);
 }
 
 std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
-                                           MojoParserContext &ctx) {
+                                           MojoREPLContext &replContext) {
   uint64_t rawPos = loc.getPointer() - contents.data();
-  return ctx.signatureHelpREPLExpression(contents, rawPos, persistentVariables,
-                                         decl);
+  return replContext.signatureHelp(contents, rawPos, persistentVariables, decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2189,7 +2159,7 @@ SMLoc MojoTextDocument::translateParserLoc(SMLoc loc) {
 
   // If the location isn't in the main document, try to map it (e.g. in the case
   // of a location within a doc string code block).
-  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  auto newLoc = getREPLContext().getLocMapper().mapLocation(loc);
   return newLoc.isValid() ? newLoc : loc;
 }
 
@@ -2211,7 +2181,7 @@ std::vector<KGEN::Mojo::CodeCompletionResult>
 MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   // Check for code completion within a code block.
   if (auto *codeBlock = docStrings.findContainingCodeBlock(completeLoc))
-    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+    return codeBlock->onCodeCompletion(completeLoc, getREPLContext());
 
   // Otherwise, perform completion using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
@@ -2222,8 +2192,9 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
   uint64_t rawCompletePos =
       completeLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
-                                         getCompilationOptions());
+  configureKGENContext(&mlirContext);
+  return KGEN::Mojo::codeComplete(*buffer, rawCompletePos, &mlirContext,
+                                  getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2260,7 +2231,7 @@ std::optional<KGEN::Mojo::SignatureHelpResult>
 MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Check for signature help within a code block.
   if (auto *codeBlock = docStrings.findContainingCodeBlock(loc))
-    return codeBlock->onSignatureHelp(loc, getParserContext());
+    return codeBlock->onSignatureHelp(loc, getREPLContext());
 
   // Otherwise, perform signature help using the main doc.
   llvm::SourceMgr &sourceMgr = getSourceMgr();
@@ -2270,8 +2241,9 @@ MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
-  return MojoParserContext::signatureHelp(*buffer, rawPos, &mlirContext,
-                                          getCompilationOptions());
+  configureKGENContext(&mlirContext);
+  return KGEN::Mojo::signatureHelp(*buffer, rawPos, &mlirContext,
+                                   getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2307,14 +2279,14 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
   size_t size = 0;
 
   // Parse each of the cells in the notebook.
-  MojoParserContext &ctx = getParserContext();
+  MojoREPLContext &replContext = getREPLContext();
   ASTDecl *prevDecl = nullptr;
   for (Cell &cell : getCells()) {
     // If the cell isn't a python expression, parse it as normal.
     StringRef contents(cell.contents);
     if (!contents.consume_front("%%python")) {
       cell.persistentVariables = persistentVariables;
-      MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+      MojoREPLContext::ParsedExpression result = replContext.parseExpression(
           listener, cell.bufferId, cell.contents, "__mojo_repl_lsp_main",
           persistentVariables, prevDecl,
           /*parseForLSP=*/false);
@@ -2329,8 +2301,8 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
     // Otherwise, this is a python expression. Extract the variables that are
     // implicitly imported into mojo and create stub definitions so that future
     // cells can reference them without error.
-    ErrorOr<std::vector<std::unique_ptr<KGEN::Mojo::ExtractedPythonSymbol>>>
-        symbolsOr = KGEN::Mojo::extractPythonSymbolsFromReplExpr(contents);
+    ErrorOr<std::vector<KGEN::Mojo::ExtractedPythonSymbol>> symbolsOr =
+        KGEN::Mojo::extractPythonSymbolsFromReplExpr(contents);
     if (failed(symbolsOr)) {
       getSourceMgr().PrintMessage(SMLoc::getFromPointer(contents.data()),
                                   llvm::SourceMgr::DK_Warning,
@@ -2343,13 +2315,13 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
     std::string pythonCell;
     llvm::raw_string_ostream os(pythonCell);
     os << "from std.python import PythonObject\n\n";
-    for (auto &symbol : *symbolsOr)
-      os << "var " << symbol->getName() << ": PythonObject\n";
+    for (const auto &symbol : *symbolsOr)
+      os << "var " << symbol.getName() << ": PythonObject\n";
     int pythonCellId = getSourceMgr().AddNewSourceBuffer(
         llvm::MemoryBuffer::getMemBuffer(pythonCell,
                                          (cell.uri.file() + "_py").str()),
         SMLoc());
-    MojoParserContext::ParsedREPLExpr result = ctx.parseREPLExpression(
+    MojoREPLContext::ParsedExpression result = replContext.parseExpression(
         listener, pythonCellId, pythonCell, "__mojo_repl_lsp_main",
         persistentVariables, prevDecl, /*parseForLSP=*/false);
     prevDecl = result.moduleDecl;
@@ -2374,7 +2346,7 @@ bool MojoNotebookDocument::containsLocation(SMLoc loc) {
 }
 
 SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
-  auto newLoc = getParserContext().getREPLLocMapper().mapLocation(loc);
+  auto newLoc = getREPLContext().getLocMapper().mapLocation(loc);
   if (!newLoc.isValid())
     return loc;
 
@@ -2382,7 +2354,7 @@ SMLoc MojoNotebookDocument::translateParserLoc(SMLoc loc) {
   // the location is in a doc string.
   if (containsLocation(newLoc))
     return newLoc;
-  newLoc = getParserContext().getREPLLocMapper().mapLocation(newLoc);
+  newLoc = getREPLContext().getLocMapper().mapLocation(newLoc);
   return newLoc.isValid() ? newLoc : loc;
 }
 
@@ -2413,12 +2385,12 @@ MojoNotebookDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
 
   // Check for code completion within a code block.
   if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(completeLoc))
-    return codeBlock->onCodeCompletion(completeLoc, getParserContext());
+    return codeBlock->onCodeCompletion(completeLoc, getREPLContext());
 
   // Query the mojo parser for potential completion results.
   uint64_t rawCompletePos = completeLoc.getPointer() - cell.contents.data();
-  return getParserContext().codeCompleteREPLExpression(
-      cell.contents, rawCompletePos, cell.persistentVariables, cell.decl);
+  return getREPLContext().codeComplete(cell.contents, rawCompletePos,
+                                       cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2467,12 +2439,12 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
   // Check for signature help within a code block.
   if (auto *codeBlock = cell.docStrings.findContainingCodeBlock(loc))
-    return codeBlock->onSignatureHelp(loc, getParserContext());
+    return codeBlock->onSignatureHelp(loc, getREPLContext());
 
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - cell.contents.data();
-  return getParserContext().signatureHelpREPLExpression(
-      cell.contents, rawPos, cell.persistentVariables, cell.decl);
+  return getREPLContext().signatureHelp(cell.contents, rawPos,
+                                        cell.persistentVariables, cell.decl);
 }
 
 //===----------------------------------------------------------------------===//

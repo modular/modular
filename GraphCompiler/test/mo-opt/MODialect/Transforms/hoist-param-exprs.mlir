@@ -59,6 +59,23 @@ mo.graph @scoped_multiple_complex_expression<N, M>(%arg0: !mo.tensor<[N], f32>, 
 }
 
 
+// A shape check declared both outside an mo.if and in its branch: rewriting the
+// mo.if's composite dim must leave the branch's `!mo.chain` declaration alone.
+// CHECK-LABEL: mo.graph @scoped_shape_check
+// CHECK: mo.if
+// CHECK-NEXT: kgen.param.declare inner_check: !mo.chain = <apply(
+mo.graph @scoped_shape_check<N, M>(%arg0: !mo.tensor<[N], f32>, %arg1: !mo.tensor<[M], f32>, %cond: !mo.tensor<[], bool>) -> (!mo.tensor<[add(N, M)], f32>) {
+  kgen.param.declare outer_check: !mo.chain = <apply(:(!kgen.scalar<bool>) -> !mo.chain "mo.assert"{message = "rows must match" : !kgen.string}, identical(:scalar<si64> N, M))>
+  %1 = mo.concat[0](%arg0, %arg1):(!mo.tensor<[N], f32>, !mo.tensor<[M], f32>) -> !mo.tensor<[add(N, M)], f32>
+  %2 = mo.if (%cond : !mo.tensor<[], bool>) -> !mo.tensor<[add(N, M)], f32> {
+    kgen.param.declare inner_check: !mo.chain = <apply(:(!kgen.scalar<bool>) -> !mo.chain "mo.assert"{message = "rows must match" : !kgen.string}, identical(:scalar<si64> N, M))>
+    mo.yield %1 : !mo.tensor<[add(N, M)], f32>
+  } else {
+    mo.yield %1 : !mo.tensor<[add(N, M)], f32>
+  }
+  mo.output %2 : !mo.tensor<[add(N, M)], f32>
+}
+
 // CHECK-LABEL: mo.graph @no_rewrite_decl
 mo.graph @no_rewrite_decl<N, M>(%arg0: !mo.tensor<[N], f32>, %arg1: !mo.tensor<[M], f32>) -> (!mo.tensor<[add(N, M)], f32>) {
   // CHECK-NEXT: mo.concat

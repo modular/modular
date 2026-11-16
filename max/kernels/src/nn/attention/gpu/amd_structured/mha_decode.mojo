@@ -83,10 +83,14 @@ __extension Attention:
             readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
-        # Split-K: compute this partition's key range.
+        # Split-K: compute this partition's key range over the keys the mask
+        # can show this sequence (all of them unless it hides a prefix).
+        var first_key = self.decode_first_key()
         var start, end = get_start_and_end_for_partitions[Self.BN](
-            self.num_keys, num_partitions, block_idx.x
+            self.num_keys - first_key, num_partitions, block_idx.x
         )
+        start += first_key
+        end += first_key
 
         # Empty partitions (from power-of-two bucketing): reset to
         # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.

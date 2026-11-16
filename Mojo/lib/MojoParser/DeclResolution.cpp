@@ -78,31 +78,45 @@ static StructASTDecl *getStructOrTargetStruct(ASTDecl &decl,
 /// failure on parse error.
 static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
                              std::optional<size_t> stmtIndent,
-                             bool allowUnbound) {
+                             TypeStrictness strictness) {
   ExprNode *expr = nullptr;
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
   IREmitter emitter(declScope, EC_Type);
-  result = emitter.emitExprType(expr, allowUnbound);
+  result = emitter.emitExprType(expr, strictness);
   if (!result)
     return failure();
 
   return success();
 }
 
+/// The witness name of a trait requirement: a method's mangled symbol (methods
+/// overload) or an alias's declared name.
+static StringAttr getWitnessName(Operation *traitMemberOp) {
+  if (auto fnOp = dyn_cast<FnOp>(traitMemberOp))
+    return fnOp.getSymNameAttr();
+  return cast<AliasDeclOp>(traitMemberOp).getDeclName();
+}
+
+/// Resolve the witness of `structDecl`'s conformance that the trait's
+/// `defaultedOp` stands in for.
 static LogicalResult resolveDefaultedOpFromTrait(DeclResolver &resolver,
                                                  Operation *defaultedOp,
                                                  StructASTDecl &structDecl) {
-  auto traitFnDecl = defaultedOp->getParentOfType<TraitDeclOp>();
-
+  auto traitDeclOp = defaultedOp->getParentOfType<TraitDeclOp>();
   auto traitSymbol =
-      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitFnDecl));
-  auto conformanceDecl =
-      structDecl.lookupInCurrentScope(traitSymbol.getFlattenedName());
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitDeclOp));
+  ConformanceASTDecl *conformanceDecl =
+      structDecl.lookupConformance(traitSymbol);
+  assert(conformanceDecl && "expected a conformance for the trait");
 
-  return resolver.resolveBody(*conformanceDecl.front(),
-                              conformanceDecl.front()->getLoc());
+  // Body resolving the conformance resolves the trait's members, which gives
+  // the default its symbol and so its witness name.
+  if (failed(resolver.resolveBody(*conformanceDecl, structDecl.getLoc())))
+    return failure();
+  return resolveConformanceMember(*conformanceDecl,
+                                  getWitnessName(defaultedOp));
 }
 //===----------------------------------------------------------------------===//
 // Decorator Support
@@ -573,6 +587,18 @@ private:
 
 static constexpr StringLiteral kAnnotationDecorator = "__annotation";
 
+/// Return true if `decorator` is `@__address_space`, in either the bare or the
+/// called form. It only applies to a `var` statement in a function body, which
+/// the statement parser handles, so declarations diagnose it themselves rather
+/// than letting it reach the emitter as an unknown name.
+static bool isAddressSpaceDecorator(ExprNode *decorator) {
+  const ExprNode *callee = decorator;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    callee = callNode->callee;
+  auto declRef = dyn_cast<DeclRefNode>(callee);
+  return declRef && declRef->spelling == "__address_space";
+}
+
 bool StructDecorators::isAnnotationDecorator(ExprNode *decorator) {
   const ExprNode *callee = decorator;
   if (auto callNode = dyn_cast<CallNode>(decorator))
@@ -731,9 +757,16 @@ void Decorators::applyBodyDecorators(
     return;
 
   SmallVector<ExprNode *> exprDecorators;
-  for (auto decorator : decl.getBodyDecorators())
+  for (auto decorator : decl.getBodyDecorators()) {
+    if (isAddressSpaceDecorator(decorator)) {
+      emitError(decorator->getLoc(),
+                "@__address_space only applies to a 'var' in a function body")
+          << decorator->getRange();
+      continue;
+    }
     if (failed(process(decorator)))
       exprDecorators.push_back(decorator);
+  }
 
   // Emit the expressions and persist the resulting PValue into the IR.
   // TODO: Emit an attempt to call the decorator value.
@@ -1876,7 +1909,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   //    captures, and record the default-all convention so free variables in
   //    the body are captured rather than seen as unknown declarations.
   for (auto [name, capture, location] : node->captures) {
-    IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp));
+    IREmitter capEmitter(*decl.getParentDecl(), OpBuilder(funcOp),
+                         emitter.getRaiseContext());
     if (!ClosureEmitter::addCaptureValue(decl, location, name, capture,
                                          capEmitter, &sigDecl))
       return {};
@@ -1945,7 +1979,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     }
     endFn.setUnresolved(false);
 
-    IREmitter bodyEmitter(decl, OpBuilder(&body.front()));
+    RaiseContext raiseContext(funcOp);
+    IREmitter bodyEmitter(decl, OpBuilder(&body.front()), &raiseContext);
     ASTType userResultType = funcOp.getUserResultType();
     ExprDest resultDest(userResultType, EC_ReturnValue);
     if (signature.hasMemoryOnlyResult())
@@ -2688,7 +2723,9 @@ LogicalResult PackageASTDecl::resolvePackage() {
 
   // A namespace is the union of plain directories across import roots, none
   // of which has an __init__, so its children are all it has. Its spec's path
-  // records only the first portion, which the namespace doesn't depend on.
+  // records at most the first portion, which the namespace doesn't depend on:
+  // the namespace a package is being precompiled into may have no directory
+  // at all yet.
   if (!state->spec->isNamespace()) {
     // Grab the directory that this package is defined in.
     std::optional<std::string> directoryStr = state->sourcePath();
@@ -2804,7 +2841,7 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
   ASTType type;
   if (bodyTypeExpr) {
     IREmitter emitter(sigDecl, EC_Type);
-    type = emitter.emitExprType(bodyTypeExpr, /*allowUnbound=*/true);
+    type = emitter.emitExprType(bodyTypeExpr, TypeStrictness::kParametric);
     if (!type)
       return failure();
   }
@@ -2818,26 +2855,9 @@ LogicalResult AliasASTDecl::resolveSignature(Lexer &lexer) {
       return failure();
 
     IREmitter emitter(sigDecl, EC_AliasValue);
-
-    // Parametric aliases become generator types whose *body* type may still
-    // mention unbound / infer-only parameters (e.g. `Origin[mut=mut]` leaves
-    // `_mlir_origin` open). That type annotation maybe dependent on the
-    // parameters of the comptime.
-    ASTType emissionType = type;
-    if (type && type.hasUnboundParameters()) {
-      if (paramSignature.paramDeclAttrs.empty()) {
-        p.emitError(initExpr->getLoc(),
-                    "cannot construct a value with parametric type: ")
-            << type << initExpr->getRange();
-        return failure();
-      }
-      emissionType = {};
-    }
-
     // Emit the value and convert to the expected type if we know it and it is
     // concrete enough to convert into.
-    PValue rhsValue =
-        emitter.emitExprPValue(initExpr, EC_AliasValue, emissionType);
+    PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
     if (!rhsValue)
       return failure();
 
@@ -3369,7 +3389,7 @@ static ParseResult resolveConformanceList(
   for (const ParsedConformanceEntry &conformance : parsedConformances) {
     IREmitter typeEmitter(declScope, EC_Type);
     ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
-                                            /*allowUnbound=*/false);
+                                            TypeStrictness::kParametric);
     if (!type)
       return failure();
 
@@ -3596,7 +3616,8 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           IREmitter emitter(*parentDecl, EC_Type);
-          if (ASTType t = emitter.emitExprType(drn)) {
+          if (ASTType t =
+                  emitter.emitExprType(drn, TypeStrictness::kConcrete)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
             return success();
           }
@@ -3685,18 +3706,24 @@ getConformanceCondition(StructASTDecl &structDecl, StringRef traitName) {
 }
 
 /// Emits the diagnostic for a bare `@explicit_destroy` decorator, which now
-/// requires a string message argument, with a note nudging users toward the
-/// `Deinitable where ...` replacement. The caller marks the decl
-/// erroneous and returns failure. Shared by `struct` and `trait` resolution.
+/// requires a string message argument, with a note suggesting the removal
+/// path. The caller marks the decl erroneous and returns failure. Shared by
+/// `struct` and `trait` resolution.
 static void emitExplicitDestroyRequiresArgError(SharedState &shared,
                                                 SMLoc decoratorLoc,
                                                 const ASTDecl &decl) {
   auto diag = shared.emitError(decoratorLoc)
               << "@explicit_destroy requires an argument: "
                  "`@explicit_destroy(\"...\")`";
-  diag.attachNote(decl)
-      << "Use a `not Deinitable` conformance to opt out of implicit "
-         "deletion. `@explicit_destroy` is deprecated.";
+  if (isa<TraitASTDecl>(decl)) {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance on struct declarations instead. "
+           "`@explicit_destroy` on traits is deprecated.";
+  } else {
+    diag.attachNote(decl)
+        << "Use a `not Deinitable` conformance to opt out of implicit "
+           "deletion. `@explicit_destroy` is deprecated.";
+  }
 }
 
 /// Validates that an `@explicit_destroy(...)` call has exactly one string
@@ -3764,8 +3791,6 @@ findDeinitableEntry(ArrayRef<ParsedConformanceEntry> entries) {
 /// Warns that `@explicit_destroy("...")` on a struct is deprecated, with a note
 /// on the struct's `Deinitable` conformance, and a fix-it that moves the
 /// message there.
-// TODO(MOCO-4468): Deprecate the trait form too once traits accept a message
-// on their conformances.
 static void
 emitExplicitDestroyDeprecation(SharedState &shared, const CallNode *call,
                                StringRef message,
@@ -3933,7 +3958,7 @@ LogicalResult StructASTDecl::resolveSignature(Lexer &lexer) {
   }
 
   // Compute the struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structOp));
+  setSelfType(computeSelfType());
 
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setConvention(TypeConvention::MemoryOnly);
@@ -4641,26 +4666,6 @@ LogicalResult StructASTDecl::resolveBody(Lexer &lexer) {
     }
   }
 
-  // Workaround: the conformances to a trait and to a trait that extends it
-  // aren't forced to be checked in order. `__Enum` extends
-  // `EnumLike`, and when the former's conformance is checked first, its default
-  // implementations of `EnumLike`'s methods cannot find the witnesses for
-  // `EnumLike`'s members. Check `EnumLike`'s conformance now, so that the
-  // witnesses exist by the time `__Enum`'s conformance is checked.
-  // TODO(MOCO-5078): remove once a refining trait's default implementations
-  // resolve in any verification order.
-  if (structOp.isEnum()) {
-    ASTDecl *enumLikeDecl = shared.lookupBuiltinTrait("EnumLike", getLoc());
-    assert(enumLikeDecl &&
-           "`__Enum` resolved, so its parent `EnumLike` exists");
-    ArrayRef<ASTDecl *> conformanceDecls = lookupInCurrentScope(
-        TraitSymbolAttr::get(enumLikeDecl->getSymbolRef()).getFlattenedName());
-    assert(!conformanceDecls.empty() &&
-           "an enum conforms to `EnumLike` through `__Enum`");
-    // The check records a failure on the conformance declaration, where every
-    // later use reads it; the enum itself stays resolvable, as for a struct.
-    (void)resolver.resolveBody(*conformanceDecls.front(), getLoc());
-  }
   return success();
 }
 
@@ -4684,7 +4689,7 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
                         &identifierLoc) ||
       p.parseToken(Token::colon, "struct field declaration must have a type") ||
       parseType(p, type, getStructDecl(), getIndentation(),
-                /*allowUnbound=*/false))
+                TypeStrictness::kConcrete))
     return failure();
 
   if (sugarIsa<TraitType>(type)) {
@@ -4716,6 +4721,13 @@ LogicalResult StructFieldASTDecl::resolveSignature(Lexer &lexer) {
             UnitAttr::get(fieldOp.getContext()));
         continue;
       }
+    }
+    if (isAddressSpaceDecorator(decorator)) {
+      shared.emitError(decorator->getLoc(),
+                       "struct fields can't have an address space; put "
+                       "@__address_space on the 'var' that holds the struct")
+          << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
+      continue;
     }
     if (succeeded(structDecorators.processFieldDecorator(decorator, fieldOp)))
       continue;
@@ -4874,32 +4886,16 @@ LogicalResult EnumCaseASTDecl::resolveSignature(Lexer &lexer) {
     payloadRequirements.push_back({traitName, std::move(assumptions)});
   }
 
-  // `NoneType` as a payload type marks a case without a payload.
-  ASTType noneType =
-      shared.lookupBuiltinType("NoneType", enumDecl, enumDecl.getLoc());
-  assert(!noneType.isTypeCheckErrorType() &&
-         "the builtin module resolved `__Enum`, so it has `NoneType`");
-
   SmallVector<Type> payloadTypes;
   for (ExprNode *typeExpr : payload) {
     IREmitter emitter(enumDecl, EC_Type);
-    ASTType type = emitter.emitExprType(typeExpr, /*allowUnbound=*/false);
+    ASTType type = emitter.emitExprType(typeExpr, TypeStrictness::kConcrete);
     if (!type)
       return failure();
     if (sugarIsa<TraitType>(type)) {
       shared.emitError(typeExpr->getLoc())
           << "enum case payloads do not support trait types; " << type
           << " is a trait, use a concrete type or compile-time generic";
-      return failure();
-    }
-    // TODO(MOCO-5080): `EnumLike` marks a case without a payload with
-    // `NoneType`, so a case cannot carry one; the marker goes away once every
-    // payload is a `Tuple`.
-    if (payload.size() == 1 && type.isEqualCanon(noneType)) {
-      shared.emitError(typeExpr->getLoc())
-          << "enum case payload must not be 'NoneType'; a case without a "
-             "payload is written 'case "
-          << caseName << "'" << typeExpr->getRange();
       return failure();
     }
     // The enum occurring as a payload implies an infinite type/layout.
@@ -5087,6 +5083,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
   // argument; the bare and empty-argument forms are errors, mirroring the
   // handling on `struct`.
   std::optional<std::string> linearTypeErrorMsg;
+  std::optional<SMLoc> explicitDestroyDecoratorLoc;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
       if (declRefNode->spelling == "explicit_destroy") {
@@ -5102,6 +5099,7 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
           if (failed(parseExplicitDestroyMessage(shared, callNode, message)))
             return failure();
           linearTypeErrorMsg = std::move(message);
+          explicitDestroyDecoratorLoc = callNode->getLoc();
         }
       }
     }
@@ -5117,6 +5115,11 @@ LogicalResult TraitASTDecl::resolveSignature(Lexer &lexer) {
     }
   } else {
     // Trait does not conform to Deinitable, so it is a linear type.
+    if (explicitDestroyDecoratorLoc) {
+      shared.emitWarning(*explicitDestroyDecoratorLoc)
+          << "'@explicit_destroy' on a trait is deprecated; only structs "
+             "support custom destruction messages right now";
+    }
     // Set a default error message if @explicit_destroy wasn't used.
     if (!linearTypeErrorMsg) {
       linearTypeErrorMsg = "unhandled explicitly destroyed type '" +
@@ -5292,12 +5295,11 @@ LogicalResult ExtensionASTDecl::resolveSignature(Lexer &lexer) {
     return failure();
   }
 
-  StructDeclOp structDeclOp = structAstDecl->getOp();
   SymbolRefAttr targetStructAttr = structAstDecl->getSymbolRef();
   extensionDeclOp.setTargetStructAttr(targetStructAttr);
 
   // Extension methods use the target struct's self type.
-  setSelfType(StructASTDecl::computeSelfType(structDeclOp));
+  setSelfType(structAstDecl->computeSelfType());
 
   // Use the parent scope to resolve the traits in the conformance list.
   // TODO(MOCO-522): This might need to change once we have parametric traits,
@@ -5480,9 +5482,9 @@ LogicalResult ExtensionASTDecl::resolveBody(Lexer &lexer) {
       // Conformances are always created as signature-resolved because there's
       // no less-resolved state for it (see CALROC for more).
 
-      // Extension conformance verification follows the same pattern as structs
-      // and is handled in verifyAndBuildConformance() during ConformanceOp body
-      // resolution. The trait body will be resolved there.
+      // Extension conformances register their members like struct ones do,
+      // when the ConformanceOp body is resolved. The trait body will be
+      // resolved there.
     }
   }
 
@@ -5719,6 +5721,23 @@ StructASTDecl &ConformanceASTDecl::getStructDecl() const {
   return *structDecl;
 }
 
+TraitASTDecl &ConformanceASTDecl::getTraitDecl() const {
+  return cast<TraitASTDecl>(shared.getDeclResolver().getDeclForTypeSymbol(
+      getOp().getTraitSymbolAttr().getSymbol()));
+}
+
+ConformanceASTDecl *
+StructASTDecl::lookupConformance(TraitSymbolAttr traitSymbol) const {
+  ArrayRef<ASTDecl *> decls =
+      lookupInCurrentScope(traitSymbol.getFlattenedName());
+  if (decls.empty())
+    return nullptr;
+  // TODO: we might need to allow multiple conformance ops for parametric
+  // traits, and we need to filter it here.
+  assert(decls.size() == 1 && "expected exactly one conformance");
+  return &cast<ConformanceASTDecl>(*decls.front());
+}
+
 LogicalResult ConformanceASTDecl::resolveBody(Lexer &) {
   return resolveConformance();
 }
@@ -5729,17 +5748,71 @@ LogicalResult ConformanceASTDecl::resolveSyntheticBody() {
 
 LogicalResult ConformanceASTDecl::resolveConformance() {
   ConformanceOp op = getOp();
-  resolvedness = DeclResolvedness::body;
+  auto &resolver = shared.getDeclResolver();
+  StructASTDecl &structDecl = getStructDecl();
+  auto structDeclOp = structDecl.getOp();
 
   if (ConstraintAttr constraint = op.getConstraintAttr())
     if (!isTriviallyTrueConstraint(constraint))
       insertKnownAssumptions({constraint});
 
-  // Verify conformance explicitly.
-  std::optional<MojoInflightDiag> diag;
+  // Find extensions that target this struct and implement this trait.
+  // This implements a form of the orphan rule: extensions can be defined either
+  // in the same file as the struct or in the same file as the trait. This
+  // ensures that extensions/conformances are local to either the struct or the
+  // trait, preventing conflicting implementations across different files.
+  // TODO(MOCO-522): Turn this into arcana docs!
+  TraitASTDecl &traitDecl = getTraitDecl();
+  TraitSymbolAttr traitSymbol = op.getTraitSymbolAttr();
+  llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
+  if (auto *structFileScope =
+          structDecl.getNearestDeclOfType<FileModuleASTDecl>())
+    structFileScope->findExtensionsInScopeForStruct(
+        structDecl.getSymbolRef(), uniqueExtensions, traitSymbol);
+  if (auto *traitFileScope =
+          traitDecl.getNearestDeclOfType<FileModuleASTDecl>())
+    traitFileScope->findExtensionsInScopeForStruct(
+        structDecl.getSymbolRef(), uniqueExtensions, traitSymbol);
+  relevantExtensions.assign(uniqueExtensions.begin(), uniqueExtensions.end());
 
-  if (failed(verifyAndBuildConformance(*this, diag)))
+  // Make sure to fully resolve the trait first.
+  if (failed(resolver.resolveBody(traitDecl, getLoc())))
     return failure();
 
+  if (traitDecl.getOp().isRegisterPassable() &&
+      !structDeclOp.isRegisterPassable()) {
+    // Non-RP structs may conditionally conform to RP traits only when the
+    // conformance constraint implies the struct's RegisterPassable constraint.
+    // This guarantees that whenever the conformance is active, the struct is
+    // actually register-passable. Extension conformances skip the ancestor
+    // implication check in `StructASTDecl::resolveSignature`, so this is
+    // their only guard.
+    ConstraintAttr rpConstraint =
+        structDeclOp.getRegisterPassableConstraintAttr();
+    bool conformanceImpliesRP =
+        rpConstraint && op.getConstraintAttr() &&
+        isImplicationProven(rpConstraint.getProposition(),
+                            op.getConstraintAttr().getProposition());
+    if (!conformanceImpliesRP) {
+      shared.emitError(structDecl.getLoc(),
+                       "a struct must be register passable in order to "
+                       "inherit from a register passable trait");
+      return failure();
+    }
+  }
+
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
+        return failure();
+      if (isa<DefASTDecl, AliasASTDecl>(decl))
+        resolver.createConformanceMemberDecl(
+            *this, *decl, getWitnessName(decl->getIfOperation()));
+    }
+  }
   return success();
+}
+
+LogicalResult ConformanceWitnessASTDecl::resolveSyntheticBody() {
+  return verifyConformanceMember(*this);
 }

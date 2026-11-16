@@ -50,13 +50,10 @@ namespace M::MGP {
 /// LowerableToMGPInterface implementers and built up as ops are lowered.
 class MOGraphLoweringState {
 public:
-  MOGraphLoweringState(M::MO::GraphOp graph,
-                       llvm::StringRef compiledFrameworkLabel,
-                       size_t minimumCpuAlignment,
+  MOGraphLoweringState(M::MO::GraphOp graph, size_t minimumCpuAlignment,
                        mlir::SymbolTable &moduleSymbolTable)
-      : graph(graph), common(compiledFrameworkLabel, minimumCpuAlignment),
-        init(graph.getContext()), execute(graph.getContext()),
-        moduleSymbolTable(moduleSymbolTable) {
+      : graph(graph), common(minimumCpuAlignment), init(graph.getContext()),
+        execute(graph.getContext()), moduleSymbolTable(moduleSymbolTable) {
     builderContext.hostDevice = M::getHostDevice(graph);
 
     typeConverter.addConversion(
@@ -116,15 +113,10 @@ public:
 
   /// Common state used by both the init and execute phases.
   struct CommonState {
-    explicit CommonState(llvm::StringRef compiledFrameworkLabel,
-                         size_t minimumCpuAlignment)
-        : compiledFrameworkLabel(compiledFrameworkLabel),
-          minimumCpuAlignment(minimumCpuAlignment) {}
+    explicit CommonState(size_t minimumCpuAlignment)
+        : minimumCpuAlignment(minimumCpuAlignment) {}
 
     MGP::ModelOp modelOp;
-
-    /// The name of the target framework, e.g. "mgp", "tf", etc.
-    llvm::StringRef compiledFrameworkLabel;
 
     /// For all CPU buffers, constant and allocated.
     size_t minimumCpuAlignment;
@@ -158,6 +150,12 @@ public:
 
     /// Sequences side-effecting operations such as printing.
     TypedValue<MEF::ChainType> currentChain;
+
+    /// Out-chains of control flow ops not yet folded into currentChain. An op
+    /// after control flow waits on one only if it reads a result of the
+    /// control flow op, through the result's guard, or is itself ordered
+    /// against control flow: control flow, a call, or a block terminator.
+    SmallVector<Value> controlFlowChains;
 
     /// Passed in as the second argument.
     TypedValue<MGP::ContextType> mgpContext;
@@ -213,10 +211,6 @@ public:
   mlir::SymbolTable &getModuleSymbolTable() { return moduleSymbolTable; }
 
   void setModelOp(MGP::ModelOp modelOp) { common.modelOp = modelOp; }
-
-  llvm::StringRef getCompiledFrameworkLabel() {
-    return common.compiledFrameworkLabel;
-  }
 
   size_t getMinimumCpuAlignment() { return common.minimumCpuAlignment; }
 
@@ -307,6 +301,16 @@ public:
   void setCurrentExecuteChain(Value chain) {
     execute.currentChain = cast<TypedValue<MEF::ChainType>>(chain);
   }
+
+  /// Records a control flow op's out-chain without ordering later ops after
+  /// it; see ExecuteState::controlFlowChains.
+  void addControlFlowChain(Value chain) {
+    execute.controlFlowChains.push_back(chain);
+  }
+
+  /// Folds the recorded control flow out-chains into the current chain, for
+  /// an op ordered against control flow, and returns the new current chain.
+  Value joinControlFlowChains(Location loc);
 
   /// The runtime value a mo.graph SSA value (often a `mo.tensor`) lowers to.
   Value lookupExecuteLoweredValue(Value key) {

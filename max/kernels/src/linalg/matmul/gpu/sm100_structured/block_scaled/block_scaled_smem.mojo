@@ -23,8 +23,8 @@ Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
 from std.math import align_up
-from layout.tensor_core_async import tile_sf_layout_k_major
-from std.utils.index import IndexList
+
+from layout.tensor_core_async import tile_sf_layout_k_major_typed
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -94,18 +94,19 @@ struct BlockScaledTileCore[
     # This determines how many K elements each scaling factor covers
     comptime SF_K_GROUP_SIZE = sf_k_group_size[Self.config]()
 
-    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
-    comptime sfa_smem_layout = tile_sf_layout_k_major[
+    comptime sfa_smem_layout = tile_sf_layout_k_major_typed[
         Self.BM,
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
 
-    comptime sfb_smem_layout = tile_sf_layout_k_major[
+    comptime sfb_smem_layout = tile_sf_layout_k_major_typed[
         align_up(Self.MMA_N, SF_MN_GROUP_SIZE),
         Self.SF_K_GROUP_SIZE * Self.config.num_sf_k_tiles,
         Self.config.vec_sf_size,
-    ]()
+    ]
+
+    # SF layouts use config.vec_sf_size (MXFP8=32, NVFP4=16) and num_sf_k_tiles
 
     # SF tile dimensions (computed via shared helper functions)
     comptime SF_BK = sf_bk[Self.config]()
@@ -121,12 +122,12 @@ struct BlockScaledTileCore[
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
         Self.OutputM,
         Self.OutputN,
-        IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
-        IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
+        (Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+        (Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -144,10 +145,10 @@ struct BlockScaledTileCore[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
-        IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
-        IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
+        (Self.BM, Self.BK),  # A tile shape
+        (Self.BN, Self.BK),  # B tile shape
+        (Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+        (Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
         Self.num_pipeline_stages,
     ]
 

@@ -154,8 +154,9 @@ class ConcatInPlacePass
       // A slice is only aligned when the preceding sizes sum to a provable
       // multiple of the alignment. Kernels assume every tensor base has the
       // device's preferred alignment (stamped into `mogg_tensor_init` by
-      // `MOGGOps.cpp`), so an unprovable offset is a misaligned-address fault,
-      // not a missed optimization. The last size feeds no offset.
+      // `MOGGOpsEmitters.cpp`), so an unprovable offset is a
+      // misaligned-address fault, not a missed optimization. The last size
+      // feeds no offset.
       uint64_t alignment = M::Driver::getPreferredAlignment(
           concatBuffer.getType().getDevice().getLabel().str());
       if (!llvm::all_of(llvm::drop_end(sliceSizes), [&](Value size) {

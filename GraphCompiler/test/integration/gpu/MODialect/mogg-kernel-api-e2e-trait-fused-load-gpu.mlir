@@ -1,4 +1,4 @@
-// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect
+// RUN: mo-opt %s -o %t.mlir --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect
 // RUN: mt --execute %t.mlir --result-output-style=full --input-shapes=4 --model-inputs=ones | FileCheck %s
 
 // End-to-end proof of the trait FUSED-LOAD (prologue fusion) emit path on GPU
@@ -9,8 +9,8 @@
 // to the device but cannot load directly. `_to_device_type` projects the fusion
 // functor field-by-field (the functor's captured source pointers translate to
 // device addresses) and the projected device value has access enabled. The
-// kernel's GPU arm binds that projected value by its `Loadable` capability via
-// `downcast[XHost.device_type, Loadable]` and runs the fused producer on-device.
+// kernel's GPU arm binds that projected value as `XHost.device_type`, asserts its
+// `Loadable` capability, and runs the fused producer on-device.
 //
 // The input must live on the GPU for a real device-launch kernel, so the graph
 // transfers `%x` to the device (the producer runs there too) and the result
@@ -28,7 +28,7 @@ mo.graph @trait_fused_load_negate_graph(%x: !mo.tensor<[4], f32>) -> !mo.tensor<
 }
 
 // Same fused-load boundary, but the load is performed by a unified closure that
-// captures the PROJECTED load proxy (`downcast[XHost.device_type, Loadable]`).
+// captures the PROJECTED load proxy (`XHost.device_type`, asserted `Loadable`).
 // The closure is created after projection, so it captures the access-enabled
 // `device_type` and the load body's context gate passes; a host-side load fails
 // to compile (see the host-negative test). Same `-2` result.

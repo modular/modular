@@ -13,16 +13,20 @@
 
 # DOC: develop/build-custom-ops.mdx
 
+from std.sys import align_of
+
 import extensibility
 
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 
 from extensibility import (
     ElementwiseUnaryOp,
-    InputTensor,
-    OutputTensor,
+    Input,
+    Output,
     Tensor,
-    foreach,
+    TileTensorable,
+    get_kernel_simd_width,
 )
 
 from std.utils.coord import Coord
@@ -32,22 +36,35 @@ from std.utils.index import IndexList
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
-    def execute[
-        # The kind of device this will be run on: "cpu" or "gpu"
-        target: StaticString,
-    ](
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime output_alignment = type_of(output).alignment
+        comptime assert type_of(x).rank == type_of(output).rank
+        var output_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
+
         @inline(.always)
         def elementwise_add_one[
-            width: Int
-        ](idx: Coord) {var} -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + 1
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var}:
+            var result = (
+                x_tile.load[width=width, alignment=align_of[dtype]()](idx) + 1
+            )
+            output_tile.store[
+                width=width,
+                alignment=min(output_alignment, alignment * align_of[dtype]()),
+            ](idx, result)
 
-        foreach[target=target](elementwise_add_one, output, ctx)
+        elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
+            elementwise_add_one, output.shape(), ctx
+        )
 
 
 # You only need to implement this if you do not manually annotate

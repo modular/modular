@@ -232,50 +232,6 @@ mo.graph @sink_rebind_through_unary_elemwise<D0, D1>(%in: !mo.tensor<[D0, 2, 4],
 // CHECK-NEXT:    %[[REBIND:.*]] = mo.rebind(%[[EXP]]) : !mo.tensor<[[[D0]], 2, 4], f32> -> !mo.tensor<[[[D1]], 2, 4], f32>
 // CHECK-NEXT:    mo.output %[[REBIND]] : !mo.tensor<[[[D1]], 2, 4], f32>
 
-mo.graph @sink_reshape_through_softmax<D0>(%in: !mo.tensor<[D0, 2, 3, 4], f32>) -> !mo.tensor<[D0, 6, 4], f32> {
-  %0 = mo.static.reshape(%in) : !mo.tensor<[D0, 2, 3, 4], f32> -> !mo.tensor<[D0, 6, 4], f32>
-  %1 = mo.reduce.softmax(%0) [axis = 2] : (!mo.tensor<[D0, 6, 4], f32>) -> !mo.tensor<[D0, 6, 4], f32>
-  mo.output %1 : !mo.tensor<[D0, 6, 4], f32>
-}
-
-// CHECK:       mo.graph @sink_reshape_through_softmax<[[D0:.*]]>(%[[IN:.*]]: !mo.tensor<[[[D0]], 2, 3, 4], f32>) -> !mo.tensor<[[[D0]], 6, 4], f32>
-// CHECK-NEXT:    %[[SOFTMAX:.*]] = mo.reduce.softmax(%[[IN]]) [axis = 3] : (!mo.tensor<[[[D0]], 2, 3, 4], f32>) -> !mo.tensor<[[[D0]], 2, 3, 4], f32>
-// CHECK-NEXT:    %[[RESHAPE:.*]] = mo.static.reshape(%[[SOFTMAX]]) : !mo.tensor<[[[D0]], 2, 3, 4], f32> -> !mo.tensor<[[[D0]], 6, 4], f32>
-// CHECK-NEXT:    mo.output %[[RESHAPE]] : !mo.tensor<[[[D0]], 6, 4], f32>
-
-mo.graph @dont_sink_reshape_through_softmax<D0>(%in: !mo.tensor<[D0, 2, 3, 4], f32>) -> !mo.tensor<[D0, 2, 12], f32> {
-  %0 = mo.static.reshape(%in) : !mo.tensor<[D0, 2, 3, 4], f32> -> !mo.tensor<[D0, 2, 12], f32>
-  %1 = mo.reduce.softmax(%0) [axis = 2] : (!mo.tensor<[D0, 2, 12], f32>) -> !mo.tensor<[D0, 2, 12], f32>
-  mo.output %1 : !mo.tensor<[D0, 2, 12], f32>
-}
-
-// CHECK:       mo.graph @dont_sink_reshape_through_softmax<[[D0:.*]]>(%[[IN:.*]]: !mo.tensor<[[[D0]], 2, 3, 4], f32>) -> !mo.tensor<[[[D0]], 2, 12], f32>
-// CHECK-NEXT:    %[[RESHAPE:.*]] = mo.static.reshape(%[[IN]]) : !mo.tensor<[[[D0]], 2, 3, 4], f32> -> !mo.tensor<[[[D0]], 2, 12], f32>
-// CHECK-NEXT:    %[[SOFTMAX:.*]] = mo.reduce.softmax(%[[RESHAPE]]) [axis = 2] : (!mo.tensor<[[[D0]], 2, 12], f32>) -> !mo.tensor<[[[D0]], 2, 12], f32>
-// CHECK-NEXT:    mo.output %[[SOFTMAX]] : !mo.tensor<[[[D0]], 2, 12], f32>
-
-mo.graph @sink_reshape_through_softmax_bad_axis<D0>(%in: !mo.tensor<[D0, 2, 3, 4], f32>) -> !mo.tensor<[D0, 6, 4], f32> {
-  %0 = mo.static.reshape(%in) : !mo.tensor<[D0, 2, 3, 4], f32> -> !mo.tensor<[D0, 6, 4], f32>
-  %1 = mo.reduce.softmax(%0) [axis = 1] : (!mo.tensor<[D0, 6, 4], f32>) -> !mo.tensor<[D0, 6, 4], f32>
-  mo.output %1 : !mo.tensor<[D0, 6, 4], f32>
-}
-
-// CHECK:       mo.graph @sink_reshape_through_softmax_bad_axis<[[D0:.*]]>(%[[IN:.*]]: !mo.tensor<[[[D0]], 2, 3, 4], f32>) -> !mo.tensor<[[[D0]], 6, 4], f32>
-// CHECK-NEXT:    %[[RESHAPE:.*]] = mo.static.reshape(%[[IN]]) : !mo.tensor<[D0, 2, 3, 4], f32> -> !mo.tensor<[D0, 6, 4], f32>
-// CHECK-NEXT:    %[[SOFTMAX:.*]] = mo.reduce.softmax(%[[RESHAPE]]) [axis = 1] : (!mo.tensor<[[[D0]], 6, 4], f32>) -> !mo.tensor<[[[D0]], 6, 4], f32>
-// CHECK-NEXT:    mo.output %[[SOFTMAX]] : !mo.tensor<[[[D0]], 6, 4], f32>
-
-mo.graph @sink_reshape_through_softmax_scalar(%in: !mo.tensor<[], f32>) -> !mo.tensor<[1], f32> {
-  %0 = mo.static.reshape(%in) : !mo.tensor<[], f32> -> !mo.tensor<[1], f32>
-  %1 = mo.reduce.softmax(%0) [axis = 0] : (!mo.tensor<[1], f32>) -> !mo.tensor<[1], f32>
-  mo.output %1 : !mo.tensor<[1], f32>
-}
-
-// CHECK:       mo.graph @sink_reshape_through_softmax_scalar(%[[IN:.*]]: !mo.tensor<[], f32>) -> !mo.tensor<[1], f32>
-// CHECK-NEXT:    %[[SOFTMAX:.*]] = mo.reduce.softmax(%[[IN]]) [axis = 0] : (!mo.tensor<[], f32>) -> !mo.tensor<[], f32>
-// CHECK-NEXT:    %[[RESHAPE:.*]] = mo.static.reshape(%[[SOFTMAX]]) : !mo.tensor<[], f32> -> !mo.tensor<[1], f32>
-// CHECK-NEXT:    mo.output %[[RESHAPE]] : !mo.tensor<[1], f32>
-
 // The reshaped operand is the exponent, an si32: the sunk pow keeps its own
 // f32 result.
 mo.graph @sink_reshape_of_exponent_through_pow(%base: !mo.tensor<[30], f32>, %exp: !mo.tensor<[50, 50, 30], si32>) -> !mo.tensor<[2500, 30], f32> {
@@ -287,14 +243,3 @@ mo.graph @sink_reshape_of_exponent_through_pow(%base: !mo.tensor<[30], f32>, %ex
 // CHECK-LABEL: mo.graph @sink_reshape_of_exponent_through_pow
 // CHECK:       %[[POW:.*]] = mo.pow({{.*}} : !mo.tensor<[50, 50, 30], f32>, {{.*}} : !mo.tensor<[50, 50, 30], si32>) : !mo.tensor<[50, 50, 30], f32>
 // CHECK-NEXT:  %[[RESHAPE:.*]] = mo.static.reshape(%[[POW]]) : !mo.tensor<[50, 50, 30], f32> -> !mo.tensor<[2500, 30], f32>
-
-// A reshape from [1] to rank 0 drops the last axis, so it stays above the
-// softmax.
-mo.graph @dont_sink_reshape_to_rank0_through_softmax(%in: !mo.tensor<[1], f32>) -> !mo.tensor<[], f32> {
-  %0 = mo.static.reshape(%in) : !mo.tensor<[1], f32> -> !mo.tensor<[], f32>
-  %1 = mo.reduce.softmax(%0) [axis = 0] : (!mo.tensor<[], f32>) -> !mo.tensor<[], f32>
-  mo.output %1 : !mo.tensor<[], f32>
-}
-// CHECK-LABEL: mo.graph @dont_sink_reshape_to_rank0_through_softmax
-// CHECK:       mo.static.reshape(%{{.*}}) : !mo.tensor<[1], f32> -> !mo.tensor<[], f32>
-// CHECK-NEXT:  mo.reduce.softmax

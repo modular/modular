@@ -6,7 +6,7 @@
 
 module {
     // Entry point model that calls into a cyclic subgraph
-    mgp.model @cycle_test : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+    mgp.model @cycle_test devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
         %0 = grt.chain.create ()
         %1 = mgp.context.create 1
         %2 = mgp.runtime.create %0, %1[0]
@@ -18,7 +18,7 @@ module {
     }
 
     // Subgraph A calls subgraph B
-    mgp.model @model_a subgraph : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+    mgp.model @model_a subgraph devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
         %0 = grt.chain.create ()
         %1 = mgp.context.create 1
         %2 = mgp.runtime.create %0, %1[0]
@@ -31,7 +31,7 @@ module {
     }
 
     // Subgraph B calls subgraph A, creating the cycle
-    mgp.model @model_b subgraph : mof devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
+    mgp.model @model_b subgraph devices [#M.device_ref<"cpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"cpu", 0>>) {
         %0 = grt.chain.create ()
         %1 = mgp.context.create 1
         %2 = mgp.runtime.create %0, %1[0]

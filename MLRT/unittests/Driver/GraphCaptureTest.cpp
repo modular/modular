@@ -21,14 +21,20 @@
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Regex.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 using namespace M::Driver;
@@ -104,6 +110,27 @@ TEST_F(GraphCaptureTest, BeginAndEndCapture) {
   EXPECT_TRUE(graph);
 }
 
+// A pool stream's capture shows through the view that runs it, not the base
+// context.
+TEST_F(GraphCaptureTest, IsGraphCapturingTracksCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, view,
+                ctx->selectStream(ctx->numStreams() - 1));
+  ASSIGN_NO_ERR(DeviceStreamRef, viewStream, view->stream());
+  ASSERT_EQ(viewStream->ptr(), stream->ptr());
+
+  EXPECT_FALSE(view->isGraphCapturing());
+
+  EXPECT_NO_ERR(stream->beginCapture());
+  EXPECT_TRUE(view->isGraphCapturing());
+  EXPECT_FALSE(ctx->isGraphCapturing());
+
+  ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
+  EXPECT_FALSE(view->isGraphCapturing());
+}
+
 TEST_F(GraphCaptureTest, DoubleBeginCaptureErrors) {
   ASSIGN_NO_ERR(DeviceContextRef, ctx,
                 DeviceContext::create(Device::gpuAPI, /*id=*/0));
@@ -163,6 +190,7 @@ TEST_F(GraphCaptureTest, CPUDeviceReturnsNotSupported) {
 
   EXPECT_ERR(stream->beginCapture());
   EXPECT_ERR(stream->endCapture());
+  EXPECT_FALSE(ctx->isGraphCapturing());
 }
 
 TEST_F(GraphCaptureTest, ReplayOnCPUStreamErrors) {
@@ -1124,7 +1152,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueIsRecordedIntoCapturedGraph) {
 
   ErrorOr<DeviceGraphCollection> captured =
       DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
-        return stream->enqueueWaitOnHostValue(*flag, 1);
+        return stream->enqueueWaitOnFlag(*flag, 1);
       });
   ASSERT_FALSE(captured.isError()) << std::string(captured.getError());
 
@@ -1192,7 +1220,7 @@ TEST_F(GraphCaptureTest, WaitOnHostValueGatesReplayedGraph) {
 
   flag->reset();
   EXPECT_NO_ERR(stream->beginCapture());
-  EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+  EXPECT_NO_ERR(stream->enqueueWaitOnFlag(*flag, 1));
   EXPECT_NO_ERR(deviceDst->copyFrom(src));
   ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
   EXPECT_NO_ERR(graph->instantiate());
@@ -1239,4 +1267,423 @@ TEST_F(GraphCaptureTest, WaitOnHostValueGatesReplayedGraph) {
   }
 }
 
+TEST_F(GraphCaptureTest, HipForkKeepsItsOwnStreamOnTheFirstEdge) {
+  llvm::SmallString<128> dotDir;
+  ASSERT_FALSE(
+      llvm::sys::fs::createUniqueDirectory("graph-capture-dot", dotDir));
+  ScopedEnvVar logCapture("MODULAR_DEVICE_CONTEXT_LOG_GRAPH_CAPTURE", dotDir);
+
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  if (ctx->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "only HIP assigns graph queues by dependent-edge order";
+  ASSIGN_NO_ERR(DeviceStreamRef, sideStream, ctx->createStream());
+  ASSIGN_NO_ERR(DeviceContextRef, side, ctx->selectStream(1));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(DeviceFunctionRef, deviceFunc, loadVecAdd(*ctx));
+
+  const uint64_t length = 1024;
+  const size_t elemSize = sizeof(float);
+  ASSIGN_NO_ERR(DeviceBufferRef, bufOut,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn0,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn1,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  EXPECT_NO_ERR(stream->synchronize());
+
+  void *outPtr = bufOut->ptr();
+  void *in0Ptr = bufIn0->ptr();
+  void *in1Ptr = bufIn1->ptr();
+  void *args[] = {(void *)&outPtr, (void *)&in0Ptr, (void *)&in1Ptr,
+                  (void *)&length};
+  const uint32_t blockDim = 256;
+  const uint32_t gridDim = (length + blockDim - 1) / blockDim;
+  auto launch = [&](DeviceStream &onStream) -> ErrorOrSuccess {
+    return onStream.enqueueFunctionExecDirect(
+        *deviceFunc,
+        /*gridX=*/gridDim, /*gridY=*/1, /*gridZ=*/1,
+        /*blockX=*/blockDim, /*blockY=*/1, /*blockZ=*/1,
+        /*sharedMemBytes=*/0,
+        /*attrs=*/nullptr, /*numAttrs=*/0, args);
+  };
+
+  ErrorOr<DeviceGraphCollection> captured =
+      DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
+        RETURN_IF_ERROR(launch(*stream));
+        RETURN_IF_ERROR(side->enqueueWaitFor(*ctx));
+        RETURN_IF_ERROR(launch(*sideStream));
+        RETURN_IF_ERROR(launch(*stream));
+        RETURN_IF_ERROR(ctx->enqueueWaitFor(*side));
+        return launch(*stream);
+      });
+  ASSERT_FALSE(captured.isError());
+  EXPECT_NO_ERR(captured->replay());
+  EXPECT_NO_ERR(stream->synchronize());
+
+  std::vector<std::string> dotFiles;
+  std::error_code ec;
+  for (llvm::sys::fs::directory_iterator it(dotDir, ec), end; it != end && !ec;
+       it.increment(ec))
+    if (llvm::StringRef(it->path()).ends_with(".dot"))
+      dotFiles.push_back(it->path());
+  ASSERT_EQ(dotFiles.size(), 1u);
+  auto dot = llvm::MemoryBuffer::getFile(dotFiles.front());
+  ASSERT_TRUE(dot);
+
+  llvm::Regex edge(
+      "\"graph_[0-9]+_node_([0-9]+)\" -> \"graph_[0-9]+_node_([0-9]+)\"");
+  std::map<uint64_t, std::vector<uint64_t>> dependents;
+  llvm::SmallVector<llvm::StringRef> lines;
+  (*dot)->getBuffer().split(lines, '\n');
+  for (llvm::StringRef line : lines) {
+    llvm::SmallVector<llvm::StringRef, 3> match;
+    if (!edge.match(line, &match))
+      continue;
+    uint64_t from = 0, to = 0;
+    ASSERT_FALSE(match[1].getAsInteger(10, from));
+    ASSERT_FALSE(match[2].getAsInteger(10, to));
+    dependents[from].push_back(to);
+  }
+
+  std::vector<std::vector<uint64_t>> forks;
+  for (const auto &[node, nodeDependents] : dependents)
+    if (nodeDependents.size() > 1)
+      forks.push_back(nodeDependents);
+  ASSERT_EQ(forks.size(), 1u);
+  ASSERT_EQ(forks.front().size(), 2u);
+  EXPECT_GT(forks.front()[0], forks.front()[1])
+      << "the fork's first dependent is the side stream's launch, so HIP "
+         "would run the base stream's continuation on another queue";
+}
+
+TEST_F(GraphCaptureTest, HipHighPriorityMainStreamCapturesAndReplays) {
+  ScopedEnvVar priority("MODULAR_DEVICE_CONTEXT_HIP_MAIN_STREAM_PRIORITY",
+                        "high");
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  if (ctx->device().api() != Device::hipAPI)
+    GTEST_SKIP() << "hip_main_stream_priority is a HIP option";
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  ASSIGN_NO_ERR(DeviceFunctionRef, deviceFunc, loadVecAdd(*ctx));
+
+  const uint64_t length = 1024;
+  const size_t elemSize = sizeof(float);
+  ASSIGN_NO_ERR(DeviceBufferRef, bufOut,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn0,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  ASSIGN_NO_ERR(DeviceBufferRef, bufIn1,
+                ctx->enqueueCreateBuffer(length * elemSize));
+  std::vector<float> in0(length, 1.0f), in1(length, 2.0f), out(length, 0.0f);
+  EXPECT_NO_ERR(bufIn0->copyFrom(in0.data()));
+  EXPECT_NO_ERR(bufIn1->copyFrom(in1.data()));
+  EXPECT_NO_ERR(stream->synchronize());
+
+  void *outPtr = bufOut->ptr();
+  void *in0Ptr = bufIn0->ptr();
+  void *in1Ptr = bufIn1->ptr();
+  void *args[] = {(void *)&outPtr, (void *)&in0Ptr, (void *)&in1Ptr,
+                  (void *)&length};
+  const uint32_t blockDim = 256;
+  const uint32_t gridDim = (length + blockDim - 1) / blockDim;
+  ErrorOr<DeviceGraphCollection> captured =
+      DeviceGraph::capture(*runtime_, {stream}, [&]() -> ErrorOrSuccess {
+        return stream->enqueueFunctionExecDirect(
+            *deviceFunc,
+            /*gridX=*/gridDim, /*gridY=*/1, /*gridZ=*/1,
+            /*blockX=*/blockDim, /*blockY=*/1, /*blockZ=*/1,
+            /*sharedMemBytes=*/0,
+            /*attrs=*/nullptr, /*numAttrs=*/0, args);
+      });
+  ASSERT_FALSE(captured.isError());
+  EXPECT_NO_ERR(captured->replay());
+  EXPECT_NO_ERR(stream->synchronize());
+
+  EXPECT_NO_ERR(bufOut->copyTo(out.data()));
+  EXPECT_NO_ERR(stream->synchronize());
+  EXPECT_EQ(out.front(), 3.0f);
+  EXPECT_EQ(out.back(), 3.0f);
+}
+
 } // namespace
+
+#define ASSERT_NO_ERR(expr)                                                    \
+  do {                                                                         \
+    auto _err_ = (expr);                                                       \
+    ASSERT_FALSE(_err_.isError()) << _err_.getError() << "\n";                 \
+  } while (0)
+
+// ===== Invalidated captures ===== //
+//
+// A capture that the vendor driver invalidates must still end, so that the
+// stream, and every stream joined to its capture, runs eager work again.
+
+// TODO(GEX-4551): HIP leaves the stream invalidated after hipStreamEndCapture.
+#define SKIP_ON_HIP(ctx)                                                       \
+  if ((ctx).device().api() == Device::hipAPI)                                  \
+  GTEST_SKIP() << "HIP does not recover an invalidated capture"
+
+namespace {
+
+// A fresh pool stream and the context view that runs it.
+struct ViewStream {
+  DeviceContextRef view;
+  DeviceStreamRef stream;
+};
+
+ErrorOr<ViewStream> createViewStream(DeviceContext &ctx) {
+  ErrorOr<DeviceStreamRef> stream = ctx.createStream();
+  if (stream.isError())
+    return stream.takeError();
+  ErrorOr<DeviceContextRef> view = ctx.selectStream(ctx.numStreams() - 1);
+  if (view.isError())
+    return view.takeError();
+  return ViewStream{view.takeValue(), stream.takeValue()};
+}
+
+// "none", "active" or "invalidated", read through the public API only.
+std::string captureState(const ViewStream &vs) {
+  if (!vs.view->isGraphCapturing())
+    return "none";
+  ErrorOrSuccess err = vs.stream->beginCapture();
+  if (!err.isError()) {
+    (void)vs.stream->endCapture();
+    return "none";
+  }
+  return llvm::StringRef(err.getError()).contains("invalidated") ? "invalidated"
+                                                                 : "active";
+}
+
+void logStep(llvm::StringRef step, llvm::StringRef detail) {
+  llvm::errs()
+      << "[invalidated-capture] "
+      << ::testing::UnitTest::GetInstance()->current_test_info()->name() << " "
+      << step << ": " << detail << "\n";
+}
+
+// Eager vec_add over buffers allocated before any capture; buffers come from
+// `vs.view` so the copies, the launch and the sync all run on `vs.stream`.
+struct EagerWork {
+  static constexpr uint64_t kLength = 1024;
+  DeviceFunctionRef vecAdd;
+  DeviceBufferRef out, in0, in1;
+
+  static ErrorOr<EagerWork> create(const ViewStream &vs) {
+    EagerWork w;
+    ErrorOr<DeviceFunctionRef> fn = loadVecAdd(*vs.view);
+    if (fn.isError())
+      return fn.takeError();
+    w.vecAdd = fn.takeValue();
+    for (DeviceBufferRef *buf : {&w.out, &w.in0, &w.in1}) {
+      ErrorOr<DeviceBufferRef> b =
+          vs.view->enqueueCreateBuffer(kLength * sizeof(float));
+      if (b.isError())
+        return b.takeError();
+      *buf = b.takeValue();
+    }
+    if (ErrorOrSuccess err = vs.view->synchronize(); err.isError())
+      return err.takeError();
+    return w;
+  }
+
+  // Returns "" when the result is correct, else the first error.
+  std::string run(const ViewStream &vs) {
+    std::vector<float> a(kLength), b(kLength), c(kLength, -1.0f);
+    for (uint64_t i = 0; i < kLength; ++i) {
+      a[i] = static_cast<float>(i);
+      b[i] = static_cast<float>(2 * i);
+    }
+    auto fail = [](llvm::StringRef what, const char *msg) {
+      return (what + ": " + msg).str();
+    };
+    if (ErrorOrSuccess e = vs.view->enqueueCopyToDevice(*in0, a.data());
+        e.isError())
+      return fail("copy in0", e.getError());
+    if (ErrorOrSuccess e = vs.view->enqueueCopyToDevice(*in1, b.data());
+        e.isError())
+      return fail("copy in1", e.getError());
+    void *outPtr = out->ptr(), *in0Ptr = in0->ptr(), *in1Ptr = in1->ptr();
+    uint64_t length = kLength;
+    void *args[] = {&outPtr, &in0Ptr, &in1Ptr, &length};
+    if (ErrorOrSuccess e = vs.stream->enqueueFunctionExecDirect(
+            *vecAdd, kLength / 256, 1, 1, 256, 1, 1, 0, nullptr, 0, args);
+        e.isError())
+      return fail("launch vec_add", e.getError());
+    if (ErrorOrSuccess e = vs.view->enqueueCopyFromDevice(c.data(), *out);
+        e.isError())
+      return fail("copy out", e.getError());
+    if (ErrorOrSuccess e = vs.stream->synchronize(); e.isError())
+      return fail("synchronize", e.getError());
+    for (uint64_t i = 0; i < kLength; ++i)
+      if (c[i] != a[i] + b[i])
+        return "wrong result at " + std::to_string(i);
+    return "";
+  }
+};
+
+// Invalidates `stream`'s capture: synchronizing a capturing stream is
+// illegal on CUDA and HIP.
+std::string invalidateCapture(DeviceStream &stream) {
+  ErrorOrSuccess err = stream.synchronize();
+  return err.isError() ? err.getError() : "synchronize succeeded";
+}
+
+} // namespace
+
+TEST_F(GraphCaptureTest, InvalidatedCaptureEndsAndStreamRunsEagerWork) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  SKIP_ON_HIP(*ctx);
+  ASSIGN_NO_ERR(ViewStream, vs, createViewStream(*ctx));
+  ASSIGN_NO_ERR(EagerWork, work, EagerWork::create(vs));
+  ASSERT_EQ(work.run(vs), "");
+
+  ASSERT_NO_ERR(vs.stream->beginCapture());
+  logStep("invalidating op", invalidateCapture(*vs.stream));
+  logStep("state before endCapture", captureState(vs));
+
+  ErrorOr<DeviceGraphRef> graph = vs.stream->endCapture();
+  ASSERT_TRUE(graph.isError());
+  logStep("endCapture", graph.getError());
+  EXPECT_THAT(graph.getError(), testing::HasSubstr("invalidated"));
+
+  std::string state = captureState(vs);
+  logStep("state after endCapture", state);
+  EXPECT_EQ(state, "none");
+
+  std::string result = work.run(vs);
+  logStep("eager work after endCapture", result.empty() ? "ok" : result);
+  EXPECT_EQ(result, "");
+
+  // A new capture on the same stream also works.
+  ASSERT_NO_ERR(vs.stream->beginCapture());
+  ASSIGN_NO_ERR(DeviceGraphRef, next, vs.stream->endCapture());
+  EXPECT_TRUE(next);
+}
+
+// The driver's failure cleanup (`DeviceGraphCaptureContext`'s destructor)
+// ends a capture that `execute` invalidated.
+TEST_F(GraphCaptureTest, InvalidatedCaptureCleanedUpByDeviceGraphCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  SKIP_ON_HIP(*ctx);
+  ASSIGN_NO_ERR(ViewStream, vs, createViewStream(*ctx));
+  ASSIGN_NO_ERR(EagerWork, work, EagerWork::create(vs));
+
+  ErrorOr<DeviceGraphCollection> captured =
+      DeviceGraph::capture(*runtime_, {vs.stream}, [&]() -> ErrorOrSuccess {
+        return vs.stream->synchronize();
+      });
+  ASSERT_TRUE(captured.isError());
+  logStep("DeviceGraph::capture", captured.getError());
+
+  std::string state = captureState(vs);
+  logStep("state after capture", state);
+  EXPECT_EQ(state, "none");
+  std::string result = work.run(vs);
+  logStep("eager work", result.empty() ? "ok" : result);
+  EXPECT_EQ(result, "");
+}
+
+// Multi-device, shaped like a model capture: one capture per device's stream
+// through `DeviceGraph::capture`, one of them invalidated.
+TEST_F(GraphCaptureTest, MultiGpuInvalidatedPerDeviceCaptures) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx0,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  SKIP_ON_HIP(*ctx0);
+  if (ctx0->device().deviceCount() < 2)
+    GTEST_SKIP() << "needs two GPUs";
+  ASSIGN_NO_ERR(DeviceContextRef, ctx1,
+                DeviceContext::create(Device::gpuAPI, /*id=*/1));
+
+  for (bool executeReturnsError : {true, false}) {
+    for (int invalidated : {0, 1}) {
+      ASSIGN_NO_ERR(ViewStream, vs0, createViewStream(*ctx0));
+      ASSIGN_NO_ERR(ViewStream, vs1, createViewStream(*ctx1));
+      ASSIGN_NO_ERR(EagerWork, work0, EagerWork::create(vs0));
+      ASSIGN_NO_ERR(EagerWork, work1, EagerWork::create(vs1));
+      ViewStream *victim = invalidated == 0 ? &vs0 : &vs1;
+
+      ErrorOr<DeviceGraphCollection> captured = DeviceGraph::capture(
+          *runtime_, {vs0.stream, vs1.stream}, [&]() -> ErrorOrSuccess {
+            ErrorOrSuccess err = victim->stream->synchronize();
+            if (executeReturnsError)
+              return err;
+            return success();
+          });
+      std::string tag = (llvm::Twine("execute_returns_error=") +
+                         (executeReturnsError ? "1" : "0") +
+                         " invalidated=gpu" + llvm::Twine(invalidated))
+                            .str();
+      EXPECT_TRUE(captured.isError()) << tag;
+      logStep(tag + " DeviceGraph::capture",
+              captured.isError() ? captured.getError() : "succeeded");
+
+      for (auto [i, vs, work] :
+           {std::tuple{0, &vs0, &work0}, std::tuple{1, &vs1, &work1}}) {
+        std::string state = captureState(*vs);
+        std::string result = work->run(*vs);
+        logStep(tag + " gpu" + std::to_string(i),
+                "state=" + state +
+                    " eager=" + (result.empty() ? "ok" : result));
+        EXPECT_EQ(state, "none") << tag << " gpu" << i;
+        EXPECT_EQ(result, "") << tag << " gpu" << i;
+      }
+    }
+  }
+}
+
+// One capture spanning two streams: a second stream, on GPU 1 or on GPU 0,
+// joins the GPU 0 stream's capture through an event and never joins back.
+// Ending on the origin stream must release the joined stream too.
+TEST_F(GraphCaptureTest, MultiGpuInvalidatedJoinedCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx0,
+                DeviceContext::create(Device::gpuAPI, /*id=*/0));
+  SKIP_ON_HIP(*ctx0);
+  if (ctx0->device().deviceCount() < 2)
+    GTEST_SKIP() << "needs two GPUs";
+  ASSIGN_NO_ERR(DeviceContextRef, ctx1,
+                DeviceContext::create(Device::gpuAPI, /*id=*/1));
+
+  for (int joinedGpu : {1, 0}) {
+    for (llvm::StringRef victim : {"origin", "joined"}) {
+      ASSIGN_NO_ERR(ViewStream, vs0, createViewStream(*ctx0));
+      ASSIGN_NO_ERR(ViewStream, vs1,
+                    createViewStream(joinedGpu == 1 ? *ctx1 : *ctx0));
+      ASSIGN_NO_ERR(EagerWork, work0, EagerWork::create(vs0));
+      ASSIGN_NO_ERR(EagerWork, work1, EagerWork::create(vs1));
+      std::string tag =
+          ("joined=gpu" + llvm::Twine(joinedGpu) + " invalidated=" + victim)
+              .str();
+
+      ASSERT_NO_ERR(vs0.stream->beginCapture());
+      ASSIGN_NO_ERR(DeviceEventRef, fork, vs0.stream->enqueueEvent());
+      ErrorOrSuccess joined = vs1.stream->enqueueWaitForEvent(*fork);
+      logStep(tag + " join", joined.isError() ? joined.getError() : "ok");
+      ASSERT_FALSE(joined.isError());
+      logStep(tag + " states after join",
+              "origin=" + captureState(vs0) + " joined=" + captureState(vs1));
+
+      ViewStream &bad = victim == "origin" ? vs0 : vs1;
+      logStep(tag + " invalidating op", invalidateCapture(*bad.stream));
+      logStep(tag + " states before endCapture",
+              "origin=" + captureState(vs0) + " joined=" + captureState(vs1));
+
+      ErrorOr<DeviceGraphRef> graph = vs0.stream->endCapture();
+      logStep(tag + " endCapture on origin",
+              graph.isError() ? graph.getError() : "returned a graph");
+      EXPECT_TRUE(graph.isError()) << tag;
+
+      for (auto [name, vs, work] : {std::tuple{"origin", &vs0, &work0},
+                                    std::tuple{"joined", &vs1, &work1}}) {
+        std::string state = captureState(*vs);
+        std::string result = work->run(*vs);
+        logStep(tag + " " + name, "state=" + state + " eager=" +
+                                      (result.empty() ? "ok" : result));
+        EXPECT_EQ(state, "none") << tag << " " << name;
+        EXPECT_EQ(result, "") << tag << " " << name;
+      }
+    }
+  }
+}

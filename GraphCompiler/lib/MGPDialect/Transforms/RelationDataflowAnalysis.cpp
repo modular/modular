@@ -303,9 +303,18 @@ BackwardsRelationDataflowAnalysis::Set
 BackwardsRelationDataflowAnalysis::operandCombination(
     const DomainMap &domainMap, Value value) const {
   Set set = domainMap.bottom;
-  for (OpOperand &operand : value.getUses())
-    domainMap.leastUpperBound(set, getEntriesAndId(domainMap, &operand));
-  return set;
+  if (domainMap.orientation == kLubIsIntersection) {
+    for (OpOperand &operand : value.getUses())
+      domainMap.leastUpperBound(set, getEntriesAndId(domainMap, &operand));
+    return set;
+  }
+
+  // A value with many uses, such as the 'execute' context, makes a pairwise
+  // merge quadratic.
+  return IndexSet<const OpOperand *>::unionMany(
+      llvm::map_range(value.getUses(), [&](OpOperand &operand) {
+        return getEntriesAndId(domainMap, &operand);
+      }));
 }
 
 void BackwardsRelationDataflowAnalysis::flowSimpleLoop(

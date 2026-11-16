@@ -29,7 +29,11 @@ the point of the cross-check:
 
 Covered cases: single expert, partial last M-tile, a zero-token expert in a
 multi-expert ragged batch, sparse expert-id routing, and a production-ish
-Llama-4-Scout gate/up shape.
+Llama-4-Scout gate/up shape; plus, on the tiled CUDA-core kernel (fp32 output,
+which is the one of the two kernels these shapes do not route to the tensor
+cores), decode-sized groups (one and two rows on each expert), an output width
+below one N tile, a K that is not a multiple of the vector width (the kernel's
+scalar K path), and an inactive (-1) group that owns rows.
 """
 
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
@@ -56,12 +60,13 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     out_type: DType,
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
+    a_base_offset: Int = 0,
 ) raises:
     comptime transpose_b = True
     comptime scales_type = DType.float32
@@ -88,6 +93,10 @@ def test_grouped_matmul_rowwise_scaled_fp8[
 
     # Sizes.
     var a_size = total_num_tokens * K
+    # `a_base_offset` puts the activations that many elements into their buffer,
+    # the way a contiguous view of a larger allocation does: the row stride is
+    # still `K`, but the view's base address can be off the vector alignment.
+    var a_buf_size = a_size + a_base_offset
     var b_size = num_experts * N * K
     var c_size = total_num_tokens * N
     # KUT layout: per-token, [T, 1].
@@ -106,7 +115,7 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     var b_scales_shape = row_major(Idx[num_experts], Idx[N], Idx[1])
 
     # Host allocations.
-    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_buf_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
@@ -126,7 +135,10 @@ def test_grouped_matmul_rowwise_scaled_fp8[
         b_scales_size
     )
 
-    var a_host = TileTensor(a_host_ptr, a_tt_shape)
+    var a_host = TileTensor(
+        ptr=a_host_ptr.unsafe_ptr().unsafe_offset(a_base_offset),
+        layout=a_tt_shape,
+    )
     var b_host = TileTensor(b_host_ptr, b_tt_shape)
     var c_host = TileTensor(c_host_ptr, c_tt_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_tt_shape)
@@ -141,8 +153,11 @@ def test_grouped_matmul_rowwise_scaled_fp8[
 
     random(a_host)
     random(b_host)
-    _ = c_host.fill(0)
-    _ = c_host_ref.fill(0)
+    # A non-zero sentinel in both outputs, so a row or a whole group that the
+    # kernel under test fails to store (an inactive expert group, or an edge
+    # tile) shows up as a mismatch against the reference, which always stores.
+    _ = c_host.fill(1000.0)
+    _ = c_host_ref.fill(1000.0)
 
     # Fill per-token activation scales once, then mirror into both layouts.
     # KUT a_scales is [T, 1]; reference a_scales is [1, T]. Same values.
@@ -158,7 +173,7 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     random(b_scales_host)
 
     # Device allocations.
-    var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_buf_size)
     var b_device_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
@@ -178,7 +193,10 @@ def test_grouped_matmul_rowwise_scaled_fp8[
         b_scales_size
     )
 
-    var a_device_tt = TileTensor(a_device_buffer, a_tt_shape)
+    var a_device_tt = TileTensor(
+        ptr=a_device_buffer.unsafe_ptr().unsafe_offset(a_base_offset),
+        layout=a_tt_shape,
+    )
     var b_device_tt = TileTensor(b_device_buffer, b_tt_shape)
     var c_device_tt = TileTensor(c_device_buffer, c_tt_shape)
     var c_device_ref_tt = TileTensor(c_device_ref_buffer, c_tt_shape)
@@ -232,7 +250,6 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     # Kernel under test (TileTensor).
     grouped_matmul_rowwise_dynamic_scaled_fp8[
         transpose_b=transpose_b,
-        target="gpu",
         pdl_level=pdl_level,
     ](
         c_device_tt,
@@ -409,7 +426,7 @@ def test_pdl_chain[
     var ref_tt = TileTensor(ref_dev, row_major(total, Idx[N]))
 
     # Reference: the same op without PDL on the published operands.
-    grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True, target="gpu"](
+    grouped_matmul_rowwise_dynamic_scaled_fp8[transpose_b=True](
         ref_tt,
         a_src_tt,
         b_tt,
@@ -467,7 +484,8 @@ def test_pdl_chain[
                 block_dim=256,
             )
             grouped_matmul_rowwise_dynamic_scaled_fp8[
-                transpose_b=True, target="gpu", pdl_level=pdl_level
+                transpose_b=True,
+                pdl_level=pdl_level,
             ](
                 c_tt,
                 a_tt,
@@ -604,8 +622,8 @@ def main() raises:
             expert_shape=(1000, 1024),
             pdl_level=PDLLevel.ON,
         ](2, [17, 41], [1, 3], ctx)
-        # N = 998 breaks the 16-byte TMA row stride, so this takes the naive
-        # CUDA-core fallback with PDL on.
+        # N = 998 breaks the 16-byte TMA row stride, so this takes the tiled
+        # CUDA-core kernel with PDL on.
         test_grouped_matmul_rowwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,
@@ -621,8 +639,60 @@ def main() raises:
             pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
         ](2, [17, 41], [1, 3], ctx)
 
+        # The five cases below target the tiled CUDA-core kernel, so they ask
+        # for fp32 output: with bf16 output and these static shapes the op takes
+        # the SM100 tensor-core grouped GEMM instead, and would leave the tiled
+        # kernel untested.
+
+        # Decode: one token per expert, fewer rows than the CTA's M tile.
+        test_grouped_matmul_rowwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=4,
+            expert_shape=(512, 1024),
+        ](2, [1, 1], [0, 3], ctx)
+
+        # An output width below one N tile, with a single row on one group. N is
+        # odd so the clamped second channel (``n1 == n``) and its store guard
+        # are exercised too.
+        test_grouped_matmul_rowwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=2,
+            expert_shape=(41, 512),
+        ](2, [1, 7], [0, 1], ctx)
+
+        # The same shape with the activations starting one byte into their
+        # buffer: K is a multiple of the 16-byte vector width, but the base
+        # address is not aligned, so the vector K loop must not assume it is.
+        test_grouped_matmul_rowwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=2,
+            expert_shape=(41, 512),
+        ](2, [1, 7], [0, 1], ctx, 1)
+
+        # K = 520 is not a multiple of the vector width, so every row start is
+        # at most 8-byte aligned and the kernel takes its scalar K path instead
+        # of the vector loads.
+        test_grouped_matmul_rowwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=2,
+            expert_shape=(512, 520),
+        ](2, [3, 5], [0, 1], ctx)
+
+        # An inactive (-1) group that does own rows stores the zero reduction,
+        # over the non-zero sentinel the outputs are initialized with.
+        test_grouped_matmul_rowwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=4,
+            expert_shape=(512, 1024),
+        ](3, [5, 7, 3], [0, -1, 2], ctx)
+
         # Late-publishing producer -> op -> consumer, on the tensor-core path
-        # (N=512) and on the naive fallback (N=998, off the TMA stride).
+        # (N=512) and on the CUDA-core fallback (N=998, off the TMA stride).
         test_pdl_chain[4, (512, 1024), PDLLevel.ON](2, [20, 300], [0, 3], ctx)
         test_pdl_chain[4, (512, 1024), PDLLevel.OVERLAP_AT_BEGINNING](
             4, [20, 0, 300, 28], [0, 3, 2, 1], ctx

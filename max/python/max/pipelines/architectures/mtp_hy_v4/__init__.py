@@ -13,7 +13,7 @@
 """The MTP layer a Hy4 checkpoint ships beside its trunk."""
 
 from .arch import mtp_hy_v4_draft_arch
-from .model import MTPHYV4DraftArchConfig
+from .model_config import MTPHYV4DraftArchConfig
 from .weight_adapters import convert_hy_v4_mtp_state_dict
 
 __all__ = [

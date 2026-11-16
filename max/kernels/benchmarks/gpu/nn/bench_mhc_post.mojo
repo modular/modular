@@ -38,7 +38,7 @@ from std.benchmark import (
 
 def bench_mhc_post[
     dtype: DType, hc: Int, hidden: Int
-](ctx: DeviceContext, mut m: Bench, num_rows: Int, non_temporal: Bool) raises:
+](ctx: DeviceContext[], mut m: Bench, num_rows: Int, non_temporal: Bool) raises:
     var n_streams = num_rows * hc * hidden
     var n_y = num_rows * hidden
     var n_post = num_rows * hc
@@ -65,11 +65,11 @@ def bench_mhc_post[
     var streams_shape = row_major((num_rows, hc, hidden))
 
     def launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_streams, mut cb_out, mut cb_y, mut cb_post, mut cb_comb, imm
     }:
-        mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+        mhc_post[hc_mult=hc, hidden_size=hidden](
             TileTensor(cb_out.offset_ptr(iteration), streams_shape),
             TileTensor(
                 cb_streams.offset_ptr(iteration), streams_shape

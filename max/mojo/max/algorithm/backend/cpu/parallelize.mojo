@@ -74,7 +74,11 @@ def sync_parallelize[
         return
 
     try:
-        var cpu_ctx = ctx.value() if ctx else DeviceContext.cpu()
+        var cpu_ctx: DeviceContext.CPU
+        if case .Some(given) = ctx:
+            cpu_ctx = given
+        else:
+            cpu_ctx = DeviceContext.cpu()
         cpu_ctx.enqueue_cpu_range(func_wrapped, count=num_work_items)
         cpu_ctx.synchronize()
     except e:

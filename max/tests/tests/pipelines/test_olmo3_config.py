@@ -21,7 +21,7 @@ from unittest.mock import NonCallableMock
 import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.olmo3 import Olmo3, olmo3_arch
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
 from max.pipelines.lib import GraphRole

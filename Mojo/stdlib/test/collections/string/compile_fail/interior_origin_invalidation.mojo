@@ -13,7 +13,7 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# A `StringSlice` vended by a `String` carries an interior origin, so mutating
+# A `StringSpan` vended by a `String` carries an interior origin, so mutating
 # the string (which may reallocate its buffer) invalidates the slice at compile
 # time.
 

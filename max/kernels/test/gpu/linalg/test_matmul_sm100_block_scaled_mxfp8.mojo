@@ -83,7 +83,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    # Shape info is derived from the TileLayout types below.
+    # Shape info is derived from the Layout types below.
     var a_shape = row_major(m, Idx[KType.static_value])
     comptime assert (
         transpose_b

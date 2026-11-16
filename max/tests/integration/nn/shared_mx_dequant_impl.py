@@ -30,7 +30,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from max.nn.legacy.kernels import mxfp4_dequant, mxfp8_dequant
+from max.nn._graph_ops import mxfp4_dequant, mxfp8_dequant
 from shared_nvfp4_dequant_impl import (
     E2M1_TABLE,
     device_ref,

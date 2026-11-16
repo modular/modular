@@ -19,3 +19,6 @@ model:
       type: rust_tiered
       host_offload_max_gb: 50
       disk_offload_max_gb: 50
+
+runtime:
+  prefer_module_v3: false

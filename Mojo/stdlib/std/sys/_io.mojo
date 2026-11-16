@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """IO constants and functions."""
-comptime stdin = RawFileDescriptor(unsafe_unchecked_value=0)
-comptime stdout = RawFileDescriptor(unsafe_unchecked_value=1)
-comptime stderr = RawFileDescriptor(unsafe_unchecked_value=2)
+comptime stdin = BorrowedFileDescriptor[ImmStaticOrigin](
+    unsafe_from_raw=RawFileDescriptor(unsafe_unchecked_value=0)
+)
+comptime stdout = BorrowedFileDescriptor[ImmStaticOrigin](
+    unsafe_from_raw=RawFileDescriptor(unsafe_unchecked_value=1)
+)
+comptime stderr = BorrowedFileDescriptor[ImmStaticOrigin](
+    unsafe_from_raw=RawFileDescriptor(unsafe_unchecked_value=2)
+)

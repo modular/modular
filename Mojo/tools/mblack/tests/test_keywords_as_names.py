@@ -69,6 +69,7 @@ KEYWORDS = [
     "trait",
     "try",
     "unified",  # Used to be a keyword
+    "__union",
     "var",
     "where",
     "while",

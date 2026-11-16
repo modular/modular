@@ -3,7 +3,7 @@
 
 // CHECK-LABEL: --- Running 'upsidedown'
 // CHECK:'upsidedown' returned tensor<1x4xf32> [1.000000e+02, 2.990000e+00, 4.564640e+00, 6.924320e+00]
-mgp.model @upsidedown : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @upsidedown devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

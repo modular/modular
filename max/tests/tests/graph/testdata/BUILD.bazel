@@ -13,6 +13,13 @@ filegroup(
         ["*"],
         exclude = ["*.py"],
     ),
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
 )
 
 modular_py_binary(

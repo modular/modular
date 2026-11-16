@@ -30,7 +30,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     BLOCKWISE_FP8_LANE_BYTES,
     MXFP6_LANE_BYTES,
     preshuffle_block_scaled_b,

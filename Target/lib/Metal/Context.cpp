@@ -76,9 +76,12 @@ M_driver_status_t M_driver_context::copyToDeviceSync(M_driver_memory_t dst,
                                                      uint64_t dstOffset,
                                                      const void *src,
                                                      uint64_t size) {
-  if (size > 0)
-    memcpy(static_cast<char *>(dst->mBuffer->contents()) + dstOffset, src,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal destination buffer length");
+  memcpy(dst->hostAddress() + dstOffset, src, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -86,9 +89,12 @@ M_driver_status_t M_driver_context::copyFromDeviceSync(void *dst,
                                                        M_driver_memory_t src,
                                                        uint64_t srcOffset,
                                                        uint64_t size) {
-  if (size > 0)
-    memcpy(dst, static_cast<char *>(src->mBuffer->contents()) + srcOffset,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!src->containsRange(srcOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal source buffer length");
+  memcpy(dst, src->hostAddress() + srcOffset, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -97,9 +103,15 @@ M_driver_status_t M_driver_context::copyIntraDeviceSync(M_driver_memory_t dst,
                                                         M_driver_memory_t src,
                                                         uint64_t srcOffset,
                                                         uint64_t size) {
-  if (size > 0)
-    memcpy(static_cast<char *>(dst->mBuffer->contents()) + dstOffset,
-           static_cast<char *>(src->mBuffer->contents()) + srcOffset, size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal destination buffer length");
+  if (!src->containsRange(srcOffset, size))
+    return device->driver->status.create(
+        "Copy size exceeds Metal source buffer length");
+  memcpy(dst->hostAddress() + dstOffset, src->hostAddress() + srcOffset, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -107,9 +119,12 @@ M_driver_status_t M_driver_context::setMemorySync(M_driver_memory_t dst,
                                                   uint64_t dstOffset,
                                                   uint64_t size,
                                                   uint8_t value) {
-  if (size > 0)
-    memset(static_cast<char *>(dst->mBuffer->contents()) + dstOffset, value,
-           size);
+  if (size == 0)
+    return M_DRIVER_STATUS_SUCCESS;
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Set size exceeds Metal buffer length");
+  memset(dst->hostAddress() + dstOffset, value, size);
   return M_DRIVER_STATUS_SUCCESS;
 }
 
@@ -123,13 +138,16 @@ M_driver_status_t M_driver_context::fillSync(M_driver_memory_t dst,
     return M_DRIVER_STATUS_INVALID_ARG;
   if (valueSize == 1)
     return setMemorySync(dst, dstOffset, size, static_cast<uint8_t>(value));
+  if (!dst->containsRange(dstOffset, size))
+    return device->driver->status.create(
+        "Fill size exceeds Metal buffer length");
 
-  // `dst->mBuffer->contents() + dstOffset` is not guaranteed to be aligned to
+  // `dst->hostAddress() + dstOffset` is not guaranteed to be aligned to
   // `valueSize` -- the fill contract only constrains `size`, not `offset`.
   // Store via memcpy rather than casting to uintN_t* and dereferencing, which
   // would be undefined behavior on a misaligned pointer (and trips
   // -fsanitize=alignment).
-  auto *bytes = static_cast<char *>(dst->mBuffer->contents()) + dstOffset;
+  char *bytes = dst->hostAddress() + dstOffset;
   switch (valueSize) {
   case 2: {
     uint16_t v16 = static_cast<uint16_t>(value);
@@ -192,8 +210,8 @@ M_driver_context_destroy(M_driver_context_t context) {
 }
 
 // Synchronous copy C ABI: thin wrappers over the M_driver_context methods
-// above. Metal targets a single GPU, so a peer (inter-device) copy is
-// unimplemented.
+// above. Apple silicon exposes a single GPU, so there is never a peer device
+// to copy from.
 extern "C" M_driver_status_t
 M_driver_copy_to_device_sync(M_driver_context_t context,
                              M_driver_memory_view_t dst, const void *src) {
@@ -231,33 +249,44 @@ M_driver_copy_intra_device_sync(M_driver_context_t context,
                                       src->offset, dst->size);
 }
 
-extern "C" M_driver_status_t M_driver_copy_inter_device_sync(
-    [[maybe_unused]] M_driver_context_t context,
-    [[maybe_unused]] M_driver_memory_view_t dst,
-    [[maybe_unused]] M_driver_memory_view_t src,
-    [[maybe_unused]] M_driver_context_t src_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+extern "C" M_driver_status_t
+M_driver_copy_inter_device_sync(M_driver_context_t context,
+                                [[maybe_unused]] M_driver_memory_view_t dst,
+                                [[maybe_unused]] M_driver_memory_view_t src,
+                                M_driver_context_t src_context) {
+  if (context == nullptr || src_context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_UNSUPPORTED;
 }
 
-// Metal has no driver-level current-context concept (command encoding is
-// bound to explicit queue/context objects, never to the calling thread), and
-// no direct free/total memory query.
+// Metal binds command encoding to explicit queue/context objects, never to
+// the calling thread, so there is no current-context state to install or save.
+// These mirror the legacy MetalDevice and the CPU plugin: a null handle and a
+// no-op restore, so callers that scope a context work unchanged.
 
 extern "C" M_driver_status_t
-M_driver_context_set_current([[maybe_unused]] M_driver_context_t context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+M_driver_context_set_current(M_driver_context_t context) {
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t M_driver_context_get_current_driver_context(
-    [[maybe_unused]] M_driver_context_t context,
-    [[maybe_unused]] M_driver_native_handle_t *driver_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+    M_driver_context_t context, M_driver_native_handle_t *driver_context) {
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  if (driver_context == nullptr)
+    return M_DRIVER_STATUS_INVALID_ARG;
+  *driver_context = 0;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t M_driver_context_set_current_driver_context(
-    [[maybe_unused]] M_driver_context_t context,
+    M_driver_context_t context,
     [[maybe_unused]] M_driver_native_handle_t driver_context) {
-  return M_DRIVER_STATUS_UNIMPLEMENTED;
+  if (context == nullptr)
+    return M_DRIVER_STATUS_BAD_CONTEXT;
+  return M_DRIVER_STATUS_SUCCESS;
 }
 
 extern "C" M_driver_status_t

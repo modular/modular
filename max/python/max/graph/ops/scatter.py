@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for scatter."""
 
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -93,7 +93,7 @@ def scatter(
 
     assert_same_device(input=input, updates=updates, indices=indices)
     return Graph.current._add_op_generated(
-        rmo.MoScatterOp,
+        mo.ScatterOp,
         result=input.type,
         input=input,
         updates=updates,
@@ -175,7 +175,7 @@ def scatter_nd(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdOp,
+        mo.ScatterNdOp,
         input.type,
         input,
         updates,
@@ -275,7 +275,7 @@ def scatter_nd_add(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdAddOp,
+        mo.ScatterNdAddOp,
         input.type,
         input,
         updates,
@@ -376,7 +376,7 @@ def scatter_nd_max(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMaxOp,
+        mo.ScatterNdMaxOp,
         input.type,
         input,
         updates,
@@ -477,7 +477,7 @@ def scatter_nd_min(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMinOp,
+        mo.ScatterNdMinOp,
         input.type,
         input,
         updates,
@@ -578,7 +578,7 @@ def scatter_nd_mul(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMulOp,
+        mo.ScatterNdMulOp,
         input.type,
         input,
         updates,
@@ -693,7 +693,7 @@ def scatter_add(
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterAddOp,
+        mo.ScatterAddOp,
         input.type,
         input,
         updates,
@@ -810,7 +810,7 @@ def scatter_max(
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterMaxOp,
+        mo.ScatterMaxOp,
         input.type,
         input,
         updates,
@@ -929,7 +929,7 @@ def scatter_min(
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterMinOp,
+        mo.ScatterMinOp,
         input.type,
         input,
         updates,
@@ -1045,7 +1045,7 @@ def scatter_mul(
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterMulOp,
+        mo.ScatterMulOp,
         input.type,
         input,
         updates,

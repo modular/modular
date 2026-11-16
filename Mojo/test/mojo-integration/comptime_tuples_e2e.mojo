@@ -125,17 +125,17 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
         writer.write(")")
 
 
-comptime IntTuple = MTuple[Int]
+comptime IntValues = MTuple[Int]
 
 
 def main():
-    comptime tup = IntTuple(IntTuple(3) + IntTuple(4))
+    comptime tup = IntValues(IntValues(3) + IntValues(4))
     # CHECK: (3, 4)
     print(tup)
     add_print[tup]()
 
 
-def add_print[x: IntTuple]():
-    comptime tup = x + IntTuple(4)
+def add_print[x: IntValues]():
+    comptime tup = x + IntValues(4)
     # CHECK: ((3, 4), 4)
     print(tup)

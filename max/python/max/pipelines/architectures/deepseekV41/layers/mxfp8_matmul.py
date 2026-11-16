@@ -13,11 +13,11 @@
 """MXFP8 projections on the cluster split-K matmul.
 
 At decode sizes one CTA per 128-row weight tile leaves most SMs idle, so
-``mo.matmul.mxfp8.cluster_splitk`` splits each tile's K over a cluster of
+``matmul.mxfp8.cluster_splitk`` splits each tile's K over a cluster of
 CTAs where that pays. For the weight shapes and M its measured tables name
 it runs a pair-CTA GEMM (the swap-AB decode GEMM or the prefill GEMM), and
 the production block-scaled matmul elsewhere.
-``mo.matmul.mxfp8.cluster_splitk.block_diagonal`` splits the
+``matmul.mxfp8.cluster_splitk.block_diagonal`` splits the
 block-diagonal (grouped) projection the same way, and runs the production
 block-diagonal matmul where no split pays.
 """
@@ -26,15 +26,15 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import Dim, TensorType, TensorValue, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_sm10x_gpu,
     block_diagonal_block_scaled_matmul,
     block_scales_interleave,
     quantize_dynamic_block_scaled,
 )
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantFormat
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
+from max.nn.quant_config import QuantFormat
 
 from ...deepseekV4.layers.rope import apply_rope_tail
 from ..model_config import mxfp8_splitk_enabled
@@ -68,7 +68,7 @@ def mxfp8_linear(
             ``[rows, in_dim]`` activation when ``x_scales`` is given.
         x_scales: The activation's E8M0 block scales when ``x`` arrives
             already MXFP8 from a fused activation and quantize, in the layout
-            :func:`~max.nn.legacy.kernels.quantize_dynamic_block_scaled` produces.
+            :func:`~max.nn._graph_ops.quantize_dynamic_block_scaled` produces.
 
     Returns:
         ``[..., out_dim]`` bf16.
@@ -101,7 +101,7 @@ def mxfp8_linear(
         layer.weight_scale.to(x.device), sf_vector_size=_MXFP8_BLOCK_SIZE
     )
     out = ops.custom(
-        "mo.matmul.mxfp8.cluster_splitk",
+        "matmul.mxfp8.cluster_splitk",
         device=x.device,
         values=[x_fp8, weight, x_scales, w_scales],
         out_types=[
@@ -124,13 +124,13 @@ def mxfp8_block_diagonal(
     ``weight``'s rows ``[g * n, (g + 1) * n)`` into the output's columns
     ``[g * n, (g + 1) * n)``. With the split-K matmul off, or on any device
     but SM100, it runs
-    :func:`~max.nn.legacy.kernels.block_diagonal_block_scaled_matmul`.
+    :func:`~max.nn._graph_ops.block_diagonal_block_scaled_matmul`.
 
     Args:
         x: The ``float8_e4m3fn`` activation, ``[rows, groups * k]``.
         weight: ``[groups * n, k]`` ``float8_e4m3fn``.
         x_scales: ``x``'s E8M0 block scales, in the layout
-            :func:`~max.nn.legacy.kernels.quantize_dynamic_block_scaled` produces.
+            :func:`~max.nn._graph_ops.quantize_dynamic_block_scaled` produces.
         weight_scales: ``weight``'s interleaved E8M0 block scales,
             ``[groups * n / 128, k / 128, 32, 4, 4]``.
         groups: The number of groups.
@@ -143,7 +143,7 @@ def mxfp8_block_diagonal(
             x, weight, x_scales, weight_scales, groups
         )
     return ops.custom(
-        "mo.matmul.mxfp8.cluster_splitk.block_diagonal",
+        "matmul.mxfp8.cluster_splitk.block_diagonal",
         device=x.device,
         values=[x, weight, x_scales, weight_scales],
         out_types=[
@@ -210,7 +210,7 @@ def mxfp8_linear_rope_tail(
         layer.weight_scale.to(x.device), sf_vector_size=_MXFP8_BLOCK_SIZE
     )
     out = ops.custom(
-        "mo.matmul.mxfp8.rope_tail",
+        "matmul.mxfp8.rope_tail",
         device=x.device,
         values=[
             x_fp8,

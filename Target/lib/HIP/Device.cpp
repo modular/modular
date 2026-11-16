@@ -134,8 +134,16 @@ M_driver_status_t M_driver_device::canAccessPeer(const M_driver_device &peer,
 // numeric layouts. Extend as new attributes are needed by real callers.
 static hipDeviceAttribute_t cudaToHipAttribute(int32_t cudaAttr) {
   switch (cudaAttr) {
+  case 1: // CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK
+    return hipDeviceAttributeMaxThreadsPerBlock;
+  case 5: // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X
+    return hipDeviceAttributeMaxGridDimX;
   case 6: // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y
     return hipDeviceAttributeMaxGridDimY;
+  case 7: // CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z
+    return hipDeviceAttributeMaxGridDimZ;
+  case 8: // CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK
+    return hipDeviceAttributeMaxSharedMemoryPerBlock;
   case 16: // CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT
     return hipDeviceAttributeMultiprocessorCount;
   case 75: // CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR

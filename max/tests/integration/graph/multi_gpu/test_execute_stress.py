@@ -14,6 +14,10 @@
 
 A cold load holds its context's lock until its GPU stops spinning in the
 broadcast, so a call into that context on the late GPU's launch path deadlocks.
+
+The `collective_burst` case instead launches many collectives per step, as a
+training step does, so most of them find the kernel-load gate busy and take
+the collective launcher's deferred path.
 """
 
 # One step's deadlock, time running down (ctx N is GPU N's driver context):
@@ -41,6 +45,7 @@ from __future__ import annotations
 
 import ctypes
 import faulthandler
+import itertools
 import math
 import os
 import random
@@ -49,7 +54,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Generator, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -127,6 +132,11 @@ SHAPE_POSITIONS = 8
 # buckets, and their cold loads, keep arriving as a concurrency sweep brings new
 # batch sizes.
 TOKEN_RAMP_SEC = 480.0
+
+# `collective_burst` case: broadcast and allgather pairs per step, and the one
+# batch shape its steps repeat.
+BURST_COLLECTIVES_PER_STEP = 64
+BURST_TOKENS = 256
 
 # Seconds without a new step, once steps begin, that count as a hang: the
 # watchdog then captures and exits rather than waiting out the deadline. 0
@@ -294,8 +304,10 @@ def _rms_norm(x: TensorValue) -> TensorValue:
     return x * ops.rsqrt(ops.mean(x * x, axis=-1) + 1e-6)
 
 
-def _step_graph(shape_positions: int = 0) -> Graph:
-    """One step on two GPUs: per-GPU compute around GPU 0's broadcasts."""
+def _step_graph(
+    shape_positions: int = 0, collectives_per_step: int = 0
+) -> Graph:
+    """Builds the graph for one step on two GPUs."""
     devices = [DeviceRef.GPU(i) for i in range(2)]
     input_types: list[TensorType | BufferType] = [
         TensorType(DType.float32, ["tokens", HIDDEN], device=devices[0]),
@@ -324,6 +336,7 @@ def _step_graph(shape_positions: int = 0) -> Graph:
                 _shape_kernel(h, d, k)
                 for h, d in zip(hidden, devices, strict=True)
             ]
+        hidden = _collective_burst(hidden, signal_buffers, collectives_per_step)
 
         xs, tail = _hang_window(x, picks, signal_buffers)
 
@@ -357,6 +370,31 @@ def _hang_window(
         signal_buffers,
     )
     return xs, tail
+
+
+def _collective_burst(
+    hidden: list[TensorValue],
+    signal_buffers: Sequence[BufferValue],
+    count: int,
+) -> list[TensorValue]:
+    """Runs `count` broadcast and allgather pairs, with compute in between.
+
+    The allgathers make most launches defer to another thread; broadcasts alone
+    rarely do.
+    """
+    if count == 0:
+        return hidden
+    x = hidden[0]
+    side = list(hidden)
+    for _ in range(count):
+        xs = ops.distributed_broadcast(_rms_norm(x), signal_buffers)
+        gathered = ops.allgather(side, signal_buffers)
+        x = xs[0]
+        side = [
+            ops.tanh(h + ops.mean(g, axis=0))
+            for h, g in zip(side, gathered, strict=True)
+        ]
+    return [ops.tanh(h + b) for h, b in zip(side, xs, strict=True)]
 
 
 def _shape_kernel(x: TensorValue, device: DeviceRef, salt: int) -> TensorValue:
@@ -596,12 +634,16 @@ def _run_steps(
     devices: Sequence[Accelerator],
     cross_context_type: type[_CrossContext],
     shape_positions: int = 0,
+    collectives_per_step: int = 0,
+    steps: Iterable[_Step] | None = None,
 ) -> int:
     signal_buffers = Signals(
         devices=[DeviceRef.GPU(i) for i in range(2)]
     ).buffers()
     load_start = time.monotonic()
-    model: Model = session.load(_step_graph(shape_positions))
+    model: Model = session.load(
+        _step_graph(shape_positions, collectives_per_step)
+    )
     print(
         f"model loaded in {time.monotonic() - load_start:.0f}s",
         file=sys.stderr,
@@ -624,7 +666,9 @@ def _run_steps(
     heartbeat = start + HEARTBEAT_SEC
     try:
         with _StallWatchdog() as watchdog:
-            for step in _steps(random.Random(SEED)):
+            for step in (
+                steps if steps is not None else _steps(random.Random(SEED))
+            ):
                 now = time.monotonic()
                 if now >= start + DURATION_SEC:
                     break
@@ -662,6 +706,26 @@ def test_steps_survive_kernel_loads(case: str) -> None:
     session = InferenceSession(devices=[CPU(), *devices])
     steps = _run_steps(session, devices, CROSS_CONTEXTS[case])
     print(f"{case} steps in {DURATION_SEC}s: {steps}")
+    assert steps > 0
+
+
+def test_collective_burst_survives_kernel_loads() -> None:
+    """Runs fixed-shape collective bursts while every kernel cold-loads.
+
+    No thread crosses contexts, as in a training step.
+    """
+    if accelerator_count() < 2:
+        pytest.skip("requires 2 GPUs")
+    devices = [Accelerator(i) for i in range(2)]
+    session = InferenceSession(devices=[CPU(), *devices])
+    steps = _run_steps(
+        session,
+        devices,
+        _CrossContext,
+        collectives_per_step=BURST_COLLECTIVES_PER_STEP,
+        steps=itertools.repeat(_Step(tokens=BURST_TOKENS, sequences=1)),
+    )
+    print(f"collective_burst steps in {DURATION_SEC}s: {steps}")
     assert steps > 0
 
 

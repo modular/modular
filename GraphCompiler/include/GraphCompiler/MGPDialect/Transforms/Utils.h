@@ -26,27 +26,6 @@
 
 namespace M::MGP {
 
-/// Returns the first value in args of type T.
-template <typename T>
-std::optional<Value> findFirstOf(const ValueRange &args) {
-  for (const auto &arg : args) {
-    if (isa<T>(arg.getType()))
-      return arg;
-  }
-  return std::nullopt;
-}
-
-/// Returns all values in args of type T.
-template <typename T>
-llvm::SmallVector<Value> findAllOf(const ValueRange &args) {
-  llvm::SmallVector<Value> res;
-  for (const auto &arg : args) {
-    if (isa<T>(arg.getType()))
-      res.push_back(arg);
-  }
-  return res;
-}
-
 /// Inserts and returns a shallow clone of origOp using given resultTypes and
 /// operands. The result will have an empty region for each region of origOp.
 /// The location, attributes and properties of the result are taken from origOp.
@@ -113,21 +92,12 @@ OpOperand *getUniqueMutator(Value value);
 /// Return the OpOperands for all input chains to op.
 SmallVector<OpOperand *, 1> getInputChainOpOperands(Operation *op);
 
-/// Returns the 'earliest' operation (in block operations order) which uses
-/// one of results as an operand.
-Operation *earliestUsingOp(ArrayRef<Value> results);
-
 using ValueSetVector = llvm::SetVector<Value, SmallVector<Value>>;
 
 /// If chain is defined by a grt.chain.create operation then accumulate
 /// all of its operands into primitiveChains (recursively). Otherwise adds
 /// chain directly to primitiveChains.
 void accumulatePrimitiveChains(ValueSetVector &primitiveChains, Value chain);
-
-/// Moves targetOp before anchorOp, then transitively any operand def not
-/// before its user. Requires a DAG. Not needed for MEF correctness, only for
-/// readable generated MLIR.
-void moveAllBefore(Operation *origTargetOp, Operation *origAnchorOp);
 
 /// Returns a chain value which will be ready only when all of chains (which
 /// cannot be empty) are ready. All chains must use the 'native' chain type
@@ -152,9 +122,6 @@ LogicalResult alsoWaitForChains(OpBuilder &builder,
 /// Helper for modifying the 'init' block.
 struct InitState {
   InitState(ModelOp model);
-
-  /// 'Allocates' a slot in the context.
-  size_t allocSlot();
 
   /// Returns the current final 'init' chain result.
   TypedValue<MEF::ChainType> getFinalChain();

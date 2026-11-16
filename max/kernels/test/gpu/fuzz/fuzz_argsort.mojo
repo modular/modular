@@ -101,7 +101,7 @@ def _run[
 
     var input = TileTensor(input_d, row_major(n))
     var indices = TileTensor(indices_d, row_major(n))
-    argsort[ascending=ascending, target="gpu"](indices, input, ctx)
+    argsort[ascending=ascending](indices, input, ctx)
     ctx.enqueue_copy(indices_h, indices_d)
     ctx.synchronize()
 

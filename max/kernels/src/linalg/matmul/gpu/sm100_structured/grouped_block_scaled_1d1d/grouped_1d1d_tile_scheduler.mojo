@@ -34,7 +34,7 @@ from layout import DefaultEngine, TensorEngine, TileTensor
 from structured_kernels.tile_types import GMEMLayout1D
 
 from std.utils.fast_div import FastDiv
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.utils.static_tuple import StaticTuple
 
 

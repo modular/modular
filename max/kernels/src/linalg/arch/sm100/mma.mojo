@@ -17,22 +17,15 @@ from std.math import align_up
 
 from max.gpu.primitives.cluster import cluster_mask_base
 from max.gpu import block_id_in_cluster
-from max.gpu.host import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, TileTensor, coord
-from layout.tile_layout import TensorLayout, _types_to_int_tuple
-from layout.tensor_core_async import (
-    _CM_ROW_BYTES,
-    tile_to_descriptor,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
+from layout import TileTensor, coord
+from layout.layout import Layout, TensorLayout
+from layout.tensor_core_async import _CM_NUM_ROWS, _CM_ROW_BYTES
 
 from std.utils.coord import Coord, CoordLike, coord
-from std.utils.index import Index, IndexList
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -55,89 +48,74 @@ def _create_mma_desc_k_major[
     return MMASmemDescriptor.create[SBO, LBO, swizzle_mode](ptr)
 
 
-@fieldwise_init("implicit")
-struct Major(EnumLike, TrivialRegisterPassable):
-    """Selects the major (contiguous) dimension for an MMA operand tile layout.
-
-    Used to configure whether the K dimension or the MN dimension is the
-    innermost (contiguous) axis of the tile in shared memory.
-    """
-
-    var val: Int
-
-    comptime K = Major(0)
-    comptime MN = Major(1)
-
-    # The implicit fieldwise initializer accepts raw values outside the two
-    # named cases, so the enum is not exhaustive.
-    comptime _enum_is_exhaustive = False
-
-    comptime _enum_case_names = ParameterList.of["K".value, "MN".value].values
-    comptime _enum_case_types = TypeList.splat[2, NoneType].values
-
-    def _get_enum_discriminant(self) -> Int:
-        """Return the active case index."""
-        return self.val
-
-    def _unsafe_get_enum_payload[
-        id: Int
-    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
-        id
-    ]:
-        """Return the payload of case `id`. Major cases carry no payload."""
-        comptime assert False, "Major has no payload"
-
-    def __eq__(self, rhs: Major) -> Bool:
-        return self.val == rhs.val
-
-
-def max_contiguous_tile_shape[
-    rank: Int,
-    //,
+def mma_desc_sbo_lbo[
     dtype: DType,
-    tile_shape: IndexList[rank],
-    /,
     *,
-    major: Major = Major.K,
-    swizzle_mode: SwizzleMode = SwizzleMode.NONE,
-]() -> IntTuple:
-    """Returns the maximum shape of a tile that's contiguous in memory for mma op. This is used to create TMA descriptor.
+    BMN: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle,
+    is_k_major: Bool,
+    page_dense: Bool = False,
+]() -> Tuple[Int, Int]:
+    """Returns the (stride, leading) byte offsets of an MMA operand descriptor.
+
+    The offsets are the two strides the canonical descriptor layout exposes:
+    the stride of the second sub-mode of mode 0 and of mode 1. They are
+    derived directly from the tile geometry, so no legacy `Layout` has to be
+    built to create a descriptor.
+
+    Parameters:
+        dtype: Element type of the operand.
+        BMN: Block tile size along the M or N dimension.
+        BK: Block tile size along the K dimension.
+        swizzle_mode: Swizzle mode for the shared memory access pattern.
+        is_k_major: When True, the operand is K-major; otherwise MN-major.
+        page_dense: When True, uses the page-dense (row-major atoms) tile.
+
+    Returns:
+        The stride byte offset (SBO) and leading byte offset (LBO).
     """
+    comptime es = size_of[dtype]()
+    comptime swizzle_bytes = swizzle_mode.bytes()
+    comptime swizzle_k = swizzle_bytes // es
+    comptime is_unswizzled = (swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE)
 
-    comptime assert rank == 2, "Only 2D tensors are supported!"
-
-    comptime match major:
-        case .K:
-            # Tile shape is (MN, K), max K is based on swizzle.
-            return IntTuple(
-                tile_shape[0], swizzle_mode.bytes() // size_of[dtype]()
+    comptime if page_dense:
+        comptime if is_k_major:
+            # ((8, BMN/8), (sw_K, BK/sw_K)) with the chunk-outer strides; the
+            # mode-0 sub-stride is one whole chunk (num_chunks * 8 * sw_K).
+            comptime chunk_sbo = (
+                (BK // swizzle_k) * _CM_NUM_ROWS * swizzle_bytes
             )
-        case .MN:
-            # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
-            # canonical layout.
-            # The following are rare in practice but worth checking.
-            # TODO: this may not work for swizzle.NONE, need to double-check
-            # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
-            return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
-        case _:
-            comptime assert False, "Invalid major"
-
-
-def _create_mma_desc_pair[
-    dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
-](
-    ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]
-) -> MMASmemDescriptorPair:
-    # Extract the stride values from the canonical layout
-    # The canonical layout is expected to have at least 2 dimensions
-    comptime stride01 = canonical_layout[0].stride[1].value()
-    comptime stride11 = canonical_layout[1].stride[1].value()
-    comptime SBO = stride01 * size_of[dtype]()
-    comptime LBO = stride11 * size_of[dtype]()
-
-    # Create and return the MMA shared memory descriptor
-    # This will be used by the SM100 MMA operations to access shared memory
-    return MMASmemDescriptorPair.create[SBO, LBO, swizzle_mode](ptr)
+            comptime sbo = 0 if BMN == _CM_NUM_ROWS else chunk_sbo
+            return (sbo, _CM_ROW_BYTES)
+        else:
+            # MN-major page-dense is the transpose of the k-major chunk-inner
+            # layout: mode 0 strides by one 8-row group of MN atoms.
+            comptime sbo = _CM_NUM_ROWS * BMN * es
+            comptime lbo = _CM_NUM_ROWS * swizzle_bytes
+            return (sbo, lbo)
+    else:
+        comptime if is_k_major:
+            comptime sbo = (
+                0 if BMN == _CM_NUM_ROWS else _CM_NUM_ROWS * swizzle_bytes
+            )
+            # A swizzled atom splits its K mode by the 16 B core-matrix row,
+            # so the second piece steps by one row. An unswizzled atom keeps
+            # the tile's outer-K stride, which is 0 when K is one atom wide.
+            comptime unswizzled_lbo = (
+                0 if BK == swizzle_k else BMN * _CM_ROW_BYTES
+            )
+            comptime lbo = (unswizzled_lbo if is_unswizzled else _CM_ROW_BYTES)
+            return (sbo, lbo)
+        else:
+            # MN-major runs the transposed k-major geometry with the extents
+            # swapped, and skips the descriptor tiling of the k-major path.
+            comptime sbo = (
+                0 if BK == _CM_NUM_ROWS else _CM_NUM_ROWS * swizzle_bytes
+            )
+            comptime lbo = 0 if BMN == swizzle_k else BK * swizzle_k * es
+            return (sbo, lbo)
 
 
 @inline(.always)
@@ -175,22 +153,17 @@ def smem_descriptor[
     Returns:
         An `MMASmemDescriptorPair` ready for use with SM100 UMMA instructions.
     """
-    # `page_dense` selects the native chunk-inner (row-major atoms) layout
-    # (SM100 row-major page-fold path) for the corresponding operand frame:
-    # k-major (`is_k_major=True`, K / Q@K') and mn-major (`is_k_major=False`,
-    # V / P@V) each have their own page-dense branch in their `tile_layout_*`.
-    comptime smem_layout = tile_layout_k_major[
-        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
-    ]() if is_k_major else tile_layout_mn_major[
-        dtype, BMN, BK, swizzle_mode, page_dense=page_dense
+    comptime sbo_lbo = mma_desc_sbo_lbo[
+        dtype,
+        BMN=BMN,
+        BK=BK,
+        swizzle_mode=swizzle_mode,
+        is_k_major=is_k_major,
+        page_dense=page_dense,
     ]()
-    comptime canonical_layout = tile_to_descriptor[
-        dtype, smem_layout, is_k_major=is_k_major
-    ]()
-    comptime cl = canonical_layout if is_k_major else canonical_layout.transpose()
-    return _create_mma_desc_pair[
-        canonical_layout=cl, swizzle_mode=swizzle_mode
-    ](ptr)
+    return MMASmemDescriptorPair.create[sbo_lbo[0], sbo_lbo[1], swizzle_mode](
+        ptr
+    )
 
 
 def product[*element_types: CoordLike](t: Coord[*element_types]) -> Int:
@@ -800,16 +773,15 @@ struct MmaOpSM100_BlockScaled_SS[
             sf_smem: Scale factor tile in shared memory.
             sf_tmem: TMEM column address for scale factors.
         """
-        comptime sf_smem_layout = Layout(
-            _types_to_int_tuple[SFLayoutType._shape_types](),
-            _types_to_int_tuple[SFLayoutType._stride_types](),
-        )
+        comptime sf_smem_layout = Layout[
+            SFLayoutType._shape_types, SFLayoutType._stride_types
+        ]()
 
         comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
-            comptime idx = IntTuple(
+            comptime idx = coord[
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
-            )
-            comptime sf_offset = sf_smem_layout(idx) * size_of[sf_dtype]()
+            ]
+            comptime sf_offset = Int(sf_smem_layout(idx)) * size_of[sf_dtype]()
             var sf_tmem_addr = (
                 sf_tmem
                 + UInt32(i * (SF_MN_GROUP_SIZE // 32))

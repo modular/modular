@@ -45,7 +45,7 @@ def execute_index_tensor_test[
         ),
     )
     # Convert all tensors to dynamic layouts before calling the kernel
-    _index_tensor_impl[batch_dims, target="gpu"](
+    _index_tensor_impl[batch_dims](
         data_device.make_dynamic[.int64](),
         indices_device.make_dynamic[.int64](),
         actual_output_tensor,

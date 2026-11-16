@@ -336,9 +336,10 @@ private:
                         size_t size, size_t align, unsigned addressSpace,
                         MemoryHandleAttr hdl, size_t refCount = 1);
 
-    /// Mark or unmark the given region of the blob as a pointer value.
+    /// Track values that need remapping when memory is exported.
     ErrorOrSuccess setMarkedRegion(int64_t offset, int64_t regionSize,
-                                   int64_t pointerSize, RegionMark regionMark);
+                                   TargetInfoAttr target, RegionMark regionMark,
+                                   unsigned addressSpace = 0);
 
     /// Return true if the memory is owned by the interpreter.
     bool isOwned() const { return isa<void *>(memory); }

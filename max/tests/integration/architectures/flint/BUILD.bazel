@@ -47,7 +47,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/nn:core",
         "//max/python/max/pipelines/architectures/flint",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),

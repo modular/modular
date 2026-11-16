@@ -26,7 +26,11 @@ from max._entrypoints import pipelines
 from max._entrypoints.cli import generate as cli_generate
 from max._entrypoints.cli.config import pipeline_config_options
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
-from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from max.pipelines.lib.generate_images import (
     GenerateImagesResult,
     _ImageRequests,
@@ -73,6 +77,7 @@ def test_pipelines_cli__smollm_float32(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -99,6 +104,7 @@ def test_pipelines_cli__invalid_quantization_encoding(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -127,6 +133,7 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -152,6 +159,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -175,6 +183,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--model",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--prompt",
                 "Why is the sky blue?",
@@ -217,6 +226,7 @@ def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--quantization-encoding=float32",
                 "--max-length=128",
@@ -230,6 +240,51 @@ def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
 
 class _StopAtPipelineArgs(Exception):
     pass
+
+
+def test_pipelines_cli__generate_checks_graph_capture_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``max generate`` holds graph capture to its measured share, as serve does."""
+    calls: list[str] = []
+    pipeline = MagicMock(spec=OverlapTextGenerationPipeline)
+    pipeline.warmup_graph_capture.side_effect = lambda: calls.append("warmup")
+    config = MagicMock()
+    config.runtime.device_graph_capture = True
+    retrieved = MagicMock()
+    retrieved.factory.return_value = pipeline
+
+    class CaptureOverBudget(Exception):
+        pass
+
+    def check_capture(checked: object) -> None:
+        assert checked is pipeline
+        calls.append("check")
+        raise CaptureOverBudget
+
+    monkeypatch.setattr(cli_generate, "_with_debug_defaults", lambda args: args)
+    monkeypatch.setattr(
+        cli_generate,
+        "PipelineConfig",
+        MagicMock(**{"from_args.return_value": config}),
+    )
+    monkeypatch.setattr(
+        cli_generate,
+        "PIPELINE_REGISTRY",
+        MagicMock(**{"retrieve_factory.return_value": retrieved}),
+    )
+    monkeypatch.setattr(
+        cli_generate, "clamp_tokenizer_to_pipeline", lambda *args: None
+    )
+    monkeypatch.setattr(
+        cli_generate.memory_ledger, "check_capture", check_capture
+    )
+
+    with pytest.raises(CaptureOverBudget):
+        cli_generate.generate_text_for_pipeline(
+            MagicMock(), MagicMock(), prompt="hi"
+        )
+    assert calls == ["warmup", "check"]
 
 
 @pytest.mark.parametrize("command", ["serve", "generate"])
@@ -404,6 +459,7 @@ def test_pipelines_cli__generate_rejects_image_flags_for_text_models(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--height=256",
                 "--num-images-per-prompt=1",
@@ -433,6 +489,7 @@ def test_pipelines_cli__generate_ignores_unset_flags(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--max-new-tokens=8",
             ]
@@ -718,6 +775,7 @@ def test_pipelines_cli__profile_on_a_text_model_passes_the_flag_check(
                 "--model-path",
                 tiny_llama_local_path,
                 f"--custom-architectures={custom_architecture_path}",
+                "--no-prefer-module-v3",
                 "--devices=cpu",
                 "--profile",
                 "--max-new-tokens=4",
@@ -727,8 +785,12 @@ def test_pipelines_cli__profile_on_a_text_model_passes_the_flag_check(
 
 def test_pipelines_cli__every_generate_flag_has_a_kind() -> None:
     command = pipelines.main.commands["generate"]
+    ctx = click.Context(command)
+    help_option = command.get_help_option(ctx)
     params = {
-        param.name for param in command.get_params(click.Context(command))
+        param.name
+        for param in command.get_params(ctx)
+        if param is not help_option
     }
     config_params = {
         param.name
@@ -740,9 +802,26 @@ def test_pipelines_cli__every_generate_flag_has_a_kind() -> None:
     }
     text = set(cli_generate._TEXT_ONLY_FLAGS)
     image = set(cli_generate._IMAGE_ONLY_FLAGS)
-    shared = {"prompt", "image_url", "seed", "help"}
+    shared = {"prompt", "image_url", "seed"}
     assert not text & image
     assert not (text | image) & shared
     assert params - config_params == (text | image | shared) - config_params
     # The config flags rejected on image models are real flags too.
     assert (text & config_params) <= params
+
+
+def test_pipelines_cli__module_v3_default_and_v2_opt_in() -> None:
+    command = pipelines.main.commands["generate"]
+    ctx = click.Context(command)
+    parameter = next(
+        param
+        for param in command.get_params(ctx)
+        if param.name == "prefer_module_v3"
+    )
+    assert parameter.default is True
+    assert "--no-prefer-module-v3" in parameter.secondary_opts
+
+    with command.make_context(
+        "generate", ["--no-prefer-module-v3"], resilient_parsing=True
+    ) as parsed:
+        assert parsed.params["prefer_module_v3"] is False

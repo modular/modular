@@ -137,7 +137,6 @@ Example: Epilogue Warp (context manager)
 """
 
 from layout.tma_async import SharedMemBarrier
-from std.utils.index import IndexList
 from .config import OutputPipelineConfig
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
@@ -168,8 +167,8 @@ comptime MbarPtr = SMemPtr[SharedMemBarrier]
 struct StandardTilePayload[
     a_type: DType,
     b_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
@@ -264,10 +263,10 @@ struct BlockScaledTilePayload[
     b_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
-    sfa_shape: IndexList[2],  # Scale factor A dims
-    sfb_shape: IndexList[2],  # Scale factor B dims
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
+    sfa_shape: Tuple[Int, Int],  # Scale factor A dims
+    sfb_shape: Tuple[Int, Int],  # Scale factor B dims
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload):
@@ -398,9 +397,9 @@ struct BlockwiseFP8TilePayload[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
-    a_scales_shape: IndexList[2],  # (1, BM)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
+    a_scales_shape: Tuple[Int, Int],  # (1, BM)
     # Pipeline stages
     num_pipeline_stages: Int,
 ](TilePayload, TrivialRegisterPassable):

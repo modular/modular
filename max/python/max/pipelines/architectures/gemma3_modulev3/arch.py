@@ -15,13 +15,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
 from .gemma3 import Gemma3
 from .model_config import Gemma3Config
+from .weight_adapters import gemma3_weight_rules
 
 gemma3_modulev3_arch = SupportedArchitecture(
     name="Gemma3ForCausalLM_ModuleV3",
@@ -41,11 +40,9 @@ gemma3_modulev3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=gemma3_weight_rules,
+    use_weight_rules=True,
     config=Gemma3Config,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

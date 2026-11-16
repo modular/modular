@@ -67,7 +67,10 @@ from std.collections import Array
 from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
+    get_defined_bool,
     get_defined_int,
+    is_amd_gpu,
+    is_nvidia_gpu,
     simd_width_of,
     size_of,
 )
@@ -79,7 +82,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, default_accelerator
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -93,7 +96,6 @@ from layout import (
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
@@ -107,6 +109,7 @@ from .rms_norm_fp8 import rms_norm_fused_fp8
 
 from .allreduce import (
     AllReduceAlgorithm,
+    _load_peers_rotated,
     allreduce,
     allreduce_tuning_table,
 )
@@ -114,9 +117,17 @@ from .allreduce_lamport_rmsnorm import (
     _lamport_allreduce_rmsnorm_launch,
     lamport_allreduce_rmsnorm_fits,
 )
+from .allreduce_mcast_rmsnorm import (
+    MCAR_GROUP,
+    allreduce_mcast_rmsnorm,
+    mcar_supports_cols,
+)
 from .device_query import get_sm_version, dispatch_select_comm_config
+from .lamport import Lamport
+from .multicast_window import McarWindowRank, mcar_window_rows
 from .reducescatter import _target_address_space
 from .sync import (
+    MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
@@ -285,13 +296,17 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         rank_sigs, rank_sigs[_my_rank], _my_rank
     )
 
-    # Round-robin access pattern for NVLink load-balancing.
-    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
-    var ptrs = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[
-            (_my_rank + i) % ngpus
-        ]
-    )
+    # Input pointers in global rank order on every rank, so every rank rounds
+    # the reduced sum identically; see `_load_peers_rotated` for the load order.
+    var ptrs = src_ptrs.copy()
+    comptime if ngpus == 2:
+        # Two terms sum to the same bits in either order, so keep the
+        # round-robin order, which also balances the reads.
+        ptrs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> ImmPointer[
+                Scalar[in_dtype], ImmutAnyOrigin
+            ]: src_ptrs[(_my_rank + i) % ngpus]
+        )
 
     # Row loop: each block processes _rows with stride = grid_dim.
     # For _rows <= grid_dim, the loop body runs exactly once per block.
@@ -303,17 +318,28 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         if is_valid:
             var elem_idx = row * _cols + idx
 
-            comptime for gpu_idx in range(ngpus):
-                vec_data += (
-                    ptrs[gpu_idx]
-                    .unsafe_address_space_cast[_target_address_space]()
-                    .unsafe_load[
-                        width=simd_width,
-                        alignment=simd_width,
-                        invariant=True,
-                    ](elem_idx)
-                    .cast[accum_type]()
-                )
+            comptime if (is_nvidia_gpu() or is_amd_gpu()) and ngpus > 2:
+                comptime for r in range(ngpus):
+                    if _my_rank == r:
+                        var vals = _load_peers_rotated[
+                            ngpus, r, simd_width, alignment=simd_width
+                        ](ptrs, elem_idx)
+                        var accum = SIMD[accum_type, simd_width](0)
+                        comptime for g in range(ngpus):
+                            accum += vals[g].cast[accum_type]()
+                        vec_data = accum
+            else:
+                comptime for gpu_idx in range(ngpus):
+                    vec_data += (
+                        ptrs[gpu_idx]
+                        .unsafe_address_space_cast[_target_address_space]()
+                        .unsafe_load[
+                            width=simd_width,
+                            alignment=simd_width,
+                            invariant=True,
+                        ](elem_idx)
+                        .cast[accum_type]()
+                    )
 
             # Add residual and write pre-norm sum (compile-time gated).
             comptime if has_residual:
@@ -1224,8 +1250,7 @@ def _launch_split_allreduce_rmsnorm[
     ](coords: Coord, val: SIMD[_dtype, length=_width]) {
         var residual_2d, var residual_output_2d
     } -> None:
-        var il = coord_to_index_list(coords)
-        var rc = Coord(il[0], il[1])
+        var rc = Coord(Int(coords[0]), Int(coords[1]))
         var res = residual_2d.load[width=_width, alignment=alignment](rc)
         # Add in f32 for precision parity with the fused kernel,
         # which accumulates allreduce + residual in f32 before casting.
@@ -1751,7 +1776,10 @@ def allreduce_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    # PDL is verified on 2 GPUs only; wider worlds stay OFF until measured.
+    pdl_level: PDLLevel = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    ),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -1937,13 +1965,14 @@ def _dispatch_ar_norm[
 ) raises:
     """Runtime-select the fused allreduce+norm vs a two-launch fallback.
 
-    Fuses while the full `[rows, cols]` payload fits `AR_NORM_FUSE_THRESHOLD`;
-    above it, hand off to `two_launch` (a standalone allreduce into `sum_out`
-    followed by a separate norm), caller-supplied so `comm` stays free of
-    `nn`. Nothing is calibrated off-AMD, so those targets always take
-    `two_launch`, as does any host without P2P access: the fused kernels
-    read their peers' inputs directly, while the plain allreduce falls back
-    to staged copies.
+    On AMD, fuses while the full `[rows, cols]` payload fits
+    `AR_NORM_FUSE_THRESHOLD`; above it, hand off to `two_launch` (a
+    standalone allreduce into `sum_out` followed by a separate norm),
+    caller-supplied so `comm` stays free of `nn`. Elsewhere only the
+    payloads `allreduce_rmsnorm` sends to its Lamport kernel fuse, since the
+    other fused kernels are not calibrated there. A host without P2P access
+    always takes `two_launch`: the fused kernels read their peers' inputs
+    directly, while the plain allreduce falls back to staged copies.
 
     Widths the fused kernels cannot warp-tile also take `two_launch`. The
     gate reads only `rows` and `cols`, which are identical on every rank
@@ -1964,16 +1993,27 @@ def _dispatch_ar_norm[
         two_launch()
         return
 
-    comptime threshold = (
-        AR_NORM_FUSE_THRESHOLD if ctx.target.is_amd_gpu() else Int(0)
-    )
-
     var payload_bytes = input_buffers[0].num_elements() * size_of[in_dtype]()
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
-    if payload_bytes <= threshold and _fused_kernel_tiles_cols[in_dtype](
-        cols, ctx
-    ):
+    var fuse: Bool
+    comptime if ctx.target.is_amd_gpu():
+        fuse = payload_bytes <= AR_NORM_FUSE_THRESHOLD and (
+            _fused_kernel_tiles_cols[in_dtype](cols, ctx)
+        )
+    else:
+        # Off AMD only the latency-bound payloads fuse, the ones
+        # `allreduce_rmsnorm` sends to its Lamport kernel: there one launch
+        # saves the separate norm launch outright. The 1- and 2-stage fused
+        # kernels are not calibrated against the plain allreduce here.
+        comptime sm_version = get_sm_version()
+        var rows = input_buffers[0].num_elements() // cols
+        fuse = dispatch_select_comm_config[
+            ngpus, sm_version, allreduce_tuning_table
+        ](payload_bytes).algorithm == AllReduceAlgorithm.LAMPORT and (
+            lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
+        )
+    if fuse:
         # in == out dtype, so the kernel skips its FP8 epilogue and never
         # touches the scale operand; `sum_out` (unwritten on this arm)
         # doubles as the dummy.
@@ -1994,6 +2034,285 @@ def _dispatch_ar_norm[
         two_launch()
 
 
+comptime MCAR_NORM_MAX_ROWS = 16
+"""Rows past which the arm's normed-row epilogue hands back to the shipped arms.
+
+Equal work, four B200s at TP4 and a 4096-wide hidden, residual and pre-norm
+stream on every arm: 7.4/9.3/10.3 (mcast) against 8.3/10.9/11.5 (Lamport) and
+10.7/13.0/13.6 (1-stage) us a call at 1/8/16 rows, a dead heat at 32, and the
+Lamport arm ahead from 64 (14.4 against 13.0, 20.9 against 15.9 at 128).
+
+This one is a cost bound, and it is the only reason the arm stops before the
+band: the epilogue past it is the same arithmetic on the same rows.
+"""
+
+comptime MCAR_GROUPED_MAX_ROWS = 16
+"""Rows past which the arm's grouped FP8 epilogue hands back to its staging path.
+
+The bound is the speculative decoder's acceptance, not the arm's time. The arm's
+kernel is its own algorithm (an fp32 residual add and its own reduction tree),
+so its group amax is close to the unfused chain's rather than byte-equal, and on
+MiMo-V2.6 that moves draft acceptance by a few percent with a sign that flips
+with the row count. The cap keeps the arm where it was measured to win; past it
+a grouped call runs the unfused chain, which is byte-inert (`distributed.mojo`).
+
+Not a hard ceiling on the kernel: `mcar_rmsnorm` serves any row count the
+window holds, and its oracle runs past this cap. What the cap bounds is the
+fold, i.e. which arm the graph compiler's epilogue may take.
+"""
+
+
+def _mcar_transport_supported[dtype: DType]() -> Bool:
+    """Whether the multicast boundary carries a `dtype` message at all.
+
+    The arm's kernel stores through `multimem`, which only SM90+ NVIDIA GPUs
+    have. On any other target this is false at compile time, so no caller
+    instantiates that kernel there.
+
+    Parameters:
+        dtype: Element type of the message.
+    """
+    return (
+        default_accelerator()._is_sm_9x_or_newer() and dtype == DType.bfloat16
+    )
+
+
+def mcar_rmsnorm_fits[
+    dtype: DType, ngpus: Int, quantized: Bool
+](rows: Int, cols: Int) -> Bool:
+    """Returns whether a `[rows, cols]` boundary belongs to the multicast arm.
+
+    The band is the bucket the arm replaces: the per-rank message has to fit a
+    slot of the symmetric window, which is the same 1 MiB the Lamport arm
+    reserves. Neither epilogue reaches it -- both are capped first, at
+    `MCAR_NORM_MAX_ROWS` and `MCAR_GROUPED_MAX_ROWS` -- so what decides a call
+    here is the epilogue's cap, and past it the existing path serves, unchanged.
+
+    Parameters:
+        dtype: Element type of the message.
+        ngpus: Number of participating ranks.
+        quantized: Whether the call's epilogue is the grouped FP8 row. Both
+            epilogues are capped below the band, for different reasons: the
+            normed row where a shipped arm is cheaper at equal work
+            (`MCAR_NORM_MAX_ROWS`), the grouped one where the arm costs draft
+            acceptance (`MCAR_GROUPED_MAX_ROWS`).
+
+    Args:
+        rows: Number of rows (tokens) the call reduces.
+        cols: Row width; RMSNorm runs over it.
+
+    Returns:
+        True when the multicast arm serves the shape.
+    """
+    comptime if not _mcar_transport_supported[dtype]():
+        return False
+    comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
+    comptime epilogue_cap = (
+        MCAR_GROUPED_MAX_ROWS if quantized else MCAR_NORM_MAX_ROWS
+    )
+    var row_cap = min(mcar_window_rows[dtype](cols), epilogue_cap)
+    return (
+        2 <= ngpus <= MAX_GPUS
+        and mcar_supports_cols[ngpus](cols)
+        and cols % atomic_width == 0
+        and rows <= row_cap
+    )
+
+
+def normalized_scale_group[
+    group_size_or_per_token: Int, static_cols: Int
+]() -> Int:
+    """Returns the FP8 scale granularity with one scale a row spelled `-1`.
+
+    The dialect spells a per-token scale as the row width, so the attribute's
+    own contract makes `-1` and the row width the same granularity, and neither
+    is a group that happens to cover the row. Normalizing once keeps every test
+    downstream a test of grouping (`<= 0`, `== MCAR_GROUP`) rather than a test
+    of spelling: a caller that passes the row width reaches the same fused
+    epilogue and the same arm that `-1` reaches.
+
+    Reads only compile-time values, so a caller can gate on it at compile time.
+
+    Parameters:
+        group_size_or_per_token: The attribute as the graph carries it.
+        static_cols: The row width when the graph knows it, else `-1`.
+
+    Returns:
+        `-1` when the granularity is one scale a row, else the attribute's
+        group size.
+    """
+    comptime if group_size_or_per_token <= 0:
+        return -1
+    comptime if static_cols > 0 and group_size_or_per_token == static_cols:
+        return -1
+    return group_size_or_per_token
+
+
+def mcar_epilogue_serves[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    group_size_or_per_token: Int,
+]() -> Bool:
+    """Whether the multicast arm's epilogue is the one this call writes.
+
+    The arm carries two epilogues: the normed row in the message dtype, and the
+    1x128-group E4M3 row with float32 scales its port implements. Every other
+    epilogue -- a per-token scale, another group size, another FP8 flavour or
+    scale type -- is the standalone quantizer's, which a caller runs as its own
+    launch over the normed rows.
+
+    Reads only compile-time values, so a caller can gate on it at compile time.
+
+    Parameters:
+        in_dtype: Message element type of the boundary.
+        out_dtype: Element type of the quantized output.
+        scales_dtype: Element type of the quantized scales.
+        group_size_or_per_token: Columns per FP8 scale (`-1` for one a row).
+
+    Returns:
+        True when the arm's own epilogue writes this call's output.
+    """
+    comptime if not _mcar_transport_supported[in_dtype]():
+        return False
+    comptime if group_size_or_per_token <= 0:
+        return out_dtype == in_dtype
+    return (
+        group_size_or_per_token == MCAR_GROUP
+        and out_dtype == DType.float8_e4m3fn
+        and scales_dtype == DType.float32
+    )
+
+
+def mcar_rmsnorm[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    ngpus: Int,
+    has_residual: Bool = False,
+    multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    group_size_or_per_token: Int = -1,
+](
+    rows: Int,
+    cols: Int,
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    output_2d: TileTensor[mut=True, out_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+    scale_output: TileTensor[mut=True, scales_dtype, ...],
+    my_rank: Int,
+    ctx: DeviceContext,
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ],
+    residual_output: _ComptimeConditionalTileTensor[
+        mut=True, in_dtype, engaged=has_residual, ...
+    ],
+    window: McarWindowRank,
+) raises:
+    """The multicast arm of the fused residual boundary.
+
+    Everything `allreduce_residual_rmsnorm` does, exchanged through the team's
+    symmetric window instead of the Lamport slots: each rank multicasts its own
+    pack once (the fabric performs the fan-out), reads the peers' slots from its
+    own copy, and runs the residual add, the RMSNorm and the group-scaled FP8
+    quant in the same launch. `window` is this rank's views of that window, and
+    its device-resident call state is what rotates the generations, so a
+    captured graph replays without a host argument.
+
+    Only the shapes `mcar_rmsnorm_fits` accepts, and only the epilogues
+    `mcar_epilogue_serves` names, reach here; every other call stays on the
+    shipped paths, which is why this arm cannot regress one.
+
+    Parameters:
+        in_dtype: Input data type (bf16 on every device the arm serves).
+        out_dtype: Output data type: `in_dtype`, or a float8 type when the
+            call quantizes.
+        scales_dtype: Scale factor data type.
+        ngpus: Number of participating ranks.
+        has_residual: Whether the residual add is engaged.
+        multiply_before_cast: Matches `ops.rms_norm`.
+        pdl_level: Programmatic dependent launch level.
+        group_size_or_per_token: Scale granularity of the quantized epilogue
+            this kernel serves (`-1` is one scale a row).
+
+    Args:
+        rows: Rows (tokens) the call reduces.
+        cols: Row width.
+        src_ptrs: Per-rank input pointers.
+        output_2d: `[rows, cols]` output.
+        gamma: RMSNorm weight.
+        epsilon: RMSNorm epsilon.
+        weight_offset: Additive offset for the RMSNorm weight.
+        scale_ub: Upper bound for the quantized scale.
+        scale_output: Quantized scales in the `[cols / K, rows]` grouped
+            layout the consuming block-scaled GEMM reads (unused by the normed
+            row epilogue).
+        my_rank: This rank's index.
+        ctx: Device context for this rank.
+        residual: `[rows, cols]` residual, replicated on every rank.
+        residual_output: `[rows, cols]` pre-norm sum.
+        window: This rank's views of the team's symmetric window.
+    """
+    comptime assert mcar_epilogue_serves[
+        in_dtype, out_dtype, scales_dtype, group_size_or_per_token
+    ](), "only the epilogues the arm ports reach the multicast launch"
+    comptime assert has_residual, "the multicast arm is the residual boundary's"
+    comptime assert (
+        in_dtype == DType.bfloat16
+    ), "the multicast arm transports bf16"
+    var scale_stride = 0
+    comptime if group_size_or_per_token > 0:
+        comptime assert (
+            scale_output.rank == 2
+        ), "a grouped epilogue writes a rank-2 scale tensor"
+        # The consuming block-scaled GEMM pads the scale tensor's row
+        # dimension, so the stride is the tensor's own, never `rows`.
+        scale_stride = Int(scale_output.dim[1]())
+    # The unused epilogue output still needs a valid pointer: the kernel's
+    # `quant` variant writes one of the two, so both name the one output and
+    # its origin is erased rather than borrowed twice. The tensors are global
+    # memory; their pointers only carry the address space as a parameter.
+    var output_ptr = output_2d.ptr.unsafe_address_space_cast[
+        .GENERIC
+    ]().unsafe_origin_cast[MutUntrackedOrigin]()
+    var normed_ptr = output_ptr.unsafe_bitcast[Scalar[DType.bfloat16]]()
+    var q_ptr = output_ptr.unsafe_bitcast[Scalar[DType.float8_e4m3fn]]()
+    var scales_ptr = scale_output.ptr.unsafe_address_space_cast[.GENERIC]()
+    var residual_ptr = residual[].ptr.unsafe_address_space_cast[.GENERIC]()
+    var residual_out_ptr = residual_output[].ptr.unsafe_address_space_cast[
+        .GENERIC
+    ]()
+    var gamma_ptr = gamma.ptr.unsafe_address_space_cast[.GENERIC]()
+    allreduce_mcast_rmsnorm[
+        ngpus,
+        quant=group_size_or_per_token > 0,
+        multiply_before_cast=multiply_before_cast,
+    ](
+        src_ptrs[my_rank].unsafe_bitcast[Scalar[DType.bfloat16]](),
+        residual_ptr.unsafe_bitcast[Scalar[DType.bfloat16]](),
+        residual_out_ptr.unsafe_bitcast[Scalar[DType.bfloat16]](),
+        normed_ptr,
+        gamma_ptr.unsafe_bitcast[Scalar[DType.bfloat16]](),
+        q_ptr,
+        scales_ptr.unsafe_bitcast[Float32](),
+        scale_stride,
+        rows,
+        cols,
+        epsilon,
+        weight_offset.cast[DType.float32](),
+        scale_ub,
+        my_rank,
+        window,
+        ctx,
+        pdl_level,
+    )
+
+
 def allreduce_residual_rmsnorm[
     in_dtype: DType,
     out_dtype: DType,
@@ -2004,7 +2323,8 @@ def allreduce_residual_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    group_size_or_per_token: Int = -1,
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -2021,6 +2341,7 @@ def allreduce_residual_rmsnorm[
     ctx: DeviceContext,
     my_rank: Optional[Int] = None,
     scratch_bytes: Optional[Int] = None,
+    window: Optional[McarWindowRank] = None,
 ) raises:
     """Fused allreduce + residual add + RMSNorm with optional FP8 quantization.
 
@@ -2045,15 +2366,12 @@ def allreduce_residual_rmsnorm[
             float32 before the single cast to the output dtype; False casts
             the normalized value to `in_dtype` first and applies gamma in
             `in_dtype`. False requires `out_dtype == in_dtype`.
-        pdl_level: Programmatic dependent launch level. The fused kernels
-            wait for their predecessor before they signal their peers, and
-            release the next kernel after the barrier that retires the peers'
-            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
-            the split path the allreduce always releases the norm at its exit,
-            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
-            requires the next kernel not to write this kernel's inputs before
-            its own PDL wait, because peers may still be reading them. The
-            Lamport branch always uses PDL.
+        group_size_or_per_token: Scale granularity of the quantized epilogue:
+            `K` is one scale per `K` columns of a row, and `-1` (or the row
+            width) is one per row, the row width normalized to `-1` here. Only
+            the multicast arm serves a grouped epilogue (1x128 groups, float32
+            scales); another grouped epilogue is the caller's to run over this
+            kernel's normed output.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -2075,6 +2393,11 @@ def allreduce_residual_rmsnorm[
         scratch_bytes: Bytes after each `Signal` header that kernels may
             stage through. Paths that need more take the 1-stage kernel.
             None means the caller sized it for every path.
+        window: This rank's views of the team's symmetric multicast window,
+            when the caller allocated one. Its presence is what lets the
+            dispatch take the multicast arm for the shapes that arm serves;
+            its absence is the fallback, and every path this op had before
+            still runs.
     """
     comptime assert (
         in_dtype.is_floating_point()
@@ -2095,6 +2418,13 @@ def allreduce_residual_rmsnorm[
     # to 2D, so we only need the last dim for cols and total/cols for rows.
     var in_num_elems = input_buffers[0].num_elements()
     comptime last_dim_idx = in_layout.rank - 1
+    # The graph's own spelling of one scale a row is the row width, so the
+    # granularity is normalized before anything tests it. `_shape_types` carries
+    # the same static width the composite reads, and `-1` when it is dynamic.
+    comptime group = normalized_scale_group[
+        group_size_or_per_token,
+        in_layout._shape_types[last_dim_idx].static_value,
+    ]()
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
     var rows = in_num_elems // cols
 
@@ -2114,6 +2444,70 @@ def allreduce_residual_rmsnorm[
     var residual_output_2d = residual_output.as_unsafe_any_origin().reshape(
         row_major(rows, cols)
     )
+    # PDL is verified on 2 GPUs only; 4/8-GPU runs stay OFF until someone
+    # measures them. The fused kernels wait for their predecessor before they
+    # signal their peers, and release the next kernel right after that wait.
+    comptime pdl_level = (
+        PDLLevel.OVERLAP_AT_BEGINNING if ngpus <= 2 else PDLLevel.OFF
+    )
+
+    # The multicast arm takes the bucket the Lamport arm serves, for the two
+    # epilogues it ports (`mcar_epilogue_serves`). `window` is absent unless the
+    # caller allocated one, so a run that cannot carry a multicast mapping
+    # simply never reaches this branch. The define is what puts the arm in the
+    # binary at all: it is validated on one model, and a graph compiled without
+    # it never allocates a window (`distributed.mojo`), so instantiating the
+    # kernels there would be codegen nothing can reach.
+    comptime if get_defined_bool[
+        "MODULAR_MULTICAST_ALLREDUCE_RMS_NORM", False
+    ]() and mcar_epilogue_serves[in_dtype, out_dtype, scales_dtype, group]():
+        if case .Some(rank_window) = window:
+            if (
+                mcar_rmsnorm_fits[in_dtype, ngpus, quantized=group > 0](
+                    rows, cols
+                )
+                and rank_window.rows >= rows
+            ):
+                mcar_rmsnorm[
+                    in_dtype,
+                    out_dtype,
+                    scales_dtype,
+                    ngpus,
+                    has_residual=True,
+                    multiply_before_cast=multiply_before_cast,
+                    pdl_level=pdl_level,
+                    group_size_or_per_token=group,
+                ](
+                    rows,
+                    cols,
+                    src_ptrs,
+                    output_2d,
+                    gamma,
+                    epsilon,
+                    weight_offset,
+                    scale_ub,
+                    scale_output,
+                    rank,
+                    ctx,
+                    residual_2d,
+                    residual_output_2d,
+                    rank_window,
+                )
+                return
+
+    # A grouped epilogue is not this kernel's to write below the arm: the paths
+    # that follow take one scale a row. A caller asking for groups runs the
+    # boundary in the message dtype and the quantizer over its output, so
+    # reaching here means the caller lost that branch.
+    comptime if group > 0:
+        raise Error(
+            "a grouped quantized epilogue needs the multicast boundary arm;"
+            " callers that miss it run the quantizer themselves"
+        )
+
+    # The paths below address one scale a row (a grouped epilogue keeps the
+    # rank-2 tensor its consumer reads, and only the multicast arm serves it),
+    # so the flatten happens once a grouped call has been routed away.
     var scale_output_1d = scale_output.reshape(row_major(rows))
 
     _dispatch_fused_kernel[

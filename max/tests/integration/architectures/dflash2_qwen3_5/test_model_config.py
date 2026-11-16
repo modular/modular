@@ -39,7 +39,7 @@ from dflash2_pairing_harness import (
 )
 from max.graph import DeviceRef
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.architectures.dflash2_qwen3_5 import DFlash2Qwen3_5
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     dflash2_draft_width,

@@ -55,7 +55,6 @@ from max.gpu import block_idx
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
-    FuncAttribute,
     default_accelerator,
 )
 from max.gpu.host.nvidia.tma import (
@@ -84,7 +83,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
 )
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -115,7 +114,7 @@ comptime _tile_layout_mn_major[
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
     native: Bool,
-] = TileLayout(
+] = Layout(
     Coord(
         Coord(
             Idx[_row_len[dtype, swizzle_mode]],
@@ -153,12 +152,7 @@ kernel asserts stride-for-stride.
 ``((1, CM*row_len), (row_len, CM*mn))``; see `_tile_layout_mn_major_native`.
 """
 
-comptime _tile_layout_mn_major_native[
-    dtype: DType,
-    mn_dim: Int,
-    k_dim: Int,
-    swizzle_mode: TensorMapSwizzle,
-] = _tile_layout_mn_major[dtype, mn_dim, k_dim, swizzle_mode, True]
+comptime _tile_layout_mn_major_native = _tile_layout_mn_major[_, _, _, _, True]
 """The native (pre-`#73811`) mn-major SMEM layout, recovered verbatim from
 `fe239ba77a3:max/kernels/src/layout/tensor_core_async.mojo`.
 
@@ -514,9 +508,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
     else:
         var v_tma_op = create_tensor_tile[
@@ -544,9 +535,6 @@ def run_pv_spike[
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_use)
-            ),
         )
 
     cpu_pv_naive(o_ref.host_tensor(), p.host_tensor(), v.host_tensor())

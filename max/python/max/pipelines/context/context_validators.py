@@ -34,6 +34,30 @@ def validate_requires_vision_context(
         raise InputError("This model requires TextAndVisionContext")
 
 
+def validate_no_images(
+    context: TextContext | TextAndVisionContext | PixelContext,
+) -> None:
+    """Validates that no image is provided in the context.
+
+    A text-only variant of an image-taking architecture keeps the base's
+    vision tokenizer, so its contexts can carry images the variant's graph
+    cannot encode; refusing them here fails the one request at admission
+    instead of reaching a batch its pipeline rejects wholesale.
+
+    Args:
+        context: The context to validate.
+
+    Raises:
+        InputError: If any image is provided.
+    """
+    if isinstance(context, TextAndVisionContext) and context.images:
+        raise InputError(
+            "This model variant serves text only: its graph encodes no"
+            " images. Drop the image parts, or serve the architecture"
+            " without its speculative pairing to use images."
+        )
+
+
 def validate_only_one_image(
     context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:

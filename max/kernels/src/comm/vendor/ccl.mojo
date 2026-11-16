@@ -27,7 +27,7 @@ from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor, row_major
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
 from max.gpu.host import HIP
@@ -343,7 +343,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     var ptr = alloc(AllocLayout[Communicators].single()).unsafe_leak()
     ptr.unsafe_write(c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(NAME), ptr.unsafe_bitcast[NoneType]()
+        StringSpan(NAME), ptr.unsafe_bitcast[NoneType]()
     )
     return ptr[]
 
@@ -493,7 +493,6 @@ def allreduce[
 
     elementwise[
         simd_size,
-        target="gpu",
         _trace_description="ccl_epilogue",
     ](epilogue_wrapper, Coord(count), ctx)
     # The free is stream-ordered; keep `scratch` until the epilogue is queued.
@@ -562,7 +561,7 @@ def allgather[
     outputs: Array[
         TileTensor[mut=True, dtype, out_layout, out_origin], ngpus * ngpus
     ],
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
 ) raises:
     """Performs an allgather across all GPUs via the vendor CCL library.
 

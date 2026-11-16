@@ -27,9 +27,9 @@ from max.gpu.host.info import B200
 from max.gpu import sm_id
 
 
-comptime MatmulWarpSpecializationWorkSpaceManager[
-    max_entries_per_warp: UInt32
-] = BlackwellWarpProfilingWorkspaceManager[1, 1, 1, 4, max_entries_per_warp]
+comptime MatmulWarpSpecializationWorkSpaceManager = BlackwellWarpProfilingWorkspaceManager[
+    1, 1, 1, 4, _
+]
 
 comptime MatmulProfileWarp[
     warp_role: UInt32, max_entries_per_warp: UInt32

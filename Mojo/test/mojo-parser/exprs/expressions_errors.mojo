@@ -1013,7 +1013,7 @@ def transfer_into_borrows() raises:
   var c = (CopyAndInitMemType(), CopyAndInitMemType())
   var x: CopyAndInitMemType
   var y: CopyAndInitMemType
-  x, y = c^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+  x, y = c^
 
   var d: List[CopyAndInitMemType] = [CopyAndInitMemType(), CopyAndInitMemType()]
   [x, y] = d^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
@@ -1110,8 +1110,9 @@ def unbound_function_type():
   # expected-note @below {{parameter 'p' of type 'Int' is not bound}}
   var g: def(HasIntParam) thin -> None
 
-  # expected-error @below {{'HasIntParamAlias' is not a concrete type, use '[]' to bind missing parameters}}
-  # expected-note @below {{'HasIntParamAlias' is aka 'comptime[p: Int] HasIntParam[p]'}}
+  # expected-error @below {{'HasIntParamAlias' is not concrete, use '[]' to bind missing parameters}}
+  # expected-note @below {{missing parameter 'p'}}
+  # expected-note @below {{'HasIntParamAlias' is aka 'HasIntParam[_]'}}
   var h: HasIntParamAlias
 
 # Various type printing cases.
@@ -1145,7 +1146,7 @@ struct HasIntParam[p: Int](Movable where False):
   def __init__(out self): # expected-note {{function declared here}}
      pass
 
-comptime HasIntParamAlias[p: Int] = HasIntParam[p]
+comptime HasIntParamAlias = HasIntParam[_]
 
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
 

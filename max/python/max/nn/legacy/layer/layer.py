@@ -43,10 +43,9 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.nn._identity import IdentitySet
 from max.tree import Tree
 from typing_extensions import Self
-
-from .._identity import IdentitySet
 
 
 @runtime_checkable
@@ -307,7 +306,7 @@ class Module(Layer, ABC):
                 positional argument of the layer's ``__call__``. Each argument
                 may be a single :class:`~max.graph.Value`, a (possibly nested)
                 list/tuple of values, or a structured type following the pytree
-                protocol, such as :class:`~max.nn.legacy.kv_cache.PagedCacheValues`.
+                protocol, such as :class:`~max.nn.kv_cache.PagedCacheValues`.
                 The subgraph's signature is derived from the flattened leaves'
                 types, and the same structure is rebuilt from the subgraph's
                 inputs before the layer is invoked.
@@ -795,6 +794,14 @@ def _array_from_weight_loader(
     elif weight.shape != data.shape:
         if weight.dtype == DType.uint8 and data.dtype == DType.uint8:
             weight._shape = data.shape
+            data.shape = Shape(weight._shape)
+        elif [dim for dim in weight.shape if dim != 1] == list(data.shape):
+            # A checkpoint may leave out unit dims, as Quark stores a per-row
+            # scale as [N] where MAX declares [N, 1]. The bytes are the same,
+            # so bind them in the declared shape, as Mach does.
+            data.data = data.to_buffer().view(
+                data.dtype, weight.shape.static_dims
+            )
             data.shape = Shape(weight._shape)
         else:
             raise ValueError(

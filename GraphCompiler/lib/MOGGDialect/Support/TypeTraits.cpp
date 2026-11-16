@@ -138,15 +138,6 @@ TypeTraits::convertToSIMD(mlir::MLIRContext *context, const void *data,
   llvm_unreachable("unimplemented DType");
 }
 
-llvm::SmallVector<TypeTraits> M::MOGG::allTypeTraits() {
-  return {
-#define DECLARE_FLOAT(SHORT_NAME, ...) SHORT_NAME(),
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-
-      ui8(), ui16(), ui32(), ui64(), si8(), si16(), si32(), si64(), b()};
-}
-
 ErrorOr<TypeTraits> TypeTraits::lookupType(Type type) {
 #define DECLARE_FLOAT(SHORT_NAME, LONG_NAME, M_TYPE, MLIR_TYPE, ...)           \
   if (isa<MLIR_TYPE>(type))                                                    \
@@ -178,39 +169,6 @@ ErrorOr<TypeTraits> TypeTraits::lookupType(Type type) {
   type.print(rso);
   return Error("No TypeTraits implementation for " + rso.str() +
                ". This is not a supported MOGG DType.");
-}
-
-ErrorOr<TypeTraits> TypeTraits::lookupDType(DType dtype) {
-  switch (dtype.getValue()) {
-
-#define DECLARE_FLOAT(SHORT_NAME, ...)                                         \
-  case DType::SHORT_NAME:                                                      \
-    return SHORT_NAME();
-#include "Support/ML/FloatTypes.def"
-#undef DECLARE_FLOAT
-
-  case DType::ui8:
-    return ui8();
-  case DType::ui16:
-    return ui16();
-  case DType::ui32:
-    return ui32();
-  case DType::ui64:
-    return ui64();
-  case DType::si8:
-    return si8();
-  case DType::si16:
-    return si16();
-  case DType::si32:
-    return si32();
-  case DType::si64:
-    return si64();
-  case DType::kBool:
-    return b();
-  default:
-    return Error("No TypeTraits implementation for " + dtype.getAsString() +
-                 ". This is not a supported MOGG DType.");
-  }
 }
 
 bool TypeTraits::isSupportedMOGGType(Type type) {

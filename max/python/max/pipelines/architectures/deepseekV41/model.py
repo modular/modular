@@ -57,19 +57,16 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -96,7 +93,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.utils import (
     CompilationTimer,
     compute_data_parallel_splits,
@@ -120,7 +117,6 @@ from .layers.engram_hash import EngramLayout, engram_lookback_token_ids
 from .layers.engram_lookup import EngramLookup
 from .layers.engram_token_map import compressed_token_map_array
 from .layers.moe import DeepseekV41MoE
-from .memory_planner import check_planned_max_length
 from .model_config import (
     DeepseekV41Config,
     forward_row_bound,
@@ -146,6 +142,38 @@ logger = logging.getLogger("max.pipelines")
 # Host-RAM budget for the load (Engram tables can be very large). Bounded by
 # total RAM as well as what is free now, so an undersized host fails fast.
 _ENGRAM_HOST_RAM_MAX_FRACTION_OF_TOTAL = 0.8
+
+
+def check_planned_max_length(
+    *, planned: int | None, requested: int, forward_rows: int
+) -> None:
+    """Refuses a memory plan whose KV pool cannot hold one prefill chunk.
+
+    Without this check the plan would succeed with ``max_length`` clamped to
+    a few tokens. The error is worded like other out-of-memory planning
+    errors so callers that retry with smaller configs recognize it.
+
+    Args:
+        planned: The plan's ``planned_max_length``.
+        requested: The ``max_length`` the config asked for.
+        forward_rows: Query rows one forward carries (the prefill chunk).
+
+    Raises:
+        RuntimeError: If ``planned < min(requested, forward_rows)``.
+    """
+    if not all(isinstance(v, int) for v in (planned, requested, forward_rows)):
+        return  # No plan (virtual devices) or a partial test double.
+    assert planned is not None
+    if planned >= min(requested, forward_rows):
+        return
+    raise RuntimeError(
+        f"DeepSeek-V4.1-Flash: the KV pool left after the weights and the "
+        f"forward's {forward_rows}-row activation reserve holds only "
+        f"{planned} tokens (max_length {requested} requested), so the "
+        "model, activations, and signal buffers don't leave room for KV "
+        "cache. Lower max_length or the prefill chunk "
+        "(max_batch_input_tokens), or raise device_memory_utilization."
+    )
 
 
 def _weight_data_bytes(weight_data: WeightData) -> int:
@@ -1813,13 +1841,7 @@ class DeepseekV41Model(
         ep_config = model_config.ep_config
         if ep_config is None or is_virtual_device_mode():
             return
-        initializer = EPCommInitializer(ep_config)
-        init = initializer.init_module()
-        specs: dict[str, GraphSpec] = {
-            GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())
-        }
-        modules = compile_and_init_graphs(session, specs)
-        initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
+        initializer = self._init_ep_comm(session, ep_config)
         self.ep_comm_initializer = initializer
         # Every V4.1 batch processor takes the buffers as graph inputs.
         bind = getattr(self.batch_processor, "bind_ep_buffers", None)
@@ -1879,11 +1901,12 @@ class DeepseekV41Model(
         with CompilationTimer("model") as timer:
             specs = self.graph_specs(model_config)
             timer.mark_build_complete()
-            self.compiled_modules = compile_and_init_graphs(session, specs)
+            compiled = compile_and_init_graphs(session, specs)
             self._finish_weight_loads()
+        # Keeps the ep_init graph that _init_distributed_runtime compiled.
+        self.compiled_modules = {**self.compiled_modules, **compiled}
         models = {
-            role: compiled.engine_model
-            for role, compiled in self.compiled_modules.items()
+            role: module.engine_model for role, module in compiled.items()
         }
         self._maybe_release_host_weights(*models.values())
         _drop_checkpoint_page_cache(self.weights)

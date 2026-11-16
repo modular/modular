@@ -715,3 +715,89 @@ kgen.func @single_unreachable_indirect_loop_break(%cond: index) -> index {
   %1 = kgen.call @f(%0) : (index) -> index
   hlcf.return %1: index
 }
+
+// COM: An elif chain is a single multi-arm `hlcf.if`, so the then, else, elif
+// COM: condition and elif arm regions all go through the generic fallthrough
+// COM: path. Constants in each region must still fold, and constants from the
+// COM: enclosing scope stay known after the chain.
+// CHECK-LABEL: @elif_chain
+kgen.func @elif_chain(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) -> (index, index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx3 = index.constant 3
+  %idx5 = index.constant 5
+
+  // CHECK-DAG: [[IDX6:%.*]] = index.constant 6
+  // CHECK-DAG: [[IDX5:%.*]] = index.constant 5
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
+
+  // CHECK: [[V0:%.*]] = hlcf.if
+  %0 = hlcf.if %cond0 -> index {
+    // COM: folds to true.
+    %1 = index.cmp sgt(%idx3, %idx2)
+    %b1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    // CHECK: hlcf.yield [[IDX1]]
+    hlcf.yield %idx1 : index
+  } else {
+    // CHECK: hlcf.if.elifcond.yield
+    hlcf.if.elifcond.yield %cond1
+  } then {
+    %2 = index.add %idx1, %idx5
+    // CHECK: hlcf.yield [[IDX6]]
+    hlcf.yield %2 : index
+  } else {
+    // COM: folds to 5.
+    %3 = index.mul %idx1, %idx5
+    // CHECK: hlcf.yield [[IDX5]]
+    hlcf.yield %3 : index
+  }
+
+  // COM: The chain's result is unknown, but the constants after it still fold.
+  // CHECK: hlcf.return [[V0]], [[IDX6]]
+  %4 = index.add %idx1, %idx5
+  hlcf.return %0, %4 : index, index
+}
+
+// COM: The same chain in a loop body goes through the fallthrough path once per
+// COM: iteration. Multiplying the chain's result keeps the loop result unknown.
+// CHECK-LABEL: @elif_chain_in_loop
+kgen.func @elif_chain_in_loop(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) -> (index, index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx7 = index.constant 7
+
+  // CHECK-DAG: [[IDX7:%.*]] = index.constant 7
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+
+  // CHECK: [[LOOP:%.*]] = hlcf.loop
+  %0 = hlcf.loop(%arg0 = %idx0 : index) -> index {
+    %1 = index.cmp slt(%arg0, %idx2)
+    %b1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    // CHECK: hlcf.if.elifcond.yield
+    %2 = hlcf.if %b1 -> index {
+      hlcf.yield %arg0 : index
+    } else {
+      hlcf.if.elifcond.yield %cond1
+    } then {
+      hlcf.yield %idx7 : index
+    } else {
+      %3 = index.add %idx1, %idx7
+      hlcf.yield %3 : index
+    }
+    %4 = index.mul %2, %2
+    hlcf.continue %4 : index
+  }
+
+  // CHECK: hlcf.return [[LOOP]], [[IDX3]]
+  %5 = index.add %idx1, %idx2
+  hlcf.return %0, %5 : index, index
+}

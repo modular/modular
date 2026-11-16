@@ -17,3 +17,17 @@
 # RUN:   -o test.mojonot 2>&1 | FileCheck %s --check-prefix=CHECK-DIAG
 # CHECK: output path must have a '.mojoc' extension
 # CHECK-DIAG: "kind":"error","message":"output path must have a '.mojoc' extension"}
+
+## Every dotted component of a namespace must be non-empty.
+# RUN: not mojo precompile %S/test_package --namespace "" -o %t.mojoc 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-EMPTY
+# RUN: not mojo precompile %S/test_package --namespace a..b -o %t.mojoc 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-INNER
+# RUN: not mojo precompile %S/test_package --namespace .a -o %t.mojoc 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-LEADING
+# RUN: not mojo precompile %S/test_package --namespace a. -o %t.mojoc 2>&1 \
+# RUN:   | FileCheck %s --check-prefix=NS-TRAILING
+# NS-EMPTY: error: invalid namespace ''
+# NS-INNER: error: invalid namespace 'a..b'
+# NS-LEADING: error: invalid namespace '.a'
+# NS-TRAILING: error: invalid namespace 'a.'

@@ -29,10 +29,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn.activation import GatedActivation
+from max.nn.ep_config import EPConfig
 from max.nn.legacy import Signals
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.moe import (
-    GatedActivation,
     MoE,
     MoEGate,
     make_concatenated_gated_activation_fn,

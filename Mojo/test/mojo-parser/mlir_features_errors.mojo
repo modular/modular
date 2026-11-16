@@ -92,6 +92,11 @@ def crash_on_invalid():
   # expected-error @+1 {{use of unregistered MLIR operation 'invalid_op'}}
   _ = __mlir_op.`invalid_op`[_type=__mlir_type.i16]()
 
+def crash_on_unowned_dialect():
+  # A dialect that is neither registered nor owned by a target plugin.
+  # expected-error @+1 {{use of unregistered MLIR operation 'nosuchdialect.op'}}
+  _ = __mlir_op.`nosuchdialect.op`[_type=__mlir_type.i16]()
+
 
 # expected-error @below {{invalid MLIR type}}
 # expected-note @below {{argument #0 with convention 'mut' in func type should be a `!kgen.pointer`}}

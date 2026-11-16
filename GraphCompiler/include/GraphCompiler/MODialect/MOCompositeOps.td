@@ -31,6 +31,97 @@ class MO_CompositeOp<string mnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// ReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_ReduceRMSNormOp : MO_CompositeOp<"reduce.rms_norm", [
+  AllDTypesMatch<["input", "result"]>,
+  AllShapeAttrsMatch<["input", "result"]>,
+  MO_ParamDeclaration,
+  MO_SingleDevice,
+  Pure,
+]> {
+  let summary = "RMS normalization operation";
+  let description = [{
+    Computes `input / sqrt(mean(input^2) + epsilon) * (weight + weight_offset)`.
+
+    A composite: MO patterns fuse it with its neighbors (a residual add,
+    RoPE, an allreduce, a quantize). A target that registers a kernel for it
+    runs that kernel; elsewhere `mo-tmp-decompose-composites` replaces it with
+    the ops it is made of.
+
+    `epsilon` and `weight_offset` are compile-time constants: targets that
+    need scalar constants as attributes cannot take them as operands.
+
+    `multiply_before_cast` false (Llama-style) casts to the output dtype
+    before multiplying by the weight; true (Gemma-style) multiplies first.
+
+    Example:
+
+    ```mlir
+      %res = mo.composite.reduce.rms_norm(%input, %weight)
+        {epsilon = #M.dense_array<9.99999997E-7> : tensor<f32>,
+         weight_offset = #M.dense_array<0.0> : tensor<f32>,
+         multiply_before_cast = false} :
+        (!mo.tensor<[2, 3], bf16, gpu:0>, !mo.tensor<[3], bf16, gpu:0>)
+        -> !mo.tensor<[2, 3], bf16, gpu:0>
+    ```
+  }];
+
+  let arguments = (ins
+    MO_Tensor:$input,
+    MO_Tensor:$weight,
+    MO_F32ScalarAttr:$epsilon,
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast,
+    MO_ParamDecls:$outputParamDecls
+  );
+  let results = (outs MO_Tensor:$result);
+  let hasVerifier = 1;
+  let assemblyFormat = [{
+    `` custom<ParamDecls>($outputParamDecls) `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// ReduceSoftmaxOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_ReduceSoftmaxOp : MO_CompositeOp<"reduce.softmax", [
+  AllDTypesMatch<["input", "result"]>,
+  AllShapeAttrsMatch<["input", "result"]>,
+  MO_ParamDeclaration,
+  MO_SingleDevice,
+  Pure,
+]> {
+  let summary = "Softmax operation";
+  let description = [{
+    Returns `exp(x) / sum(exp(x))`, summing along `axis`.
+
+    A composite: a target that registers a kernel for it runs that kernel;
+    elsewhere `mo-tmp-decompose-composites` replaces it with the ops it is
+    made of.
+
+    Example:
+
+    ```mlir
+      %res = mo.composite.reduce.softmax(%arg) [axis = 1] :
+        (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f32>
+    ```
+  }];
+
+  let arguments = (ins MO_Tensor:$input, IndexAttr:$axis);
+  let results = (outs MO_Tensor:$result);
+  let assemblyFormat = [{
+    `(` $input `)` `[` `axis` `=` $axis `]` attr-dict `:`
+    functional-type($input, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ReduceRMSNormRoPEOp
 //===----------------------------------------------------------------------===//
 
@@ -389,8 +480,16 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     RMSNorm and dynamic FP8 quantization. Returns the quantized output, its
     scale, and the post-add residual.
 
-    `multiply_before_cast` is the fused `mo.reduce.rms_norm`'s cast order. It
+    `multiply_before_cast` is the fused `mo.composite.reduce.rms_norm`'s cast order. It
     may be false only when the output is not quantized.
+
+    `group_size_or_per_token` is the quantized epilogue's scale granularity, as
+    on `mo.composite.quantize_dynamic_scaled_fp8`: `K` gives one scale per `K`
+    columns of a row, and the attribute's default `-1` is the per-token scale
+    the kernel has always written. A grouped epilogue is written in the
+    boundary kernel's own launch where its multicast arm serves the shape, and
+    otherwise by running the quantizer over the normed rows the kernel stages in
+    a workspace outside graph memory planning.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -401,7 +500,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    BoolAttr:$multiply_before_cast
+    BoolAttr:$multiply_before_cast,
+    DefaultValuedAttr<IndexAttr, "-1">:$group_size_or_per_token
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -412,7 +512,8 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
-    `multiply_before_cast` `=` $multiply_before_cast `}`
+    `multiply_before_cast` `=` $multiply_before_cast
+    (`,` `group_size_or_per_token` `=` $group_size_or_per_token^)? `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -461,79 +562,41 @@ def MOComposite_BundledAllReduceAddRMSNormQuantFP8Op : MO_CompositeOp<
 }
 
 //===----------------------------------------------------------------------===//
-// Flash attention ops
+// QuantizeDynamicScaledFP8Op
 //===----------------------------------------------------------------------===//
-//
-// Each is a 1:1 wrapper around an existing flash-attention kernel. Splitting
-// per (device, mask) keeps each kernel's signature and avoids dispatch in the
-// graph compiler.
 
-def MOComposite_NoMaskFlashAttentionCPUOp
-    : MO_CompositeOp<"no_mask_flash_attention_cpu", [
-  MO_SingleDeviceWithHostOperands<["scale"]>,
+def MOComposite_QuantizeDynamicScaledFP8Op
+    : MO_CompositeOp<"quantize_dynamic_scaled_fp8", [
+  Pure,
+  MO_SingleDeviceWithHostOperands<["scaleUb"]>,
 ]> {
-  let summary = "Fused multi-head (flash) attention on CPU, without a mask";
+  let summary = "Dynamic-scaled FP8 quantize";
   let description = [{
-    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale) @ V`) on CPU
-    with no attention mask. `scale` is a host scalar (`f32`). Lowers 1:1 to the
-    `no_mask_flash_attention_cpu` kernel.
-  }];
-  let arguments = (ins
-    MO_Tensor:$query,
-    MO_Tensor:$key,
-    MO_Tensor:$value,
-    MO_Tensor:$scale
-  );
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
-  }];
-}
+      output, scales = quantize_dynamic_scaled_float8(input, scale_ub)
 
-def MOComposite_MaskedFlashAttentionCPUOp
-    : MO_CompositeOp<"masked_flash_attention_cpu", [
-  MO_SingleDeviceWithHostOperands<["scale"]>,
-]> {
-  let summary = "Fused multi-head (flash) attention on CPU, with a mask";
-  let description = [{
-    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
-    on CPU. `scale` is a host scalar (`f32`). Lowers 1:1 to the
-    `with_mask_flash_attention_cpu` kernel.
-  }];
-  let arguments = (ins
-    MO_Tensor:$query,
-    MO_Tensor:$key,
-    MO_Tensor:$value,
-    MO_Tensor:$mask,
-    MO_Tensor:$scale
-  );
-  let results = (outs MO_Tensor:$result);
-  let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
-  }];
-}
+    `input` is `[rows, cols]`. Each group of `group_size_or_per_token`
+    columns of a row gets one scale, its max-abs over the FP8 maximum,
+    capped at `scale_ub`; `-1` gives one scale per row. When set,
+    `amax_floor` floors each group's max-abs first. GPU only.
 
-def MOComposite_MaskedFlashAttentionGPUOp
-    : MO_CompositeOp<"masked_flash_attention_gpu", [
-  MO_SingleDeviceWithHostOperands<["scale"]>,
-]> {
-  let summary = "Fused multi-head (flash) attention on GPU, with a mask";
-  let description = [{
-    Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
-    on GPU. `scale` is a host scalar (`f32`). Lowers 1:1 to the
-    `masked_flash_attention_gpu` kernel.
+    The fusion patterns that fold an `mo.composite.reduce.rms_norm` (and an
+    allreduce and add) into the quantize match this op.
   }];
+
   let arguments = (ins
-    MO_Tensor:$query,
-    MO_Tensor:$key,
-    MO_Tensor:$value,
-    MO_Tensor:$mask,
-    MO_Tensor:$scale
+    MO_Tensor:$input,
+    MO_Tensor:$scaleUb,
+    IndexAttr:$group_size_or_per_token,
+    OptionalAttr<MO_F32ScalarAttr>:$amax_floor
   );
-  let results = (outs MO_Tensor:$result);
+  let results = (outs MO_Tensor:$output, MO_Tensor:$scales);
   let assemblyFormat = [{
-    `(` operands `)` attr-dict `:` functional-type(operands, results)
+    `(` operands `)`
+    `{` `group_size_or_per_token` `=` $group_size_or_per_token
+    (`,` `amax_floor` `=` $amax_floor^)? `}`
+    attr-dict `:` functional-type(operands, results)
   }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -676,6 +739,13 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     into contiguous groups that reduce independently (TP-within-DP). It must
     be at least 2 and divide the device count. The builder always sets it;
     the `0` default is not usable.
+
+    A nonzero `quant_bits` (4 or 8) makes the reduce-scatter of shards too
+    large to fuse send each device's contribution to its peers quantized, in
+    groups of 32 elements: symmetric INT4 with a bf16 scale, or MXFP8. That is
+    lossy. Each device's own contribution and the residual stay exact. It
+    applies only to a full-world reduce-scatter (`group_size` equal to the
+    device count); the fused small-shard path never quantizes.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -686,7 +756,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
     DefaultValuedAttr<I64Attr, "0">:$group_size,
-    DefaultValuedAttr<BoolAttr, "false">:$has_residual
+    DefaultValuedAttr<BoolAttr, "false">:$has_residual,
+    DefaultValuedAttr<I64Attr, "0">:$quant_bits
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -696,7 +767,8 @@ def MOComposite_DistributedReduceScatterRMSNormOp : MO_DistributedOp<"composite.
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual)
+    `` custom<ReduceScatterRMSNormAttrs>($group_size, $has_residual,
+        $quant_bits)
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -721,6 +793,12 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
     contiguous groups that gather independently (TP-within-DP), so each output
     is its group's tensor. It must be at least 2 and divide the device count.
     The builder always sets it; the `0` default is not usable.
+
+    `gather_axis` 1 gathers column shards (`[rows, cols / group_size]` each,
+    in rank order) instead of row shards. `round_offset_gamma` rounds
+    `gamma + weight_offset` to the input dtype before the f32 multiply, as a
+    norm that scales by a stored `1 + w` does. Either one always runs the
+    fused kernel.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -729,7 +807,9 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    DefaultValuedAttr<I64Attr, "0">:$group_size
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<I64Attr, "0">:$gather_axis,
+    DefaultValuedAttr<BoolAttr, "false">:$round_offset_gamma
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -739,7 +819,52 @@ def MOComposite_DistributedAllGatherRMSNormOp : MO_DistributedOp<"composite.dist
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
+    (` ` `[` `group_size` `=` $group_size^ `]`)?
+    (` ` `[` `gather_axis` `=` $gather_axis^ `]`)?
+    (` ` `[` `round_offset_gamma` `=` $round_offset_gamma^ `]`)? attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+def MOComposite_DistributedAllGatherGatedResidualRMSNormOp : MO_DistributedOp<"composite.distributed.allgather_gated_residual_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused column AllGather + gated residual boundary across N devices.";
+  let description = [{
+    Gathers each device's column shard of a branch (`[rows, cols / N]`, in
+    rank order) and joins it to that device's residual stream in the same
+    launch, as `gated_residual_rms_norm` does with a whole branch: the
+    branch's weightless norm (after scaling by `1 + postWeight` when
+    `scale_branch`), the gate's mix, and the next pre-norm, scaled by
+    `1 + normWeight`. Returns the new stream (`output`) and its norm
+    (`outNormed`), replicated. One full-world group, bf16 activations.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$postWeight,
+    Variadic<MO_Tensor>:$gate,
+    Variadic<MO_Tensor>:$normWeight,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$post_eps,
+    MO_F32ScalarAttr:$norm_eps,
+    MO_F32ScalarAttr:$temperature,
+    MO_F32ScalarAttr:$gate_eps,
+    BoolAttr:$scale_branch
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$outNormed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `post_eps` `=` $post_eps `,` `norm_eps` `=` $norm_eps `,`
+    `temperature` `=` $temperature `,` `gate_eps` `=` $gate_eps `,`
+    `scale_branch` `=` $scale_branch `}` attr-dict `:`
     functional-type(operands, results)
   }];
 }
@@ -758,6 +883,13 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
     interleave and NOT the preshuffled atom order `block_scaled_matmul_amd_preb`
     requires). Quantized from the bf16 written to `output`, so byte-identical
     to a standalone quantize. Same `group_size` contract.
+
+    When `gather_quant_only` is true and every group gathers at least ~1024
+    rows, each device norms and quantizes only its own row shard with its own
+    `gamma`, and the group gathers just `outQuant` and `outScale`; this
+    matches the default only when every device in a group holds the same
+    `gamma`. `output` and `outResidual` then hold valid values only in the
+    device's own rows, so consumers may read nothing else of them.
   }];
   let arguments = (ins
     Variadic<MO_Tensor>:$inputs,
@@ -766,7 +898,8 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
     MO_Chain:$inChain,
     MO_F32ScalarAttr:$epsilon,
     MO_F32ScalarAttr:$weight_offset,
-    DefaultValuedAttr<I64Attr, "0">:$group_size
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<BoolAttr, "false">:$gather_quant_only
   );
   let results = (outs
     Variadic<MO_Tensor>:$output,
@@ -778,7 +911,8 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP8Op : MO_DistributedOp<"comp
   let assemblyFormat = [{
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `}`
-    (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
+    (` ` `[` `group_size` `=` $group_size^ `]`)?
+    (` ` `[` `gather_quant_only` `=` $gather_quant_only^ `]`)? attr-dict `:`
     functional-type(operands, results)
   }];
 }
@@ -825,6 +959,51 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op : MO_DistributedOp<"comp
 }
 
 //===----------------------------------------------------------------------===//
+// DistributedAllReducePostNormResidualRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_DistributedAllReducePostNormResidualRMSNormOp : MO_DistributedOp<"composite.distributed.allreduce_post_norm_residual_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + post-norm residual join across N devices.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs, norms the sum with `gamma`,
+    joins it to the replicated `residual` stream as
+    `mix[0] * normed + mix[1] * residual`, and norms the join with `gamma2`,
+    in one launch per device: a transformer block's post-norm, scaled
+    residual join and next pre-norm. Each product and the sum round to the
+    input dtype on their own, as the unfused ops do, and both norms multiply
+    by their weight in float32 before the cast. Returns the join (`joined`)
+    and its norm (`normed`), replicated.
+
+    `mix` is one `[2]` float32 tensor per device. bf16 in/out. A Lamport
+    kernel runs it with one block per row, in row chunks that each fit its
+    1 MiB workspace.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$gamma,
+    Variadic<MO_Tensor>:$gamma2,
+    Variadic<MO_Tensor>:$mix,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$epsilon
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$joined,
+    Variadic<MO_Tensor>:$normed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)` `{` `epsilon` `=` $epsilon `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedAllReduceRMSNormOp
 //===----------------------------------------------------------------------===//
 
@@ -842,7 +1021,7 @@ def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.dist
     allreduce (which rounds the sum to the input dtype) followed by a norm.
 
     `multiply_before_cast` is the norm's gamma cast order, matching
-    `mo.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
+    `mo.composite.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
     `gamma` is one operand per device, but every device must pass the same
     replicated weight: the 2-stage dispatch arm normalizes each row shard
     on its owner rank, so a gamma that differed per device would leak the
@@ -906,6 +1085,12 @@ def MOComposite_GroupedMatmulSwigluNvfp4Op
     When `has_a_row_scales` is set, `a_row_scales` holds one bf16 scale per
     `hidden_states` row, applied with its expert scale before the SwiGLU.
     Otherwise it is an unread placeholder.
+
+    `max_total_m` is an upper bound on the `hidden_states` row count that the
+    MegaFFN fusion sizes its arrival buffer from when that count is dynamic;
+    0 means unknown. `prefill_dynamic_claim` asks a MegaFFN that this op fuses
+    into to claim its 2-CTA prefill tiles from a shared counter; see
+    `mo.composite.mega_ffn_nvfp4`. The kernel itself ignores both.
   }];
 
   let arguments = (ins
@@ -924,13 +1109,17 @@ def MOComposite_GroupedMatmulSwigluNvfp4Op
     DefaultValuedAttr<StrAttr, "\"silu\"">:$activation,
     MO_F32ScalarAttr:$swiglu_alpha,
     MO_F32ScalarAttr:$swiglu_limit,
-    DefaultValuedAttr<BoolAttr, "false">:$has_a_row_scales
+    DefaultValuedAttr<BoolAttr, "false">:$has_a_row_scales,
+    DefaultValuedAttr<I64Attr, "0">:$max_total_m,
+    DefaultValuedAttr<BoolAttr, "false">:$prefill_dynamic_claim
   );
   let results = (outs MO_Tensor:$c_packed, MO_Tensor:$c_swiglu_scales);
   let assemblyFormat = [{
     `(` operands `)`
     `` custom<GroupedMatmulSwigluNvfp4Attrs>($activation, $swiglu_alpha,
-                                             $swiglu_limit, $has_a_row_scales)
+                                             $swiglu_limit, $has_a_row_scales,
+                                             $max_total_m,
+                                             $prefill_dynamic_claim)
     attr-dict `:` functional-type(operands, results)
   }];
 }
@@ -978,7 +1167,7 @@ def MOComposite_GroupedMatmulBlockScaledOp
 
 def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
   // Not `Pure`: writes `arrival_count` in place. `getEffects` is hand-written
-  // in MOOps.cpp.
+  // in MOOpsTraits.cpp.
   DeclareOpInterfaceMethods<MO_MutableOpInterface>,
   DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
   MO_SingleDeviceWithHostOperands<[
@@ -1009,6 +1198,12 @@ def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
 
     `gate_up_a_row_scales`/`has_gate_up_a_row_scales` are the gate-up leg's
     per-row input scales (see `mo.composite.grouped_matmul_swiglu_nvfp4`).
+
+    `prefill_dynamic_claim`, copied from the gate-up leg, makes the 2-CTA
+    prefill walk claim every tile from a shared counter instead of a
+    round-robin share. It is for a layer that runs beside a kernel holding
+    SMs, such as a pipeline stage's NCCL send: the round-robin walk stalls
+    until that kernel ends, the claimed walk does not.
   }];
 
   let arguments = (ins
@@ -1030,12 +1225,14 @@ def MOComposite_MegaFFNNvfp4Op : MO_CompositeOp<"mega_ffn_nvfp4", [
     MO_Tensor:$down_num_active_experts,
     MO_Buffer:$arrival_count,
     MO_Chain:$inChain,
-    DefaultValuedAttr<BoolAttr, "false">:$has_gate_up_a_row_scales
+    DefaultValuedAttr<BoolAttr, "false">:$has_gate_up_a_row_scales,
+    DefaultValuedAttr<BoolAttr, "false">:$prefill_dynamic_claim
   );
   let results = (outs MO_Tensor:$output, MO_Chain:$outChain);
   let assemblyFormat = [{
     `(` operands `)`
     (` ` `[` `has_gate_up_a_row_scales` `=` $has_gate_up_a_row_scales^ `]`)?
+    (`prefill_dynamic_claim` `=` $prefill_dynamic_claim^)?
     attr-dict `:` functional-type(operands, results)
   }];
 }

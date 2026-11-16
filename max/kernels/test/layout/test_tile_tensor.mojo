@@ -19,10 +19,9 @@ from layout import (
     RowMajorLayout,
     TileTensor,
     row_major,
-    Layout,
     UNKNOWN_VALUE,
 )
-from layout.tile_layout import Layout as TileLayout, blocked_product
+from layout.layout import Layout, blocked_product
 from layout.tile_tensor import (
     _IndexOrSlice,
     _IndexOrSliceLike,
@@ -93,7 +92,7 @@ def test_distribute() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -139,7 +138,7 @@ def test_distribute_with_swizzle() raises:
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
     var layout_tensor = TileTensor[.uint32](
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -201,7 +200,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_no_swizzle = TileTensor[.uint32](
         ptr=ptr_no_swizzle,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -209,7 +208,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
 
     var tensor_with_swizzle = TileTensor[.uint32](
         ptr=ptr_with_swizzle,
-        layout=TileLayout(
+        layout=Layout(
             shape=data_layout_shape(Idx[4], Idx[4]),
             stride=data_layout_stride(Idx[4], Idx[1]),
         ),
@@ -246,8 +245,8 @@ def test_tile() raises:
 
     var counter = 0
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var current_tile = layout_tensor.tile[2, 2](
                 (tile_i, tile_j),
             )
@@ -284,8 +283,8 @@ def test_tile_with_coord_shape() raises:
 
     # Tile with Coord shape — same logic as test_tile but using the
     # tile(tile_shape, tile_coord) overload instead of tile[2, 2](coord).
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var current_tile = layout_tensor.tile(
                 tile_shape,
                 (tile_i, tile_j),
@@ -722,7 +721,7 @@ def test_distribute_runtime_dims() raises:
     # Create 4x4 tensor with runtime first dim.
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=Coord(Int(4), Idx[4]),
             stride=Coord(Int(4), Idx[1]),
         ),
@@ -753,7 +752,7 @@ def test_distribute_with_offset_runtime_dims() raises:
     # Create 4x4 tensor with runtime dims.
     var layout_tensor = TileTensor(
         ptr=ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=Coord(Int(4), Idx[4]),
             stride=Coord(Int(4), Idx[1]),
         ),
@@ -912,7 +911,7 @@ def test_load_store_non_trivial_stride() raises:
     var data_ptr: MutPointer[Int32, origin_of(data)] = data.unsafe_ptr()
     var tensor = TileTensor(
         ptr=data_ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=col_major_shape(Idx[2], Idx[3]),
             stride=col_major_stride(Idx[1], Idx[2]),
         ),
@@ -944,7 +943,9 @@ def test_linear_idx_type_small_static_layout() raises:
     """Small fully-static layouts use int32 for linear_idx_type."""
     # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
     comptime TensorType = TileTensor[
-        .float32, RowMajorLayout[ComptimeInt[4], ComptimeInt[4]], MutAnyOrigin
+        .float32,
+        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
+        MutUntrackedOrigin,
     ]
     comptime assert TensorType.linear_idx_type == .int32
 
@@ -952,7 +953,7 @@ def test_linear_idx_type_small_static_layout() raises:
 def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
-        .float32, RowMajorLayout[Int, ComptimeInt[4]], MutAnyOrigin
+        .float32, RowMajorLayout[Int, ComptimeInt[4]], MutUntrackedOrigin
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64
     comptime assert TensorType.linear_idx_type == .int64
@@ -963,7 +964,7 @@ def test_linear_idx_type_shared_address_space() raises:
     comptime TensorType = TileTensor[
         .float32,
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
-        MutAnyOrigin,
+        MutUntrackedOrigin,
         address_space=.SHARED,
     ]
     comptime assert TensorType.linear_idx_type == .int32
@@ -1110,7 +1111,7 @@ def test_setitem_nested_layout() raises:
     var data = Array[Int32, 1024](fill=0)
     var tensor = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16]), Idx[32]),
             Coord(Coord(Idx[1], Idx[64]), Idx[2]),
         ),
@@ -1127,7 +1128,7 @@ def test_num_elements_nested_layout() raises:
     var data = Array[Int32, 1024](fill={})
     var static_nested = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(coord[2, 16], Idx[32]),
             Coord(coord[1, 64], Idx[2]),
         ),
@@ -1137,7 +1138,7 @@ def test_num_elements_nested_layout() raises:
     var tiles = 2
     var runtime_leaf = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], tiles), Idx[16]),
             Coord(Coord(Idx[1], Idx[32], 512), Idx[2]),
         ),
@@ -1161,7 +1162,7 @@ def test_tile_nested_layout() raises:
     var block_col_stride = 16
     var runtime_blocks = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[4], Idx[3]), Coord(Idx[4], Idx[5])),
             Coord(Coord(row_stride, Idx[80]), Coord(Idx[1], block_col_stride)),
         ),
@@ -1207,14 +1208,14 @@ def test_tile_nested_row_pair_grid() raises:
     var row_pair_stride = 64
     var static_grid = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], Idx[3]), Coord(Idx[32], Idx[2])),
             Coord(Coord(Idx[1], Idx[64], Idx[2048]), Coord(Idx[2], Idx[1024])),
         ),
     )
     var runtime_grid = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16], row_tiles), Coord(Idx[32], Idx[2])),
             Coord(
                 Coord(Idx[1], row_pair_stride, Int(2048)),
@@ -1259,7 +1260,7 @@ def test_slice_nested_layout() raises:
     var data = Array[Int32, 1024](fill_with=lambda (i: Int) -> Int32: Int32(i))
     var tensor = TileTensor(
         data,
-        TileLayout(
+        Layout(
             Coord(Coord(Idx[2], Idx[16]), Idx[32]),
             Coord(Coord(Idx[1], Idx[64]), Idx[2]),
         ),
@@ -1637,14 +1638,14 @@ def test_copy_from_roundtrip_tile_by_tile() raises:
     var mid = TileTensor(mid_data, row_major[4, 4]())
     var dst = TileTensor(dst_data, row_major[4, 4]())
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var s = src.tile[2, 2]((tile_i, tile_j))
             var m = mid.tile[2, 2]((tile_i, tile_j))
             m.copy_from(s)
 
-    comptime for tile_i in range(2):
-        comptime for tile_j in range(2):
+    for tile_i in range(2):
+        for tile_j in range(2):
             var m = mid.tile[2, 2]((tile_i, tile_j))
             var d = dst.tile[2, 2]((tile_i, tile_j))
             d.copy_from(m)
@@ -1670,7 +1671,7 @@ def test_copy_from_respects_non_contiguous_layout() raises:
     ] = dst_data.unsafe_ptr()
     var dst = TileTensor(
         ptr=dst_data_ptr,
-        layout=TileLayout(
+        layout=Layout(
             shape=padded_shape(Idx[2], Idx[3]),
             stride=padded_stride(Idx[4], Idx[1]),
         ),
@@ -2234,7 +2235,7 @@ def test_storage_abs_out_of_place() raises:
 def test_tuple_getter() raises:
     var data = Array[Float32, 4](fill=0)
     var a = TileTensor(data, row_major[2, 2]())
-    comptime for i in range(data.length):
+    for i in range(data.length):
         data[i] = Float32(i)
 
     assert_equal(a[(1, 1)], 3)

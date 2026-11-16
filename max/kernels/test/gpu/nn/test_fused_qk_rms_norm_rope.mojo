@@ -278,7 +278,7 @@ def run_fused_qk_rms_norm_rope[
         UInt32(max_cache_length),
     )
 
-    fused_qk_rms_norm_ragged_paged[target="gpu", multiply_before_cast=True](
+    fused_qk_rms_norm_ragged_paged[multiply_before_cast=True](
         q_in_tt,
         ref_collection,
         gamma_q_tt,
@@ -291,7 +291,8 @@ def run_fused_qk_rms_norm_rope[
         ctx,
     )
     fused_qk_rope_ragged[
-        ref_collection.CacheType, interleaved=False, target="gpu"
+        ref_collection.CacheType,
+        interleaved=False,
     ](
         q_proj=q_norm_ref_tt,
         input_row_offsets=row_offsets_tensor,
@@ -310,7 +311,6 @@ def run_fused_qk_rms_norm_rope[
         return q_in_tt.load[width=width]((token, head, col))
 
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=False,
     ](
@@ -754,7 +754,6 @@ def run_fused_dual_qk_rms_norm_rope[
 
     # Reference: two separate single-kernel launches.
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -771,7 +770,6 @@ def run_fused_dual_qk_rms_norm_rope[
         ctx,
     )
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -790,7 +788,6 @@ def run_fused_dual_qk_rms_norm_rope[
 
     # Fused: one dual launch.
     fused_dual_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -938,7 +935,6 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     fused_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](
@@ -955,7 +951,6 @@ def run_fused_dual_qk_rms_norm_rope[
         ctx,
     )
     fused_dual_qk_rms_norm_rope_ragged_paged[
-        target="gpu",
         multiply_before_cast=True,
         interleaved=interleaved,
     ](

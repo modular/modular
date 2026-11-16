@@ -14,11 +14,13 @@
 #ifndef KGEN_LIB_KGENTOLLVM_CABILOWERING_H
 #define KGEN_LIB_KGENTOLLVM_CABILOWERING_H
 
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include <memory>
 
@@ -168,12 +170,15 @@ struct SignatureClassification {
                   mlir::Type retType, bool isVarArg,
                   size_t numFixedArgs = SIZE_MAX) const;
 
-  /// Get the C ABI attributes (sret, byval, zeroext/signext) of the LLVM
-  /// parameters of the first `numArgs` arguments, one list per LLVM
-  /// parameter.
+  /// Get the attributes of the LLVM parameters of the first `numArgs`
+  /// arguments. The result has one list for each LLVM parameter. The
+  /// attributes of each argument in `argAttrs` move to the first LLVM
+  /// parameter of that argument. Then the C ABI attributes (sret, byval,
+  /// zeroext/signext) are added. A struct that is passed by value does not
+  /// get `noundef`, because its padding bytes are not defined.
   llvm::SmallVector<mlir::NamedAttrList>
   getParamAttrs(mlir::TypeRange argTypes, mlir::Type retType,
-                size_t numArgs = SIZE_MAX) const;
+                mlir::ArrayAttr argAttrs = {}, size_t numArgs = SIZE_MAX) const;
 
   /// Get the C ABI attributes (zeroext/signext) of the LLVM result.
   mlir::NamedAttrList getResultAttrs(mlir::MLIRContext *ctx) const;
@@ -313,6 +318,15 @@ int64_t getStructSize(mlir::LLVM::LLVMStructType type,
 /// Check if an LLVM struct contains only float/double types.
 /// Used for ARM64 HFA (Homogeneous Float Aggregate) detection.
 bool isAllFloatStruct(mlir::LLVM::LLVMStructType type);
+
+/// Walk `type` as a tree and call `callback` for each leaf with its type and
+/// byte offset, in the order a C compiler sees the members. Leaves are
+/// scalars, vectors and types without size. `offset` is the byte offset of
+/// `type` in the struct; pass 0 at the top.
+/// Arrays are visited once per element, so bound the size of `type` first.
+void forEachMember(mlir::Type type, int64_t offset,
+                   const LLVMDataLayout &dataLayout,
+                   llvm::function_ref<void(mlir::Type, int64_t)> callback);
 
 /// Get the integer type for a given byte size: 1→i8, 2→i16, ≤4→i32, ≤8→i64.
 mlir::IntegerType getIntegerTypeForSize(int64_t size, mlir::MLIRContext *ctx);

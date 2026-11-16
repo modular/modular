@@ -94,7 +94,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     random(topk_host_t, min=0, max=UInt32(num_experts))
     ctx.enqueue_copy(topk_dev, topk_host)
 
-    moe_create_indices["gpu"](
+    moe_create_indices(
         token_expert_order,
         expert_start_indices,
         restore_token_order,

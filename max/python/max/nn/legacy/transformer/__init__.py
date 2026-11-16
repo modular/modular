@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The transformer mechanism used within the model."""
 
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
+
 from .distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     DistributedTransformer,
@@ -21,8 +23,6 @@ from .distributed_transformer import (
 from .transformer import (
     DecoderOutputs,
     LogitsPostprocessMixin,
-    ReturnHiddenStates,
-    ReturnLogits,
     Transformer,
     TransformerBlock,
     forward_sequential_layers,

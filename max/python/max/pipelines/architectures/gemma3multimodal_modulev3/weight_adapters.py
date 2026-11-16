@@ -67,3 +67,23 @@ def convert_safetensor_vision_state_dict(
         new_state_dict[max_name] = value.data()
 
     return new_state_dict
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Maps the checkpoint into disjoint decoder and vision namespaces."""
+    return {
+        **{
+            f"decoder.{name}": value
+            for name, value in convert_safetensor_language_state_dict(
+                state_dict
+            ).items()
+        },
+        **{
+            f"vision.{name}": value
+            for name, value in convert_safetensor_vision_state_dict(
+                state_dict
+            ).items()
+        },
+    }

@@ -54,9 +54,10 @@ _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _PROCESSOR_CONFIG = "processor_config.json"
 
 
-def _load_processor_config(
+def load_processor_config(
     model_path: str, revision: str | None
 ) -> dict[str, Any]:
+    """Returns the checkpoint's ``processor_config.json``."""
     local = Path(model_path) / _PROCESSOR_CONFIG
     if not local.is_file():
         local = Path(
@@ -132,7 +133,7 @@ class MuseGlimmerTokenizer(TextAndVisionTokenizer):
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
         self.processor = MuseGlimmerProcessor(
-            self.delegate, _load_processor_config(model_path, revision)
+            self.delegate, load_processor_config(model_path, revision)
         )
         self.vision_token_ids = [
             huggingface_config.image_token_id,

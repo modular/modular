@@ -743,7 +743,9 @@ mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
 
 bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   assert(inputs.size() == 1 && outputs.size() == 1);
-  return isa<PointerType>(inputs.front()) && isa<IndexType>(outputs.front());
+  auto result = dyn_cast<SIMDType>(outputs.front());
+  return isa<PointerType>(inputs.front()) && result && result.isScalar() &&
+         result.getResolvedDType() == KGENDType::index;
 }
 
 //===----------------------------------------------------------------------===//

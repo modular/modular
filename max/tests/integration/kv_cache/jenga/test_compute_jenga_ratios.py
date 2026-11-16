@@ -570,3 +570,31 @@ def test_padding_fraction_env_var_turns_padding_off(
     module = reloaded_with_env(MODULAR_KV_JENGA_MAX_PADDING_FRACTION="0")
     geometry = module.plan_jenga_geometry(25 * GIB, cache_sizes, alignments)
     assert geometry.padded_sizes == cache_sizes
+
+
+@pytest.mark.parametrize(
+    ("num_huge_blocks", "top_fraction", "expected"),
+    [
+        (101, 1.0, 0),
+        (101, 0.1, 91),
+        (101, 0.001, 100),
+        (2, 0.5, 0),
+    ],
+)
+def test_min_huge_bid_for_top_fraction(
+    num_huge_blocks: int, top_fraction: float, expected: int
+) -> None:
+    assert (
+        jenga_block_pool.min_huge_bid_for_top_fraction(
+            num_huge_blocks, top_fraction
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize("top_fraction", [0.0, -0.5, 1.5])
+def test_min_huge_bid_for_top_fraction_rejects_out_of_range(
+    top_fraction: float,
+) -> None:
+    with pytest.raises(ValueError, match="top_fraction"):
+        jenga_block_pool.min_huge_bid_for_top_fraction(101, top_fraction)

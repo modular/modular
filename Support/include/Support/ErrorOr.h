@@ -22,6 +22,7 @@
 #include "Support/Error.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
 #include <cstdlib>
@@ -286,7 +287,7 @@ public:
 
 /// Convert an LLVM error (which may be in either success state or error state)
 /// to a Modular ErrorOrSuccess.
-ErrorOrSuccess toModularErrorOr(llvm::Error llvmError);
+MODULAR_CXX_EXPORT ErrorOrSuccess toModularErrorOr(llvm::Error llvmError);
 
 /// Convert an LLVM Expected value to a Modular ErrorOr.
 template <typename T>

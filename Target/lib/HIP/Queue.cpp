@@ -15,6 +15,7 @@
 #include "Context.h"
 #include "Device.h"
 #include "Event.h"
+#include "Target/lib/Support/PinnedSlotFlag.h"
 #include "llvm/ADT/Twine.h"
 
 #include <algorithm>
@@ -296,12 +297,24 @@ M_driver_status_t M_driver_queue::launchHostFunc(void (*fn)(void *),
   return M_DRIVER_STATUS_SUCCESS;
 }
 
-M_driver_status_t M_driver_queue::waitValue64(uint64_t device_address,
-                                              uint64_t value) {
+M_driver_status_t
+M_driver_queue::waitFlag(M_driver_flag_t flag, uint64_t value,
+                         M_driver_flag_condition_t condition) {
+  unsigned int hipCondition;
+  switch (condition) {
+  case M_DRIVER_FLAG_CONDITION_GEQ:
+    hipCondition = hipStreamWaitValueGte;
+    break;
+  case M_DRIVER_FLAG_CONDITION_EQ:
+    hipCondition = hipStreamWaitValueEq;
+    break;
+  default:
+    return M_DRIVER_STATUS_UNIMPLEMENTED;
+  }
   M_driver_driver &driver = context.getDevice().getDriver();
   if (hipError_t r = driver.hip().hipStreamWaitValue64(
-          stream, reinterpret_cast<hipDeviceptr_t>(device_address), value,
-          hipStreamWaitValueEq, /*mask=*/~0ULL);
+          stream, reinterpret_cast<hipDeviceptr_t>(flag->deviceAddress()),
+          value, hipCondition, /*mask=*/~0ULL);
       r != hipSuccess)
     return hipErrorStatus(&driver, r, "hipStreamWaitValue64");
   return M_DRIVER_STATUS_SUCCESS;

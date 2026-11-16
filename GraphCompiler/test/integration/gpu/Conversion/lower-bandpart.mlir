@@ -1,5 +1,5 @@
 
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof constant-fold=false default-device-label=gpu" %s -o %t.mlir
+// RUN: mo-opt --gc-pipeline="constant-fold=false default-device-label=gpu" %s -o %t.mlir
 
 // RUN: cat %t.mlir | FileCheck --check-prefix=CHECK-IR %s
 // RUN: mt --execute --default-device-label=gpu --model-inputs=ones --input-shapes=3x2 --result-output-style=full %t.mlir | FileCheck --check-prefix=CHECK-MT %s

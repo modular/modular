@@ -1,4 +1,4 @@
-// RUN: not mo-opt %s --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu compiled-framework-label=mof" --allow-unregistered-dialect 2>&1 | FileCheck %s
+// RUN: not mo-opt %s --gc-pipeline="kernel-library-paths=%kernel_api_test_lib default-device-label=gpu" --allow-unregistered-dialect 2>&1 | FileCheck %s
 
 // NEGATIVE test (expected to FAIL compilation). `trait_fused_store_host_negative`
 // stores DIRECTLY on the fused-store proxy from the host entry, with no

@@ -84,12 +84,19 @@ public:
   }
   /// Get the ABI alignment of the LLVM type and the element type that imposes
   /// the alignment requirement, it is typically the element type with maximum
-  /// bitwidth.
+  /// bitwidth. The type is null when no element imposes it, as in an empty or
+  /// a packed struct.
   std::pair<int64_t, Type> getTypeABIAlignAndType(Type type) const;
   /// Get the ABI alignment of the LLVM type.
   int64_t getTypeABIAlign(Type type) const {
     return getTypeABIAlignAndType(type).first;
   }
+  /// Get the byte offset of each field of the LLVM struct type, as
+  /// llvm::StructLayout::getElementOffset does: each field is at the next
+  /// offset aligned for it, after the alloc size of the field before. In a
+  /// packed struct, each field starts where the field before it ends.
+  SmallVector<int64_t>
+  getStructFieldOffsets(mlir::LLVM::LLVMStructType type) const;
 
   /// Get the target info.
   TargetInfoAttr getTarget() const { return target; }
@@ -164,13 +171,6 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
   using ImplicitLocOpBuilder::getContext;
   using POPToLLVMTypeConverter::getIndexType;
 
-  /// Create an `LLVMFuncOp` with the target info attributes.
-  template <typename... Args>
-  auto createFunc(Args &&...args) {
-    return createLLVMFunc(*this, getTarget(), getLoc(),
-                          std::forward<Args>(args)...);
-  }
-
   /// Create an `unrealized_conversion_cast` operation.
   Value createConversion(Type type, Value src) {
     if (src.getType() == type)
@@ -182,11 +182,6 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
     if (Type type = convertType(src.getType()))
       return createConversion(type, src);
     return {};
-  }
-
-  /// Get the pointer width in bytes.
-  size_t getPointerByteWidth() {
-    return llvm::divideCeil(getIndexTypeBitwidth(), CHAR_BIT);
   }
 };
 
@@ -399,38 +394,8 @@ struct DirectOpToLLVMPattern : public M::DirectOpConversionPattern<OpT> {
 
   Type getIndexType() const { return getTypeConverter()->getIndexType(); }
 
-  Type getIntPtrType(unsigned addressSpace = 0) const {
-    return IntegerType::get(
-        &getTypeConverter()->getContext(),
-        getTypeConverter()->getPointerBitwidth(addressSpace));
-  }
-
   Type getVoidType() const {
     return mlir::LLVM::LLVMVoidType::get(&getTypeConverter()->getContext());
-  }
-};
-
-/// Direct-conversion analogue of mlir::OneToOneConvertToLLVMPattern: replace
-/// the source op with the target op, forwarding the converted operands and
-/// attributes.
-template <typename SourceOp, typename TargetOp>
-struct DirectOneToOnePattern : public DirectOpToLLVMPattern<SourceOp> {
-  using DirectOpToLLVMPattern<SourceOp>::DirectOpToLLVMPattern;
-  using OpAdaptor = typename SourceOp::Adaptor;
-
-  LogicalResult matchAndRewrite(SourceOp op, OpAdaptor adaptor,
-                                M::DirectRewriter &rewriter) const override {
-    SmallVector<Type> resultTypes;
-    if (failed(this->getTypeConverter()->convertTypes(op->getResultTypes(),
-                                                      resultTypes)))
-      return rewriter.notifyMatchFailure(op, "failed to convert result types");
-    mlir::OperationState state(op.getLoc(), TargetOp::getOperationName());
-    state.addTypes(resultTypes);
-    state.addOperands(adaptor.getOperands());
-    state.addAttributes(op->getAttrs());
-    mlir::Operation *newOp = rewriter.create(state);
-    rewriter.replaceOp(op, newOp->getResults());
-    return success();
   }
 };
 

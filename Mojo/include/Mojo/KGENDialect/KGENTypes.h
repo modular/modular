@@ -25,6 +25,7 @@
 #include "Mojo/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/ForwardDecls.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/SymbolExport.h"
 
 namespace M::KGEN {
 class ParameterEvaluationContext;
@@ -47,13 +48,15 @@ class ParamListAttr;
 } // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENTypes.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 // FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
-class FuncTypeGeneratorType : public GeneratorType {
+class MODULAR_CXX_EXPORT FuncTypeGeneratorType : public GeneratorType {
 public:
   using GeneratorType::GeneratorType;
   FuncTypeGeneratorType(GeneratorType sig);

@@ -58,7 +58,7 @@ struct PayloadMaxPlugin(MaxPlugin):
     """A MAX plugin that reaches a target only through its payload."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["payload"]()
-    comptime HookFor[target: CompilationTarget] = PayloadMaxPluginHooks[target]
+    comptime HookFor = PayloadMaxPluginHooks[_]
 
 
 struct PayloadMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
@@ -71,7 +71,7 @@ struct PayloadStdPlugin(StdPlugin):
     """A stdlib plugin whose name no MAX registry lists."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["vendor"]()
-    comptime HookFor[target: CompilationTarget] = PayloadStdPluginHooks[target]
+    comptime HookFor = PayloadStdPluginHooks[_]
 
 
 struct PayloadStdPluginHooks[target: CompilationTarget](PluginHooks):

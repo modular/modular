@@ -94,18 +94,22 @@ def _metrics_url(framework: str) -> str:
 #   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
+    "RecursiveSI/flint": "max/pipelines/architectures/flint/recipes/flint_bf16_1x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": "max/pipelines/architectures/deepseekV4_modulev3/recipes/flash_0731_fp8_tp2_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
     "deepseek-ai/DeepSeek-V4.1-Flash-1017": "max/pipelines/architectures/deepseekV41/recipes/flash_1017_mxfp4_dp4_ep4_dspark_4x_b200.yaml",
     "nvidia/DeepSeek-V4.1-Flash-NVFP4": "max/pipelines/architectures/deepseekV41/recipes/flash_nvfp4_dp4_ep4_dspark_4x_b200.yaml",
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
+    "google/gemma-4-26B-A4B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_26b_a4b.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
     "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_26b_a4b_nvfp4.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
@@ -126,10 +130,9 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
-    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_4x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
-    "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
@@ -138,13 +141,17 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
-    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_b200.yaml",
-    "XiaomiMiMo/MiMo-V2.6-Flash-RL__modulev3_dflash": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_modulev3_dflash_b200.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_b200.yaml",
+    "XiaomiMiMo/MiMo-V2.6-Flash-RL__dflash": "max/pipelines/architectures/mimo_v2_modulev3/recipes/mimo_v2_6_flash_dflash_b200.yaml",
     "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__modulev3_mtp": "max/pipelines/architectures/qwen3_5_modulev3/recipes/qwen38_27b_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__modulev3_dflash2": "max/pipelines/architectures/qwen3_5_modulev3/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "Qwen/Qwen3.8-27B__modulev3": "max/pipelines/architectures/qwen3_5_modulev3/recipes/qwen38_27b.yaml",
+    "reflection/Beam-1.0-501B-A23B-NVFP4": "max/pipelines/architectures/beam_modulev3/recipes/beam_1_0_nvfp4_tp4_ep4_4x_b200.yaml",
     "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on
@@ -180,6 +187,7 @@ class RecipeConfig(BaseModel):
     class Runtime(BaseModel):
         model_config = ConfigDict(extra="ignore")
 
+        prefer_module_v3: bool = False
         ep_size: int | None = None
         enable_chunked_prefill: bool | None = None
 
@@ -200,10 +208,21 @@ class ServerCommand(NamedTuple):
     env: dict[str, str]
 
 
-# Repos a variant without a recipe needs beside its base repo, such as the
-# draft a Mach speculative variant exports with.
+# Repos a model needs beside its base repo and recipe, such as the draft a
+# Mach speculative variant exports with.
 VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
+    "google/gemma-4-31B-it__mtp": ("google/gemma-4-31B-it-assistant",),
     "google/gemma-4-31B-it__pp_mtp": ("google/gemma-4-31B-it-assistant",),
+    "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": (
+        "Inferact/Muse-Spark-Open-DSpark",
+    ),
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark_mixed": (
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark",
+    ),
+    "poolside/Laguna-S-2.1-NVFP4": ("poolside/Laguna-S-2.1-DFlash-NVFP4",),
+    "poolside/Laguna-S-2.1-NVFP4__modulev3": (
+        "poolside/Laguna-S-2.1-DFlash-NVFP4",
+    ),
 }
 
 
@@ -241,6 +260,7 @@ def is_vision_model(model: str) -> bool:
             "kimi-vl",
             "minimax-m3",
             "muse-glimmer",
+            "muse-spark",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -508,7 +528,15 @@ def get_server_cmd(
     # CUDA graph capture and fails Hy4's engine start.
     if "hy4" in model.casefold():
         VLLM += ["--enforce-eager"]
-    MAX = ["serve", "--pretty-print-config"]
+    MAX = [
+        "serve",
+        "--pretty-print-config",
+        (
+            "--prefer-module-v3"
+            if recipe is not None and recipe.runtime.prefer_module_v3
+            else "--no-prefer-module-v3"
+        ),
+    ]
     # A smoke test is where an eager or host-transfer footgun should surface,
     # so validate each request too and not just initialization. max-ci only:
     # the flag is newer than the wheels the ``max`` framework installs.
@@ -581,10 +609,10 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
-        # Without this, the registry falls back to an unquantized matmul
-        # that rejects the packed checkpoint's weight shapes.
-        if "kimi-k3" in model.casefold() and gpu_name.startswith("AMD"):
-            env["MAX_KIMI_K3_AMD_W4A8"] = "1"
+        # Hy4's recipe env: its init-time gate/up permute traps memory in
+        # partly used pages at the default 256 MB.
+        if "hy4" in model.casefold():
+            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB"] = "32"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"

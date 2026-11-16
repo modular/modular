@@ -66,7 +66,7 @@ from layout import (
     TileTensor,
 )
 from layout.coord import Coord
-from layout.tile_layout import Layout as TileLayout, TensorLayout, row_major
+from layout.layout import Layout, TensorLayout, row_major
 
 from linalg.arch.apple.mma import MmaOpApple
 
@@ -127,7 +127,6 @@ comptime FA_PREFILL_APPLE_MAX_HEAD_DIM = 256
 # (NUM_M_MMAS*((depth/16) + NUM_N_MMAS) fp32 fragments) binds occupancy: a narrow
 # 1x2 tile keeps them resident while a wider score tile collapses occupancy.
 # NUM_N_MMAS=2 measured fastest.
-comptime DEFAULT_NUM_M_MMAS = 1
 comptime DEFAULT_NUM_N_MMAS = 2
 comptime MMA_DIM = 16
 
@@ -493,7 +492,7 @@ def fa_prefill_apple_core[
     # Build the layout value, then derive the TileTensor type via `type_of`
     # (the matmul idiom for a runtime-stride layout).
     var q_row_stride = _num_heads * _depth
-    var q_layout_val = TileLayout(
+    var q_layout_val = Layout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
     # Offsetting through the engine keeps `q`'s engine on the view; the `ptr=`
@@ -528,7 +527,7 @@ def fa_prefill_apple_core[
     var kv_row_stride = (Int(k_base1) - Int(k_base0)) // kv_elt_size
 
     # KV sub-tile layout (16 keys x Depth), reused for every K/V sub-tile.
-    var kv_layout_val = TileLayout(
+    var kv_layout_val = Layout(
         Coord(Idx[MMA_DIM], Idx[Depth]), Coord(kv_row_stride, Idx[1])
     )
 
@@ -840,7 +839,7 @@ def fa_prefill_apple_core[
     # cast to `output_type` on store, so the fp32-only `store_bounded` fast path
     # is unavailable; scatter each fragment via `out_mma`'s `rb`/`cb` lane map
     # with a per-element cast and a query-row bounds check.
-    var out_layout_val = TileLayout(
+    var out_layout_val = Layout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
     var out_tile = output.OffsetViewType[

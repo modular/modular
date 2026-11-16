@@ -27,6 +27,7 @@
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/Support/TriBool.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
+#include "Support/SymbolExport.h"
 
 #include "Support/BumpAllocator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -96,7 +97,6 @@ public:
   Capture(CValue value, CaptureConvention kind, StringRef spelling)
       : value(value), kind(kind), spelling(spelling) {}
   CValue getValue() const { return value; }
-  bool isCopy() const;
   bool isRef() const;
   /// The name of the capture
   StringRef getSpelling() const { return spelling; }
@@ -130,7 +130,7 @@ enum class DeclResolvedness : uint8_t {
 
 /// This is state shared across multiple different instances of Parser
 /// which are always shared across them.
-class SharedState {
+class MODULAR_CXX_EXPORT SharedState {
   friend class ModuleLoader;
 
 public:

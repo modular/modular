@@ -123,8 +123,8 @@ which handles memory allocation for key-value pairs across generation steps.
 
 For most use cases, you don't interact with the cache manager directly. The
 pipeline builds the cache parameters with your architecture config's
-`get_kv_params()`, and the memory planner your architecture registers in
-`SupportedArchitecture` sizes the cache for the available device memory.
+`get_kv_params()`, and at startup the model worker measures peak memory during
+warmups and sizes the cache from what remains on the device.
 
 ### How modules and pipelines work together
 
@@ -501,9 +501,9 @@ The base class delegates the following through `model_config_cls`:
   `get_kv_params()` delegates to it. Architectures with multiple or hybrid
   caches (for example, separate sliding-window and full-attention caches) return
   a
-  [`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
+  [`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
   tree instead, which the cache manager consumes through the shared
-  [`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
+  [`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
 
 You can override `calculate_max_seq_len()` (on the architecture config) or
 `get_kv_params()` if needed.
@@ -556,8 +556,8 @@ When you run a model, configuration flows through several layers:
    defaults the architecture declares. A model whose architecture isn't
    registered fails here, before any weights are downloaded.
 
-3. **Plan memory**: The registry runs the architecture's memory planner to
-   size the KV cache and batch limits for the available devices.
+3. **Size memory**: The model worker measures peak memory during startup
+   warmups and sizes the KV cache from what remains on the devices.
 
 4. **Instantiate pipeline**: Finally, the registry constructs and returns the
    tokenizer and compiled pipeline ready for inference.

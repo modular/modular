@@ -37,7 +37,7 @@ def check[
     cipher_init: def(Array[UInt8, KeySize]) thin raises -> C,
 ](n: Int) raises:
     var k = Array[UInt8, KeySize](fill=0)
-    var c = cipher_init(k)
+    _ = cipher_init(k)
     print("checked KeySize =", KeySize, "n =", n)
 
 

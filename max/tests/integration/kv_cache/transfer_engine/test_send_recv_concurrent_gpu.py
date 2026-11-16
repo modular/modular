@@ -13,8 +13,9 @@
 
 """Test DP=1, TP=1 with 32 concurrent in-flight transfers using GPU 0 and GPU 1.
 
-The payload size is intentionally kept small (512MB) to ensure the test
-completes in a reasonable time while still validating concurrent transfer logic.
+The test looks for races between transfers. Races need many transfers, not
+large ones. Each page is 2 MB to keep host allocations small, because a large
+allocation can stall for seconds on a busy host.
 """
 
 from __future__ import annotations
@@ -154,9 +155,7 @@ def test_send_recv_basic() -> None:
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
-    total_bytes = (
-        512 * 1024 * 1024
-    )  # 512MB - reduced from 6GB for faster CI runs
+    total_bytes = 64 * 1024 * 1024
     total_num_pages = 32
 
     sender_proc = ctx.Process(

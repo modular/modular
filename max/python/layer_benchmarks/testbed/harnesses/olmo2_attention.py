@@ -43,7 +43,7 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 from transformers.models.olmo2.configuration_olmo2 import Olmo2Config

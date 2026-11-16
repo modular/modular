@@ -13,7 +13,7 @@
 
 """Graph-compiler rms_norm model cache for the MO interpreter.
 
-Covers ``ReduceRmsNormOp`` only. ``epsilon``, ``weight_offset`` and
+Covers ``CompositeReduceRmsNormOp`` only. ``epsilon``, ``weight_offset`` and
 ``multiply_before_cast`` are compile-time attributes of the MO op, so all
 three ride in the cache key. ``epsilon`` and ``weight_offset`` are keyed by
 their ``f32`` bit patterns, which is exactly what the op stores.
@@ -48,6 +48,9 @@ _SWEPT_SCALARS = (
     (1e-6, 0.0),
     (1e-5, 1.0),
     (1e-6, 1.0),
+    # Gemma 4's float16 post-FFN norm: 1e-6 over its FFN loss scale (256)
+    # squared.
+    (1e-6 / 256**2, 0.0),
 )
 
 
@@ -92,7 +95,7 @@ def _rms_norm_graph(
     with graph:
         x, weight = (v.tensor for v in graph.inputs)
         result = Graph.current._add_op_generated(
-            mo.ReduceRmsNormOp,
+            mo.CompositeReduceRmsNormOp,
             result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
             input=x,
             weight=weight,

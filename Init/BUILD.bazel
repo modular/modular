@@ -28,7 +28,6 @@ modular_cc_library(
         "//Support:Configuration",
         "//Support:Context",
         "//Support:CrashReporting",
-        "//Support:MArchTarget",
         "//Support:MArchTargetMinimal",
         "//Support:SymbolExport",
         "//Support:Telemetry",

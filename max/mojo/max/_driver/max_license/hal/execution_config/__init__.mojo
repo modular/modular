@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import BitSet
-from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
+from max.gpu.host import ConstantMemoryMapping, Dim
 from max.gpu.host import _DumpPath
 from max.gpu.host import ExecutionConfig
 from .gpu_execution_config import GPUExecutionConfiguration
@@ -326,24 +326,19 @@ trait OptionalMatrixUnitExecutionConfig(ExecutionConfig):
         ...
 
 
-trait LaunchAttributeHolderExecutionConfig(ExecutionConfig):
-    """An `ExecutionConfig` which has the ability to hold CUDA launch attributes.
+def check_config_fields_launchable[
+    ExecutionConfigType: ExecutionConfig, api_name: StringLiteral
+]():
+    """Fails to compile if `ExecutionConfigType` can hold constant memory
+    mappings.
+
+    No HAL launch plumbs them yet, so a launch refuses a config that can hold
+    them rather than drop what it holds.
+
+    Parameters:
+        ExecutionConfigType: The config a launch was given.
+        api_name: The launch API, for the error message.
     """
-
-    def get_launch_attributes[
-        o: ImmOrigin
-    ](ref[o] self) -> Span[LaunchAttribute, o]:
-        """Gets the launch attributes configured for kernel launch.
-
-        Returns:
-            The configured launch attributes, or `None` if unset.
-        """
-        ...
-
-    def set_launch_attributes(mut self, var attributes: List[LaunchAttribute]):
-        """Sets launch attributes used for kernel launch.
-
-        Args:
-            attributes: Launch attributes to apply, or `None` to clear them.
-        """
-        ...
+    comptime assert not conforms_to(
+        ExecutionConfigType, ConstantMemoryMappingExecutionConfig
+    ), String(api_name, " does not support `constant_memory` mappings.")

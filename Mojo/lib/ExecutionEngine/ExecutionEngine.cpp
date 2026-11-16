@@ -62,7 +62,7 @@ static ErrorOrSuccess setupPlatform(llvm::orc::JITDylib &platformStdlib,
   // currently hit conflicts with symbols in the current COFF ORC runtime.
   auto generator = toModularErrorOr(
       llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-          session, dylibMgr));
+          dylibMgr));
   if (generator.isError())
     return generator.takeError();
   platformStdlib.addGenerator(std::move(*generator));
@@ -122,8 +122,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session,
     auto *libJD = &session.createBareJITDylib(mlirclibName.str());
     libJD->addGenerator(llvm::cantFail(
         llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-            session, dylibMgr,
-            [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
+            dylibMgr, [=](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
               StringRef name = *symbolStringPtr;
               // On MachO, the symbol names start with `_`.
               return name.starts_with("mlir") || name.starts_with("_mlir");
@@ -144,7 +143,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session,
   for (StringRef libPath : paths) {
     auto generatorOr =
         toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-            session, dylibMgr, libPath.str().c_str(),
+            dylibMgr, libPath.str().c_str(),
             [globalPrefix](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
               return !isProcessAllocatorSymbol(*symbolStringPtr, globalPrefix);
             }));
@@ -161,7 +160,7 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session,
   // reaches the same allocator the host process uses.
   libJD->addGenerator(llvm::cantFail(
       llvm::orc::EPCDynamicLibrarySearchGenerator::GetForTargetProcess(
-          session, dylibMgr,
+          dylibMgr,
           [globalPrefix](const llvm::orc::SymbolStringPtr &symbolStringPtr) {
             return isProcessAllocatorSymbol(*symbolStringPtr, globalPrefix);
           })));

@@ -19,9 +19,11 @@ import json
 import logging
 import math
 import statistics
+from collections.abc import Sequence
 from unittest.mock import MagicMock
 
 import pytest
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import BenchmarkResult
 from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
@@ -89,6 +91,38 @@ def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
     return tokenizer
 
 
+def _calculate(
+    outputs: Sequence[RequestFuncOutput],
+    *,
+    dur_s: float,
+    tokenizer: MagicMock,
+    skip_first_n_requests: int = 0,
+    skip_last_n_requests: int = 0,
+    reject_outliers: bool = False,
+    record_request_text: bool = False,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
+) -> BenchmarkResult:
+    """Runs `calculate_metrics` with no GPU stats and no concurrency limit."""
+    return calculate_metrics(
+        outputs=outputs,
+        dur_s=dur_s,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+        reject_outliers=reject_outliers,
+        record_request_text=record_request_text,
+        goodput_targets=goodput_targets,
+        num_gpus=num_gpus,
+    )
+
+
 def test_per_chunk_tpot_collected_from_outputs() -> None:
     """Per-chunk TPOT values are collected into step_tpot_ms."""
     output = RequestFuncOutput(
@@ -103,18 +137,10 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -157,18 +183,10 @@ def test_tpot_both_definitions() -> None:
     # Mock tokenizer: output1 -> 10 tokens, output2 -> 4 tokens
     tokenizer = _make_mock_tokenizer({"ten tokens out": 10, "four tok": 4})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output1, output2],
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -204,18 +222,10 @@ def test_output_len_prefers_server_completion_tokens() -> None:
     )
     tokenizer = _make_mock_tokenizer({"four tok": 4})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -248,18 +258,10 @@ def test_tpot_zero_decode_tokens() -> None:
     # 1 output token, 1 completed -> decode_tokens = 0
     tokenizer = _make_mock_tokenizer({"a": 1})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -276,18 +278,10 @@ def test_empty_outputs_no_crash() -> None:
     """Empty outputs list doesn't crash."""
     tokenizer = _make_mock_tokenizer({})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -326,18 +320,10 @@ def test_itl_metrics_unchanged() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -368,18 +354,10 @@ def test_failed_requests_excluded() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello": 3, "": 0})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[success_output, failed_output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -429,32 +407,17 @@ def test_skip_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 3, "second": 3, "third": 3})
 
-    metrics_all = calculate_metrics(
+    metrics_all = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
-    metrics_skip_last = calculate_metrics(
+    metrics_skip_last = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics_all.text_data is not None
@@ -506,18 +469,12 @@ def test_skip_first_and_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "middle": 2, "last": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -567,18 +524,12 @@ def test_skip_last_with_cancelled_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "second": 2, "third": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -611,18 +562,12 @@ def test_skip_all_requests_warns() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        calculate_metrics(
+        _calculate(
             outputs=outputs,
             dur_s=1.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=1,
             skip_last_n_requests=1,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
         )
         assert len(w) == 1
         assert "excluded" in str(w[0].message).lower()
@@ -689,18 +634,10 @@ def test_request_submit_time_set_on_output() -> None:
     assert output.request_submit_time == 100.5
 
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
     assert metrics.text_data is not None
     # Metrics are computed normally regardless of submit time
@@ -759,18 +696,12 @@ def test_measured_duration_uses_measured_window() -> None:
     # measured window should be.
     full_run_duration = 60.0
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=full_run_duration,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=10,
         skip_last_n_requests=10,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -809,18 +740,10 @@ def test_measured_duration_falls_back_when_no_timestamps() -> None:
     )
     # No request_submit_time -> fallback to dur_s.
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=[output],
         dur_s=3.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
     assert metrics.text_data is not None
     assert math.isclose(metrics.text_data.duration, 3.0, rel_tol=1e-9)
@@ -865,18 +788,12 @@ def test_skipped_tokens_excluded_from_totals() -> None:
     ]
     tokenizer = _make_mock_tokenizer({"warm": 999, "mid": 3, "tail": 999})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=20.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -999,18 +916,12 @@ def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
         {"s0t0": 2, "s0t1": 2, "s1t0": 2, "s1t1": 2, "s2t0": 2, "s2t1": 2}
     )
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=10.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1071,18 +982,12 @@ def test_skip_distinguishes_dispatch_order_from_timing() -> None:
         {"block_late_complete": 2, "block_early_submit": 2, "middle": 2}
     )
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=15.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1141,18 +1046,12 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
 
     tokenizer = _make_mock_tokenizer({"slow_warmup": 2, "a": 2, "b": 2})
 
-    metrics = calculate_metrics(
+    metrics = _calculate(
         outputs=outputs,
         dur_s=21.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
     assert metrics.text_data is not None
@@ -1396,6 +1295,73 @@ def test_build_text_generation_result_detected_uses_window_with_rejection() -> (
     assert result.text_data.ttft_ms.mean == pytest.approx(50.0, rel=0.05)
 
 
+def test_per_gpu_throughput_spans_full_run_on_steady_state_path() -> None:
+    """On the detected steady-state path, the per-GPU figure still spans
+    the full run, not the detected window.
+
+    The 60 warmup requests carry no TPOT data, so steady-state detection
+    filters them out of its valid set and the window covers only the 100
+    steady requests. They are still successful requests, so the per-GPU
+    throughput must divide every request's tokens by the full
+    first-submit to last-complete span.
+    """
+    warmup = [
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.5,
+            prompt_len=100,
+            generated_text="warmup",
+            itl=[],
+            tpot=[],
+            request_submit_time=float(i),
+        )
+        for i in range(60)
+    ]
+    steady = [
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.05,
+            prompt_len=10,
+            generated_text="steady",
+            itl=[0.05] * 4,
+            tpot=[0.05] * 4,
+            request_submit_time=60.0 + i * 0.1,
+        )
+        for i in range(100)
+    ]
+    tokenizer = _make_mock_tokenizer({"warmup": 5, "steady": 5})
+    result = build_text_generation_result(
+        outputs=warmup + steady,
+        benchmark_duration=80.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        num_gpus=1,
+    )
+
+    assert result.steady_state_detected is True
+    text = result.text_data
+    assert text is not None
+    # The reported metric set covers the detected window only: the 100
+    # steady requests, spanning t=60.0 to t=70.4.
+    assert text.completed == 100
+    assert math.isclose(text.duration, 10.4, rel_tol=1e-9)
+    # Per-GPU throughput covers every successful request over the full
+    # span: first submit t=0.0, last steady completes at t=70.4. Tokens:
+    # 60 * (100 + 5) + 100 * (10 + 5) = 7800.
+    assert text.total_tokens_per_second_per_gpu is not None
+    assert math.isclose(
+        text.total_tokens_per_second_per_gpu, 7800.0 / 70.4, rel_tol=1e-9
+    )
+
+
 def test_build_text_generation_result_concurrency_one_falls_back() -> None:
     """At concurrency=1 detection is skipped; the full-run path (with trim) is used.
 
@@ -1422,6 +1388,179 @@ def test_build_text_generation_result_concurrency_one_falls_back() -> None:
     assert result.num_outliers_rejected == 0  # no rejection on fallback
     assert result.text_data is not None
     assert result.text_data.completed == 50
+
+
+def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
+    None
+):
+    """With filtering disabled, a run detection would accept uses the trim path.
+
+    The caller's skip counts apply, no outliers are rejected, and the
+    diagnostics report ``"disabled"`` rather than a failed detection.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=200.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=10,
+        skip_last_n_requests=5,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.steady_state_mode == "disabled"
+    assert result.steady_state_detected is None
+    assert result.steady_state_window_count is None
+    assert result.steady_state_warning is None
+    assert result.num_outliers_rejected is None
+    assert result.text_data is not None
+    assert result.text_data.completed == 185
+    assert result.to_result_dict()["steady_state_mode"] == "disabled"
+
+
+def test_build_text_generation_result_filtering_disabled_keeps_all_requests() -> (
+    None
+):
+    """Requests the detector would drop are kept when filtering is disabled.
+
+    A reply that arrives in one chunk has no per-chunk TPOT, so detection
+    treats it as invalid and leaves it out of the window, and a TTFT outlier
+    is rejected inside the window. Neither happens with filtering disabled.
+    """
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    for i in range(10):
+        single_chunk = _make_stable_request_func_output(50.0 + i + 0.5)
+        single_chunk.itl = []
+        single_chunk.tpot = []
+        outputs.append(single_chunk)
+    # Spread TTFTs so the outlier rejection's MAD is nonzero.
+    for i, output in enumerate(outputs):
+        output.ttft = 0.05 + 0.001 * (i % 5)
+    ttft_outlier = _make_stable_request_func_output(100.5)
+    ttft_outlier.ttft = 10.0
+    ttft_outlier.latency = 11.0
+    outputs.append(ttft_outlier)
+    outputs.sort(key=lambda o: o.request_submit_time or 0.0)
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    def build(steady_state_filtering: bool) -> BenchmarkResult:
+        return build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=211.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    filtered = build(steady_state_filtering=True)
+    unfiltered = build(steady_state_filtering=False)
+
+    assert filtered.text_data is not None
+    assert unfiltered.text_data is not None
+    assert filtered.steady_state_detected is True
+    assert filtered.text_data.completed <= 201
+    assert filtered.text_data.ttft_ms is not None
+    assert filtered.text_data.ttft_ms.mean < 60.0
+    assert unfiltered.text_data.completed == 211
+    assert unfiltered.text_data.ttft_ms is not None
+    assert unfiltered.text_data.ttft_ms.mean == pytest.approx(
+        statistics.mean(o.ttft for o in outputs) * 1000.0
+    )
+
+
+def _make_failed_request_func_output(submit_time: float) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=False,
+        latency=0.0,
+        ttft=0.0,
+        prompt_len=10,
+        error="No text content captured from the response",
+        request_submit_time=submit_time,
+    )
+
+
+@pytest.mark.parametrize("steady_state_filtering", [True, False])
+def test_build_text_generation_result_excludes_failures(
+    steady_state_filtering: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Failed requests leave the metrics alike with or without filtering.
+
+    They are excluded from the metric set but kept in ``request_records``,
+    and they don't shift which requests the steady-state window selects.
+    """
+    outputs: list[RequestFuncOutput] = []
+    for i in range(200):
+        outputs.append(_make_stable_request_func_output(float(i)))
+        if i % 50 == 10:
+            outputs.append(_make_failed_request_func_output(i + 0.5))
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+
+    with caplog.at_level(logging.WARNING):
+        result = build_text_generation_result(
+            outputs=outputs,
+            benchmark_duration=200.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=None,
+            skip_first_n_requests=0,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            steady_state_filtering=steady_state_filtering,
+        )
+
+    assert any(
+        "Excluding 4 failed requests" in r.message for r in caplog.records
+    )
+    assert result.text_data is not None
+    assert result.text_data.failures == 0
+    if steady_state_filtering:
+        assert result.steady_state_detected is True
+        assert result.text_data.completed == result.steady_state_window_count
+    else:
+        assert result.text_data.completed == 200
+    records = result.text_data.request_records
+    assert len(records) == 204
+    failed = [r for r in records if not r.success]
+    assert len(failed) == 4
+    assert not any(r.measured for r in failed)
+
+
+def test_build_text_generation_result_all_failed_still_counts_failures() -> (
+    None
+):
+    """With no successful request, failures are kept and still counted."""
+    outputs = [_make_failed_request_func_output(float(i)) for i in range(5)]
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=5.0,
+        tokenizer=_make_tokenizer_mock(tokens_per_output=5),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=32,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+    )
+
+    assert result.text_data is not None
+    assert result.text_data.failures == 5
+    assert result.text_data.completed == 0
 
 
 def test_build_text_generation_result_with_outlier_inputs() -> None:
@@ -1542,9 +1681,18 @@ def _turn(
 class TestPerTurnCacheRetention:
     """`_per_turn_cache_retentions` block-aligns vs the prior turn's context."""
 
-    def test_clean_hit_is_full_retention(self) -> None:
-        # prev context = 500 + 100 = 600. expected_cacheable =
-        # (600 // 128 - 1) * 128 = 3 * 128 = 384. cached(turn1) == 384 -> 1.0.
+    # prev context = 500 + 100 = 600. expected_cacheable =
+    # (600 // 128 - 1) * 128 = 3 * 128 = 384.
+    @pytest.mark.parametrize(
+        ("cached_tokens", "expected"),
+        [
+            pytest.param(384, 1.0, id="clean_hit_is_full_retention"),
+            pytest.param(192, 0.5, id="partial_drop"),
+        ],
+    )
+    def test_retention_against_prior_context(
+        self, cached_tokens: int, expected: float
+    ) -> None:
         turns = [
             _turn(
                 "s",
@@ -1558,30 +1706,12 @@ class TestPerTurnCacheRetention:
                 1,
                 prompt_tokens=600,
                 completion_tokens=100,
-                cached_tokens=384,
+                cached_tokens=cached_tokens,
             ),
         ]
-        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(1.0)]
-
-    def test_partial_drop(self) -> None:
-        # cached(turn1) == 192 of a 384 ceiling -> 0.5.
-        turns = [
-            _turn(
-                "s",
-                0,
-                prompt_tokens=500,
-                completion_tokens=100,
-                cached_tokens=0,
-            ),
-            _turn(
-                "s",
-                1,
-                prompt_tokens=600,
-                completion_tokens=100,
-                cached_tokens=192,
-            ),
+        assert _per_turn_cache_retentions(turns, 128) == [
+            pytest.approx(expected)
         ]
-        assert _per_turn_cache_retentions(turns, 128) == [pytest.approx(0.5)]
 
     def test_first_turn_excluded_and_sessions_isolated(self) -> None:
         # Two sessions, each 2 turns; only the second turn of each is checked,
@@ -1613,18 +1743,10 @@ class TestPerTurnCacheRetention:
             generated_text="x",
             itl=[0.1],
         )
-        metrics = calculate_metrics(
+        metrics = _calculate(
             outputs=[output],
             dur_s=1.0,
             tokenizer=_make_mock_tokenizer({"x": 3}),
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
         )
         assert metrics.text_data is not None
         assert metrics.text_data.per_turn_cache_retention is None
@@ -1670,18 +1792,11 @@ class TestRequestRecords:
         self, *, record_request_text: bool = False, skip_first: int = 0
     ) -> BenchmarkResult:
         tokenizer = _make_mock_tokenizer({"alpha": 5, "gamma": 5, "": 0})
-        return calculate_metrics(
+        return _calculate(
             outputs=self._outputs(),
             dur_s=3.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=skip_first,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
-            kv_block_size=128,
             record_request_text=record_request_text,
         )
 
@@ -1837,18 +1952,12 @@ def _calculate_for(
     skip_last: int = 0,
 ) -> object:
     tokenizer = _make_mock_tokenizer({"five tokens here now": 5})
-    return calculate_metrics(
+    return _calculate(
         outputs=outputs,
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=skip_first,
         skip_last_n_requests=skip_last,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     )
 
 
@@ -1947,18 +2056,10 @@ def test_tpot_split_is_gated_on_its_own_population() -> None:
         long.request_submit_time = float(2 * i + 1)
         outputs.append(long)
 
-    text = calculate_metrics(
+    text = _calculate(
         outputs=outputs,
         dur_s=2.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-        kv_block_size=128,
     ).text_data
     assert text is not None
     # Both sides produced a first token, so the TTFT split stands.
@@ -2246,3 +2347,659 @@ def test_image_and_lora_rates_count_over_measured_requests() -> None:
     d = text.to_result_dict()
     assert d["image_request_rate"] == text.image_request_rate
     assert d["lora_request_rate"] == text.lora_request_rate
+
+
+def _goodput_outputs() -> list[RequestFuncOutput]:
+    """Requests that each test one goodput rule against ttft:200 tpot:150.
+
+    Ten-token replies have TPOT ``(latency - ttft) / 9``.
+    """
+
+    def out(
+        text: str,
+        *,
+        ttft: float,
+        latency: float,
+        submit: float,
+        success: bool = True,
+    ) -> RequestFuncOutput:
+        return RequestFuncOutput(
+            success=success,
+            latency=latency,
+            ttft=ttft,
+            prompt_len=10,
+            generated_text=text,
+            request_submit_time=submit,
+        )
+
+    return [
+        # First submitted, so --skip-first-n-requests 1 drops it even
+        # though it meets every target.
+        out("skipped", ttft=0.05, latency=0.5, submit=0.0),
+        # TPOT 0.1 s: meets both.
+        out("good", ttft=0.1, latency=1.0, submit=1.0),
+        # TTFT 0.3 s misses.
+        out("slow first", ttft=0.3, latency=1.2, submit=1.1),
+        # TPOT 1.9 / 9 = 0.211 s misses.
+        out("slow decode", ttft=0.1, latency=2.0, submit=1.2),
+        # One token, so no TPOT: misses a TPOT target.
+        out("one", ttft=0.1, latency=0.1, submit=1.3),
+        # Failed requests are not measured.
+        out("", ttft=0.0, latency=0.1, submit=1.4, success=False),
+    ]
+
+
+_GOODPUT_TOKENIZER_COUNTS = {
+    "skipped": 10,
+    "good": 10,
+    "slow first": 10,
+    "slow decode": 10,
+    "one": 1,
+}
+
+
+def _goodput_metrics(
+    targets: GoodputTargets | None,
+) -> BenchmarkResult:
+    return _calculate(
+        outputs=_goodput_outputs(),
+        dur_s=10.0,
+        tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+        skip_first_n_requests=1,
+        goodput_targets=targets,
+    )
+
+
+def test_goodput_counts_requests_meeting_every_target() -> None:
+    metrics = _goodput_metrics(GoodputTargets(ttft_ms=200.0, tpot_ms=150.0))
+    text = metrics.text_data
+    assert text is not None
+    assert text.completed == 4
+    assert text.goodput_attainment == pytest.approx(0.25)
+    # One good request over the measured window, 1.0 s to 3.2 s.
+    assert text.request_goodput == pytest.approx(1 / 2.2)
+    assert text.request_goodput == pytest.approx(0.25 * text.request_throughput)
+    assert (text.goodput_ttft_ms, text.goodput_tpot_ms) == (200.0, 150.0)
+    assert text.goodput_e2el_ms is None
+
+    # The result's per-request records give the same answer.
+    rr = [r for r in text.request_records if r.measured and r.success]
+    good = [
+        r
+        for r in rr
+        if r.ttft_ms is not None
+        and r.tpot_ms is not None
+        and r.ttft_ms <= 200.0
+        and r.tpot_ms <= 150.0
+    ]
+    assert text.request_goodput == pytest.approx(len(good) / text.duration)
+    assert text.goodput_attainment == pytest.approx(len(good) / len(rr))
+
+    d = metrics.to_result_dict()
+    assert d["request_goodput"] == pytest.approx(1 / 2.2)
+    assert d["goodput_attainment"] == pytest.approx(0.25)
+    assert d["goodput_ttft_ms"] == 200.0
+    assert "goodput_e2el_ms" not in d
+    assert metrics.result_groups is not None
+    summary = metrics.result_groups.summary
+    assert summary.request_goodput == pytest.approx(1 / 2.2)
+    assert summary.goodput_attainment == pytest.approx(0.25)
+    assert summary.goodput_tpot_ms == 150.0
+
+
+def test_goodput_e2el_target_ignores_missing_tpot() -> None:
+    """Only the given targets apply, so a one-token reply can meet e2el."""
+    text = _goodput_metrics(GoodputTargets(e2el_ms=1500.0)).text_data
+    assert text is not None
+    assert text.goodput_attainment == pytest.approx(0.75)
+
+
+def test_goodput_unreported_ttft_misses_a_ttft_target() -> None:
+    """An endpoint that reports no TTFT leaves it 0.0, which is not a pass."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.0,
+            prompt_len=10,
+            generated_text="good",
+            request_submit_time=0.0,
+        )
+    ]
+
+    def attainment(targets: GoodputTargets) -> float | None:
+        text = _calculate(
+            outputs=outputs,
+            dur_s=1.0,
+            tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+            goodput_targets=targets,
+        ).text_data
+        assert text is not None
+        return text.goodput_attainment
+
+    assert attainment(GoodputTargets(ttft_ms=200.0)) == 0.0
+    assert attainment(GoodputTargets(e2el_ms=1000.0)) == 1.0
+
+
+def test_goodput_unset_reports_nothing() -> None:
+    metrics = _goodput_metrics(None)
+    text = metrics.text_data
+    assert text is not None
+    for name in (
+        "request_goodput",
+        "goodput_attainment",
+        "goodput_ttft_ms",
+        "goodput_tpot_ms",
+        "goodput_e2el_ms",
+    ):
+        assert getattr(text, name) is None
+        assert name not in metrics.to_result_dict()
+        assert metrics.result_groups is not None
+        assert getattr(metrics.result_groups.summary, name) is None
+
+
+def test_build_text_generation_result_passes_goodput_targets() -> None:
+    result = build_text_generation_result(
+        outputs=_goodput_outputs(),
+        benchmark_duration=10.0,
+        tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        steady_state_filtering=False,
+        goodput_targets=GoodputTargets(ttft_ms=200.0, tpot_ms=150.0),
+    )
+    assert result.text_data is not None
+    assert result.text_data.goodput_attainment == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------------------
+# Interactivity (per-user token rate) and per-GPU throughput.
+# ---------------------------------------------------------------------------
+
+# Two requests whose streams end with a trailing usage chunk: latency runs
+# past the last content chunk, so the content-bounded and full-response
+# bases differ visibly. Token counts come from the mock tokenizer below.
+#
+# Request A: ttft 0.1 s, 9 content gaps of 0.05 s (sum 0.45 s), 10 tokens,
+#   latency 1.0 s (0.45 s of trailing usage chunk).
+#   content ITL = 0.45 / 9 = 0.05 s; TPOT = 0.9 / 9 = 0.1 s;
+#   content e2e = (0.1 + 0.45) / 10 = 0.055 s.
+# Request B: ttft 0.2 s, 3 content gaps of 0.1 s (sum 0.3 s), 4 tokens,
+#   latency 0.8 s (0.3 s of trailing usage chunk).
+#   content ITL = 0.3 / 3 = 0.1 s; TPOT = 0.6 / 3 = 0.2 s;
+#   content e2e = (0.2 + 0.3) / 4 = 0.125 s.
+_INTERACTIVITY_TOKENIZER_COUNTS = {
+    "ten tokens out": 10,
+    "four tok": 4,
+    "six tokens here": 6,
+}
+
+
+def _interactivity_outputs() -> list[RequestFuncOutput]:
+    """Two measured requests with distinct content-bounded ITLs and TPOTs."""
+    return [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="ten tokens out",
+            itl=[0.05] * 9,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=0.8,
+            ttft=0.2,
+            prompt_len=5,
+            generated_text="four tok",
+            itl=[0.1] * 3,
+        ),
+    ]
+
+
+def _calculate_interactivity(
+    outputs: list[RequestFuncOutput],
+    *,
+    num_gpus: int | None = None,
+    dur_s: float = 2.0,
+    reject_outliers: bool = False,
+) -> BenchmarkResult:
+    return _calculate(
+        outputs=outputs,
+        dur_s=dur_s,
+        tokenizer=_make_mock_tokenizer(_INTERACTIVITY_TOKENIZER_COUNTS),
+        num_gpus=num_gpus,
+        reject_outliers=reject_outliers,
+    )
+
+
+def test_interactivity_pins_both_bases_on_a_trailing_usage_chunk() -> None:
+    """Content-bounded interactivity and full-response interactivity are
+    separate figures, and a request with a trailing usage chunk tells them
+    apart.
+
+    Content ITLs [0.05, 0.1] s: mean 0.075 -> 13.33 tok/s, p50 0.075 ->
+    13.33, p75 0.0875 -> 11.43, p90 0.095 -> 10.53, p95 0.0975 -> 10.26,
+    p99 0.0995 -> 10.05.
+    TPOTs [0.1, 0.2] s: mean 0.15 -> 6.67 tok/s, p50 0.15 -> 6.67,
+    p75 0.175 -> 5.71, p90 0.19 -> 5.26, p95 0.195 -> 5.13, p99 0.199 ->
+    5.03.
+    """
+    text = _calculate_interactivity(_interactivity_outputs()).text_data
+    assert text is not None
+    assert text.interactivity_tok_s is not None
+    assert text.full_response_interactivity_tok_s is not None
+
+    assert text.interactivity_tok_s.mean == pytest.approx(1.0 / 0.075)
+    assert text.interactivity_tok_s.p50 == pytest.approx(1.0 / 0.075)
+    assert text.interactivity_tok_s.p75 == pytest.approx(1.0 / 0.0875)
+    assert text.interactivity_tok_s.p90 == pytest.approx(1.0 / 0.095)
+    assert text.interactivity_tok_s.p95 == pytest.approx(1.0 / 0.0975)
+    assert text.interactivity_tok_s.p99 == pytest.approx(1.0 / 0.0995)
+
+    assert text.full_response_interactivity_tok_s.mean == pytest.approx(
+        1.0 / 0.15
+    )
+    assert text.full_response_interactivity_tok_s.p50 == pytest.approx(
+        1.0 / 0.15
+    )
+    assert text.full_response_interactivity_tok_s.p75 == pytest.approx(
+        1.0 / 0.175
+    )
+    assert text.full_response_interactivity_tok_s.p90 == pytest.approx(
+        1.0 / 0.19
+    )
+    assert text.full_response_interactivity_tok_s.p95 == pytest.approx(
+        1.0 / 0.195
+    )
+    assert text.full_response_interactivity_tok_s.p99 == pytest.approx(
+        1.0 / 0.199
+    )
+
+    # The two bases differ on this stream: the content-bounded figure sits
+    # above the full-response one, which pays for the trailing usage chunk.
+    assert (
+        text.interactivity_tok_s.mean
+        > text.full_response_interactivity_tok_s.mean
+    )
+
+    # The reciprocal of the mean is NOT the mean of the reciprocals:
+    # 1 / mean([0.05, 0.1]) = 13.33 tok/s, but mean([20, 10]) = 15 tok/s.
+    mean_of_reciprocals = statistics.mean(1.0 / v for v in (0.05, 0.1))
+    assert not math.isclose(
+        text.interactivity_tok_s.mean, mean_of_reciprocals, rel_tol=1e-6
+    )
+    assert math.isclose(mean_of_reciprocals, 15.0, rel_tol=1e-6)
+
+
+def test_full_response_interactivity_matches_tpot_ms_statistics() -> None:
+    """Without outlier rejection, every full-response interactivity
+    statistic is exactly 1000 / the matching ``tpot_ms`` statistic."""
+    outputs = _interactivity_outputs()
+    # A third request: (2.0 - 0.5) / (6 - 1) = 0.3 s TPOT.
+    outputs.append(
+        RequestFuncOutput(
+            success=True,
+            latency=2.0,
+            ttft=0.5,
+            prompt_len=7,
+            generated_text="six tokens here",
+            itl=[0.25] * 5,
+        )
+    )
+    text = _calculate_interactivity(outputs).text_data
+    assert text is not None
+    assert text.tpot_ms is not None
+    assert text.full_response_interactivity_tok_s is not None
+
+    for stat in ("mean", "p50", "p90", "p95", "p99"):
+        tpot_ms = getattr(text.tpot_ms, stat)
+        intvty = getattr(text.full_response_interactivity_tok_s, stat)
+        assert math.isclose(intvty, 1000.0 / tpot_ms, rel_tol=1e-9)
+
+
+def test_e2e_normalized_interactivity_is_content_bounded() -> None:
+    """E2E normalized interactivity inverts the content-bounded per-request
+    e2e latency, (ttft + sum(itl)) / output_tokens, so TTFT is folded in.
+
+    Golden values: request A (0.1 + 0.45) / 10 = 0.055 s, request B
+    (0.2 + 0.3) / 4 = 0.125 s; mean 0.09 -> 11.11 tok/s, p50 0.09 ->
+    11.11, p75 0.1075 -> 9.30, p90 0.118 -> 8.47, p95 0.1215 -> 8.23,
+    p99 0.1243 -> 8.04.
+    """
+    text = _calculate_interactivity(_interactivity_outputs()).text_data
+    assert text is not None
+    assert text.e2e_normalized_interactivity_tok_s is not None
+    e2e = text.e2e_normalized_interactivity_tok_s
+
+    assert e2e.mean == pytest.approx(1.0 / 0.09)
+    assert e2e.p50 == pytest.approx(1.0 / 0.09)
+    assert e2e.p75 == pytest.approx(1.0 / 0.1075)
+    assert e2e.p90 == pytest.approx(1.0 / 0.118)
+    assert e2e.p95 == pytest.approx(1.0 / 0.1215)
+    assert e2e.p99 == pytest.approx(1.0 / 0.1243)
+
+    # TTFT is included: dropping request A's ttft from its basis would give
+    # 0.45 / 10 = 0.045 s and a visibly larger figure.
+    assert e2e.mean < 1.0 / 0.045
+
+
+def test_interactivity_uses_unrejected_per_request_values() -> None:
+    """The published figures apply no outlier rejection, so interactivity
+    must come from the raw series even when ``tpot_ms`` rejects outliers.
+
+    The third request's 2.0 s TPOT is an Iglewicz-Hoaglin outlier the
+    rejection path drops from ``tpot_ms``; the full-response interactivity
+    still inverts the raw mean (0.1, 0.2, 2.0) -> 0.7667 s.
+    """
+    outputs = _interactivity_outputs()
+    # TPOT = (18.3 - 0.3) / 9 = 2.0 s; content ITL = 1.8 / 9 = 0.2 s.
+    outputs.append(
+        RequestFuncOutput(
+            success=True,
+            latency=18.3,
+            ttft=0.3,
+            prompt_len=7,
+            generated_text="ten tokens out",
+            itl=[0.2] * 9,
+        )
+    )
+    metrics = _calculate_interactivity(outputs, reject_outliers=True)
+    text = metrics.text_data
+    assert text is not None
+    assert text.tpot_ms is not None
+    assert text.full_response_interactivity_tok_s is not None
+
+    # The outlier was rejected from tpot_ms ...
+    assert text.tpot_ms.mean < 1000.0 * 0.7667
+    # ... but not from the interactivity series.
+    assert text.full_response_interactivity_tok_s.mean == pytest.approx(
+        1.0 / ((0.1 + 0.2 + 2.0) / 3)
+    )
+    assert not math.isclose(
+        text.full_response_interactivity_tok_s.mean,
+        1000.0 / text.tpot_ms.mean,
+        rel_tol=1e-6,
+    )
+
+
+def test_interactivity_reaches_result_groups_and_flat_dict() -> None:
+    """The console and stored JSON read ``result_groups`` and the flat dict,
+    not the aggregates."""
+    metrics = _calculate_interactivity(_interactivity_outputs())
+    assert metrics.result_groups is not None
+    throughput = metrics.result_groups.throughput_stats
+    assert throughput is not None
+    assert throughput.interactivity_tok_s is not None
+    assert throughput.full_response_interactivity_tok_s is not None
+    assert throughput.e2e_normalized_interactivity_tok_s is not None
+    assert throughput.interactivity_tok_s.mean == pytest.approx(1.0 / 0.075)
+
+    d = metrics.to_result_dict()
+    assert d["mean_interactivity_tok_s"] == pytest.approx(1.0 / 0.075)
+    assert d["p90_interactivity_tok_s"] == pytest.approx(1.0 / 0.095)
+    assert d["p99_interactivity_tok_s"] == pytest.approx(1.0 / 0.0995)
+    assert d["mean_full_response_interactivity_tok_s"] == pytest.approx(
+        1.0 / 0.15
+    )
+    assert d["p75_e2e_normalized_interactivity_tok_s"] == pytest.approx(
+        1.0 / 0.1075
+    )
+    assert "p50_interactivity_tok_s" in d
+
+
+def test_per_gpu_total_token_throughput_arithmetic() -> None:
+    """(total input + output tokens) / full span / GPU count.
+
+    The two requests carry 10 + 5 = 15 prompt tokens and 10 + 4 = 14
+    generated tokens over the 2 s fallback window, so a 2-GPU server
+    reads (15 + 14) / 2 / 2 = 7.25 tok/s per GPU.
+    """
+    metrics = _calculate_interactivity(
+        _interactivity_outputs(), num_gpus=2, dur_s=2.0
+    )
+    assert metrics.num_gpus == 2
+    text = metrics.text_data
+    assert text is not None
+    assert text.total_tokens_per_second_per_gpu is not None
+    assert math.isclose(
+        text.total_tokens_per_second_per_gpu, 7.25, rel_tol=1e-9
+    )
+
+    assert metrics.result_groups is not None
+    summary = metrics.result_groups.summary
+    assert summary.num_gpus == 2
+    assert summary.total_tokens_per_second_per_gpu is not None
+    assert math.isclose(
+        summary.total_tokens_per_second_per_gpu, 7.25, rel_tol=1e-9
+    )
+    assert metrics.to_result_dict()[
+        "total_tokens_per_second_per_gpu"
+    ] == pytest.approx(7.25)
+
+
+def test_per_gpu_throughput_spans_all_successful_requests_despite_trims() -> (
+    None
+):
+    """The per-GPU window is the full first-submit to last-complete span of
+    every successful request; the skip_first/skip_last trim shrinks the
+    other aggregates' window but not this one.
+
+    Three requests (prompt = output tokens): R1 spans [0.0, 1.0],
+    R2 [0.5, 2.5], R3 [1.0, 2.0]. skip_first=1 drops R1, skip_last=1 drops
+    R2 (last completed), so the measured window is R3 alone -- but the
+    per-GPU figure still divides 120 tokens by the full 2.5 s span.
+    """
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="ten tokens out",
+            itl=[0.05] * 9,
+            request_submit_time=0.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=2.0,
+            ttft=0.1,
+            prompt_len=20,
+            generated_text="twenty tokens out",
+            itl=[0.05] * 3,
+            request_submit_time=0.5,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=30,
+            generated_text="thirty tokens out",
+            itl=[0.05] * 5,
+            request_submit_time=1.0,
+        ),
+    ]
+    tokenizer_counts = {
+        "ten tokens out": 10,
+        "twenty tokens out": 20,
+        "thirty tokens out": 30,
+    }
+    metrics = _calculate(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=_make_mock_tokenizer(tokenizer_counts),
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        num_gpus=1,
+    )
+    text = metrics.text_data
+    assert text is not None
+    # The trim left exactly one measured request (R3) over a 1 s window.
+    assert text.completed == 1
+    assert math.isclose(text.duration, 1.0, rel_tol=1e-9)
+    # Per-GPU: all 3 requests' 120 tokens over the full 2.5 s span.
+    assert text.total_tokens_per_second_per_gpu is not None
+    assert math.isclose(
+        text.total_tokens_per_second_per_gpu, 120.0 / 2.5, rel_tol=1e-9
+    )
+
+
+def test_per_gpu_input_counts_each_request_on_its_own_token_source() -> None:
+    """Input tokens for the per-GPU figure are picked per request: the
+    server's ``prompt_tokens`` where the request carries usage, the
+    client's ``prompt_len`` where it does not.
+
+    One request reporting usage must not zero out the other's client-side
+    count.
+    """
+    with_usage = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=5,
+        generated_text="four tok",
+        itl=[0.1] * 3,
+        request_submit_time=0.0,
+        server_token_stats=ServerTokenStats(
+            prompt_tokens=7, completion_tokens=4
+        ),
+    )
+    without_usage = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="four tok",
+        itl=[0.1] * 3,
+        request_submit_time=0.0,
+        server_token_stats=ServerTokenStats(completion_tokens=4),
+    )
+    metrics = _calculate(
+        outputs=[with_usage, without_usage],
+        dur_s=1.0,
+        tokenizer=_make_mock_tokenizer({"four tok": 4}),
+        num_gpus=1,
+    )
+    text = metrics.text_data
+    assert text is not None
+    assert text.total_tokens_per_second_per_gpu is not None
+    # Input: 7 (server) + 10 (client). Output: 4 + 4. Span: 1.0 s.
+    assert math.isclose(
+        text.total_tokens_per_second_per_gpu, 7 + 10 + 4 + 4, rel_tol=1e-9
+    )
+
+
+def test_per_gpu_throughput_none_without_gpu_count() -> None:
+    """An unknown GPU count leaves the per-GPU figure unreported rather
+    than guessing a divisor."""
+    metrics = _calculate_interactivity(_interactivity_outputs())
+    assert metrics.num_gpus is None
+    text = metrics.text_data
+    assert text is not None
+    assert text.total_tokens_per_second_per_gpu is None
+    assert "total_tokens_per_second_per_gpu" not in metrics.to_result_dict()
+    assert metrics.result_groups is not None
+    assert metrics.result_groups.summary.total_tokens_per_second_per_gpu is None
+
+
+def test_interactivity_none_for_single_token_outputs() -> None:
+    """No request generated two tokens, so neither decode interactivity has
+    samples. The e2e normalized interactivity (ttft + sum(itl) / 1 token)
+    stays defined."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.4,
+            prompt_len=3,
+            generated_text="one",
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=0.7,
+            ttft=0.6,
+            prompt_len=4,
+            generated_text="one",
+        ),
+    ]
+    tokenizer = _make_mock_tokenizer({"one": 1})
+    metrics = _calculate(
+        outputs=outputs,
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        num_gpus=1,
+    )
+    text = metrics.text_data
+    assert text is not None
+    assert text.interactivity_tok_s is None
+    assert text.full_response_interactivity_tok_s is None
+    assert text.e2e_normalized_interactivity_tok_s is not None
+    # Content-bounded e2e = ttft / 1 token: 0.4 s and 0.6 s -> mean 0.5.
+    assert math.isclose(
+        text.e2e_normalized_interactivity_tok_s.mean, 1.0 / 0.5, rel_tol=1e-6
+    )
+    # Per-GPU throughput does not depend on decode samples.
+    assert text.total_tokens_per_second_per_gpu is not None
+    assert math.isclose(
+        text.total_tokens_per_second_per_gpu,
+        (3 + 4 + 1 + 1) / 1.0,
+        rel_tol=1e-9,
+    )
+
+
+def test_interactivity_none_when_no_requests_succeed() -> None:
+    """A fully-failed run reports no interactivity and no per-GPU figure."""
+    outputs = [
+        RequestFuncOutput(success=False, latency=0.0, error="boom"),
+    ]
+    metrics = _calculate_interactivity(outputs, num_gpus=1)
+    text = metrics.text_data
+    assert text is not None
+    assert text.interactivity_tok_s is None
+    assert text.full_response_interactivity_tok_s is None
+    assert text.e2e_normalized_interactivity_tok_s is None
+    assert text.total_tokens_per_second_per_gpu is None
+
+
+def test_interactivity_drops_zero_durations_rather_than_poisoning_stats() -> (
+    None
+):
+    """A zero duration has no reciprocal; it is dropped from the series
+    (as the published figures drop non-positive records) instead of
+    collapsing the metric or dragging a percentile to zero."""
+    outputs = [
+        # latency == ttft with >1 output tokens and no content gaps:
+        # TPOT 0, content ITL 0.
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.5,
+            prompt_len=3,
+            generated_text="ten tokens out",
+        ),
+        # TPOT 0.2 s, content ITL 0.1 s.
+        RequestFuncOutput(
+            success=True,
+            latency=0.8,
+            ttft=0.2,
+            prompt_len=5,
+            generated_text="four tok",
+            itl=[0.1] * 3,
+        ),
+    ]
+    text = _calculate_interactivity(outputs).text_data
+    assert text is not None
+    # Both series keep the one positive sample.
+    assert text.interactivity_tok_s is not None
+    assert text.interactivity_tok_s.mean == pytest.approx(1.0 / 0.1)
+    assert text.full_response_interactivity_tok_s is not None
+    assert text.full_response_interactivity_tok_s.mean == pytest.approx(
+        1.0 / 0.2
+    )
+    # The e2e basis is positive for both requests.
+    assert text.e2e_normalized_interactivity_tok_s is not None

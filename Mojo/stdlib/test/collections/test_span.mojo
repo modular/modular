@@ -29,7 +29,7 @@ from std.hash import Hasher
 
 def test_span_list_int() raises:
     var l: List = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(list=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -76,7 +76,7 @@ def test_span_list_str() raises:
 
 def test_span_array_int() raises:
     var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -99,7 +99,7 @@ def test_span_array_int() raises:
 
 def test_span_array_str() raises:
     var l: Array[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
         assert_equal(l[i], s[i])
@@ -122,7 +122,7 @@ def test_span_array_str() raises:
 
 def test_indexing() raises:
     var l: Array[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
 
@@ -190,12 +190,40 @@ def test_equality() raises:
     var sp3 = Span(l2)
     # same pointer
     assert_true(sp == sp2)
+    assert_false(sp != sp2)
     # different pointer
     assert_true(sp == sp3)
     # different length
     assert_true(sp != sp3[0 : len(l2) - 1])
     # empty
     assert_true(sp[0:0] == sp3[0:0])
+
+
+struct NotEquatable:
+    pass
+
+
+def test_span_conforms_to_equatable() raises:
+    assert_true(conforms_to(Span[Int, ImmStaticOrigin], Equatable))
+    assert_false(conforms_to(Span[NotEquatable, ImmStaticOrigin], Equatable))
+    assert_false(
+        conforms_to(
+            Span[Int, ImmStaticOrigin, address_space=.SHARED], Equatable
+        )
+    )
+
+    # This is purposefully not using `assert_equal` because there is currently
+    # an overload of `assert_equal` which does manual element-wise comparison
+    # instead of actually going through the `Equatable` trait as expected.
+    # This test catches cases were we rely on the default implementation of
+    # Equatable.__eq__ which only does field-wise comparison.
+    def do_eq[T: Equatable](a: T, b: T) -> Bool:
+        return a == b
+
+    var a: List = [1, 2, 3]
+    var b: List = [1, 2, 3]
+    comptime SpanT = ImmSpan[Int, origin_of(a, b)]
+    assert_true(do_eq(SpanT(a), SpanT(b)))
 
 
 def test_fill() raises:
@@ -213,7 +241,7 @@ def test_fill_bytes() raises:
     # Exercises the single-byte `memset` fast path in `Span.fill`: a non-zero
     # pattern, a length past the SIMD width (tail handling), and zeroing.
     var a = Array[Byte, 37](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
 
     s.fill(0xAB)
     for i in range(len(s)):
@@ -226,7 +254,7 @@ def test_fill_bytes() raises:
 
 def test_fill_empty() raises:
     var a = Array[Byte, 4](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
     var empty = s[0:0]
     # Filling a zero-length span is a no-op and must not touch memory.
     empty.fill(0xFF)
@@ -238,7 +266,7 @@ def test_fill_empty() raises:
 def test_fill_multibyte() raises:
     # Exercises the element-wise (non-`memset`) branch for a wider element type.
     var a = Array[Int32, 5](fill=0)
-    var s = Span(array=a)
+    var s = Span(a)
 
     s.fill(-1)
     for i in range(len(s)):
@@ -247,7 +275,7 @@ def test_fill_multibyte() raises:
 
 def test_ref() raises:
     var l: Array[Int, 3] = [1, 2, 3]
-    var s = Span(array=l)
+    var s = Span(l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
@@ -353,6 +381,16 @@ def test_reverse() raises:
     _test_dtype[.float16]()
     _test_dtype[.float32]()
     _test_dtype[.float64]()
+
+
+def test_reverse_all_lengths() raises:
+    for length in range(40):
+        var values = List[Int32](capacity=length)
+        for i in range(length):
+            values.append(Int32(i))
+        Span(values).reverse()
+        for i in range(length):
+            assert_equal(values[i], Int32(length - 1 - i))
 
 
 def test_apply() raises:
@@ -471,16 +509,16 @@ def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    var result = span.binary_search_by[lambda (x: Int) -> Int: x - 7]()
+    var result = span.binary_search_by(lambda (x: Int) -> Int: x - 7)
     assert_equal(Optional(3), result)
 
-    var result2 = span.binary_search_by[lambda (x: Int) -> Int: x - 6]()
+    var result2 = span.binary_search_by(lambda (x: Int) -> Int: x - 6)
     assert_true(not result2)
 
-    var result3 = span.binary_search_by[lambda (x: Int) -> Int: x - 1]()
+    var result3 = span.binary_search_by(lambda (x: Int) -> Int: x - 1)
     assert_equal(Optional(0), result3)
 
-    var result4 = span.binary_search_by[lambda (x: Int) -> Int: x - 13]()
+    var result4 = span.binary_search_by(lambda (x: Int) -> Int: x - 13)
     assert_equal(Optional(6), result4)
 
 

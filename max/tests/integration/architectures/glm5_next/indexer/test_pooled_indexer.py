@@ -10,25 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GLM-5.3-Flash k-pooled DSA indexer against the pinned torch reference.
+"""GLM-5.3-Flash's k-pooled DSA indexer against the pinned torch reference.
 
-Every dimension the pooling works in is held at its real checkpoint value ---
-``index_head_dim`` 128, ``index_kpool`` 4, ``index_n_heads`` 32,
-``q_lora_rank`` 1536, ``hidden_size`` 4096. Only counts move, and they move
-along two axes at once because the two properties worth testing pull against
-each other:
+The indexer under test is the one the model runs, :class:`PooledIndexer`,
+compiled with one sparse layer's paged FP8 pooled-key cache and k-pool tail
+ring as its inputs. Every schedule leaves two things to compare against the
+reference: the selection of each query row, and the pooled keys the cache
+holds once every request has finished.
 
-* the real ``index_topk`` = 2048 is what produces the 2051-wide selection, and
-  it needs at least 2048 tokens before the indexer selects anything at all;
-* real selection *pressure* needs many more pools than the 512 a query keeps,
-  and the dense scorer's ``[tokens, heads, pools]`` tensor grows as that
-  product --- past a few hundred megabytes MAX's intermediate allocator refuses
-  it.
-
-So :data:`CASES` runs the checkpoint's ``index_topk`` at the shortest length
-that yields the real 2051 width, plus a reduced budget at a 2:1
-pool-to-slot ratio. Nothing about the pooling logic depends on the budget's
-value.
+Every width is the checkpoint's --- ``index_head_dim`` 128, ``index_kpool``
+4, ``index_n_heads`` 32, ``q_lora_rank`` 1536, ``hidden_size`` 4096 --- but
+the budget is not. The checkpoint's ``index_topk`` of 2048 selects every pool
+of any sequence shorter than 8192 tokens, so a top-k at that budget ranks
+nothing; 512 over 1024 tokens leaves two pools competing for every slot.
+Nothing about the pooling depends on the budget's value.
 """
 
 from __future__ import annotations
@@ -36,24 +31,30 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 import pytest
 import torch
-from graph_op_reference import (
-    Glm5NextIndexer,
-    indexer_traffic_bytes_per_token,
-)
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn import Module
+from max.nn._graph_ops import (
     mla_kpool_compress,
     mla_kpool_ring_close,
     mla_kpool_seed_tail,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+    MultiKVCacheParams,
+    padded_lut_cols,
+)
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -61,6 +62,19 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.architectures.glm5_next.layers.indexer import (
+    KPoolTail,
+    PooledIndexer,
+)
+from max.pipelines.architectures.glm5_next.model_config import (
+    Glm5NextConfig,
+)
+from max.pipelines.architectures.glm5_next.state_cache import (
+    TAIL_RING_DTYPE,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import BufferLayout, TensorLayout
 from torch.utils.dlpack import from_dlpack
 from torch_reference.glm5_next_indexer import (
     Glm5NextIndexerRefConfig,
@@ -72,44 +86,25 @@ Q_LORA_RANK = 1536
 INDEX_N_HEADS = 32
 INDEX_HEAD_DIM = 128
 INDEX_KPOOL = 4
+INDEX_TOPK = 512
+SEQ_LEN = 1024
+PAGE_SIZE = 128
 SEED = 20260826
 
+POOLS_SELECTED = INDEX_TOPK // INDEX_KPOOL
+SELECTION_WIDTH = INDEX_TOPK + INDEX_KPOOL - 1
+POOLED_HEAD_DIM = INDEX_HEAD_DIM // INDEX_KPOOL
+
+# e4m3 carries three mantissa bits, so a value rounds by at most 2^-4 of
+# itself, and the pool's absmax scale bounds that by 2^-4 of the largest
+# member. The slack covers the bf16 rounding the two sides do differently
+# before quantizing.
+_POOLED_REL_ERROR = 0.07
+
 # The reference runs on CPU: it shares the GPU with the MAX graph under test,
-# and its peak tensor is the same score matrix, which is a fraction of a second
-# of CPU matmul at these shapes.
+# and its peak tensor is the score matrix, a fraction of a second of CPU
+# matmul at these shapes.
 _REFERENCE_DEVICE = "cpu"
-
-
-@dataclass(frozen=True)
-class Case:
-    """One (budget, length) pair, named by what it is there to prove."""
-
-    name: str
-    index_topk: int
-    seq_len: int
-
-    @property
-    def max_pools(self) -> int:
-        return math.ceil(self.seq_len / INDEX_KPOOL)
-
-    @property
-    def selection_width(self) -> int:
-        return self.index_topk + INDEX_KPOOL - 1
-
-
-CASES = (
-    # The checkpoint's budget, at the shortest length that reaches the real
-    # 2051-wide selection. 2052 is not a multiple of `index_kpool`, so the last
-    # pool is partial and the tail has to carry it.
-    Case("topk2048", index_topk=2048, seq_len=2052),
-    # Two pools competing for every slot, so the top-k actually discriminates.
-    Case("topk512", index_topk=512, seq_len=1024),
-)
-
-
-@pytest.fixture(params=CASES, ids=[c.name for c in CASES])
-def case(request: pytest.FixtureRequest) -> Case:
-    return request.param
 
 
 def _weights() -> dict[str, torch.Tensor]:
@@ -167,25 +162,38 @@ def _activations(total_tokens: int) -> tuple[torch.Tensor, torch.Tensor]:
     return x, qr
 
 
-def _row_offsets(lengths: tuple[int, ...]) -> torch.Tensor:
-    offsets = np.zeros(len(lengths) + 1, dtype=np.uint32)
-    offsets[1:] = np.cumsum(lengths)
-    return torch.from_numpy(offsets)
+def _bf16_to_device(tensor: torch.Tensor, device: Accelerator) -> Buffer:
+    return (
+        Buffer.from_numpy(tensor.contiguous().view(torch.float16).numpy())
+        .view(DType.bfloat16)
+        .to(device)
+    )
 
 
 # ------------------------------------------------------------------ reference
 
 
-def _reference_module(
-    case: Case, weights: dict[str, torch.Tensor]
-) -> Glm5NextIndexerReference:
+@dataclass(frozen=True)
+class _Reference:
+    """One sequence through the reference, scored and pooled whole."""
+
+    selection: torch.Tensor
+    """``[seq_len, SELECTION_WIDTH]`` int32 positions, ``-1`` unused."""
+    pooled: torch.Tensor
+    """``[seq_len // INDEX_KPOOL, INDEX_HEAD_DIM]`` float32 keys of the
+    sequence's complete pools."""
+
+
+def _reference(
+    weights: dict[str, torch.Tensor], x: torch.Tensor, qr: torch.Tensor
+) -> _Reference:
     module = Glm5NextIndexerReference(
         Glm5NextIndexerRefConfig(
             hidden_size=HIDDEN_SIZE,
             q_lora_rank=Q_LORA_RANK,
             index_n_heads=INDEX_N_HEADS,
             index_head_dim=INDEX_HEAD_DIM,
-            index_topk=case.index_topk,
+            index_topk=INDEX_TOPK,
             index_kpool=INDEX_KPOOL,
         )
     )
@@ -203,44 +211,79 @@ def _reference_module(
         },
         strict=True,
     )
-    return module.to(device=_REFERENCE_DEVICE, dtype=torch.bfloat16).eval()
-
-
-def _run_reference(
-    case: Case,
-    weights: dict[str, torch.Tensor],
-    x: torch.Tensor,
-    qr: torch.Tensor,
-    attention_mask: torch.Tensor,
-) -> torch.Tensor:
-    module = _reference_module(case, weights)
-    return module(
-        x.to(_REFERENCE_DEVICE),
-        qr.to(_REFERENCE_DEVICE),
-        attention_mask.to(_REFERENCE_DEVICE),
-    ).cpu()
+    module = module.to(device=_REFERENCE_DEVICE, dtype=torch.bfloat16).eval()
+    seq_len = x.shape[0]
+    x, qr = x[None].to(_REFERENCE_DEVICE), qr[None].to(_REFERENCE_DEVICE)
+    selection = module(
+        x, qr, torch.ones(1, seq_len, dtype=torch.bool, device=x.device)
+    )[0]
+    with torch.no_grad():
+        packed = torch.cat(
+            [
+                module.k_norm(module.wk(x)),
+                torch.nn.functional.linear(x, module.index_kpool_compress_gate),
+                torch.ones(1, seq_len, 1, dtype=torch.bfloat16),
+            ],
+            dim=-1,
+        )
+        pooled, _, valid = module.get_pooled_states(packed)
+    complete = seq_len // INDEX_KPOOL
+    assert int(valid.sum()) == complete, (
+        "the reference should mark exactly the complete pools valid"
+    )
+    return _Reference(
+        selection.cpu(), pooled[0, :complete].to(torch.float32).cpu()
+    )
 
 
 # ------------------------------------------------------------------------ MAX
 
 
-def _max_indexer(case: Case) -> Glm5NextIndexer:
-    return Glm5NextIndexer(
+def _config() -> Glm5NextConfig:
+    devices = [DeviceRef.GPU()]
+    mla = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        page_size=PAGE_SIZE,
+        devices=devices,
+        num_q_heads=8,
+    )
+    return Glm5NextConfig(
+        dtype=DType.bfloat16,
+        kv_params=MultiKVCacheParams.from_params(
+            {"mla": mla, "indexer": _cache_params()}
+        ),
+        devices=devices,
+        max_seq_len=SEQ_LEN,
         hidden_size=HIDDEN_SIZE,
+        num_hidden_layers=1,
+        qk_rope_head_dim=0,
         q_lora_rank=Q_LORA_RANK,
         index_n_heads=INDEX_N_HEADS,
         index_head_dim=INDEX_HEAD_DIM,
-        index_topk=case.index_topk,
+        index_topk=INDEX_TOPK,
         index_kpool=INDEX_KPOOL,
-        devices=[DeviceRef.GPU()],
     )
 
 
-def _bf16_to_device(tensor: torch.Tensor, device: Accelerator) -> Buffer:
-    return (
-        Buffer.from_numpy(tensor.contiguous().view(torch.float16).numpy())
-        .view(DType.bfloat16)
-        .to(device)
+def _cache_params() -> MLAKVCacheParams:
+    """The indexer leaf ``hybrid_layout.construct_kv_params`` declares.
+
+    One pooled key spans ``index_kpool`` FP8 rows of ``index_head_dim /
+    index_kpool`` values, with one float32 scale per row.
+    """
+    return MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=POOLED_HEAD_DIM,
+        num_layers=1,
+        page_size=PAGE_SIZE,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=INDEX_N_HEADS,
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32,
+            quantization_granularity=POOLED_HEAD_DIM,
+        ),
     )
 
 
@@ -264,105 +307,260 @@ def _quant_config() -> QuantConfig:
     )
 
 
-def _run_max_selection(
-    case: Case,
-    weights: dict[str, torch.Tensor],
-    x: torch.Tensor,
-    qr: torch.Tensor,
-    row_offsets: torch.Tensor,
-    max_pools: int,
-) -> torch.Tensor:
-    """Runs the dense selection path."""
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-    indexer = _max_indexer(case)
-    indexer.load_state_dict(weights, strict=True)
+class _SparseLayerIndexer(Module[..., Tensor]):
+    """The indexer as ``Glm5NextTextModel`` calls it for one sparse layer."""
 
-    batch = int(row_offsets.shape[0]) - 1
-    # The batch dimension is static here: the dense scorer's `q @ pooled^T` has
-    # `batch * max_pools` columns and the multistage GEMM will not split a
-    # dynamic N. Only this verification path cares --- the fused pooled scorer
-    # reads a paged cache and never forms this matmul.
-    input_types = [
-        TensorType(
-            DType.bfloat16, ["total_tokens", HIDDEN_SIZE], DeviceRef.GPU()
-        ),
-        TensorType(
-            DType.bfloat16, ["total_tokens", Q_LORA_RANK], DeviceRef.GPU()
-        ),
-        TensorType(DType.uint32, [batch + 1], DeviceRef.GPU()),
-    ]
+    def __init__(self) -> None:
+        self.indexer = PooledIndexer(_config(), _quant_config())
 
-    with Graph(
-        "Glm5NextIndexerSelection", input_types=tuple(input_types)
-    ) as graph:
-        graph.output(
-            indexer(
-                graph.inputs[0].tensor,
-                graph.inputs[1].tensor,
-                graph.inputs[2].tensor,
-                max_pools=max_pools,
-            )
+    def forward(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        input_row_offsets: Tensor,
+        tail_pool: Tensor,
+        tail_rows: Tensor,
+        kv_blocks: Tensor,
+        kv_scales: Tensor,
+        cache_lengths: Tensor,
+        lookup_table: Tensor,
+        max_prompt_length: Tensor,
+        max_cache_length: Tensor,
+        page_stride: Tensor,
+    ) -> Tensor:
+        # The scales share the values' pages, as every non-pooled-page cache
+        # does, so they share the stride and the lookup table too.
+        cache = PagedCacheValues(
+            kv_blocks=kv_blocks,
+            cache_lengths=cache_lengths,
+            lookup_table=lookup_table,
+            max_prompt_length=max_prompt_length,
+            max_cache_length=max_cache_length,
+            page_stride=page_stride,
+            kv_scales=kv_scales,
+            scales_page_stride=page_stride,
+            scales_lookup_table=lookup_table,
+        )
+        return self.indexer(
+            x,
+            qr,
+            input_row_offsets,
+            cache,
+            F.constant(0, DType.uint32, device=CPU()),
+            KPoolTail(
+                pool=tail_pool,
+                rows=tail_rows,
+                layer=F.constant(0, DType.int64, device=CPU()),
+            ),
         )
 
-    compiled = session.load(graph, weights_registry=indexer.state_dict())
-    args: list[Buffer] = [
-        _bf16_to_device(x, device),
-        _bf16_to_device(qr, device),
-        Buffer.from_numpy(row_offsets.numpy()).to(device),
-    ]
-    return from_dlpack(compiled.execute(*args)[0]).cpu()
+
+# Ring slots by request: neither the identity nor dense, so a ring addressed
+# by batch row rather than by slot lands on another request's pool.
+_RING_SLOTS = (3, 0)
+_RING_ROWS = 4
+
+_Indexer = CompiledCallable[..., Tensor]
 
 
-def _compile_max_pool_compress(
-    case: Case,
-    weights: dict[str, torch.Tensor],
-    max_pools: int,
-    *,
-    num_sequences: int,
-    quantize: bool = False,
-) -> Model:
-    """Compiles the pool compression for ``num_sequences`` ragged sequences.
-
-    With ``quantize``, the graph also outputs the FP8 cache rows.
-    """
-    session = InferenceSession(devices=[Accelerator()])
-    indexer = _max_indexer(case)
-    indexer.load_state_dict(weights, strict=True)
-
-    with Graph(
-        "Glm5NextIndexerPoolCompress",
-        input_types=(
-            TensorType(
-                DType.bfloat16, ["total_tokens", HIDDEN_SIZE], DeviceRef.GPU()
-            ),
-            TensorType(DType.uint32, [num_sequences + 1], DeviceRef.GPU()),
-        ),
-    ) as graph:
-        grid = indexer.pool_grid(graph.inputs[1].tensor, max_pools)
-        keys, gate = indexer.keys_and_gate(graph.inputs[0].tensor)
-        pooled = indexer.compress_pools(keys, gate, grid)
-        outputs = [pooled]
-        if quantize:
-            rows, scales = indexer.quantize_pooled_keys(pooled, _quant_config())
-            # BF16 represents every e4m3 value exactly and there is no
-            # FP8-to-integer cast, so this reads the stored bytes losslessly.
-            outputs += [rows.cast(DType.bfloat16), scales]
-        graph.output(outputs)
-
-    return session.load(graph, weights_registry=indexer.state_dict())
-
-
-def _run_max_pool_compress(
-    compiled: Model, x: torch.Tensor, row_offsets: torch.Tensor
-) -> tuple[torch.Tensor, ...]:
-    """Returns the pooled keys, and their FP8 cache rows if compiled with them."""
+def _compile(weights: dict[str, torch.Tensor]) -> _Indexer:
     device = Accelerator()
-    results = compiled.execute(
-        _bf16_to_device(x, device),
-        Buffer.from_numpy(row_offsets.numpy()).to(device),
+    params = _cache_params()
+    with default_device(device), default_dtype(DType.bfloat16):
+        layer = _SparseLayerIndexer()
+    return layer.compile(
+        TensorLayout(DType.bfloat16, ["total_tokens", HIDDEN_SIZE], device),
+        TensorLayout(DType.bfloat16, ["total_tokens", Q_LORA_RANK], device),
+        TensorLayout(DType.uint32, ["batch_plus_one"], device),
+        BufferLayout(
+            TAIL_RING_DTYPE,
+            [_RING_ROWS, 2, INDEX_KPOOL, INDEX_HEAD_DIM],
+            device,
+        ),
+        TensorLayout(DType.uint32, [1, "batch"], device),
+        BufferLayout(params.dtype, ["pages", *params.shape_per_block], device),
+        BufferLayout(
+            DType.float32, ["pages", *params.shape_per_scale_block], device
+        ),
+        TensorLayout(DType.uint32, ["batch"], device),
+        TensorLayout(DType.uint32, ["batch", "lut_cols"], device),
+        TensorLayout(DType.uint32, [1], CPU()),
+        TensorLayout(DType.uint32, [1], CPU()),
+        TensorLayout(DType.int64, [1], CPU()),
+        weights={f"indexer.{name}": value for name, value in weights.items()},
     )
-    return tuple(from_dlpack(result).cpu() for result in results)
+
+
+@pytest.fixture(scope="module")
+def indexer() -> _Indexer:
+    return _compile(_weights())
+
+
+def _host(array: np.ndarray) -> Tensor:
+    return Tensor(storage=Buffer.from_numpy(np.ascontiguousarray(array)))
+
+
+def _device(array: np.ndarray, device: Accelerator) -> Tensor:
+    return Tensor(
+        storage=Buffer.from_numpy(np.ascontiguousarray(array)).to(device)
+    )
+
+
+@dataclass(frozen=True)
+class _Served:
+    """What a schedule left behind, per request."""
+
+    selections: list[torch.Tensor]
+    """``[length, SELECTION_WIDTH]`` int32, each row from the call that
+    brought its token."""
+    pooled: list[torch.Tensor]
+    """``[pools spanned, INDEX_HEAD_DIM]`` float32 dequantized cache rows,
+    one per pool the request's tokens reach, complete or not."""
+
+
+def _batch_rows(
+    per_request: Sequence[torch.Tensor],
+    spans: Sequence[tuple[int, range]],
+    device: Accelerator,
+) -> Tensor:
+    """Packs each active request's rows for this call, in batch order."""
+    return Tensor(
+        storage=_bf16_to_device(
+            torch.cat(
+                [
+                    per_request[request][span.start : span.stop]
+                    for request, span in spans
+                ]
+            ),
+            device,
+        )
+    )
+
+
+def _serve(
+    indexer: _Indexer,
+    xs: Sequence[torch.Tensor],
+    qrs: Sequence[torch.Tensor],
+    schedule: Sequence[tuple[int, ...]],
+) -> _Served:
+    """Runs the requests through ``schedule``, a token count per request per
+    call, against one cache and one ring that persist across calls.
+
+    A request is in a call's batch only when it brings tokens, so its batch
+    row moves between calls while its pages and its ring slot stay put.
+    """
+    device = Accelerator()
+    params = _cache_params()
+    lengths = [x.shape[0] for x in xs]
+    pages = [math.ceil(length / PAGE_SIZE) for length in lengths]
+    first_page = np.concatenate([[0], np.cumsum(pages)])
+    null_page = int(first_page[-1])
+    lut = np.full(
+        (len(lengths), padded_lut_cols(max(pages))), null_page, dtype=np.uint32
+    )
+    for request, count in enumerate(pages):
+        lut[request, :count] = np.arange(
+            first_page[request], first_page[request] + count
+        )
+
+    # One page past the requests' backs the null page the padding names.
+    blocks = Buffer.zeros(
+        shape=[null_page + 1, *params.shape_per_block],
+        dtype=params.dtype,
+        device=device,
+    )
+    scales = Buffer.zeros(
+        shape=[null_page + 1, *params.shape_per_scale_block],
+        dtype=DType.float32,
+        device=device,
+    )
+    ring = Buffer.zeros(
+        shape=[_RING_ROWS, 2, INDEX_KPOOL, INDEX_HEAD_DIM],
+        dtype=TAIL_RING_DTYPE,
+        device=device,
+    )
+    blocks_t, scales_t, ring_t = (
+        Tensor(storage=b) for b in (blocks, scales, ring)
+    )
+    page_stride = _host(np.array([-1], dtype=np.int64))
+
+    selections = [
+        torch.full((length, SELECTION_WIDTH), -2, dtype=torch.int32)
+        for length in lengths
+    ]
+    positions = [0] * len(lengths)
+    for counts in schedule:
+        spans = [
+            (request, range(positions[request], positions[request] + count))
+            for request, count in enumerate(counts)
+            if count
+        ]
+        active = [request for request, _ in spans]
+        offsets = np.concatenate(
+            [[0], np.cumsum([len(span) for _, span in spans])]
+        ).astype(np.uint32)
+        result = indexer(
+            _batch_rows(xs, spans, device),
+            _batch_rows(qrs, spans, device),
+            _device(offsets, device),
+            ring_t,
+            _device(
+                np.array([[_RING_SLOTS[r] for r in active]], dtype=np.uint32),
+                device,
+            ),
+            blocks_t,
+            scales_t,
+            _device(
+                np.array([span.start for _, span in spans], dtype=np.uint32),
+                device,
+            ),
+            _device(lut[active], device),
+            _host(np.array([max(counts)], dtype=np.uint32)),
+            _host(
+                np.array([max(span.stop for _, span in spans)], dtype=np.uint32)
+            ),
+            page_stride,
+        )
+        rows = torch.from_numpy(result.to_numpy().copy())
+        for i, (request, span) in enumerate(spans):
+            selections[request][span.start : span.stop] = rows[
+                offsets[i] : offsets[i + 1]
+            ]
+            positions[request] = span.stop
+
+    assert positions == lengths, "the schedule must finish every request"
+    return _Served(selections, _read_pooled(blocks, scales, lut, lengths))
+
+
+def _read_pooled(
+    blocks: Buffer, scales: Buffer, lut: np.ndarray, lengths: Sequence[int]
+) -> list[torch.Tensor]:
+    """Dequantizes each request's pooled keys out of its pages.
+
+    Pool ``p`` sits at the request's token slots ``[p * kpool, (p + 1) *
+    kpool)``, one FP8 row of ``POOLED_HEAD_DIM`` per slot, each row with the
+    pool's scale.
+    """
+    values = (
+        torch.from_numpy(blocks.view(DType.uint8).to(CPU()).to_numpy())
+        .view(torch.float8_e4m3fn)
+        .to(torch.float32)
+    )
+    row_scales = torch.from_numpy(scales.to(CPU()).to_numpy())
+    pooled = []
+    for request, length in enumerate(lengths):
+        slots = torch.arange(math.ceil(length / INDEX_KPOOL) * INDEX_KPOOL)
+        page = torch.from_numpy(lut[request].astype(np.int64))[
+            slots // PAGE_SIZE
+        ]
+        offset = slots % PAGE_SIZE
+        rows = values[page, 0, 0, offset, 0] * row_scales[page, 0, 0, offset, 0]
+        scale = row_scales[page, 0, 0, offset, 0, 0].reshape(-1, INDEX_KPOOL)
+        assert torch.equal(scale, scale[:, :1].expand_as(scale)), (
+            f"request {request}: a pool's scale differs between its rows"
+        )
+        pooled.append(rows.reshape(-1, INDEX_HEAD_DIM))
+    return pooled
 
 
 # ------------------------------------------------------------------- helpers
@@ -378,13 +576,12 @@ class Agreement:
 
     ``whole_pools_only`` is the load-bearing field, not the exact-row fraction.
     Once a query's budget saturates, two pools at the top-k boundary can be
-    separated by less than a float32 rounding step --- and the two
-    implementations reach those scores through differently shaped matmuls ---
-    so which one wins is arbitrary. What is *not* arbitrary is the granularity
-    of the disagreement: a tie swaps whole aligned pools, so every position in
-    the symmetric difference comes with its ``index_kpool - 1`` siblings. A bug
-    in the expansion, the masking or the tail breaks that alignment, which is
-    why it is the assertion rather than a threshold on how many rows differ.
+    separated by less than the FP8 scorer's rounding step, so which one wins
+    is arbitrary. What is *not* arbitrary is the granularity of the
+    disagreement: a tie swaps whole aligned pools, so every position in the
+    symmetric difference comes with its ``index_kpool - 1`` siblings. A bug in
+    the expansion, the masking or the tail breaks that alignment, which is why
+    it is the assertion rather than a threshold on how many rows differ.
     """
 
     exact_rows: float
@@ -432,357 +629,148 @@ def _set_agreement(lhs: torch.Tensor, rhs: torch.Tensor) -> Agreement:
     )
 
 
+def _pooled_error(actual: torch.Tensor, expected: torch.Tensor) -> float:
+    """The worst pool's error, relative to that pool's largest value."""
+    error = (actual - expected).abs().amax(dim=-1)
+    return float((error / expected.abs().amax(dim=-1)).max())
+
+
+def _assert_matches_reference(
+    served: _Served, references: Sequence[_Reference], label: str
+) -> None:
+    for request, reference in enumerate(references):
+        rows = served.selections[request]
+        length = rows.shape[0]
+        name = f"[{label}] request {request} (length {length})"
+
+        for position, row in enumerate(rows.tolist()):
+            picked = [v for v in row if v >= 0]
+            assert len(picked) == len(set(picked)), (
+                f"{name} position {position} selected a position twice"
+            )
+            assert max(picked) <= position, (
+                f"{name} position {position} selected a future token"
+            )
+            start = (position + 1) // INDEX_KPOOL * INDEX_KPOOL
+            assert set(range(start, position + 1)) <= set(picked), (
+                f"{name} position {position} dropped its incomplete pool"
+            )
+
+        agreement = _set_agreement(rows, reference.selection)
+        print(f"{name} selection: {agreement}")
+        # Until a query sees more complete pools than it may keep, it keeps
+        # all of them, so a score cannot reorder anything and any
+        # disagreement is a logic bug.
+        unsaturated = min(POOLS_SELECTED * INDEX_KPOOL + INDEX_KPOOL, length)
+        assert (
+            _set_agreement(
+                rows[:unsaturated], reference.selection[:unsaturated]
+            ).exact_rows
+            == 1.0
+        ), f"{name}: an unsaturated row differs from the reference"
+        assert agreement.whole_pools_only
+        assert agreement.mean_jaccard >= 0.98
+
+        complete = length // INDEX_KPOOL
+        pooled = served.pooled[request]
+        error = _pooled_error(pooled[:complete], reference.pooled)
+        cos = torch.nn.functional.cosine_similarity(
+            pooled[:complete].reshape(-1), reference.pooled.reshape(-1), dim=0
+        ).item()
+        print(
+            f"{name} pooled cache: worst pool error={error:.4f} of its "
+            f"absmax, cos={cos:.6f}"
+        )
+        assert error <= _POOLED_REL_ERROR
+        assert not pooled[complete:].any(), (
+            f"{name}: an incomplete pool reached the cache"
+        )
+
+
 # --------------------------------------------------------------------- tests
 
+_LENGTHS = (SEQ_LEN, SEQ_LEN - 3)
 
-def test_pool_compression_matches_reference(case: Case) -> None:
-    """The learned pooled key, on real head dimensions.
 
-    Channel-wise softmax over the four members, the ape added to the gate
-    logits before it, and the weights cast back to bf16 before the weighted
-    sum --- get any of the three wrong and long-context retrieval degrades
-    without anything crashing.
+@pytest.fixture(scope="module")
+def requests() -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    x, qr = _activations(sum(_LENGTHS))
+    bounds = list(pairwise([0, *np.cumsum(_LENGTHS).tolist()]))
+    return [x[a:b] for a, b in bounds], [qr[a:b] for a, b in bounds]
+
+
+@pytest.fixture(scope="module")
+def references(
+    requests: tuple[list[torch.Tensor], list[torch.Tensor]],
+) -> list[_Reference]:
+    weights = _weights()
+    return [_reference(weights, x, qr) for x, qr in zip(*requests, strict=True)]
+
+
+def _decode_rest(
+    prefix: Sequence[tuple[int, ...]], lengths: Sequence[int]
+) -> list[tuple[int, ...]]:
+    """``prefix``, then one token per request per call until all are done."""
+    remaining = [
+        length - sum(call[request] for call in prefix)
+        for request, length in enumerate(lengths)
+    ]
+    calls = list(prefix)
+    while any(remaining):
+        calls.append(tuple(1 if r else 0 for r in remaining))
+        remaining = [max(r - 1, 0) for r in remaining]
+    return calls
+
+
+_SCHEDULES: dict[str, list[tuple[int, ...]]] = {
+    "one prefill": [_LENGTHS],
+    # The second chunk of the first request starts mid-pool and both
+    # requests decode across pool boundaries, so pools close from the ring
+    # while the batch mixes a multi-token request with a decode one.
+    "chunked prefill and decode": _decode_rest(
+        [(509, 1013), (510, 1)], _LENGTHS
+    ),
+}
+
+
+@pytest.mark.parametrize("schedule", list(_SCHEDULES), ids=list(_SCHEDULES))
+def test_indexer_matches_reference(
+    indexer: _Indexer,
+    requests: tuple[list[torch.Tensor], list[torch.Tensor]],
+    references: list[_Reference],
+    schedule: str,
+) -> None:
+    """Selections and the pooled cache, however the tokens arrive.
+
+    The cache check holds the pool compression to the reference to within FP8
+    rounding: the channel-wise softmax over the four members, and the ape
+    added to the gate logits before it. Get either wrong and long-context
+    retrieval degrades without anything crashing.
+    """
+    xs, qrs = requests
+    served = _serve(indexer, xs, qrs, _SCHEDULES[schedule])
+    _assert_matches_reference(served, references, schedule)
+
+
+def test_ape_is_load_bearing(
+    requests: tuple[list[torch.Tensor], list[torch.Tensor]],
+    references: list[_Reference],
+) -> None:
+    """Without the ape, the pooled cache misses the reference's tolerance.
+
+    The checkpoint ships ``index_kpool_compress_ape`` zero-initialized, which
+    is exactly why an implementation that silently drops it passes every
+    smoke test; this shows the cache check above would catch one.
     """
     weights = _weights()
-    x, _ = _activations(case.seq_len)
-
-    max_pooled = _run_max_pool_compress(
-        _compile_max_pool_compress(
-            case, weights, case.max_pools, num_sequences=1
-        ),
-        x,
-        _row_offsets((case.seq_len,)),
-    )[0]
-
-    reference = _reference_module(case, weights)
-    packed = torch.cat(
-        [
-            reference.k_norm(reference.wk(x[None])),
-            torch.nn.functional.linear(
-                x[None], reference.index_kpool_compress_gate
-            ),
-            torch.ones(1, case.seq_len, 1, dtype=torch.bfloat16),
-        ],
-        dim=-1,
-    )
-    ref_pooled, _, ref_valid = reference.get_pooled_states(packed)
-
-    complete = case.seq_len // INDEX_KPOOL
-    assert int(ref_valid.sum()) == complete, (
-        "the reference should mark exactly the complete pools valid"
-    )
-    max_f = max_pooled[0, :complete].to(torch.float32)
-    ref_f = ref_pooled[0, :complete].to(torch.float32)
-    max_abs = (max_f - ref_f).abs().max().item()
-    cos = torch.nn.functional.cosine_similarity(
-        max_f.reshape(-1), ref_f.reshape(-1), dim=0
-    ).item()
-    # bfloat16 carries 7 explicit mantissa bits, so one ULP at the largest
-    # value present is 2^(exponent - 7). Both sides compute the same four-term
-    # weighted sum and each term rounds, so the tolerance is stated in ULPs
-    # rather than picked: 4 is the loosest value that still fails if a member's
-    # weight or the ape is dropped (which moves values by whole percent).
-    largest = ref_f.abs().max().item()
-    ulp = 2.0 ** (math.floor(math.log2(largest)) - 7)
-    print(
-        f"[{case.name}] pooled key over {complete} pools: "
-        f"max|diff|={max_abs:.3e} ({max_abs / ulp:.1f} bf16 ULP at "
-        f"|max|={largest:.3f}) cos={cos:.9f}"
-    )
-    assert max_abs <= 4 * ulp
-    assert cos >= 1.0 - 5e-6
-
-
-def test_ape_is_load_bearing() -> None:
-    """Zeroing ``index_kpool_compress_ape`` must move the pooled keys.
-
-    The checkpoint ships it zero-initialized, which is exactly why an
-    implementation that silently drops it passes every smoke test.
-    """
-    case = CASES[1]
-    weights = _weights()
-    x, _ = _activations(case.seq_len)
-    offsets = _row_offsets((case.seq_len,))
-
-    zeroed = dict(weights)
-    zeroed["index_kpool_compress_ape"] = torch.zeros_like(
+    weights["index_kpool_compress_ape"] = torch.zeros_like(
         weights["index_kpool_compress_ape"]
     )
-    with_ape_model = _compile_max_pool_compress(
-        case, weights, case.max_pools, num_sequences=1
-    )
-    without_ape_model = _compile_max_pool_compress(
-        case, zeroed, case.max_pools, num_sequences=1
-    )
-
-    with_ape = _run_max_pool_compress(with_ape_model, x, offsets)[0]
-    without_ape = _run_max_pool_compress(without_ape_model, x, offsets)[0]
-
-    delta = (
-        (with_ape.to(torch.float32) - without_ape.to(torch.float32))
-        .abs()
-        .max()
-        .item()
-    )
-    print(f"[{case.name}] ape ablation: max|diff|={delta:.3e}")
-    assert delta > 1e-3, "the ape is not reaching the pool softmax"
-
-
-def test_selection_matches_reference() -> None:
-    """Selected token sets against the reference, plain and left-padded.
-
-    Only at `topk512`. The other case's budget is 2051 slots over 2052
-    tokens, so it selects everything and the top-k ranks nothing -- it
-    reported an exact match on every row while this case reports 0.94, which
-    is the difference between a test that can fail and one that cannot.
-
-    The padded half is here rather than in its own test because it asserts
-    against the same MAX selection: the reference derives pool boundaries
-    from ``first_key`` while MAX's ragged layout has none, so left-padding
-    the reference and shifting its answer back has to agree with MAX exactly
-    as well as the unpadded one does. Any gap between the two is `first_key`
-    handling, and if they disagreed every cached pooled key would be wrong
-    the moment padding changed.
-    """
-    case = CASES[1]
-    pad = 7
-    weights = _weights()
-    x, qr = _activations(case.seq_len)
-
-    actual = _run_max_selection(
-        case, weights, x, qr, _row_offsets((case.seq_len,)), case.max_pools
-    )
-    reference = _run_reference(
-        case,
-        weights,
-        x[None],
-        qr[None],
-        torch.ones(1, case.seq_len, dtype=torch.bool),
-    )[0]
-
-    assert actual.shape == (case.seq_len, case.selection_width)
-    assert actual.dtype == torch.int32
-    agreement = _set_agreement(actual, reference)
-    print(f"[{case.name}] selection: {agreement}")
-    # Rows that still fit inside the budget must match exactly: every visible
-    # pool is selected there, so a score tie cannot reorder anything and any
-    # disagreement is a logic bug.
-    unsaturated = min(case.index_topk, case.seq_len)
-    assert (
-        _set_agreement(actual[:unsaturated], reference[:unsaturated]).exact_rows
-        == 1.0
-    )
-    assert agreement.whole_pools_only
-    assert agreement.mean_jaccard >= 0.99
-
-    padded_x = torch.cat([torch.zeros_like(x[:pad]), x])
-    padded_qr = torch.cat([torch.zeros_like(qr[:pad]), qr])
-    mask = torch.ones(1, case.seq_len + pad, dtype=torch.bool)
-    mask[0, :pad] = False
-    padded = _run_reference(
-        case, weights, padded_x[None], padded_qr[None], mask
-    )[0][pad:]
-    shifted = torch.where(padded < 0, padded, padded - pad)
-
-    padded_agreement = _set_agreement(actual, shifted)
-    print(f"[{case.name}] left-pad {pad}: {padded_agreement}")
-    # The padded and unpadded references must agree with MAX *equally* well.
-    # The residual disagreement they share is top-k tie-breaking.
-    assert padded_agreement.exact_rows == agreement.exact_rows
-    assert padded_agreement.first_mismatch == agreement.first_mismatch
-    assert padded_agreement.whole_pools_only
-
-
-def test_ragged_batch_matches_per_sequence_reference() -> None:
-    """A ragged batch whose lengths are not multiples of ``index_kpool``.
-
-    Each sequence is also run through the reference on its own, so this checks
-    both that the pooling is per-sequence and that no selection escapes into a
-    neighbour's tokens.
-    """
-    case = CASES[1]
-    lengths = (case.seq_len, case.seq_len - 3)
-    weights = _weights()
-    x, qr = _activations(sum(lengths))
-    offsets = _row_offsets(lengths)
-    max_pools = math.ceil(max(lengths) / INDEX_KPOOL)
-
-    actual = _run_max_selection(case, weights, x, qr, offsets, max_pools)
-
-    for seq, length in enumerate(lengths):
-        begin, end = int(offsets[seq]), int(offsets[seq + 1])
-        reference = _run_reference(
-            case,
-            weights,
-            x[begin:end][None],
-            qr[begin:end][None],
-            torch.ones(1, length, dtype=torch.bool),
-        )[0]
-        rows = actual[begin:end]
-        agreement = _set_agreement(rows, reference)
-        print(f"[{case.name}] ragged seq {seq} (len {length}): {agreement}")
-        assert agreement.whole_pools_only
-        assert agreement.mean_jaccard >= 0.99
-        assert int(rows.max()) < length, "a selection escaped its own sequence"
-
-
-def test_tail_is_the_current_incomplete_pool(case: Case) -> None:
-    """The tail's start is the visible count rounded down to a pool boundary.
-
-    Not a fixed offset, and never past the query's own position --- the two
-    ways to get this wrong either let attention read a future token or drop a
-    just-written one.
-    """
-    weights = _weights()
-    x, qr = _activations(case.seq_len)
-    actual = _run_max_selection(
-        case, weights, x, qr, _row_offsets((case.seq_len,)), case.max_pools
-    )
-
-    tail = actual[:, -(INDEX_KPOOL - 1) :]
-    for position in range(case.seq_len):
-        start = ((position + 1) // INDEX_KPOOL) * INDEX_KPOOL
-        expected = [
-            start + offset
-            for offset in range(INDEX_KPOOL - 1)
-            if start + offset <= position
-        ]
-        got = [int(v) for v in tail[position].tolist() if v >= 0]
-        assert got == expected, f"position {position}: tail {got} != {expected}"
-        assert int(actual[position].max()) <= position, (
-            f"position {position} selected a future token"
-        )
-    print(f"[{case.name}] tail verified for all {case.seq_len} positions")
-
-
-def test_rebuild_versus_cached_pooled_keys() -> None:
-    """The differential the whole lane rests on.
-
-    Only at `topk512`. `prefix` is rounded down to a pool boundary, so this
-    never exercises the partial final pool that separates the two cases, and
-    `test_pool_compression_matches_reference` covers that at both lengths.
-
-    A pooled key is immutable once its ``index_kpool`` tokens exist, which is
-    what lets it be written once and read forever. This runs the compression
-    twice --- over a prefix and over the full sequence --- and requires the
-    pools they share to be bit-identical. If the shorter run's arithmetic
-    differed at all (a shape-dependent reduction order, say), a pooled cache
-    would silently diverge from a rebuild and nothing cheap would notice.
-    """
-    case = CASES[1]
-    weights = _weights()
-    x, _ = _activations(case.seq_len)
-    prefix = (case.seq_len // 2) // INDEX_KPOOL * INDEX_KPOOL
-    prefix_pools = prefix // INDEX_KPOOL
-
-    rebuilt_model = _compile_max_pool_compress(
-        case, weights, case.max_pools, num_sequences=1
-    )
-    prefix_model = _compile_max_pool_compress(
-        case, weights, prefix_pools, num_sequences=1
-    )
-
-    rebuilt = _run_max_pool_compress(
-        rebuilt_model, x, _row_offsets((case.seq_len,))
-    )[0]
-    from_prefix = _run_max_pool_compress(
-        prefix_model, x[:prefix], _row_offsets((prefix,))
-    )[0]
-
-    shared = rebuilt[0, :prefix_pools].view(torch.uint16)
-    cached_shared = from_prefix[0].view(torch.uint16)
-    mismatches = int((shared != cached_shared).sum().item())
-    print(
-        f"[{case.name}] pool immutability: {prefix_pools} shared pools, "
-        f"mismatching bf16 values={mismatches}/{shared.numel()}"
-    )
-    assert mismatches == 0, (
-        "pooled keys built over a prefix differ from the same pools built over "
-        "the full sequence, so they cannot be cached"
-    )
-
-
-def test_quantized_pooled_cache_rows() -> None:
-    """The pooled cache's FP8 row layout and its per-pool scale.
-
-    One 128-value pooled key spans ``index_kpool`` cache rows of
-    ``index_head_dim / index_kpool`` values, which is byte-identical to a
-    compacted pooled cache; the scale is per *pool* and replicated across those
-    rows so the cached arm quantizes exactly what a rebuild would.
-    """
-    case = CASES[1]
-    weights = _weights()
-    x, _ = _activations(case.seq_len)
-    max_pools = case.max_pools
-
-    pooled, rows, scales = _run_max_pool_compress(
-        _compile_max_pool_compress(
-            case, weights, max_pools, num_sequences=1, quantize=True
-        ),
-        x,
-        _row_offsets((case.seq_len,)),
-    )
-    indexer = _max_indexer(case)
-
-    assert rows.shape == (
-        max_pools * INDEX_KPOOL,
-        1,
-        indexer.pooled_cache_head_dim,
-    )
-    assert scales.shape == (max_pools * INDEX_KPOOL, 1, 1)
-    per_pool = scales.reshape(max_pools, INDEX_KPOOL)
-    assert bool(torch.equal(per_pool, per_pool[:, :1].expand_as(per_pool))), (
-        "a pool's scale must be identical in every row it occupies"
-    )
-
-    keys = rows.reshape(max_pools, INDEX_HEAD_DIM).to(torch.float32)
-    dequantized = keys * per_pool[:, :1].to(torch.float32)
-    reference = pooled[0].to(torch.float32)
-    rel = (
-        (dequantized - reference).abs().max()
-        / reference.abs().max().clamp(min=1e-6)
-    ).item()
-    print(f"[{case.name}] pooled FP8 round trip: max relative error={rel:.4f}")
-    # e4m3 carries three mantissa bits, so 2^-4 = 6.25% is the per-value
-    # ceiling against a per-row absmax scale.
-    assert rel <= 0.07
-
-
-def test_traffic_arithmetic() -> None:
-    """The numbers that make the pooled cache mandatory rather than nice.
-
-    At 1M context over 11 sparse layers on an 8 TB/s part: rebuilding pools
-    every step reads 4.5 GB per decoded token and caching them reads 0.4 GB,
-    with GLM-5.2's per-token indexer between at 1.5 GB. That ordering is why a
-    faithful port of this model's indexer is slower than the model it replaces.
-    """
-    kv_len = 1 << 20
-    layers = 11
-
-    def traffic(kpool: int, pooled_cache: bool) -> int:
-        return indexer_traffic_bytes_per_token(
-            num_sparse_layers=layers,
-            kv_len=kv_len,
-            index_head_dim=INDEX_HEAD_DIM,
-            index_kpool=kpool,
-            pooled_cache=pooled_cache,
-        )
-
-    rebuild = traffic(INDEX_KPOOL, False)
-    cached = traffic(INDEX_KPOOL, True)
-    glm52 = traffic(1, True)
-    bandwidth = 8e12
-    for label, value in (
-        ("rebuild pools each step", rebuild),
-        ("cached pooled keys", cached),
-        ("GLM-5.2 per-token", glm52),
-    ):
-        print(
-            f"{label:>24}: {value / 1e9:6.2f} GB/token "
-            f"-> {value / bandwidth * 1e6:6.1f} us at 8 TB/s"
-        )
-    assert rebuild / glm52 > 2.5
-    assert glm52 / cached > 3.5
+    xs, qrs = requests
+    served = _serve(_compile(weights), xs[:1], qrs[:1], [(SEQ_LEN,)])
+    error = _pooled_error(served.pooled[0], references[0].pooled)
+    print(f"ape ablation: worst pool error={error:.4f} of its absmax")
+    assert error > 2 * _POOLED_REL_ERROR, "the ape is not reaching the pools"
 
 
 # --------------------------------------- tail ring versus one-shot compression
@@ -803,15 +791,9 @@ class _TailRig:
     """All the pooled-key writers, compiled once, over one set of operands.
 
     ``general_model`` (``ring_close`` + ``compress`` + ``seed_tail``, run
-    unconditionally, every call) is what :meth:`Indexer._select_pooled` runs.
-    ``oracle_model`` is the independent one-shot compression it is judged
-    against.
-
-    There is no separate prefill or decode writer. :meth:`_select_pooled`
-    used to pick between them with a batch-wide ``ops.cond`` predicate, which
-    could route a ragged multi-token request onto a rectangular
-    one-token-per-request kernel; every schedule below now drives the one
-    writer that replaced them.
+    unconditionally, every call) is what :class:`PooledIndexer` runs, for
+    prefill, decode and any mix of the two in one call. ``oracle_model`` is the
+    independent one-shot compression it is judged against.
     """
 
     device: Accelerator
@@ -873,9 +855,9 @@ def tail_rig() -> _TailRig:
         )
 
     # `ring_close` + `compress` + `seed_tail`, unconditionally: what
-    # `Indexer._select_pooled` now always runs, regardless of alignment or
+    # `PooledIndexer` always runs, regardless of alignment or
     # per-request token count. `pool_row_offsets` is supplied rather than
-    # computed here, mirroring `_select_pooled`'s own arithmetic, which the
+    # computed here, mirroring `select_pooled`'s own arithmetic, which the
     # caller (`_run_general_writer`) reproduces on the host.
     with Graph(
         "kpool_general",
@@ -915,7 +897,7 @@ def tail_rig() -> _TailRig:
         )
         # `seed_tail` last: it reuses ring slots `ring_close` just read, and
         # correctness depends on `ring_close` observing them first -- see
-        # `Indexer._select_pooled`'s comment on this same ordering.
+        # `select_pooled`'s comment on this same ordering.
         mla_kpool_seed_tail(
             general_graph.inputs[7].buffer,
             k_in,
@@ -982,14 +964,12 @@ def _run_general_writer(
     rig: _TailRig, schedule: Sequence[tuple[int, ...]]
 ) -> torch.Tensor:
     """Runs ``ring_close`` + ``compress`` + ``seed_tail`` on an explicit,
-    caller-chosen schedule -- unconditionally, on *every* call, exactly as
-    :meth:`Indexer._select_pooled` now always does.
+    caller-chosen schedule, on every call, as :class:`PooledIndexer` does.
 
-    ``schedule`` is not tied to a fixed prefill/decode split: each call can
-    bring any per-request token count, so this exercises the shape the
-    retired ``ops.cond`` predicate could not -- a call where different requests are at different
-    points in their pool (some mid-pool from a previous call, some fresh),
-    and bring different numbers of new tokens.
+    ``schedule`` is not tied to a prefill/decode split: each call can bring any
+    per-request token count, so one call can hold requests at different points
+    in their pool (some mid-pool from a previous call, some fresh) that bring
+    different numbers of new tokens.
 
     Args:
         rig: The compiled writers and shared operands.
@@ -1034,7 +1014,7 @@ def _run_general_writer(
         offsets = np.zeros(len(active) + 1, dtype=np.uint32)
         offsets[1:] = np.cumsum(n)
 
-        # Same arithmetic as `Indexer._select_pooled`: pools this call
+        # Same arithmetic as `select_pooled`: pools this call
         # completes from new tokens alone, excluding whatever `ring_close`
         # closes -- floor of the post-call position minus ceil of the
         # pre-call one.
@@ -1132,7 +1112,7 @@ def _assert_bit_identical(
     Both writers run the same shared ``pool_channel`` over the same operands,
     so any difference at all is a difference in *which* members were gathered
     rather than a rounding difference --- and a tolerance would hide exactly
-    the off-by-one member this lane exists to prevent.
+    the off-by-one member these tests look for.
     """
     mismatches = int(
         (actual.view(torch.uint16) != expected.view(torch.uint16)).sum().item()
@@ -1156,8 +1136,55 @@ def _assert_bit_identical(
     )
 
 
+def test_one_shot_compression_matches_reference(tail_rig: _TailRig) -> None:
+    """The oracle the writers are judged against, against the reference.
+
+    ``mla_kpool_compress`` is the pooling every writer shares, so this holds
+    it to the reference's ``get_pooled_states`` in bf16, finer than the FP8
+    cache check can resolve.
+    """
+    actual = _run_compress_oracle(tail_rig)
+    reference = Glm5NextIndexerReference(
+        Glm5NextIndexerRefConfig(
+            index_head_dim=INDEX_HEAD_DIM, index_kpool=INDEX_KPOOL
+        )
+    )
+    expected = torch.zeros_like(actual)
+    start = 0
+    with torch.no_grad():
+        reference.index_kpool_compress_ape.copy_(torch.from_numpy(tail_rig.ape))
+        for request, length in enumerate(_TAIL_LENGTHS):
+            rows = slice(start, start + length)
+            start += length
+            packed = torch.cat(
+                [
+                    tail_rig.keys[rows],
+                    tail_rig.gate[rows],
+                    torch.ones(length, 1, dtype=torch.bfloat16),
+                ],
+                dim=-1,
+            )
+            pooled, _, _ = reference.get_pooled_states(packed[None])
+            complete = length // INDEX_KPOOL
+            expected[request, :complete] = pooled[0, :complete]
+
+    actual_f, expected_f = actual.to(torch.float32), expected.to(torch.float32)
+    max_abs = (actual_f - expected_f).abs().max().item()
+    # One bf16 ULP at the largest value present is 2^(exponent - 7). Both
+    # sides round each of the four weighted terms, so the bound is in ULPs
+    # rather than picked; dropping a member's weight or the ape moves values
+    # by whole percent.
+    largest = expected_f.abs().max().item()
+    ulp = 2.0 ** (math.floor(math.log2(largest)) - 7)
+    print(
+        f"one-shot compression vs reference: max|diff|={max_abs:.3e} "
+        f"({max_abs / ulp:.1f} bf16 ULP at |max|={largest:.3f})"
+    )
+    assert max_abs <= 4 * ulp
+
+
 def test_decode_pools_match_one_shot_compression(tail_rig: _TailRig) -> None:
-    """The gate this whole slice rests on.
+    """Pools closed one decode token at a time match one-shot compression.
 
     A pool whose members arrive on ``index_kpool`` separate decode steps has to
     come out identical to one compressed from all its members at once ---
@@ -1204,17 +1231,14 @@ def test_chunked_prefill_pools_match_one_shot_compression(
 def test_mixed_ragged_batch_matches_one_shot_compression(
     tail_rig: _TailRig,
 ) -> None:
-    """The shape that used to crash: a ragged, mixed-alignment call.
+    """A ragged call whose requests differ in pool remainder and token count.
 
-    A batch-wide predicate picking one writer for the whole call cannot serve
-    a call where requests differ in both how much of a pool the ring is
-    already holding (a different remainder mod ``index_kpool`` each) and how
-    many new tokens they bring (also different, and none of them ``1``) --
-    every request here enters the second call at a different pending-pool
-    remainder and completes with a different, multi-token count in the same
-    call. The old rectangular ``tail_update`` writer took exactly one new
-    token per request; a call shaped like this is what made it read and
-    write out of bounds.
+    Every request enters the second call holding a different remainder mod
+    ``index_kpool`` in the ring and brings a different multi-token count, none
+    of them ``1``, so the writer must address each request's ring slot and
+    token range on its own. A writer that chose one path for the whole batch,
+    or that took one new token per request, reads and writes out of bounds on
+    a call shaped like this.
     """
     _assert_bit_identical(
         _run_general_writer(tail_rig, [(6, 3, 9), (7, 6, 2)]),

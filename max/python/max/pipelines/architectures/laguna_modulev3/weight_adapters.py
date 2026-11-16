@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Weight adapter for the Laguna checkpoint family on ModuleV3.
 
-The checkpoint-level work -- compressed-tensors NVFP4 suffixes, reciprocated
-global scales, e4m3 block scales, the Laguna structural renames, dropped FP8
-KV-cache scales -- is the graph architecture's adapter, run unchanged. ModuleV3
+The checkpoint-level work -- the compressed-tensors NVFP4 packed weight, e4m3
+block scales, the Laguna structural renames, dropped FP8 KV-cache scales -- is
+the graph architecture's adapter, run unchanged. ModuleV3
 names a quantized weight as its checkpoint does, so this module only adds the
 ``language_model.`` prefix its tree nests everything under:
 
@@ -42,13 +42,13 @@ from transformers import AutoConfig
 
 MODULEV3_PREFIX = "language_model."
 
-# ``NVFP4Tensor`` declares its global scales as scalars; the checkpoint may
-# ship them as one-element vectors.
-_SCALAR_SCALE_SUFFIXES = (".weight_scale_2", ".input_scale")
+# ``CompressedTensorsNVFP4Tensor`` declares its global scales as scalars; the
+# checkpoint may ship them as one-element vectors.
+_SCALAR_SCALE_SUFFIXES = (".weight_global_scale", ".input_global_scale")
 
 
 def _as_scalar(data: WeightData, name: str) -> WeightData:
-    """Reshapes a one-element global scale to the scalar ``NVFP4Tensor`` wants."""
+    """Reshapes a one-element global scale to the scalar the container wants."""
     arr = np.from_dlpack(data)
     if arr.ndim == 0:
         return data

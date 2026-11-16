@@ -125,11 +125,6 @@ def msg_set_begin_flag(pd: UInt64) -> UInt64:
 
 
 @inline(.always)
-def msg_reset_begin_flag(pd: UInt64) -> UInt64:
-    return pd & (~(UInt64(1) << DescriptorOffset.flag_begin))
-
-
-@inline(.always)
 def msg_get_end_flag(pd: UInt64) -> UInt64:
     return pd & (UInt64(1) << DescriptorOffset.flag_end)
 
@@ -333,17 +328,6 @@ def fprintf_stdout_begin() -> UInt64:
         Message descriptor for a new printf invocation.
     """
     return begin_fprintf(FprintfCtrl.stdout)
-
-
-@inline(.always)
-def fprintf_stderr_begin() -> UInt64:
-    """
-    Begin a new fprintf message for stderr.
-
-    Returns:
-        Message descriptor for a new printf invocation.
-    """
-    return begin_fprintf(FprintfCtrl.stderr)
 
 
 @inline(.always)
@@ -768,12 +752,6 @@ struct ControlWidth(TrivialRegisterPassable):
     @inline(.always)
     def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
-
-
-@inline(.always)
-def get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
-    var value: UInt32 = (control >> offset) & ((UInt32(1) << width) - UInt32(1))
-    return value
 
 
 @inline(.always)

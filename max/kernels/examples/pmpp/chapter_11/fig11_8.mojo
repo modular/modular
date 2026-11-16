@@ -82,7 +82,7 @@ def cpu_scan(
 
 def main() raises:
     """Example usage of warp-level scan."""
-    comptime N = DeviceContext.default_device_info.warp_size
+    comptime N = DeviceContext[].default_device_info.warp_size
     comptime dtype = DType.float32
 
     # Allocate host memory

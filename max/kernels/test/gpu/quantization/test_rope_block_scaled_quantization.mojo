@@ -162,7 +162,6 @@ def test_rope_quantize_matches_unfused[
         DType.bfloat16,
         DType.float32,
         interleaved=True,
-        target=StaticString("gpu"),
     ](
         x=TileTensor(x, heads_layout),
         input_row_offsets=TileTensor(row_offsets, row_major(Idx[2])),

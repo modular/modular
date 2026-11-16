@@ -27,8 +27,6 @@ SMEM Organization:
 """
 
 
-from layout import Layout
-from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major_typed
 
 # Import pipeline storage from matmul structured kernels
@@ -113,7 +111,6 @@ struct Conv2dSmem[
     ].static_product
 
     # Output tiles use row-major layout
-    comptime out_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
     # ========== Tile Storage ==========
     # Reuse StandardTileStorage from matmul (same structure)
@@ -121,9 +118,9 @@ struct Conv2dSmem[
         Self.act_type,
         Self.filter_type,
         # Activation tile dimensions (BM x BK)
-        IndexList[2](Self.BM, Self.BK),
+        (Self.BM, Self.BK),
         # Filter tile dimensions (BN x BK)
-        IndexList[2](Self.BN, Self.BK),
+        (Self.BN, Self.BK),
         Self.num_pipeline_stages,
     ]
 
@@ -150,7 +147,7 @@ struct Conv2dSmem[
     )
     comptime SourceTiles = SourceTileStorage[
         Self.out_type,  # Source C has same type as output D
-        IndexList[2](Self.OutputM, Self.OutputN),
+        (Self.OutputM, Self.OutputN),
         Self.num_epi_load_stages,
     ]
 
@@ -194,8 +191,8 @@ struct Conv2dSmem[
         StandardTilePayload[
             Self.act_type,
             Self.filter_type,
-            IndexList[2](Self.BM, Self.BK),
-            IndexList[2](Self.BN, Self.BK),
+            (Self.BM, Self.BK),
+            (Self.BN, Self.BK),
             Self.num_pipeline_stages,
         ],
     ]

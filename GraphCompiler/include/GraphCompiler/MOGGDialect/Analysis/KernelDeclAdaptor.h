@@ -48,9 +48,6 @@ enum class IOSpec {
   MutableInputTensor,
   FusedInputTensor,
   FusedOutputTensor,
-  FusedComputeOutputTensor,
-  FusedComputeOutputTileTensor,
-  FusedOutputTileTensor,
 };
 
 //===----------------------------------------------------------------------===//
@@ -67,7 +64,17 @@ enum class TensorArgRole { input, output, mutableInput, none };
 
 /// Element-access form a tensor argument exposes (`none` for a plain dense
 /// argument). Also indexes the bitmasks of `TensorArgContract`.
-enum class TensorArgAccess { none, load, store, transform };
+///
+/// TODO(GEX-4340): `legacyTileStore` and `legacyTileTransform` are the
+/// interim legacy tile traits (LegacyTileTraits.h). Remove them with GEX-4467.
+enum class TensorArgAccess {
+  none,
+  load,
+  store,
+  transform,
+  legacyTileStore,
+  legacyTileTransform,
+};
 
 /// The deepest trait bound written on a shape-function tensor argument:
 /// `Tensor` (shape only) or `TileTensorable` (adds layout and host-side data
@@ -84,6 +91,10 @@ inline unsigned bit(TensorArgAccess access) {
     return 1u << 1;
   case TensorArgAccess::transform:
     return 1u << 2;
+  case TensorArgAccess::legacyTileStore:
+    return 1u << 3;
+  case TensorArgAccess::legacyTileTransform:
+    return 1u << 4;
   }
   return 0;
 }
@@ -117,8 +128,10 @@ struct TensorArgContract {
   /// Requires `accessCount() == 1`, which a fused arg guarantees.
   TensorArgAccess soleAccess() const {
     assert(accessCount() == 1 && "soleAccess requires exactly one access form");
-    for (TensorArgAccess a : {TensorArgAccess::load, TensorArgAccess::store,
-                              TensorArgAccess::transform})
+    for (TensorArgAccess a :
+         {TensorArgAccess::load, TensorArgAccess::store,
+          TensorArgAccess::transform, TensorArgAccess::legacyTileStore,
+          TensorArgAccess::legacyTileTransform})
       if (hasAccess(a))
         return a;
     return TensorArgAccess::none;
@@ -198,8 +211,8 @@ std::optional<TensorArgContract> dictToTensorArgContract(mlir::Attribute attr);
 // Type predicates and IOSpec helpers
 //===----------------------------------------------------------------------===//
 
-/// Returns the underlying legacy tensor struct, including fused and stable
-/// aliases, or null for other argument types. Does not require bound IO params.
+/// Returns the underlying legacy tensor struct, including fused aliases, or
+/// null for other argument types. Does not require bound IO params.
 KGEN::LIT::StructType getLegacyTensorArgType(mlir::Type argType);
 
 /// Check whether a symbol has the given root and leaf, ignoring intermediate
@@ -211,23 +224,22 @@ inline bool symbolMatchesRootAndLeaf(mlir::SymbolRefAttr symbol,
   return symbol.getRootReference() == root && symbol.getLeafReference() == leaf;
 }
 
-inline bool isXType(KGEN::LIT::StructType maybeTensor, llvm::StringLiteral root,
-                    llvm::StringLiteral className) {
-  return symbolMatchesRootAndLeaf(maybeTensor.getSymbol(), root, className);
-}
-
-inline bool isExtensibilityTensor(KGEN::LIT::StructType maybeTensor) {
-  return isXType(maybeTensor, "extensibility", "Tensor");
-}
-
-inline bool isCustomType(KGEN::LIT::StructType maybeCustom) {
-  return !isExtensibilityTensor(maybeCustom);
+/// Like `symbolMatchesRootAndLeaf`, but also accepts the leaf with a `Legacy`
+/// or `HAL` prefix: `max.gpu.host` dispatches between the two backend structs
+/// (e.g. `LegacyDeviceContext`, `HALDeviceContext`), and a kernel argument
+/// names whichever one is linked.
+inline bool symbolMatchesBackendLeaf(mlir::SymbolRefAttr symbol,
+                                     llvm::StringRef root,
+                                     llvm::StringRef leaf) {
+  if (symbol.getRootReference() != root)
+    return false;
+  llvm::StringRef name = symbol.getLeafReference();
+  if (!name.consume_front("Legacy"))
+    name.consume_front("HAL");
+  return name == leaf;
 }
 
 llvm::StringRef toString(IOSpec spec);
-std::optional<IOSpec> toIOSpec(llvm::StringRef str);
-std::pair<mlir::TypedAttr, mlir::TypedAttr> getParams(IOSpec ioSpec,
-                                                      mlir::Builder &builder);
 
 bool isOutputIOSpec(IOSpec spec);
 bool isFusableIOSpec(IOSpec spec);
@@ -260,9 +272,8 @@ struct KernelDeclVariadicTensorAdaptor {
   bool fused = false;
   bool stable = false;
   IOSpec ioSpec = {};
-  /// Present only for a trait-lane variadic (`xs: TensorTuple[*Ts]`): the
-  /// contract shared by every element. Empty for the legacy `VariadicTensors`
-  /// lane.
+  /// Present for a trait-lane variadic (`xs: TensorTuple[*Ts]`): the
+  /// contract shared by every element.
   std::optional<TensorArgContract> traitContract;
   KernelDeclVariadicTensorAdaptor() = default;
   explicit KernelDeclVariadicTensorAdaptor(IOSpec ioSpec)
@@ -282,11 +293,6 @@ struct KernelDeclTileTensorAdaptor {
 };
 
 struct KernelDeclContextPtrAdaptor {
-  /// The context's target is a parameter of the signature, as in
-  /// `DeviceContext.Generic`, so the caller picks it by the static type of the
-  /// context it passes. Otherwise the context is the default accelerator's.
-  bool genericTarget = false;
-
   bool operator==(const KernelDeclContextPtrAdaptor &) const { return true; }
 };
 
@@ -380,7 +386,7 @@ struct KernelDeclOperandAdaptor {
     return false;
   }
 
-  /// nullopt for a `ManagedTensorSlice` or non-tensor argument.
+  /// nullopt for a non-trait argument.
   std::optional<TensorArgContract> getTraitContract() const {
     if (const auto *t = std::get_if<KernelDeclTensorAdaptor>(&underlyingType))
       return t->traitContract;
@@ -425,12 +431,6 @@ struct KernelDeclOperandAdaptor {
                underlyingType) ||
            std::holds_alternative<KernelDeclContextPtrListAdaptor>(
                underlyingType);
-  }
-
-  /// A single `DeviceContext` whose target the callee leaves generic.
-  bool isGenericTargetContextType() const {
-    const auto *t = std::get_if<KernelDeclContextPtrAdaptor>(&underlyingType);
-    return t && t->genericTarget;
   }
 
   bool isVariadicContextType() const {
@@ -504,6 +504,14 @@ struct KernelDeclFunctionAdaptor {
   /// argument, and injects a synthetic fused-output tensor.
   static KernelDeclFunctionAdaptor
   synthesizeExecuteFromElementwise(KGEN::LIT::FnTypeGeneratorType sig);
+
+  /// Whether the last input is the element's `IndexList`, which an
+  /// elementwise function takes when its result depends on the position.
+  bool takesIndexList() const {
+    return !inputArguments.empty() &&
+           inputArguments.back().isOpaqueWithTypeName(
+               kMojoInternalDpsIndexListTypeQualifiedName);
+  }
 
   template <typename StreamType>
   StreamType &printNested(StreamType &os, const std::string &nesting) const {

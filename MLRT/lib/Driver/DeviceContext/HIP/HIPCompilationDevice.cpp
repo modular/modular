@@ -30,7 +30,7 @@ using namespace llvm;
 namespace M::Driver {
 
 HIPCompilationDevice::HIPCompilationDevice(std::string targetArch)
-    : CompilationDevice(Device::hipAPI, std::move(targetArch)) {}
+    : CompilationDevice("hip", std::move(targetArch)) {}
 
 HIPCompilationDevice::~HIPCompilationDevice() = default;
 

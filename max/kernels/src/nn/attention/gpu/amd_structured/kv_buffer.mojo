@@ -32,10 +32,11 @@ TileTensor is used throughout:
   - MMA register tiles: TileTensor in LOCAL with stack_allocation
 """
 
-from std.math import ceildiv
+from std.math import ceildiv, clamp
 from std.math.uutils import umod, ufloordiv
 from std.sys import simd_width_of
 from max.gpu import WARP_SIZE, lane_id
+from max.gpu.intrinsics import readfirstlane
 from layout import (
     ComptimeInt,
     Coord,
@@ -44,7 +45,7 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation
 from layout.tensor_core import TiledTensorCore
 from layout.swizzle import Swizzle
@@ -61,7 +62,7 @@ from structured_kernels.amd_tile_io import (
     _IndexedSubTileLayout,
 )
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 
 struct KVCacheIterator[
@@ -71,6 +72,11 @@ struct KVCacheIterator[
     depth: Int,
     cache_depth: Int = depth,
     head_dim_offset: Int = 0,
+    # Keep the per-tile row bookkeeping (`tile_start_row`, `end`) wave-uniform so
+    # the tile clamp and the prefetch clamp stay in SALU (see `set_start_row`).
+    # Opt-in for the same reason as `KVBuffer.uniform_dma_offset`: it changes
+    # the register allocation.
+    uniform_row_math: Bool = False,
 ]:
     """TileTensor-based DRAM tile iterator.
 
@@ -91,6 +97,8 @@ struct KVCacheIterator[
         head_dim_offset: Column offset within each cache row, used to
             skip to a sub-region such as the rope portion (defaults to
             `0`).
+        uniform_row_math: Pin `tile_start_row` and `end` to wave-uniform
+            values (defaults to `False`).
     """
 
     comptime GmemTileLayout = MixedLayout[
@@ -125,14 +133,31 @@ struct KVCacheIterator[
         self.tile_start_row = 0
         self.batch_idx = batch_idx
         self.kv_head_idx = kv_head_idx
+        comptime if Self.uniform_row_math:
+            # Every lane walks the same tiles; pin the cache length once here so
+            # nothing per tile has to be proved uniform downstream.
+            self.end = Int(readfirstlane(Int32(end)))
+
+    @inline(.always)
+    def set_start_row(mut self, row: Int):
+        """Points the iterator at the tile starting at `row`.
+
+        With `uniform_row_math`, `row` is pinned to a wave-uniform value, which
+        keeps the `next_tile` tile clamp and the prefetch clamp (re-read the
+        last valid tile) in SALU for the rest of the loop.
+
+        Args:
+            row: First key row of the next tile.
+        """
+        comptime if Self.uniform_row_math:
+            self.tile_start_row = Int(readfirstlane(Int32(row)))
+        else:
+            self.tile_start_row = row
 
     @inline(.always)
     def next_tile(mut self) -> Self.GmemTileType:
         """Returns a TileTensor for the next DRAM tile."""
-        var valid_rows = max(
-            0,
-            min(Self.tile_size, self.end - self.tile_start_row),
-        )
+        var valid_rows = self.valid_rows()
         var tile = self.cache.block_paged_tile[Self.tile_size](
             UInt32(self.batch_idx),
             UInt32(self.tile_start_row),
@@ -155,6 +180,66 @@ struct KVCacheIterator[
     @inline(.always)
     def increment(mut self):
         self.tile_start_row += Self.tile_size
+
+    @inline(.always)
+    def clamp_prefetch_tile(mut self):
+        """Rewinds to the last valid tile after a prefetch ran past `end`.
+
+        Call after advancing past the last tile a consumer will use: the
+        pipeline prefetches one tile ahead even from the final tile, which
+        would be a paged-cache OOB read, so it re-reads the previous tile
+        instead. The data is unused; only the DMA count has to stay the same.
+        """
+        comptime if Self.uniform_row_math:
+            # 32-bit so the compare is `s_cmp_ge_i32`: gfx9 SALU has no
+            # `s_cmp_lt/gt/ge_i64`, only `s_cmp_eq/lg_u64`.
+            var row = Int32(self.tile_start_row)
+            if row >= Int32(self.end):
+                self.tile_start_row = Int(row - Int32(Self.tile_size))
+        else:
+            if self.tile_start_row >= self.end:
+                self.tile_start_row -= Self.tile_size
+
+    @inline(.always)
+    def valid_rows(self) -> Int:
+        """Returns the next tile's valid row count, clamped to `[0, tile_size]`.
+
+        With `uniform_row_math` the clamp runs in 32-bit math (gfx9 SALU has
+        32-bit compares, but only `s_cmp_eq/lg_u64` at 64-bit) and the result is
+        pinned to an SGPR, so the loader's bounds math on it stays scalar.
+        """
+        comptime if Self.uniform_row_math:
+            return Int(
+                readfirstlane(
+                    clamp(
+                        Int32(self.end) - Int32(self.tile_start_row),
+                        Int32(0),
+                        Int32(Self.tile_size),
+                    )
+                )
+            )
+        return max(0, min(Self.tile_size, self.end - self.tile_start_row))
+
+
+@inline(.always)
+def _uniform_dma_offset(base: Int, src: Int) -> Int:
+    """Byte offset of `src` in a DMA buffer, as a wave-uniform value.
+
+    `SubTileLoaderLDS.load` recomputes its scalar offset from the src pointer
+    on every iteration, but the tile base address runs through values the
+    backend cannot prove wave-uniform (the paged block table lookup, the cache
+    length), so it materializes that offset in VGPRs and wraps each DMA in a
+    `v_readfirstlane` + `s_and_saveexec` waterfall. Every lane addresses the
+    same tile, so pin the offset to an SGPR instead.
+
+    Args:
+        base: Byte address of the DMA buffer resource's base.
+        src: Byte address of the sub-tile to load.
+
+    Returns:
+        The offset in bytes, as a scalar (SGPR-resident) value.
+    """
+    return Int(readfirstlane(Int32(src - base)))
 
 
 @inline(.always)
@@ -190,7 +275,7 @@ def _get_k_swizzle[mma_m: Int, bk: Int]() -> Optional[Swizzle]:
 struct KVBuffer[
     kv_t: MHAOperand,
     //,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
@@ -216,6 +301,14 @@ struct KVBuffer[
     # `load_from_shared(0)`) never touches the 2nd stage, so it can pass 1 to
     # halve the SMEM allocation.
     num_smem_stages: Int = 2,
+    # Hand the DMA a wave-uniform (SGPR) source offset instead of letting
+    # `SubTileLoaderLDS` re-derive one per tile/iteration. Only the MLA prefill
+    # buffers need it (see `_uniform_dma_offset`); it changes the register
+    # allocation, so it stays opt-in to keep every other caller byte-identical.
+    uniform_dma_offset: Bool = False,
+    # Keep the per-tile KV row bookkeeping wave-uniform (see
+    # `KVCacheIterator.set_start_row`). Opt-in for the same reason.
+    uniform_row_math: Bool = False,
 ]:
     """KV cache buffer managing DMA, LDS staging, and register tiles.
 
@@ -282,6 +375,10 @@ struct KVBuffer[
         num_smem_stages: Number of SMEM stages (double-buffer depth); a
             single-block consumer with no streaming loop may pass `1` to
             halve the SMEM allocation (defaults to `2`).
+        uniform_dma_offset: Hand the DMA a wave-uniform source offset
+            (defaults to `False`).
+        uniform_row_math: Keep the per-tile KV row bookkeeping in
+            wave-uniform values (defaults to `False`).
     """
 
     comptime MMA_N = Self.mma_shape[1]
@@ -356,6 +453,23 @@ struct KVBuffer[
         Self._tiles_per_warp * 2 if Self._total_tiles % Self._num_warps == 0
         and not Self.kv_t.rows_indexed else 0
     )
+    # Issued depth-column-major (column group outer, key group inner) instead
+    # of key-major, so a consumer that waits on a prefix of the DMA has the
+    # shallow depth strips of the whole BN tile in LDS and can start QK on
+    # them while the rest of the tile is still in flight. Only the FP8
+    # 16x16x128 decode layout qualifies; every other config keeps the
+    # key-major order and full drains.
+    comptime dma_col_major = (
+        Self.transpose
+        and Self.full_kv
+        and Self.kv_t.dtype.is_float8()
+        and Self.mma_shape[0] == 16
+        and Self.BK == 2 * Self.bk_smem
+        and not Self.kv_t.rows_indexed
+        and not Self.kv_t.rows_predicated
+        and Self.vm_instrs_per_load > 0
+        and Self._total_tiles % (Self._num_warps * 2) == 0
+    )
 
     comptime _mma_total_rows = Self.num_mmas * Self.num_k_mmas2 * Self._reg_num_k_tiles
     comptime mma_layout = row_major[
@@ -400,6 +514,7 @@ struct KVBuffer[
         Self.depth,
         Self.cache_depth,
         Self.head_dim_offset,
+        Self.uniform_row_math,
     ]
 
     var warp_id: UInt32
@@ -641,7 +756,44 @@ struct KVBuffer[
                             zero_strip[strip]()
 
     @inline(.always)
-    def load_from_dram[buffer_idx: Int](mut self):
+    def _dma_subtile[
+        desc_in_registers: Bool = False,
+    ](
+        self,
+        loader: SubTileLoaderLDS[Self.kv_t.dtype, Self.swizzle],
+        smem_warp: TileTensor[
+            Self.kv_t.dtype, _, _, address_space=.SHARED, ...
+        ],
+        gmem_warp_tile: TileTensor[Self.kv_t.dtype, ...],
+    ):
+        """DMAs one warp sub-tile of `gmem_warp_tile` into `smem_warp`.
+
+        With `uniform_dma_offset`, the descriptor's byte offset is pinned to an
+        SGPR here instead of being re-derived in VGPRs inside the loader.
+
+        Parameters:
+            desc_in_registers: Build the descriptor pointer without a stack
+                slot.
+
+        Args:
+            loader: The loader built over this tile's buffer resource.
+            smem_warp: Destination SMEM sub-tile.
+            gmem_warp_tile: Source DRAM sub-tile.
+        """
+        var src_offset = Int(0)
+        comptime if Self.uniform_dma_offset:
+            src_offset = _uniform_dma_offset(
+                loader.bc.get_base_ptr(), Int(gmem_warp_tile.ptr)
+            )
+        loader.load[
+            hoist_scalar_offset=Self.uniform_dma_offset,
+            desc_in_registers=desc_in_registers,
+        ](smem_warp, gmem_warp_tile, scalar_offset=src_offset)
+
+    @inline(.always)
+    def load_from_dram[
+        buffer_idx: Int, desc_in_registers: Bool = False
+    ](mut self):
         comptime if Self.kv_t.rows_predicated:
             self._load_predicated_from_dram[buffer_idx]()
             return
@@ -669,9 +821,9 @@ struct KVBuffer[
                 var gmem_warp_tile = gmem_tile.tile[
                     Self.warp_tile_rows, Self.bk_smem
                 ](warp_row, 0)
-                # Default `hoist_scalar_offset=False` keeps the legacy
-                # per-iter `Int(src_partitions.ptr) - dram_base` codegen.
-                loader.load(smem_warp, gmem_warp_tile)
+                self._dma_subtile[desc_in_registers=desc_in_registers](
+                    loader, smem_warp, gmem_warp_tile
+                )
         elif (
             Self.smem_depth == 64
             and Self.BN <= Self.warp_tile_rows * 2
@@ -684,7 +836,9 @@ struct KVBuffer[
             var gmem_warp_tile = gmem_tile.tile[
                 Self.warp_tile_rows, Self.bk_smem
             ](warp_r, warp_c)
-            loader.load(smem_warp, gmem_warp_tile)
+            self._dma_subtile[desc_in_registers=desc_in_registers](
+                loader, smem_warp, gmem_warp_tile
+            )
         else:
             comptime num_warps = Self.num_threads // WARP_SIZE
             comptime num_row_groups = Self.BN // Self.warp_tile_rows
@@ -716,13 +870,25 @@ struct KVBuffer[
                         var gmem_warp_tile = gmem_tile.tile[
                             Self.warp_tile_rows, Self.bk_smem
                         ](Int(warp_row), Int(warp_col))
-                        loader.load(smem_warp, gmem_warp_tile)
+                        self._dma_subtile[desc_in_registers=desc_in_registers](
+                            loader, smem_warp, gmem_warp_tile
+                        )
             else:
                 comptime for t in range(tiles_per_warp):
                     comptime tile_idx = Int(t) * num_warps
                     var warp_tile = UInt32(tile_idx) + self.warp_id
-                    var warp_row, warp_col = divmod(
-                        warp_tile, UInt32(num_col_groups)
+                    var warp_major, warp_minor = divmod(
+                        warp_tile,
+                        UInt32(
+                            Self.BN
+                            // Self.warp_tile_rows if Self.dma_col_major else num_col_groups
+                        ),
+                    )
+                    var warp_row = (
+                        warp_minor if Self.dma_col_major else warp_major
+                    )
+                    var warp_col = (
+                        warp_major if Self.dma_col_major else warp_minor
                     )
                     var smem_warp = self.smem_block_tile[Self.warp_tile_rows](
                         Int(warp_row), _stage_block_base + Int(warp_col)
@@ -730,7 +896,9 @@ struct KVBuffer[
                     var gmem_warp_tile = gmem_tile.tile[
                         Self.warp_tile_rows, Self.bk_smem
                     ](Int(warp_row), Int(warp_col))
-                    loader.load(smem_warp, gmem_warp_tile)
+                    self._dma_subtile[desc_in_registers=desc_in_registers](
+                        loader, smem_warp, gmem_warp_tile
+                    )
 
         # K-tail padding is handled register-side in `zero_partial_tile_pad`
         # (as the reference does — see that method for the rationale). The
@@ -778,61 +946,65 @@ struct KVBuffer[
 
     @inline(.always)
     def zero_partial_tile_pad(self):
-        """Register-side zero for the OOB tail of the partial K-tile.
+        """Sets the pad columns of the partial K-tile to zero.
 
-        When `depth % BK != 0`, the last K-tile (i = depth // BK) spans
-        `BK` K-positions but only `valid_cols = depth - i*BK` are valid;
-        the trailing `BK - valid_cols` are pad and must read as zero.
+        When `depth % BK != 0`, the last K-tile (`i = depth // BK`) has `BK`
+        K-positions, but only `valid_cols = depth - i*BK` are valid. The
+        other `BK - valid_cols` positions are pad. The load fills them with
+        data from other rows, and the QK MMA must read zero there.
 
-        Per-lane K-fragment layout: the `input_frag_size` elements per
-        lane interleave across MFMA-K such that the LOWER
-        `valid_per_lane = input_frag_size * valid_cols / BK` elements
-        correspond to the valid K-range and the UPPER
-        `input_frag_size - valid_per_lane` elements correspond to the
-        pad. Zero the upper portion per lane.
+        The pad layout depends on the fragment shape:
 
-        The reference pre-zeros half of the partial-tile K-fragment dwords
-        once and reuses; we re-zero each K LDS load because the LDS loader
-        fills the whole reg tile.
+        - Single-pack fragment (BF16): lane l holds the contiguous K-run
+          `[k_mma*MMA_K + (l // MMA_N) * input_frag_size, +input_frag_size)`.
+          The pad is whole fragments. Each lane sets to zero the fragments
+          that start at or after `valid_cols`.
+        - Two-pack fragment (`input_frag_size` is not one load width, as
+          in the FP8 `lo.join(hi)`): the fragment splits by element. Each
+          lane sets its upper
+          `input_frag_size - input_frag_size * valid_cols / BK` elements to
+          zero.
 
-        A no-op when `depth % BK == 0`.
-
-        NOTE: keep in sync with `QRegisterBuffer.__init__`'s partial-tile
-        zero in `buffers.mojo`. Both sites share the upper-half-is-pad
-        assumption (asserted below); a future config that violates it
-        (`valid_cols > BK/2`) needs a different zero pattern in both.
+        Each K load from LDS writes the full register tile. Call this
+        function after each load.
         """
         comptime if Self.depth % Self.BK != 0:
             comptime partial_bk_tile = Self.depth // Self.BK
             comptime valid_cols_in_partial = (
                 Self.depth - partial_bk_tile * Self.BK
             )
-            # Upper-half-is-pad invariant: today (depth=576, BK=128)
-            # `valid_cols` is exactly BK/2, so the lo half of each
-            # lane's per-tile fragment covers the valid K-range and the
-            # hi half is pad. A future config with `valid_cols > BK/2`
-            # would split the valid range across both halves and need a
-            # different zero pattern.
-            comptime assert valid_cols_in_partial <= Self.BK // 2, (
-                "zero_partial_tile_pad assumes valid cols fit in the"
-                " lower-K half of the per-lane fragment"
-            )
-            comptime valid_per_lane = (
-                Self.input_frag_size * valid_cols_in_partial // Self.BK
-            )
-            comptime zero_per_lane = Self.input_frag_size - valid_per_lane
-            comptime assert (
-                zero_per_lane > 0
-            ), "zero_partial_tile_pad: zero_per_lane must be positive"
-            comptime for k_mma in range(Self.num_k_mmas2):
-                # Zero cols [valid_per_lane .. input_frag_size) of each
-                # lane's partial-bk-tile fragment — the K-pad portion
-                # produced by `load_b`'s `lo.join(hi)` upper half.
-                _ = (
-                    self.mma_subtile[k_mma, partial_bk_tile]()
-                    .tile[Self._rows_per_k_mma, zero_per_lane](0, 1)
-                    .fill(0)
+            comptime if (
+                Self.input_frag_size != simd_width_of[Self.kv_t.dtype]()
+            ):
+                # The valid columns must fit in the lower half of each
+                # lane's fragment. Then the upper half holds only pad.
+                comptime assert valid_cols_in_partial <= Self.BK // 2, (
+                    "zero_partial_tile_pad assumes valid cols fit in the"
+                    " lower-K half of the per-lane fragment"
                 )
+                comptime valid_per_lane = (
+                    Self.input_frag_size * valid_cols_in_partial // Self.BK
+                )
+                comptime zero_per_lane = (Self.input_frag_size - valid_per_lane)
+                comptime assert (
+                    zero_per_lane > 0
+                ), "zero_partial_tile_pad: zero_per_lane must be positive"
+                comptime for k_mma in range(Self.num_k_mmas2):
+                    # Set elements [valid_per_lane, input_frag_size) of
+                    # each lane's fragment to zero.
+                    _ = (
+                        self.mma_subtile[k_mma, partial_bk_tile]()
+                        .tile[Self._rows_per_k_mma, zero_per_lane](0, 1)
+                        .fill(0)
+                    )
+            else:
+                comptime assert (
+                    valid_cols_in_partial % Self.input_frag_size == 0
+                ), "K partial-tile tail must cover whole lane fragments"
+                var lane_k = lane_id() // Self.MMA_N * Self.input_frag_size
+                comptime for k_mma in range(Self.num_k_mmas2):
+                    if k_mma * Self.MMA_K + lane_k >= valid_cols_in_partial:
+                        _ = self.mma_subtile[k_mma, partial_bk_tile]().fill(0)
 
     @inline(.always)
     def load_from_shared(self, buffer: Int):
@@ -1024,7 +1196,7 @@ struct KVBuffer[
 struct DecodeStreamingKVBuffer[
     kv_t: MHAOperand,
     //,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     swizzle: Optional[Swizzle],
     BN: Int,
     WN: Int,
@@ -1458,7 +1630,7 @@ trait KVBufferConfig:
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         ...
 
 
@@ -1487,9 +1659,9 @@ struct KBufferConfig[BN: Int, BK: Int, WN: Int](KVBufferConfig):
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](warp_col, 0)
+        return (warp_col, 0)
 
 
 @fieldwise_init
@@ -1518,9 +1690,9 @@ struct VBufferConfig[BN: Int, BK: Int, WN: Int, depth: Int](KVBufferConfig):
 
     @staticmethod
     @inline(.always)
-    def get_wtile_coord() -> IndexList[2]:
+    def get_wtile_coord() -> Tuple[Int, Int]:
         var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        return IndexList[2](0, warp_col)
+        return (0, warp_col)
 
 
 struct DecodeKVBuffer[

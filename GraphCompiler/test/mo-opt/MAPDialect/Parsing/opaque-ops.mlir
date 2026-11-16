@@ -10,8 +10,8 @@
 // decls the kernels below reference are declared here (the import pass cannot be
 // scoped to a single kernel, and importing a whole package is far too much for a
 // parse test).
-mogg.kernel.decl @kernels.matmul registration = "mo.matmul" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
-mogg.kernel.decl @kernels.relu registration = "kernels.relu" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.matmul registration = "mo.matmul" struct_params = [] is_user_defined = false
+mogg.kernel.decl @kernels.relu registration = "kernels.relu" struct_params = [] is_user_defined = false
 
 // The `!map.index<N>` type prints and parses with its static rank.
 

@@ -63,6 +63,19 @@ struct Bar(Foo, Movable where False):
     pass
 
 
+trait ThrowingDefault:
+    def fail(self) raises:
+        raise Error()
+
+
+# CHECK-LABEL: lit.struct.decl @ThrowingDefaultImpl
+struct ThrowingDefaultImpl(ThrowingDefault, Movable where False):
+    # CHECK: lit.fn @"fail(default_trait_methods::ThrowingDefaultImpl)ThrowingDefault"{{.*}}throws
+    # CHECK: [[STATUS:%.*]] = lit.call @default_trait_methods::@ThrowingDefault::@"fail($0)"{{.*}}
+    # CHECK-NEXT: hlcf.if [[STATUS]]
+    pass
+
+
 @fieldwise_init
 struct Zork(TrivialRegisterPassable):
     pass

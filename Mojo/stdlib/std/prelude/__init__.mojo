@@ -51,7 +51,7 @@ from std.collections.string import (
 from std.format import Writable, Writer, repr
 from std.hash.hash import Hashable, hash, hash_bytes
 from std.io.file import FileHandle, open
-from std.io.file_descriptor import RawFileDescriptor
+from std.io.file_descriptor import BorrowedFileDescriptor, RawFileDescriptor
 from std.io.io import input, print
 
 from std.builtin.anytype import (
@@ -147,6 +147,7 @@ from std.iter import (
     Iterator,
     StopIteration,
     enumerate,
+    filter,
     iter,
     map,
     next,
@@ -164,7 +165,6 @@ from std.memory import (
     ImmPointer,
     MutPointer,
     Pointer,
-    UnsafePointer,
 )
 from std.origin import (
     AnyOrigin,

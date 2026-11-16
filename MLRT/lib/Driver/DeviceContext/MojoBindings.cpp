@@ -123,14 +123,16 @@ MODULAR_EXPORT void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result,
   *result = ctx->device().api();
 }
 
-MODULAR_EXPORT void AsyncRT_DeviceContext_archName(llvm::StringRef *result,
-                                                   DeviceContext *ctx) {
+MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_archName(llvm::StringRef *result, DeviceContext *ctx) {
   TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceContext_archName", TRACY_COLOR_GRAY);
   ErrorOr<const char *> archName = ctx->device().getArchName();
-  if (archName.isError())
+  if (archName.isError()) {
     *result = "";
-  else
-    *result = archName.get();
+    return raiseError(archName.getError());
+  }
+  *result = archName.get();
+  return nullptr;
 }
 
 MODULAR_EXPORT const char *
@@ -371,15 +373,47 @@ AsyncRT_DeviceStream_enqueueHostFunc(DeviceStream *stream, void (*fn)(void *),
   return checkSuccess(stream->enqueueHostFunc(fn, userData));
 }
 
-MODULAR_EXPORT const char *AsyncRT_DeviceStream_enqueueWaitOnHostValue(
-    DeviceStream *stream, CompletionFlag *flag, uint64_t value) {
-  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceStream_enqueueWaitOnHostValue",
+MODULAR_EXPORT const char *
+AsyncRT_DeviceStream_enqueueWaitOnFlag(DeviceStream *stream,
+                                       CompletionFlag *flag, uint64_t value) {
+  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceStream_enqueueWaitOnFlag",
                        TRACY_COLOR_GRAY);
-  return checkSuccess(stream->enqueueWaitOnHostValue(*flag, value));
+  return checkSuccess(stream->enqueueWaitOnFlag(*flag, value));
 }
 
-MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_devicePtr(CompletionFlag *flag) {
-  return flag->devicePtr();
+MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_allocateCompletionFlag(CompletionFlag **result,
+                                             DeviceContext *ctx) {
+  return checkRef(result, ctx->allocateCompletionFlag());
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_retain(CompletionFlag *flag) {
+  CompletionFlagRef::lowLevelAddRef(flag);
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_release(CompletionFlag *flag) {
+  CompletionFlagRef::lowLevelDropRef(flag);
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_signal(CompletionFlag *flag,
+                                                  uint64_t value) {
+  flag->signal(value);
+}
+
+MODULAR_EXPORT uint64_t AsyncRT_CompletionFlag_load(CompletionFlag *flag) {
+  return flag->load();
+}
+
+MODULAR_EXPORT const char *
+AsyncRT_DeviceContext_isGraphCapturing(bool *result, DeviceContext *ctx) {
+  TRACY_ZONE_SCOPED_NC("AsyncRT_DeviceContext_isGraphCapturing",
+                       TRACY_COLOR_GRAY);
+  *result = ctx->isGraphCapturing();
+  return nullptr;
+}
+
+MODULAR_EXPORT void AsyncRT_CompletionFlag_reset(CompletionFlag *flag) {
+  flag->reset();
 }
 
 MODULAR_EXPORT const char *AsyncRT_DeviceEvent_synchronize(DeviceEvent *event) {

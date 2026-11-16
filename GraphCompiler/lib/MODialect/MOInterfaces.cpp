@@ -691,6 +691,19 @@ LogicalResult Impl::verifyBundledCollectiveInterface(Operation *op) {
       "isDeviceGraph attribute");
 }
 
+// Merging, rather than chaining, the copies: they share the distributed op's
+// in-chain, so any ordering between them would serialize the collective and
+// leave one rank waiting on the next.
+void Impl::replaceDistributedOp(IRRewriter &rewriter, Operation *distributedOp,
+                                ValueRange origOutputs, Value origOutChain,
+                                ValueRange outputs, ValueRange outChains) {
+  Value outChain =
+      ChainCreateOp::create(rewriter, distributedOp->getLoc(), outChains);
+  rewriter.replaceAllUsesWith(origOutputs, outputs);
+  rewriter.replaceAllUsesWith(origOutChain, outChain);
+  rewriter.eraseOp(distributedOp);
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

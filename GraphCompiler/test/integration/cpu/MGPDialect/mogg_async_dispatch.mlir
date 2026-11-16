@@ -27,7 +27,7 @@ mogg.func @noop_stub_2 private ()
 
 // CHECK-LABEL: --- Running 'single_async_call':
 // CHECK-NOT: <error
-mgp.model @single_async_call : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @single_async_call devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch1 = mgp.runtime.create %ch0, %ctx[1]
@@ -53,7 +53,7 @@ mgp.model @single_async_call : mof devices [#M.device_ref<"cpu", 0>] init (%weig
 
 // CHECK-LABEL: --- Running 'two_parallel_async_calls':
 // CHECK-NOT: <error
-mgp.model @two_parallel_async_calls : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @two_parallel_async_calls devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch1 = mgp.runtime.create %ch0, %ctx[1]
@@ -80,7 +80,7 @@ mgp.model @two_parallel_async_calls : mof devices [#M.device_ref<"cpu", 0>] init
 
 // CHECK-LABEL: --- Running 'four_parallel_async_calls':
 // CHECK-NOT: <error
-mgp.model @four_parallel_async_calls : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @four_parallel_async_calls devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch1 = mgp.runtime.create %ch0, %ctx[1]

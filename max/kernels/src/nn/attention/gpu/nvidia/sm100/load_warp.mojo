@@ -19,7 +19,7 @@ from max.gpu.memory import CacheEviction, fence_async_view_proxy
 from max.gpu.sync import syncwarp
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout import Coord, TileTensor
-from layout.tile_layout import row_major as tt_row_major
+from layout.layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
 )

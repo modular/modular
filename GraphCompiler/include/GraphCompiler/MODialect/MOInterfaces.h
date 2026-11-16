@@ -137,11 +137,6 @@ using M::KGEN::ParamDefValue;
 /// op should be executed.
 constexpr StringRef kOperationDeviceRefAttrName = "device";
 
-/// Name of optional attribute signalling that a MO or MOGG op is called via a
-/// host shim that invokes the implementation on the 'device' attribute's
-/// device.
-constexpr StringRef kOperationViaHostAttrName = "via_host";
-
 namespace Impl {
 /// Verify that ranks are either all static and match or all dynamic.
 LogicalResult verifyMatchingRanks(ArrayRef<TensorValue> values);
@@ -158,7 +153,6 @@ LogicalResult verifySlidingWindow(SlidingWindow op);
 LogicalResult verifyPadLike(PadLike op);
 LogicalResult verifyMOSameOperandsAndResultElementType(Operation *op);
 LogicalResult verifyMOSameOperandsAndResultShapeAttr(Operation *op);
-LogicalResult verifyMOSameOperandsAndResultShape(Operation *op);
 LogicalResult verifyMOSameOperandsElementType(Operation *op);
 LogicalResult verifyMOSameFirstOperandAndResultsElementType(Operation *op);
 LogicalResult verifyHostOnly(Operation *op);
@@ -175,6 +169,13 @@ LogicalResult verifyExplicitDevice(Operation *op);
 /// Bundled collectives must live inside `mo.parallel` or inside an
 /// `isDeviceGraph` `mo.graph`.
 LogicalResult verifyBundledCollectiveInterface(Operation *op);
+
+/// Replaces a distributed collective with the bundled ops that produced
+/// `outputs` and `outChains`: merges the out-chains, replaces the uses of
+/// `origOutputs` and `origOutChain`, and erases the op.
+void replaceDistributedOp(IRRewriter &rewriter, Operation *distributedOp,
+                          ValueRange origOutputs, Value origOutChain,
+                          ValueRange outputs, ValueRange outChains);
 
 ShapeMaterializeResult
 materializeReductionShapeDefs(Reduction op, ArrayRef<TypedAttr> inputAttrs);

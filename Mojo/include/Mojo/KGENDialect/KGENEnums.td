@@ -260,6 +260,18 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
   I32EnumAttrCase<"ByRefError", 9, "byref_error">,
+
+  /// These are used for a variadic pack argument like `def x(*args: *Ts)`
+  /// after LowerLIT, which uses them in place of the pack's own convention.
+  /// The argument is a pointer to a parameter pack that is read but not
+  /// mutated. Each element of the pack is the address of an argument of the
+  /// caller, passed as `imm_mem`, `mut` or `owned_in_mem`. This is also true
+  /// when that argument is a pointer: the element is then a pointer to that
+  /// pointer. LowerArgConventions splits the pack into its elements, so these
+  /// conventions do not occur after it.
+  I32EnumAttrCase<"PackImmMem", 10, "pack_imm_mem">,
+  I32EnumAttrCase<"PackMut", 11, "pack_mut">,
+  I32EnumAttrCase<"PackOwnedMem", 12, "pack_owned_in_mem">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

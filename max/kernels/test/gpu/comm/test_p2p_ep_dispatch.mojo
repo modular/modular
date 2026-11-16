@@ -99,7 +99,7 @@ trait DispatchTestT(Deinitable):
     comptime n_tokens_per_rank: Int
     comptime TokenFormatType: TokenFormat
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         ...
 
     @inline(.always)
@@ -107,14 +107,14 @@ trait DispatchTestT(Deinitable):
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         ...
 
     @inline(.always)
     def save_outputs_to_host(
-        self, list_of_ctx: List[DeviceContext]
+        self, list_of_ctx: List[DeviceContext[]]
     ) raises -> None:
         ...
 
@@ -172,7 +172,7 @@ struct BF16DispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[.bfloat16]]
     var host_output_bufs_list: List[MutPointer[BFloat16, MutUntrackedOrigin]]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[.bfloat16]](
             capacity=Self.n_ranks
         )
@@ -200,7 +200,7 @@ struct BF16DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -215,7 +215,7 @@ struct BF16DispatchTest[
 
     @inline(.always)
     def save_outputs_to_host(
-        self, list_of_ctx: List[DeviceContext]
+        self, list_of_ctx: List[DeviceContext[]]
     ) raises -> None:
         for i in range(Self.n_ranks):
             list_of_ctx[i].enqueue_copy(
@@ -302,7 +302,7 @@ struct BlockwiseFP8DispatchTest[
         MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[Self.fp8_dtype]](
             capacity=Self.n_ranks
         )
@@ -353,7 +353,7 @@ struct BlockwiseFP8DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -379,7 +379,7 @@ struct BlockwiseFP8DispatchTest[
 
     @inline(.always)
     def save_outputs_to_host(
-        self, list_of_ctx: List[DeviceContext]
+        self, list_of_ctx: List[DeviceContext[]]
     ) raises -> None:
         for i in range(Self.n_ranks):
             list_of_ctx[i].enqueue_copy(
@@ -509,7 +509,7 @@ struct NVFP4DispatchTest[
         MutPointer[BFloat16, MutUntrackedOrigin]
     ]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[Self.fp4_dtype]](
             capacity=Self.n_ranks
         )
@@ -609,7 +609,7 @@ struct NVFP4DispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_rowwise_scales = Optional[
@@ -659,7 +659,7 @@ struct NVFP4DispatchTest[
 
     @inline(.always)
     def save_outputs_to_host(
-        self, list_of_ctx: List[DeviceContext]
+        self, list_of_ctx: List[DeviceContext[]]
     ) raises -> None:
         for i in range(Self.n_ranks):
             list_of_ctx[i].enqueue_copy(
@@ -873,7 +873,7 @@ struct MXDispatchTest[
         MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
-    def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
+    def __init__(out self, list_of_ctx: List[DeviceContext[]]) raises:
         self.device_output_bufs_list = List[DeviceBuffer[Self.quant_dtype]](
             capacity=Self.n_ranks
         )
@@ -922,7 +922,7 @@ struct MXDispatchTest[
         self,
         dev_idx: Int,
         slot_idx: Int,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor(
@@ -946,7 +946,7 @@ struct MXDispatchTest[
 
     @inline(.always)
     def save_outputs_to_host(
-        self, list_of_ctx: List[DeviceContext]
+        self, list_of_ctx: List[DeviceContext[]]
     ) raises -> None:
         for i in range(Self.n_ranks):
             list_of_ctx[i].enqueue_copy(
@@ -1039,7 +1039,7 @@ def test_dispatch_common[
     varied_token_scales: Bool = False,
     # Run the fused dispatch kernel in place of dispatch_async + dispatch_wait.
     fused_dispatch: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime input_type = DType.bfloat16
     comptime hidden_size = DispatchTestType.hidden_size
     comptime top_k = DispatchTestType.top_k
@@ -1254,7 +1254,6 @@ def test_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
             use_shmem=False,
         ](
             get_atomic_counters_tensor(dev_idx, slot_idx),
@@ -1277,7 +1276,6 @@ def test_dispatch_common[
             n_tokens_per_rank,
             n_ranks,
             1,
-            "gpu",
         ](
             format_handler,
             get_row_offsets_tensor(dev_idx, slot_idx),
@@ -1298,7 +1296,6 @@ def test_dispatch_common[
             n_ranks,
             1,
             False,  # fused_shared_expert
-            "gpu",
             use_shmem=False,
         ](
             dispatch_test.get_token_handler(dev_idx, slot_idx, ctx),
@@ -1365,7 +1362,9 @@ def test_dispatch_common[
         # First, bench the dispatch kernel overhead
 
         @inline(.always)
-        def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn_dispatch(
+            ctx: DeviceContext[], cache_iter: Int
+        ) raises {imm}:
             var dev_id = Int(ctx.device().id)
             run_dispatch_async(dev_id, cache_iter)
 
@@ -1406,7 +1405,7 @@ def test_dispatch_common[
 
         @inline(.always)
         def call_fn_dispatch_wait(
-            ctx: DeviceContext, cache_iter: Int
+            ctx: DeviceContext[], cache_iter: Int
         ) raises {imm}:
             var dev_id = Int(ctx.device().id)
             run_dispatch_async_wait(dev_id, cache_iter)
@@ -1453,7 +1452,7 @@ def test_dispatch_common[
             list_of_ctx[dev_i].synchronize()
 
         @inline(.always)
-        def call_fn_e2e(ctx: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn_e2e(ctx: DeviceContext[], cache_iter: Int) raises {imm}:
             var dev_id = Int(ctx.device().id)
             run_dispatch_async(dev_id, cache_iter + 1)
             run_dispatch_async_wait(dev_id, cache_iter + 1)
@@ -1672,7 +1671,7 @@ def test_dispatch_bf16[
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = BF16DispatchTest[
         hidden_size, top_k, n_experts, n_ranks, n_slots, n_tokens_per_rank
     ]
@@ -1692,7 +1691,7 @@ def test_dispatch_blockwise_fp8[
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = BlockwiseFP8DispatchTest[
         fp8_dtype=DType.float8_e4m3fn,
         scales_dtype=DType.float32,
@@ -1719,7 +1718,7 @@ def test_dispatch_block_scaled_nv[
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype=DType.uint8,
         scales_dtype=DType.float8_e4m3fn,
@@ -1744,7 +1743,7 @@ def test_dispatch_nvfp4_dyn_global_scales[
     n_ranks: Int,
     n_slots: Int,
     n_tokens_per_rank: Int,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype=DType.uint8,
         scales_dtype=DType.float8_e4m3fn,
@@ -1773,7 +1772,7 @@ def test_dispatch_mxfp4[
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     comptime dispatch_test_type = MXDispatchTest[
         quant_dtype=DType.uint8,
         scales_dtype=DType.float8_e8m0fnu,
@@ -1800,7 +1799,7 @@ def test_dispatch_mxfp8[
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
     skewed: Bool = False,
-](list_of_ctx: List[DeviceContext]) raises:
+](list_of_ctx: List[DeviceContext[]]) raises:
     # OCP E4M3 (`float8_e4m3fn`) is the MXFP8 element encoding CDNA4's
     # f8f6f4 MFMA consumes and the only FP8 flavor `MXFormat` names; the
     # MI300-era `float8_e4m3fnuz` is not an MX wire format.
@@ -1840,7 +1839,7 @@ def main() raises:
             continue
 
         # Create GPU context.
-        var ctx = List[DeviceContext]()
+        var ctx = List[DeviceContext[]]()
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
@@ -1868,7 +1867,7 @@ def main() raises:
                 bench_e2e=False,
             ](ctx)
 
-            comptime device_info = DeviceContext.default_device_info
+            comptime device_info = DeviceContext[].default_device_info
 
             comptime if ctx.T.target.is_nvidia_gpu() and _is_sm10x_gpu(
                 device_info
@@ -1956,7 +1955,7 @@ def main() raises:
         # production shape that hits it (896 / EP8). Kept outside the sweep
         # above because its `> 256` cap would skip this count on 4+ GPUs.
         comptime if ctx.T.target.is_nvidia_gpu() and _is_sm10x_gpu(
-            DeviceContext.default_device_info
+            DeviceContext[].default_device_info
         ):
             test_dispatch_block_scaled_nv[
                 hidden_size=3584,

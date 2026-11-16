@@ -10,64 +10,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight loading for the unified DSpark Nemotron-H pipeline.
+"""Rules that map the DSpark Nemotron-H draft checkpoint onto its module.
 
-The draft module tree mirrors its checkpoint's names, so tensors pass through
-as stored, quantized ones included. What differs is:
-
-- ``embed_tokens`` is a frozen copy of the target's embedding, with one row
-  trained: the mask token's. The draft embeds its anchor with the target's
-  table and its mask slots with that row, so the table is dropped after
-  checking it matches the target's everywhere else, and the row is kept as
-  ``mask_embedding``.
+The draft module tree mirrors its checkpoint's names and declares each
+tensor as stored, quantized ones included, so no rule renames, relabels or
+drops a weight. The one tensor the module reads differently is
+``embed_tokens.weight``: it is a frozen copy of the target's table with the
+mask token's row trained, and the graph takes that row at init while the
+table stays on the host.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Sequence
 
-import numpy as np
-from max.driver import Buffer
-from max.dtype import DType
-from max.graph import Shape
-from max.graph.weights import WeightData
+from max.pipelines.lib.weight_transform import WeightRule
+from transformers import PretrainedConfig
 
 from .dspark_qwen3 import DSparkQwen3DraftConfig, draft_nvfp4_modules
 
-__all__ = [
-    "MASK_EMBEDDING",
-    "SHARED_DRAFT_PREFIXES",
-    "SKIPPED_DRAFT_PREFIXES",
-    "classify_draft_weight",
-    "convert_draft_state_dict",
-    "expected_draft_weight_names",
-]
-
-MASK_EMBEDDING = "mask_embedding"
-"""The draft module's weight holding the mask token's trained embedding."""
-
-SHARED_DRAFT_PREFIXES = ("embed_tokens.", "lm_head.")
-"""Draft checkpoint weights the draft takes from the target instead."""
-
-SKIPPED_DRAFT_PREFIXES = ("confidence_head.", "mask_embedding")
-"""Draft checkpoint weights nothing in this pipeline reads: the confidence
-head gates dynamic proposal lengths, which MAX does not use."""
+__all__ = ["dspark_qwen3_weight_rules", "expected_draft_weight_names"]
 
 _QUANT_SUFFIXES = ("weight", "weight_scale", "weight_scale_2")
 
 
-def classify_draft_weight(name: str) -> str:
-    """Says what the pipeline does with one draft checkpoint tensor.
+def dspark_qwen3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns no rules: the module takes the checkpoint's names as stored.
 
-    Returns:
-        ``"shared"`` if the draft reuses the target's copy, ``"skipped"`` if
-        nothing reads it, and ``"loaded"`` otherwise.
+    Args:
+        huggingface_config: The draft checkpoint's config, which no rule
+            reads.
     """
-    if name.startswith(SHARED_DRAFT_PREFIXES):
-        return "shared"
-    if name.startswith(SKIPPED_DRAFT_PREFIXES):
-        return "skipped"
-    return "loaded"
+    del huggingface_config
+    return ()
 
 
 def expected_draft_weight_names(
@@ -88,7 +65,7 @@ def expected_draft_weight_names(
             names.add(f"{module}.weight")
 
     linear("fc")
-    names.add(MASK_EMBEDDING)
+    names.add("embed_tokens.weight")
     names.add("hidden_norm.weight")
     names.add("norm.weight")
     names.add("markov_head.markov_w1.weight")
@@ -106,99 +83,3 @@ def expected_draft_weight_names(
         for proj in ("gate_proj", "up_proj", "down_proj"):
             linear(f"{prefix}.mlp.{proj}")
     return names
-
-
-def _rows(weight: WeightData) -> np.ndarray:
-    """A BF16 table's bits as ``[rows, width]`` uint16."""
-    rows, width = (int(d) for d in weight.shape)
-    buffer = weight.to_buffer().view(DType.uint16, (rows, width))
-    return np.from_dlpack(buffer)
-
-
-def _mask_embedding(
-    embedding: WeightData,
-    target_embedding: WeightData | None,
-    mask_token_id: int,
-) -> WeightData:
-    """Returns the mask token's row of the draft's embedding table.
-
-    The draft's table is the target's with the mask row trained. Every other
-    row must equal the target's, or the draft would embed its anchor
-    differently from the target it reads.
-
-    Raises:
-        ValueError: If the shapes or any other row differ.
-    """
-    shape = tuple(int(d) for d in embedding.shape)
-    if embedding.dtype != DType.bfloat16:
-        raise ValueError(
-            f"The DSpark draft's embedding is {embedding.dtype}, not BF16."
-        )
-    table = _rows(embedding)
-    if target_embedding is not None:
-        target_shape = tuple(int(d) for d in target_embedding.shape)
-        if shape != target_shape:
-            raise ValueError(
-                f"The DSpark draft's embedding has shape {shape}, which does"
-                " not match the target's embedding"
-                f" {target_shape}; the draft cannot share it."
-            )
-        differing = np.flatnonzero(
-            (table != _rows(target_embedding)).any(axis=1)
-        )
-        others = [int(r) for r in differing if int(r) != mask_token_id]
-        if others:
-            raise ValueError(
-                "The DSpark draft's embedding differs from the target's at"
-                f" rows {others[:5]} beyond the mask token {mask_token_id},"
-                " so the draft cannot share the target's table."
-            )
-    row = np.ascontiguousarray(table[mask_token_id])
-    return WeightData(
-        data=Buffer.from_numpy(row.view(np.uint8)).view(
-            DType.bfloat16, (shape[1],)
-        ),
-        name=MASK_EMBEDDING,
-        dtype=DType.bfloat16,
-        shape=Shape((shape[1],)),
-    )
-
-
-def convert_draft_state_dict(
-    state_dict: Mapping[str, WeightData],
-    config: DSparkQwen3DraftConfig,
-    *,
-    target_embedding: WeightData | None = None,
-) -> dict[str, WeightData]:
-    """Returns the draft tensors its module reads.
-
-    Args:
-        state_dict: The draft checkpoint's tensors.
-        config: The parsed draft config.
-        target_embedding: The target's embedding table, which the draft's
-            must equal bar the mask token's row.
-
-    Raises:
-        ValueError: If the draft's embedding does not match the target's, or
-            the checkpoint lacks or adds tensors.
-    """
-    weights: dict[str, WeightData] = {}
-    for name, value in state_dict.items():
-        match classify_draft_weight(name):
-            case "shared":
-                if name == "embed_tokens.weight":
-                    weights[MASK_EMBEDDING] = _mask_embedding(
-                        value, target_embedding, config.mask_token_id
-                    )
-            case "skipped":
-                continue
-            case _:
-                weights[name] = value
-    expected = expected_draft_weight_names(config)
-    missing, extra = expected - weights.keys(), weights.keys() - expected
-    if missing or extra:
-        raise ValueError(
-            "The DSpark draft checkpoint does not match its module. Missing:"
-            f" {sorted(missing)[:5]}; unexpected: {sorted(extra)[:5]}."
-        )
-    return weights

@@ -167,7 +167,7 @@ def _widen_e2m1_to_e4m3_gpu(
 
 
 def _widen_e2m1_to_e4m3_into(
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     packed: DeviceBuffer[.uint8],
     widened: DeviceBuffer[.float8_e4m3fn],
     num_bytes: Int,
@@ -184,7 +184,7 @@ def _widen_e2m1_to_e4m3_into(
 
 
 def _widen_e2m1_to_e4m3(
-    ctx: DeviceContext, packed: DeviceBuffer[.uint8], num_bytes: Int
+    ctx: DeviceContext[], packed: DeviceBuffer[.uint8], num_bytes: Int
 ) raises -> DeviceBuffer[.float8_e4m3fn]:
     """Returns a new E4M3 buffer holding `2 * num_bytes` widened E2M1 values."""
     var widened = ctx.enqueue_create_buffer[.float8_e4m3fn](2 * num_bytes)
@@ -208,7 +208,7 @@ def _pow2_e4m3_scales_gpu(
 
 def _init_matched_operand[
     dtype: DType
-](ctx: DeviceContext, buf: DeviceBuffer[dtype], length: Int) raises:
+](ctx: DeviceContext[], buf: DeviceBuffer[dtype], length: Int) raises:
     """Fills an operand with uniformly random E2M1 values, in any format.
 
     Packed operands get random bytes, two E2M1 codes each; E4M3 operands get
@@ -244,7 +244,7 @@ def _init_matched_operand[
 
 def _init_matched_scales[
     dtype: DType
-](ctx: DeviceContext, buf: DeviceBuffer[dtype], length: Int) raises:
+](ctx: DeviceContext[], buf: DeviceBuffer[dtype], length: Int) raises:
     """Fills scales with powers of two drawn uniformly from {1, 2, 4, 8}.
 
     E8M0 scales already init to that set; E4M3 (NVFP4) scales are mapped to it
@@ -344,7 +344,7 @@ def verify_matmul[
     *,
     transpose_b: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     shape_c: Coord,
     shape_a: Coord,
     shape_b: Coord,
@@ -499,7 +499,7 @@ def verify_matmul[
 def _check_against_reference[
     c_type: DType
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     output: DeviceBuffer[c_type],
     reference: DeviceBuffer[c_type],
     init_type: InitializationType,
@@ -677,7 +677,7 @@ def bench_matmul[
     epilogue: Bool = False,
     micro_scaling_mode: StaticString = "",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     shape_c: Coord,
     shape_a: Coord,
@@ -766,7 +766,7 @@ def bench_matmul[
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
     def run_vendor_blas(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         c: TileTensor[mut=True, .bfloat16, ...],
         a: TileTensor[dtype, ...],
         b: TileTensor[dtype, ...],
@@ -786,7 +786,7 @@ def bench_matmul[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {
         mut cb_a, mut cb_b, mut cb_c, mut cb_a_scales, mut cb_b_scales, imm
     }:
@@ -894,7 +894,7 @@ def create_matmul_bench[
     epilogue: Bool,
     micro_scaling_mode: StaticString = "",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,
@@ -949,7 +949,7 @@ def _launch_tuned[
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_type, ...],
     b_scales: TileTensor[scales_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Launches the SM100 warp-specialized kernel at the `TUNE_*` config.
 
@@ -979,7 +979,7 @@ def _launch_tuned[
 
 def verify_w4a8[
     N: Int, K: Int
-](ctx: DeviceContext, M: Int, init_type: InitializationType) raises:
+](ctx: DeviceContext[], M: Int, init_type: InitializationType) raises:
     """Checks the W4A8 kernel at the `TUNE_*` config on fresh buffers.
 
     Widening the weights to E4M3 is exact, so the W4A8 output is checked
@@ -1095,7 +1095,7 @@ def verify_w4a8[
 def bench_w4a8[
     N: Int, K: Int
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     init_type: InitializationType,
@@ -1175,7 +1175,7 @@ def bench_w4a8[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         _launch_tuned(
             TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c)),
@@ -1237,7 +1237,7 @@ def bench_mxfp4_amd[
     epilogue: Bool = False,
     micro_scaling_mode: StaticString = "mxfp4_amd",
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     m: MType,
     n: NType,
@@ -1289,7 +1289,7 @@ def bench_mxfp4_amd[
     # entry. The 2D scale tiles are passed through as-is.
     @inline(.always)
     def run_vendor_blas(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         c: TileTensor[mut=True, .float32, ...],
         a: TileTensor[.uint8, ...],
         b: TileTensor[.uint8, ...],
@@ -1313,7 +1313,7 @@ def bench_mxfp4_amd[
 
     @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
         var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)

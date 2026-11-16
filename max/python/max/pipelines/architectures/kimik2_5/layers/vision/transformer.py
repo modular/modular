@@ -33,8 +33,8 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
+from max.nn._graph_ops import tpool_patch_merger
 from max.nn.legacy.comm import Allreduce, Signals
-from max.nn.legacy.kernels import tpool_patch_merger
 from max.nn.legacy.layer import Module
 
 from ...model_config import VisionConfig

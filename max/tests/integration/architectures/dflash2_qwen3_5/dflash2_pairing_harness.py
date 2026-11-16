@@ -29,7 +29,7 @@ from typing import Any, NamedTuple, cast
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -37,15 +37,15 @@ from max.nn.legacy.kv_cache import (
     recurrent_leaf,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash2_qwen3_5 import DFlash2Qwen3_5
 from max.pipelines.architectures.dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,
     Dflash2DraftHFConfig,
     DFlash2Qwen3_5Config,
+    Llama3Config,
 )
-from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -62,7 +62,8 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 from max.pipelines.speculative import SpeculativeConfig
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
-TARGET_ARCH = "Qwen3_5ForConditionalGeneration"
+# The tiny target has no vision tower, so it pairs as a text-only one.
+TARGET_ARCH = "Qwen3_5ForCausalLM"
 DRAFT_ARCH = "DFlash2DraftModel"
 
 CONV_KERNEL = 4
@@ -129,15 +130,11 @@ def target_config(geometry: Geometry) -> Qwen3_5Config:
         vocab_size=g.vocab,
         dtype=g.dtype,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=attn,
         norm_dtype=g.dtype,
         rms_norm_eps=1e-6,
         attention_multiplier=KV_HEAD_DIM**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[g.device],
-        clip_qkv=None,
         layer_types=list(g.layer_types),
         # The recurrence kernel is only compiled for 128 x 128 heads.
         linear_key_head_dim=128,

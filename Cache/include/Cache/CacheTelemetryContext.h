@@ -15,6 +15,7 @@
 #define CACHE_CACHE_TELEMETRY_CONTEXT_H
 
 #include "Support/Context.h"
+#include "Support/SymbolExport.h"
 #include "Support/Telemetry/Instruments.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/Operation.h"
@@ -32,7 +33,7 @@ class CPUDevice;
 namespace M::Cache {
 /// Utility that manages the objects used to perform telemetry related to the
 /// KGEN compiler.
-class CacheTelemetryContext {
+class MODULAR_CXX_EXPORT CacheTelemetryContext {
 public:
   CacheTelemetryContext(Telemetry::TelemetryContext &ctx);
 

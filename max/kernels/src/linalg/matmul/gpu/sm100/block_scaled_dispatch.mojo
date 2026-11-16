@@ -18,8 +18,8 @@
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import Layout as TileLayout
+from layout import Coord, Idx, TileTensor, row_major
+from layout.layout import Layout
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -62,8 +62,9 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 
 comptime logger = Logger()
 
-# Largest M whose compute closure runs in a separate elementwise pass instead
-# of inside the GEMM epilogue; B200 measurements cover M <= 512.
+# Largest M whose compute closure runs on a `c_type` GEMM result in a separate
+# elementwise pass. Larger M keeps a float32 intermediate, so the closure sees
+# what the fused epilogue would; B200 decode measurements cover M <= 512.
 comptime compute_fn_unfused_m_cap = 512
 
 comptime DISPATCH_MISS = 0
@@ -572,7 +573,7 @@ def block_scaled_matmul_block_diagonal[
     *,
     groups: Int,
     SF_VECTOR_SIZE: Int,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -654,6 +655,42 @@ def block_scaled_matmul_block_diagonal[
         raise Error("no SM100 block-scaled config for the block-diagonal shape")
 
 
+def _apply_compute_fn[
+    c_type: DType,
+    src_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    src: TileTensor[mut=False, src_type, ...],
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Writes `compute_fn(idx, src[idx])` to `c` from an elementwise kernel.
+
+    `compute_fn` runs at `src_type`, the dtype the fused epilogue would hand
+    it, and its result is rounded to `c_type` on the store. Every element of
+    `c` is written, so `compute_fn` must return its input for the elements it
+    leaves alone.
+    """
+    comptime simd_size = simd_width_of[c_type, target=ctx.target]()
+
+    def apply_compute_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var c, var src, var compute_fn}:
+        c.store[alignment=alignment * size_of[c_type]()](
+            idx,
+            compute_fn[src_type, width, alignment=alignment](
+                idx, src.load[width=width](idx)
+            ).cast[c_type](),
+        )
+
+    elementwise[
+        simd_size,
+        _trace_description="elementwise_block_scaled_matmul_compute",
+    ](apply_compute_fn, (Int(c.dim[0]()), Int(c.dim[1]())), ctx)
+
+
 ########################################################
 # SM100 Block Scaled matmul with normal epilogue kernel dispatch
 ########################################################
@@ -721,25 +758,25 @@ def _block_scaled_matmul_with_epilogue[
         comptime sf_k = b_scales.static_shape[1]
         comptime sf_atom = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
         var a_3d = a.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Int64(m), Idx[K_phys]),
                 Coord(Idx[K_phys], Idx[groups * K_phys], Idx[1]),
             )
         )
         var b_3d = b.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Idx[N_g], Idx[K_phys]),
                 Coord(Idx[N_g * K_phys], Idx[K_phys], Idx[1]),
             )
         )
         var c_3d = c.reshape(
-            TileLayout(
+            Layout(
                 Coord(Idx[groups], Int64(m), Idx[N_g]),
                 Coord(Idx[N_g], Idx[groups * N_g], Idx[1]),
             )
         )
         var a_scales_6d = a_scales.reshape(
-            TileLayout(
+            Layout(
                 Coord(
                     Idx[groups],
                     Int64(a_scales.dim[0]()),
@@ -759,7 +796,7 @@ def _block_scaled_matmul_with_epilogue[
             )
         )
         var b_scales_6d = b_scales.reshape(
-            TileLayout(
+            Layout(
                 Coord(
                     Idx[groups],
                     Idx[N_g // SF_MN_GROUP_SIZE],
@@ -798,13 +835,21 @@ def _block_scaled_matmul_with_epilogue[
         )
         return
 
-    # At decode-sized M the compute closure runs inside the single-tile
-    # mainloop tail, once per scalar element behind dependent global loads, and
-    # costs several microseconds on top of a GEMM that is itself ~10us. Writing
-    # the plain GEMM result to `c` and applying `compute_fn` from an
-    # elementwise kernel hides those latencies across threads. The small-BN
-    # kernel keeps the fused closure: its epilogue is cheap there, and the
-    # extra launch would lose.
+    # The compute closure runs inside the GEMM epilogue, where each call waits
+    # on its own dependent global loads. At decode M that is once per scalar
+    # element in the mainloop tail; at prefill M the 256-wide tile has a
+    # single accumulator stage, so the epilogue never overlaps the next tile's
+    # MMAs and a 128-thread chain of exposed load latencies is added to every
+    # tile (a swiglu closure that reads the gate tensor: 569us fused vs 206us
+    # plain GEMM + 76us elementwise at M=16384, N=3072, K=6144 on B200).
+    # Writing the plain GEMM result and applying `compute_fn` from an
+    # elementwise kernel hides those latencies across threads. The extra
+    # scratch traffic can regress light closures whose loads already overlap
+    # in the epilogue. The small-BN kernel keeps the fused closure because
+    # its epilogue is cheap and an extra launch would lose.
+    #
+    # Up to `compute_fn_unfused_m_cap` the pass reads a `c_type` GEMM result;
+    # that rounds the closure's input once more than the fused epilogue does.
     #
     # A kernel that swaps A and B hands the closure one element at a time, so
     # a closure that needs consecutive columns runs from the elementwise
@@ -817,73 +862,122 @@ def _block_scaled_matmul_with_epilogue[
             and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
         )
     ):
-        if per_element or m <= compute_fn_unfused_m_cap:
-            _block_scaled_matmul_with_epilogue[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                config=config,
-                pdl_level=pdl_level,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                tensor_sf,
-                no_epilogue_fn,
-                no_compute_fn,
-                ctx,
-            )
+        comptime if not per_element:
+            if m > compute_fn_unfused_m_cap:
+                # The fused epilogue hands the closure the float32
+                # accumulator, so the GEMM result is kept in float32 for the
+                # separate pass and only the closure's output is rounded to
+                # `c_type`, as the fused store does.
+                comptime c32_config = BlockScaledMatmulConfig[
+                    a_type,
+                    b_type,
+                    DType.float32,
+                    scales_dtype,
+                    scales_dtype,
+                    transpose_b,
+                ](
+                    scaling_kind=config.scaling_kind,
+                    cta_group=config.cta_group,
+                    mma_shape=config.mma_shape,
+                    cluster_shape=config.cluster_shape,
+                    AB_swapped=config.AB_swapped,
+                    num_split_k=config.num_split_k,
+                    block_swizzle_size=config.block_swizzle_size,
+                    raster_order=config.raster_order,
+                    k_group_size=config.k_group_size,
+                    num_accum_pipeline_stages=config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=config.num_clc_pipeline_stages,
+                    register_based_epilogue=config.register_based_epilogue,
+                    gemm_kind=config.gemm_kind,
+                )
+                var scratch = ctx.enqueue_create_buffer[.float32](m * n)
+                var c32 = TileTensor(
+                    scratch, row_major(m, Idx[c.static_shape[1]])
+                )
+                _block_scaled_matmul_with_epilogue[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    config=c32_config,
+                    pdl_level=pdl_level,
+                ](
+                    c32,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    tensor_sf,
+                    no_epilogue_fn,
+                    no_compute_fn,
+                    ctx,
+                )
+                _apply_compute_fn(c, c32.as_imm(), compute_fn, ctx)
+                _ = scratch^
+                return
 
-            comptime simd_size = simd_width_of[c_type, target=ctx.target]()
-            comptime if compute_fn_col_period > 0:
-                comptime period = compute_fn_col_period
-                comptime start = compute_fn_col_start
-                comptime assert (
-                    0 <= start < period and (period - start) % simd_size == 0
-                ), "the changed columns must be whole SIMD vectors"
-                if n % period != 0:
-                    raise Error("the output width must be whole column periods")
+        _block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+            config=config,
+            pdl_level=pdl_level,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            no_epilogue_fn,
+            no_compute_fn,
+            ctx,
+        )
 
-                # Visits only the columns `compute_fn` changes: column
-                # `p * period + start + j` is `(row, p, j)`.
-                def apply_compute_fn_cols[
-                    width: Int, alignment: Int = 1
-                ](idx: Coord) {var c, var compute_fn}:
-                    var at = Coord(
-                        Int64(Int(idx[0])),
-                        Int64(Int(idx[1]) * period + start + Int(idx[2])),
-                    )
-                    c.store[alignment=alignment * size_of[c_type]()](
-                        at,
-                        compute_fn[c_type, width, alignment=alignment](
-                            at, c.load[width=width](at)
-                        ),
-                    )
+        comptime simd_size = simd_width_of[c_type, target=ctx.target]()
+        comptime if compute_fn_col_period > 0:
+            comptime period = compute_fn_col_period
+            comptime start = compute_fn_col_start
+            comptime assert (
+                0 <= start < period and (period - start) % simd_size == 0
+            ), "the changed columns must be whole SIMD vectors"
+            if n % period != 0:
+                raise Error("the output width must be whole column periods")
 
-                elementwise[
-                    simd_size,
-                    target="gpu",
-                    _trace_description="elementwise_block_scaled_matmul_compute",
-                ](apply_compute_fn_cols, (m, n // period, period - start), ctx)
-            else:
+            # Visits only the columns `compute_fn` changes: column
+            # `p * period + start + j` is `(row, p, j)`.
+            def apply_compute_fn_cols[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var c, var compute_fn}:
+                var at = Coord(
+                    Int64(Int(idx[0])),
+                    Int64(Int(idx[1]) * period + start + Int(idx[2])),
+                )
+                c.store[alignment=alignment * size_of[c_type]()](
+                    at,
+                    compute_fn[c_type, width, alignment=alignment](
+                        at, c.load[width=width](at)
+                    ),
+                )
 
-                def apply_compute_fn[
-                    width: Int, alignment: Int = 1
-                ](idx: Coord) {var c, var compute_fn}:
-                    c.store[alignment=alignment * size_of[c_type]()](
-                        idx,
-                        compute_fn[c_type, width, alignment=alignment](
-                            idx, c.load[width=width](idx)
-                        ),
-                    )
+            elementwise[
+                simd_size,
+                _trace_description="elementwise_block_scaled_matmul_compute",
+            ](apply_compute_fn_cols, (m, n // period, period - start), ctx)
+        else:
 
-                elementwise[
-                    simd_size,
-                    target="gpu",
-                    _trace_description="elementwise_block_scaled_matmul_compute",
-                ](apply_compute_fn, (m, n), ctx)
-            return
+            def apply_compute_fn[
+                width: Int, alignment: Int = 1
+            ](idx: Coord) {var c, var compute_fn}:
+                c.store[alignment=alignment * size_of[c_type]()](
+                    idx,
+                    compute_fn[c_type, width, alignment=alignment](
+                        idx, c.load[width=width](idx)
+                    ),
+                )
+
+            elementwise[
+                simd_size,
+                _trace_description="elementwise_block_scaled_matmul_compute",
+            ](apply_compute_fn, (m, n), ctx)
+        return
 
     # Store-redirect epilogues and the remaining compute closures stay fused
     # through TileWriter on both the main and small-BN paths.

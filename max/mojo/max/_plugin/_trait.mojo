@@ -16,7 +16,7 @@ from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.collections.string.string_span import _get_kgen_string
 from std.reflection import SourceLocation
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 from std._gpu import lane_id
 from std._gpu.host.info import (
     NoGPU,
@@ -33,14 +33,16 @@ from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceContext,
     Dim,
+    GridBlockLaunchConfig,
     LaunchAttribute,
 )
 
 # Hooks the legacy `DeviceContext` calls take its types. It still compiles when
 # `--config=hal-device-context` points `max.gpu.host` at the HAL one.
+from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._legacy.device_context import (
-    DeviceContext as _LegacyDeviceContext,
-    DeviceFunction,
+    LegacyDeviceContext as _LegacyDeviceContext,
+    LegacyDeviceFunction,
 )
 from max.gpu.host.info import get_gpu_info
 from max.gpu.memory.memory import (
@@ -51,6 +53,10 @@ from max.gpu.primitives.warp import _FULL_MASK
 from max.gpu.sync.sync import (
     _BarrierPluginHookFnType,
     _SyncwarpPluginHookFnType,
+)
+from max._driver.max_license.hal._plugin._trait import (
+    DefaultHalPluginHooks,
+    HalPluginHooks,
 )
 
 
@@ -85,11 +91,11 @@ trait MaxPluginHooks:
         pdl_level: PDLLevel = PDLLevel.ON,
     ](
         func: Some[
-            def[
-                width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) -> None
+            ImplicitlyCopyable
+            & RegisterPassable
+            & (def[width: Int, alignment: Int = 1](Coord) -> None)
         ],
-        shape: IndexList[rank, element_type=_],
+        shape: Coord,
         ctx: DeviceContext,
     ) raises:
         """Per-target plugin hook for `elementwise[...]`.
@@ -111,6 +117,14 @@ trait MaxPluginHooks:
 
     comptime _handles_elementwise: Bool = False
     """Whether this plugin overrides MAX elementwise dispatch."""
+
+    comptime FunctionWrapper: DeviceFunctionWrapper = _IdentityWrapper
+    """Selects the function `compile_function` compiles for a user kernel,
+    such as a generated entry point the plugin's runtime launches.
+
+    Both backends read this one member: the legacy `DeviceContext` through its
+    own `FunctionWrapper`, and the HAL one through its plugin hooks.
+    """
 
     comptime warp_size: Int
     """The number of lanes in a warp on the target, which `WARP_SIZE` reads.
@@ -374,8 +388,8 @@ trait MaxPluginHooks:
     def enqueue_function_fn[
         *Ts: DevicePassable
     ](
-        ctx: _LegacyDeviceContext.Generic[Self.hooks_target],
-        f: DeviceFunction,
+        ctx: _LegacyDeviceContext[Self.hooks_target],
+        f: LegacyDeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -478,12 +492,63 @@ trait MaxPluginHooks:
     comptime _supports_external_function: Bool = True
     """Whether a `DeviceExternalFunction` can launch on this target."""
 
+    @staticmethod
+    def whole_device_launch_config() -> GridBlockLaunchConfig:
+        """Per-target plugin hook for `max._graph_blob.launch_config`.
+
+        It runs on the host, so `max._graph_blob` reaches it through the plugin
+        of the device context's target rather than `CurrentMaxPlugin`.
+
+        Returns:
+            A launch on every thread of every core of the device.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called.
+        """
+        return GridBlockLaunchConfig(grid_dim=Dim(1), block_dim=Dim(1))
+
+    @staticmethod
+    def graph_blob_is_thread_active(active: Int32) -> Bool:
+        """Per-target plugin hook for `max._graph_blob.is_thread_active`.
+
+        Args:
+            active: The number of blocks a member runs on, from the start of
+                the launch's grid.
+
+        Returns:
+            Whether the calling thread's block is one of those.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called.
+        """
+        return False
+
+    @staticmethod
+    def graph_blob_barrier():
+        """Per-target plugin hook for `max._graph_blob.barrier`.
+
+        Only invoked when `_handles_graph_blobs` is `True`; the default is
+        never called and is a no-op.
+        """
+        pass
+
+    comptime _handles_graph_blobs: Bool = False
+    """Whether this plugin implements the hooks a graph blob's kernel calls."""
+
+    comptime HalHooks: HalPluginHooks = DefaultHalPluginHooks[Self.hooks_target]
+    """The HAL backend's hooks for this target.
+
+    The HAL `DeviceContext` and the HAL client API read their execution
+    configuration, extensions and launcher from here, so a plugin names its
+    HAL behavior in one place instead of in a second registry.
+    """
+
 
 struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
-    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks[target]
+    comptime HookFor = DefaultMaxPluginHooks[_]
 
 
 struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):

@@ -43,6 +43,7 @@ from max.benchmark.benchmark_shared.model_csv import (
     strip_leading_hierarchy_key,
 )
 from pydantic import BaseModel
+from tests.benchmark.benchmark_fakes import write_blob
 
 # --- Data-driven flattening --------------------------------------------------
 
@@ -191,14 +192,10 @@ def test_load_result_rows_bad_toplevel(tmp_path: Path) -> None:
         load_result_rows(path)
 
 
-def _write_blob(path: Path, **fields: object) -> None:
-    path.write_text(json.dumps(fields))
-
-
 def test_convert_end_to_end_summary(tmp_path: Path) -> None:
     a = tmp_path / "results-1-median.json"
     b = tmp_path / "results-2-median.json"
-    _write_blob(
+    write_blob(
         a,
         date="2026-07-29",
         model_id="m",
@@ -208,7 +205,7 @@ def test_convert_end_to_end_summary(tmp_path: Path) -> None:
         prefill_stats={"maxserve_batch_input_tokens_mean": 42.0},
         input_lens=[1, 2, 3],
     )
-    _write_blob(
+    write_blob(
         b,
         date="2026-07-29",
         model_id="m",
@@ -235,7 +232,7 @@ def test_convert_end_to_end_summary(tmp_path: Path) -> None:
 
 def test_convert_with_group_adds_columns(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(
+    write_blob(
         a,
         max_concurrency=1,
         request_throughput=10.0,
@@ -249,9 +246,9 @@ def test_convert_with_group_adds_columns(tmp_path: Path) -> None:
 def test_convert_missing_cell_is_empty(tmp_path: Path) -> None:
     a = tmp_path / "a.json"
     b = tmp_path / "b.json"
-    _write_blob(a, max_concurrency=1, mean_ttft_ms=100.0)
+    write_blob(a, max_concurrency=1, mean_ttft_ms=100.0)
     # b lacks mean_ttft_ms.
-    _write_blob(b, max_concurrency=2)
+    write_blob(b, max_concurrency=2)
     out = tmp_path / "out.csv"
     columns = convert([a, b], out)
     with open(out) as f:
@@ -268,7 +265,7 @@ def test_convert_no_inputs_raises(tmp_path: Path) -> None:
 
 def test_convert_dry_run_does_not_write(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    write_blob(a, max_concurrency=1, request_throughput=10.0)
     out = tmp_path / "out.csv"
     columns = convert([a], out, dry_run=True)
     # Selection is still computed and returned, but no file is created.

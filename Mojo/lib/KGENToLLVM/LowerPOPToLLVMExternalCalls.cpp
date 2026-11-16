@@ -61,30 +61,6 @@ private:
     }
   }
 
-  /// Seed per-parameter attribute lists with the op's POP-level argAttrs.
-  /// ABI coercion can change the parameter list: sret prepends a hidden
-  /// pointer, two-register args expand to two parameters, etc. The original
-  /// argAttrs from the POP op use POP-level indexing, so we seed the
-  /// LLVM-indexed list with user-provided attrs at the correct positions.
-  /// Only positions within [0, paramAttrs.size()) are filled, so variadic
-  /// callers can pass a list sized for fixed params only.
-  void seedUserArgAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
-                        mlir::ArrayAttr argAttrs,
-                        const SignatureClassification &sigClass) const {
-    if (!argAttrs)
-      return;
-    size_t numArgs = std::min<size_t>(argAttrs.size(), sigClass.args.size());
-    for (size_t popIdx = 0; popIdx < numArgs; ++popIdx) {
-      unsigned paramIdx = sigClass.getLLVMParamIndex(popIdx);
-      if (paramIdx >= paramAttrs.size())
-        break;
-      if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[popIdx])) {
-        for (auto namedAttr : dict)
-          paramAttrs[paramIdx].set(namedAttr.getName(), namedAttr.getValue());
-      }
-    }
-  }
-
   /// Build the final LLVM-level per-parameter argAttrs that we expect on the
   /// declaration: user-provided attrs remapped to LLVM indices, plus the sret
   /// and byval overlays applied by the lowering. Returns null if no attrs
@@ -101,14 +77,8 @@ private:
     Type llvmRetType;
     if (!op.getResults().empty())
       llvmRetType = getTypeConverter()->convertType(op.getResult().getType());
-    SmallVector<mlir::NamedAttrList> abiAttrs =
-        sigClass.getParamAttrs(llvmArgTypes, llvmRetType, numFixedArgs);
-
-    SmallVector<mlir::NamedAttrList> paramAttrs(abiAttrs.size());
-    seedUserArgAttrs(paramAttrs, argAttrs, sigClass);
-    for (auto [attrs, abi] : llvm::zip_equal(paramAttrs, abiAttrs))
-      for (mlir::NamedAttribute attr : abi)
-        attrs.set(attr.getName(), attr.getValue());
+    SmallVector<mlir::NamedAttrList> paramAttrs = sigClass.getParamAttrs(
+        llvmArgTypes, llvmRetType, argAttrs, numFixedArgs);
 
     bool anySet = llvm::any_of(paramAttrs, [](const mlir::NamedAttrList &nal) {
       return !nal.empty();
@@ -242,6 +212,10 @@ public:
     if (!sigClass.ret.useSRet) {
       NamedAttrList attrs =
           resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
+      // As for a struct argument, the padding of a struct result is not
+      // defined.
+      if (isa_and_nonnull<LLVM::LLVMStructType>(llvmReturnType))
+        attrs.erase(LLVM::LLVMDialect::getNoUndefAttrName());
       assert(sigClass.getResultAttrs(getContext()).empty() &&
              "Not expecting call-side result attrs");
       if (!attrs.empty()) {

@@ -66,7 +66,7 @@ def bench_blockwise_fp8_1d2d[
     num_experts: Int,
     expert_shape: IndexList[2],  # (N, K)
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -208,7 +208,7 @@ def bench_blockwise_fp8_1d2d[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
                 config=config,
             ](
@@ -248,7 +248,7 @@ def bench_blockwise_fp8_1d2d[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
                 a_scales_type=DType.float32,
                 b_scales_type=DType.float32,

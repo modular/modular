@@ -18,6 +18,8 @@
 #ifndef SUPPORT_DEBUGGER_H
 #define SUPPORT_DEBUGGER_H
 
+#include "Support/SymbolExport.h"
+
 namespace M {
 
 /// Print the executable name and process ID to standard output, then pause
@@ -29,7 +31,7 @@ namespace M {
 /// example, on Mac, after resuming a process stopped with `sleep_for`, you
 /// continue the wait. However, on Linux, you don't wait anymore and simply
 /// continue the rest of the execution of the process.
-void waitForDebuggerToAttach(int timeoutSeconds = 120);
+MODULAR_CXX_EXPORT void waitForDebuggerToAttach(int timeoutSeconds = 120);
 
 } // namespace M
 

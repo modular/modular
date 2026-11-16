@@ -26,6 +26,11 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "gtest/gtest.h"
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <string_view>
 #include <thread>
 
 using namespace M;
@@ -223,6 +228,161 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
       getLocalDefaultBackendChain(tempDir.getPath()).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";
+}
+
+namespace {
+
+/// Opens version directories of one cache as the binaries that own them, to
+/// check which siblings each open prunes.
+class OwnedCacheTest : public testing::Test {
+protected:
+  TempDir tempDir = createTempDir();
+
+  std::filesystem::path base() const { return tempDir.getPath() / "transform"; }
+
+  /// Creates a file standing in for a binary, and returns its canonical path.
+  std::string makeBinary(const std::string &name) {
+    std::filesystem::path path = tempDir.getPath() / name;
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream{path};
+    return std::filesystem::canonical(path).string();
+  }
+
+  std::string owners(const std::string &version) const {
+    std::ifstream file(base() / version / ".owners");
+    std::stringstream content;
+    content << file.rdbuf();
+    return content.str();
+  }
+
+  void open(std::string_view version, const CacheOwner &owner) {
+    auto backendOr = getFilesystemBackend(base(), version, owner);
+    ASSERT_FALSE(backendOr.isError());
+  }
+
+  bool exists(const std::string &version) const {
+    return std::filesystem::exists(base() / version);
+  }
+};
+
+} // namespace
+
+TEST_F(OwnedCacheTest, RecordsEachOwnerOnce) {
+  // Identical binaries in two environments share one version directory.
+  //   1.0aaaa-production/.owners   aaaa  <tmp>/env-a/bin/mojo
+  //                                aaaa  <tmp>/env-b/bin/mojo
+  // Reopening as <tmp>/env-a/bin/mojo adds no second line for it.
+  std::string envA = makeBinary("env-a/bin/mojo");
+  std::string envB = makeBinary("env-b/bin/mojo");
+  open("1.0aaaa-production", {envA, "aaaa"});
+  EXPECT_EQ(owners("1.0aaaa-production"), "aaaa\t" + envA + "\n");
+  open("1.0aaaa-production", {envA, "aaaa"});
+  open("1.0aaaa-production", {envB, "aaaa"});
+  EXPECT_EQ(owners("1.0aaaa-production"),
+            "aaaa\t" + envA + "\n" + "aaaa\t" + envB + "\n");
+}
+
+TEST_F(OwnedCacheTest, KeepsDirectoryOfAnotherBinary) {
+  //   1.0aaaa-production/.owners   aaaa  <tmp>/a
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // Both binaries exist, so neither open prunes the other's directory.
+  std::string a = makeBinary("a"), b = makeBinary("b");
+  open("1.0aaaa-production", {a, "aaaa"});
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_TRUE(exists("1.0aaaa-production"));
+  open("1.0aaaa-production", {a, "aaaa"});
+  EXPECT_TRUE(exists("1.0bbbb-production"));
+}
+
+TEST_F(OwnedCacheTest, PrunesDirectoryOfReplacedBinary) {
+  //   1.0aaaa-production/.owners   aaaa  <tmp>/a
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/a
+  // The binary at <tmp>/a now has build ID bbbb. It replaced the only owner of
+  // 1.0aaaa-production, so opening 1.0bbbb-production prunes that directory.
+  std::string a = makeBinary("a");
+  open("1.0aaaa-production", {a, "aaaa"});
+  open("1.0bbbb-production", {a, "bbbb"});
+  EXPECT_FALSE(exists("1.0aaaa-production"));
+}
+
+TEST_F(OwnedCacheTest, PrunesDirectoryOfRemovedBinary) {
+  //   1.0aaaa-production/.owners   aaaa  <tmp>/a  (removed)
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // The only owner of 1.0aaaa-production is gone, so opening
+  // 1.0bbbb-production prunes it.
+  std::string a = makeBinary("a"), b = makeBinary("b");
+  open("1.0aaaa-production", {a, "aaaa"});
+  std::filesystem::remove(a);
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_FALSE(exists("1.0aaaa-production"));
+}
+
+TEST_F(OwnedCacheTest, KeepsDirectorySharedWithAnotherBinary) {
+  // Identical binaries in two environments share one version directory.
+  //   1.0aaaa-production/.owners   aaaa  <tmp>/a   (removed)
+  //                                aaaa  <tmp>/a2
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // <tmp>/a2 still exists, so opening 1.0bbbb-production keeps
+  // 1.0aaaa-production.
+  std::string a = makeBinary("a"), a2 = makeBinary("a2"), b = makeBinary("b");
+  open("1.0aaaa-production", {a, "aaaa"});
+  open("1.0aaaa-production", {a2, "aaaa"});
+  std::filesystem::remove(a);
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_TRUE(exists("1.0aaaa-production"));
+}
+
+TEST_F(OwnedCacheTest, KeepsDirectoryOfSameBuildUnderAnotherSuffix) {
+  // MODULAR_NVPTX_COMPILER_PATH appends a hash to the version, so one binary
+  // uses two directories at once.
+  //   1.0aaaa-cccc-production/.owners   aaaa  <tmp>/a
+  //   1.0aaaa-production/.owners        aaaa  <tmp>/a
+  // The path and build ID match the opener's, so opening 1.0aaaa-production
+  // keeps 1.0aaaa-cccc-production.
+  std::string a = makeBinary("a");
+  open("1.0aaaa-cccc-production", {a, "aaaa"});
+  open("1.0aaaa-production", {a, "aaaa"});
+  EXPECT_TRUE(exists("1.0aaaa-cccc-production"));
+}
+
+TEST_F(OwnedCacheTest, PrunesDirectoryWithoutOwners) {
+  //   1.0aaaa-production/.owners   (missing)
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // An older compiler wrote 1.0aaaa-production, so opening 1.0bbbb-production
+  // prunes it as before.
+  std::string b = makeBinary("b");
+  std::filesystem::create_directories(base() / "1.0aaaa-production");
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_FALSE(exists("1.0aaaa-production"));
+}
+
+TEST_F(OwnedCacheTest, ClearsLockOfProcessOnAnotherHost) {
+  //   transform.lock               some-other-host 1
+  //   1.0aaaa-production/.owners   (missing)
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // LockFileManager cannot check a process on another host, so the lock looks
+  // held. Opening 1.0bbbb-production waits kPruneLockWait, clears the lock and
+  // prunes 1.0aaaa-production.
+  std::string b = makeBinary("b");
+  std::filesystem::create_directories(base() / "1.0aaaa-production");
+  std::string lockPath = base().string() + ".lock";
+  std::ofstream{lockPath} << "some-other-host 1";
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_FALSE(exists("1.0aaaa-production"));
+  EXPECT_FALSE(exists(".pruning-1.0aaaa-production"));
+  EXPECT_FALSE(std::filesystem::exists(lockPath));
+}
+
+TEST_F(OwnedCacheTest, RemovesDirectoryLeftByDeadPruner) {
+  //   .pruning-1.0aaaa-debug/      (renamed by a pruner that then died)
+  //   1.0bbbb-production/.owners   bbbb  <tmp>/b
+  // Opening 1.0bbbb-production removes the leftover of any build type.
+  std::string b = makeBinary("b");
+  std::filesystem::path leftover = base() / ".pruning-1.0aaaa-debug";
+  std::filesystem::create_directories(leftover);
+  std::ofstream{leftover / "blob"};
+  open("1.0bbbb-production", {b, "bbbb"});
+  EXPECT_FALSE(exists(".pruning-1.0aaaa-debug"));
 }
 
 TEST_F(BlobCacheTest, OutKeyHashPopulatedOnContains) {

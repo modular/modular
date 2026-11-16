@@ -432,8 +432,11 @@ ensure_checkout() {
     # `typing.NotRequired`, which does not exist before 3.11 — so a 3.10 venv
     # dies with `ImportError: cannot import name 'NotRequired'` the moment the
     # CLI loads. uv fetches the interpreter if the host lacks it.
+    # litellm 1.106 imports `mcp` from completion() but declares it only in
+    # its `mcp` extra, so without the extra every request raises
+    # ModuleNotFoundError.
     "$uv" venv --python "$HARNESS_PYTHON" "$VENV" >/dev/null
-    (cd "$CHECKOUT" && "$uv" pip install --python "$VENV/bin/python" -q -e .)
+    (cd "$CHECKOUT" && "$uv" pip install --python "$VENV/bin/python" -q -e . "litellm[mcp]")
   fi
   # Recent litellm imports mcp on the plain completion path but declares it
   # only under its proxy/mcp extras, so a tool-calling agent request dies with

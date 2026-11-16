@@ -16,11 +16,11 @@
 written against the engine the target uses:
 
 ```mojo
-from layout import CurrentTensorEngine, TensorEngine, TileTensor
+from layout import CurrentTensorEngine, TensorEngine, TensorLayout, TileTensor
 
-def generic[Engine: TensorEngine = CurrentTensorEngine](
-    tile: TileTensor[..., Engine=Engine]
-):
+def generic[
+    L: TensorLayout, Engine: TensorEngine = CurrentTensorEngine[L]
+](tile: TileTensor[_, L, _, Engine=Engine]):
     ...
 ```
 
@@ -32,6 +32,8 @@ up its engines.
 from ._impl import (
     CurrentLayoutPlugin,
     CurrentTensorEngine,
+    DeviceGlobalAddressSpace,
+    DeviceTensorEngine,
     LayoutPluginForTarget,
     TensorEngineForTarget,
 )

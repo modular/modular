@@ -24,7 +24,7 @@ import pytest
 import shared_mx_dequant_impl as impl
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import mxfp4_dequant, mxfp8_dequant
+from max.nn._graph_ops import mxfp4_dequant, mxfp8_dequant
 
 FORMATS: list[impl.Format] = ["mxfp4", "mxfp8"]
 

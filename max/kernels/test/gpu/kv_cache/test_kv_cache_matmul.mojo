@@ -156,7 +156,7 @@ def execute_fused_qkv_matmul[
     valid_lengths.to_device()
     var valid_lengths_tensor = valid_lengths.device_tensor().as_imm()
 
-    _fused_qkv_matmul_kv_cache_impl[target="gpu"](
+    _fused_qkv_matmul_kv_cache_impl(
         hidden_state_device_tensor,
         weight_device_tensor,
         kv_collection_device,

@@ -144,7 +144,7 @@ def bench_grouped_matmul[
     pdl_level: Int = 0,
     row_scales: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -422,7 +422,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -628,7 +630,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -748,7 +752,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -826,7 +832,9 @@ def bench_grouped_matmul[
             imm,
         }:
             @inline(.always)
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -903,7 +911,7 @@ def create_grouped_matmul_bench[
     pdl_level: Int = 0,
     row_scales: Bool = False,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut bench: Bench,
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],

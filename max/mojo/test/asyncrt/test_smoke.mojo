@@ -17,8 +17,8 @@ from std.testing import TestSuite, assert_equal
 
 
 def _ownership_helper(
-    var ctx: DeviceContext,
-) raises -> DeviceContext:
+    var ctx: DeviceContext[],
+) raises -> DeviceContext[]:
     var ctx_copy = ctx
     print("local ctx_copy: " + ctx_copy.device().get_name())
     return ctx_copy
@@ -53,7 +53,7 @@ def _run_name(ctx: DeviceContext) raises:
     raise "ctx_name malformed"
 
 
-def _run_ownership_transfer(ctx: DeviceContext) raises:
+def _run_ownership_transfer(ctx: DeviceContext[]) raises:
     print("-")
     print("_run_ownership_transfer()")
 

@@ -22,6 +22,9 @@ lit_tests(
             # Single-GPU device-scope ordering regression guard. Pure std, no
             # rocshmem runtime; runs as the standalone mojo_test below.
             "test_ep_combine_ordering.mojo",
+            # Two-GPU cross-rank arrival cost; runs as the standalone
+            # lit_tests target below, one process per GPU.
+            "test_shmem_pingpong_sys.mojo",
         ],
     ),
     env = select({
@@ -81,6 +84,33 @@ mojo_test(
         "//max:linalg",
         "//max:shmem",
         "@mojo//:std",
+    ],
+)
+
+# Cost of the cross-rank arrival between two B200s, which a Moka
+# megakernel's system-scope counter edge is built on: the bare signal word, then
+# the signal riding with a payload. One process per GPU.
+lit_tests(
+    name = "pingpong",
+    size = "large",
+    srcs = ["test_shmem_pingpong_sys.mojo"],
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        },
+        "//conditions:default": {},
+    }),
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    mojo_deps = [
+        "//max:layout",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+    tags = [
+        "gpu",
+        "requires-network",
     ],
 )
 

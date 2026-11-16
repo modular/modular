@@ -603,3 +603,30 @@ func.func @line_table_loc_lowering() {
 
 // CHECK: #[[LOC1_RAW:.+]] = loc("foo.mlir":1:0)
 // CHECK: #[[LOC1]] = loc(fused<{{.*}}>[#[[LOC1_RAW]]])
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#sp = #debuginfo.subprogram<file = #file, scope = #file, sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#var = #debuginfo.local_variable<scope = #sp, name = "x", file = #file, line = 1, arg = 1> : !debuginfo.unresolved<i32>
+#loc0 = loc(fused<#sp>["foo.mlir":0:0])
+#loc1 = loc(fused<#sp>["foo.mlir":1:0])
+
+module attributes {M.target_info = #M.target<triple="air64-apple-macosx", arch="apple-m1", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: func @metal_line_table_loc_lowering
+  // CHECK-SAME: (%[[X:.*]]: i32
+  func.func @metal_line_table_loc_lowering(%x: i32, %p: !llvm.ptr) {
+    // CHECK-NEXT: llvm.intr.dbg.value
+    // CHECK-NEXT: llvm.store %[[X]], {{.*}} loc(#[[LOC:.+]])
+    // CHECK-NEXT: llvm.inline_asm has_side_effects asm_dialect = att "nop", "" : () -> () loc(#[[LOC]])
+    // CHECK-NEXT: return
+    debuginfo.value #var = %x : i32 loc(#loc1)
+    debuginfo.line_table_loc loc(#loc1)
+    llvm.store %x, %p : i32, !llvm.ptr loc(#loc1)
+    llvm.inline_asm has_side_effects asm_dialect = att "nop", "" : () -> () loc(#loc1)
+    return loc(#loc1)
+  } loc(#loc0)
+}
+
+// CHECK: #[[LOC_RAW:.+]] = loc("foo.mlir":1:0)
+// CHECK: #[[LOC]] = loc(fused<{{.*}}>[#[[LOC_RAW]]])

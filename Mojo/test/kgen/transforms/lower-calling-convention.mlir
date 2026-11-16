@@ -138,6 +138,17 @@ kgen.func @pack_load(%arg0: !kgen.struct<(pointer<i32>, pointer<i64>) isParamPac
   hlcf.return %0 : !kgen.struct<(i32, i64) isParamPack>
 }
 
+// CHECK-LABEL: @pack_concat
+kgen.func @pack_concat(%arg0: !kgen.struct<(pointer<i32>) isParamPack>, %arg1: !kgen.struct<(pointer<i64>, pointer<f32>) isParamPack>) -> !kgen.struct<(pointer<i32>, pointer<i64>, pointer<f32>) isParamPack> {
+  // CHECK-NEXT: [[E0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<i32>)>
+  // CHECK-NEXT: [[E1:%.*]] = kgen.struct.extract %arg1[0] : <(pointer<i64>, pointer<f32>)>
+  // CHECK-NEXT: [[E2:%.*]] = kgen.struct.extract %arg1[1] : <(pointer<i64>, pointer<f32>)>
+  // CHECK-NEXT: [[RESULT:%.*]] = kgen.struct.create([[E0]], [[E1]], [[E2]]) : !kgen.struct<(pointer<i32>, pointer<i64>, pointer<f32>)>
+  %0 = kgen.struct.concat(%arg0, %arg1) : !kgen.struct<(pointer<i32>) isParamPack>, !kgen.struct<(pointer<i64>, pointer<f32>) isParamPack> -> !kgen.struct<(pointer<i32>, pointer<i64>, pointer<f32>) isParamPack>
+  // CHECK-NEXT: return [[RESULT]]
+  hlcf.return %0 : !kgen.struct<(pointer<i32>, pointer<i64>, pointer<f32>) isParamPack>
+}
+
 // CHECK-LABEL: @nested_pack_attr
 kgen.func @nested_pack_attr() {
   // CHECK-NEXT: constant: struct<(struct<()>, struct<(i32, i64)>)> = <{ { }, { 1, 2 } }>

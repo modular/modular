@@ -187,7 +187,7 @@ def test_rmsnorm_then_matmul[
     block_swizzle_size: Int = 0,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel.OFF,
     prefetch_tiles_n: Int = 0,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     var M = Int(m)

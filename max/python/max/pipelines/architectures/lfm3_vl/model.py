@@ -30,8 +30,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,
@@ -45,7 +45,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_gemma_multimodal_language_symbolic_inputs,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor import default_dtype
 

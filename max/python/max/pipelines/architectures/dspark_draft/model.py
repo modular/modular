@@ -20,8 +20,9 @@ the draft's module for that graph, and supplies the draft's KV leaf.
 
 from __future__ import annotations
 
+from max.nn.kv_cache import KVCacheParams
 from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
@@ -135,3 +136,18 @@ class DSparkDraftArchConfig(DSparkSpeculatorsDraftArchConfig):
             loaded.keys(),
         )
         return draft, config
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: DSparkSpeculatorsDraftConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the draft's weights.
+
+        They come from its own checkpoint, named by its weight transform. An
+        unpruned drafter's graph takes a zero ``d2t`` its checkpoint lacks,
+        which no name supplies, so it returns none.
+        """
+        if not config.has_d2t:
+            return []
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

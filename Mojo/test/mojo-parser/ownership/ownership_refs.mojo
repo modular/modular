@@ -511,10 +511,10 @@ struct TestDict[K: AnyType, V: Deinitable](Movable where False):
 # ===----------------------------------------------------------------------=== #
 
 struct MyListInterior[T: Movable](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass # Explicit deinit so it isn't considered trivial and elided.

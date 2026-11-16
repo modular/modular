@@ -39,7 +39,7 @@ patterns:
   `.. autosummary::` directives referencing templates in
   `_templates/autosummary/` (`class.rst`, `function.rst`).
 - **Automodule with :members:** (for example, `graph.ops.rst`,
-  `nn.legacy.kernels.rst`, `functional.rst`): documents all public
+  `functional.rst`): documents all public
   members automatically without explicit listing.
 
 `index.rst` lists all module pages in its toctree. Module pages that have

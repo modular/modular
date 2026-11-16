@@ -18,6 +18,7 @@
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "GraphCompiler/MGPDialect/Primitives/KernelLogger.h"
+#include "GraphCompiler/MGPDialect/RT/BinaryID.h"
 #include "GraphCompiler/Support/CompiledKernelsContext.h"
 #include "GraphCompiler/Support/List.h"
 #include "Init/Init.h"
@@ -43,10 +44,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif // _WIN32
 
 #define DEBUG_TYPE "mgp"
 
@@ -76,6 +82,24 @@ using namespace M::MGP;
 
 /// Indicates that a work item has no device preference for execution.
 static constexpr int kNoDevicePreference = -1;
+
+/// Returns the MGPRT this process already loaded, when it links MGPRT as a
+/// shared library, and the configured one otherwise. The two paths can name
+/// distinct copies of the same library, as under remote execution, and macOS
+/// would load the second copy alongside the first.
+static StringRef getMGPRTPath(KGEN::MojoConfig &cfg) {
+  StringRef configured = cfg.getMGPRTPath();
+#ifndef _WIN32
+  Dl_info info;
+  if (dladdr(reinterpret_cast<const void *>(&MGPRT::getMGPRTBinaryID), &info) !=
+          0 &&
+      info.dli_fname != nullptr &&
+      llvm::sys::path::filename(info.dli_fname) ==
+          llvm::sys::path::filename(configured))
+    return info.dli_fname;
+#endif // _WIN32
+  return configured;
+}
 
 //===----------------------------------------------------------------------===//
 // mgp.context.create
@@ -719,7 +743,7 @@ void mgp_runtime_create(Chain inChain, StateContext &theContext,
             options.registerPerfPlugins =
                 cpuDevice.getProfilerDebuginfo() ==
                 M::AsyncRT::CPUDeviceOptions::ProfilerDebuginfo::kPerfProfiler;
-            options.libraryPaths.push_back(cfg.getMGPRTPath());
+            options.libraryPaths.push_back(getMGPRTPath(cfg));
             return KGEN::ExecutionEngine::createWithStandardLayers(
                 std::move(options), **targetMachineOr);
           });

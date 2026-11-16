@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # Tests that abi("C") function pointers obtained from C at runtime are
-# called with the correct C ABI (CallIndirectOpConversion path).
+# called with the correct C ABI (ConvertKGENCallIndirect path).
 #
 # Two struct types are used:
 #

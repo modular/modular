@@ -43,13 +43,13 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.comm.ep.ep_kernels import fused_silu_quantized
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
-from max.nn.legacy.quant_config import (
+from max.nn._graph_ops.ep import fused_silu_quantized
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -57,6 +57,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack
 
 
@@ -118,7 +119,7 @@ def _to_buffer(arr: np.ndarray, device: Accelerator, dtype: DType) -> Buffer:
 
 
 @pytest.mark.skipif(
-    not torch.cuda.is_available(),
+    not is_b100_b200(),
     reason="Fused SwiGLU+NVFP4 grouped matmul kernel is SM100-only.",
 )
 def test_grouped_matmul_swiglu_nvfp4_equiv() -> None:
@@ -341,7 +342,7 @@ def test_grouped_matmul_swiglu_nvfp4_equiv() -> None:
 
 
 @pytest.mark.skipif(
-    not torch.cuda.is_available(),
+    not is_b100_b200(),
     reason="Fused SwiGLU+NVFP4 grouped matmul kernel is SM100-only.",
 )
 def test_grouped_matmul_nvfp4_row_scales() -> None:

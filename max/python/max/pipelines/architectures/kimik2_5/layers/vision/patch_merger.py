@@ -21,7 +21,7 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.legacy.layer import Module, Shardable
 from max.nn.legacy.linear import Linear
 from max.nn.legacy.norm import LayerNorm
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 
 class PatchMergerMLP(Module, Shardable):

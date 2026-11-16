@@ -15,8 +15,19 @@ from std.collections import OptionalReg
 from std.ffi import _DLHandle
 
 from ..plugin import RawDriver
-from ..plugins import ContextHandle, DeviceHandle, HALPluginConstructable
-from ..status import HALError
+from ..plugins import (
+    ContextHandle,
+    DeviceHandle,
+    FlagHandle,
+    HALPluginConstructable,
+)
+from ..status import STATUS_UNKNOWN_SYMBOL, HALError
+from .completion_flag import (
+    CompletionFlagAddressV1,
+    CompletionFlagResetV1,
+    CompletionFlagV1,
+    FlagConditionSet,
+)
 
 
 trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
@@ -30,25 +41,18 @@ trait HALExtensions(Deinitable, HALPluginConstructable, Movable):
     A capability is a `Supports<Name>V<N>` trait; the vendor set holds its
     symbols as a `RawPluginComponent` field resolved in `__init__`. Callers
     branch on a literal `conforms_to`, which refines `Ext` so the call
-    type-checks; the Bool flags below do not refine:
+    type-checks:
 
     ```mojo
     comptime Ext = type_of(device.extensions())
     comptime if conforms_to(Ext, SupportsPeerAccessV1):
-        var peer_access = device.extensions().peer_access()
+        var ok = device.extensions().can_access_peer(
+            device.raw_driver()[], device.handle(), peer.handle()
+        )
     ```
     """
 
-    comptime SupportsGraphCaptureV1: Bool = conforms_to(
-        Self, SupportsGraphCaptureV1
-    )
-    comptime SupportsPeerAccessV1: Bool = conforms_to(
-        Self, SupportsPeerAccessV1
-    )
-
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         ...
 
 
@@ -70,16 +74,55 @@ trait GraphCaptureV1:
 trait SupportsPeerAccessV1(Deinitable, Movable):
     """Capability: device-to-device memory access (`M_driver_peer.h`).
 
-    See `CUDAHALExtensions` in `cuda.mojo` for an implementation.
-
-    `peer_access()` returns `None` for plugins without peer support, such as
-    `CPUPlugin.so` in a CUDA build.
+    Vendors set `PeerGroup` and implement only `peer_group()`, as
+    `CUDAHALExtensions` does. It is None for plugins without peer support,
+    such as `CPUPlugin.so` in a CUDA build.
     """
 
-    comptime PeerAccessTy: PeerAccessV1
+    comptime PeerGroup: PeerAccessV1
 
-    def peer_access(self) -> OptionalReg[Self.PeerAccessTy]:
+    def peer_group(self) -> OptionalReg[Self.PeerGroup]:
+        """Returns the loaded peer symbols, or None when the plugin has none."""
         ...
+
+    def supports_peer_access(self) -> Bool:
+        return Bool(self.peer_group())
+
+    def can_access_peer[
+        device_origin: ImmOrigin, peer_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        device: Pointer[DeviceHandle.T, device_origin],
+        peer: Pointer[DeviceHandle.T, peer_origin],
+    ) raises HALError -> Bool:
+        if case .Some(group) = self.peer_group():
+            return group.can_access_peer(
+                driver,
+                rebind[DeviceHandle](device),
+                rebind[DeviceHandle](peer),
+            )
+        return False
+
+    def enable_peer_access[
+        context_origin: ImmOrigin, peer_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        context: Pointer[ContextHandle.T, context_origin],
+        peer: Pointer[ContextHandle.T, peer_origin],
+    ) raises HALError:
+        if case .Some(group) = self.peer_group():
+            group.enable_peer_access(
+                driver,
+                rebind[ContextHandle](context),
+                rebind[ContextHandle](peer),
+            )
+        else:
+            raise HALError(
+                STATUS_UNKNOWN_SYMBOL,
+                message="plugin does not export peer access",
+            )
 
 
 trait PeerAccessV1(TrivialRegisterPassable):
@@ -95,10 +138,88 @@ trait PeerAccessV1(TrivialRegisterPassable):
         ...
 
 
+trait SupportsCompletionFlagV1(Deinitable, Movable):
+    """Capability: host-signaled flags a queue waits on (`M_driver_flag.h`).
+
+    `FlagConditions` is the in-tree vendor's set (GEQ at minimum), for
+    `comptime assert` checks. `M_driver_flag_conditions` reports the loaded
+    plugin's fixed set, which can differ for an out-of-tree plugin.
+    `completion_flag()` is None for plugins without flags, such as
+    `CPUPlugin.so` in a CUDA build.
+    """
+
+    comptime FlagGroup: CompletionFlagV1
+    comptime FlagConditions: FlagConditionSet
+
+    def completion_flag(self) -> OptionalReg[Self.FlagGroup]:
+        """Returns the loaded flag symbols, or None when the plugin has none."""
+        ...
+
+    # These take origin-carrying handles, as peer access does, so the context
+    # that owns a flag's memory stays alive across each call.
+    def create_flag[
+        context_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        context: Pointer[ContextHandle.T, context_origin],
+    ) raises HALError -> FlagHandle:
+        return _flag_group(self).create(driver, rebind[ContextHandle](context))
+
+    def destroy_flag[
+        context_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        context: Pointer[ContextHandle.T, context_origin],
+        flag: FlagHandle,
+    ) raises HALError:
+        _flag_group(self).destroy(driver, rebind[ContextHandle](context), flag)
+
+    def flag_conditions[
+        device_origin: ImmOrigin, //
+    ](
+        self,
+        driver: RawDriver,
+        device: Pointer[DeviceHandle.T, device_origin],
+    ) raises HALError -> FlagConditionSet:
+        return _flag_group(self).conditions(
+            driver, rebind[DeviceHandle](device)
+        )
+
+
+def _flag_group[
+    Ext: SupportsCompletionFlagV1
+](ext: Ext) raises HALError -> Ext.FlagGroup:
+    if case .Some(group) = ext.completion_flag():
+        return group
+    raise HALError(
+        STATUS_UNKNOWN_SYMBOL, message="plugin does not export completion flags"
+    )
+
+
+trait SupportsCompletionFlagResetV1(SupportsCompletionFlagV1):
+    """Capability: reset a flag to 0, keeping its handle."""
+
+    comptime ResetGroup: CompletionFlagResetV1
+
+    def completion_flag_reset(self) -> OptionalReg[Self.ResetGroup]:
+        """Returns the loaded reset symbol, or None when the plugin lacks it."""
+        ...
+
+
+trait SupportsCompletionFlagAddressV1(SupportsCompletionFlagV1):
+    """Capability: a flag's device-visible 64-bit slot (CUDA, HIP)."""
+
+    comptime AddressGroup: CompletionFlagAddressV1
+
+    def completion_flag_address(self) -> OptionalReg[Self.AddressGroup]:
+        """Returns the loaded address symbol, or None if absent."""
+        ...
+
+
 struct DefaultHALExtensions(HALExtensions):
     """`HALExtensions` implementation used when no plugin is active."""
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         pass

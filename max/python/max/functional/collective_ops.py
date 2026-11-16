@@ -116,7 +116,7 @@ def _even_chunk(sv: TensorValue, axis: int, n: int, index: int) -> TensorValue:
 def _collective(
     t: Tensor,
     mesh_axis: int | str | Sequence[int | str],
-    new_placement: Replicated | Sharded,
+    new_placement: Placement,
     kernel: Callable[..., list[TensorValue]],
     simulated: Callable[[list[TensorValue]], list[TensorValue]],
 ) -> Tensor:
@@ -266,6 +266,110 @@ def allgather(
             [ops.concat(shards, tensor_axis)] * len(shards)
         ),
     )
+
+
+def all_to_all(
+    t: Tensor,
+    split_axis: int = 0,
+    concat_axis: int = 0,
+    mesh_axis: int | str | Sequence[int | str] = 0,
+) -> Tensor:
+    """Exchanges one chunk of a tensor between every pair of devices.
+
+    Each device splits its shard into one chunk per device along
+    ``mesh_axis`` (by ``split_axis``), sends chunk ``j`` to the group's
+    device ``j``, and concatenates what it receives, in device order, along
+    ``concat_axis``. A tensor :class:`~max.tensor.sharding.Sharded` along
+    ``concat_axis`` on ``mesh_axis`` comes out sharded along ``split_axis``,
+    in one launch and moving each element once. With both axes equal it is
+    ``torch.distributed.all_to_all_single`` along that axis. With several
+    mesh axes, one collective spans every device they span, in row-major
+    device order.
+
+    The result claims :class:`~max.tensor.sharding.Sharded` along
+    ``split_axis`` on ``mesh_axis`` only when the input is sharded along a
+    different ``concat_axis`` there. Otherwise, for example for per-rank
+    partial results or with both axes equal, the shards are not slices of
+    one tensor and the result is :class:`~max.tensor.sharding.Unknown` on
+    ``mesh_axis``.
+
+    Args:
+        t: The input distributed tensor. Its shards must have the same shape
+            within each group, with ``split_axis`` a multiple of the group
+            size.
+        split_axis: The tensor axis each shard is split along.
+        concat_axis: The tensor axis the received chunks concatenate along.
+        mesh_axis: The mesh axis or axes, by index or name, the exchange
+            runs over. Defaults to ``0``.
+
+    Returns:
+        A tensor whose shards have ``split_axis`` divided by the group size
+        and ``concat_axis`` multiplied by it.
+    """
+
+    def simulated(shards: list[TensorValue]) -> list[TensorValue]:
+        chunks = [
+            _split_evenly(shard, split_axis, len(shards)) for shard in shards
+        ]
+        return [
+            ops.concat(
+                [chunks[src][dst] for src in range(len(shards))], concat_axis
+            )
+            for dst in range(len(shards))
+        ]
+
+    return _collective(
+        t,
+        mesh_axis,
+        _all_to_all_placement(t, split_axis, concat_axis, mesh_axis),
+        kernel=lambda shards, signal_buffers, group_size=None: ops.all_to_all(
+            shards,
+            signal_buffers,
+            split_axis=split_axis,
+            concat_axis=concat_axis,
+            group_size=group_size,
+        ),
+        simulated=simulated,
+    )
+
+
+def _all_to_all_placement(
+    t: Tensor,
+    split_axis: int,
+    concat_axis: int,
+    mesh_axis: int | str | Sequence[int | str],
+) -> Placement:
+    """Returns the placement an all-to-all leaves on ``mesh_axis``.
+
+    Chunks of a tensor sharded along ``concat_axis`` reassemble along it, so
+    the result is sharded along ``split_axis``. Anything else is not slices
+    of one tensor afterwards, so it is :class:`~max.tensor.sharding.Unknown`.
+    """
+    rank = t.rank
+    split, concat = split_axis % rank, concat_axis % rank
+    axes = (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
+    placements = [t.placements[t.mesh._resolve_axis(axis)] for axis in axes]
+    if split != concat and all(
+        isinstance(p, Sharded) and p.axis % rank == concat for p in placements
+    ):
+        return Sharded(split)
+    return Unknown()
+
+
+def _split_evenly(sv: TensorValue, axis: int, n: int) -> list[TensorValue]:
+    """Splits ``sv`` into ``n`` equal chunks along ``axis``."""
+    axis %= sv.rank
+    dim = sv.shape[axis]
+    if isinstance(dim, StaticDim):
+        if int(dim) % n != 0:
+            raise ValueError(
+                f"all_to_all cannot split axis {axis} of size {int(dim)} "
+                f"into {n} chunks"
+            )
+        return list(ops.split(sv, [int(dim) // n] * n, axis=axis))
+    # A symbolic axis splits into equal chunks only when it divides; the
+    # ragged binning of ``_even_chunk`` is exactly that then.
+    return [_even_chunk(sv, axis, n, index) for index in range(n)]
 
 
 def reduce_scatter(
@@ -532,13 +636,136 @@ def allreduce_rms_norm(
         )
 
 
+def allreduce_post_norm_residual_rms_norm(
+    t: Tensor,
+    residual: Tensor,
+    gamma: Tensor,
+    gamma2: Tensor,
+    mix: Tensor,
+    epsilon: float,
+) -> tuple[Tensor, Tensor]:
+    """All-reduces a branch and joins it to the residual between two norms.
+
+    A transformer block with post-norms (the sandwich-norm layout) ends each
+    branch with a norm, joins it to the residual stream with scalar weights
+    and norms the result for the next branch. This does all of it in one
+    launch per device:
+
+    .. code-block:: text
+
+        joined = mix[0] * rms_norm(allreduce(t), gamma) + mix[1] * residual
+        normed = rms_norm(joined, gamma2)
+
+    Each product and the sum round to bfloat16 on their own, as the unfused
+    ops do; both norms multiply by their weight in float32 before the cast
+    and take no weight offset. A Lamport kernel runs it (see
+    :func:`max.graph.ops.allreduce_post_norm_residual_rms_norm`), in row
+    chunks that each fit its 1 MiB workspace.
+
+    Args:
+        t: A ``[rows, cols]`` bfloat16 tensor that is
+            :class:`~max.tensor.sharding.Partial` on a one-dimensional mesh
+            of accelerators.
+        residual: The residual stream, replicated on that mesh.
+        gamma: The branch norm's weight, replicated on that mesh or a host
+            tensor, which is copied to every device.
+        gamma2: The next norm's weight, as ``gamma``.
+        mix: ``[2]`` float32, as ``gamma``: the weight of the normed branch,
+            then of the residual.
+        epsilon: Both norms' epsilon.
+
+    Returns:
+        ``(joined, normed)``, each replicated.
+
+    Raises:
+        ValueError: If ``t`` is not a 2-D bfloat16 Partial tensor on a
+            one-dimensional mesh, ``residual`` is not replicated on that
+            mesh, a weight is distributed but not replicated on it, or the
+            mesh has no accelerators.
+    """
+    mesh = t.mesh
+    if mesh.ndim != 1 or not isinstance(t.placements[0], Partial):
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm needs a Partial tensor on a "
+            f"one-dimensional mesh, got {t.mapping}."
+        )
+    if t.dtype != DType.bfloat16 or t.rank != 2:
+        raise ValueError(
+            "allreduce_post_norm_residual_rms_norm takes a 2-D bfloat16 "
+            f"tensor, got {t.dtype} of rank {t.rank}."
+        )
+    # Each device joins its own operands and the outputs are labelled
+    # replicated, so an operand that differs across devices would make the
+    # outputs differ under that label. A weight may instead be one host
+    # tensor, copied to every device.
+    for name, operand in (
+        ("residual", residual),
+        ("gamma", gamma),
+        ("gamma2", gamma2),
+        ("mix", mix),
+    ):
+        is_replicated = operand.mesh == mesh and operand.placements == (
+            Replicated(),
+        )
+        if not is_replicated and (name == "residual" or operand.is_distributed):
+            raise ValueError(
+                f"allreduce_post_norm_residual_rms_norm takes {name} "
+                f"replicated on the mesh of its input, got {operand.mapping}."
+            )
+
+    def run(
+        shards: list[Tensor],
+        residuals: list[Tensor],
+        gammas: list[Tensor] | Tensor,
+        gamma2s: list[Tensor] | Tensor,
+        mixes: list[Tensor] | Tensor,
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is None:
+            raise ValueError(
+                "allreduce_post_norm_residual_rms_norm runs only on "
+                "accelerators."
+            )
+        values = [TensorValue(shard) for shard in shards]
+
+        # The op reads each weight on its input's device, so a host weight,
+        # which reaches the group whole, needs a copy on every device.
+        def local(weights: list[Tensor] | Tensor) -> list[TensorValue]:
+            if not isinstance(weights, list):
+                weights = [weights] * len(values)
+            return [
+                w if w.device == v.device else w.to(v.device)
+                for w, v in zip(
+                    (TensorValue(w) for w in weights), values, strict=True
+                )
+            ]
+
+        joined, normed = ops.allreduce_post_norm_residual_rms_norm(
+            shards,
+            signal_buffers,
+            residuals,
+            local(gammas),
+            local(gamma2s),
+            local(mixes),
+            epsilon,
+        )
+        return list(zip(joined, normed, strict=True))
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with ensure_context():
+        return call_on_mesh(
+            run, mesh, (0,), out_specs=[replicated, replicated]
+        )(t, residual, gamma, gamma2, mix, _signal_buffers(mesh))
+
+
 def allgather_rms_norm(
     t: Tensor,
     gamma: Tensor,
     epsilon: float,
     weight_offset: float = 0.0,
+    round_offset_gamma: bool = False,
 ) -> tuple[Tensor, Tensor]:
-    """All-gathers a tensor along axis 0 and RMS-normalizes the result.
+    """All-gathers a 2D tensor and RMS-normalizes the result.
 
     Fuses :func:`allgather` over every device of a one-dimensional mesh with
     an RMS norm of the gathered rows, in one collective launch (see
@@ -547,11 +774,13 @@ def allgather_rms_norm(
 
     Args:
         t: A ``[rows, cols]`` bfloat16 tensor that is
-            :class:`~max.tensor.sharding.Sharded` along axis 0 on a
-            one-dimensional mesh.
+            :class:`~max.tensor.sharding.Sharded` along axis 0 or 1 on
+            a one-dimensional mesh.
         gamma: The norm weight, replicated on the mesh of ``t``.
         epsilon: The norm epsilon.
         weight_offset: A constant added to ``gamma``.
+        round_offset_gamma: Whether ``gamma + weight_offset`` is rounded to
+            the input dtype before the multiply.
 
     Returns:
         A pair ``(normed, gathered)``, each
@@ -559,11 +788,14 @@ def allgather_rms_norm(
         gathered tensor, and the gathered tensor itself.
     """
     mesh = t.mesh
-    if mesh.ndim != 1 or t.placements[0] != Sharded(0):
+    placement = t.placements[0] if mesh.ndim == 1 else None
+    if t.rank != 2 or placement not in (Sharded(0), Sharded(1)):
         raise ValueError(
-            "allgather_rms_norm needs a tensor sharded along axis 0 on a "
-            f"one-dimensional mesh, got {t.mapping}."
+            "allgather_rms_norm needs a 2D tensor sharded along axis 0 or 1 "
+            f"on a one-dimensional mesh, got {t.mapping}."
         )
+    assert isinstance(placement, Sharded)
+    axis = placement.axis
 
     def run(
         shards: list[Tensor],
@@ -577,12 +809,14 @@ def allgather_rms_norm(
                 gammas,
                 epsilon=epsilon,
                 weight_offset=weight_offset,
+                axis=axis,
+                round_offset_gamma=round_offset_gamma,
             )
         else:
             values = [TensorValue(shard) for shard in shards]
             home = values[0].device
             full = ops.concat(
-                [v if v.device == home else v.to(home) for v in values], 0
+                [v if v.device == home else v.to(home) for v in values], axis
             )
             gathered = [
                 full if v.device == home else full.to(v.device) for v in values
@@ -590,10 +824,13 @@ def allgather_rms_norm(
             normed = [
                 ops.rms_norm(
                     g,
-                    w,
+                    TensorValue(w) + weight_offset,
                     epsilon,
-                    weight_offset,
                     multiply_before_cast=True,
+                )
+                if round_offset_gamma
+                else ops.rms_norm(
+                    g, w, epsilon, weight_offset, multiply_before_cast=True
                 )
                 for g, w in zip(gathered, gammas, strict=True)
             ]
@@ -604,6 +841,88 @@ def allgather_rms_norm(
         return call_on_mesh(
             run, mesh, (0,), out_specs=[replicated, replicated]
         )(t, gamma, _signal_buffers(mesh))
+
+
+def allgather_gated_residual_rms_norm(
+    branch: Tensor,
+    residual: Tensor,
+    post_weight: Tensor,
+    gate: Tensor,
+    norm_weight: Tensor,
+    post_eps: float,
+    norm_eps: float,
+    temperature: float,
+    gate_eps: float,
+    scale_branch: bool,
+) -> tuple[Tensor, Tensor]:
+    """Gathers a branch's columns and joins it to the residual stream.
+
+    See :func:`max.graph.ops.allgather_gated_residual_rms_norm`.
+
+    Args:
+        branch: A ``[rows, cols]`` bfloat16 tensor
+            :class:`~max.tensor.sharding.Sharded` along axis 1 on a
+            one-dimensional mesh of accelerators.
+        residual: The residual stream, replicated on that mesh.
+        post_weight: The branch's scale weight, replicated.
+        gate: The residual gate's logits, replicated.
+        norm_weight: The next pre-norm's weight, replicated.
+        post_eps: The branch norm's epsilon.
+        norm_eps: The next pre-norm's epsilon.
+        temperature: The residual gate's temperature.
+        gate_eps: The floor under the residual coefficient's root.
+        scale_branch: Whether the branch is scaled by ``1 + post_weight``
+            before its norm.
+
+    Returns:
+        ``(stream, normed)``, each replicated.
+    """
+    mesh = branch.mesh
+    if mesh.ndim != 1 or branch.placements[0] != Sharded(1):
+        raise ValueError(
+            "allgather_gated_residual_rms_norm needs a branch sharded along "
+            f"axis 1 on a one-dimensional mesh, got {branch.mapping}."
+        )
+
+    def run(
+        shards: list[Tensor],
+        residuals: list[Tensor],
+        post_weights: list[Tensor],
+        gates: list[Tensor],
+        norm_weights: list[Tensor],
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[tuple[TensorValue, TensorValue]]:
+        if signal_buffers is None:
+            raise ValueError(
+                "allgather_gated_residual_rms_norm runs only on accelerators."
+            )
+        stream, normed = ops.allgather_gated_residual_rms_norm(
+            shards,
+            signal_buffers,
+            residuals,
+            post_weights,
+            gates,
+            norm_weights,
+            post_eps,
+            norm_eps,
+            temperature,
+            gate_eps,
+            scale_branch,
+        )
+        return list(zip(stream, normed, strict=True))
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with ensure_context():
+        return call_on_mesh(
+            run, mesh, (0,), out_specs=[replicated, replicated]
+        )(
+            branch,
+            residual,
+            post_weight,
+            gate,
+            norm_weight,
+            _signal_buffers(mesh),
+        )
 
 
 def _local_split(

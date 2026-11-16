@@ -24,6 +24,7 @@
 #include "Support/LLVMYAMLForwardDecls.h"
 #include "Support/ML/DType.h"
 #include "Support/ML/TensorShape.h"
+#include "Support/SymbolExport.h"
 #include <cstddef>
 #include <initializer_list>
 #include <string>
@@ -32,7 +33,7 @@ namespace M {
 
 /// TensorSpec is a memory efficient representation of a shape and
 /// element type, implemented using TensorShape.
-class TensorSpec : public TensorShape {
+class MODULAR_CXX_EXPORT TensorSpec : public TensorShape {
 public:
   TensorSpec() : TensorShape() { setEltType(DType::invalid); }
   template <typename ShapeType>

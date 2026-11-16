@@ -34,7 +34,7 @@ comment).
 from __future__ import annotations
 
 import numpy as np
-from fusion_utils import run_and_verify_fusion
+from fusion_utils import execute, load_and_verify_fusion, run_and_verify_fusion
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -248,21 +248,14 @@ def test_fuses_independently_per_conditional_branch(
     # Both branches compile regardless of which one a given call executes, so
     # the fusion check only needs to run once, against either branch's
     # pattern; the loop below is purely for the numeric check per branch.
-    (out,) = run_and_verify_fusion(
-        session,
-        graph,
-        x_np,
-        b_np,
-        np.array(True),
-        fused=r"mo\.reduce\.max.*mo\.add",
+    model = load_and_verify_fusion(
+        session, graph, fused=r"mo\.reduce\.max.*mo\.add"
     )
-    np.testing.assert_allclose(out, reduced_np + b_np, rtol=1e-5, atol=1e-5)
-
     for cond_np, ref in (
         (np.array(True), reduced_np + b_np),
         (np.array(False), reduced_np * b_np),
     ):
-        (out,) = run_and_verify_fusion(session, graph, x_np, b_np, cond_np)
+        (out,) = execute(model, x_np, b_np, cond_np)
         np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
@@ -296,11 +289,12 @@ def test_no_fuse_across_conditional_blocks(session: InferenceSession) -> None:
     b_np = np.random.randn(1, 4).astype(np.float32)
     reduced_np = np.max(x_np, axis=0, keepdims=True)
 
+    model = load_and_verify_fusion(session, graph)
     for cond_np, ref in (
         (np.array(True), reduced_np + b_np),
         (np.array(False), b_np),
     ):
-        (out,) = run_and_verify_fusion(session, graph, x_np, b_np, cond_np)
+        (out,) = execute(model, x_np, b_np, cond_np)
         np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 

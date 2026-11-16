@@ -4185,7 +4185,7 @@ def test_m3_variable_keys_require_an_explicit_paired_tag_policy(
     "field", ["additionalProperties", "unevaluatedProperties"]
 )
 @pytest.mark.parametrize("reject_unsupported", [False, True])
-def test_m3_legacy_min_properties_keeps_undeclared_keys(
+def test_m3_root_min_properties_keeps_undeclared_keys(
     field: str, reject_unsupported: bool
 ) -> None:
     schema = {
@@ -4196,7 +4196,7 @@ def test_m3_legacy_min_properties_keeps_undeclared_keys(
         field: {"type": "boolean"},
     }
     extra = f"{_M3_PREFIX}<extra>true{_M3_PREFIX}</extra>"
-    for paired in (None, False):
+    for paired in (None, False, True):
         compiled = _compile_m3_xml_policy(
             schema, paired, reject_unsupported=reject_unsupported
         )
@@ -4205,11 +4205,18 @@ def test_m3_legacy_min_properties_keeps_undeclared_keys(
         assert not _accepts(
             compiled, _m3_state("42") + extra.replace("true", "wrong")
         )
+    # Below the root, a paired object holds such keys only as a JSON leaf.
+    nested = {
+        "type": "object",
+        "properties": {"m": schema},
+        "required": ["m"],
+        "additionalProperties": False,
+    }
     with pytest.raises(
         Exception, match="undeclared keys whose tags cannot be paired"
     ):
         _compile_m3_xml_policy(
-            schema, True, reject_unsupported=reject_unsupported
+            nested, True, reject_unsupported=reject_unsupported
         )
 
 
@@ -6776,3 +6783,36 @@ def test_deepseek_v41_empty_arguments_whitespace_cap_through_shim() -> None:
         compiled,
         '<\uff5cDSML\uff5c parameter name="x" string="true">v</\uff5cDSML\uff5c parameter>\n',
     )
+
+
+def test_free_form_object_value_takes_the_node_s_separators_and_bound() -> None:
+    # A free-form object value uses the node's separators and whitespace
+    # bound, the same as a typed object.
+    schema = {
+        "type": "object",
+        "properties": {"a": {"type": "object"}},
+        "required": ["a"],
+    }
+
+    def compile_with(**settings: Any) -> xgr.CompiledGrammar:
+        return _compiler().compile_structural_tag(
+            xgr.StructuralTag(
+                format=JSONSchemaFormat(
+                    json_schema=schema,
+                    require_object_root=True,
+                    strict_mode=False,
+                    max_whitespace_cnt=1,
+                    **settings,
+                )
+            )
+        )
+
+    exact = compile_with(any_whitespace=False, separators=(",", ":"))
+    assert _accepts(exact, '{"a":{"a":1,"b":1}}')
+    assert not _accepts(exact, '{"a":{"a":1, "b":1}}')
+    assert not _accepts(exact, '{"a":{ "a":1}}')
+
+    bounded = compile_with(any_whitespace=True)
+    assert _accepts(bounded, '{"a":{ "a":1, "b":1 }}')
+    assert not _accepts(bounded, '{"a":{  "a":1}}')
+    assert not _accepts(bounded, '{"a":{"a":1,  "b":1}}')

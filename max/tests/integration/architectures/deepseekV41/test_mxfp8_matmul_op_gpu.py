@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests ``mo.matmul.mxfp8.cluster_splitk`` in a graph against the MXFP8
+"""Tests ``matmul.mxfp8.cluster_splitk`` in a graph against the MXFP8
 matmul it replaces, bit for bit, at every DeepSeek-V4.1 weight shape.
 
 :func:`mxfp8_linear` builds the op as the model does: the dynamic MXFP8
@@ -50,8 +50,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
+from max.nn._graph_ops.quant import _matmul_float8_mxfp8
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -59,7 +60,6 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 from max.pipelines.architectures.deepseekV41.layers.mxfp8_matmul import (
     mxfp8_linear,
 )
@@ -210,7 +210,7 @@ def compiled(session: InferenceSession) -> dict[str, _Compiled]:
                         x, layer.weight.to(x.device), layer.weight_scale
                     ),
                 )
-            assert "mo.matmul.mxfp8.cluster_splitk" in str(graph)
+            assert "matmul.mxfp8.cluster_splitk" in str(graph)
             out[name] = _Compiled(
                 session.load(graph, weights_registry=layer.state_dict()), k
             )

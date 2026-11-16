@@ -25,7 +25,7 @@ from std.sys import size_of
 from layout import Coord, TileTensor, coord, row_major
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from std.testing import assert_false
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
@@ -331,9 +331,6 @@ def run_im2col_test[
         grid_dim=(1, 1, 1),
         block_dim=128,
         shared_mem_bytes=smem_bytes,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_bytes)
-        ),
     )
     ctx.synchronize()
 

@@ -1,0 +1,30 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 2x B200 recipe for DeepSeek-V4-Flash-0731 on ModuleV3, native fp8 linears
+# and fp4 routed experts, tensor parallel across both GPUs. The sizes match
+# the graph API recipe in deepseekV4/recipes.
+model:
+  model_path: deepseek-ai/DeepSeek-V4-Flash-0731
+  huggingface_model_revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
+  huggingface_weight_revision: 7872f01b1d1fe23eabc4c98b48bffcef5a386062
+  device_specs: [0, 1]
+  quantization_encoding: float8_e4m3fn
+  # Sizes the compressed-attention candidate axis, which is a graph shape.
+  # TODO(MXSERV-569): derive max_length automatically.
+  max_length: 4096
+
+runtime:
+  prefer_module_v3: true
+  # An 8192-token CE batch does not fit beside the weights and the KV floor
+  # on 2x B200.
+  max_batch_input_tokens: 4096

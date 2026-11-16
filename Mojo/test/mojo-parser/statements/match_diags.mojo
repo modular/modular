@@ -287,7 +287,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
     case _:
         pass
 
-    # Cannot destructure a case whose payload is NoneType.
+    # Cannot destructure a case without a payload.
     match opt:
     # expected-error @+1 {{enum case 'None' has no associated value}}
     case Optional.None(value):
@@ -325,6 +325,54 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
 
+__enum Payloads:
+    case three(Int, String, Bool)
+    case pairi(Int, Int)
+    case word(String)
+    case none
+    case linear(SomeLinearType, SomeLinearType)
+
+
+def match_enum_payload_arity(v: Payloads):
+    # A case pattern takes one subpattern per payload element, as the case's
+    # constructor takes one argument per element.
+    match v:
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi(s):
+        pass
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi(_):
+        pass
+    # expected-error @+1 {{expected 2 subpatterns for enum case 'pairi', found 1}}
+    case .pairi((a, b)):
+        pass
+    # expected-error @+1 {{expected 3 subpatterns for enum case 'three', found 4}}
+    case .three(a, b, c, d):
+        pass
+    # expected-error @+1 {{expected 1 subpattern for enum case 'word', found 2}}
+    case .word(a, b):
+        pass
+    # expected-error @+1 {{enum case 'none' has no associated value}}
+    case .none(x):
+        pass
+    # expected-error @+1 {{enum case 'pairi' requires a payload pattern inside the parentheses}}
+    case .pairi():
+        pass
+    case _:
+        pass
+
+
+def match_enum_consume_multi_element_payload(var v: Payloads):
+    # A consuming match copies the elements of a multi-element payload.
+    match v^:
+    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    case .linear(var a, var b):
+        a^.consume()
+        b^.consume()
+    case _:
+        pass
+
+
 @fieldwise_init
 struct BoolPair:
     var a: Bool
@@ -345,11 +393,30 @@ __enum ParametricExhaustivityColor[
 
 
 def match_open_enum_duplicate(color: OpenColor):
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match color:
     case .red:
         pass
     # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
     case .red:
+        pass
+
+
+def match_open_enum_requires_catchall(color: OpenColor):
+    # Open enums may acquire cases outside the current compilation unit.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+
+    match color:
+    case .red:
+        pass
+    case .green:
+        pass
+    case _:
         pass
 
 
@@ -524,20 +591,23 @@ def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
         pass
 
 def match_exhaustivity_literal_subjects(n: Int, s: String):
-    # Int/String are open universes: covering literals never proves exhaustivity,
-    # but duplicate / already-covered literal cases are diagnosed.
+    # Int/String are open universes: literal patterns require a catch-all.
+    # Duplicate / already-covered literal cases are still diagnosed.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0:
         pass
     case 1:
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match s:
     case "a":
         pass
     case "b":
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match s:
     case "a":
         pass
@@ -545,6 +615,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case "a":
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0:
         pass
@@ -554,6 +625,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case -1:
         pass
@@ -562,6 +634,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
         pass
 
     # Or of literals covers each alternative; a later duplicate is unreachable.
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     match n:
     case 0 | 1 | 2:
         pass
@@ -569,8 +642,7 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
-    # After a catch-all, everything else is unreachable (still no exhaustivity
-    # warning when only literals are present).
+    # A catch-all closes the open literal space.
     match n:
     case 0:
         pass
@@ -608,6 +680,7 @@ def match_exhaustivity_summarizes_many_missing_cases(
 
 
 def comptime_match_or_binding_name_mismatch[x: Tuple[Int, Int]]():
+    # expected-warning @+1 {{'match' is not exhaustive; add a '_' case}}
     comptime match x:
     # expected-error @+1 {{or-pattern alternatives must bind the same names; 'y' is bound in one alternative but not the other}}
     case (0, y) | (1, 2):
@@ -776,3 +849,18 @@ def print_token(tok: Token):
             pass
         case .eof:
             pass
+
+
+# `Tuple[*Ts]` has no fixed arity, so a tuple pattern is rejected but a
+# catch-all still works.
+def match_parametric_tuple_pattern[*Ts: Movable](t: Tuple[*Ts]):
+    match t:
+    # expected-error @+1 {{cannot match value of parametric tuple type 'Tuple[*Ts]' against a pattern with 2 elements}}
+    case (a, b):
+        pass
+
+
+def match_parametric_tuple_catchall[*Ts: Movable](t: Tuple[*Ts]):
+    match t:
+    case _:
+        pass

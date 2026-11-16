@@ -66,6 +66,9 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   // passing convention, since those are trivially convertible.
   switch (expectedConv) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::ByRefError:
     // We checked that the function effects line up, so if we see
@@ -338,10 +341,23 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   FunctionEmitter structEmitter(shared);
   auto paramListAttrs = PogListAttr::get(
       ctx, thunkSignature.getInputParamTypes().size() + 1, remappedConstraints);
+  // The thunk has the expected function type's ABI, which includes which
+  // argument is a pack vararg and how its elements are passed.
+  std::optional<size_t> thunkPackIndex = thunkSignature.findPackVarArgIndex();
+  PogListAttr thunkArgList =
+      PogListAttr::get(ctx, thunkSignature.getNumArguments());
+  if (thunkPackIndex) {
+    SmallVector<PogMetadataAttr> pogs(thunkArgList.getPogs());
+    PogMetadataAttr &pog = pogs[*thunkPackIndex];
+    pog = PogMetadataAttr::get(pog.getName(), pog.getPassingKind(),
+                               VariadicKind::PackVarArg);
+    thunkArgList =
+        PogListAttr::get(ctx, pogs, /*bodyConstraints=*/{},
+                         thunkSignature.getVariadicConvention(*thunkPackIndex));
+  }
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls, paramListAttrs, functionType.getInputs(),
-      thunkSignature.getArgConventions(),
-      PogListAttr::get(ctx, thunkSignature.getNumArguments()),
+      thunkSignature.getArgConventions(), thunkArgList,
       functionType.getResults().front(), SpecialFunctionKind::kNormal,
       moduleDecl.getLoc(), b, thunkSignature.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic);
@@ -360,16 +376,16 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  IREmitter emitter(*thunkDecl, b);
+  RaiseContext raiseContext(thunk);
+  IREmitter emitter(*thunkDecl, b, &raiseContext);
 
   // Construct the call operands from the function block arguments.
   SyntheticNode node(useLoc);
   CallOperands operands(CallSyntax::kMethodCall, &node, EC_ConversionThunk);
 
-  std::optional<size_t> thunkVariadicArgIndexOpt =
-      thunkSignature.findPackVarArgIndex();
-  std::optional<size_t> actualVariadicArgIndexOpt =
-      actualSignature.findPackVarArgIndex();
+  std::optional<size_t> actualPackIndex = actualSignature.findPackVarArgIndex();
+  assert((!actualPackIndex || actualPackIndex == thunkPackIndex) &&
+         "function conversion must keep the pack at the same index");
 
   ArrayRef<Type> actualArgTypes = actualSignature.getArguments().drop_back(
       actualSignature.hasMemoryOnlyResult() + actualSignature.isThrows());
@@ -386,17 +402,32 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   assert(actualKwVarArgIndex.has_value() == thunkKwVarArgIndex.has_value() &&
          "function conversion must preserve kwargs");
 
+  // When only the thunk has a pack, the actual arguments in [packBegin,
+  // packEnd) get the elements of the pack, and the actual arguments after them
+  // get the keyword-only arguments that follow the pack.
+  size_t packBegin = actualArgTypes.size();
+  size_t packEnd = actualArgTypes.size();
+  if (thunkPackIndex && !actualPackIndex) {
+    size_t actualPositionalArgCount =
+        actualKwVarArgIndex.value_or(actualArgTypes.size());
+    size_t thunkPositionalArgCount =
+        thunkKwVarArgIndex.value_or(thunkArgTypes.size());
+    packBegin = *thunkPackIndex;
+    packEnd = actualPositionalArgCount -
+              (thunkPositionalArgCount - *thunkPackIndex - 1);
+  }
+
   for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
        actualArgIndex++) {
     bool actualArgIsKwVarArg =
         actualKwVarArgIndex && actualArgIndex == *actualKwVarArgIndex;
     bool actualArgIsVariadicPack =
-        actualVariadicArgIndexOpt && thunkVariadicArgIndexOpt &&
-        actualVariadicArgIndexOpt == thunkVariadicArgIndexOpt &&
-        actualArgIndex == *actualVariadicArgIndexOpt;
+        actualPackIndex && actualArgIndex == *actualPackIndex;
     bool actualArgIsForVariadic =
-        !actualArgIsKwVarArg && thunkVariadicArgIndexOpt.has_value() &&
-        actualArgIndex >= thunkVariadicArgIndexOpt.value();
+        actualArgIndex >= packBegin && actualArgIndex < packEnd;
+    size_t thunkArgIndex = actualArgIndex < packEnd
+                               ? actualArgIndex
+                               : actualArgIndex - packEnd + packBegin + 1;
 
     Value argForActual;
     KGEN::ArgConvention convForActual;
@@ -404,15 +435,12 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       argForActual = thunk.getArgument(*thunkKwVarArgIndex);
       convForActual = thunkSignature.getArgConvention(*thunkKwVarArgIndex);
     } else if (actualArgIsVariadicPack) {
-      argForActual = thunk.getArgument(*thunkVariadicArgIndexOpt);
-      convForActual =
-          thunkSignature.getArgConvention(*thunkVariadicArgIndexOpt);
+      argForActual = thunk.getArgument(*thunkPackIndex);
+      convForActual = thunkSignature.getArgConvention(*thunkPackIndex);
     } else if (actualArgIsForVariadic) {
-      size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
-      size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
+      size_t indexInVariadic = actualArgIndex - packBegin;
 
-      MBValue packRefMBValue =
-          MBValue(thunk.getArgument(thunkVariadicArgIndex));
+      MBValue packRefMBValue = MBValue(thunk.getArgument(*thunkPackIndex));
 
       // Emit: the_pack[index]
       CValue indexCValue =
@@ -431,13 +459,16 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       argForActual = getItemResult.getMlirValue();
       convForActual = ArgConvention::ImmMem;
     } else {
-      argForActual = thunk.getArgument(actualArgIndex);
-      convForActual = thunkSignature.getArgConvention(actualArgIndex);
+      argForActual = thunk.getArgument(thunkArgIndex);
+      convForActual = thunkSignature.getArgConvention(thunkArgIndex);
     }
 
     AnyValue value;
     switch (convForActual) {
     case ArgConvention::OwnedReg:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
+    case ArgConvention::PackOwnedMem:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
@@ -474,9 +505,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     // Pass any required-keyword args with a name.
     StringAttr name;
     if (!actualArgIsForVariadic &&
-        thunkSignature.getArgListAttrs().getPassingKind(actualArgIndex) ==
+        thunkSignature.getArgListAttrs().getPassingKind(thunkArgIndex) ==
             PassingKind::KwOnly)
-      name = thunkSignature.getArgName(actualArgIndex);
+      name = thunkSignature.getArgName(thunkArgIndex);
     operands.add(name, {value, &node},
                  name ? ArgUnpackStyle::kKeyword : ArgUnpackStyle::kPositional);
   }
@@ -982,6 +1013,29 @@ classifyGeneratorToGenerator(ASTExprAnd<CValue> valueExpr,
 // Zero Cost Conversions
 //===----------------------------------------------------------------------===//
 
+/// Returns the closure wrapper struct that a function value of type `rvType`
+/// converts to when the required type is `requiredType`, or null if there is
+/// none. A `#kgen.extension` of the wrapper is accepted too, since the wrapper
+/// rebinds to it at zero cost.
+static LIT::StructType getInflatedClosureTarget(ASTType rvType, PValue value,
+                                                ASTType requiredType,
+                                                SharedState &shared) {
+  if (!sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType))
+    return {};
+
+  // strip rebind/extention/up/downcast.
+  ASTType wrapperType = KGEN::stripIdentityWrappers(PValue(requiredType));
+  auto structMeta = sugarDynCast<StructMetaType>(wrapperType.extractMetaType());
+  if (!structMeta)
+    return {};
+  LIT::StructType structTy = structMeta.getType();
+  if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
+    value = PValue(fnLiteral.getFuncSymbolAttr());
+  if (!shared.getClosureEmitter().isInflatedClosureForFnSymbol(value, structTy))
+    return {};
+  return structTy;
+}
+
 static TypedAttr stripTypeValueCasts(TypedAttr typeValue) {
   typeValue = KGEN::stripIdentityWrappers(typeValue);
   if (auto typeParam = sugarDynCast<TypeParamAttr>(typeValue))
@@ -1134,6 +1188,25 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
                        SmallVectorImpl<ConstraintAttr> *unprovenConstraints) {
   if (sugaredFromType.isEqualCanon(sugaredToType))
     return TriBool::yes(); // No rebind needed!
+
+  // A conditional type `A if c else B` is the same type as the arm that the
+  // scope's assumptions select, so converting to or from that arm is free.
+  if (sugarIsa<ParamType>(sugaredFromType) ||
+      sugarIsa<ParamType>(sugaredToType)) {
+    SmallVector<ConstraintAttr> assumptions =
+        ASTDecl::getAssumptionsFromScope(&declScope);
+    llvm::append_range(assumptions, additionalAssumptions);
+    Type refinedFrom = maybeRefineCondTypeWithAssumptions(
+        sugaredFromType.mlirType, assumptions);
+    Type refinedTo =
+        maybeRefineCondTypeWithAssumptions(sugaredToType.mlirType, assumptions);
+    if (refinedFrom != sugaredFromType.mlirType ||
+        refinedTo != sugaredToType.mlirType)
+      return canZeroCostConvertImpl(ASTType(refinedFrom), ASTType(refinedTo),
+                                    shared, declScope, additionalAssumptions,
+                                    unprovenConstraints);
+  }
+
   ASTType toType = getCanonicalType(sugaredToType);
   ASTType fromType = getCanonicalType(sugaredFromType);
 
@@ -1607,6 +1680,21 @@ ParseResult IREmitter::coerceTypesToEachOther(
   return success(lhs && rhs);
 }
 
+/// Returns a common type for two values using their `__merge_with__`
+/// functions and implicit conversions, without emitting those conversions.
+/// Returns null when no common type exists or selecting it would require
+/// emitting a `__merge_with__` call.
+ASTType IREmitter::getCommonType(CValue lhs, CValue rhs, SMLoc loc,
+                                 ASTType contextualType) {
+  SyntheticNode source(loc);
+  ASTType commonType;
+  auto [result, lhsMergeWith, rhsMergeWith] = findCommonType(
+      {lhs, &source}, {rhs, &source}, commonType, *this, contextualType);
+  if (result != CTR_Success || lhsMergeWith || rhsMergeWith)
+    return {};
+  return commonType;
+}
+
 /// Given a value of a type that can be zero cost converted to another type,
 /// emit a rebind or other operation to get it in the right type.
 PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
@@ -1724,7 +1812,8 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
 
   // Otherwise, create a new type value whose witness table is provided by the
   // wrapper stub.
-  ASTType boundWrapper = wrapperDecl->getOp().bindReference({typeValue});
+  ASTType boundWrapper = wrapperDecl->getOp().bindAllReferences(
+      &shared.getEvaluationContext(), {typeValue});
   return TypeParamAttr::get(boundWrapper, mlirType, trait);
 }
 
@@ -2152,17 +2241,17 @@ static TriBool classifyImplicitConversionImpl(
 
   // Functions can implicitly convert to their corresponding closure wrapper.
   // This is distinct from converting to a closure trait.
-  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
-    if (auto structMeta =
-            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
-      LIT::StructType structTy = structMeta.getType();
-      PValue target = value.ir.getIfPValue();
-      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getFuncSymbolAttr());
-      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
-                                                                  structTy))
-        return cacheAndReturnVal(rvType, requiredType, true);
-    }
+  if (getInflatedClosureTarget(rvType, value.ir.getIfPValue(), requiredType,
+                               shared))
+    return cacheAndReturnVal(rvType, requiredType, true);
+
+  // An implicit constructor builds a value, so the required type can not be a
+  // trait or metatype.
+  if (!LIT::isFirstLevelTypeExpr(PValue(requiredType)) &&
+      !StructTypeGenerator::dynCast(requiredType)) {
+    if (sawUnknown)
+      return TriBool::unknown();
+    return cacheAndReturnVal(rvType, requiredType, false);
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -2373,22 +2462,12 @@ CValue IREmitter::emitImplicitConversionToType(
   if (succeeded(typeValueCast))
     return emitCResult(*typeValueCast, expr, dest);
 
-  // Conversions from function pointers to closures.
-  if (sugarIsa<FnTypeGeneratorType, FnLiteralTypeGeneratorType>(rvType)) {
-    // Functions can implicitly convert to their corresponding closure wrapper.
-    if (auto structMeta =
-            sugarDynCast<StructMetaType>(requiredType.extractMetaType())) {
-      StructType structTy = structMeta.getType();
-      auto target = valueExpr.ir.getIfPValue();
-      if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
-        target = PValue(fnLiteral.getFuncSymbolAttr());
-      if (shared.getClosureEmitter().isInflatedClosureForFnSymbol(target,
-                                                                  structTy)) {
-        return emitConstructorCall(
-            structTy,
-            CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
-      }
-    }
+  // Functions can implicitly convert to their corresponding closure wrapper.
+  if (LIT::StructType structTy = getInflatedClosureTarget(
+          rvType, valueExpr.ir.getIfPValue(), requiredType, shared)) {
+    return emitConstructorCall(
+        structTy,
+        CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
   }
 
   if (sugarIsa<ParamListType>(rvType) &&
@@ -2451,17 +2530,8 @@ CValue IREmitter::emitImplicitConversionToType(
                                      dest, additionalAssumptions);
   }
 
-  // Before we try emitting constructor call, makes sure that the required type
-  // is concrete.
-  if (llvm::find_if(requiredType.getParamBindings(), [](TypedAttr param) {
-        return isa<UnboundAttr>(param);
-      }) != requiredType.getParamBindings().end()) {
-    emitError(expr->getLoc())
-        << "cannot construct a value with parametric type: " << requiredType
-        << expr->getRange();
-    dest.resetForError(*this);
-    return {};
-  }
+  assert(llvm::none_of(requiredType.getParamBindings(),
+                       llvm::IsaPred<UnboundAttr>));
   //  We disable implicit conversions to prevent converting T -> S -> U in
   //  one step, and to avoid infinite conversion cycles.
   return emitConstructorCall(requiredType,
@@ -2478,8 +2548,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   // implicitly converted to StringSpan, but String has an explicit constructor
   // that accepts TString.
   if (isa<TStringExprNode>(expr->getWithoutParens())) {
-    auto stringType = shared.lookupBuiltinType("String", declScope, loc)
-                          .getWithoutParameters(shared);
+    auto stringType = shared.lookupBuiltinType("String", declScope, loc);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
       val = emitConstructorCall(
           stringType,
@@ -2490,8 +2559,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   }
 
   // Convert to StringSpan if not already.
-  auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc)
-                            .getWithoutParameters(shared);
+  auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc);
   if (val.getType().getDecl(shared) != stringSpanType.getDecl(shared)) {
     if (!canImplicitlyConvertToType({val, expr}, stringSpanType, declScope)) {
       emitError(expr->getLoc()) << "cannot implicitly convert " << val.getType()

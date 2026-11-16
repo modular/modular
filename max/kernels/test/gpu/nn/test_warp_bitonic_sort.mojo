@@ -122,7 +122,11 @@ def test_warp_bitonic_sort_interleaved[
         expected.append(g0 * experts_per_group + 1)
 
         router_group_limited[
-            n_experts, topk_experts, n_groups, topk_group, True, target="gpu"
+            n_experts,
+            topk_experts,
+            n_groups,
+            topk_group,
+            True,
         ](
             indices_tensor,
             weights_tensor,
@@ -218,7 +222,6 @@ def test_router_group_limited_fused_scores[
         n_groups,
         topk_group,
         True,
-        target="gpu",
     ](
         indices_tensor,
         weights_tensor,
@@ -314,7 +317,6 @@ def test_single_group_router_fused_scores[
         n_experts,
         topk_experts,
         True,
-        "gpu",
     ](
         indices_tensor,
         weights_tensor,
@@ -451,7 +453,6 @@ def test_single_group_router_eplb_fused_scores[
         num_log=num_log,
         max_replicas=max_replicas,
         hash_decorrelate=False,
-        target="gpu",
     ](
         expert_indices,
         expert_indices_log,
@@ -547,7 +548,7 @@ def test_single_group_router[
             var warp = (starting_warp + r) % num_warps
             expected.append(warp * 32)
 
-        single_group_router[n_experts, topk_experts, True, "gpu"](
+        single_group_router[n_experts, topk_experts, True](
             indices_tensor,
             weights_tensor,
             scores_tensor.as_imm(),
@@ -616,7 +617,7 @@ def test_single_group_router_raw_score_used_for_weights[
     var scores_tensor = TileTensor(scores_dev, row_major[1, n_experts]())
     var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
 
-    single_group_router[n_experts, topk_experts, True, "gpu"](
+    single_group_router[n_experts, topk_experts, True](
         indices_tensor,
         weights_tensor,
         scores_tensor.as_imm(),
@@ -690,7 +691,7 @@ def test_single_group_router_scores_from_layout_and_lambda[
         ) % Int32(n_experts)
         return (Int32(n_experts) - rotated).cast[.float32]()
 
-    single_group_router[n_experts, topk_experts, True, "gpu"](
+    single_group_router[n_experts, topk_experts, True](
         indices_tensor,
         weights_tensor,
         row_major(Coord(num_tokens, Idx[n_experts])),
@@ -776,7 +777,7 @@ def test_single_group_router_ties[
     )
     var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
 
-    single_group_router[n_experts, topk_experts, True, "gpu"](
+    single_group_router[n_experts, topk_experts, True](
         indices_tensor,
         weights_tensor,
         scores_tensor.as_imm(),
@@ -835,7 +836,11 @@ def test_router_group_limited_ties[
     var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
 
     router_group_limited[
-        n_experts, topk_experts, n_groups, topk_group, True, target="gpu"
+        n_experts,
+        topk_experts,
+        n_groups,
+        topk_group,
+        True,
     ](
         indices_tensor,
         weights_tensor,
@@ -907,7 +912,7 @@ def test_single_group_router_token_bias[
             SIMD[.float32, width](10.0), SIMD[.float32, width](0.0)
         )
 
-    single_group_router[n_experts, topk_experts, True, "gpu"](
+    single_group_router[n_experts, topk_experts, True](
         indices_tensor,
         weights_tensor,
         row_major[num_tokens, n_experts](),
@@ -986,7 +991,7 @@ def test_single_group_router_image_bias[
         ), "the expert-scores lambda contract is rank 2"
         return 1.0 + iota[.float32, width](Float32(Int(coords[1]))) * 1e-3
 
-    single_group_router[n_experts, topk_experts, True, "gpu"](
+    single_group_router[n_experts, topk_experts, True](
         TileTensor(indices_dev, row_major[num_tokens, topk_experts]()),
         TileTensor(weights_dev, row_major[num_tokens, topk_experts]()),
         row_major[num_tokens, n_experts](),

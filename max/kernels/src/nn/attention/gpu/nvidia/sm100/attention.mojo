@@ -134,11 +134,12 @@ struct FA4Config[
     # literally `padded_ov_depth`, i.e. every existing config is byte-identical.
     var ws_shared_key: Bool
     # Fuses a GQA group that does not divide MMA_M (9 or 6) into one CTA on the
-    # warp-specialized BM=32 depth-128 route. Fusing shrinks `BM_eff()` from 32
-    # to `32 // group`, so this is an explicit knob rather than derived: the
-    # dispatch instantiates both the fused and the unfused config and picks per
-    # launch by `max_prompt_len`. Reconstructors (`with_splitk`) must forward it,
-    # or the rebuilt config is unfused under a grid sized for the fused one.
+    # depth-128 BM=32 (warp-specialized) or BM=128 (1Q) route. Fusing shrinks
+    # `BM_eff()` to `BM // group`, so this is an explicit knob rather than
+    # derived: the dispatch instantiates the fused configs beside the unfused
+    # ones and picks per launch by `max_prompt_len`. Reconstructors
+    # (`with_splitk`) must forward it, or the rebuilt config is unfused under a
+    # grid sized for the fused one.
     var fuse_nondividing: Bool
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
@@ -1273,14 +1274,15 @@ struct FA4Config[
             self.MMA_M = 128
         # A group that does not divide MMA_M is packed by the d256 shared-key
         # decode vehicle, and, when requested via `fuse_nondividing`, by the
-        # BM=32 depth-128 route. Such a tile holds `MMA_M // group` seq
-        # positions x `group` heads and leaves `MMA_M % group` pad rows, which
-        # `load_warp.mojo` zero-fills and excludes from the Q barrier's bytes.
+        # BM=32 and BM=128 depth-128 routes. Such a tile holds `MMA_M // group`
+        # seq positions x `group` heads and leaves `MMA_M % group` pad rows,
+        # which `load_warp.mojo` zero-fills and excludes from the Q barrier's
+        # bytes.
         # The request is honored only for the validated (group, depth) set, so
         # callers can pass it unconditionally and read the result back.
         self.fuse_nondividing = (
             fuse_nondividing
-            and BM == 32
+            and (BM == 32 or BM == 128)
             and not pair_cta
             and qk_depth == 128
             and not is_mla
@@ -2085,8 +2087,9 @@ struct FA4Config[
         unchanged.
 
         `fuse_nondividing` follows the same rule: it is selected here, defaults
-        to False, and is honored only for BM=32 depth-128 groups 9 and 6 (read
-        the result back from the returned config's `fuse_nondividing`).
+        to False, and is honored only for BM=32 or BM=128 depth-128 groups 9
+        and 6 (read the result back from the returned config's
+        `fuse_nondividing`).
         """
         return Self(
             num_q_heads=self.num_q_heads,

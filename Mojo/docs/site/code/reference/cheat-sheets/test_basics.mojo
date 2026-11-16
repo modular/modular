@@ -107,7 +107,7 @@ def test_conversions() raises:
 
 def test_operators() raises:
     assert_equal(2**10, 1024)
-    assert_equal(pow(2, 10), 1024)
+    # assert_equal(pow(2, 10), 1024) # Removed from sheet. SIMD only. 3 Nov 26
     assert_equal(7 // 2, 3)
     assert_equal(7 % 2, 1)
     var a = 1

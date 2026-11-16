@@ -32,7 +32,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from std.testing import assert_true
 from layout import Coord, Idx, TileTensor, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
     LARGE_M_MIN,
@@ -123,13 +123,11 @@ def test_large[
         blockwise_scaled_fp8_matmul_amd[
             transpose_b=True, N_SCALE=BLOCK, K_SCALE=BLOCK
         ](
-            TileTensor(
-                c_dev, TileLayout(Coord(M, Idx[N]), Coord(c_ld, Idx[1]))
-            ),
+            TileTensor(c_dev, Layout(Coord(M, Idx[N]), Coord(c_ld, Idx[1]))),
             a_tt,
             b_tt,
             TileTensor(
-                as_dev, TileLayout(Coord(Idx[KB], M), Coord(sa_stride, Idx[1]))
+                as_dev, Layout(Coord(Idx[KB], M), Coord(sa_stride, Idx[1]))
             ),
             bs_tt,
             ctx,

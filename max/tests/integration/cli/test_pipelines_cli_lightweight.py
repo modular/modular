@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+from click.testing import CliRunner
 from max._entrypoints import pipelines
 
 
@@ -20,3 +21,22 @@ def test_pipelines_list(capsys: pytest.CaptureFixture[str]) -> None:
         pipelines.main(["list"])
     captured = capsys.readouterr()
     assert "DeepseekV2ForCausalLM" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("command", "refusal"),
+    [
+        (["serve"], "not max serve"),
+        (["warm-cache"], "no decoder to warm"),
+        (["export", "--output", "unused"], "nothing to export"),
+    ],
+)
+def test_commands_that_compile_refuse_eager(
+    command: list[str], refusal: str
+) -> None:
+    result = CliRunner().invoke(
+        pipelines.main,
+        [*command, "--model-path", "HuggingFaceTB/SmolLM2-135M", "--eager"],
+    )
+    assert result.exit_code == 2, result.output
+    assert refusal in result.output

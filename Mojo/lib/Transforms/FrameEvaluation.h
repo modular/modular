@@ -19,13 +19,9 @@
 namespace M::KGEN {
 
 /// Puts every value that is live across a suspension point into the frame.
-/// Forwards to `evaluateFrameByStateNumbering` until the liveness
-/// analysis lands.
-/// Selected with the `use-liveness-frame-evaluation` option of
-/// `lower-async-functions`. Matches the `FrameEvaluator` signature.
+/// Matches the `FrameEvaluator` signature.
 void evaluateFrameByLiveness(FrameData &frameData, FuncOp originalFunction,
-                             mlir::DominanceInfo &domInfo, Value errorValue,
-                             Value resultValue,
+                             Value errorValue, Value resultValue,
                              FrameStateTransform rematerializeFrameValues,
                              bool isHot);
 

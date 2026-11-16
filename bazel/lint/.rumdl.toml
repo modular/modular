@@ -20,6 +20,7 @@ exclude = [
     ".agents",
     "third-party",
     "oss/mojo-gpu-puzzles/book",
+    "oss/max-llm-book/book/src/[0-9]*.md",  # generated from the notebooks by tools/nb2book.py, with their outputs
     "oss/skills",
     "Faux/mojo_llm_from_scratch",
     "CloudInfra/workloads/max-product-dashboard",

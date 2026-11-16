@@ -1,4 +1,4 @@
-// RUN: mo-opt --gc-pipeline="compiled-framework-label=mof constant-fold=false default-device-label=gpu kernel-library-paths=%kernel_api_test_lib" %s -o %t
+// RUN: mo-opt --gc-pipeline="constant-fold=false default-device-label=gpu kernel-library-paths=%kernel_api_test_lib" %s -o %t
 // RUN: mt --execute --default-device-label=gpu --soft-fusion-non-host-kernel-limit=3 --model-inputs=ones --result-output-style=compact %t | FileCheck %s
 
 // CHECK-LABEL: --- Running 'custom_op_test':

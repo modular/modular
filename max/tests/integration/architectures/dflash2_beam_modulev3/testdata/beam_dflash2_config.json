@@ -1,0 +1,59 @@
+{
+  "architectures": [
+    "DFlash2BeamDraftModel"
+  ],
+  "attention_bias": false,
+  "attention_dropout": 0.0,
+  "dflash_config": {
+    "block_size": 16,
+    "conv_group_size": 16,
+    "conv_kernel_size": 2,
+    "final_logit_softcapping": 30,
+    "mask_token_id": 151669,
+    "selector_rank": 256,
+    "selector_top_k": 16,
+    "target_layer_ids": [
+      4,
+      16,
+      28,
+      40,
+      46
+    ]
+  },
+  "draft_vocab_size": 151936,
+  "dtype": "bfloat16",
+  "eos_token_id": 151674,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 5120,
+  "initializer_range": 0.02,
+  "intermediate_size": 17408,
+  "is_causal": false,
+  "layer_types": [
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention"
+  ],
+  "max_position_embeddings": 1048576,
+  "max_window_layers": 5,
+  "model_type": "qwen3",
+  "num_attention_heads": 40,
+  "num_hidden_layers": 5,
+  "num_key_value_heads": 8,
+  "num_target_layers": 52,
+  "pad_token_id": 151643,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": {
+    "rope_theta": 10000,
+    "rope_type": "default"
+  },
+  "rope_scaling": null,
+  "rope_theta": 10000.0,
+  "sliding_window": 4096,
+  "tie_word_embeddings": false,
+  "use_cache": true,
+  "use_sliding_window": true,
+  "vocab_size": 151936
+}

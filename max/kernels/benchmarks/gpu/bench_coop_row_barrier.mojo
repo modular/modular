@@ -74,7 +74,7 @@ def main() raises:
         ctx.synchronize()
 
         @inline(.always)
-        def launch(ctx: DeviceContext) raises {mut workspace, mut sink, imm}:
+        def launch(ctx: DeviceContext[]) raises {mut workspace, mut sink, imm}:
             def go[g: Int]() raises {imm}:
                 ctx.enqueue_function[coop_combine_kernel[g]](
                     workspace.unsafe_ptr(),

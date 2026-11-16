@@ -24,7 +24,10 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import Shape
 from max.nn import Module
-from max.nn.common_layers.quant_kernels import (
+from max.nn.kernels import (
+    mxfp4_dequant,
+    mxfp8_dequant,
+    nvfp4_dequant,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
 )
@@ -265,6 +268,69 @@ class NVFP4Tensor(_QuantizedWeight):
             block_size=block_size,
         )
 
+    @classmethod
+    def stacked_zeros(
+        cls,
+        num_experts: int,
+        shape: tuple[int, int],
+        *,
+        scales_per_expert: int = 1,
+        block_size: tuple[int, int] = (1, 16),
+        device: DeviceMapping | None = None,
+    ) -> NVFP4Tensor:
+        """Builds a zero-filled stack of ``num_experts`` weights of ``shape``.
+
+        ``weight`` and ``weight_scale`` gain a leading expert axis on
+        ``device``. The per-tensor scales stay on the host as
+        ``[num_experts]``, or ``[num_experts, scales_per_expert]`` for a fused
+        weight that keeps each part's scale.
+        """
+        rows, cols = int(shape[0]), int(shape[1])
+        block_m, block_k = block_size
+        scalars = (
+            (num_experts, scales_per_expert)
+            if scales_per_expert > 1
+            else (num_experts,)
+        )
+        return cls(
+            weight=Tensor.zeros(
+                (num_experts, rows, cols // 2), dtype=DType.uint8, device=device
+            ),
+            weight_scale=Tensor.zeros(
+                (
+                    num_experts,
+                    _ceildiv(rows, block_m),
+                    _ceildiv(cols, block_k),
+                ),
+                dtype=DType.float8_e4m3fn,
+                device=device,
+            ),
+            weight_scale_2=Tensor.zeros(
+                scalars, dtype=DType.float32, device=CPU()
+            ),
+            input_scale=Tensor.zeros(
+                scalars, dtype=DType.float32, device=CPU()
+            ),
+            block_size=block_size,
+        )
+
+    def local_experts(self, device: int) -> NVFP4Tensor:
+        """``device``'s experts of a stack sharded on its expert axis.
+
+        Unlike :attr:`local_shards`, the per-expert host scales are cut to the
+        same experts.
+        """
+        weight = self.weight.local_shards[device]
+        n = int(weight.shape[0])
+        rows = slice(device * n, (device + 1) * n)
+        return NVFP4Tensor(
+            weight=weight,
+            weight_scale=self.weight_scale.local_shards[device],
+            weight_scale_2=self.weight_scale_2[rows],
+            input_scale=self.input_scale[rows],
+            block_size=self.block_size,
+        )
+
     @property
     def block_size(self) -> tuple[int, int]:
         """Quantization block shape as ``(rows, cols)``."""
@@ -319,6 +385,151 @@ class NVFP4Tensor(_QuantizedWeight):
             weight_scale_2=self.weight_scale_2,
             input_scale=self.input_scale,
             block_size=self.block_size,
+        )
+
+
+class CompressedTensorsNVFP4Tensor(_QuantizedWeight):
+    """NVFP4 as compressed-tensors stores it.
+
+    The packed ``weight`` and block ``weight_scale`` are an
+    :class:`NVFP4Tensor`'s. The per-tensor ``weight_global_scale`` and
+    ``input_global_scale`` are the reciprocals of its ``weight_scale_2`` and
+    ``input_scale``. :func:`~.quant_ops.stack` and :func:`~.quant_ops.matmul`
+    read it as an :class:`NVFP4Tensor` and invert the global scales in the
+    graph, once per stack.
+
+    Args:
+        weight: Packed ``uint8`` weight data of shape ``[rows, cols // 2]``.
+        weight_scale: Per-block ``float8_e4m3fn`` scales of shape
+            ``[ceil(rows / block_m), ceil(cols / block_k)]``.
+        weight_global_scale: Per-tensor ``float32`` global scale, scalar
+            ``()``.
+        input_global_scale: Static per-tensor ``float32`` activation global
+            scale, scalar ``()``.
+        block_size: Per-block size as ``(block_m, block_k)``; ``(1, 16)`` for
+            NVFP4.
+    """
+
+    weight_scale: Tensor
+    weight_global_scale: Tensor
+    input_global_scale: Tensor
+
+    def __init__(
+        self,
+        *,
+        weight: Tensor,
+        weight_scale: Tensor,
+        weight_global_scale: Tensor,
+        input_global_scale: Tensor,
+        block_size: tuple[int, int] = (1, 16),
+    ) -> None:
+        super().__init__()
+        self.weight = weight
+        self.weight_scale = weight_scale
+        self.weight_global_scale = weight_global_scale
+        self.input_global_scale = input_global_scale
+        self._block_size = block_size
+
+    @classmethod
+    def zeros(
+        cls,
+        shape: tuple[int, int],
+        *,
+        block_size: tuple[int, int] = (1, 16),
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Builds a zero weight of logical ``shape``.
+
+        As :meth:`NVFP4Tensor.zeros`, but with global scales of one: the
+        reciprocal of a zero scale would dequantize the zero weight to NaN.
+        """
+        zeros = NVFP4Tensor.zeros(shape, block_size=block_size)
+        return cls(
+            weight=zeros.weight,
+            weight_scale=zeros.weight_scale,
+            weight_global_scale=Tensor.ones(
+                (), dtype=DType.float32, device=CPU()
+            ),
+            input_global_scale=Tensor.ones(
+                (), dtype=DType.float32, device=CPU()
+            ),
+            block_size=block_size,
+        )
+
+    @property
+    def block_size(self) -> tuple[int, int]:
+        """Quantization block shape as ``(rows, cols)``."""
+        return self._block_size
+
+    def as_nvfp4(self) -> NVFP4Tensor:
+        """This weight with modelopt's per-tensor scales.
+
+        Inverts each global scale; stack the weights first to invert a
+        stack once.
+        """
+        return NVFP4Tensor(
+            weight=self.weight,
+            weight_scale=self.weight_scale,
+            weight_scale_2=1.0 / self.weight_global_scale,
+            input_scale=1.0 / self.input_global_scale,
+            block_size=self.block_size,
+        )
+
+    def _with_data(
+        self, weight: Tensor, weight_scale: Tensor
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Returns a copy holding ``weight`` and ``weight_scale``."""
+        return CompressedTensorsNVFP4Tensor(
+            weight=weight,
+            weight_scale=weight_scale,
+            weight_global_scale=self.weight_global_scale,
+            input_global_scale=self.input_global_scale,
+            block_size=self.block_size,
+        )
+
+    def shard(
+        self, axis: int, mesh: DeviceMesh
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Co-shard ``weight``/``weight_scale`` along ``axis`` onto ``mesh``."""
+        mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
+        return self._with_data(
+            self.weight.to(mapping), self.weight_scale.to(mapping)
+        )
+
+    @property
+    def local_shards(self) -> tuple[CompressedTensorsNVFP4Tensor, ...]:
+        """Per-device shards, pairing each ``weight`` shard with its scales."""
+        return tuple(
+            self._with_data(w, s)
+            for w, s in zip(
+                self.weight.local_shards,
+                self.weight_scale.local_shards,
+                strict=True,
+            )
+        )
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        """Device mesh of the packed ``weight`` tensor."""
+        return self.weight.mesh
+
+    @property
+    def _mapping(self) -> DeviceMapping:
+        return self.weight.mapping
+
+    @_mapping.setter
+    def _mapping(self, mapping: DeviceMapping) -> None:
+        self.weight._mapping = mapping
+        self.weight_scale._mapping = mapping
+
+    def to(
+        self, target: Device | DeviceMesh | DeviceMapping
+    ) -> CompressedTensorsNVFP4Tensor:
+        """Returns a copy with ``weight`` and ``weight_scale`` on ``target``.
+
+        The global scales stay on the host.
+        """
+        return self._with_data(
+            self.weight.to(target), self.weight_scale.to(target)
         )
 
 
@@ -570,6 +781,22 @@ class NVFP4Activation(QTensor):
 
 
 @module_dataclass(frozen=True)
+class MXFP8Activation(QTensor):
+    """MXFP8-quantized activation tensor, rows sorted by expert.
+
+    Args:
+        data: ``float8_e4m3fn`` tokens of shape ``[total_tokens, K]``.
+        scales: ``float8_e8m0fnu`` block scales, one per 32 values, in the
+            padded SF-atom layout.
+        scales_offset: Per-expert offset into the padded ``scales``.
+    """
+
+    data: Tensor
+    scales: Tensor
+    scales_offset: Tensor
+
+
+@module_dataclass(frozen=True)
 class FP8BlockActivation(QTensor):
     """FP8 block-quantized activation tensor.
 
@@ -614,6 +841,24 @@ def _scales_as_rows(scales: Tensor, rows: int, k_blocks: int) -> Tensor:
     return padded[:rows, :k_blocks]
 
 
+def _error_stats(source: Tensor, restored: Tensor) -> Tensor:
+    """Returns ``[sum_sq_error, sum_sq_source, max_abs_error]`` (float32, [3]).
+
+    ``restored`` is the float32 dequantization of the *same* quantized values
+    the matmul consumes, so the numbers describe the served weight.
+    """
+    original = source.cast(DType.float32)
+    error = restored - original
+    return F.concat(
+        [
+            (error * error).sum(axis=None),
+            (original * original).sum(axis=None),
+            F.abs(error).max(axis=None),
+        ],
+        axis=0,
+    )
+
+
 class _Quantizer(QTensor):
     """Wraps a native-precision weight, quantizing it on first use.
 
@@ -637,8 +882,20 @@ class _Quantizer(QTensor):
 
     _tensor: Tensor
     _block_size: tuple[int, int]
+    _report_error: bool = False
 
-    def __init__(self, tensor: Tensor, block_size: tuple[int, int]):
+    def __init__(
+        self,
+        tensor: Tensor,
+        block_size: tuple[int, int],
+        *,
+        report_error: bool = False,
+    ):
+        if report_error and type(self)._dequantize is _Quantizer._dequantize:
+            # Fail at construction, not deep inside tracing.
+            raise NotImplementedError(
+                f"{type(self).__name__} cannot report its quantization error"
+            )
         if int(tensor.shape[-1]) % block_size[-1]:
             raise ValueError(
                 f"{type(self).__name__} needs a K that is a multiple of "
@@ -646,10 +903,51 @@ class _Quantizer(QTensor):
             )
         self._tensor = tensor
         self._block_size = block_size
+        self._report_error = report_error
 
     def _quantize(self) -> QTensor:
         """Produces the quantized container. The only format-specific part."""
         raise NotImplementedError
+
+    def _dequantize(self, quantized: QTensor) -> Tensor:
+        """Returns ``quantized`` decoded to float32, to measure its error.
+
+        Format-specific, like :meth:`_quantize`. A format that cannot decode
+        in the graph does not override it and cannot report its error.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot report its quantization error"
+        )
+
+    @property
+    def reports_error(self) -> bool:
+        """Whether quantizing also prints this weight's quantization error."""
+        return self._report_error
+
+    def _print_error(self, quantized: QTensor) -> None:
+        """Measures and prints the error of ``quantized``, if reporting.
+
+        Called by each format's :meth:`_quantize` with the container it
+        built. Adds ops beside the quantization that consume the same
+        quantized values, and prints
+        ``[sum_sq_error, sum_sq_source, max_abs_error]`` under
+        ``quant_error.<weight name>``. Does nothing unless the quantizer was
+        built with ``report_error=True``.
+
+        Raises:
+            ValueError: If reporting and the wrapped tensor is not a named
+                weight, which is the case outside ``compile``.
+        """
+        if not self._report_error:
+            return
+        name = self._tensor.external_name
+        if name is None:
+            raise ValueError(
+                "cannot report quantization error for a tensor that is not a "
+                "named weight; compile names weights after their path"
+            )
+        stats = _error_stats(self._tensor, self._dequantize(quantized))
+        F.print(stats.to(CPU()), f"quant_error.{name}")
 
     @cached_property
     def quant_tensor(self) -> Any:
@@ -677,7 +975,13 @@ class _Quantizer(QTensor):
         # Not vars(self): that also holds the cached quant_tensor once it is
         # computed, which is no weight to load. The tensor is keyed by its
         # checkpoint name, though the attribute `weight` is the packed field.
-        return {"weight": self._tensor, "_block_size": self._block_size}, None
+        # ``_report_error`` rides along so a rebuilt copy, which skips
+        # ``__init__``, keeps reporting.
+        return {
+            "weight": self._tensor,
+            "_block_size": self._block_size,
+            "_report_error": self._report_error,
+        }, None
 
     def __tree_setattr__(self, key: Any, value: Any) -> None:
         super().__tree_setattr__("_tensor" if key == "weight" else key, value)
@@ -710,8 +1014,10 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
         self,
         tensor: Tensor,
         block_size: tuple[int, int] = (1, 16),
+        *,
+        report_error: bool = False,
     ):
-        super().__init__(tensor, block_size)
+        super().__init__(tensor, block_size, report_error=report_error)
 
     def _reduction_amax(self) -> Tensor:
         """Returns this tensor's abs-max as a CPU float32 scalar."""
@@ -766,11 +1072,22 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
         )
         input_scale = Tensor.ones((), dtype=DType.float32, device=CPU())
 
-        return NVFP4Tensor(
+        result = NVFP4Tensor(
             weight=packed,
             weight_scale=_scales_as_rows(scales, *self._scale_grid()),
             weight_scale_2=decode_scale,
             input_scale=input_scale,
+        )
+        self._print_error(result)
+        return result
+
+    def _dequantize(self, quantized: QTensor) -> Tensor:
+        assert isinstance(quantized, NVFP4Tensor)
+        return nvfp4_dequant(
+            quantized.weight,
+            quantized.weight_scale,
+            quantized.weight_scale_2,
+            out_type=DType.float32,
         )
 
     @cached_property
@@ -813,8 +1130,10 @@ class MXFP8Quantizer(_Quantizer, MXFP8Tensor):
         self,
         tensor: Tensor,
         block_size: tuple[int, int] = (1, 32),
+        *,
+        report_error: bool = False,
     ):
-        super().__init__(tensor, block_size)
+        super().__init__(tensor, block_size, report_error=report_error)
 
     def _quantize(self) -> MXFP8Tensor:
         data, scales = quantize_dynamic_block_scaled(
@@ -823,10 +1142,18 @@ class MXFP8Quantizer(_Quantizer, MXFP8Tensor):
             scales_type=MXFP8Tensor.scale_dtype,
             out_type=MXFP8Tensor.storage_dtype,
         )
-        return MXFP8Tensor(
+        result = MXFP8Tensor(
             weight=data,
             weight_scale=_scales_as_rows(scales, *self._scale_grid()),
             block_size=self.block_size,
+        )
+        self._print_error(result)
+        return result
+
+    def _dequantize(self, quantized: QTensor) -> Tensor:
+        assert isinstance(quantized, MXFP8Tensor)
+        return mxfp8_dequant(
+            quantized.weight, quantized.weight_scale, out_type=DType.float32
         )
 
     @cached_property
@@ -858,8 +1185,10 @@ class MXFP4Quantizer(_Quantizer, MXFP4Tensor):
         self,
         tensor: Tensor,
         block_size: tuple[int, int] = (1, 32),
+        *,
+        report_error: bool = False,
     ):
-        super().__init__(tensor, block_size)
+        super().__init__(tensor, block_size, report_error=report_error)
 
     def _quantize(self) -> MXFP4Tensor:
         data, scales = quantize_dynamic_block_scaled_mxfp4(
@@ -867,8 +1196,16 @@ class MXFP4Quantizer(_Quantizer, MXFP4Tensor):
             scales_type=MXFP4Tensor.scale_dtype,
             out_type=MXFP4Tensor.storage_dtype,
         )
-        return MXFP4Tensor(
+        result = MXFP4Tensor(
             weight=data, weight_scale=scales, block_size=self.block_size
+        )
+        self._print_error(result)
+        return result
+
+    def _dequantize(self, quantized: QTensor) -> Tensor:
+        assert isinstance(quantized, MXFP4Tensor)
+        return mxfp4_dequant(
+            quantized.weight, quantized.weight_scale, out_type=DType.float32
         )
 
     @cached_property
@@ -897,12 +1234,14 @@ QuantAwareTensor: TypeAlias = (
     Tensor
     | FP8BlockTensor
     | NVFP4Tensor
+    | CompressedTensorsNVFP4Tensor
     | MXFP8Tensor
     | MXFP4Tensor
     | NVFP4TensorQuantizer
     | MXFP8Quantizer
     | MXFP4Quantizer
     | NVFP4Activation
+    | MXFP8Activation
     | FP8BlockActivation
 )
 
@@ -919,6 +1258,13 @@ def all_nvfp4(
 ) -> TypeGuard[Sequence[NVFP4Tensor]]:
     """Narrow a sequence of mixed weights to a homogeneous NVFP4 sequence."""
     return all(isinstance(w, NVFP4Tensor) for w in weights)
+
+
+def all_compressed_tensors_nvfp4(
+    weights: Sequence[QuantAwareTensor],
+) -> TypeGuard[Sequence[CompressedTensorsNVFP4Tensor]]:
+    """Narrow a sequence of mixed weights to compressed-tensors NVFP4."""
+    return all(isinstance(w, CompressedTensorsNVFP4Tensor) for w in weights)
 
 
 def all_mxfp8(
@@ -940,6 +1286,7 @@ __all__ = [
     "FP8BlockTensor",
     "MXFP4Quantizer",
     "MXFP4Tensor",
+    "MXFP8Activation",
     "MXFP8Quantizer",
     "MXFP8Tensor",
     "NVFP4Activation",

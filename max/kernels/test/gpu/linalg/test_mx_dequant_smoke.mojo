@@ -179,7 +179,7 @@ def test_mx_dequant[
             scales_device,
             row_major(Idx[row_tiles], Idx[col_tiles], Idx[32], Idx[4], Idx[4]),
         )
-        dequant_mx["gpu"](
+        dequant_mx(
             ctx,
             out_tt,
             in_tt,
@@ -191,7 +191,7 @@ def test_mx_dequant[
         var scales_tt = TileTensor(
             scales_device, row_major[num_rows, scale_cols]()
         )
-        dequant_mx["gpu"](
+        dequant_mx(
             ctx,
             out_tt,
             in_tt,

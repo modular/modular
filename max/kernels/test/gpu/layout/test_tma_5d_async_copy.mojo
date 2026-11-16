@@ -17,7 +17,8 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, grid_dim, thread_idx
-from layout import Coord, Idx, IntTuple, Layout, TileTensor, coord, row_major
+from layout import Coord, Idx, TileTensor, coord, row_major
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -47,9 +48,7 @@ def test_tma_5d_load_kernel[
     dst: TileTensor[
         dtype,
         type_of(
-            row_major[
-                dst_layout.shape[0].value(), dst_layout.shape[1].value()
-            ]()
+            row_major[dst_layout.static_shape[0], dst_layout.static_shape[1]]()
         ),
         dst_origin,
     ],
@@ -59,8 +58,8 @@ def test_tma_5d_load_kernel[
         _idx_product[cta_tile_shape]() == smem_layout.size()
     ), "CTA Tile and SMEM tile should be the same size"
 
-    comptime dst_dim0 = dst_layout.shape[0].value()
-    comptime dst_dim1 = dst_layout.shape[1].value()
+    comptime dst_dim0 = dst_layout.static_shape[0]
+    comptime dst_dim1 = dst_layout.static_shape[1]
 
     comptime cta_tile_dim0 = Int(cta_tile_shape[0])
     comptime cta_tile_dim1 = Int(cta_tile_shape[1])
@@ -72,16 +71,15 @@ def test_tma_5d_load_kernel[
         dst_dim1 == cta_tile_dim4
     ), "dst and cta should have the same last dimension for these test cases"
 
-    comptime assert smem_layout == Layout.row_major(smem_layout.shape)
     var smem_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](
         row_major[
-            smem_layout.shape[0].value(),
-            smem_layout.shape[1].value(),
-            smem_layout.shape[2].value(),
-            smem_layout.shape[3].value(),
-            smem_layout.shape[4].value(),
+            smem_layout.static_shape[0],
+            smem_layout.static_shape[1],
+            smem_layout.static_shape[2],
+            smem_layout.static_shape[3],
+            smem_layout.static_shape[4],
         ]()
     )
 
@@ -119,9 +117,9 @@ def test_tma_5d_load_kernel[
     var idx = (
         block_idx.z * grid_dim.y + block_idx.y
     ) * grid_dim.x + block_idx.x
-    comptime dst_tile_layout = Layout.row_major(
+    comptime dst_tile_layout = row_major[
         cta_tile_dim1, cta_tile_dim2, cta_tile_dim3, cta_tile_dim4
-    )
+    ]()
     comptime dst_tile_size = dst_tile_layout.size()
 
     for i in range(cta_tile_dim0):
@@ -152,29 +150,28 @@ def test_tma_5d_load_row_major[
 ](ctx: DeviceContext) raises:
     print("test_tma_5d_load")
 
-    comptime src_dim0 = src_layout.shape[0].value()
-    comptime src_dim1 = src_layout.shape[1].value()
-    comptime src_dim2 = src_layout.shape[2].value()
-    comptime src_dim3 = src_layout.shape[3].value()
-    comptime src_dim4 = src_layout.shape[4].value()
+    comptime src_dim0 = src_layout.static_shape[0]
+    comptime src_dim1 = src_layout.static_shape[1]
+    comptime src_dim2 = src_layout.static_shape[2]
+    comptime src_dim3 = src_layout.static_shape[3]
+    comptime src_dim4 = src_layout.static_shape[4]
 
-    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
-    comptime cta_tile_dim3 = cta_tile_layout.shape[3].value()
-    comptime cta_tile_dim4 = cta_tile_layout.shape[4].value()
+    comptime cta_tile_dim0 = cta_tile_layout.static_shape[0]
+    comptime cta_tile_dim1 = cta_tile_layout.static_shape[1]
+    comptime cta_tile_dim2 = cta_tile_layout.static_shape[2]
+    comptime cta_tile_dim3 = cta_tile_layout.static_shape[3]
+    comptime cta_tile_dim4 = cta_tile_layout.static_shape[4]
 
-    comptime dst_layout = Layout.row_major(
+    comptime dst_layout = row_major[
         src_dim0 * src_dim1 * src_dim2 * src_dim3 * src_dim4 // cta_tile_dim4,
         cta_tile_dim4,
-    )
+    ]()
 
-    comptime assert src_layout == Layout.row_major(src_layout.shape)
     var src = HostDeviceTileTensor[dtype](
         row_major[src_dim0, src_dim1, src_dim2, src_dim3, src_dim4](), ctx
     )
     var dst = HostDeviceTileTensor[dtype](
-        row_major[dst_layout.shape[0].value(), dst_layout.shape[1].value()](),
+        row_major[dst_layout.static_shape[0], dst_layout.static_shape[1]](),
         ctx,
     )
 
@@ -308,89 +305,44 @@ def main() raises:
         # Basic 5D test with no swizzling
         test_tma_5d_load_row_major[
             DType.bfloat16,
-            src_layout=Layout(
-                IntTuple(2, 2, 4, 8, 8),
-                IntTuple(512, 256, 64, 8, 1),
-            ),
-            cta_tile_layout=Layout(
-                IntTuple(1, 1, 4, 8, 8),
-                IntTuple(256, 256, 64, 8, 1),
-            ),
-            smem_tile_layout=Layout(
-                IntTuple(1, 1, 4, 8, 8),
-                IntTuple(256, 256, 64, 8, 1),
-            ),
+            src_layout=row_major[2, 2, 4, 8, 8](),
+            cta_tile_layout=row_major[1, 1, 4, 8, 8](),
+            smem_tile_layout=row_major[1, 1, 4, 8, 8](),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         # 5D with larger dimensions
         test_tma_5d_load_row_major[
             DType.bfloat16,
-            src_layout=Layout(
-                IntTuple(2, 2, 4, 8, 16),
-                IntTuple(1024, 512, 128, 16, 1),
-            ),
-            cta_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 16),
-                IntTuple(256, 256, 128, 16, 1),
-            ),
-            smem_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 16),
-                IntTuple(256, 256, 128, 16, 1),
-            ),
+            src_layout=row_major[2, 2, 4, 8, 16](),
+            cta_tile_layout=row_major[1, 1, 2, 8, 16](),
+            smem_tile_layout=row_major[1, 1, 2, 8, 16](),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         # 5D with 128B swizzling
         test_tma_5d_load_row_major[
             DType.bfloat16,
-            src_layout=Layout(
-                IntTuple(2, 2, 4, 8, 64),
-                IntTuple(4096, 2048, 512, 64, 1),
-            ),
-            cta_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 64),
-                IntTuple(1024, 1024, 512, 64, 1),
-            ),
-            smem_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 64),
-                IntTuple(1024, 1024, 512, 64, 1),
-            ),
+            src_layout=row_major[2, 2, 4, 8, 64](),
+            cta_tile_layout=row_major[1, 1, 2, 8, 64](),
+            smem_tile_layout=row_major[1, 1, 2, 8, 64](),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         # 5D with 64B swizzling
         test_tma_5d_load_row_major[
             DType.bfloat16,
-            src_layout=Layout(
-                IntTuple(2, 2, 4, 8, 32),
-                IntTuple(2048, 1024, 256, 32, 1),
-            ),
-            cta_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 32),
-                IntTuple(512, 512, 256, 32, 1),
-            ),
-            smem_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 32),
-                IntTuple(512, 512, 256, 32, 1),
-            ),
+            src_layout=row_major[2, 2, 4, 8, 32](),
+            cta_tile_layout=row_major[1, 1, 2, 8, 32](),
+            smem_tile_layout=row_major[1, 1, 2, 8, 32](),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         # 5D with 32B swizzling
         test_tma_5d_load_row_major[
             DType.bfloat16,
-            src_layout=Layout(
-                IntTuple(2, 2, 4, 8, 16),
-                IntTuple(1024, 512, 128, 16, 1),
-            ),
-            cta_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 16),
-                IntTuple(256, 256, 128, 16, 1),
-            ),
-            smem_tile_layout=Layout(
-                IntTuple(1, 1, 2, 8, 16),
-                IntTuple(256, 256, 128, 16, 1),
-            ),
+            src_layout=row_major[2, 2, 4, 8, 16](),
+            cta_tile_layout=row_major[1, 1, 2, 8, 16](),
+            smem_tile_layout=row_major[1, 1, 2, 8, 16](),
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)

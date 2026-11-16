@@ -52,9 +52,9 @@ struct Driver(Deinitable, Movable):
             plugin_spec: 'name@/path/to/plugin.so' or just the path.
         """
         var raw = RawDriver.load(plugin_spec)
-        # If `get_device_count` raises, `raw`'s destructor cleans up the
+        # If `device_count` raises, `raw`'s destructor cleans up the
         # loaded plugin and initialised driver handle.
-        var device_count = raw.get_device_count()
+        var device_count = raw.device_count()
         var arc = ArcPointer[Self](
             Driver(
                 _raw=ArcPointer(raw^),
@@ -69,10 +69,10 @@ struct Driver(Deinitable, Movable):
     # Queries
     # ===-------------------------------------------------------------------===#
 
-    def get_name(self) -> String:
+    def name(self) -> String:
         return self._raw[]._raw.name
 
-    def get_device_count(self) -> Int64:
+    def device_count(self) -> Int64:
         return self._device_count
 
     def get_device[

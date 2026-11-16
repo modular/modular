@@ -2,7 +2,7 @@
 
 // map.call.opaque verifies that its callee resolves to a mogg.kernel.decl. The
 // pass never reads the signature, so an empty declaration is enough here.
-mogg.kernel.decl @builtin_kernels.kernels.Struct_sampler_apply_penalties registration = "sampler.apply_penalties" device_info = <"", "", "", ""> struct_params = [] is_user_defined = false
+mogg.kernel.decl @builtin_kernels.kernels.Struct_sampler_apply_penalties registration = "sampler.apply_penalties" struct_params = [] is_user_defined = false
 
 // Written as MAP IR rather than lowered from an mo.custom: MOToMAP only builds a
 // map.iter.prologue for an input the kernel declares fusible, and no chained

@@ -42,9 +42,12 @@ from layout import (
     DefaultLayoutPlugin,
     LayoutPluginForTarget,
     TensorEngineForTarget,
+    row_major,
 )
 
 comptime _DEFAULT = DefaultEngine[element_width=1]
+
+comptime _LAYOUT = type_of(row_major[4, 8]())
 
 comptime _TARGETS = TypeList.of[
     Trait=TargetAcceleratorCollection, CudaTargets, HipTargets, MetalTargets
@@ -74,24 +77,42 @@ def test_current_target_resolves_to_default_engine() raises:
     comptime assert (
         CurrentLayoutPlugin == DefaultLayoutPlugin
     ), "the host build should select DefaultLayoutPlugin"
-    comptime assert CurrentTensorEngine[AddressSpace.GENERIC] == _DEFAULT, (
+    comptime assert (
+        CurrentTensorEngine[_LAYOUT, AddressSpace.GENERIC] == _DEFAULT
+    ), (
         "the default build must resolve to DefaultEngine; an arm has changed"
         " what every unannotated tile is backed by"
     )
     assert_equal(
-        CurrentTensorEngine[AddressSpace.GENERIC]._BASE_TYPE_NAME,
+        CurrentTensorEngine[_LAYOUT, AddressSpace.GENERIC]._BASE_TYPE_NAME,
         "DefaultEngine",
     )
-    assert_equal(CurrentTensorEngine[AddressSpace.GENERIC].element_size, 1)
+    assert_equal(
+        CurrentTensorEngine[_LAYOUT, AddressSpace.GENERIC].element_size, 1
+    )
 
 
 def test_every_address_space_resolves_to_default_engine() raises:
     """No in-tree backend splits its engine by address space."""
     comptime for space in _SPACES:
-        comptime assert CurrentTensorEngine[space] == _DEFAULT, (
+        comptime assert CurrentTensorEngine[_LAYOUT, space] == _DEFAULT, (
             "an address space has acquired its own engine; every in-tree"
             " backend is pointer-addressable in all of them"
         )
+
+
+def test_dynamic_layout_resolves_to_default_engine() raises:
+    """`DefaultEngine` does not read the layout, so a dynamic one is fine.
+
+    A backend whose engine bakes in the tile's extents rejects a dynamic layout
+    instead; the Trainium plugin's test pins that error.
+    """
+    comptime Dynamic = type_of(row_major((4, 8)))
+    comptime assert not Dynamic.all_dims_known
+    comptime for space in _SPACES:
+        comptime assert (
+            CurrentTensorEngine[Dynamic, space] == _DEFAULT
+        ), "a dynamic layout must resolve to DefaultEngine in the default build"
 
 
 def test_unregistered_backends_fall_back_to_default_plugin() raises:
@@ -104,24 +125,24 @@ def test_unregistered_backends_fall_back_to_default_plugin() raises:
 def test_cuda_targets_resolve_to_default_engine() raises:
     """`stdlib_plugin = "cuda"`, covering every NVIDIA target."""
     comptime assert (
-        TensorEngineForTarget[_target["sm_100a"]] == _DEFAULT
+        TensorEngineForTarget[_target["sm_100a"], _LAYOUT] == _DEFAULT
     ), "B200 must resolve to DefaultEngine"
     comptime assert (
-        TensorEngineForTarget[_target["sm_80"]] == _DEFAULT
+        TensorEngineForTarget[_target["sm_80"], _LAYOUT] == _DEFAULT
     ), "A100 must resolve to DefaultEngine"
 
 
 def test_hip_target_resolves_to_default_engine() raises:
     """`stdlib_plugin = "hip"`, covering every AMD target."""
     comptime assert (
-        TensorEngineForTarget[_target["gfx942"]] == _DEFAULT
+        TensorEngineForTarget[_target["gfx942"], _LAYOUT] == _DEFAULT
     ), "MI300X must resolve to DefaultEngine"
 
 
 def test_metal_target_resolves_to_default_engine() raises:
     """`stdlib_plugin = "metal"`, covering every Apple target."""
     comptime assert (
-        TensorEngineForTarget[_target["apple-m3"]] == _DEFAULT
+        TensorEngineForTarget[_target["apple-m3"], _LAYOUT] == _DEFAULT
     ), "Apple M3 must resolve to DefaultEngine"
 
 

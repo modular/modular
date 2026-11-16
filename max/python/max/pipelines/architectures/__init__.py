@@ -80,6 +80,9 @@ def register_all_models() -> None:
     from . import hf_config_shims as hf_config_shims
 
     lazy_architectures = [
+        _LazyArch(
+            "BeamForCausalLM_ModuleV3", ".beam_modulev3", "beam_modulev3_arch"
+        ),
         _LazyArch("BertModel", ".bert", "bert_arch"),
         _LazyArch("D1Model", ".d1", "d1_arch"),
         _LazyArch("DeepseekV2ForCausalLM", ".deepseekV2", "deepseekV2_arch"),
@@ -93,6 +96,11 @@ def register_all_models() -> None:
             "DeepseekV32ForCausalLM", ".deepseekV3_2", "deepseekV3_2_arch"
         ),
         _LazyArch("DeepseekV4ForCausalLM", ".deepseekV4", "deepseekV4_arch"),
+        _LazyArch(
+            "DeepseekV4ForCausalLM_ModuleV3",
+            ".deepseekV4_modulev3",
+            "deepseekV4_modulev3_arch",
+        ),
         _LazyArch("DeepseekV41ForCausalLM", ".deepseekV41", "deepseekV41_arch"),
         _LazyArch(
             "DeepseekV41ForCausalLM_ModuleV3",
@@ -116,7 +124,17 @@ def register_all_models() -> None:
         ),
         _LazyArch("DFlashDraftModel", ".dflash_llama3", "dflash_llama_arch"),
         _LazyArch(
+            "DFlash2BeamDraftModel",
+            ".dflash2_beam_modulev3",
+            "dflash2_beam_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DFlash2DraftModel", ".dflash2_qwen3_5", "dflash2_qwen3_5_arch"
+        ),
+        _LazyArch(
+            "DFlash2DraftModel_ModuleV3",
+            ".dflash2_qwen3_5_modulev3",
+            "dflash2_qwen3_5_modulev3_draft_arch",
         ),
         _LazyArch(
             "DFlashKimiK25DraftModel",
@@ -124,12 +142,12 @@ def register_all_models() -> None:
             "dflash_kimi_k25_draft_arch",
         ),
         _LazyArch(
-            "DFlashMiMoV2DraftModel",
-            ".dflash_mimo_v2",
-            "dflash_mimo_v2_draft_arch",
+            "DFlashLagunaForCausalLM",
+            ".dflash_laguna_modulev3",
+            "dflash_laguna_modulev3_draft_arch",
         ),
         _LazyArch(
-            "DFlashMiMoV2DraftModel_ModuleV3",
+            "DFlashMiMoV2DraftModel",
             ".dflash_mimo_v2_modulev3",
             "dflash_mimo_v2_modulev3_draft_arch",
         ),
@@ -147,6 +165,11 @@ def register_all_models() -> None:
             "DSparkDeepseekV41DraftModel_ModuleV3",
             ".dspark_deepseekV41_modulev3",
             "dspark_deepseekV41_modulev3_draft_arch",
+        ),
+        _LazyArch(
+            "DSparkMistralLarge4DraftModel_ModuleV3",
+            ".dspark_mistral_large4_modulev3",
+            "dspark_mistral_large4_modulev3_draft_arch",
         ),
         _LazyArch(
             "DSparkDraftModel", ".dspark_draft", "dspark_speculators_draft_arch"
@@ -231,12 +254,9 @@ def register_all_models() -> None:
             "gemma4_unified_modulev3_arch",
         ),
         _LazyArch(
-            "Glm5NextForConditionalGeneration", ".glm5_next", "glm5_next_arch"
-        ),
-        _LazyArch(
             "Glm5NextForConditionalGeneration_ModuleV3",
-            ".glm5_next_modulev3",
-            "glm5_next_modulev3_arch",
+            ".glm5_next",
+            "glm5_next_arch",
         ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch(
@@ -295,6 +315,11 @@ def register_all_models() -> None:
             ".kimi_k3_modulev3",
             "kimi_k3_modulev3_arch",
         ),
+        _LazyArch(
+            "K3DSparkModel",
+            ".kimi_k3_modulev3.dspark",
+            "k3_dspark_draft_arch",
+        ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch(
             "LagunaForCausalLM_ModuleV3",
@@ -332,9 +357,14 @@ def register_all_models() -> None:
         ),
         _LazyArch("MTPHYV4DraftModel", ".mtp_hy_v4", "mtp_hy_v4_draft_arch"),
         _LazyArch(
-            "MTPGlm5NextDraftModel",
+            "MTPGlm5NextDraftModel_ModuleV3",
             ".mtp_glm5_next",
             "mtp_glm5_next_draft_arch",
+        ),
+        _LazyArch(
+            "MTPGlmMoeDsaDraftModel_ModuleV3",
+            ".glm5_1_modulev3",
+            "glm5_1_mtp_draft_arch",
         ),
         _LazyArch(
             "MTPInklingDraftModel", ".mtp_inkling", "mtp_inkling_draft_arch"
@@ -342,9 +372,13 @@ def register_all_models() -> None:
         _LazyArch(
             "MTPQwen3_5DraftModel", ".mtp_qwen3_5", "mtp_qwen3_5_draft_arch"
         ),
-        _LazyArch("MiMoV2ForCausalLM", ".mimo_v2", "mimo_v2_arch"),
         _LazyArch(
-            "MiMoV2ForCausalLM_ModuleV3",
+            "MTPQwen3_5DraftModel_ModuleV3",
+            ".mtp_qwen3_5_modulev3",
+            "mtp_qwen3_5_modulev3_draft_arch",
+        ),
+        _LazyArch(
+            "MiMoV2ForCausalLM",
             ".mimo_v2_modulev3",
             "mimo_v2_modulev3_arch",
         ),
@@ -364,6 +398,11 @@ def register_all_models() -> None:
         _LazyArch(
             "Mistral3ForConditionalGeneration", ".mistral3", "mistral3_arch"
         ),
+        _LazyArch(
+            "MistralLarge4ForConditionalGeneration_ModuleV3",
+            ".mistral_large4_modulev3",
+            "mistral_large4_modulev3_arch",
+        ),
         _LazyArch("MPNetForMaskedLM", ".mpnet", "mpnet_arch"),
         _LazyArch(
             "MPNetForMaskedLM_ModuleV3",
@@ -379,6 +418,11 @@ def register_all_models() -> None:
             "MuseSparkForConditionalGeneration_ModuleV3",
             ".muse_spark",
             "muse_spark_arch",
+        ),
+        _LazyArch(
+            "MuseSparkDSparkModel",
+            ".dspark_muse_spark",
+            "muse_spark_dspark_draft_arch",
         ),
         _LazyArch("OlmoForCausalLM", ".olmo", "olmo_arch"),
         _LazyArch("Olmo2ForCausalLM", ".olmo2", "olmo2_arch"),
@@ -419,6 +463,16 @@ def register_all_models() -> None:
         ),
         _LazyArch("Qwen3_5ForCausalLM", ".qwen3_5", "qwen3_5_text_arch"),
         _LazyArch(
+            "Qwen3_5ForConditionalGeneration_ModuleV3",
+            ".qwen3_5_modulev3",
+            "qwen3_5_modulev3_arch",
+        ),
+        _LazyArch(
+            "Qwen3_5ForCausalLM_ModuleV3",
+            ".qwen3_5_modulev3",
+            "qwen3_5_text_modulev3_arch",
+        ),
+        _LazyArch(
             "Qwen3ForCausalLM", ".qwen3_embedding", "qwen3_embedding_arch"
         ),
         _LazyArch(
@@ -448,11 +502,6 @@ def register_all_models() -> None:
             "UnifiedMTPGlmMoeDsaForCausalLM",
             ".unified_mtp_glm5_2",
             "unified_mtp_glm5_2_arch",
-        ),
-        _LazyArch(
-            "UnifiedMTPGlmMoeDsaForCausalLM_ModuleV3",
-            ".unified_mtp_glm5_2_modulev3",
-            "unified_mtp_glm5_2_modulev3_arch",
         ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),

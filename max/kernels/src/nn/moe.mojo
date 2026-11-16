@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements Mixture-of-Experts (MoE) routing, token dispatch, and expert computation kernels."""
 
-from std.math import align_up, ceildiv, exp, log1p
-from std.math.uutils import umod
+from std.math import align_up, ceildiv, exp, log1p, tanh
+from std.math.uutils import udivmod, umod
 from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
@@ -35,7 +35,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -45,6 +45,8 @@ from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
+    ImmTileTensor,
+    MutTileTensor,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -333,6 +335,15 @@ def moe_create_indices_kernel[
                     - base
                 )
                 if e < 0 or e >= chunk_experts:
+                    # An id outside [0, num_experts) lands in no chunk, so
+                    # the scatter never writes the pair's restore entry; pin
+                    # it to the out-of-range sentinel instead of leaving it
+                    # uninitialized. An id inside another chunk's range takes
+                    # its real position there.
+                    if e + base < 0 or e + base >= num_experts:
+                        restore_token_order[i] = UInt32(total_tokens).cast[
+                            restore_type
+                        ]()
                     continue
                 var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
                     ordering=Ordering.RELAXED
@@ -380,11 +391,214 @@ def moe_create_indices_kernel[
             expert_usage_stats[1] = UInt32(num_experts)
 
 
+# Tokens per CTA of the multi-CTA index builder. Each CTA owns a contiguous
+# chunk, so the histogram and scatter kernels see the same token ranges.
+comptime _MULTI_CTA_TOKENS_PER_CTA = 512
+
+# Most experts per thread in the multi-CTA path: its histogram and its
+# scatter cursors live in shared memory indexed by expert, so one workgroup
+# covers `experts_per_thread * block_threads` experts. A launch uses the
+# fewest experts per thread that cover its expert count, since each extra
+# expert per thread serializes that thread's per-CTA count exchange.
+comptime _MULTI_CTA_MAX_EXPERTS_PER_THREAD = 2
+
+# Below this many token slots one CTA's two passes are cheaper than two
+# launches plus a per-CTA count exchange.
+comptime _MULTI_CTA_MIN_TOKENS = 16384
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
+)
+def _moe_histogram_kernel[
+    input_type: DType,
+    block_threads: Int,
+    experts_per_thread: Int,
+](
+    cta_counts: MutPointer[UInt32, MutUntrackedOrigin],
+    topk_ids: ImmPointer[Scalar[input_type], ImmUntrackedOrigin],
+    total_tokens_i32: Int32,
+    num_experts_i32: Int32,
+):
+    """Counts, per CTA, how many of its token slots go to each expert.
+
+    CTA `g` owns token slots `[g * _MULTI_CTA_TOKENS_PER_CTA, ...)` and writes
+    its histogram to `cta_counts[g * num_experts : (g + 1) * num_experts]`.
+    Thread `t` owns experts `t * experts_per_thread + r`, which
+    covers more experts than there are threads when it exceeds one.
+    """
+    comptime atomic_scope = _cta_atomic_scope()
+    comptime assert (
+        block_threads > 0 and block_threads % WARP_SIZE == 0
+    ), "the block scans need whole warps"
+    var total_tokens = Int(total_tokens_i32)
+    var num_experts = Int(num_experts_i32)
+    var tid = thread_idx.x
+    var counts = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[experts_per_thread * block_threads]()
+    )
+    with PDL[overlap_at_beginning=True]():
+        comptime for r in range(experts_per_thread):
+            counts[tid * experts_per_thread + r] = 0
+        barrier()
+        var begin = block_idx.x * _MULTI_CTA_TOKENS_PER_CTA
+        var end = min(begin + _MULTI_CTA_TOKENS_PER_CTA, total_tokens)
+        for i in range(begin + tid, end, block_threads):
+            var e = Int(topk_ids[unsafe_offset=i])
+            if e < 0 or e >= num_experts:
+                continue
+            _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
+                ordering=Ordering.RELAXED
+            ](counts.ptr.unsafe_offset(e), UInt32(1))
+        barrier()
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            if e < num_experts:
+                cta_counts[
+                    unsafe_offset=block_idx.x * num_experts + e
+                ] = counts[e]
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
+)
+def _moe_scatter_kernel[
+    input_type: DType,
+    block_threads: Int,
+    experts_per_thread: Int,
+    _scale_alignment: UInt32 = 128,
+](
+    token_expert_order: MutPointer[UInt32, MutUntrackedOrigin],
+    expert_start_indices: MutPointer[UInt32, MutUntrackedOrigin],
+    restore_token_order: MutPointer[UInt32, MutUntrackedOrigin],
+    expert_ids: MutPointer[Int32, MutUntrackedOrigin],
+    expert_usage_stats: MutPointer[UInt32, MutUntrackedOrigin],
+    scales_offset_p: Optional[MutPointer[UInt32, MutUntrackedOrigin]],
+    cta_counts: ImmPointer[UInt32, ImmUntrackedOrigin],
+    topk_ids: ImmPointer[Scalar[input_type], ImmUntrackedOrigin],
+    total_tokens_i32: Int32,
+    num_experts_i32: Int32,
+    num_ctas_i32: Int32,
+):
+    """Places every token slot at its expert's CSR position.
+
+    Each CTA turns the per-CTA histograms into its own cursors: the expert's
+    start (a block scan of the column totals) plus the counts of the CTAs
+    before it. CTA 0 also writes the per-expert outputs. As in
+    `moe_create_indices_kernel`, the order of slots within an expert follows
+    the shared cursor and is not load-bearing.
+
+    Thread `t` owns experts `t * experts_per_thread + r`, so the
+    block scans run over per-thread sums and each thread carries the running
+    offsets across its own experts.
+    """
+    comptime atomic_scope = _cta_atomic_scope()
+    comptime assert (
+        block_threads > 0 and block_threads % WARP_SIZE == 0
+    ), "the block scans need whole warps"
+    comptime experts = experts_per_thread * block_threads
+    var total_tokens = Int(total_tokens_i32)
+    var num_experts = Int(num_experts_i32)
+    var num_ctas = Int(num_ctas_i32)
+    var tid = thread_idx.x
+    var counts = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[experts]()
+    )
+    var cursor = tensor_alloc[.uint32, address_space=.SHARED](
+        row_major[experts]()
+    )
+    with PDL[overlap_at_beginning=True]():
+        var total = UInt32(0)
+        var thread_max = UInt32(0)
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            var n = UInt32(0)
+            var prior = UInt32(0)
+            if e < num_experts:
+                for c in range(num_ctas):
+                    var v = cta_counts[unsafe_offset=c * num_experts + e]
+                    n += v
+                    if c < block_idx.x:
+                        prior += v
+            counts[e] = n
+            # Parked here until the scan gives each expert its launch-wide
+            # start, which is what turns this into the CTA's cursor.
+            cursor[e] = prior
+            total += n
+            thread_max = max(thread_max, n)
+
+        var g_offset = block.prefix_sum[
+            block_size=block_threads, exclusive=True
+        ](total)
+        barrier()
+
+        var aligned_g_offset = UInt32(0)
+        var max_count = UInt32(0)
+        if block_idx.x == 0:
+            # The aligned offsets only ever describe the whole launch, so only
+            # the CTA that writes them pays for this scan.
+            var aligned_total = UInt32(0)
+            comptime for r in range(experts_per_thread):
+                aligned_total += align_up(
+                    counts[tid * experts_per_thread + r],
+                    _scale_alignment,
+                )
+            aligned_g_offset = block.prefix_sum[
+                block_size=block_threads, exclusive=True
+            ](aligned_total)
+            barrier()
+            max_count = block.max[block_size=block_threads, broadcast=False](
+                thread_max
+            )
+
+        var start = g_offset
+        var aligned_start = aligned_g_offset
+        comptime for r in range(experts_per_thread):
+            var e = tid * experts_per_thread + r
+            var n = counts[e]
+            cursor[e] += start
+            if block_idx.x == 0:
+                if e < num_experts:
+                    expert_ids[unsafe_offset=e] = Int32(e)
+                    expert_start_indices[unsafe_offset=e] = start
+                    if case .Some(scales_offset) = scales_offset_p:
+                        scales_offset[unsafe_offset=e] = (
+                            aligned_start // _scale_alignment
+                            - start // _scale_alignment
+                        )
+                    if e == num_experts - 1:
+                        expert_start_indices[unsafe_offset=num_experts] = (
+                            start + n
+                        )
+                aligned_start += align_up(n, _scale_alignment)
+            start += n
+        if block_idx.x == 0 and tid == 0:
+            expert_usage_stats[0] = max_count
+            expert_usage_stats[1] = UInt32(num_experts)
+        barrier()
+
+        var begin = block_idx.x * _MULTI_CTA_TOKENS_PER_CTA
+        var end = min(begin + _MULTI_CTA_TOKENS_PER_CTA, total_tokens)
+        for i in range(begin + tid, end, block_threads):
+            var e = Int(topk_ids[unsafe_offset=i])
+            if e < 0 or e >= num_experts:
+                # An out-of-range id lands in no expert's CSR range, so the
+                # scatter below never writes the pair's restore entry; pin it
+                # to the out-of-range sentinel instead of leaving it
+                # uninitialized.
+                restore_token_order[unsafe_offset=i] = UInt32(total_tokens)
+                continue
+            var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
+                ordering=Ordering.RELAXED
+            ](cursor.ptr.unsafe_offset(e), UInt32(1))
+            token_expert_order[unsafe_offset=Int(pos)] = UInt32(i)
+            restore_token_order[unsafe_offset=i] = pos
+
+
 @inline(.always)
 def moe_create_indices[
     input_type: DType,
     //,
-    target: StaticString,
 ](
     token_expert_order: TileTensor[mut=True, .uint32, ...],
     expert_start_indices: TileTensor[mut=True, .uint32, ...],
@@ -398,13 +612,16 @@ def moe_create_indices[
     """Launches the MoE index creation kernel on GPU.
 
     Groups tokens by their assigned expert so that downstream kernels such as
-    grouped matmul can process each expert's tokens contiguously. One CTA
+    grouped matmul can process each expert's tokens contiguously. At 16384
+    or more token slots, with stride-1 tensors and at most
+    `_MULTI_CTA_MAX_EXPERTS_PER_THREAD * block_threads` experts, a histogram
+    kernel counts each CTA's slots per expert and a scatter kernel turns the
+    per-CTA counts into CSR offsets and places the slots. Otherwise one CTA
     histograms the expert ids in shared memory, scans the histogram into CSR
     offsets, and scatters the tokens.
 
     Parameters:
         input_type: DType of the topk_ids tensor.
-        target: The target device to run the kernel on.
 
     Args:
         token_expert_order: Output 1D tensor of token indices grouped by expert.
@@ -421,17 +638,70 @@ def moe_create_indices[
         scales_offset_p: Optional pointer receiving the aligned scale offsets
             for FP8/block-scaled grouped matmul.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Creating MoE indices is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Creating MoE indices is only supported on GPU"
 
     comptime block_threads = (
         _APPLE_BLOCK_THREADS if context.target.is_apple_gpu() else _BLOCK_THREADS
     )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.create_indices", task_id=Int(context.device().id)
     ):
+        var total_tokens = Int(topk_ids.dim(0))
+        var num_experts = Int(expert_ids.dim(0))
+        # The multi-CTA kernels use flat pointers; strided tensors retain the
+        # layout-aware single-CTA path.
+        if (
+            total_tokens >= _MULTI_CTA_MIN_TOKENS
+            and num_experts <= _MULTI_CTA_MAX_EXPERTS_PER_THREAD * block_threads
+            and Int(token_expert_order.layout.stride[0]().value()) == 1
+            and Int(expert_start_indices.layout.stride[0]().value()) == 1
+            and Int(restore_token_order.layout.stride[0]().value()) == 1
+            and Int(expert_ids.layout.stride[0]().value()) == 1
+            and Int(expert_usage_stats.layout.stride[0]().value()) == 1
+            and Int(topk_ids.layout.stride[0]().value()) == 1
+        ):
+            var num_ctas = ceildiv(total_tokens, _MULTI_CTA_TOKENS_PER_CTA)
+            var cta_counts = context.enqueue_create_buffer[.uint32](
+                num_ctas * num_experts
+            )
+            comptime for ept in range(1, _MULTI_CTA_MAX_EXPERTS_PER_THREAD + 1):
+                if num_experts <= ept * block_threads:
+                    comptime histogram = _moe_histogram_kernel[
+                        input_type, block_threads, ept
+                    ]
+                    context.enqueue_function[histogram](
+                        cta_counts.unsafe_ptr(),
+                        topk_ids.unsafe_ptr(),
+                        Int32(total_tokens),
+                        Int32(num_experts),
+                        grid_dim=num_ctas,
+                        block_dim=block_threads,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
+                    )
+                    comptime scatter = _moe_scatter_kernel[
+                        input_type, block_threads, ept
+                    ]
+                    context.enqueue_function[scatter](
+                        token_expert_order.unsafe_ptr(),
+                        expert_start_indices.unsafe_ptr(),
+                        restore_token_order.unsafe_ptr(),
+                        expert_ids.unsafe_ptr(),
+                        expert_usage_stats.unsafe_ptr(),
+                        scales_offset_p,
+                        cta_counts.unsafe_ptr(),
+                        topk_ids.unsafe_ptr(),
+                        Int32(total_tokens),
+                        Int32(num_experts),
+                        Int32(num_ctas),
+                        grid_dim=num_ctas,
+                        block_dim=block_threads,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
+                    )
+                    return
+
         comptime kernel = moe_create_indices_kernel[
             input_type,
             DType.uint32,
@@ -476,7 +746,6 @@ def moe_create_indices_with_slots[
     input_type: DType,
     //,
     slot_stride: Int,
-    target: StaticString,
 ](
     token_expert_order: TileTensor[mut=True, .uint32, ...],
     expert_start_indices: TileTensor[mut=True, .uint32, ...],
@@ -523,7 +792,6 @@ def moe_create_indices_with_slots[
     Parameters:
         input_type: DType of the topk_ids tensor.
         slot_stride: Slots per token (`n_experts_per_tok`).
-        target: The target device to run the kernel on.
 
     Args:
         token_expert_order: As `moe_create_indices`.
@@ -544,15 +812,15 @@ def moe_create_indices_with_slots[
         local_experts: Experts held locally.
         context: The device context.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Creating MoE indices is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Creating MoE indices is only supported on GPU"
 
     comptime block_threads = (
         _APPLE_BLOCK_THREADS if context.target.is_apple_gpu() else _BLOCK_THREADS
     )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.create_indices.with_slots", task_id=Int(context.device().id)
     ):
         comptime kernel = moe_create_indices_kernel[
@@ -596,12 +864,263 @@ def moe_create_indices_with_slots[
         )
 
 
+# At decode `moe_finalize` is latency-bound, not bandwidth-bound: what a small
+# call costs is its gather's dependent round trips, not its bytes. The generic
+# body pays two of them per expert -- the `restore_order` row id, then that row
+# of `down` -- so a top-16 call serializes 16 of them. The gather kernel below
+# reads a token's whole top-k routing first and issues every row load before
+# the first accumulate, so no accumulate waits on a row it does not consume.
+#
+# A small call also has little work to spread across the CUs, so at few enough
+# chunks the launch takes `_FINALIZE_SMALL_BLOCK` threads instead of
+# `_FINALIZE_LARGE_BLOCK`, and below two workgroups per CU it halves the vector
+# too, which doubles the workgroup count. Past that a thread reads whole
+# 16-byte vectors of `down`, as the generic body does.
+comptime _FINALIZE_SMALL_BLOCK = 64
+comptime _FINALIZE_LARGE_BLOCK = 256
+comptime _FINALIZE_SMALL_WORK = 64 * 1024
+
+
+@inline(.always)
+def _moe_finalize_mut_ptr[
+    dtype: DType
+](t: TileTensor[dtype, ...],) -> MutPointer[Scalar[dtype], MutUntrackedOrigin]:
+    """The mutable generic-address-space pointer behind a tile tensor.
+
+    The gather kernel takes dense row-major rows, so its launch rebuilds the
+    tensors as row-major ones over these pointers rather than carrying the
+    caller's layout and engine through the kernel's parameters.
+    """
+    comptime assert t.is_row_major, "moe.finalize tensors must be row-major"
+    return (
+        t.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
+    )
+
+
+@inline(.always)
+def _moe_finalize_imm_ptr[
+    dtype: DType
+](
+    t: TileTensor[mut=False, dtype, ...],
+) -> ImmPointer[
+    Scalar[dtype], ImmUntrackedOrigin
+]:
+    """The immutable generic-address-space pointer behind a tile tensor."""
+    comptime assert t.is_row_major, "moe.finalize tensors must be row-major"
+    return (
+        t.unsafe_ptr()
+        .unsafe_origin_cast[ImmUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
+)
+@__name(
+    t"moe_finalize_gather_{down_type}_{weight_type}_{out_type}_k{topk}_b{block_threads}{'_bounded' if bounded else ''}"
+)
+def moe_finalize_gather_kernel[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    OutputLayoutType: TensorLayout,
+    DownLayoutType: TensorLayout,
+    RestoreOrderLayoutType: TensorLayout,
+    RouterWeightLayoutType: TensorLayout,
+    ValidRowsLayoutType: TensorLayout,
+    topk: Int,
+    vec: Int,
+    block_threads: Int,
+    bounded: Bool,
+](
+    output: TileTensor[out_type, OutputLayoutType, MutUntrackedOrigin],
+    down: TileTensor[down_type, DownLayoutType, ImmUntrackedOrigin],
+    restore_order: TileTensor[
+        .uint32, RestoreOrderLayoutType, ImmUntrackedOrigin
+    ],
+    router_weight: TileTensor[
+        weight_type, RouterWeightLayoutType, ImmUntrackedOrigin
+    ],
+    valid_rows: TileTensor[.uint32, ValidRowsLayoutType, ImmUntrackedOrigin],
+):
+    """Sums one token's top-k `down` rows per thread, top-k known at compile
+    time.
+
+    One thread owns `vec` consecutive columns of one token's row: it reads the
+    token's `topk` row ids and weights, issues all `topk` row loads, then
+    accumulates them in ascending k in fp32. The arithmetic is the per-term
+    `acc += f32(down) * f32(weight)` of the generic path, in the same order, so
+    a call is bit-identical to it. When `bounded`, a row at or past
+    `valid_rows[0]` is neither loaded nor accumulated, as in the generic path.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        OutputLayoutType: Layout of `output` (row-major).
+        DownLayoutType: Layout of `down` (row-major).
+        RestoreOrderLayoutType: Layout of `restore_order`.
+        RouterWeightLayoutType: Layout of `router_weight`.
+        ValidRowsLayoutType: Layout of `valid_rows`.
+        topk: `num_experts_per_token`, as a compile-time constant.
+        vec: Columns per thread; one vector load of `down` per row.
+        block_threads: Threads per workgroup, 64 or 256. It also bounds what the
+            register allocator keeps live, which is why the small-token launch
+            declares its own 64-thread group.
+        bounded: Skip the rows of `down` from `valid_rows[0]` on.
+
+    Args:
+        output: `[num_tokens, row_chunks * vec]`, one combined row per token.
+        down: `[num_tokens * topk, row_chunks * vec]`, expert-permuted rows.
+        restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
+        router_weight: `[num_tokens, topk]`, per-(token, expert) weight.
+        valid_rows: `[1]` row bound of `down`; read only when `bounded`.
+    """
+    # The row width comes from the output view rather than a kernel argument:
+    # `Int` is not `DevicePassable`, so passing it would force an `Int32`
+    # narrowing at the launch and a widening back here.
+    var chunks = Int(output.dim(1)) // vec
+    var tid = block_idx.x * block_threads + thread_idx.x
+    if tid >= Int(output.dim(0)) * chunks:
+        return
+    var token, chunk = udivmod(tid, chunks)
+    var col = chunk * vec
+
+    var rows = Array[UInt32, topk](fill=UInt32(0))
+    var weights = Array[SIMD[.float32, 1], topk](fill=SIMD[.float32, 1](0))
+    var vals = Array[SIMD[down_type, vec], topk](fill=SIMD[down_type, vec](0))
+
+    with PDL():
+        # The token's routing, before anything that depends on it.
+        comptime for k in range(topk):
+            rows[k] = restore_order[token * topk + k]
+        comptime for k in range(topk):
+            weights[k] = router_weight.load[width=1]((token, k)).cast[
+                .float32
+            ]()
+        var acc = SIMD[.float32, vec](0)
+        # Every row load issues here, ahead of the first accumulate.
+        comptime if bounded:
+            var bound = valid_rows[0]
+            comptime for k in range(topk):
+                if rows[k] < bound:
+                    vals[k] = down.load[width=vec]((Int(rows[k]), col))
+            comptime for k in range(topk):
+                if rows[k] < bound:
+                    acc += vals[k].cast[.float32]() * weights[k]
+        else:
+            comptime for k in range(topk):
+                vals[k] = down.load[width=vec]((Int(rows[k]), col))
+            comptime for k in range(topk):
+                acc += vals[k].cast[.float32]() * weights[k]
+        output.store((token, col), acc.cast[out_type]())
+
+
+@inline(.always)
+def _moe_finalize_gather[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    topk: Int,
+    vec: Int,
+    small_block: Bool,
+    bounded: Bool,
+](
+    output: TileTensor[mut=True, out_type, ...],
+    down: TileTensor[mut=False, down_type, ...],
+    restore_order: TileTensor[mut=False, .uint32, ...],
+    router_weight: TileTensor[mut=False, weight_type, ...],
+    valid_rows: TileTensor[mut=False, .uint32, ...],
+    row_chunks: Int,
+    context: DeviceContext,
+) raises:
+    """Launches `moe_finalize_gather_kernel` over the output's row chunks.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        topk: `num_experts_per_token`, as a compile-time constant.
+        vec: Columns per thread; one vector load of `down` per row.
+        small_block: Launch `_FINALIZE_SMALL_BLOCK` threads per workgroup
+            instead of `_FINALIZE_LARGE_BLOCK`.
+        bounded: Skip the rows of `down` from `valid_rows[0]` on.
+
+    Args:
+        output: `[num_tokens, row_chunks * vec]`, the combined rows.
+        down: `[num_tokens * topk, row_chunks * vec]`, the expert rows.
+        restore_order: `[num_tokens * topk]`, token-major index to a `down` row.
+        router_weight: `[num_tokens, topk]`, the router weights.
+        valid_rows: `[1]` row bound of `down`; read only when `bounded`.
+        row_chunks: Vector chunks in a row, `hidden // vec`.
+        context: The device context.
+    """
+    var num_tokens = Int(output.dim(0))
+    var hidden = Int(down.dim(1))
+    # `Idx[topk]` keeps the routing width out of the runtime layout, so the
+    # kernel's `router_weight` row stride stays a compile-time constant.
+    var output_rm = TileTensor(
+        ptr=_moe_finalize_mut_ptr(output),
+        layout=row_major(num_tokens, hidden),
+    )
+    var down_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(down),
+        layout=row_major(Int(down.dim(0)), hidden),
+    )
+    var restore_order_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(restore_order),
+        layout=row_major(Int(restore_order.dim(0))),
+    )
+    var router_weight_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(router_weight),
+        layout=row_major((num_tokens, Idx[topk])),
+    )
+    var valid_rows_rm = TileTensor(
+        ptr=_moe_finalize_imm_ptr(valid_rows), layout=row_major(Idx[1])
+    )
+
+    comptime block_threads = (
+        _FINALIZE_SMALL_BLOCK if small_block else _FINALIZE_LARGE_BLOCK
+    )
+    comptime kernel = moe_finalize_gather_kernel[
+        down_type,
+        weight_type,
+        out_type,
+        output_rm.LayoutType,
+        down_rm.LayoutType,
+        restore_order_rm.LayoutType,
+        router_weight_rm.LayoutType,
+        valid_rows_rm.LayoutType,
+        topk,
+        vec,
+        block_threads,
+        bounded,
+    ]
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        "mo.moe.finalize.gather", task_id=Int(context.device().id)
+    ):
+        context.enqueue_function[kernel](
+            output_rm,
+            down_rm,
+            restore_order_rm,
+            router_weight_rm,
+            valid_rows_rm,
+            grid_dim=(ceildiv(num_tokens * row_chunks, block_threads),),
+            block_dim=(block_threads,),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
 def moe_finalize[
     down_type: DType,
     weight_type: DType,
     out_type: DType,
     //,
-    target: StaticString,
 ](
     output: TileTensor[mut=True, out_type, ...],
     down: TileTensor[mut=False, down_type, ...],
@@ -620,7 +1139,6 @@ def moe_finalize[
         down_type: DType of the permuted expert outputs.
         weight_type: DType of the router weights.
         out_type: DType of the combined output.
-        target: The target device to run the kernel on.
 
     Args:
         output: One combined row per token. Shape: [num_tokens, hidden].
@@ -633,7 +1151,68 @@ def moe_finalize[
             sum. Shape: [num_tokens, num_experts_per_token].
         context: The device context.
     """
-    comptime assert is_gpu[target](), "MoE finalize is only supported on GPU"
+    _moe_finalize[bounded=False](
+        output, down, restore_order, router_weight, restore_order, context
+    )
+
+
+def moe_finalize_bounded[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+](
+    output: MutTileTensor[out_type, ...],
+    down: ImmTileTensor[down_type, ...],
+    restore_order: ImmTileTensor[.uint32, ...],
+    router_weight: ImmTileTensor[weight_type, ...],
+    valid_rows: ImmTileTensor[.uint32, ...],
+    context: DeviceContext,
+) raises:
+    """Runs `moe_finalize` over only the rows of `down` below `valid_rows[0]`.
+
+    A row of `down` at or past the bound adds nothing to its token's sum and
+    is never read, so it may hold anything, NaN included. Expert-parallel
+    layers sort the slots of experts held on other devices last, past the
+    local rows, and the bound drops them without masking `down` first.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+
+    Args:
+        output: As `moe_finalize`.
+        down: As `moe_finalize`; rows from `valid_rows[0]` on are ignored.
+        restore_order: As `moe_finalize`.
+        router_weight: As `moe_finalize`.
+        valid_rows: `[1]` count of the leading rows of `down` that count, on
+            the device.
+        context: The device context.
+    """
+    _moe_finalize[bounded=True](
+        output, down, restore_order, router_weight, valid_rows, context
+    )
+
+
+@inline(.always)
+def _moe_finalize[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    bounded: Bool,
+](
+    output: MutTileTensor[out_type, ...],
+    down: ImmTileTensor[down_type, ...],
+    restore_order: ImmTileTensor[.uint32, ...],
+    router_weight: ImmTileTensor[weight_type, ...],
+    valid_rows: ImmTileTensor[.uint32, ...],
+    context: DeviceContext,
+) raises:
+    comptime assert (
+        context.target.is_gpu()
+    ), "MoE finalize is only supported on GPU"
 
     var num_experts_per_token = Int(router_weight.dim(1))
 
@@ -644,6 +1223,9 @@ def moe_finalize[
         var acc = SIMD[.float32, width](0)
         for k in range(num_experts_per_token):
             var row = Int(restore_order[token * num_experts_per_token + k])
+            comptime if bounded:
+                if row >= Int(valid_rows[0]):
+                    continue
             var weight = router_weight.load[width=1]((token, k)).cast[
                 .float32
             ]()
@@ -653,16 +1235,187 @@ def moe_finalize[
     comptime simd_width = simd_width_of[down_type, target=context.target]()
     var shape = output.layout.shape_coord()
 
+    # The gather launch: row-major tensors, whole vectors per row, and a top-k
+    # it has an instantiation for. Everything else falls through to the generic
+    # elementwise body below, which is the only path for a layout whose density
+    # this cannot prove, and for every top-k without an instantiation.
+    var hidden = Int(down.dim(1))
+    comptime gathered = (
+        output.is_row_major
+        and down.is_row_major
+        and restore_order.is_row_major
+        and router_weight.is_row_major
+        and valid_rows.is_row_major
+    )
+    # `is_row_major` compares static strides, so a layout with runtime shape and
+    # stride satisfies it vacuously. The gather reads rows as `row * hidden`,
+    # which is only the caller's addressing when the stride really is dense, so
+    # a runtime stride larger than the row width keeps the generic body.
+    var dense = (
+        Int(output.layout.stride[0]()) == Int(output.dim(1))
+        and Int(output.layout.stride[1]()) == 1
+        and Int(down.layout.stride[0]()) == hidden
+        and Int(down.layout.stride[1]()) == 1
+        and Int(restore_order.layout.stride[0]()) == 1
+        and Int(router_weight.layout.stride[0]()) == Int(router_weight.dim(1))
+        and Int(router_weight.layout.stride[1]()) == 1
+    )
+    comptime if gathered:
+        var num_tokens = Int(output.dim(0))
+        if dense and hidden % simd_width == 0 and num_tokens > 0:
+            comptime sm_count = context.default_device_info.sm_count
+            var row_chunks = hidden // simd_width
+            var small_block = num_tokens * row_chunks <= _FINALIZE_SMALL_WORK
+            # Fewer than two workgroups per CU leaves each CU one wave, with no
+            # second wave to hide a stall. Halving the vector doubles the
+            # workgroup count, which measured faster than whole vectors at these
+            # token counts.
+            comptime narrow = max(1, simd_width // 2)
+            var narrow_vec = (
+                small_block
+                and narrow < simd_width
+                and hidden % narrow == 0
+                and num_tokens * (hidden // narrow)
+                < 2 * _FINALIZE_SMALL_BLOCK * sm_count
+            )
+
+            @inline(.always)
+            def launch_topk[ntopk: Int]() raises {var}:
+                if narrow_vec:
+                    _moe_finalize_gather[ntopk, narrow, True, bounded](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        valid_rows,
+                        hidden // narrow,
+                        context,
+                    )
+                elif small_block:
+                    _moe_finalize_gather[ntopk, simd_width, True, bounded](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        valid_rows,
+                        row_chunks,
+                        context,
+                    )
+                else:
+                    _moe_finalize_gather[ntopk, simd_width, False, bounded](
+                        output,
+                        down,
+                        restore_order,
+                        router_weight,
+                        valid_rows,
+                        row_chunks,
+                        context,
+                    )
+
+            match num_experts_per_token:
+                case 16:
+                    launch_topk[16]()
+                    return
+                case 8:
+                    launch_topk[8]()
+                    return
+                case 6:
+                    launch_topk[6]()
+                    return
+                case 4:
+                    launch_topk[4]()
+                    return
+                case 2:
+                    launch_topk[2]()
+                    return
+                case _:
+                    pass
+
     # `down` rows are only vector-aligned when the row width is a multiple of
     # `simd_width`; every other shape runs scalar.
-    if Int(down.dim(1)) % simd_width == 0:
-        elementwise[
-            simd_width, target=target, _trace_description="mo.moe.finalize"
-        ](finalize, shape, context)
-    else:
-        elementwise[1, target=target, _trace_description="mo.moe.finalize"](
+    if hidden % simd_width == 0:
+        elementwise[simd_width, _trace_description="moe.finalize"](
             finalize, shape, context
         )
+    else:
+        elementwise[1, _trace_description="moe.finalize"](
+            finalize, shape, context
+        )
+
+
+def moe_exit_act_concat[
+    dtype: DType,
+    simd_width: Int,
+    //,
+    LatentFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+    GateUpFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+](
+    output: TileTensor[mut=True, dtype, ...],
+    latent_fn: LatentFnType,
+    gate_up_fn: GateUpFnType,
+    latent_cols: Int,
+    half_cols: Int,
+    beta: Float32,
+    linear_beta: Float32,
+    context: DeviceContext,
+) raises:
+    """Writes a normed latent and a SiTU-and-mul beside each other, one launch.
+
+    The MoE exit reads `[normed latent | shared activation]` as one K axis:
+    the routed experts' normed latent followed by the shared expert's
+    SiTU-and-mul of its fused `[gate ; up]` projection. Computing the
+    activation into its own buffer and concatenating afterwards is two
+    launches over tens of KB, so this writes both halves of the destination
+    directly -- the latent half as a copy, the shared half activated.
+
+    Parameters:
+        dtype: Element type of the destination and of both inputs.
+        simd_width: Elements per thread's vector; must divide the latent
+            width and the shared half so no vector straddles them.
+        LatentFnType: The latent input's load closure.
+        GateUpFnType: The `[gate ; up]` input's load closure.
+
+    Args:
+        output: `[num_tokens, latent_cols + half_cols]`, the exit GEMM's
+            activation.
+        latent_fn: Loads `[num_tokens, latent_cols]`, the normed latent.
+        gate_up_fn: Loads `[num_tokens, 2 * half_cols]`, the shared expert's
+            fused gate/up projection, gate half first.
+        latent_cols: Latent width, the output's leading columns.
+        half_cols: Shared FFN width, the gate/up input's half width.
+        beta: `config.activation_situ_beta`; the gate's tanh scale.
+        linear_beta: `config.activation_situ_linear_beta`, or 0 to pass the
+            up half through unchanged.
+        context: The device context.
+    """
+
+    @inline(.always)
+    def body[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var col = Int(idx[1])
+        if col < latent_cols:
+            output.store[width=width](idx, latent_fn[width](idx))
+            return
+        # The activation is elementwise over the output's trailing columns:
+        # gate at j, up at j + half_cols, both of this output element's row.
+        var row = Int(idx[0])
+        var j = col - latent_cols
+        var gate = gate_up_fn[width]((row, j)).cast[.float32]()
+        var up = gate_up_fn[width]((row, j + half_cols)).cast[.float32]()
+        # `beta * tanh(gate / beta) * sigmoid(gate) * up`, in the operation
+        # order of the graph's SiTU chain the exit used to run.
+        var situ = beta * tanh(gate / beta)
+        situ = situ * sigmoid(gate)
+        if linear_beta != 0.0:
+            up = linear_beta * tanh(up / linear_beta)
+        output.store[width=width](idx, (situ * up).cast[dtype]())
+
+    elementwise[simd_width, _trace_description="moe.exit.act.concat"](
+        body, output.layout.shape_coord(), context
+    )
 
 
 # Function to perform warp-level sorting
@@ -755,6 +1508,7 @@ def group_limited_router_kernel[
     ExpertIndicesEngine: TensorEngine,
     ExpertWeightsEngine: TensorEngine,
     ExpertBiasEngine: TensorEngine,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[
         mut=True,
@@ -774,6 +1528,7 @@ def group_limited_router_kernel[
         bias_type, ExpertBiasLayoutType, ImmutAnyOrigin, Engine=ExpertBiasEngine
     ],
     routed_scaling_factor: Float32,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutUntrackedOrigin]],
     scores_input_fn: ScoresInputFnType,
 ):
     """A manually fused MoE router with the group-limited strategy. It divides all
@@ -812,6 +1567,7 @@ def group_limited_router_kernel[
         ExpertIndicesEngine: Storage engine backing the `expert_indices` tile.
         ExpertWeightsEngine: Storage engine backing the `expert_weights` tile.
         ExpertBiasEngine: Storage engine backing the `expert_bias` tile.
+        packed: Also write `packed_p`.
 
     Args:
         expert_indices: Output tensor holding the selected expert index per
@@ -824,6 +1580,8 @@ def group_limited_router_kernel[
             `[n_routed_experts]`.
         routed_scaling_factor: Factor multiplied into the final, optionally
             normalized, expert weights.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
         scores_input_fn: Closure that loads scores given a
             `(token, expert)` index.
     """
@@ -850,7 +1608,6 @@ def group_limited_router_kernel[
     comptime assert (
         WARP_SIZE % group_size == 0
     ), "WARP_SIZE must be divisible by group_size"
-    comptime n_groups_per_warp = WARP_SIZE // group_size
     comptime assert (
         topk_group * n_experts_per_tok <= WARP_SIZE
     ), "topk_group * n_experts_per_tok must be less than or equal to WARP_SIZE"
@@ -963,10 +1720,14 @@ def group_limited_router_kernel[
             original_weight *= Scalar[scores_type](routed_scaling_factor)
 
             if tid < n_experts_per_tok:
-                expert_indices.store(
-                    (token_idx, tid), Int32(global_topk_result.p)
-                )
+                var selected = Int32(global_topk_result.p)
+                expert_indices.store((token_idx, tid), selected)
                 expert_weights[token_idx, tid] = original_weight
+                comptime if packed:
+                    var out = packed_p.unsafe_value()
+                    var row = Int(token_idx) * 2 * n_experts_per_tok
+                    out[row + Int(tid)] = selected.cast[scores_type]()
+                    out[row + n_experts_per_tok + Int(tid)] = original_weight
 
 
 @inline(.always)
@@ -979,7 +1740,6 @@ def router_group_limited[
     n_groups: Int,
     topk_group: Int,
     norm_weights: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
@@ -1001,7 +1761,6 @@ def router_group_limited[
         n_groups: The number of expert groups.
         topk_group: The number of expert groups to be selected per token.
         norm_weights: Whether to normalize the selected weights.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: The indices of the routed experts for each token.
@@ -1029,7 +1788,6 @@ def router_group_limited[
         n_groups=n_groups,
         topk_group=topk_group,
         norm_weights=norm_weights,
-        target=target,
     ](
         expert_indices,
         expert_weights,
@@ -1053,7 +1811,7 @@ def router_group_limited[
     n_groups: Int,
     topk_group: Int,
     norm_weights: Bool,
-    target: StaticString,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
@@ -1062,6 +1820,9 @@ def router_group_limited[
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
+    packed_p: Optional[
+        MutPointer[Scalar[scores_type], MutUntrackedOrigin]
+    ] = None,
 ) raises:
     """
     A manually fused MoE router with the group-limited strategy.
@@ -1078,7 +1839,7 @@ def router_group_limited[
         n_groups: The number of expert groups.
         topk_group: The number of expert groups to be selected per token.
         norm_weights: Whether to normalize the selected weights.
-        target: The target device to run the kernel on.
+        packed: Also write `packed_p`.
 
     Inputs:
         expert_indices: The indices of the routed experts for each token.
@@ -1093,10 +1854,12 @@ def router_group_limited[
         expert_bias: The bias for each expert. Shape: [n_routed_experts].
         routed_scaling_factor: The scaling factor for the routed expert weights.
         context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Group limited MoE router is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Group limited MoE router is only supported on GPU"
 
     var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
@@ -1104,7 +1867,7 @@ def router_group_limited[
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.router_group_limited", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
@@ -1130,6 +1893,7 @@ def router_group_limited[
             ExpertIndicesEngine=expert_indices.Engine,
             ExpertWeightsEngine=expert_weights.Engine,
             ExpertBiasEngine=expert_bias.Engine,
+            packed=packed,
         ]
 
         gpu_ctx.enqueue_function[kernel](
@@ -1137,6 +1901,7 @@ def router_group_limited[
             expert_weights,
             expert_bias,
             routed_scaling_factor,
+            packed_p,
             host_args=(scores_input_fn,),
             grid_dim=num_tokens,
             block_dim=num_threads,
@@ -1354,6 +2119,7 @@ def single_group_router_kernel[
     *,
     ExpertIndicesEngine: TensorEngine,
     ExpertWeightsEngine: TensorEngine,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[
         mut=True,
@@ -1371,6 +2137,7 @@ def single_group_router_kernel[
     ],
     num_tokens: Int32,
     routed_scaling_factor: Float32,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]],
     scores_input_fn: ScoresInputFnType,
     bias_input_fn: BiasInputFnType,
 ):
@@ -1384,6 +2151,8 @@ def single_group_router_kernel[
     Scores and the selection bias are read only through `scores_input_fn`
     and `bias_input_fn`, closures that load the value at a
     `(token, expert)` index, so the bias may differ per token.
+    With `packed`, each token's ids, as `scores_type`, then its weights
+    are also written to its `[2 * n_experts_per_tok]` row of `packed_p`.
     """
 
     comptime assert expert_indices.flat_rank == 2
@@ -1510,6 +2279,11 @@ def single_group_router_kernel[
             if lane < n_experts_per_tok:
                 expert_indices.store((token_idx, lane), selected)
                 expert_weights[token_idx, lane] = weight
+                comptime if packed:
+                    var out = packed_p.unsafe_value()
+                    var row = token_idx * 2 * n_experts_per_tok
+                    out[row + lane] = selected.cast[scores_type]()
+                    out[row + n_experts_per_tok + lane] = weight
 
 
 @__llvm_metadata(
@@ -1697,7 +2471,6 @@ def single_group_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1718,7 +2491,6 @@ def single_group_router[
         n_experts_per_tok: Experts selected per token.
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -1741,7 +2513,6 @@ def single_group_router[
         n_routed_experts,
         n_experts_per_tok,
         norm_weights,
-        target,
     ](
         expert_indices,
         expert_weight,
@@ -1763,7 +2534,7 @@ def single_group_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1772,6 +2543,7 @@ def single_group_router[
     expert_bias: TileTensor[mut=False, bias_type, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]] = None,
 ) raises:
     """Launch the single-group MoE router on GPU, loading scores via a lambda.
 
@@ -1787,7 +2559,7 @@ def single_group_router[
         n_experts_per_tok: Experts selected per token, at most the warp size.
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
-        target: The target device to run the kernel on.
+        packed: Also write `packed_p` (Muse Spark's decode routing).
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -1800,6 +2572,8 @@ def single_group_router[
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
     """
 
     def load_bias[
@@ -1816,7 +2590,7 @@ def single_group_router[
         n_routed_experts,
         n_experts_per_tok,
         norm_weights,
-        target,
+        packed=packed,
     ](
         expert_indices,
         expert_weight,
@@ -1825,6 +2599,7 @@ def single_group_router[
         load_bias,
         routed_scaling_factor,
         context,
+        packed_p,
     )
 
 
@@ -1839,7 +2614,6 @@ def single_group_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1866,7 +2640,6 @@ def single_group_router[
         n_experts_per_tok: Experts selected per token.
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -1907,7 +2680,6 @@ def single_group_router[
         n_routed_experts,
         n_experts_per_tok,
         norm_weights,
-        target,
     ](
         expert_indices,
         expert_weight,
@@ -1931,7 +2703,7 @@ def single_group_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
+    packed: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1940,6 +2712,7 @@ def single_group_router[
     bias_input_fn: BiasInputFnType,
     routed_scaling_factor: Float32,
     context: DeviceContext,
+    packed_p: Optional[MutPointer[Scalar[scores_type], MutAnyOrigin]] = None,
 ) raises:
     """Launch the single-group MoE router on GPU, loading scores and the
     selection bias via lambdas.
@@ -1958,7 +2731,7 @@ def single_group_router[
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor. An all-zero selection keeps
             zero weights.
-        target: The target device to run the kernel on.
+        packed: Also write `packed_p` (Muse Spark's decode routing).
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -1973,10 +2746,12 @@ def single_group_router[
             device, so it must copy what it captures.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `scores_type`, then its weights.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Single group router is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Single group router is only supported on GPU"
 
     var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
@@ -1984,7 +2759,7 @@ def single_group_router[
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.router_single_group", task_id=Int(gpu_ctx.device().id)
     ):
         # Several tokens a block keep large batches in one wave.
@@ -2006,6 +2781,7 @@ def single_group_router[
             BiasInputFnType=BiasInputFnType,
             ExpertIndicesEngine=expert_indices.Engine,
             ExpertWeightsEngine=expert_weight.Engine,
+            packed=packed,
         ]
 
         gpu_ctx.enqueue_function[kernel](
@@ -2013,6 +2789,7 @@ def single_group_router[
             expert_weight,
             Int32(num_tokens),
             routed_scaling_factor,
+            packed_p,
             host_args=(scores_input_fn, bias_input_fn),
             grid_dim=ceildiv(num_tokens, tokens_per_block),
             block_dim=num_threads,
@@ -2115,6 +2892,74 @@ def router_gemv_partials_kernel[
             )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"router_gemv_partials_warp_{hidden_type}_{weight_type}_t{num_threads}")
+def router_gemv_partials_warp_kernel[
+    hidden_type: DType,
+    weight_type: DType,
+    PartialsLayoutType: TensorLayout,
+    HiddenLayoutType: TensorLayout,
+    GateWeightLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    hidden_size: Int,
+    num_splits: Int,
+    num_threads: Int,
+](
+    partials: TileTensor[
+        mut=True, weight_type, PartialsLayoutType, MutUntrackedOrigin
+    ],
+    hidden: TileTensor[hidden_type, HiddenLayoutType, ImmUntrackedOrigin],
+    gate_weight: TileTensor[
+        weight_type, GateWeightLayoutType, ImmUntrackedOrigin
+    ],
+):
+    """Writes the partials of `router_gemv_partials_kernel` for a few tokens.
+
+    Each warp owns one (expert, split) pair and keeps that slice of the gate
+    row in registers, so the gate weights are read once from global memory
+    whatever the token count. A 16-token tile would leave most threads of
+    `router_gemv_partials_kernel` idle on a decode step.
+    """
+    comptime assert partials.flat_rank == 3
+    comptime assert hidden.flat_rank == 2
+    comptime assert gate_weight.flat_rank == 2
+    comptime assert num_threads % WARP_SIZE == 0
+    comptime slice_len = hidden_size // num_splits
+    comptime assert slice_len * num_splits == hidden_size
+    comptime vec = 4
+    comptime assert slice_len % vec == 0
+    comptime steps = ceildiv(slice_len, WARP_SIZE * vec)
+
+    var pair = block_idx.x * (num_threads // WARP_SIZE) + warp_id()
+    if pair >= n_routed_experts * num_splits:
+        return
+    var expert, split = divmod(pair, num_splits)
+    var k0 = split * slice_len
+    var lane = lane_id()
+
+    var w = Array[SIMD[weight_type, vec], steps](fill=SIMD[weight_type, vec](0))
+    comptime for i in range(steps):
+        var k = (i * WARP_SIZE + lane) * vec
+        if k < slice_len:
+            w[i] = gate_weight.load[width=vec]((expert, k0 + k))
+
+    with PDL():
+        for t in range(Int(hidden.dim(0))):
+            var acc = SIMD[weight_type, vec](0)
+            comptime for i in range(steps):
+                var k = (i * WARP_SIZE + lane) * vec
+                if k < slice_len:
+                    acc += (
+                        hidden.load[width=vec]((t, k0 + k)).cast[weight_type]()
+                        * w[i]
+                    )
+            var total = warp.sum(acc)
+            if lane == 0:
+                partials.store((split, t, expert), total)
+
+
 @inline(.always)
 def _single_group_router_on_partials[
     scores_type: DType,
@@ -2123,7 +2968,6 @@ def _single_group_router_on_partials[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
     num_splits: Int,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
@@ -2159,7 +3003,6 @@ def _single_group_router_on_partials[
         n_routed_experts,
         n_experts_per_tok,
         norm_weights,
-        target,
     ](
         expert_indices,
         expert_weights,
@@ -2180,7 +3023,6 @@ def sigmoid_gemv_single_group_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     norm_weights: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, weight_type, ...],
@@ -2206,7 +3048,6 @@ def sigmoid_gemv_single_group_router[
         n_experts_per_tok: Experts selected per token.
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
@@ -2217,9 +3058,9 @@ def sigmoid_gemv_single_group_router[
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Sigmoid GEMV single group router is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Sigmoid GEMV single group router is only supported on GPU"
     # TODO(GEX-3342): the warp bitonic top-k is wrong on Metal.
     comptime assert (
         not context.target.is_apple_gpu()
@@ -2231,68 +3072,22 @@ def sigmoid_gemv_single_group_router[
     if num_tokens == 0:
         return
 
-    # The most hidden-dimension splits, up to 16, that leave every slice a
-    # whole number of 4-wide vectors.
-    comptime num_splits = 16 if hidden_size % 64 == 0 else (
-        8 if hidden_size % 32
-        == 0 else (
-            4 if hidden_size % 16 == 0 else (2 if hidden_size % 8 == 0 else 1)
-        )
-    )
-    comptime tile_tokens = 16
-    comptime tile_experts = 16
-    comptime assert n_routed_experts % tile_experts == 0
-    # The GEMV stages one slice of hidden and gate rows in shared memory; keep
-    # it within the 48 KiB every target allows without opting in.
-    comptime assert (tile_tokens + tile_experts) * (
-        hidden_size // num_splits + 4
-    ) * size_of[
-        weight_type
-    ]() <= 48 * 1024, "hidden_size slice does not fit in shared memory"
-    comptime gemv_threads = tile_tokens * tile_experts
-
+    comptime num_splits = _router_gemv_num_splits[hidden_size]
     var partials = context.enqueue_create_buffer[weight_type](
         num_splits * num_tokens * n_routed_experts
     )
-    var partials_by_split = TileTensor(
-        partials,
-        row_major((Idx[num_splits], num_tokens, Idx[n_routed_experts])),
-    )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.sigmoid_gemv_router_single_group",
         task_id=Int(context.device().id),
     ):
-        comptime gemv = router_gemv_partials_kernel[
-            hidden_type,
-            weight_type,
-            partials_by_split.LayoutType,
-            hidden.LayoutType,
-            gate_weight.LayoutType,
-            hidden_size,
-            num_splits,
-            tile_tokens,
-            tile_experts,
-            gemv_threads,
-        ]
-        context.enqueue_function[gemv](
-            partials_by_split,
-            hidden,
-            gate_weight,
-            grid_dim=(
-                n_routed_experts // tile_experts,
-                num_splits,
-                ceildiv(num_tokens, tile_tokens),
-            ),
-            block_dim=gemv_threads,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
+        _enqueue_router_gemv_partials[n_routed_experts, num_splits](
+            partials, hidden, gate_weight, context
         )
-
         _single_group_router_on_partials[
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
-            target=target,
             num_splits=num_splits,
         ](
             expert_indices,
@@ -2306,6 +3101,222 @@ def sigmoid_gemv_single_group_router[
             context,
         )
     _ = partials^
+
+
+def sigmoid_gemv_group_limited_router[
+    hidden_type: DType,
+    weight_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    n_groups: Int,
+    topk_group: Int,
+    norm_weights: Bool,
+    packed: Bool = False,
+](
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_weights: TileTensor[mut=True, weight_type, ...],
+    hidden: TileTensor[mut=False, hidden_type, ...],
+    gate_weight: TileTensor[mut=False, weight_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+    packed_p: Optional[
+        MutPointer[Scalar[weight_type], MutUntrackedOrigin]
+    ] = None,
+) raises:
+    """Runs the sigmoid group-limited MoE router, computing its gate GEMV.
+
+    Equivalent to `router_group_limited` on
+    `sigmoid(hidden.cast[weight_type]() @ gate_weight.T)`. The GEMV writes
+    partial dot products over hidden-dimension splits; the router adds them
+    and applies the sigmoid as it loads its scores, so no separate reduction
+    or sigmoid runs.
+
+    Parameters:
+        hidden_type: DType of the hidden states.
+        weight_type: DType of the gate weight, the scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of experts.
+        n_experts_per_tok: Experts selected per token.
+        n_groups: Number of expert groups.
+        topk_group: Groups kept per token.
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        packed: Also write `packed_p`.
+
+    Inputs:
+        expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
+        hidden: Hidden states. Shape: [num_tokens, hidden_size].
+        gate_weight: Router weight. Shape: [n_routed_experts, hidden_size].
+        expert_bias: Per-expert correction bias used for selection only.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: The device context.
+        packed_p: With `packed`, the `[num_tokens, 2 * n_experts_per_tok]`
+            output of each token's ids, as `weight_type`, then its weights.
+    """
+    comptime assert (
+        context.target.is_gpu()
+    ), "Sigmoid GEMV group-limited router is only supported on GPU"
+    # TODO(GEX-3342): the warp bitonic top-k is wrong on Metal.
+    comptime assert (
+        not context.target.is_apple_gpu()
+    ), "Sigmoid GEMV group-limited router is not supported on Apple GPUs"
+    comptime assert gate_weight.static_shape[0] == n_routed_experts
+    comptime num_splits = _router_gemv_num_splits[gate_weight.static_shape[1]]
+
+    var num_tokens = Int(hidden.dim(0))
+    if num_tokens == 0:
+        return
+
+    var partials = context.enqueue_create_buffer[weight_type](
+        num_splits * num_tokens * n_routed_experts
+    )
+    var scores = TileTensor(
+        partials,
+        row_major((num_splits * num_tokens, Idx[n_routed_experts])),
+    ).as_imm()
+
+    def load_scores[
+        width: Int
+    ](coords: Coord) {var scores} -> SIMD[weight_type, width]:
+        comptime assert (
+            coords.rank == 2
+        ), "the expert-scores lambda contract is rank 2"
+        var tokens = Int(scores.dim(0)) // num_splits
+        var score = scores.load[width=width](coords)
+        comptime for split in range(1, num_splits):
+            score += scores.load[width=width](
+                (split * tokens + Int(coords[0]), Int(coords[1]))
+            )
+        return sigmoid(score)
+
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        "mo.moe.sigmoid_gemv_router_group_limited",
+        task_id=Int(context.device().id),
+    ):
+        _enqueue_router_gemv_partials[n_routed_experts, num_splits](
+            partials, hidden, gate_weight, context
+        )
+        router_group_limited[
+            n_routed_experts,
+            n_experts_per_tok,
+            n_groups,
+            topk_group,
+            norm_weights,
+            packed=packed,
+        ](
+            expert_indices,
+            expert_weights,
+            row_major((num_tokens, Idx[n_routed_experts])),
+            load_scores,
+            expert_bias,
+            routed_scaling_factor,
+            context,
+            packed_p,
+        )
+    _ = partials^
+
+
+comptime _ROUTER_GEMV_WARP_MAX_TOKENS = 16
+"""The most tokens the router GEMV runs with one warp per (expert, split)
+pair; larger batches use shared-memory tiles."""
+
+
+comptime _router_gemv_num_splits[
+    hidden_size: Int
+] = 16 if hidden_size % 64 == 0 else (
+    8 if hidden_size % 32
+    == 0 else (
+        4 if hidden_size % 16 == 0 else (2 if hidden_size % 8 == 0 else 1)
+    )
+)
+"""The most hidden-dimension splits of the router GEMV, up to 16, that leave
+every slice a whole number of 4-wide vectors."""
+
+
+def _enqueue_router_gemv_partials[
+    hidden_type: DType,
+    weight_type: DType,
+    //,
+    n_routed_experts: Int,
+    num_splits: Int,
+](
+    partials: DeviceBuffer[weight_type],
+    hidden: TileTensor[mut=False, hidden_type, ...],
+    gate_weight: TileTensor[mut=False, weight_type, ...],
+    context: DeviceContext,
+) raises:
+    """Writes `num_splits` stacked `[num_tokens, n_routed_experts]` blocks of
+    partial gate dot products, one per hidden-dimension split, to `partials`.
+    """
+    comptime hidden_size = gate_weight.static_shape[1]
+    comptime tile_tokens = 16
+    comptime tile_experts = 16
+    comptime assert n_routed_experts % tile_experts == 0
+    # The GEMV stages one slice of hidden and gate rows in shared memory; keep
+    # it within the 48 KiB every target allows without opting in.
+    comptime assert (tile_tokens + tile_experts) * (
+        hidden_size // num_splits + 4
+    ) * size_of[
+        weight_type
+    ]() <= 48 * 1024, "hidden_size slice does not fit in shared memory"
+    comptime gemv_threads = tile_tokens * tile_experts
+
+    var num_tokens = Int(hidden.dim(0))
+    var partials_by_split = TileTensor(
+        partials,
+        row_major((Idx[num_splits], num_tokens, Idx[n_routed_experts])),
+    )
+    if num_tokens <= _ROUTER_GEMV_WARP_MAX_TOKENS:
+        comptime warp_threads = 256
+        comptime warps = warp_threads // WARP_SIZE
+        comptime gemv_warp = router_gemv_partials_warp_kernel[
+            hidden_type,
+            weight_type,
+            partials_by_split.LayoutType,
+            hidden.LayoutType,
+            gate_weight.LayoutType,
+            n_routed_experts,
+            hidden_size,
+            num_splits,
+            warp_threads,
+        ]
+        context.enqueue_function[gemv_warp](
+            partials_by_split,
+            hidden,
+            gate_weight,
+            grid_dim=ceildiv(n_routed_experts * num_splits, warps),
+            block_dim=warp_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+        return
+    comptime gemv = router_gemv_partials_kernel[
+        hidden_type,
+        weight_type,
+        partials_by_split.LayoutType,
+        hidden.LayoutType,
+        gate_weight.LayoutType,
+        hidden_size,
+        num_splits,
+        tile_tokens,
+        tile_experts,
+        gemv_threads,
+    ]
+    context.enqueue_function[gemv](
+        partials_by_split,
+        hidden,
+        gate_weight,
+        grid_dim=(
+            n_routed_experts // tile_experts,
+            num_splits,
+            ceildiv(num_tokens, tile_tokens),
+        ),
+        block_dim=gemv_threads,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
 
 
 @__llvm_metadata(
@@ -2501,7 +3512,6 @@ def sink_gate_router[
     n_routed_experts: Int,
     n_experts_per_tok: Int,
     n_shared_experts: Int,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, dtype, ...],
@@ -2526,7 +3536,6 @@ def sink_gate_router[
             Inkling-Small).
         n_shared_experts: Always-selected sink experts (e.g. 2 for
             Inkling-Small).
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output selected expert indices. Shape:
@@ -2543,16 +3552,16 @@ def sink_gate_router[
         route_scale: Scalar output-scaling factor.
         context: The device context.
     """
-    comptime assert is_gpu[
-        target
-    ](), "sink_gate_router is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "sink_gate_router is only supported on GPU"
 
     if logits.dim(0) == 0:
         return
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
@@ -2598,7 +3607,6 @@ def single_group_router_eplb[
     num_log: Int,
     max_replicas: Int,
     hash_decorrelate: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_indices_log: TileTensor[mut=True, .int32, ...],
@@ -2630,7 +3638,6 @@ def single_group_router_eplb[
         hash_decorrelate: If True, xor-hash the flat position with a Knuth
             multiplicative hash before the modulo to break structured-position
             bias in replica selection.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output physical expert IDs.
@@ -2666,7 +3673,6 @@ def single_group_router_eplb[
         num_log=num_log,
         max_replicas=max_replicas,
         hash_decorrelate=hash_decorrelate,
-        target=target,
     ](
         expert_indices,
         expert_indices_log,
@@ -2695,7 +3701,6 @@ def single_group_router_eplb[
     num_log: Int,
     max_replicas: Int,
     hash_decorrelate: Bool,
-    target: StaticString,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_indices_log: TileTensor[mut=True, .int32, ...],
@@ -2730,7 +3735,6 @@ def single_group_router_eplb[
         hash_decorrelate: If True, xor-hash the flat position with a Knuth
             multiplicative hash before the modulo to break structured-position
             bias in replica selection.
-        target: The target device to run the kernel on.
 
     Inputs:
         expert_indices: Output physical expert IDs.
@@ -2753,9 +3757,9 @@ def single_group_router_eplb[
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
     """
-    comptime assert is_gpu[
-        target
-    ](), "Single group router (EPLB) is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "Single group router (EPLB) is only supported on GPU"
 
     var num_tokens = Int(scores_layout.shape[0]())
     if num_tokens == 0:
@@ -2763,8 +3767,8 @@ def single_group_router_eplb[
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
-        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        "moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -2984,7 +3988,6 @@ def eplb_remap[
     max_replicas: Int,
     K: Int,
     hash_decorrelate: Bool,
-    target: StaticString,
 ](
     phy_idx: TileTensor[mut=True, .int32, ...],  # [N, K] output
     router_idx: TileTensor[.int32, ...],  # [N, K] logical ids
@@ -3005,7 +4008,6 @@ def eplb_remap[
         hash_decorrelate: If True, xor-hash the position before the modulo
             to break structured-position bias in replica selection. If False,
             preserves the exact pos % cnt semantics of the legacy chain.
-        target: The target device to run the kernel on.
 
     Args:
         phy_idx: Output physical expert ids. Shape: [num_tokens, K].
@@ -3019,17 +4021,17 @@ def eplb_remap[
             MoE layer index. Sits on the same device as router_idx.
         context: DeviceContext.
     """
-    comptime assert is_gpu[
-        target
-    ](), "EPLB remap kernel is only supported on GPU"
+    comptime assert (
+        context.target.is_gpu()
+    ), "EPLB remap kernel is only supported on GPU"
 
     if router_idx.dim(0) == 0:
         return
 
     var gpu_ctx = context
 
-    with Trace[TraceLevel.OP, target=target](
-        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
+        "moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
     ):
         # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
         # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.

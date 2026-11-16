@@ -32,7 +32,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn.legacy import MLP, Linear
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 CLAMP_BOUND_NAMES: tuple[str, ...] = (
     "input_min",

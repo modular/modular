@@ -20,9 +20,10 @@
 # are capacity-matched by construction rather than by whoever typed the
 # flags -- which is the only way their failure counts compare.
 
-# Matches the Mach variant's `max_batch_size=64` (`mach_variants.py`) and the
-# MAX smoke recipe's 64, so both engines admit the same concurrency and the
-# lane's pressure scenarios exercise the same admission on each.
+# The MAX smoke recipe's 64, which is also the MAX Serve control's batch, so
+# both lanes drive the same concurrency. Mach's export admits 128
+# (`mach_variants.py`), so 64 in flight never queues there, and the 600 s
+# timeout below is sized from TPOT at 64 streams.
 batch_size=64
 max_length=262144
 

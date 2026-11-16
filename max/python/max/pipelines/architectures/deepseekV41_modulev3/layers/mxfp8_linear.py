@@ -27,16 +27,14 @@ launch. ``wq_b`` rotates its RoPE tail in the matmul epilogue
 (:func:`dense_rope_tail_op`).
 """
 
+from dataclasses import dataclass
+
 from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn import Module
-from max.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-)
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     _is_apple_gpu,
     _is_sm10x_gpu,
     block_scales_interleave,
@@ -44,6 +42,10 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled,
     rope_quantize_dynamic_block_scaled,
     swiglu_quantize_dynamic_block_scaled,
+)
+from max.nn.activation import GatedActivation
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
@@ -76,13 +78,29 @@ def _quantize(x: TensorValue) -> tuple[TensorValue, TensorValue]:
     return codes, scales
 
 
+@dataclass(frozen=True)
+class Mxfp8Rows:
+    """Activation codes and scales in the matmul's interleaved layout."""
+
+    codes: Tensor
+    scales: Tensor
+
+
 def _check_compact(weight: TensorValue, scale: TensorValue) -> None:
+    """Accept ceil-div scales; matmul pads N while load stacking needs full blocks."""
+    if weight.rank != 2 or scale.rank != 2:
+        raise ValueError("V4.1 dense weights and scales must be rank-2")
+    rows, cols = (int(d) for d in weight.shape)
+    expected = ((rows + 31) // 32, cols // 32)
     if (
-        weight.dtype != DType.float8_e4m3fn
+        cols % 32
+        or tuple(int(d) for d in scale.shape) != expected
+        or weight.dtype != DType.float8_e4m3fn
         or scale.dtype != DType.float8_e8m0fnu
     ):
         raise ValueError(
-            "V4.1 dense weights require E4M3 and compact E8M0 scales"
+            f"V4.1 dense weights require E4M3 and compact E8M0 scales "
+            f"{expected}, got {weight.shape} and {scale.shape}"
         )
 
 
@@ -92,34 +110,28 @@ def _matmul(
     weight: TensorValue,
     scale: TensorValue,
 ) -> TensorValue:
-    """Quantized ``codes @ weight.T`` on the block-scaled MXFP8 matmul, bf16.
+    """Quantized ``codes @ weight.T`` using compact MXFP8 weights.
 
-    The weight arrives as compact checkpoint leaves (E4M3 codes plus one
-    E8M0 scale per 32x32 block); its scale is expanded per output row and
-    interleaved. On SM100 the matmul is main's cluster split-K op, which
-    picks a decode-shaped split-K or a pair-CTA GEMM per weight shape and
-    runs the production matmul where neither pays.
+    Padding to 32 lets ceil-div scales cover rows; load stacking needs full blocks.
+    Expansion is about weight bytes / 32 (V2 pays once at load, this graph
+    per site per step).
     """
     _check_compact(weight, scale)
     rows = int(weight.shape[0])
-    padding = (-rows) % 32
-    if padding:
-        # SM100's output TMA requires an aligned row stride, including when
-        # the checkpoint's final 32-row scale block is partial.
-        weight = ops.pad(weight, [0, padding, 0, 0])
-    expanded = ops.repeat_interleave(scale, 32, axis=0)[:rows]
-    if padding:
-        expanded = ops.pad(expanded, [0, padding, 0, 0], value=1.0)
+    padded_rows = (rows + 31) // 32 * 32
+    if padded_rows != rows:
+        weight = ops.pad(weight, [0, padded_rows - rows, 0, 0])
+    expanded = ops.repeat_interleave(scale, 32, axis=0)
     b_scales = block_scales_interleave(expanded, sf_vector_size=32)
     if mxfp8_splitk_enabled() and _is_sm10x_gpu():
         out = ops.custom(
-            "mo.matmul.mxfp8.cluster_splitk",
+            "matmul.mxfp8.cluster_splitk",
             device=codes.device,
             values=[codes, weight, a_scales, b_scales],
             out_types=[
                 TensorType(
                     DType.bfloat16,
-                    [codes.shape[0], weight.shape[0]],
+                    [codes.shape[0], padded_rows],
                     codes.device,
                 )
             ],
@@ -156,6 +168,23 @@ def _dense_rule(
 
 
 _dense_op = F.functional(_dense, rule=_dense_rule)
+
+
+def _dense_rule_quantized(
+    codes: TensorLayout,
+    a_scales: TensorLayout,
+    weight: TensorLayout,
+    scale: TensorLayout,
+) -> list[AxisAssignment]:
+    """Keep activation scale blocks intact by avoiding a K split."""
+    return [
+        AxisAssignment((R, R, R, R), (R,)),
+        AxisAssignment((R, R, Sharded(0), Sharded(0)), (Sharded(1),)),
+        AxisAssignment((Sharded(0), Sharded(0), R, R), (Sharded(0),)),
+    ]
+
+
+_dense_quantized_op = F.functional(_matmul, rule=_dense_rule_quantized)
 
 
 def _swiglu_dense(
@@ -217,23 +246,33 @@ def _dense_rope_tail(
     written once; elsewhere it is the matmul followed by the rotation.
     ``cos_sin`` is ``[T, rope_dim // 2, 2]`` float32, one row per token.
     """
+    return _rope_tail_matmul(*_quantize(x), weight, scale, cos_sin, head_dim)
+
+
+def _rope_tail_matmul(
+    codes: TensorValue,
+    a_scales: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    cos_sin: TensorValue,
+    head_dim: int,
+) -> TensorValue:
+    _check_compact(weight, scale)
     rope_dim = int(cos_sin.shape[-2]) * 2
     if not (mxfp8_splitk_enabled() and _is_sm10x_gpu()):
-        out = _dense(x, weight, scale)
+        out = _matmul(codes, a_scales, weight, scale)
         heads = ops.reshape(
             out, [1, -1, int(out.shape[1]) // head_dim, head_dim]
         )
         return ops.reshape(
             apply_rope_tail_values(heads, cos_sin, rope_dim), out.shape
         )
-    _check_compact(weight, scale)
-    codes, a_scales = _quantize(x)
     b_scales = block_scales_interleave(
         ops.repeat_interleave(scale, 32, axis=0), sf_vector_size=32
     )
     return ops.custom(
-        "mo.matmul.mxfp8.rope_tail",
-        device=x.device,
+        "matmul.mxfp8.rope_tail",
+        device=codes.device,
         values=[
             codes,
             weight,
@@ -242,7 +281,9 @@ def _dense_rope_tail(
             ops.reshape(cos_sin, [-1, rope_dim]),
         ],
         out_types=[
-            TensorType(DType.bfloat16, [x.shape[0], weight.shape[0]], x.device)
+            TensorType(
+                DType.bfloat16, [codes.shape[0], weight.shape[0]], codes.device
+            )
         ],
         parameters={"head_dim": head_dim, "rope_dim": rope_dim},
     )[0].tensor
@@ -269,15 +310,31 @@ def _dense_rope_tail_rule(
 dense_rope_tail_op = F.functional(_dense_rope_tail, rule=_dense_rope_tail_rule)
 
 
-def _trace_device_is_gpu(device: object) -> bool:
-    """Whether a trace-time device names a GPU, in either of its two forms.
+def _rope_tail_matmul_rule(
+    codes: TensorLayout,
+    a_scales: TensorLayout,
+    weight: TensorLayout,
+    scale: TensorLayout,
+    cos_sin: TensorLayout,
+    head_dim: int,
+) -> list[AxisAssignment]:
+    """Keep activation scale blocks intact by avoiding a K split."""
+    return [
+        AxisAssignment((R, R, R, R, R), (R,)),
+        AxisAssignment((R, R, Sharded(0), Sharded(0), R), (Sharded(1),)),
+        AxisAssignment(
+            (Sharded(0), Sharded(0), R, R, Sharded(0)), (Sharded(0),)
+        ),
+    ]
 
-    A guard runs on devices in two flavors: the raw driver ``Accelerator``
-    of a tensor the op built itself, and the graph ``DeviceRef`` of every
-    value ``F.functional`` converts for a wrapped op's parameters and
-    every ``ops.*`` result. No single method or isinstance answers both;
-    this call does.
-    """
+
+rope_tail_matmul_op = F.functional(
+    _rope_tail_matmul, rule=_rope_tail_matmul_rule
+)
+
+
+def trace_device_is_gpu(device: object) -> bool:
+    """Recognize GPU devices from either graph or driver values."""
     if isinstance(device, DeviceRef):
         return device.is_gpu()
     return isinstance(device, Accelerator)
@@ -296,11 +353,24 @@ def block_diagonal_woa_supported(
     blocks.
     """
     return (
-        _trace_device_is_gpu(device)
+        trace_device_is_gpu(device)
         and not _is_apple_gpu()
         and _is_sm10x_gpu()
         and k % 128 == 0
         and group_rows % 128 == 0
+    )
+
+
+def norm_quantize_store_supported(
+    device: object, q_cols: int, kv_cols: int
+) -> bool:
+    """Whether the device supports fused q/kv norm, quantization, and storage."""
+    return (
+        trace_device_is_gpu(device)
+        and not _is_apple_gpu()
+        and _is_sm10x_gpu()
+        and q_cols % 256 == 0
+        and kv_cols % 256 == 0
     )
 
 
@@ -311,25 +381,7 @@ def _grouped_dense(
     group_rows: int,
     rope: tuple[TensorValue, int] | None = None,
 ) -> TensorValue:
-    """``[T, g * d] -> [T, g * group_rows]``: group ``j`` uses its own rows.
-
-    Runs per shard, where ``g`` is the shard's group count. Each group is a
-    dense projection, so the weight is read as FP8 and never dequantized.
-    With two or more groups on SM100 the groups run as ONE
-    block-diagonal block-scaled matmul (main #105486's mechanism): one
-    token-major quantize over the whole width, one launch. The per-32
-    amax blocks the quantize computes are independent of the group
-    slicing, so the one launch's codes are the bytes the per-group
-    chains produce, and each output column keeps its separate-launch
-    value. Every other trace -- a non-SM100 device, or a site whose K
-    or group rank is not whole 128-block tiles -- runs the grouped
-    reference launch (:func:`_grouped_dense_reference`); a rank below a
-    whole 32-row scale block is refused below, before any arm runs.
-
-    ``rope`` -- ``(cos_sin, head_dim)`` at the attention's wo_a site --
-    folds the output path's inverse tail rotation into the quantize: ``x``
-    then arrives un-rotated, and only the block-diagonal launch takes it.
-    """
+    """Run grouped MXFP8 projections, fusing supported groups into one launch."""
     _check_compact(weight, scale)
     rows = int(weight.shape[0])
     if rows % group_rows:
@@ -381,7 +433,6 @@ def _grouped_dense_block_diagonal(
     With ``rope`` the quantize also rotates each head's tail back, through
     main's rope-quantize op.
     """
-    groups = int(weight.shape[0]) // group_rows
     if rope is None:
         codes, a_scales = _quantize(x)
     else:
@@ -395,11 +446,36 @@ def _grouped_dense_block_diagonal(
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
+    return _block_diagonal_matmul(codes, a_scales, weight, scale, group_rows)
+
+
+def _block_diagonal_matmul(
+    codes: TensorValue,
+    a_scales: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    group_rows: int,
+) -> TensorValue:
+    """The block-diagonal launch over quantized activations."""
     # The weight-side interleave is the same bytes the reference arm
     # builds per group, unsplit: [rows / 128, k / 128, 32, 4, 4].
     expanded = ops.repeat_interleave(scale, 32, axis=0)
     b_scales = block_scales_interleave(expanded, sf_vector_size=32)
-    return mxfp8_block_diagonal(codes, weight, a_scales, b_scales, groups)
+    return mxfp8_block_diagonal(
+        codes, weight, a_scales, b_scales, int(weight.shape[0]) // group_rows
+    )
+
+
+def _grouped_dense_quantized(
+    codes: TensorValue,
+    a_scales: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    group_rows: int,
+) -> TensorValue:
+    """Run grouped MXFP8 matmul on pre-quantized rows."""
+    _check_compact(weight, scale)
+    return _block_diagonal_matmul(codes, a_scales, weight, scale, group_rows)
 
 
 def _grouped_dense_reference(
@@ -408,13 +484,7 @@ def _grouped_dense_reference(
     scale: TensorValue,
     group_rows: int,
 ) -> TensorValue:
-    """The reference arm: one quantize and one dense launch per group.
-
-    The values every arm must reproduce: each group quantizes its own
-    K-slice of ``x`` and multiplies it by
-    its own rows of the leaf -- the per-group dense launches the
-    block-diagonal matmul replaces with one batched kernel.
-    """
+    """Reference grouped MXFP8 projection with one launch per group."""
     groups = int(weight.shape[0]) // group_rows
     width = int(x.shape[-1]) // groups
     outputs: list[TensorValue] = []
@@ -465,6 +535,10 @@ def _grouped_dense_rule(
 
 
 grouped_dense_op = F.functional(_grouped_dense, rule=_grouped_dense_rule)
+# No sharding rule: only the single-device-per-rank layouts run it, where
+# the K slices that a tensor-parallel split would pair with weight shards do
+# not exist.
+grouped_dense_quantized_op = F.functional(_grouped_dense_quantized)
 
 
 class MXFP8Linear(Module[[Tensor], Tensor]):
@@ -519,6 +593,14 @@ class MXFP8Linear(Module[[Tensor], Tensor]):
             )
         return _dense_op(x, self.weight, self.scale)
 
+    def forward_quantized(self, x: Mxfp8Rows) -> Tensor:
+        """:meth:`forward` on an activation that arrives already quantized."""
+        if isinstance(self.weight, FP8BlockTensor):
+            raise ValueError(
+                "V4.1 requires compact E8M0 scales, not FP8BlockTensor"
+            )
+        return _dense_quantized_op(x.codes, x.scales, self.weight, self.scale)
+
     def forward_swiglu(self, gate_up: Tensor, limit: float | None) -> Tensor:
         """Applies the clamped SwiGLU of ``gate_up``, then this projection.
 
@@ -540,3 +622,15 @@ class MXFP8Linear(Module[[Tensor], Tensor]):
                 "V4.1 requires compact E8M0 scales, not FP8BlockTensor"
             )
         return dense_rope_tail_op(x, self.weight, self.scale, cos_sin, head_dim)
+
+    def forward_quantized_rope_tail(
+        self, x: Mxfp8Rows, cos_sin: Tensor, head_dim: int
+    ) -> Tensor:
+        """:meth:`forward_rope_tail` on an activation that arrives quantized."""
+        if isinstance(self.weight, FP8BlockTensor):
+            raise ValueError(
+                "V4.1 requires compact E8M0 scales, not FP8BlockTensor"
+            )
+        return rope_tail_matmul_op(
+            x.codes, x.scales, self.weight, self.scale, cos_sin, head_dim
+        )

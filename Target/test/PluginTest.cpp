@@ -12,8 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "Fixture.h"
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <future>
+#include <thread>
 #include <vector>
 
 #include "llvm/ADT/ScopeExit.h"
@@ -200,8 +204,6 @@ TEST_F(DriverPluginContextTest, ContextMemoryInfoBadArgs) {
 }
 
 TEST_F(DriverPluginContextTest, CurrentContextRoundTrip) {
-  if (api == "Metal")
-    GTEST_SKIP() << "current-context state is not implemented for Metal";
   for (M_driver_context_t context : contexts) {
     // Save whatever driver-level context is active (may be null), make this
     // context current, then restore the saved state.
@@ -342,7 +344,7 @@ TEST_F(DriverPluginContextTest, QueueCopySync) {
 }
 
 TEST_F(DriverPluginContextTest, QueueAsyncAllocSync) {
-  if (api == "HIP" || api == "Metal")
+  if (api == "HIP")
     GTEST_SKIP() << "Unimplemented for " << api;
 
   constexpr size_t size = 128;
@@ -400,7 +402,10 @@ TEST_F(DriverPluginContextTest, EventRecordWait) {
   for (unsigned int i = 0; i < numElems; i++)
     src[i] = i;
 
-  for (M_driver_context_t ctx : contexts) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    if (maxQueuesPerContext(devices[i]) < 2)
+      GTEST_SKIP() << "the context holds one queue at a time";
+    M_driver_context_t ctx = contexts[i];
     M_driver_queue_t queueA = nullptr;
     M_driver_queue_t queueB = nullptr;
     ASSERT_SUCCESS(queue_create(ctx, &queueA));
@@ -568,6 +573,48 @@ TEST_F(DriverPluginQueueTest, Fill) {
       M_driver_memory_view fillView{memory, /*offset=*/0, size};
       ASSERT_EQ(M_DRIVER_STATUS_INVALID_ARG,
                 queue_fill(queue, &fillView, uint64_t(0), /*value_size=*/3));
+    }
+  }
+}
+
+TEST_F(DriverPluginQueueTest, FillSubrangeKeepsNeighbors) {
+  // Mid-block ends catch a fill that writes whole 16-byte blocks. The 1 MiB
+  // case needs more than one threadgroup.
+  struct Case {
+    uint64_t bufferSize, offset, size, value, valueSize;
+  };
+  constexpr uint64_t kMiB = 1 << 20;
+  for (const Case &c :
+       {Case{96, 6, 20, 0xABCD, 2}, Case{96, 4, 40, 0x11223344, 4},
+        Case{96, 8, 72, 0x0123456789ABCDEFull, 8}, Case{96, 3, 5, 0x5A, 1},
+        Case{96, 12, 8, 0x77777777, 4}, Case{kMiB, 6, kMiB - 12, 0xABCD, 2}}) {
+    for (size_t i = 0; i < contexts.size(); i++) {
+      M_driver_context_t context = contexts[i];
+      M_driver_queue_t queue = queues[i];
+
+      M_driver_memory_t memory = nullptr;
+      ASSERT_SUCCESS(memory_alloc_sync(context, c.bufferSize, &memory));
+      auto defer =
+          llvm::scope_exit([&]() { memory_free_sync(context, memory); });
+
+      M_driver_memory_view whole{memory, /*offset=*/0, c.bufferSize};
+      ASSERT_SUCCESS(queue_set_memory(queue, &whole, uint8_t(0xEE)));
+      M_driver_memory_view fillView{memory, c.offset, c.size};
+      ASSERT_SUCCESS(queue_fill(queue, &fillView, c.value, c.valueSize));
+      std::vector<uint8_t> result(c.bufferSize);
+      ASSERT_SUCCESS(queue_copy_from_device(queue, result.data(), &whole));
+      ASSERT_SUCCESS(queue_synchronize(queue));
+
+      std::vector<uint8_t> expected(c.bufferSize, 0xEE);
+      for (uint64_t b = 0; b < c.size; ++b)
+        expected[c.offset + b] =
+            static_cast<uint8_t>(c.value >> (8 * (b % c.valueSize)));
+      auto mismatch =
+          std::mismatch(expected.begin(), expected.end(), result.begin());
+      ASSERT_EQ(mismatch.first, expected.end())
+          << "byte " << (mismatch.first - expected.begin()) << " of buffer "
+          << c.bufferSize << ", offset " << c.offset << " size " << c.size
+          << " valueSize " << c.valueSize;
     }
   }
 }
@@ -837,22 +884,6 @@ TEST_F(DriverPluginQueueTest, QueueLaunchHostFunc) {
   EXPECT_EQ(flag, 42u);
 }
 
-TEST_F(DriverPluginQueueTest, QueueWaitValue64) {
-  if (api != "CUDA" && api != "HIP")
-    GTEST_SKIP() << "stream wait-value requires a CUDA or HIP driver";
-  // Pinned host memory is device-visible; pre-set the value so the equality
-  // wait is already satisfied when the queue reaches it.
-  M_driver_memory_t mem = nullptr;
-  ASSERT_SUCCESS(memory_alloc_pinned(contexts[0], sizeof(uint64_t), &mem));
-  void *addr = nullptr;
-  ASSERT_SUCCESS(memory_property(mem, M_DRIVER_MEMORY_PROPERTY_ADDRESS, &addr));
-  *static_cast<uint64_t *>(addr) = 42;
-  ASSERT_SUCCESS(
-      queue_wait_value64(queues[0], reinterpret_cast<uint64_t>(addr), 42));
-  ASSERT_SUCCESS(queue_synchronize(queues[0]));
-  ASSERT_SUCCESS(memory_free_pinned(contexts[0], mem));
-}
-
 TEST_F(DriverPluginContextTest, MemoryWrapUnwrapErrors) {
   for (M_driver_context_t context : contexts) {
     // A live allocation gives us a valid address and handle for the argument
@@ -1088,4 +1119,326 @@ TEST_F(DriverPluginContextTest, PeerAccessNullArgs) {
             M_DRIVER_STATUS_INVALID_ARG);
   EXPECT_EQ(context_enable_peer_access(nullptr, contexts[0]),
             M_DRIVER_STATUS_BAD_CONTEXT);
+}
+
+namespace {
+// Optional, so loaded apart from the fixture's core symbols.
+struct FlagApi {
+  M_driver_flag_create_func_ptr_t create;
+  M_driver_flag_destroy_func_ptr_t destroy;
+  M_driver_flag_signal_func_ptr_t signal;
+  M_driver_flag_load_func_ptr_t load;
+  M_driver_flag_conditions_func_ptr_t conditions;
+  M_driver_queue_wait_flag_func_ptr_t wait;
+  M_driver_flag_reset_func_ptr_t reset;
+  M_driver_flag_device_address_func_ptr_t device_address;
+
+  bool hasCore() const {
+    return create && destroy && signal && load && conditions && wait;
+  }
+  bool hasAnyCore() const {
+    return create || destroy || signal || load || conditions || wait;
+  }
+  bool hasReset() const { return reset != nullptr; }
+  bool hasAddress() const { return device_address != nullptr; }
+};
+
+FlagApi loadFlagApi(void *soHandle) {
+  return {
+      (M_driver_flag_create_func_ptr_t)dlsym(soHandle, "M_driver_flag_create"),
+      (M_driver_flag_destroy_func_ptr_t)dlsym(soHandle,
+                                              "M_driver_flag_destroy"),
+      (M_driver_flag_signal_func_ptr_t)dlsym(soHandle, "M_driver_flag_signal"),
+      (M_driver_flag_load_func_ptr_t)dlsym(soHandle, "M_driver_flag_load"),
+      (M_driver_flag_conditions_func_ptr_t)dlsym(soHandle,
+                                                 "M_driver_flag_conditions"),
+      (M_driver_queue_wait_flag_func_ptr_t)dlsym(soHandle,
+                                                 "M_driver_queue_wait_flag"),
+      (M_driver_flag_reset_func_ptr_t)dlsym(soHandle, "M_driver_flag_reset"),
+      (M_driver_flag_device_address_func_ptr_t)dlsym(
+          soHandle, "M_driver_flag_device_address")};
+}
+} // namespace
+
+TEST_F(DriverPluginTest, CompletionFlagExports) {
+  FlagApi flags = loadFlagApi(soHandle);
+  EXPECT_EQ(flags.hasCore(), flags.hasAnyCore());
+  if (flags.hasReset() || flags.hasAddress())
+    EXPECT_TRUE(flags.hasCore());
+
+  if (api == "cpu") {
+    EXPECT_FALSE(flags.hasAnyCore() || flags.hasReset() || flags.hasAddress());
+  } else if (api == "CUDA" || api == "HIP") {
+    EXPECT_TRUE(flags.hasCore());
+    EXPECT_TRUE(flags.hasReset());
+    EXPECT_TRUE(flags.hasAddress());
+  } else if (api == "Metal") {
+    EXPECT_TRUE(flags.hasCore());
+    EXPECT_TRUE(flags.hasReset());
+    EXPECT_FALSE(flags.hasAddress());
+  }
+}
+
+namespace {
+// Long enough for a queue that ignored its wait to have run what follows.
+constexpr std::chrono::milliseconds kBlockedWindow{50};
+} // namespace
+
+struct DriverPluginFlagTest : DriverPluginQueueTest {
+  void SetUp() override {
+    DriverPluginQueueTest::SetUp();
+    if (this->HasFatalFailure() || this->IsSkipped())
+      return;
+    flags = loadFlagApi(soHandle);
+    if (!flags.hasCore())
+      GTEST_SKIP() << "plugin does not export completion flags";
+  }
+
+  // Expects work queued behind a pending wait on `flag` to run only once
+  // `flag` is signaled to `value`. A CPU-visible event stands in for the work.
+  void expectGatedUntilSignal(M_driver_flag_t flag, uint64_t value) {
+    // Unblock the queue on an early ASSERT so the test fails instead of hangs.
+    auto release = llvm::scope_exit([&] { (void)flags.signal(flag, value); });
+    M_driver_event_t event = nullptr;
+    ASSERT_SUCCESS(
+        event_create(contexts[0], M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &event));
+    ASSERT_SUCCESS(queue_record_event(queues[0], event));
+    std::this_thread::sleep_for(kBlockedWindow);
+    bool ready = true;
+    ASSERT_SUCCESS(is_event_ready(contexts[0], event, &ready));
+    EXPECT_FALSE(ready);
+    ASSERT_SUCCESS(flags.signal(flag, value));
+    ASSERT_SUCCESS(event_synchronize(contexts[0], event));
+    ASSERT_SUCCESS(queue_synchronize(queues[0]));
+    EXPECT_SUCCESS(event_destroy(contexts[0], event));
+  }
+
+  FlagApi flags;
+};
+
+TEST_F(DriverPluginFlagTest, FlagSignalLoadRoundTrip) {
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_NE(flag, nullptr);
+  uint64_t value = 1;
+  ASSERT_SUCCESS(flags.load(flag, &value));
+  EXPECT_EQ(value, 0u);
+  ASSERT_SUCCESS(flags.signal(flag, 5));
+  ASSERT_SUCCESS(flags.load(flag, &value));
+  EXPECT_EQ(value, 5u);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagWaitPassesWhenSatisfied) {
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.signal(flag, 5));
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 3, M_DRIVER_FLAG_CONDITION_GEQ));
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagWaitBlocksUntilSignal) {
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 7, M_DRIVER_FLAG_CONDITION_GEQ));
+  expectGatedUntilSignal(flag, 7);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagConditionsReportsNativeSet) {
+  uint32_t mask = 0;
+  ASSERT_SUCCESS(flags.conditions(devices[0], &mask));
+  EXPECT_NE(mask & M_DRIVER_FLAG_CONDITION_GEQ, 0u);
+  if (api == "CUDA" || api == "HIP")
+    EXPECT_EQ(mask, uint32_t{M_DRIVER_FLAG_CONDITION_GEQ |
+                             M_DRIVER_FLAG_CONDITION_EQ});
+  else if (api == "Metal")
+    EXPECT_EQ(mask, uint32_t{M_DRIVER_FLAG_CONDITION_GEQ});
+}
+
+TEST_F(DriverPluginFlagTest, FlagWaitRejectsUnsupportedCondition) {
+  uint32_t mask = 0;
+  ASSERT_SUCCESS(flags.conditions(devices[0], &mask));
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  for (M_driver_flag_condition_t cond :
+       {M_DRIVER_FLAG_CONDITION_EQ, M_DRIVER_FLAG_CONDITION_GT,
+        M_DRIVER_FLAG_CONDITION_LT, M_DRIVER_FLAG_CONDITION_LEQ}) {
+    if (mask & cond)
+      continue;
+    EXPECT_EQ(flags.wait(queues[0], flag, 1, cond),
+              M_DRIVER_STATUS_UNIMPLEMENTED)
+        << "condition " << cond;
+  }
+  // 0 sets no condition bit, so no backend can map it.
+  EXPECT_EQ(
+      flags.wait(queues[0], flag, 1, static_cast<M_driver_flag_condition_t>(0)),
+      M_DRIVER_STATUS_UNIMPLEMENTED);
+  // A rejected wait enqueues nothing, so the queue still drains.
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagWaitEq) {
+  uint32_t mask = 0;
+  ASSERT_SUCCESS(flags.conditions(devices[0], &mask));
+  if (!(mask & M_DRIVER_FLAG_CONDITION_EQ))
+    GTEST_SKIP() << "plugin does not support EQ waits";
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.signal(flag, 4));
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 4, M_DRIVER_FLAG_CONDITION_EQ));
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagResetRestartsValues) {
+  if (!flags.hasReset())
+    GTEST_SKIP() << "plugin does not export flag reset";
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.signal(flag, 9));
+  ASSERT_SUCCESS(flags.reset(flag));
+  uint64_t value = 1;
+  ASSERT_SUCCESS(flags.load(flag, &value));
+  EXPECT_EQ(value, 0u);
+
+  // A wait queued after the reset gates on the new values, which may start
+  // below the old ones.
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 5, M_DRIVER_FLAG_CONDITION_GEQ));
+  expectGatedUntilSignal(flag, 5);
+  ASSERT_SUCCESS(flags.load(flag, &value));
+  EXPECT_EQ(value, 5u);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagSignalLowerRejected) {
+  // Elsewhere a lower signal is undefined; Metal's event cannot decrease.
+  if (api != "Metal")
+    GTEST_SKIP() << "only Metal reports a lower signal";
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.signal(flag, 5));
+  EXPECT_EQ(flags.signal(flag, 4), M_DRIVER_STATUS_INVALID_ARG);
+  uint64_t value = 0;
+  ASSERT_SUCCESS(flags.load(flag, &value));
+  EXPECT_EQ(value, 5u);
+  EXPECT_SUCCESS(flags.signal(flag, 5));
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagDeviceAddress) {
+  if (!flags.hasAddress())
+    GTEST_SKIP() << "plugin does not export flag device addresses";
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  uint64_t first = 0, second = 0;
+  ASSERT_SUCCESS(flags.device_address(flag, &first));
+  EXPECT_NE(first, 0u);
+  if (flags.hasReset())
+    ASSERT_SUCCESS(flags.reset(flag));
+  ASSERT_SUCCESS(flags.device_address(flag, &second));
+  EXPECT_EQ(first, second);
+  EXPECT_EQ(flags.device_address(flag, nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.device_address(nullptr, &first), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagCreateDestroyLoop) {
+  for (int i = 0; i < 100; ++i) {
+    M_driver_flag_t flag = nullptr;
+    ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+    // Wait before signaling so the wait is really queued, not skipped as
+    // already satisfied.
+    ASSERT_SUCCESS(flags.wait(queues[0], flag, 1, M_DRIVER_FLAG_CONDITION_GEQ));
+    ASSERT_SUCCESS(flags.signal(flag, 1));
+    ASSERT_SUCCESS(queue_synchronize(queues[0]));
+    ASSERT_SUCCESS(flags.destroy(contexts[0], flag));
+  }
+}
+
+TEST_F(DriverPluginFlagTest, FlagDestroyWithQueuedWait) {
+  // Only Metal allows this: its queue holds its own reference to the event.
+  if (api != "Metal")
+    GTEST_SKIP() << "destroy before the wait drains is Metal-only";
+  for (int i = 0; i < 100; ++i) {
+    M_driver_flag_t flag = nullptr;
+    ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+    ASSERT_SUCCESS(flags.wait(queues[0], flag, 1, M_DRIVER_FLAG_CONDITION_GEQ));
+    ASSERT_SUCCESS(flags.signal(flag, 1));
+    ASSERT_SUCCESS(flags.destroy(contexts[0], flag));
+    ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  }
+}
+
+TEST_F(DriverPluginFlagTest, SetMemoryAndFillDoNotBlockOnPendingWait) {
+  constexpr size_t size = 64;
+  M_driver_memory_t a = nullptr, b = nullptr;
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], size, &a));
+  ASSERT_SUCCESS(memory_alloc_sync(contexts[0], size, &b));
+  auto freeMemory = llvm::scope_exit([&]() {
+    memory_free_sync(contexts[0], a);
+    memory_free_sync(contexts[0], b);
+  });
+  M_driver_memory_view aView{a, 0, size}, bView{b, 0, size};
+  // Keeps a first-use kernel compile out of the timed window.
+  ASSERT_SUCCESS(queue_fill(queues[0], &bView, 0x01020304, 4));
+
+  M_driver_flag_t flag = nullptr;
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+  ASSERT_SUCCESS(flags.wait(queues[0], flag, 1, M_DRIVER_FLAG_CONDITION_GEQ));
+
+  // Off-thread so a host-blocking fill fails the test instead of hanging it.
+  auto enqueued = std::async(std::launch::async, [&]() {
+    return std::array<M_driver_status_t, 2>{
+        queue_set_memory(queues[0], &aView, uint8_t(0xAB)),
+        queue_fill(queues[0], &bView, 0x11223344, 4)};
+  });
+  // Below Metal's ~5 s command buffer timeout, which unblocks a host wait.
+  bool returnedBeforeSignal =
+      enqueued.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+  // Signal before get() so a blocked enqueue can finish.
+  M_driver_status_t signalStatus = flags.signal(flag, 1);
+  std::array<M_driver_status_t, 2> statuses = enqueued.get();
+  ASSERT_SUCCESS(signalStatus);
+  ASSERT_TRUE(returnedBeforeSignal)
+      << "set_memory/fill waited on the host for the flag";
+  for (M_driver_status_t enqueueStatus : statuses)
+    ASSERT_SUCCESS(enqueueStatus);
+
+  std::array<uint8_t, size> aResult;
+  std::array<uint32_t, size / 4> bResult;
+  ASSERT_SUCCESS(queue_copy_from_device(queues[0], aResult.data(), &aView));
+  ASSERT_SUCCESS(queue_copy_from_device(queues[0], bResult.data(), &bView));
+  ASSERT_SUCCESS(queue_synchronize(queues[0]));
+  for (uint8_t v : aResult)
+    ASSERT_EQ(v, 0xAB);
+  for (uint32_t v : bResult)
+    ASSERT_EQ(v, 0x11223344u);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
+}
+
+TEST_F(DriverPluginFlagTest, FlagNullArgs) {
+  M_driver_flag_t flag = nullptr;
+  EXPECT_EQ(flags.create(contexts[0], nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.create(nullptr, &flag), M_DRIVER_STATUS_BAD_CONTEXT);
+  ASSERT_SUCCESS(flags.create(contexts[0], &flag));
+
+  uint64_t value = 0;
+  uint32_t mask = 0;
+  EXPECT_EQ(flags.load(flag, nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.load(nullptr, &value), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.signal(nullptr, 1), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.conditions(devices[0], nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.conditions(nullptr, &mask), M_DRIVER_STATUS_BAD_DEVICE);
+  EXPECT_EQ(flags.wait(nullptr, flag, 1, M_DRIVER_FLAG_CONDITION_GEQ),
+            M_DRIVER_STATUS_BAD_QUEUE);
+  EXPECT_EQ(flags.wait(queues[0], nullptr, 1, M_DRIVER_FLAG_CONDITION_GEQ),
+            M_DRIVER_STATUS_INVALID_ARG);
+  if (flags.hasReset())
+    EXPECT_EQ(flags.reset(nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_EQ(flags.destroy(nullptr, flag), M_DRIVER_STATUS_BAD_CONTEXT);
+  EXPECT_EQ(flags.destroy(contexts[0], nullptr), M_DRIVER_STATUS_INVALID_ARG);
+  EXPECT_SUCCESS(flags.destroy(contexts[0], flag));
 }

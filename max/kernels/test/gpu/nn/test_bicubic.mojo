@@ -140,7 +140,8 @@ def test_bicubic_kernel[
         " upsampling kernel--------------------------------"
     )
     # Call the bicubic upsampling kernel.
-    resize_bicubic[target="cpu"](output_host, input_host, ctx)
+    with DeviceContext.CPU(api="cpu") as cpu_ctx:
+        resize_bicubic(output_host, input_host, cpu_ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -585,7 +586,7 @@ def test_bicubic_kernel[
     comptime H = output_dim.element_types[2].static_value
     comptime W = output_dim.element_types[3].static_value
 
-    resize_bicubic[target="gpu"](output_dev_nd, input_dev_nd, ctx)
+    resize_bicubic(output_dev_nd, input_dev_nd, ctx)
 
     ctx.enqueue_copy(output_ref_host_ptr, output_dev)
     ctx.synchronize()

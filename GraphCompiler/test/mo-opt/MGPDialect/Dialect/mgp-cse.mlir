@@ -11,7 +11,7 @@
 //}
 
 module {
-  mgp.model @basicMoGraph : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+  mgp.model @basicMoGraph devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
     %0 = grt.chain.create ()
     %1 = mgp.context.create 0
     mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -59,7 +59,7 @@ module {
 
 // -----
 
-mgp.model @tensor_extract_fold : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @tensor_extract_fold devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 0
   mef.output %0, %1, %weights, %cpu : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"cpu", 0>>
@@ -85,7 +85,7 @@ mgp.model @tensor_extract_fold : mof devices [#M.device_ref<"cpu", 0>] init (%we
 // CSE-PLAN: %[[HWM:.*]], %[[OFFS:.*]]:2 = mgp.buffer.plan
 // CSE-PLAN-SAME: canShare = #M.dense_array<0, 0, 0, 0>
 // CSE-PLAN-NOT: mgp.buffer.plan
-mgp.model @buffer_plan_cse_after_canonicalize : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @buffer_plan_cse_after_canonicalize devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>
@@ -113,7 +113,7 @@ mgp.model @buffer_plan_cse_after_canonicalize : mof devices [#M.device_ref<"gpu"
 // CSE-PLAN: %[[HWM:.*]], %[[OFFS:.*]]:3 = mgp.buffer.plan
 // CSE-PLAN-SAME: canShare = #M.dense_array<0, 0, 0, 0, 0, 0, 0, 0, 0>
 // CSE-PLAN-NOT: mgp.buffer.plan
-mgp.model @buffer_plan_cse_identical_sharing : mof devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
+mgp.model @buffer_plan_cse_identical_sharing devices [#M.device_ref<"gpu", 0>] init (%arg0: !mgp.opaque<"weights_registry">, %arg1: !mgp.device_context<<"gpu", 0>>) {
   %0 = grt.chain.create ()
   %1 = mgp.context.create 2
   mef.output %0, %1, %arg0, %arg1 : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">, !mgp.device_context<<"gpu", 0>>

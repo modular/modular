@@ -74,6 +74,7 @@ declare_tools()
         "clang-format",
         "clang-tidy",
         "clangd",
+        "dsymutil",
         "llvm-install-name-tool",
         "llvm-objcopy",
         "llvm-otool",

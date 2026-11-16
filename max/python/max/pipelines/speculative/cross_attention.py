@@ -27,11 +27,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, DimLike, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import (
-    DecoderOutputs,
-    ReturnHiddenStates,
-    ReturnLogits,
-)
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 

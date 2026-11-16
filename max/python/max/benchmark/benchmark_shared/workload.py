@@ -22,7 +22,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+from max.benchmark.benchmark_shared.config import (
+    ServingBenchmarkConfig,
+    current_option_name,
+)
 from max.benchmark.benchmark_shared.utils import is_castable_to_int
 
 logger = logging.getLogger(__name__)
@@ -193,7 +196,8 @@ def _apply_workload_to_config(
         config: The benchmark configuration to update.
         workload: The workload options, keyed by their hyphenated names.
     """
-    for k, v in workload.items():
+    for key, v in workload.items():
+        k = current_option_name(key)
         field_name = k.replace("-", "_")
         if field_name not in ServingBenchmarkConfig.model_fields:
             logger.warning(f"Ignoring unknown workload key: {k}")

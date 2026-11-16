@@ -22,7 +22,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
@@ -35,6 +35,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 
 from .gemma4 import Gemma4TextModel
+from .modules import Gemma4Decoder
 
 if TYPE_CHECKING:
     from max.pipelines.speculative.spec_adapters import VerifyFn
@@ -62,6 +63,9 @@ def verify(
             "A ModuleV3 Gemma 4 target verifies only for a draft that reads"
             f" its last normalized layer. Got {hidden_states.value}."
         )
+    # The registered decoder wraps the language model this calls.
+    if isinstance(target, Gemma4Decoder):
+        target = target.model.language_model
     assert isinstance(target, Gemma4TextModel)
     on_tensors = tensor_compat_verify(partial(_verify, target))
 
@@ -77,7 +81,10 @@ def _verify(
     target: Gemma4TextModel, batch: SequentialBatch[Tensor, Tensor, Tensor]
 ) -> Verified[list[Tensor], Tensor]:
     replicated = DeviceMapping.replicated(target.mesh)
-    # Images arrive only in prefill, which merges no drafts into a row.
+    # A step with images to encode verifies no drafts
+    # (`_should_verify_drafts` in overlap_text_generation.py), so the scatter
+    # indices hold in the merged sequence. A graph without image inputs
+    # merges none.
     outputs = target(
         batch.merged_tokens,
         PagedCacheValues.from_upstream(batch.kv_collections, replicated),
@@ -87,8 +94,12 @@ def _verify(
         batch.return_n_logits,
         # The target broadcasts the merged tokens and offsets itself.
         batch.merged_offsets,
-        batch.vision_embeddings[0],
-        batch.vision_scatter_indices[0],
+        batch.vision_embeddings[0] if batch.vision_embeddings else None,
+        (
+            batch.vision_scatter_indices[0]
+            if batch.vision_scatter_indices
+            else None
+        ),
     )
     # (last_logits, logits, offsets, hs_0..hs_{n-1}). The logits are
     # replicated after the vocab allgather, so the first device's serves.

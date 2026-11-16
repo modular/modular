@@ -14,6 +14,7 @@
 #ifndef SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 #define SUPPORT_COMPILER_TIMEPROFILERTIMINGMANAGER_H
 
+#include "Support/SymbolExport.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include <memory>
@@ -30,7 +31,8 @@ namespace M {
 /// TimeTraceProfiler functionality.
 ///
 /// CAUTION: These profiling entries are always enabled at compile time.
-class TimeProfilerTimingManager : public mlir::TimingManager {
+class MODULAR_CXX_EXPORT TimeProfilerTimingManager
+    : public mlir::TimingManager {
 public:
   TimeProfilerTimingManager();
   TimeProfilerTimingManager(TimeProfilerTimingManager &&rhs);

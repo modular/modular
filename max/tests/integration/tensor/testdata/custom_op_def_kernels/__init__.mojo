@@ -17,8 +17,18 @@ data-dependent, so no dim of a declared `CustomOp` signature can size it.
 """
 # MXF-353
 
+from std.sys import align_of
+
 import extensibility
-from extensibility import InputTensor, OutputTensor, TileTensorable, foreach
+from extensibility import (
+    Input,
+    Output,
+    Tensor,
+    TileTensorable,
+    get_kernel_simd_width,
+)
+from layout import ImmTileTensor, TensorEngine, TensorLayout
+from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
@@ -30,14 +40,21 @@ struct Mxf353Downsample:
     """
 
     @staticmethod
-    def execute(
-        output: OutputTensor[rank=3, ...],
-        x: InputTensor[dtype=output.dtype, rank=3, ...],
-    ):
-        for n in range(output.dim_size(0)):
-            for w in range(output.dim_size(1)):
-                for c in range(output.dim_size(2)):
-                    output[n, w, c] = x[n, w, c]
+    def execute(output: Some[Output & Tensor], x: Some[Input & Tensor]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(x).rank == 3
+        var out_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
+        for n in range(Int(output.shape()[0].value())):
+            for w in range(Int(output.shape()[1].value())):
+                for c in range(Int(output.shape()[2].value())):
+                    out_tile.store(
+                        Coord(n, w, c), x_tile.load[width=1](Coord(n, w, c))
+                    )
 
 
 @extensibility.register("mxf353_scale")
@@ -45,16 +62,19 @@ struct Mxf353Scale[factor: Int]:
     """Elementwise identity-with-param: multiplies every element by `factor`."""
 
     @staticmethod
-    def execute(
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-    ):
-        var out_ptr = output.unsafe_ptr()
-        var x_ptr = x.unsafe_ptr()
-        for i in range(output.size()):
-            out_ptr[unsafe_offset=i] = x_ptr[unsafe_offset=i] * Scalar[
-                output.dtype
-            ](Self.factor)
+    def execute(output: Some[Output & Tensor], x: Some[Input & Tensor]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(x).rank == type_of(output).rank
+        var out_tile = output.to_tile_tensor[dtype]()
+        var out_ptr = out_tile.ptr
+        var x_ptr = x.to_tile_tensor[dtype]().as_imm().ptr
+        for i in range(out_tile.num_elements()):
+            out_ptr[unsafe_offset=i] = x_ptr[unsafe_offset=i] * Scalar[dtype](
+                Self.factor
+            )
 
 
 @extensibility.register("mxf353_q8_like")
@@ -66,16 +86,30 @@ struct Mxf353Q8Like:
 
     @staticmethod
     def execute(
-        output: OutputTensor[rank=2, ...],
-        x: InputTensor[dtype=output.dtype, rank=2, ...],
-        y: InputTensor[dtype=output.dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        y: Some[Input & Tensor],
     ):
-        for i in range(output.dim_size(0)):
-            for j in range(output.dim_size(1)):
-                var acc = Scalar[output.dtype](0)
-                for l in range(x.dim_size(1)):
-                    acc += x[i, l] * y[j, l]
-                output[i, j] = acc
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(y).dtype == dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(x).rank == 2
+        comptime assert type_of(y).rank == 2
+        var out_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
+        var y_tile = y.to_tile_tensor[dtype]().as_imm()
+        for i in range(Int(output.shape()[0].value())):
+            for j in range(Int(output.shape()[1].value())):
+                var acc = Scalar[dtype](0)
+                for l in range(Int(x.shape()[1].value())):
+                    acc += x_tile.load[width=1](Coord(i, l)) * y_tile.load[
+                        width=1
+                    ](Coord(j, l))
+                out_tile.store(Coord(i, j), acc)
 
 
 @extensibility.register("mxf353_group_pack")
@@ -85,13 +119,21 @@ struct Mxf353GroupPack[group_size: Int]:
     """
 
     @staticmethod
-    def execute(
-        output: OutputTensor[rank=2, ...],
-        w: InputTensor[dtype=output.dtype, rank=2, ...],
-    ):
-        for i in range(output.dim_size(0)):
-            for j in range(output.dim_size(1)):
-                output[i, j] = w[i, j * Self.group_size]
+    def execute(output: Some[Output & Tensor], w: Some[Input & Tensor]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(w), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(w).dtype == dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(w).rank == 2
+        var out_tile = output.to_tile_tensor[dtype]()
+        var w_tile = w.to_tile_tensor[dtype]().as_imm()
+        for i in range(Int(output.shape()[0].value())):
+            for j in range(Int(output.shape()[1].value())):
+                out_tile.store(
+                    Coord(i, j),
+                    w_tile.load[width=1](Coord(i, j * Self.group_size)),
+                )
 
 
 @extensibility.register("mxf353_filter")
@@ -102,15 +144,23 @@ struct Mxf353Filter:
     """
 
     @staticmethod
-    def execute(
-        output: OutputTensor[rank=2, ...],
-        x: InputTensor[dtype=output.dtype, rank=2, ...],
-    ):
+    def execute(output: Some[Output & Tensor], x: Some[Input & Tensor]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(x).rank == 2
+        var out_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
         var out_row = 0
-        for row in range(x.dim_size(0)):
-            if x[row, 0] > 0:
-                for col in range(output.dim_size(1)):
-                    output[out_row, col] = x[row, col]
+        for row in range(Int(x.shape()[0].value())):
+            if x_tile.load[width=1](Coord(row, 0)) > 0:
+                for col in range(Int(output.shape()[1].value())):
+                    out_tile.store(
+                        Coord(out_row, col),
+                        x_tile.load[width=1](Coord(row, col)),
+                    )
                 out_row += 1
 
 
@@ -180,13 +230,13 @@ def _nvfp4_decode(code: UInt8) -> Float32:
     return -mag if (code & 8) != 0 else mag
 
 
-def _block_absmax(
-    x: InputTensor[dtype=DType.float32, rank=2, ...], row: Int, block: Int
-) -> Float32:
+def _block_absmax[
+    LT: TensorLayout, E: TensorEngine
+](x: ImmTileTensor[.float32, LT, _, Engine=E], row: Int, block: Int) -> Float32:
     """Returns the largest magnitude in *block* of *row*."""
     var hi: Float32 = 0.0
     for i in range(_NVFP4_BLOCK):
-        var v = abs(x.load[1]((row, block * _NVFP4_BLOCK + i))[0])
+        var v = abs(x.load[width=1](Coord(row, block * _NVFP4_BLOCK + i)))
         if v > hi:
             hi = v
     return hi
@@ -201,41 +251,59 @@ struct Mxf353NVFP4Quantize:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
-        packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=DType.float32, rank=2, ...],
-        x: InputTensor[dtype=DType.float32, rank=2, ...],
+    def execute(
+        packed: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert type_of(packed).dtype == .uint8
+        comptime assert type_of(scales).dtype == .float32
+        comptime assert type_of(x).dtype == .float32
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(x).rank == 2
+        var packed_tile = packed.to_tile_tensor[.uint8]()
+        var scales_tile = scales.to_tile_tensor[.float32]()
+        var x_tile = x.to_tile_tensor[.float32]().as_imm()
+
         @always_inline
         def block_scale[
-            width: Int
-        ](idx: Coord) {var} -> SIMD[DType.float32, width]:
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var x_tile, var scales_tile}:
             var at = coord_to_index_list(idx)
-            var hi = _block_absmax(x, at[0], at[1])
+            var hi = _block_absmax(x_tile, at[0], at[1])
             var scale = hi / _NVFP4_MAX
-            return SIMD[DType.float32, width](1.0 if scale == 0.0 else scale)
+            scales_tile.store[alignment=alignment * align_of[DType.float32]()](
+                idx,
+                SIMD[DType.float32, width](1.0 if scale == 0.0 else scale),
+            )
 
-        foreach[target=target, simd_width=1](block_scale, scales, ctx)
+        elementwise[1](block_scale, scales.shape(), ctx)
 
         @always_inline
-        def pack[width: Int](idx: Coord) {var} -> SIMD[DType.uint8, width]:
+        def pack[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var x_tile, var packed_tile}:
             var at = coord_to_index_list(idx)
             var row = at[0]
             var lo_k = at[1] * 2
             # Both halves of a byte sit in one block, so one scale covers them.
-            var hi = _block_absmax(x, row, lo_k // _NVFP4_BLOCK)
+            var hi = _block_absmax(x_tile, row, lo_k // _NVFP4_BLOCK)
             var scale = hi / _NVFP4_MAX
             if scale == 0.0:
                 scale = 1.0
-            var lo = x.load[1]((row, lo_k))[0] / scale
-            var up = x.load[1]((row, lo_k + 1))[0] / scale
+            var lo = x_tile.load[width=1](Coord(row, lo_k)) / scale
+            var up = x_tile.load[width=1](Coord(row, lo_k + 1)) / scale
             var byte = _nvfp4_encode(lo) | (_nvfp4_encode(up) << 4)
-            return SIMD[DType.uint8, width](byte)
+            packed_tile.store[alignment=alignment * align_of[DType.uint8]()](
+                idx, SIMD[DType.uint8, width](byte)
+            )
 
-        foreach[target=target, simd_width=1](pack, packed, ctx)
+        elementwise[1](pack, packed.shape(), ctx)
 
 
 @extensibility.register("mxf353_nvfp4_matmul")
@@ -247,29 +315,57 @@ struct Mxf353NVFP4Matmul:
     """
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
-        out_tensor: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a_packed: InputTensor[dtype=DType.uint8, rank=2, ...],
-        a_scales: InputTensor[dtype=DType.float32, rank=2, ...],
-        b_packed: InputTensor[dtype=DType.uint8, rank=2, ...],
-        b_scales: InputTensor[dtype=DType.float32, rank=2, ...],
+    def execute(
+        out_tensor: Some[Output & Tensor],
+        a_packed: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_packed: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tensor), TileTensorable)
+        comptime assert conforms_to(type_of(a_packed), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime assert type_of(out_tensor).dtype == .float32
+        comptime assert type_of(a_packed).dtype == .uint8
+        comptime assert type_of(a_scales).dtype == .float32
+        comptime assert type_of(b_packed).dtype == .uint8
+        comptime assert type_of(b_scales).dtype == .float32
+        comptime assert type_of(out_tensor).rank == 2
+        comptime assert type_of(a_packed).rank == 2
+        comptime assert type_of(a_scales).rank == 2
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b_scales).rank == 2
+        var out_tile = out_tensor.to_tile_tensor[.float32]()
+        var a_packed_tile = a_packed.to_tile_tensor[.uint8]().as_imm()
+        var a_scales_tile = a_scales.to_tile_tensor[.float32]().as_imm()
+        var b_packed_tile = b_packed.to_tile_tensor[.uint8]().as_imm()
+        var b_scales_tile = b_scales.to_tile_tensor[.float32]().as_imm()
+        var bytes = Int(a_packed.shape()[1].value())
+
         @always_inline
-        def dot[width: Int](idx: Coord) {var} -> SIMD[DType.float32, width]:
+        def dot[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {
+            var out_tile,
+            var a_packed_tile,
+            var a_scales_tile,
+            var b_packed_tile,
+            var b_scales_tile,
+            var bytes,
+        }:
             var at = coord_to_index_list(idx)
             var row = at[0]
             var col = at[1]
-            var bytes = a_packed.dim_size(1)
             var acc: Float32 = 0.0
             for j in range(bytes):
                 var block = (j * 2) // _NVFP4_BLOCK
-                var a_scale = a_scales.load[1]((row, block))[0]
-                var b_scale = b_scales.load[1]((col, block))[0]
-                var a_byte = a_packed.load[1]((row, j))[0]
-                var b_byte = b_packed.load[1]((col, j))[0]
+                var a_scale = a_scales_tile.load[width=1](Coord(row, block))
+                var b_scale = b_scales_tile.load[width=1](Coord(col, block))
+                var a_byte = a_packed_tile.load[width=1](Coord(row, j))
+                var b_byte = b_packed_tile.load[width=1](Coord(col, j))
                 acc += (
                     _nvfp4_decode(a_byte & 15)
                     * a_scale
@@ -282,9 +378,11 @@ struct Mxf353NVFP4Matmul:
                     * _nvfp4_decode(b_byte >> 4)
                     * b_scale
                 )
-            return SIMD[DType.float32, width](acc)
+            out_tile.store[alignment=alignment * align_of[DType.float32]()](
+                idx, SIMD[DType.float32, width](acc)
+            )
 
-        foreach[target=target, simd_width=1](dot, out_tensor, ctx)
+        elementwise[1](dot, out_tensor.shape(), ctx)
 
 
 @extensibility.register("mxf353_relu")
@@ -292,16 +390,27 @@ struct Mxf353Relu:
     """Shape- and dtype-preserving ReLU, the pipeline's activation."""
 
     @staticmethod
-    def execute[
-        target: StaticString
-    ](
-        output: OutputTensor,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    def execute(
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        @always_inline
-        def relu[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
-            var v = x.load[width](idx)
-            return max(v, 0)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(x).dtype == dtype
+        comptime assert type_of(x).rank == type_of(output).rank
+        var out_tile = output.to_tile_tensor[dtype]()
+        var x_tile = x.to_tile_tensor[dtype]().as_imm()
 
-        foreach[target=target](relu, output, ctx)
+        @always_inline
+        def relu[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var x_tile, var out_tile}:
+            comptime align = alignment * align_of[dtype]()
+            var v = x_tile.load[width=width, alignment=align](idx)
+            out_tile.store[alignment=align](idx, max(v, 0))
+
+        elementwise[get_kernel_simd_width[dtype, ctx.target]()](
+            relu, output.shape(), ctx
+        )

@@ -51,26 +51,25 @@ mo.graph @add_gather_indices(
 }
 
 // CHECK-LABEL: mo.graph @chain
-// CHECK-SAME:  (%[[A:.*]]: !mo.tensor<[2, 3], f32>)
+// CHECK-SAME:  (%[[A:.*]]: !mo.tensor<[3, 3], f32>, %{{.*}}: !mo.tensor<[2, 2], si32>)
 // CHECK-NEXT:  %[[OUT:.*]] = map.iter.opaque
-// CHECK-NEXT:  inputs (%[[A]]: !mo.tensor<[2, 3], f32>)
 // CHECK:       %[[P:.*]] = map.iter.prologue
 // CHECK:       map.call.elementwise @{{.*}}.Add(%{{.*}}) : !map.index<2>, f32, f32 -> f32
 // CHECK-NEXT:  %[[CAST:.*]] = map.call.elementwise @{{.*}}.Cast(%{{.*}}) : !map.index<2>, f32 -> f64
 // CHECK-NEXT:  map.yield %[[CAST]] : f64
-// CHECK-NEXT:  } : !mo.tensor<[2, 3], f64>
-// CHECK-NEXT:  map.call.opaque @{{.*}}.Softmax{{.*}} inputs(%[[P]])
+// CHECK-NEXT:  } : !mo.tensor<[3, 3], f64>
+// CHECK:       map.call.opaque @{{.*}}.Gather{{.*}} inputs(%[[P]], %{{.*}})
 // CHECK:       #mogg.fusion_prologue<[#mogg.fusion_elementwise<[#mogg.fusion_leaf<"mo.add"
 // CHECK-SAME:  #mogg.fusion_leaf<"mo.cast"
-// CHECK-SAME:  #mogg.fusion_leaf<"mo.reduce.softmax"
+// CHECK-SAME:  #mogg.fusion_leaf<"mo.gather"
 // CHECK-SAME:  operandIndices = [0]
 // CHECK-NOT:   map.iter.elementwise
-// CHECK:       mo.output %[[OUT]] : !mo.tensor<[2, 3], f64>
-mo.graph @chain(%a: !mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f64> {
-  %add = mo.add(%a, %a) : !mo.tensor<[2, 3], f32>
-  %cast = mo.cast(%add) : (!mo.tensor<[2, 3], f32>) -> !mo.tensor<[2, 3], f64>
-  %out = mo.reduce.softmax(%cast) [axis = 1] : (!mo.tensor<[2, 3], f64>) -> !mo.tensor<[2, 3], f64>
-  mo.output %out : !mo.tensor<[2, 3], f64>
+// CHECK:       mo.output %[[OUT]] : !mo.tensor<[2, 2, 3], f64>
+mo.graph @chain(%a: !mo.tensor<[3, 3], f32>, %indices: !mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 2, 3], f64> {
+  %add = mo.add(%a, %a) : !mo.tensor<[3, 3], f32>
+  %cast = mo.cast(%add) : (!mo.tensor<[3, 3], f32>) -> !mo.tensor<[3, 3], f64>
+  %out = mo.gather(%cast, %indices) [axis = 0] : (!mo.tensor<[3, 3], f64>, !mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 2, 3], f64>
+  mo.output %out : !mo.tensor<[2, 2, 3], f64>
 }
 
 // CHECK-LABEL: mo.graph @two_fused_inputs

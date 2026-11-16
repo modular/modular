@@ -40,6 +40,7 @@ from std.random import seed
 from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
+from nn.attention.gpu.mla import AMDMLA
 
 from _paged_prefill_test_utils import run_test_paged_prefill
 
@@ -61,6 +62,7 @@ def main() raises:
                 nope_depth=128,
                 page_size=PAGE_SIZE,
                 batch_size=1,
+                kernels=AMDMLA,
             ](9, 9, ctx)
 
             print("=== TARGET S=9 appended after cache_length=503 prefix ===")
@@ -75,6 +77,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 cache_length=503,
+                kernels=AMDMLA,
             ](9, 512, ctx)
 
             # See the module docstring's Shapes section for why 448 pairs
@@ -94,6 +97,7 @@ def main() raises:
                 page_size=PAGE_SIZE,
                 batch_size=1,
                 cache_length=448,
+                kernels=AMDMLA,
             ](9, 457, ctx)
 
             # See "Scattered-LUT cases" in the module docstring.
@@ -110,6 +114,7 @@ def main() raises:
                 batch_size=1,
                 cache_length=503,
                 scatter_pool_factor=3,
+                kernels=AMDMLA,
             ](9, 512, ctx)
 
             print("=== SCATTERED_900 S=9, scattered LUT, cache_length=900 ===")
@@ -125,4 +130,5 @@ def main() raises:
                 batch_size=1,
                 cache_length=900,
                 scatter_pool_factor=3,
+                kernels=AMDMLA,
             ](9, 909, ctx)

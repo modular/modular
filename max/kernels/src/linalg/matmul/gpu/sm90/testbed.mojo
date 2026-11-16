@@ -20,13 +20,10 @@ from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
-from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
 from internal_utils._measure import relative_difference
-from std.collections import OptionalReg
-from std.utils.index import IndexList
 
 from ....utils import ElementwiseComputeFn, no_compute_fn
 from ....utils_gpu import MatmulConfig
@@ -52,7 +49,7 @@ def test_matmul_sm90[
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
-    grid_shape: OptionalReg[IndexList[2]] = None,
+    grid_shape: Optional[Tuple[Int, Int]] = None,
     use_tma_store: Bool = False,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
     default_epilogue: Bool = False,
@@ -136,9 +133,7 @@ def test_matmul_sm90[
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](length=c_size)
     ).into_managed()
-    var c_host_ref: MutPointer[
-        Scalar[c_type], origin_of(c_host_ref_alloc)
-    ] = c_host_ref_alloc.unsafe_ptr()
+    var c_host_ref = c_host_ref_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -258,7 +253,7 @@ def test_matmul_sm90[
             schedule=schedule,
             grid_shape=grid_shape,
             use_tma_store=use_tma_store,
-        ](IndexList[2](M, N), a_tensor, b_tensor, epilogue_fn, ctx)
+        ]((M, N), a_tensor, b_tensor, epilogue_fn, ctx)
     else:
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,

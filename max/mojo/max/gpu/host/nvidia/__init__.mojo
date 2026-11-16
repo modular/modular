@@ -10,4 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the tma package."""
+"""NVIDIA host APIs: launch configurations with CUDA launch attributes, and
+the Tensor Memory Accelerator (TMA)."""
+
+from .launch_config import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
+    LaunchAttributeHolderExecutionConfig,
+)

@@ -546,6 +546,93 @@ def test_tau2_rows_index_tasks_by_id_and_trials_from_zero() -> None:
     assert [r["error"] for r in rows] == [None, "agent_error"]
 
 
+def _agent_turn(
+    completion_tokens: int | None, finish_reason: str = "stop"
+) -> dict[str, Any]:
+    usage = (
+        None
+        if completion_tokens is None
+        else {"completion_tokens": completion_tokens, "prompt_tokens": 1000}
+    )
+    return {
+        "role": "assistant",
+        "usage": usage,
+        "raw_data": {"finish_reason": finish_reason},
+    }
+
+
+# tau2 opens every conversation with this message; no model produced it.
+GREETING = {
+    "role": "assistant",
+    "content": "Hi! How can I help you today?",
+    "cost": 0.0,
+    "usage": None,
+    "raw_data": None,
+}
+
+
+def _tau2_log_with_messages(
+    *messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    log = json.loads(json.dumps(TAU2_LOG))
+    for sim, sim_messages in zip(log["simulations"], messages, strict=True):
+        sim["messages"] = sim_messages
+    return log
+
+
+def test_tau2_rows_count_agent_turns_and_their_output_tokens() -> None:
+    log = _tau2_log_with_messages(
+        [
+            GREETING,
+            {"role": "user", "content": "Cancel my booking."},
+            _agent_turn(120, "tool_calls"),
+            {"role": "tool", "content": "{}"},
+            _agent_turn(300),
+        ],
+        [GREETING, _agent_turn(50, "length")],
+    )
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert [
+        (
+            r["agent_turns"],
+            r["completion_tokens"],
+            r["max_turn_completion_tokens"],
+            r["length_capped_turns"],
+        )
+        for r in rows
+    ] == [(2, 420, 300, 0), (1, 50, 50, 1)]
+    assert summary["mean_output_tokens"] == 235.0
+    assert summary["p50_output_tokens"] == 235.0
+    assert summary["length_capped_turns"] == 1
+
+
+def test_tau2_rows_finish_on_the_termination_reason() -> None:
+    rows, _ = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert [r["finish_reason"] for r in rows] == ["user_stop", "agent_error"]
+
+
+def test_tau2_tokens_are_unknown_when_a_turn_lacks_usage() -> None:
+    # A partial sum would read as a short conversation, so report none.
+    log = _tau2_log_with_messages(
+        [GREETING, _agent_turn(120), _agent_turn(None)],
+        [GREETING, _agent_turn(80)],
+    )
+    rows, summary = exacto_report.parse_tau2_log(log)
+    assert [r["completion_tokens"] for r in rows] == [None, 80]
+    assert [r["max_turn_completion_tokens"] for r in rows] == [None, 80]
+    assert [r["agent_turns"] for r in rows] == [2, 1]
+    assert summary["mean_output_tokens"] == 80.0
+
+
+def test_tau2_simulation_that_never_reached_the_agent_has_no_tokens() -> None:
+    rows, summary = exacto_report.parse_tau2_log(TAU2_LOG)
+    assert [(r["agent_turns"], r["completion_tokens"]) for r in rows] == [
+        (0, 0),
+        (0, 0),
+    ]
+    assert summary["mean_output_tokens"] == 0.0
+
+
 def test_gpqa_config_records_the_endpoint_and_parity_knobs() -> None:
     rows, summary = exacto_report.parse_openbench_log(OPENBENCH_LOG)
     assert exacto_report.eval_config("openbench", summary, rows) == {

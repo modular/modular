@@ -259,7 +259,7 @@ def execute_test[
         fused_output_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -302,14 +302,14 @@ def execute_test[
         )
         return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
         k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
@@ -345,7 +345,6 @@ def execute_test[
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,
@@ -670,9 +669,7 @@ def execute_test_with_position_ids[
         pos_ids_device, row_major(num_sections, total_length)
     )
 
-    _rope_split_store_ragged_with_position_ids[
-        target="gpu", interleaved=interleaved
-    ](
+    _rope_split_store_ragged_with_position_ids[interleaved=interleaved,](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -715,14 +712,14 @@ def execute_test_with_position_ids[
         )
         return v_ptr.unsafe_offset(flat).unsafe_load[width=width]()
 
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_k_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
         k_load_fn,
         ctx,
     )
-    kv_cache_store_ragged[target="gpu"](
+    kv_cache_store_ragged(
         unfused_v_cache,
         (total_length, num_kv_heads, head_dim),
         row_offsets,
@@ -758,7 +755,6 @@ def execute_test_with_position_ids[
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,
-        target="gpu",
     ](
         q_proj=q_tile,
         input_row_offsets=row_offsets_tile,
@@ -1062,7 +1058,7 @@ def execute_test_fp8[
         bf16_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,
@@ -1081,7 +1077,7 @@ def execute_test_fp8[
         fp8_q_device, row_major(total_length, Idx[hidden_size])
     )
 
-    _rope_split_store_ragged[target="gpu", interleaved=interleaved](
+    _rope_split_store_ragged[interleaved=interleaved](
         qkv_tile,
         row_offsets_tile,
         freqs_tensor,

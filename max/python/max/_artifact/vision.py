@@ -39,7 +39,11 @@ from .value_types import (
 
 VISION_CONFIG_FILE_NAME = "vision_config.json"
 
-# TODO(DISTINF-523): The resize rules are a closed set of three, mirrored in
+# Mach's `multimodal::layout::MAX_IMAGE_PIXELS`: the most pixels an image may
+# decode to.
+_MAX_IMAGE_PIXELS = 64 * 1024 * 1024
+
+# TODO(DISTINF-523): The resize rules are a closed set, mirrored in
 # Mach's `multimodal::ResizeStrategy`; a model that sizes media by another rule
 # needs a new variant on both sides.
 
@@ -94,8 +98,99 @@ class VideoSmartResize:
     max_pixels: int
 
 
+@dataclass(frozen=True)
+class InklingPatchRows:
+    """Grows the long edge without shrinking and pads to whole patch rows.
+
+    Args:
+        max_upscale: The largest factor by which either side grows.
+        upscale_long_edge: The long edge up to which images grow.
+    """
+
+    rule: ClassVar[str] = "inkling_patch_rows"
+    max_upscale: int = 2
+    upscale_long_edge: int = 2048
+
+
+@dataclass(frozen=True)
+class MuseSmartResize:
+    """Picks the merged-patch grid nearest the aspect ratio within a token cap.
+
+    The ideal grid, in merged patches, shrinks to the cap, and of the floor
+    and ceiling of each side the grid whose aspect ratio is nearest the
+    item's wins. Unlike :class:`SmartResize`, it bounds merged tokens, not
+    pixels.
+
+    Args:
+        max_tokens: The most merged tokens an item may have.
+    """
+
+    rule: ClassVar[str] = "muse_smart_resize"
+    max_tokens: int
+
+
+@dataclass(frozen=True)
+class DeepseekV41Letterbox:
+    """Grows small images, then letterboxes them into a span budget.
+
+    An image smaller than ``min_pixels`` grows to that area, and each side
+    rounds up to whole patches. If the span then has more than
+    ``max_span_tokens`` positions, the target shrinks to the largest
+    aspect-preserving size whose span fits. A strip too thin for one merged
+    cell across at that cap gets a target one merged cell across, as long as
+    the cap allows. The image is fitted into the target with a bicubic
+    resize, centered with Python's half-to-even rounding, and padded with
+    gray ``(127, 127, 127)``, so it is not stretched.
+
+    The span is not one position per merged patch: each merged row ends
+    with a newline position, and a start and an end position frame the
+    rows, ``ceil(h / merge) * (ceil(w / merge) + 1) + 2`` positions in all.
+
+    Args:
+        min_pixels: The smallest source area; a smaller image grows to it.
+        max_span_tokens: The most span positions one image may take, the
+            start, newline and end positions included.
+
+    Raises:
+        ValueError: If ``min_pixels`` is not an integer from 0 to the 64
+            Mi-pixel image cap, or ``max_span_tokens`` is not an integer from
+            4, the positions of one merged cell, to ``2**32 - 1``. Mach
+            refuses a ``vision_config.json`` with any other value.
+    """
+
+    rule: ClassVar[str] = "deepseek_v41_letterbox"
+    min_pixels: int
+    max_span_tokens: int
+
+    def __post_init__(self) -> None:
+        # Mach reads `min_pixels` as u64 and `max_span_tokens` as u32.
+        if not _is_int_in(self.min_pixels, 0, _MAX_IMAGE_PIXELS):
+            raise ValueError(
+                f"min_pixels {self.min_pixels!r} is not an integer from 0 to "
+                f"the {_MAX_IMAGE_PIXELS}-pixel image cap"
+            )
+        if not _is_int_in(self.max_span_tokens, 4, 2**32 - 1):
+            raise ValueError(
+                f"max_span_tokens {self.max_span_tokens!r} is not an integer "
+                "from 4, the span of one merged cell, to 2**32 - 1"
+            )
+
+
+def _is_int_in(value: object, low: int, high: int) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and low <= value <= high
+    )
+
+
 ResizeStrategy: TypeAlias = (
-    SmartResize | AspectRatioPreserving | VideoSmartResize
+    SmartResize
+    | AspectRatioPreserving
+    | VideoSmartResize
+    | InklingPatchRows
+    | MuseSmartResize
+    | DeepseekV41Letterbox
 )
 
 
@@ -244,6 +339,8 @@ class VisionMetadata:
         max_image_bytes: int,
         max_video_bytes: int,
         prompt: PromptText,
+        max_images_per_request: int | None = None,
+        max_videos_per_request: int | None = None,
     ) -> Self:
         """Returns the metadata for a model's media layouts.
 
@@ -256,16 +353,26 @@ class VisionMetadata:
             max_video_bytes: The per-video encoded-byte cap, or ``0`` for
                 none.
             prompt: The prompt text around media.
+            max_images_per_request: The model's image count cap, or
+                ``None`` for none declared. A reader then applies its own
+                default: 16 items in Mach and its orchestrator. MAX Serve
+                reads the tokenizer's caps instead, and applies none when
+                the tokenizer declares none.
+            max_videos_per_request: The model's video count cap, or
+                ``None`` for none declared, with the same default.
         """
-        return cls(
-            {
-                "image": image.to_json(),
-                "video": None if video is None else video.to_json(),
-                "max_image_bytes": max_image_bytes,
-                "max_video_bytes": max_video_bytes,
-                "prompt": asdict(prompt),
-            }
-        )
+        config: dict[str, JsonValue] = {
+            "image": image.to_json(),
+            "video": None if video is None else video.to_json(),
+            "max_image_bytes": max_image_bytes,
+            "max_video_bytes": max_video_bytes,
+        }
+        if max_images_per_request is not None:
+            config["max_images_per_request"] = max_images_per_request
+        if max_videos_per_request is not None:
+            config["max_videos_per_request"] = max_videos_per_request
+        config["prompt"] = asdict(prompt)
+        return cls(config)
 
     def __serialize__(self) -> Mapping[str, ArtifactType]:
         """Returns the config as the ``vision_config.json`` file."""

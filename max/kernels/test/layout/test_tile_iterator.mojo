@@ -14,7 +14,7 @@
 
 from layout import TileTensor, row_major
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout
+from layout.layout import Layout
 from layout.coord import ComptimeInt, Coord
 from std.testing import TestSuite, assert_equal, assert_true
 
@@ -92,13 +92,16 @@ def test_explicit_stride_and_offset() raises:
     for i in range(24):
         data[i] = Int32(i)
 
-    comptime TileLayout = Layout[
-        shape_types=Coord[ComptimeInt[2], ComptimeInt[4]].element_types,
-        stride_types=Coord[ComptimeInt[12], ComptimeInt[1]].element_types,
-    ]
-    var it = TileTensorIter[.int32, TileLayout, _](
+    var it = TileTensorIter[
+        .int32,
+        Layout[
+            shape_types=Coord[ComptimeInt[2], ComptimeInt[4]].element_types,
+            stride_types=Coord[ComptimeInt[12], ComptimeInt[1]].element_types,
+        ],
+        _,
+    ](
         data.unsafe_ptr(),
-        TileLayout(
+        Layout(
             Coord[ComptimeInt[2], ComptimeInt[4]](),
             Coord[ComptimeInt[12], ComptimeInt[1]](),
         ),

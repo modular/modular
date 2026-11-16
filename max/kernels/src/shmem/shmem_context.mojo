@@ -180,7 +180,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     ```
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     var _main_stream: DeviceStream
     var _priority_stream: DeviceStream
     var _begin_event: DeviceEvent
@@ -224,16 +224,14 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
             self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = False
 
-    def __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
+    def __init__(out self, ctx: DeviceContext[]) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -259,9 +257,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
             self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
@@ -270,7 +266,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         node_id: Int = -1,
         total_nodes: Int = -1,
         gpus_per_node: Int = -1,
@@ -300,9 +296,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.device().get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch
         # capability with: hipLaunchAttributeCooperative and create function
         # that works across NVIDIA/AMD. For now assume cooperative capability.
@@ -620,7 +614,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._ctx.synchronize()
 
     @inline(.always)
-    def get_device_context(self) -> DeviceContext:
+    def get_device_context(self) -> DeviceContext[]:
         """Returns the device context associated with this SHMEMContext.
 
         Returns:
@@ -631,7 +625,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @staticmethod
     @inline(.always)
     def number_of_devices(
-        *, api: String = String(DeviceContext.default_device_info.api)
+        *, api: String = String(DeviceContext[].default_device_info.api)
     ) -> Int:
         """Returns the number of devices available that support the specified API.
 

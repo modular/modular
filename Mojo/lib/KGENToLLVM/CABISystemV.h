@@ -59,14 +59,8 @@ private:
   CoercionInfo classifyStructType(mlir::Type type, mlir::Location loc,
                                   bool useSRet) const;
 
-  /// Classify 1-8 byte all-float structs for SSE register passing.
-  ///
-  /// \param size Size in bytes (1-8)
-  /// \return Coercion to f32 (≤4 bytes) or f64 (5-8 bytes)
-  CoercionInfo classifySmallSSEStruct(int64_t size) const;
-
   //===--------------------------------------------------------------------===//
-  // Phase 2: Complete eightbyte classification (9-16 byte structs)
+  // Eightbyte classification (structs up to 16 bytes)
   //===--------------------------------------------------------------------===//
 
   /// Classification for each 8-byte chunk of a struct.
@@ -74,35 +68,9 @@ private:
     NoClass, // Uninitialized
     Integer, // Integer types (passed in GP registers)
     SSE,     // Float/double types (passed in SSE registers)
+    SSEUp,   // Upper half of a 128-bit vector, in the same SSE register
     Memory   // Must use memory (stack)
   };
-
-  /// Classify a 9-16 byte struct into two eightbytes.
-  ///
-  /// This implements the System V ABI's two-register passing for medium
-  /// structs. Each eightbyte is classified separately, then combined to
-  /// determine the overall passing method.
-  ///
-  /// \param structType The LLVM struct type to classify
-  /// \param size Total size in bytes (must be 9-16)
-  /// \param loc Source location for diagnostics
-  /// \return Coercion information (IntegerPair, SSEPair, Mixed, or Memory)
-  CoercionInfo classifyTwoEightbyteStruct(mlir::LLVM::LLVMStructType structType,
-                                          int64_t size, mlir::Location loc,
-                                          bool useSRet) const;
-
-  /// Classify a single 8-byte region of a struct.
-  ///
-  /// This examines all fields that overlap with the byte range
-  /// [offset, offset+maxSize) and determines the eightbyte class.
-  ///
-  /// \param structType The LLVM struct type to examine
-  /// \param offset Starting byte offset of this eightbyte
-  /// \param maxSize Maximum size to consider (≤8)
-  /// \return {classification, region size in bytes}
-  std::pair<EightbyteClass, int64_t>
-  classifyEightbyte(mlir::LLVM::LLVMStructType structType, int64_t offset,
-                    int64_t maxSize) const;
 
   /// Get the LLVM type to use for an eightbyte.
   ///
@@ -111,6 +79,32 @@ private:
   /// \return Appropriate integer (i8/i16/i32/i64) or float (f32/f64) type
   mlir::Type getEightbyteType(EightbyteClass eightbyteClass,
                               int64_t size) const;
+
+  /// Merge the class of one more member into its eightbyte's class
+  /// (System V ABI 3.2.3p2, rule 4).
+  ///
+  /// Members that share an eightbyte share one register, so the higher class
+  /// wins: NoClass < SSEUp < SSE < Integer < Memory.
+  ///
+  /// \param accum The class of the members already in the eightbyte
+  /// \param field The class of the new member
+  /// \return The combined class
+  static EightbyteClass mergeEightbyteClass(EightbyteClass accum,
+                                            EightbyteClass field);
+
+  /// Classify one member of a struct of at most 16 bytes.
+  ///
+  /// Floats up to 64 bits are SSE. Vectors are classified by size: up to 32
+  /// bits Integer, 64 bits SSE, 128 bits SSE with SSEUp for the upper half,
+  /// other sizes Memory. Anything else is Integer. A member that is not
+  /// aligned is Memory.
+  ///
+  /// \param type The member type: a scalar, a vector, or a type without size
+  /// \param offset Byte offset of the member in the struct
+  /// \return The classes the member gives to bytes 0-7 and to bytes 8-15;
+  ///         NoClass for an eightbyte it does not cover
+  std::pair<EightbyteClass, EightbyteClass>
+  classifyMember(mlir::Type type, int64_t offset) const;
 };
 
 } // namespace M::KGEN

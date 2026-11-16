@@ -97,7 +97,7 @@ def test_kimi_situ_and_mul_passes_up_through_unchanged_when_linear_beta_none() -
 
 
 @pytest.mark.compile_on_gpu(
-    "mo.quantize.dynamic.block.scaled and the fused swiglu quantize are"
+    "quantization.quantize.dynamic.block.scaled and the fused swiglu quantize are"
     " custom ops the interpreter can't bind"
 )
 def test_kimi_situ_and_mul_quantize_mxfp8_matches_chain_bytes() -> None:

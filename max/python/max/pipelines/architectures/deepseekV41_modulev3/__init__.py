@@ -12,4 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """The DeepSeek-V4.1-Flash architecture, in the ModuleV3 API."""
 
-from .arch import deepseekV41_modulev3_arch as deepseekV41_modulev3_arch
+from .arch import deepseekV41_modulev3_arch
+from .model import DeepseekV41Model
+from .model_config import (
+    DeepseekV41Config,
+    EngramTableFormat,
+    RoutedExpertFormat,
+)
+
+__all__ = [
+    "DeepseekV41Config",
+    "DeepseekV41Model",
+    "EngramTableFormat",
+    "RoutedExpertFormat",
+    "deepseekV41_modulev3_arch",
+]

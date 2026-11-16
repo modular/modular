@@ -17,7 +17,7 @@
 #        collision), Drawable.draw error pair only, discard
 #        pattern `_, y = ...` (tuple-destructuring syntax in
 #        flux).
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_false
 from std.math import sqrt
 
 
@@ -121,7 +121,7 @@ def test_triple_line_continuation() raises:
     var x = """\
     No leading newline.\
     """
-    assert_equal(x.find("\n"), -1)  # no newline survives
+    assert_false("\n" in x)  # no newline survives
 
 
 # --- T-string interpolation ---

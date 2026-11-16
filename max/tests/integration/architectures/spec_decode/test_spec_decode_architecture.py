@@ -20,7 +20,10 @@ either serves the wrong graph or refuses a pairing that should work.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
+from max.pipelines.context.context_validators import validate_no_images
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
@@ -35,6 +38,27 @@ TARGET = "LlamaForCausalLM"
 # it to the draft architecture.
 EAGLE_DRAFT = "LlamaForCausalLM"
 DFLASH_DRAFT = "DFlashDraftModel"
+
+
+def test_a_pairing_takes_images_exactly_when_its_target_encodes_them() -> None:
+    """A pairing serves images when its target encodes them for a pairing,
+    and refuses them at admission otherwise; its draft has no say.
+
+    These targets encode for a pairing, so theirs serve images, though no
+    draft declares image input. Mistral Large 4 + DSpark refuses them
+    (``test_spec_decode_layout``).
+    """
+    vision_pairings: list[tuple[str, Literal["mtp", "dspark"]]] = [
+        ("Qwen3_5ForConditionalGeneration", "mtp"),
+        ("InklingForConditionalGeneration", "mtp"),
+        ("DeepseekV41ForCausalLM", "dspark"),
+        ("Glm5NextForConditionalGeneration", "mtp"),
+    ]
+    for target, method in vision_pairings:
+        pairing = spec_decode_architecture(target, method, None)
+        assert pairing is not None, (target, method)
+        assert validate_no_images not in pairing.context_validators, target
+        assert InputModality.IMAGE in pairing.input_modalities, target
 
 
 def test_a_target_and_its_draft_resolve_to_the_fused_architecture() -> None:
@@ -137,7 +161,8 @@ def test_a_modulev3_block_target_pairs_with_its_modulev3_drafter() -> None:
         "MiMoV2ForCausalLM", "dflash", "DFlashDraftModel", prefer_module_v3=True
     )
     assert arch is not None
-    assert arch.name == "MiMoV2ForCausalLM_ModuleV3+dflash"
+    # The plain name: the ModuleV3 registration is the only MiMo-V2 variant.
+    assert arch.name == "MiMoV2ForCausalLM+dflash"
     assert arch.pipeline_model is _SpecDecodeModuleV3PipelineModel
     assert arch.multi_gpu_supported
     assert arch.supports_spec_decode_mixed_batches

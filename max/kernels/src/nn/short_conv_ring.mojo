@@ -182,7 +182,6 @@ def short_conv_ring[
     dtype: DType,
     ring_dtype: DType,
     //,
-    target: StaticString,
     commit: Bool,
 ](
     x: TileTensor[mut=False, dtype, ...],
@@ -203,7 +202,7 @@ def short_conv_ring[
     `conv_rows`: `[num_layers, batch]` ring slot per sequence; `layer_row`
     picks this layer's row. Without `commit` the ring is only read.
     """
-    comptime assert is_gpu[target](), "short_conv_ring is GPU-only"
+    comptime assert context.target.is_gpu(), "short_conv_ring is GPU-only"
     comptime assert x.flat_rank == 2, "x must be [total_seq_len, channels]"
     comptime assert output.flat_rank == 2, "output must match x"
     comptime assert weight.flat_rank == 2, "weight must be [channels, width]"
@@ -287,7 +286,7 @@ def short_conv_ring[
                         channel,
                     )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(t"short_conv_ring.channels_{channels}"),
         task_id=get_safe_task_id(context),
     ):
@@ -542,7 +541,6 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     page_size: Int,
     cache_dtype: DType,
     //,
-    target: StaticString,
     multiply_before_cast: Bool,
     apply_log_scaling: Bool,
     commit: Bool,
@@ -586,9 +584,9 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     sequence's last `R` tokens are also written into the rings; without it
     the rings are only read.
     """
-    comptime assert is_gpu[
-        target
-    ](), "fused_qk_rms_norm_short_conv_ragged_paged is GPU-only"
+    comptime assert (
+        context.target.is_gpu()
+    ), "fused_qk_rms_norm_short_conv_ragged_paged is GPU-only"
     comptime assert qkvr.flat_rank == 2, "qkvr must be rank 2"
     comptime assert q_output.flat_rank == 3, "q_output must be rank 3"
     comptime head_dim = params.head_size
@@ -605,7 +603,7 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     if qkvr.dim[0]() == 0:
         return
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_{params.num_heads}.hdim_{head_dim}"
         ),

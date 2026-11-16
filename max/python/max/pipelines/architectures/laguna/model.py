@@ -24,26 +24,17 @@ from max._core.engine import Model
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_config import (
+from max.nn.ep_config import (
+    EPConfig,
     calculate_ep_max_tokens_per_rank,
-    estimate_ep_memory_usage,
 )
 from max.pipelines.architectures.llama3.model import LlamaModelBase
-from max.pipelines.lib import (
-    PipelineConfig,
-    supported_encoding_dtype,
-)
-from max.pipelines.lib.config.model_config import (
-    _select_quantization_encoding,
-)
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.weights.quant import (
     apply_fused_kernel_flags,
     build_modelopt_nvfp4_config,
 )
-from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -60,8 +51,9 @@ _EXPERT_BLOCK_SCALE = re.compile(
     r"layers\.(\d+)\.mlp\.experts\.\d+\.(?:gate|up|down)_proj\.weight_scale"
 )
 
-# The two other tensors an NVFP4 projection needs alongside its block scales.
-_NVFP4_SCALE_SIBLINGS = ("weight_scale_2", "input_scale")
+# The two other tensors an NVFP4 projection needs alongside its block scales,
+# the compressed-tensors global scales every Laguna checkpoint stores.
+_NVFP4_SCALE_SIBLINGS = ("weight_global_scale", "input_global_scale")
 
 # Compute dtypes a projection can be in and still be unquantized.
 _UNQUANTIZED_DTYPES = (DType.bfloat16, DType.float16, DType.float32)
@@ -80,83 +72,6 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory one forward pass needs."""
-        encoding = _select_quantization_encoding(
-            pipeline_config.model, LagunaConfig.DEFAULT_ENCODING
-        )
-        n_gpus_per_node = len(pipeline_config.model.device_specs)
-        num_experts = getattr(huggingface_config, "num_local_experts", 256)
-        moe_dim = getattr(huggingface_config, "intermediate_size", 1536)
-        hidden_size = getattr(huggingface_config, "hidden_size", 3072)
-        top_k = getattr(huggingface_config, "num_experts_per_tok", 8)
-
-        ep_buffer_memory = 0
-        moe_activation_memory = 0
-        ep_size = pipeline_config.runtime.ep_size
-        if ep_size > 1:
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=ep_size,
-                data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            )
-            ep_dispatch_dtype = supported_encoding_dtype(encoding)
-
-            # Worst-case tokens received per rank during all-to-all routing.
-            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
-                num_experts,
-                ep_size * top_k,
-            )
-
-            # Peak MoE activation: input to second grouped_matmul has shape
-            # [max_recv_tokens_per_rank, moe_intermediate_size].
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * moe_dim
-                * ep_dispatch_dtype.size_in_bytes
-            )
-            # Output has shape [max_recv_tokens_per_rank, hidden_size] in
-            # bfloat16.
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * hidden_size
-                * DType.bfloat16.size_in_bytes
-            )
-            # 256MB per GPU for misc scalar buffers.
-            moe_activation_memory += 256 * 1024 * 1024
-            moe_activation_memory *= n_gpus_per_node
-
-            n_nodes = max(ep_size // n_gpus_per_node, 1)
-            per_device_ep_memory = estimate_ep_memory_usage(
-                hidden_size=hidden_size,
-                dispatch_dtype=ep_dispatch_dtype,
-                combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=ep_max_rank_send_tokens,
-                n_experts=num_experts,
-                n_nodes=n_nodes,
-                n_gpus_per_node=n_gpus_per_node,
-                top_k=top_k,
-            )
-            # EPCommInitializer double-buffers (NUM_GROUPS=2) the SHMEM
-            # dispatch/combine buffers.
-            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node * 2
-
-        activation_memory = moe_activation_memory + ep_buffer_memory
-
-        if activation_memory != 0:
-            logger.info(
-                "Estimated activation memory: %s "
-                "(ep_buffers=%s, moe_activation=%s)",
-                to_human_readable_bytes(activation_memory),
-                to_human_readable_bytes(ep_buffer_memory),
-                to_human_readable_bytes(moe_activation_memory),
-            )
-
-        return activation_memory
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> LagunaConfig:
@@ -190,8 +105,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
         self.ep_comm_initializer = None
         if model_config.ep_config is None:
             return
-        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-        self.ep_comm_initializer.ep_init(session)
+        self.ep_comm_initializer = self._init_ep_comm(
+            session, model_config.ep_config
+        )
         logger.info(
             f"EP initialized: node_id={model_config.ep_config.node_id}, "
             f"n_gpus={model_config.ep_config.n_gpus_per_node}, "

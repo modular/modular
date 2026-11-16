@@ -67,7 +67,7 @@ from dataclasses import dataclass
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.kernels import latent_sparse_attention_ragged
+from max.nn._graph_ops import latent_sparse_attention_ragged
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm.rms_norm import RMSNorm
 
@@ -130,6 +130,7 @@ class PendingAttention:
     freqs_cis: TensorValue
     stream: CompressedStream | None
     valid: TensorValue | None
+    live: TensorValue | None
     index_score: TensorValue | None
     candidates: TensorValue | None
 
@@ -262,12 +263,9 @@ class DeepseekV4Attention(Module):
         """
         b, s = o.shape[0], o.shape[1]
         group_width = self.n_heads * self.head_dim // self.o_groups
-        # The group axis is the only batch dim, tokens are the rows: a rank-3
-        # [g, b*s, d] @ [g, d, r] with no broadcast on either side. The
-        # earlier [b*s, g, 1, d] @ [1, g, d, r] form broadcast wo_a over every
-        # token, and the graph compiler materializes that broadcast as a
-        # constant per layer -- 24.75 GB each at seq=198 -- which ran the B200
-        # out of memory at model setup (ISSUES.md Issue 32).
+        # The group axis is the only batch dim and tokens are the rows, so
+        # neither operand is broadcast. Broadcasting wo_a over tokens would
+        # materialize a per-layer constant that grows with sequence length.
         grouped = ops.transpose(
             ops.reshape(o, [b * s, self.o_groups, group_width]), 0, 1
         )
@@ -279,7 +277,8 @@ class DeepseekV4Attention(Module):
         wo_a = ops.reshape(
             weight, [self.o_groups, self.o_lora_rank, group_width]
         )
-        # [g, b*s, d] @ [g, d, r] -> [g, b*s, r]
+        # The graph compiler folds this transpose into transpose_b, so the
+        # product runs as one batched GEMM over K-major wo_a.
         projected = ops.matmul(grouped, ops.transpose(wo_a, -1, -2))
         flattened = ops.reshape(
             ops.transpose(projected, 0, 1),
@@ -333,8 +332,9 @@ class DeepseekV4Attention(Module):
         if state.index_score is not None:
             assert self.indexer is not None
             assert state.valid is not None
+            assert state.live is not None
             state.candidates = self.indexer.select(
-                state.index_score, state.valid
+                state.index_score, state.valid, state.live
             )
         return self.end(state, rows, cache)
 
@@ -379,14 +379,15 @@ class DeepseekV4Attention(Module):
         stream: CompressedStream | None = None
         candidates: TensorValue | None = None
         valid: TensorValue | None = None
+        live: TensorValue | None = None
         index_score: TensorValue | None = None
         if self.compressor is not None:
             ratio = self.compress_ratio
-            x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
+            x2 = ops.reshape(x, [t, x.shape[2]])
             windows = rows.windows[ratio]
             stream = compressed_stream(
                 self.compressor,
-                x32,
+                x2,
                 rows,
                 windows,
                 freqs_table,
@@ -400,9 +401,10 @@ class DeepseekV4Attention(Module):
             cutoff = (positions + scalar(1, device)) // ratio
             valid = stream.valid(cutoff)
             if self.indexer is not None:
+                live = stream.live(cutoff)
                 idx_stream = compressed_stream(
                     self.indexer.compressor,
-                    x32,
+                    x2,
                     rows,
                     windows,
                     freqs_table,
@@ -411,7 +413,6 @@ class DeepseekV4Attention(Module):
                     cache.idx_comp if cache is not None else None,
                     index,
                 )
-                x2 = ops.reshape(x, [t, x.shape[2]])
                 qr2 = ops.reshape(qr, [t, qr.shape[2]])
                 if cache is not None:
                     index_score = self.indexer.score_cached(
@@ -429,7 +430,15 @@ class DeepseekV4Attention(Module):
                     scalar(-1, device),
                 )
         return PendingAttention(
-            index, q, kv, freqs_cis, stream, valid, index_score, candidates
+            index,
+            q,
+            kv,
+            freqs_cis,
+            stream,
+            valid,
+            live,
+            index_score,
+            candidates,
         )
 
     def end(

@@ -43,8 +43,25 @@ mo.graph @concat_gpu(%arg0: !mo.tensor<[2, 8], f32, gpu:0>) -> !mo.tensor<[4, 2,
   mo.output %3 : !mo.tensor<[4, 2, 4], f32, gpu:0>
 }
 
+// The rebind keeps canonicalization from merging the two transposes. Only the
+// outer one folds into transpose_b; folding the inner one too computes
+// input @ y^T instead of input @ y.
+// CHECK-LABEL: mo.graph @batch_matmul_transpose_b_rebind_transpose_cpu
+// CHECK: %[[T:.*]] = mo.transpose(
+// CHECK: %[[R:.*]] = mo.rebind(%[[T]])
+// CHECK: mo.batch_matmul(%{{.*}}, %[[R]]) [transpose_b = true]
+mo.graph @batch_matmul_transpose_b_rebind_transpose_cpu<seq>(%input: !mo.tensor<[10, 100, 1000], f32>, %y: !mo.tensor<[10, 1000, seq], f32>) -> !mo.tensor<[10, 100, 10000], f32> {
+  %perm = mo.constant <#M.dense_array<0, 2, 1> : tensor<3xsi32>> : !mo.tensor<[3], si32>
+  %inner = mo.transpose(%y, %perm): (!mo.tensor<[10, 1000, seq], f32>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, seq, 1000], f32>
+  %rebind = mo.rebind(%inner) : !mo.tensor<[10, seq, 1000], f32> -> !mo.tensor<[10, 10000, 1000], f32>
+  %outer = mo.transpose(%rebind, %perm): (!mo.tensor<[10, 10000, 1000], f32>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, 1000, 10000], f32>
+  %res = mo.batch_matmul(%input, %outer): (!mo.tensor<[10, 100, 1000], f32>, !mo.tensor<[10, 1000, 10000], f32>) -> !mo.tensor<[10, 100, 10000], f32>
+  mo.output %res : !mo.tensor<[10, 100, 10000], f32>
+}
+
 // CHECK-LABEL: mo.graph @batch_matmul_transpose_b_cpu
-// CHECK: mo.batch_matmul(%{{.*}}, %{{.*}}) [transpose_b = true]
+// CHECK-SAME: %[[WEIGHT:[^:]+]]: !mo.tensor<[10, 10000, 1000], f32>
+// CHECK: mo.batch_matmul(%{{.*}}, %[[WEIGHT]]) [transpose_b = true]
 mo.graph @batch_matmul_transpose_b_cpu(%input: !mo.tensor<[10, 100, 1000], f32>, %weight: !mo.tensor<[10, 10000, 1000], f32>) -> !mo.tensor<[10, 100, 10000], f32> {
   %perm = mo.constant <#M.dense_array<0, 2, 1> : tensor<3xsi32>> : !mo.tensor<[3], si32>
   %transpose_weight = mo.transpose(%weight, %perm): (!mo.tensor<[10, 10000, 1000], f32>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, 1000, 10000], f32>
@@ -52,14 +69,14 @@ mo.graph @batch_matmul_transpose_b_cpu(%input: !mo.tensor<[10, 100, 1000], f32>,
   mo.output %res : !mo.tensor<[10, 100, 10000], f32>
 }
 
-// `transpose_b=True` on GPU for batch matmul is not supported rn.
-// CHECK-LABEL: mo.graph @batch_matmul_transpose_b_gpu_disabled
-// CHECK-NOT: [transpose_b = true]
-mo.graph @batch_matmul_transpose_b_gpu_disabled(%input: !mo.tensor<[10, 100, 1000], f32, gpu:0>, %weight: !mo.tensor<[10, 10000, 1000], f32, gpu:0>) -> !mo.tensor<[10, 100, 10000], f32, gpu:0> {
+// CHECK-LABEL: mo.graph @batch_matmul_transpose_b_gpu
+// CHECK-SAME: %[[KEY:[^:]+]]: !mo.tensor<[10, seq, 1000], f32, gpu:0>
+// CHECK: mo.batch_matmul(%{{.*}}, %[[KEY]]) [transpose_b = true]
+mo.graph @batch_matmul_transpose_b_gpu<seq>(%input: !mo.tensor<[10, 100, 1000], f32, gpu:0>, %key: !mo.tensor<[10, seq, 1000], f32, gpu:0>) -> !mo.tensor<[10, 100, seq], f32, gpu:0> {
   %perm = mo.constant <#M.dense_array<0, 2, 1> : tensor<3xsi32>> : !mo.tensor<[3], si32>
-  %transpose_weight = mo.transpose(%weight, %perm): (!mo.tensor<[10, 10000, 1000], f32, gpu:0>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, 1000, 10000], f32, gpu:0>
-  %res = mo.batch_matmul(%input, %transpose_weight): (!mo.tensor<[10, 100, 1000], f32, gpu:0>, !mo.tensor<[10, 1000, 10000], f32, gpu:0>) -> !mo.tensor<[10, 100, 10000], f32, gpu:0>
-  mo.output %res : !mo.tensor<[10, 100, 10000], f32, gpu:0>
+  %transpose_key = mo.transpose(%key, %perm): (!mo.tensor<[10, seq, 1000], f32, gpu:0>, !mo.tensor<[3], si32>) -> !mo.tensor<[10, 1000, seq], f32, gpu:0>
+  %res = mo.batch_matmul(%input, %transpose_key): (!mo.tensor<[10, 100, 1000], f32, gpu:0>, !mo.tensor<[10, 1000, seq], f32, gpu:0>) -> !mo.tensor<[10, 100, seq], f32, gpu:0>
+  mo.output %res : !mo.tensor<[10, 100, seq], f32, gpu:0>
 }
 
 
@@ -76,38 +93,4 @@ mo.graph @matmul_transpose_b_indirect_constant_weight(%input: !mo.tensor<[1000, 
   %transpose_weight = mo.transpose(%gpu_weight, %perm) : (!mo.tensor<[3584, 4096], bf16, gpu:0>, !mo.tensor<[2], si64>) -> !mo.tensor<[4096, 3584], bf16, gpu:0, {layout = #mo.layout<KN>}>
   %res = mo.matmul(%input, %transpose_weight) : (!mo.tensor<[1000, 4096], bf16, gpu:0>, !mo.tensor<[4096, 3584], bf16, gpu:0, {layout = #mo.layout<KN>}>) -> !mo.tensor<[1000, 3584], bf16, gpu:0>
   mo.output %res : !mo.tensor<[1000, 3584], bf16, gpu:0>
-}
-
-
-// CHECK-LABEL: mo.graph @batch_matmul_scale_on_gpu
-// CHECK: %[[SCALE:.*]], %{{.*}} = mo.transfer
-// CHECK: %[[RESULT:.*]] = mo.composite.masked_flash_attention_gpu(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %[[SCALE]])
-// CHECK: mo.output %[[RESULT]]
-mo.graph @batch_matmul_scale_on_gpu<batch, seq_len>(
-  %arg1: !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>,
-
-  %Q: !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>,
-  %K: !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>,
-  %V: !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>
-) -> !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0> {
-    %0 = mo.constant <#M.dense_array<0, 2, 3, 1> : !M.array<4xsi64>> : !mo.tensor<[4], si64>
-    %2 = mo.constant <#M.dense_array<8.837890e-02> : tensor<bf16>> : !mo.tensor<[], bf16, gpu:0>
-    %3 = mo.constant <#M.dense_array<0, 2, 1, 3> : tensor<4xsi64>> : !mo.tensor<[4], si64>
-
-    // This is the scale value on the GPU
-    %4 = mo.static.broadcast_to(%2) : !mo.tensor<[], bf16, gpu:0> -> !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>
-
-    %5 = mo.transpose(%Q, %3) : (!mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>, !mo.tensor<[4], si64>) -> !mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>
-    %6 = mo.transpose(%K, %3) : (!mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>, !mo.tensor<[4], si64>) -> !mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>
-    %7 = mo.transpose(%V, %0) : (!mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>, !mo.tensor<[4], si64>) -> !mo.tensor<[batch, 18, 128, seq_len], bf16, gpu:0>
-
-    %8 = mo.batch_matmul(%5, %7) : (!mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>, !mo.tensor<[batch, 18, 128, seq_len], bf16, gpu:0>) -> !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>
-    %9 = mo.mul(%8, %4) : !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>
-    %10 = mo.add(%9, %arg1) : !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>
-    %11 = mo.reduce.softmax(%10) [axis = 3] : (!mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>) -> !mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>
-
-    %12 = mo.batch_matmul(%11, %6) : (!mo.tensor<[batch, 18, seq_len, seq_len], bf16, gpu:0>, !mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>) -> !mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>
-    %13 = mo.transpose(%12, %3) : (!mo.tensor<[batch, 18, seq_len, 128], bf16, gpu:0>, !mo.tensor<[4], si64>) -> !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>
-
-    mo.output %13 : !mo.tensor<[batch, seq_len, 18, 128], bf16, gpu:0>
 }

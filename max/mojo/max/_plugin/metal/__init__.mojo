@@ -23,6 +23,9 @@ from max.gpu.sync.sync import (
 )
 
 from .._trait import MaxPlugin, MaxPluginHooks
+from max._driver.max_license.hal._plugin.metal.metal_plugin import (
+    MetalHalPluginHooks,
+)
 
 
 @inline(.always)
@@ -39,7 +42,7 @@ def _syncwarp(mask: Int):
 
 @inline(.always)
 def _shuffle_apple_helper[
-    op: StringSlice, dtype: DType, simd_width: SIMDLength
+    op: StringSpan, dtype: DType, simd_width: SIMDLength
 ](
     mask: UInt,  # Ignored, for API parity
     val: SIMD[dtype, simd_width],
@@ -107,12 +110,14 @@ struct MetalMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for Metal targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["metal"]()
-    comptime HookFor[target: CompilationTarget] = MetalMaxPluginHooks[target]
+    comptime HookFor = MetalMaxPluginHooks[_]
 
 
 struct MetalMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
     comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = 32
+
+    comptime HalHooks = MetalHalPluginHooks[Self.target]
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp
 

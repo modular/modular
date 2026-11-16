@@ -22,6 +22,7 @@ batch_size=64
 max_length=131072
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --ep-size 8
   --data-parallel-degree 2
   --device-graph-capture

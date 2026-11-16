@@ -15,6 +15,15 @@ kgen_kernel(
 modular_cc_test(
     name = "unittests",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//clang:clangBasic",
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
     deps = [
         ":test_kernels",
         "//Mojo:HostBackend",
@@ -23,11 +32,29 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "TransformUtilsTest",
+    srcs = glob(["transform-utils/*.cpp"]),
+    deps = [
+        # `:TransformUtils` uses the KGEN interfaces without linking them.
+        "//Mojo:KGENDialect",
+        "//Mojo:TransformUtils",
+        "@llvm-project//mlir:LLVMDialect",
+        "@llvm-project//mlir:Parser",
+    ],
+)
+
+modular_cc_test(
     name = "KGENDialectTest",
     srcs = glob(["kgen-dialect/*.cpp"]),
     deps = [
+        "//Mojo:CODialect",
+        "//Mojo:HLCFDialect",
         "//Mojo:KGENDialect",
         "//Mojo:LITDialect",
+        "//Mojo:POPDialect",
         "//Mojo:ToolCommon",
+        "//Mojo:Transforms",
+        "//Support:Threading",
+        "@llvm-project//mlir:Parser",
     ],
 )

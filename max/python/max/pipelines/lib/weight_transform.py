@@ -192,6 +192,21 @@ class WeightTransform:
         Raises:
             ValueError: If two checkpoint weights adapt to the same name.
         """
+        return self._apply(weights)
+
+    def apply_data(
+        self, weights: Mapping[str, WeightData]
+    ) -> dict[str, WeightData]:
+        """Applies the rules to already materialized checkpoint weights.
+
+        This lets config finalization inspect original checkpoint names
+        before the same serializable transform prepares module weights.
+        """
+        return self._apply(weights)
+
+    def _apply(
+        self, weights: Mapping[str, Weights | WeightData]
+    ) -> dict[str, WeightData]:
         adapted: dict[str, WeightData] = {}
         sources: dict[str, str] = {}
         ignored: Counter[Ignore] = Counter()
@@ -218,7 +233,7 @@ class WeightTransform:
         return adapted
 
     def _adapt(
-        self, name: str, weight: Weights
+        self, name: str, weight: Weights | WeightData
     ) -> tuple[str, WeightData] | Ignore:
         """Returns the adapted name and data, or the Ignore that drops it."""
         # Loaded only when a rule or the result needs it, so a weight that is
@@ -233,11 +248,15 @@ class WeightTransform:
                 return rule
             else:
                 if data is None:
-                    data = weight.data()
+                    data = (
+                        weight
+                        if isinstance(weight, WeightData)
+                        else weight.data()
+                    )
                 if data.dtype == rule.src:
                     data = _bitcast(data, rule.dst)
         if data is None:
-            data = weight.data()
+            data = weight if isinstance(weight, WeightData) else weight.data()
         return name, data
 
     def __serialize__(self) -> dict[str, list[dict[str, str]]]:

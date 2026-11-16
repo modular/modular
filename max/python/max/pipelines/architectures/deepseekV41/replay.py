@@ -22,7 +22,7 @@ from itertools import pairwise
 
 import numpy as np
 import numpy.typing as npt
-from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.context import TextContext
 
 from .model_config import DeepseekV41Config

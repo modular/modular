@@ -23,3 +23,5 @@ extra_lm_eval_args=(
 )
 
 tasks=gsm8k_cot_llama
+
+extra_pipelines_args=(--no-prefer-module-v3)

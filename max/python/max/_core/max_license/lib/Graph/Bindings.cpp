@@ -96,7 +96,7 @@ std::string describeRejectedArg(const M::MOGG::KernelDeclOperandAdaptor &arg) {
           std::get_if<M::MOGG::KernelDeclOpaqueAdaptor>(&arg.underlyingType))
     return toRootLeafTypeName(o->typeName.strref());
   if (arg.isVariadicTensorType())
-    return M::MOGG::kMojoVariadicTensorsName.str();
+    return toRootLeafTypeName(M::MOGG::kStructTensorTuple);
   return "<unknown>";
 }
 

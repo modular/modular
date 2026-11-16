@@ -386,25 +386,6 @@ def MOGG_ToMGPFromOpaqueOp : MOGG_Op<"to_mgp_from_opaque", [
   let hasFolder = 1;
 }
 
-def MOGG_ScratchPlaceholdersOp : MOGG_Op<"scratch_placeholders"> {
-  let results = (outs Variadic<MO_Tensor>:$results);
-
-  let summary = "Represents scratch buffer tensors that are not returned from the kernel";
-  let description = [{
-    Like `mogg.output_placeholders`, but the tensors are not returned from the
-    kernel.
-
-    Example:
-    ```mlir
-      %scratch = mogg.scratch_placeholders : !mo.tensor<[2, 3], f32>
-    ```
-  }];
-
-  let assemblyFormat = [{
-   attr-dict `:` type($results)
-  }];
-}
-
 def MOGG_CompiledLoadOp : MOGG_LowerableOp<"compiled.load"> {
   let summary = "Loads pairs of (symbol, compiled object) into the runtime "
                 "for a given device.";
@@ -491,8 +472,8 @@ def MOGG_FuncOp : MOGG_Op<"func", [
                               "::M::MOGG::DispatchKind::Immediate">:$dispatch,
     DefaultValuedAttr<ArrayAttr, "{}">:$constantResources,
     MOGG_ABIKindAttr:$abi,
-    // Execution-device label for each kernel's `target` parameter. A string
-    // rather than `#M.device_ref` because only the label matters.
+    // Execution-device label of the stub. A string rather than `#M.device_ref`
+    // because only the label matters.
     StrAttr:$device,
     OptionalAttr<ArrayAttr>:$trait_stub_buffer_capture,
     OptionalAttr<ArrayAttr>:$trait_stub_arg_bounds,
@@ -689,7 +670,8 @@ def MOGG_YieldOp : MOGG_Op<"yield", [
     Yields the results of a mogg.try / except, the value a
     `mogg.tensor.create.prologue` body returns to the reading kernel, the
     value a compute `mogg.tensor.create.epilogue` body returns for the kernel
-    to store, or an element's contribution to a `mogg.rowwise.reduce`.
+    to store, an element's contribution to a `mogg.rowwise.reduce`, or the
+    value a `mogg.index.concat.select` region reads from its input.
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
@@ -912,6 +894,13 @@ def MOGG_KernelDeclOp
     built-ins with the same registration. The shape function lives in a
     separate `mogg.shape_func.decl`.
 
+    `platform_predicate` is the `cond` of `register(name, cond)`. It is
+    a `#kgen.gen` over the device's label, API, architecture, and model, and
+    the decl applies to the devices for which it holds. A decl without a
+    `platform_predicate` comes from `register(name)` and applies to all
+    devices.
+    `MojoRegistry::getResolvedKernel` describes how a decl is selected.
+
     `build_graph` has the same tensor signature as `execute` but takes a
     `DeviceGraphBuilder` in place of the `DeviceContext`.
 
@@ -936,7 +925,7 @@ def MOGG_KernelDeclOp
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     StrAttr:$registration,
-    M_DeviceInfoAttr:$registration_device_info,
+    OptionalAttr<KGEN_GeneratorAttr>:$platform_predicate,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute,
     OptionalAttr<MOGG_KernelFunctionAttr>:$elementwise,
     OptionalAttr<MOGG_KernelFunctionAttr>:$tile_elementwise,
@@ -953,7 +942,7 @@ def MOGG_KernelDeclOp
   let assemblyFormat = [{
     custom<SymbolVisibility>($sym_visibility) `` $sym_name
     `registration` `=` $registration
-    `device_info` `=` $registration_device_info
+    (`platform_predicate` `=` qualified($platform_predicate)^)?
     (`execute` `=` $execute^)?
     (`elementwise` `=` $elementwise^)?
     (`tile_elementwise` `=` $tile_elementwise^)?
@@ -1096,6 +1085,18 @@ def MOGG_RoutineOp : MOGG_LowerableOp<"routine", [
     /// Returns the last entry of `outputs` if it is a chain, else null.
     ::mlir::Value getOutputChain();
 
+    /// The body's entry-block arguments, grouped by what they stand for.
+    struct BodyArgs {
+      /// One per input.
+      ::mlir::Block::BlockArgListType inputs;
+      /// One per tensor-like output, so none for a chain.
+      ::mlir::Block::BlockArgListType outputs;
+      ::mlir::Block::BlockArgListType dims;
+      /// One, or one per device for a distributed kernel.
+      ::mlir::Block::BlockArgListType contexts;
+    };
+    BodyArgs getBodyArgs();
+
     /// Lowers to a `mogg.routine.async` and registers its outputs;
     /// returns null on error. `mo.parallel` calls it per launch to collect
     /// regions it fuses into one async region.
@@ -1138,10 +1139,7 @@ def MOGG_TensorCreateOp : MOGG_Op<"tensor.create", [
     StrAttr:$device,
     TypeAttr:$elementType,
     BoolAttr:$mut,
-    MO_IOKind:$io,
-    // The source `!mo.tensor` was a stable address slot: emit builds a
-    // `StableTensor` over the slot instead of a pointer-backed slice.
-    DefaultValuedAttr<BoolAttr, "false">:$stable
+    MO_IOKind:$io
   );
   // `!mo.buffer` reconstructs as `!mogg.buffer`, so `getKernelOperandKind()`
   // resolves `Buffer` vs `Tensor` from the type alone.
@@ -1150,8 +1148,7 @@ def MOGG_TensorCreateOp : MOGG_Op<"tensor.create", [
     `(` $ptr `,` $shape `)`
     `<` `device` `=` $device `,` `elementType` `=` $elementType `,`
         `io` `=` custom<IOKind>($io) `,` `mut` `=` $mut `,`
-        `shapeAttr` `=` qualified($shapeAttr)
-        (`,` `stable` `=` $stable^)? `>`
+        `shapeAttr` `=` qualified($shapeAttr) `>`
     attr-dict `:` qualified(type($tensor))
   }];
 }
@@ -1172,12 +1169,10 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
 
     A store body ends with `mogg.tensor.store` into the store-target capture.
     A compute body ends with `mogg.yield` of the value to store, leaving the
-    store to the kernel; the store-target capture stays so emit has a slice to
-    bind onto.
+    store to the kernel.
 
     `$computeOutputArg` records whether the kernel declares this output as a
-    `_FusedComputeOutputTensor`, choosing `_bind_to_fused_compute_output` over
-    `_bind_to_fused_output`. It is independent of the body shape: a
+    `_LegacyComputeOutput` slot. It is independent of the body shape: a
     dtype-changing epilogue or `enable-compute-lambdas=false` keeps a store
     body against a compute-capable argument.
   }];
@@ -1191,9 +1186,9 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
     BoolAttr:$mut,
     MO_IOKind:$io,
     DefaultValuedAttr<BoolAttr, "false">:$computeOutputArg,
-    // Present iff the kernel declares this output against a trait bound, so
-    // emit wraps the functor in the trait tensor instead of a
-    // `ManagedTensorSlice`. Set at MAP lowering, where the call edge is known.
+    // The trait bound the kernel declares this output against; emit wraps the
+    // functor in the matching trait tensor. Set at MAP lowering, where the
+    // call edge is known.
     OptionalAttr<MOGG_TensorArgContractAttr>:$contract
   );
   let results = (outs MOGG_Tensor:$tensor);
@@ -1203,6 +1198,7 @@ def MOGG_TensorCreateEpilogueOp : MOGG_Op<"tensor.create.epilogue", [
 }
 
 def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,
   DeclareOpInterfaceMethods<MOGG_FusedEpilogueInterface>,
@@ -1242,7 +1238,13 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
     StrAttr:$device,
     TypeAttr:$elementType,
     BoolAttr:$mut,
-    MO_IOKind:$io
+    MO_IOKind:$io,
+    // TODO(GEX-4340): How the kernel that takes this output declares it: a
+    // fused output with a legacy tile access form. MAP lowering copies it from
+    // the kernel declaration, so later passes need not look the kernel up, and
+    // the verifier checks its access form against `$lane`. Remove with
+    // GEX-4467.
+    MOGG_TensorArgContractAttr:$contract
   );
   let results = (outs MOGG_Tensor:$tensor);
   let regions = (region SizedRegion<1>:$body);
@@ -1381,7 +1383,7 @@ def MOGG_CallExecuteDeviceOp : MOGG_Op<"call.execute_device", [
   }];
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
-    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$inputs,
+    Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Scalar]>>:$outputs,
     MOGG_Context:$device_context,
     OptionalAttr<DictionaryAttr>:$kernel_param
@@ -1404,12 +1406,12 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   let summary = "Launch several declarative kernels as one device kernel.";
   let description = [{
     Runs the `mogg.call.execute_device`s in its body, in order, in one launch
-    on their shared device context. Emit calls each kernel's
-    `execute_configuration` on the host, uses `merge` to combine them, then
-    compiles one kernel that runs each `execute_device` only on the threads
-    its configuration's `active_threads` names, with the configuration's
-    `barrier` between kernels. The kernels return the same configuration type,
-    a `GraphBlobExecutionConfig`.
+    on their shared device context, on every core and thread of the device:
+    `max._graph_blob.launch_config` of the context. Emit calls each
+    kernel's `execute_configuration` on the host, then compiles one kernel that
+    runs each `execute_device` only on the threads
+    `max._graph_blob.is_thread_active` accepts for its own grid, with
+    `max._graph_blob.barrier` between kernels.
 
     The body is host code: it holds only the ops that build the calls'
     operands, and the calls. The kernel takes each operand as an argument
@@ -1419,6 +1421,12 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "$body attr-dict";
   let hasRegionVerifier = 1;
+  // `bodyBuilder` fills the body with the builder's insertion point in it.
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "::llvm::function_ref<void(::mlir::OpBuilder &, "
+                   "::mlir::Location)>":$bodyBuilder)>
+  ];
 }
 
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
@@ -1611,6 +1619,7 @@ def MOGG_ConstantScalarOp : MOGG_Op<"constant.scalar", [
 }
 
 def MOGG_CallForeachOp : MOGG_Op<"call.foreach", [
+  AttrSizedOperandSegments,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,
@@ -1626,19 +1635,31 @@ def MOGG_CallForeachOp : MOGG_Op<"call.foreach", [
     Captures may differ in shape from `$shape` and each other (e.g.
     broadcasts), so there is no shape verifier. A capture is a `!mogg.buffer`
     where in-place fusion folded in a mutable buffer.
+
+    The SIMD widths the loop may run at must divide the
+    `map.iter.elementwise.body`'s `max_simd_width`, when set: `$max_simd_width`
+    when it is a number, else the GCD of `$dynamic_max_simd_width`'s dims,
+    known at run time. At most one of them is set; `$callee` picks the width.
   }];
   let arguments = (ins
     FlatSymbolRefAttr:$callee,
     MOGG_Shape:$shape,
-    MOGG_Context:$context,
+    // Not `$context`: `$dynamic_max_simd_width` makes the op use
+    // `AttrSizedOperandSegments`, whose generated code calls `getContext()`
+    // for the MLIR context, which an operand named `context` would shadow.
+    MOGG_Context:$device_context,
     Variadic<MOGG_TensorLike>:$capturing,
-    StrAttr:$device
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
+    StrAttr:$device,
+    OptionalAttr<I64Attr>:$max_simd_width
   );
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def MOGG_CallForeachTileOp : MOGG_Op<"call.foreach.tile", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   NoTerminator,
@@ -1705,6 +1726,7 @@ def MOGG_CallViewCopyOp : MOGG_Op<"call.view_copy", [
 }
 
 def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
+  AttrSizedOperandSegments,
   MOGG_CallLike,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
@@ -1713,23 +1735,31 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let summary = "Run a fused reduction body once per row.";
   let description = [{
     Runs its body once per row of `$shape` along `$axis`. The body holds the
-    row's folds (`mogg.rowwise.reduce`), row-level ops and stores. Its
-    arguments are one per `$capturing` tensor, then the row index, which has
-    the `$axis` coordinate pinned to 0. Lowered from a `map.iter.opaque`
-    wrapping a `map.iter.rowwise.body`.
+    row's phases in order: folds (`mogg.rowwise.reduce`) and per-element
+    phases (`mogg.rowwise.map`), the row-level ops between them, and the
+    per-row stores. A fold can't follow a map phase, and a body with a map
+    phase has no per-row stores. Its arguments are one per `$capturing`
+    tensor, then the row index, which has the `$axis` coordinate pinned to
+    0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
-    `mogg-legalize-rowwise-kernels` sets the rest, which the Row API needs:
+    `mogg-legalize-rowwise-kernels` gives the body a `mogg.rowwise.tile`,
+    the value every phase reads of the row, and sets the rest, which the Row
+    API needs:
 
-    - `$primary`: the capture the folds walk along `$axis`.
-    - `$dtype`: `$primary`'s element type.
     - `$accum`: the type the folds' contributions are computed in.
-    - `$is_cached`: whether more than one fold reads the row.
+    - `$keep_tile`: whether more than one phase reads the tile, so the Row
+      may keep it instead of loading it again.
     - `$cols`: the static size of `$axis`.
-    - `$num_phases`: 1 when the body is reduce-shaped.
-    - `$dtype_size`: `$primary`'s byte size when the body may split the
-      row, else 0.
-    - `$computationally_expensive`: whether the folds' per-element work
-      reaches the pass's cost threshold.
+    - `$num_phases`: 1 when the body writes one value per row, else one per
+      fold plus one for the map phases, which write every element.
+    - `$dtype_size`: the tile's byte size when the body writes every
+      element and every fold keeps one field, which lets the Row API split
+      a long row; else 0.
+    - `$computationally_expensive`: whether the body writes every element,
+      or its per-element work reaches the pass's cost threshold.
+    - `$max_simd_width` / `$dynamic_max_simd_width`: a number every SIMD
+      width must divide, from the `map.iter.rowwise.body`'s
+      `max_simd_width`, as on `mogg.call.foreach`.
     - `$simd_monoid`: the fold monoid that picks the SIMD width, the one
       with the largest state.
 
@@ -1750,31 +1780,61 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let arguments = (ins
     MOGG_Shape:$shape,
     I64Attr:$axis,
-    MOGG_Context:$context,
+    // Not `$context`, as on `mogg.call.foreach`: `$dynamic_max_simd_width`
+    // makes the op use `AttrSizedOperandSegments`, whose generated code calls
+    // `getContext()` for the MLIR context.
+    MOGG_Context:$device_context,
     Variadic<MOGG_TensorLike>:$capturing,
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
     StrAttr:$device,
-    OptionalAttr<I64Attr>:$primary,
-    OptionalAttr<TypeAttr>:$dtype,
     OptionalAttr<TypeAttr>:$accum,
-    UnitAttr:$is_cached,
+    UnitAttr:$keep_tile,
     OptionalAttr<I64Attr>:$cols,
     OptionalAttr<I64Attr>:$num_phases,
     OptionalAttr<I64Attr>:$dtype_size,
     UnitAttr:$computationally_expensive,
-    OptionalAttr<FlatSymbolRefAttr>:$simd_monoid
+    OptionalAttr<FlatSymbolRefAttr>:$simd_monoid,
+    OptionalAttr<I64Attr>:$max_simd_width
   );
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    /// The body's `mogg.rowwise.tile`, once legalized.
+    RowwiseTileOp getTile();
+  }];
 }
 
-def MOGG_RowwisePrimaryOp : MOGG_Op<"rowwise.primary", [
-  HasParent<"MOGG::RowwiseReduceOp">,
+def MOGG_RowwiseTileOp : MOGG_Op<"rowwise.tile", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  SingleBlock,
+]> {
+  let summary = "The row's tile: the value every phase of the row reads.";
+  let description = [{
+    Computes, at the element index in its argument, the value each phase
+    reads with `mogg.rowwise.tile.load`: a load of an input, or a fused
+    computation on it, such as a producer of the reduction's input. It
+    prints as the Row's `load` closure, and the Row keeps the tile when more
+    than one phase reads it (`keep_tile`).
+  }];
+  let results = (outs MOGG_Simd:$result);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MOGG_RowwiseTileLoadOp : MOGG_Op<"rowwise.tile.load", [
+  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
 ]> {
-  let summary = "The primary input's value at the current element.";
+  let summary = "Read the row's tile at the current element.";
   let description = [{
-    Stands for a load of the `primary` capture at the fold's own index. The
-    row is loaded once and handed to each fold.
+    Reads the value the kernel's `mogg.rowwise.tile` computes, at the
+    phase's own index: the tile the Row hands each phase.
   }];
   let results = (outs MOGG_Simd:$result);
   let assemblyFormat = "attr-dict `:` qualified(type($result))";
@@ -1782,21 +1842,63 @@ def MOGG_RowwisePrimaryOp : MOGG_Op<"rowwise.primary", [
 
 def MOGG_RowwiseEmitOp : MOGG_Op<"rowwise.emit", [
   HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   NoTerminator,
   SingleBlock,
 ]> {
   let summary = "The per-row stores of a rowwise kernel.";
   let description = [{
-    Holds the stores at the row index. Only one participant of a row writes.
+    Holds the stores at the row index, and the row-level ops only they read.
+    It runs once per row, one lane per output, and only one participant of a
+    row writes.
   }];
   let regions = (region SizedRegion<1>:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
 }
 
+def MOGG_RowwiseLoadLaneOp : MOGG_Op<"rowwise.load_lane", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Load a per-row input into the row's lane.";
+  let description = [{
+    Loads `$tensor` at the row index once per row. Each row owns one lane: a
+    participant that handles several rows at once (the tiled tier) loads one
+    lane per row. `mogg.rowwise.splat_lane` then spreads it to the width the
+    row-level ops a phase reads run at. A per-row input only the per-row
+    stores read is a plain load in the emit instead.
+  }];
+  let arguments = (ins MOGG_TensorLike:$tensor, AnyType:$index);
+  let results = (outs MOGG_Simd:$result);
+  let assemblyFormat = [{
+    $tensor `[` $index `]` attr-dict `:`
+    qualified(type($tensor)) `,` qualified(type($index)) `->` qualified(type($result))
+  }];
+}
+
+def MOGG_RowwiseSplatLaneOp : MOGG_Op<"rowwise.splat_lane", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  Pure,
+  SameOperandsAndResultType,
+]> {
+  let summary = "Spread each row's lane over the folds' width.";
+  let description = [{
+    Spreads a value loaded by `mogg.rowwise.load_lane`, one lane per row, over
+    the width of the row's folds, at which row-level ops run: every lane for a
+    participant with one row, unchanged on the tiled tier.
+  }];
+  let arguments = (ins MOGG_Simd:$input);
+  let results = (outs MOGG_Simd:$result);
+  let assemblyFormat = "$input attr-dict `:` qualified(type($input))";
+}
+
 def MOGG_RowwiseReduceOp : MOGG_Op<"rowwise.reduce", [
   HasParent<"MOGG::CallRowwiseOp">,
   DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
   SingleBlock,
+  MOGG_RowwisePhaseOpInterface,
 ]> {
   let summary = "Fold the current row with a monoid.";
   let description = [{
@@ -1813,6 +1915,25 @@ def MOGG_RowwiseReduceOp : MOGG_Op<"rowwise.reduce", [
     OptionalAttr<StrArrayAttr>:$fields
   );
   let results = (outs Variadic<MOGG_Simd>:$results);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+def MOGG_RowwiseMapOp : MOGG_Op<"rowwise.map", [
+  HasParent<"MOGG::CallRowwiseOp">,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  SingleBlock,
+  NoTerminator,
+  MOGG_RowwisePhaseOpInterface,
+]> {
+  let summary = "Run a body once per element of the current row.";
+  let description = [{
+    Runs its body once per element of the enclosing row, at the index in its
+    argument. It reads the row's values computed before it and stores each
+    element.
+  }];
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
@@ -1928,19 +2049,24 @@ def MOGG_TensorCreateBroadcastOp : MOGG_Op<"tensor.create.broadcast", [
   let summary = "Build a codegen tensor that is a broadcast view of another codegen tensor.";
   let description = [{
     A zero-copy view with numpy broadcasting semantics, indexed by the
-    consuming loop's index.
+    consuming loop's index. `$staticOutShape` is the output shape with `dyn`
+    where a dim is known only at runtime, and `$runtimeOutShape` the same shape
+    built at runtime with `mogg.shape.create`, so identical shapes CSE. A view
+    composed on top, such as a slice, clamps its bounds against the runtime
+    shape.
   }];
   let arguments = (ins
-    MOSH_ShapeAttr:$outShape,
+    MOSH_ShapeAttr:$staticOutShape,
     TypeAttr:$elementType,
     BoolAttr:$mut,
-    MOGG_TensorLike:$input
+    MOGG_TensorLike:$input,
+    MOGG_Shape:$runtimeOutShape
   );
   let results = (outs MOGG_Tensor:$result);
   let assemblyFormat = [{
-    `(` $input `)`
+    `(` $input `,` $runtimeOutShape `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
-        `outShape` `=` qualified($outShape) `>`
+        `staticOutShape` `=` qualified($staticOutShape) `>`
     attr-dict `:` qualified(type($input))
   }];
 }
@@ -1983,24 +2109,24 @@ def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
   let summary = "Build a codegen tensor that is a reshape view of another codegen tensor.";
   let description = [{
     A zero-copy row-major view indexed by the consuming loop's index.
-    `$outShape` is the static shape (`dyn` where unknown) and `$shape` the
-    runtime one, built with `mogg.shape.create` so identical shapes CSE.
-    Unlike broadcast/transpose, the result's stride comes from the output
-    shape alone, so a wrong runtime dim corrupts every element past the first
-    row.
+    `$staticOutShape` is the output shape with `dyn` where a dim is known only
+    at runtime, and `$runtimeOutShape` the same shape built at runtime with
+    `mogg.shape.create`, so identical shapes CSE. Unlike broadcast/transpose,
+    the result's stride comes from the output shape alone, so a wrong runtime
+    dim corrupts every element past the first row.
   }];
   let arguments = (ins
-    MOSH_ShapeAttr:$outShape,
+    MOSH_ShapeAttr:$staticOutShape,
     TypeAttr:$elementType,
     BoolAttr:$mut,
     MOGG_TensorLike:$input,
-    MOGG_Shape:$shape
+    MOGG_Shape:$runtimeOutShape
   );
   let results = (outs MOGG_Tensor:$result);
   let assemblyFormat = [{
-    `(` $input `,` $shape `)`
+    `(` $input `,` $runtimeOutShape `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
-        `outShape` `=` qualified($outShape) `>`
+        `staticOutShape` `=` qualified($staticOutShape) `>`
     attr-dict `:` qualified(type($input))
   }];
 }
@@ -2080,6 +2206,53 @@ def MOGG_IndexSliceSelectOp : MOGG_Op<"index.slice.select", [
         `staticStep` `=` qualified($staticStep) `>`
     attr-dict `:` qualified(type($index))
     $body
+  }];
+}
+
+def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
+  RecursiveMemoryEffects,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Read a concat at its output index, from the one input holding it.";
+  let description = [{
+    Lowering of `map.index.concat.select`, in place inside a
+    `mogg.call.foreach` closure: of the regions, one per input, only the one
+    holding `$index` runs, its block argument bound to `$index` rebased into
+    that input, and the op returns what it yields.
+
+    `$axis` is the concat axis and `$staticConcatSizes` every input's extent on it
+    (`dyn` where unknown). Along the output's innermost dim a vector could
+    cross from one input into the next, so the enclosing
+    `mogg.call.foreach` then launches only widths that divide every extent.
+    `$dynamicShapes` holds every input's runtime shape when an extent in
+    `$staticConcatSizes` is dynamic, and is empty otherwise.
+
+    Example:
+    ```mlir
+    %v = mogg.index.concat.select(%idx) <axis = 1, sizes = #mosh<ape[512, 768]> : !mosh.ape> : !map.index<2> -> f32 {
+    ^bb0(%i: !map.index<2>):
+      %a = mogg.tensor.load %lhs[%i] : !mogg.tensor, !map.index<2> -> f32
+      mogg.yield %a : f32
+    }, {
+    ^bb0(%i: !map.index<2>):
+      %b = mogg.tensor.load %rhs[%i] : !mogg.tensor, !map.index<2> -> f32
+      mogg.yield %b : f32
+    }
+    ```
+  }];
+  let arguments = (ins
+    AnyType:$index,
+    I64Attr:$axis,
+    MOSH_ShapeAttr:$staticConcatSizes,
+    Variadic<MOGG_Shape>:$dynamicShapes
+  );
+  let results = (outs AnyType:$result);
+  let regions = (region VariadicRegion<SizedRegion<1>>:$inputs);
+  let assemblyFormat = [{
+    `(` $index (`,` $dynamicShapes^)? `)`
+    `<` `axis` `=` $axis `,` `sizes` `=` qualified($staticConcatSizes) `>`
+    attr-dict `:` qualified(type($index)) `->` type($result)
+    $inputs
   }];
 }
 

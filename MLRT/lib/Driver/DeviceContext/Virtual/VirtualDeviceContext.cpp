@@ -66,6 +66,10 @@ ErrorOr<bool> VirtualDevice::canAccess(const Device &peer) const {
   return false;
 }
 
+ErrorOrSuccess VirtualDevice::enablePeerAccessImpl(const Device &peer) {
+  RETURN_ERROR("VirtualDevice does not support peer access");
+}
+
 ErrorOr<int> VirtualDevice::getAttribute(Attribute attr) const {
   RETURN_ERROR("VirtualDevice does not support getAttribute");
 }
@@ -157,8 +161,8 @@ ErrorOrSuccess VirtualDeviceStream::enqueueHostFunc(void (*fn)(void *),
 }
 
 ErrorOrSuccess
-VirtualDeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
-                                            uint64_t value) const {
+VirtualDeviceStream::enqueueWaitOnFlag(const CompletionFlag &flag,
+                                       uint64_t value) const {
   RETURN_ERROR("VirtualDevice does not support host-value waits");
 }
 

@@ -46,6 +46,7 @@ Examples:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Annotated
 
 import cyclopts
@@ -60,6 +61,7 @@ from max.experimental.cascade.serve.all_routes import build_router
 from max.experimental.cascade.serve.cascade_fastapi import CascadeFastAPI
 from max.experimental.cascade.telemetry import configure_telemetry
 from max.pipelines.lib import PipelineArgs
+from max.pipelines.lib.pipeline_args import _flatten_set_fields
 
 logger = logging.getLogger(__name__)
 cli = cyclopts.App()
@@ -76,6 +78,16 @@ async def serve(
     *,
     host: str = "localhost",
     port: int = 8000,
+    task_arg: Annotated[tuple[str, ...] | None, Parameter(negative="")] = None,
+    pretty_print_config: bool = False,
+    headless: bool = False,
+    max_queue_size: Annotated[int | None, Parameter(negative="")] = None,
+    max_pending_requests: Annotated[int | None, Parameter(negative="")] = None,
+    eplb_stats: Annotated[str | None, Parameter(negative="")] = None,
+    log_prefix: Annotated[str | None, Parameter(negative="")] = None,
+    allow_cold_interpreter_cache: bool = False,
+    config_file: Annotated[str | None, Parameter(negative="")] = None,
+    section_name: Annotated[str | None, Parameter(negative="")] = None,
 ) -> None:
     """Launch the experimental cascade inference server.
 
@@ -103,6 +115,111 @@ async def serve(
             exposed as top-level CLI flags via ``Parameter(name="*")``.
         host: Interface to bind uvicorn to.
         port: TCP port to bind uvicorn to.
+        task_arg: Accepted for ``max serve`` compatibility; ignored.
+        pretty_print_config: Accepted for ``max serve`` compatibility;
+            ignored.
+        headless: Accepted for ``max serve`` compatibility; ignored: the
+            cascade server has no dispatcher/worker split.
+        max_queue_size: Rejected: the cascade server has no request queue
+            cap.
+        max_pending_requests: Rejected: the cascade server has no
+            scheduler pending-queue cap.
+        eplb_stats: Rejected: the cascade server has no EPLB rebalance
+            step.
+        log_prefix: Published as ``MAX_SERVE_LOG_PREFIX`` for worker
+            subprocesses that read it; the cascade server's own log
+            lines are not prefixed.
+        allow_cold_interpreter_cache: Permit compiling eager interpreter
+            ops on demand. Like ``max serve``, the server refuses on-demand
+            compiles by default, so it does not stall on a compile
+            mid-request.
+        config_file: YAML recipe, merged by ``from_flat_kwargs`` (CLI flags
+            win per field). Not routed into the PipelineArgs constructor:
+            a PipelineConfig-shaped recipe would fail validation there.
+        section_name: Section of the config file to read values from.
+    """
+    # Rebuild through from_flat_kwargs so the parsed flags get ``max serve``
+    # semantics: draft-model inheritance, config-file merge, and manifest
+    # probing. Cyclopts constructs PipelineArgs directly, which skips them.
+    # ``cascade=True`` skips the HuggingFace manifest probe, which the
+    # dummy and echo pipelines must not need.
+    pipeline_args = PipelineArgs.from_flat_kwargs(
+        **{
+            **_flatten_set_fields(pipeline_args),
+            "config_file": config_file,
+            "section_name": section_name,
+            "cascade": True,
+        }
+    )
+
+    # Before any worker subprocess inherits the environment, matching the
+    # click path (max._entrypoints.pipelines._apply_interpreter_cache_policy
+    # and the MAX_SERVE_LOG_PREFIX plumbing). Like ``max serve``, the
+    # cascade server refuses on-demand eager compiles by default, so it
+    # does not stall on a compile mid-request. The flag opts back in.
+    if allow_cold_interpreter_cache:
+        os.environ["MAX_EAGER_ALLOW_LAZY_COMPILE"] = "1"
+    else:
+        os.environ.setdefault("MAX_EAGER_ALLOW_LAZY_COMPILE", "0")
+    if log_prefix is not None:
+        # Published for any subprocess that reads it, but the cascade
+        # server's own logs are unprefixed: nothing in this process calls
+        # configure_logging.
+        os.environ["MAX_SERVE_LOG_PREFIX"] = log_prefix
+        logger.warning(
+            "--log-prefix is published to MAX_SERVE_LOG_PREFIX for worker "
+            "subprocesses, but the cascade server's own log lines are "
+            "not prefixed."
+        )
+
+    if task_arg:
+        logger.warning(
+            "--task-arg is accepted for max serve compatibility but "
+            "ignored by the cascade server."
+        )
+    if pretty_print_config:
+        logger.warning(
+            "--pretty-print-config is accepted for max serve compatibility "
+            "but ignored by the cascade server."
+        )
+    if headless:
+        logger.warning(
+            "--headless is accepted for max serve compatibility but "
+            "ignored: the cascade server has no dispatcher/worker split."
+        )
+    if max_queue_size is not None:
+        raise ValueError(
+            "--max-queue-size is not supported by the cascade server: it "
+            "has no request queue cap. Remove the flag to serve."
+        )
+    if max_pending_requests is not None:
+        raise ValueError(
+            "--max-pending-requests is not supported by the cascade "
+            "server: it has no scheduler pending-queue cap. Remove the "
+            "flag to serve."
+        )
+    if eplb_stats is not None:
+        raise ValueError(
+            "--eplb-stats is not supported by the cascade server: it has "
+            "no EPLB rebalance step. Remove the flag to serve."
+        )
+
+    await _serve_deployed(pipeline_args, context_config, host, port)
+
+
+async def _serve_deployed(
+    pipeline_args: PipelineArgs,
+    context_config: ContextConfig,
+    host: str,
+    port: int,
+) -> None:
+    """Runs the cascade server from an already-built ``PipelineArgs``.
+
+    ``max serve --cascade`` calls this directly. Its own
+    ``from_flat_kwargs`` call built the instance. The cyclopts
+    entrypoint calls this through :func:`serve`, which rebuilds the
+    parsed flags first. Both paths share one body, so their serving
+    behavior cannot drift.
     """
     raise_nofile_soft_limit()
 

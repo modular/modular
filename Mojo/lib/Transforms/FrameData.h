@@ -16,6 +16,7 @@
 
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/ToolCommon/KGENPasses.h"
 #include "Mojo/TransformUtils/AsyncUtils.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -53,7 +54,8 @@ public:
   virtual bool isAfterSuspend(Operation *op) = 0;
 
   /// Returns the first ops of the virtual blocks that no path from the entry
-  /// through a suspend reaches, in dominance order. A hot resume removes them.
+  /// through a suspend reaches, in reverse postorder. A hot resume removes
+  /// them.
   virtual ArrayRef<VirtualBlock> firstStateVirtualBlocks() = 0;
 
   /// Returns the suspends reachable from the entry without passing another
@@ -73,8 +75,7 @@ using FrameStateTransform = function_ref<void(FuncOp, FrameInterface &)>;
 /// `rematerializeFrameValues` with their answers to the cloner's queries, lay
 /// out the frame, and store the frame interface in `frameData`.
 using FrameEvaluator = void (*)(FrameData &frameData, FuncOp originalFunction,
-                                mlir::DominanceInfo &domInfo, Value errorValue,
-                                Value resultValue,
+                                Value errorValue, Value resultValue,
                                 FrameStateTransform rematerializeFrameValues,
                                 bool isHot);
 
@@ -84,11 +85,10 @@ using FrameEvaluator = void (*)(FrameData &frameData, FuncOp originalFunction,
 /// interface that answers where the suspends are.
 struct FrameData {
   /// Error value and result value are excluded from the frame
-  FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue,
+  FrameData(FuncOp originalFunction, Value errorValue, Value resultValue,
             FrameStateTransform rematerializeFrameValues, bool isHot,
             FrameEvaluator evaluateFrame) {
-    evaluateFrame(*this, originalFunction, domInfo, errorValue, resultValue,
+    evaluateFrame(*this, originalFunction, errorValue, resultValue,
                   rematerializeFrameValues, isHot);
   }
   FrameData(const FrameData &) = delete;
@@ -107,7 +107,6 @@ struct FrameData {
 
   SmallVector<Type> frameTypes;
   DenseMap<Value, unsigned> valueToIndexInFrame;
-  DenseMap<Operation *, unsigned> operationToIndexInFrame;
   SmallVector<ArgInFrame> argsInFrame;
   std::unique_ptr<FrameInterface> frame;
 };

@@ -18,3 +18,7 @@
 MODULAR_CXX_EXPORT std::string getSharedLibraryBinaryID() {
   return M::getBinaryID();
 }
+
+MODULAR_CXX_EXPORT std::string getSharedLibraryBinaryPath() {
+  return M::getBinaryPath();
+}

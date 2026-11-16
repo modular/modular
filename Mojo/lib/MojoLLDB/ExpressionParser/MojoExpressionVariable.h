@@ -129,10 +129,6 @@ public:
   // Python Expression State
   //===--------------------------------------------------------------------===//
 
-  /// Returns true if python is known to have already been initialized by the
-  /// persistent expression state.
-  bool hasInitializedPython() const;
-
   /// Return the prefix of all python expression modules.
   static StringRef getPythonExpressionModuleNamePrefix() {
     return "__lldb_python_module_";

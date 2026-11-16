@@ -13,7 +13,7 @@
 """Shared helpers for gfx950 attention kernels.
 
 Warp + fragment layout types are constructed inline in the structs that
-need them (`Softmax`, `MaskTileOp`), using TileLayout / `Coord` Layout
+need them (`Softmax`, `MaskTileOp`), using Layout / `Coord` Layout
 Algebra. Selecting concrete Layout specializations across an `Int` struct
 parameter at the struct field level (rather than a ternary between two
 different `Layout[...]` specializations) avoids the Mojo conditional-type

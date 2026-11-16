@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Integration tests for the ``mo.inplace_memcpy`` custom op.
+"""Integration tests for the ``runtime.inplace_memcpy`` custom op.
 
 The op copies a read-only ``src`` tensor into a mutable ``dst`` buffer in
 place, similar to ``Buffer.inplace_copy_from`` but usable from within a
@@ -25,7 +25,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 
 
 def _build_fill_with_42_graph(

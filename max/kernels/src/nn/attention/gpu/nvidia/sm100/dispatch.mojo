@@ -21,11 +21,15 @@ from std.collections import OptionalReg
 from std.math import ceildiv, clamp, nan
 from std.sys import get_defined_int
 from max.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.host.info import B200
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     Dim,
-    FuncAttribute,
+)
+from max.gpu.host.nvidia import (
+    ClusterAttributeLaunchConfig,
+    GridBlockAttributeLaunchConfig,
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout import Coord, TensorEngine
@@ -83,6 +87,7 @@ comptime SPLIT_KV_1Q_MAX_Q_ROWS = 128
 comptime WS_G_FUSED = 0
 comptime WS_G_UNFUSED = 1
 comptime WS_G_NONE = 2
+comptime WS_G_FUSED_1Q = 3
 
 
 @inline(.always)
@@ -91,17 +96,22 @@ def _ws_g_route(
     fused_bm_eff: Int,
     unfused_bm_eff: Int,
     max_prompt_len: Int,
+    fused_1q_bm_eff: Int = 0,
 ) -> Int:
-    """Picks the BM=32 Layout-G config for a prompt, or `WS_G_NONE`.
+    """Picks the WS-G or fused 1Q config for a prompt, or `WS_G_NONE`.
 
     A prompt single-tiles into the fused config when it fits `fused_bm_eff`
-    (`32 // group`), else into the unfused one when it fits `unfused_bm_eff`.
-    Otherwise the caller falls through to Layout-E / the 1Q-2Q carve. The two
-    configs are separate comptime instantiations, so this runtime choice is the
-    only thing keeping a prompt past `fused_bm_eff` off the slower Layout-E.
+    (`32 // group`), else into the fused 1Q BM=128 config when it fits
+    `fused_1q_bm_eff` (`128 // group`, 0 when there is none), else into the
+    unfused one when it fits `unfused_bm_eff`. Otherwise the caller falls
+    through to Layout-E / the 1Q-2Q carve. The configs are separate comptime
+    instantiations, so this runtime choice is the only thing keeping a prompt
+    past `fused_bm_eff` off the slower Layout-E.
     """
     if fused_available and fused_bm_eff >= max_prompt_len:
         return WS_G_FUSED
+    if fused_available and fused_1q_bm_eff >= max_prompt_len:
+        return WS_G_FUSED_1Q
     if unfused_bm_eff >= max_prompt_len:
         return WS_G_UNFUSED
     return WS_G_NONE
@@ -226,6 +236,23 @@ def _ws_g_p_ceiling[
     if raw_grid > WS_SWEEP_MAX_RAW_GRID:
         p = clamp(p, UInt32(1), UInt32(sm_count) // raw_grid)
     return p
+
+
+@inline(.always)
+def _1q_fills_waves_better[
+    sm_count: UInt32
+](raw_grid_2q: UInt32, raw_grid_1q: UInt32, visible_keys: UInt32) -> Bool:
+    """Whether 1Q's grid finishes sooner than 2Q's nearly empty last wave.
+
+    One CTA per SM. Over 32K or more visible keys a 1Q wave takes 0.53-0.54
+    of a 2Q wave (B200, d64); over fewer keys the ratio climbs past 0.6 and
+    2Q's larger tile wins.
+    """
+    return (
+        visible_keys >= 32768
+        and ceildiv(raw_grid_1q, sm_count) * 54
+        < ceildiv(raw_grid_2q, sm_count) * 100
+    )
 
 
 @inline(.always)
@@ -935,13 +962,6 @@ def mha_sm100_dispatch[
                         # size is baked into its `nvvm.cluster_dim` metadata.
                         comptime kernel = KernelStruct.kernel
 
-                        var cluster_dim: OptionalReg[Dim] = None
-                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
-                        # (cluster_size==P): both are the comptime `cluster_size()`,
-                        # matching the static `nvvm.cluster_dim` metadata on the
-                        # `kernel` entry (split-K is compiled once per static P).
-                        comptime if fa4_config.cluster_size() > 1:
-                            cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
                         comptime name = String(
                             "nq",
                             fa4_config.num_q,
@@ -953,34 +973,70 @@ def mha_sm100_dispatch[
                             fa4_config.num_kv_heads,
                             ".",
                         )
-                        ctx.enqueue_function[kernel](
-                            q_tma_op,
-                            k_tma_op,
-                            v_tma_op,
-                            ragged_tma_store,
-                            k,
-                            scale,
-                            batch_size,
-                            max_cache_valid_length,
-                            pack,
-                            # Total query-row count, used only by the workspace
-                            # (traditional/unfused) split-K egress as the per-partition
-                            # `o_partial`/`lse_partial` row stride; harmless (unused)
-                            # for every other config.
-                            UInt32(num_rows_q),
-                            grid_dim=SchedulerType.grid_dim(
+                        var grid_dim = Dim(
+                            SchedulerType.grid_dim(
                                 batch_size,
                                 block_x,
                                 num_partitions.as_uint32(),
-                            ),
-                            block_dim=(num_threads, 1, 1),
-                            cluster_dim=cluster_dim,
-                            shared_mem_bytes=smem_use,
-                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                UInt32(smem_use)
-                            ),
-                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+                            )
                         )
+                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
+                        # (cluster_size==P): both are the comptime `cluster_size()`,
+                        # matching the static `nvvm.cluster_dim` metadata on the
+                        # `kernel` entry (split-K is compiled once per static P).
+                        comptime if fa4_config.cluster_size() > 1:
+                            ctx.enqueue_function[kernel](
+                                ClusterAttributeLaunchConfig(
+                                    grid_dim=grid_dim,
+                                    block_dim=(num_threads, 1, 1),
+                                    cluster_dim=Dim(
+                                        fa4_config.cluster_size(), 1, 1
+                                    ),
+                                    shared_mem_bytes=smem_use,
+                                    attributes=pdl_launch_attributes(
+                                        MHA_PDL_LEVEL
+                                    ),
+                                ),
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                ragged_tma_store,
+                                k,
+                                scale,
+                                batch_size,
+                                max_cache_valid_length,
+                                pack,
+                                # Total query-row count, used only by the workspace
+                                # (traditional/unfused) split-K egress as the per-partition
+                                # `o_partial`/`lse_partial` row stride; harmless (unused)
+                                # for every other config.
+                                UInt32(num_rows_q),
+                            )
+                        else:
+                            ctx.enqueue_function[kernel](
+                                GridBlockAttributeLaunchConfig(
+                                    grid_dim=grid_dim,
+                                    block_dim=(num_threads, 1, 1),
+                                    shared_mem_bytes=smem_use,
+                                    attributes=pdl_launch_attributes(
+                                        MHA_PDL_LEVEL
+                                    ),
+                                ),
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                ragged_tma_store,
+                                k,
+                                scale,
+                                batch_size,
+                                max_cache_valid_length,
+                                pack,
+                                # Total query-row count, used only by the workspace
+                                # (traditional/unfused) split-K egress as the per-partition
+                                # `o_partial`/`lse_partial` row stride; harmless (unused)
+                                # for every other config.
+                                UInt32(num_rows_q),
+                            )
 
                     # --- ragged dispatch ---
                     comptime if ragged:
@@ -1113,13 +1169,6 @@ def mha_sm100_dispatch[
                         # size is baked into its `nvvm.cluster_dim` metadata.
                         comptime kernel = KernelStruct.kernel
 
-                        var cluster_dim: OptionalReg[Dim] = None
-                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
-                        # (cluster_size==P): both are the comptime `cluster_size()`,
-                        # matching the static `nvvm.cluster_dim` metadata on the
-                        # `kernel` entry (split-K is compiled once per static P).
-                        comptime if fa4_config.cluster_size() > 1:
-                            cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
                         comptime name = String(
                             "nq",
                             fa4_config.num_q,
@@ -1131,34 +1180,70 @@ def mha_sm100_dispatch[
                             fa4_config.num_kv_heads,
                             ".",
                         )
-                        ctx.enqueue_function[kernel](
-                            q_tma_op,
-                            k_tma_op,
-                            v_tma_op,
-                            ragged_tma_store,
-                            k,
-                            scale,
-                            batch_size,
-                            max_cache_valid_length,
-                            pack,
-                            # Total query-row count, used only by the workspace
-                            # (traditional/unfused) split-K egress as the per-partition
-                            # `o_partial`/`lse_partial` row stride; harmless (unused)
-                            # for every other config.
-                            UInt32(num_rows_q),
-                            grid_dim=SchedulerType.grid_dim(
+                        var grid_dim = Dim(
+                            SchedulerType.grid_dim(
                                 batch_size,
                                 block_x,
                                 num_partitions.as_uint32(),
-                            ),
-                            block_dim=(num_threads, 1, 1),
-                            cluster_dim=cluster_dim,
-                            shared_mem_bytes=smem_use,
-                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                                UInt32(smem_use)
-                            ),
-                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+                            )
                         )
+                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
+                        # (cluster_size==P): both are the comptime `cluster_size()`,
+                        # matching the static `nvvm.cluster_dim` metadata on the
+                        # `kernel` entry (split-K is compiled once per static P).
+                        comptime if fa4_config.cluster_size() > 1:
+                            ctx.enqueue_function[kernel](
+                                ClusterAttributeLaunchConfig(
+                                    grid_dim=grid_dim,
+                                    block_dim=(num_threads, 1, 1),
+                                    cluster_dim=Dim(
+                                        fa4_config.cluster_size(), 1, 1
+                                    ),
+                                    shared_mem_bytes=smem_use,
+                                    attributes=pdl_launch_attributes(
+                                        MHA_PDL_LEVEL
+                                    ),
+                                ),
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                ragged_tma_store,
+                                k,
+                                scale,
+                                batch_size,
+                                max_cache_valid_length,
+                                pack,
+                                # Total query-row count, used only by the workspace
+                                # (traditional/unfused) split-K egress as the per-partition
+                                # `o_partial`/`lse_partial` row stride; harmless (unused)
+                                # for every other config.
+                                UInt32(num_rows_q),
+                            )
+                        else:
+                            ctx.enqueue_function[kernel](
+                                GridBlockAttributeLaunchConfig(
+                                    grid_dim=grid_dim,
+                                    block_dim=(num_threads, 1, 1),
+                                    shared_mem_bytes=smem_use,
+                                    attributes=pdl_launch_attributes(
+                                        MHA_PDL_LEVEL
+                                    ),
+                                ),
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                ragged_tma_store,
+                                k,
+                                scale,
+                                batch_size,
+                                max_cache_valid_length,
+                                pack,
+                                # Total query-row count, used only by the workspace
+                                # (traditional/unfused) split-K egress as the per-partition
+                                # `o_partial`/`lse_partial` row stride; harmless (unused)
+                                # for every other config.
+                                UInt32(num_rows_q),
+                            )
 
                     # --- ragged dispatch ---
                     comptime if ragged:
@@ -1553,6 +1638,80 @@ def mha_sm100_dispatch[
             comptime fa4_config_ws_fused = fa4_config_2q.with_bm(
                 32, fuse_nondividing=True
             )
+            # Past the fused BM=32 bound (a speculative verify step, a short
+            # prefill), the same groups fuse into the 1Q BM=128 tile, which
+            # holds 14 (group 9) or 21 (group 6) positions: one CTA per KV head
+            # rather than one per q-head on the unfused BM=32 tile. Split-K is
+            # sized as on the 1Q carve below. Only 16-bit Q/KV is validated on
+            # this tile.
+            comptime fa4_config_1q_fused = fa4_config_2q.with_bm(
+                128, fuse_nondividing=True
+            )
+            comptime if (
+                KVType.dtype.is_half_float()
+                and fa4_config_ws_fused.fuse_nondividing
+                and fa4_config_1q_fused.fuse_nondividing
+                and fa4_config_1q_fused.supported()
+                and MaskType.nonfull_sets[
+                    fa4_config_1q_fused.PairBM_eff(), fa4_config_1q_fused.BN
+                ]()[0]
+                != TileMaskStatus.UNKNOWN_MASK
+            ):
+                if (
+                    _ws_g_route(
+                        True,
+                        fa4_config_ws_fused.BM_eff(),
+                        fa4_config_ws_unfused.BM_eff(),
+                        Int(max_prompt_len_u32),
+                        fa4_config_1q_fused.BM_eff(),
+                    )
+                    == WS_G_FUSED_1Q
+                ):
+                    var p_fused_1q: UInt32
+                    if num_partitions_override > 0:
+                        p_fused_1q = UInt32(num_partitions_override)
+                    else:
+                        var raw_grid_fused_1q: UInt32 = _raw_grid[
+                            fa4_config_1q_fused
+                        ](max_prompt_len_u32, batch_size)
+                        p_fused_1q = UInt32(
+                            _bucket_ws[ctx.default_device_info.sm_count](
+                                Int(
+                                    _visible_keys[
+                                        fa4_config_1q_fused.PairBM_eff(),
+                                        fa4_config_1q_fused.BN,
+                                        KVType.page_size,
+                                    ](mask, max_cache_valid_length)
+                                    // 512
+                                ),
+                                Int(
+                                    ws_p_ceiling[
+                                        ctx.default_device_info.sm_count,
+                                        splitk_oversubscribe,
+                                    ](raw_grid_fused_1q)
+                                ),
+                                Int(raw_grid_fused_1q),
+                            )
+                        )
+                    if p_fused_1q > UInt32(1):
+                        comptime for C in CLUSTER_SPLITK_CANDIDATES:
+                            comptime fused_1q_splitk_cfg = (
+                                fa4_config_1q_fused.with_splitk(C)
+                            )
+                            comptime assert (
+                                fused_1q_splitk_cfg.supported()
+                            ), fused_1q_splitk_cfg.description()
+                            if p_fused_1q == UInt32(C):
+                                with_fa4_config[fused_1q_splitk_cfg](
+                                    StaticInt[C](), NoPartition[.float32]()
+                                )
+                                return
+                        launch_workspace[fa4_config_1q_fused](p_fused_1q)
+                        return
+                    with_fa4_config[fa4_config_1q_fused](
+                        StaticInt[1](), NoPartition[.float32]()
+                    )
+                    return
             comptime for ws_g_fused in [True, False]:
                 comptime fa4_config_ws = (
                     fa4_config_ws_fused if ws_g_fused else fa4_config_ws_unfused
@@ -1779,6 +1938,18 @@ def mha_sm100_dispatch[
                         StaticInt[1](), NoPartition[.float32]()
                     )
                     return
+        # The last-wave rule's 1Q/2Q ratio is measured at d64 on B200 only,
+        # and `_visible_keys` is host-safe only for a mask with a known range.
+        comptime one_q_tail_measured = (
+            ctx.default_device_info.compute == B200.compute
+            and config.depth == 64
+            and (
+                MaskType.nonfull_sets[
+                    fa4_config_1q.PairBM_eff(), fa4_config_1q.BN
+                ]()[0]
+                != TileMaskStatus.UNKNOWN_MASK
+            )
+        )
         # An explicit `num_partitions` forces BM < 256. The 2Q arms below launch
         # `StaticInt[1]()` / `NoPartition` unconditionally -- 2Q has NO split-K
         # mechanism at all -- so letting an override fall through there would
@@ -1905,6 +2076,25 @@ def mha_sm100_dispatch[
                     " outside [64, 128])"
                 ),
             )
+            with_fa4_config[fa4_config_1q](
+                StaticInt[1](), NoPartition[.float32]()
+            )
+        elif (
+            not FA4_FORCE_2Q
+            and one_q_tail_measured
+            # Only when every row is a full prompt, so the grid is the work;
+            # a ragged grid's empty CTAs would double under 1Q.
+            and UInt32(num_rows_q) == max_prompt_len_u32 * batch_size
+            and _1q_fills_waves_better[sm_count](
+                raw_grid_2q,
+                _raw_grid[fa4_config_1q](max_prompt_len_u32, batch_size),
+                _visible_keys[
+                    fa4_config_1q.PairBM_eff(),
+                    fa4_config_1q.BN,
+                    KVType.page_size,
+                ](mask, max_cache_valid_length),
+            )
+        ):
             with_fa4_config[fa4_config_1q](
                 StaticInt[1](), NoPartition[.float32]()
             )

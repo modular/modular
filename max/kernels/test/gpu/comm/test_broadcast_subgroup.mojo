@@ -44,7 +44,7 @@ def broadcast_subgroup_test[
     dtype: DType,
     ngpus: Int,
 ](
-    list_of_ctxs: List[DeviceContext], length: Int, root: Int, dev_offset: Int
+    list_of_ctxs: List[DeviceContext[]], length: Int, root: Int, dev_offset: Int
 ) raises:
     """Runs one broadcast over `ngpus` contexts based at device `dev_offset`.
 
@@ -154,7 +154,7 @@ def main() raises:
         if dev_offset <= 0:
             continue
 
-        var list_of_ctxs = List[DeviceContext]()
+        var list_of_ctxs = List[DeviceContext[]]()
         for i in range(ngpus):
             list_of_ctxs.append(DeviceContext(device_id=dev_offset + i))
 

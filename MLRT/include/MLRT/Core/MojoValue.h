@@ -14,6 +14,7 @@
 #ifndef MLRT_CORE_MOJOVALUE_H
 #define MLRT_CORE_MOJOVALUE_H
 
+#include "Support/SymbolExport.h"
 #include <cstddef>
 
 namespace M {
@@ -27,7 +28,7 @@ namespace M {
 /// Warning: The MojoValue has a pointer to the mojo destructor function, and
 /// the user must ensure that the function pointer is still valid. (for example
 /// if the mojo library is dynamically loaded).
-class MojoValue {
+class MODULAR_CXX_EXPORT MojoValue {
 public:
   using DestructorFn = void (*)(void *);
 
@@ -58,7 +59,7 @@ public:
   /// Allows for values to be allocated within mojo
   /// and destroyed at end of life without forcing an allocation for a
   /// T to be done from C++.
-  /// `data` is, itself, a `*T`/`UnsafePointer[T]` with a backing allocation
+  /// `data` is, itself, a `*T`/`Pointer[T]` with a backing allocation
   /// originating in Mojo. It is expected that `destructor` free the backing
   /// allocation.
   static MojoValue createOwningRef(void *data, DestructorFn destructor) {

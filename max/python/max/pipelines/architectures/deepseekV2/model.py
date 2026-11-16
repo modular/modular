@@ -22,7 +22,7 @@ from max import tree
 from max.driver import Buffer, Device, DeviceSpec
 from max.engine.api import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     BatchProcessor,
@@ -37,7 +37,7 @@ from max.pipelines.lib import (
     compile_and_init_graphs,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.profiler import traced
 from typing_extensions import override
 
@@ -219,7 +219,7 @@ class DeepseekV2Model(
                 **compile_and_init_graphs(session, specs),
             }
         models = {
-            role: self.compiled_modules[role].engine_model for role in specs
+            role: self.compiled_graphs[role].engine_model for role in specs
         }
         self._weights_dict = {}
         self._maybe_release_host_weights(*models.values())

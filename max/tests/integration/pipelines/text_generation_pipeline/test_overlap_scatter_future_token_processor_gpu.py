@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -27,6 +28,8 @@ from max.pipelines.lib.interfaces import ModelInputs
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     AsyncBatch,
     RealizeFutureTokenProcessor,
+    _RealizeFutureTokenInputs,
+    _RealizeFutureTokenSpecDecodeInputs,
 )
 from max.pipelines.modeling.types import TextGenerationInputs
 
@@ -270,6 +273,9 @@ def test_no_overlap_returns_none_and_skips_scatter(
         inputs=curr_inputs,
     )
     assert mappings is None
+    assert not realize_future_token_processor.has_carried_requests(
+        prev_batch, curr_inputs
+    )
 
     # realize_future_tokens returns original tokens unchanged.
     model_inputs = _to_model_inputs(curr_ragged_inputs, curr_input_row_offsets)
@@ -279,3 +285,78 @@ def test_no_overlap_returns_none_and_skips_scatter(
         model_inputs=model_inputs,
     )
     assert model_inputs.tokens.to_numpy().tolist() == curr_ragged_inputs
+
+
+def test_has_carried_requests_matches_mappings(
+    realize_future_token_processor: RealizeFutureTokenProcessor,
+) -> None:
+    """The processor reports carried requests exactly when it builds maps."""
+    req_a = _create_context([11, 12, 13])
+    req_b = _create_context([21, 22, 23])
+    req_c = _create_context([31, 32, 33])
+    prev_batch = _create_async_batch(batches=[[req_a, req_b]])
+
+    for curr_batch, carried in (([[req_b, req_c]], True), ([[req_c]], False)):
+        curr_inputs = TextGenerationInputs(batches=curr_batch)
+        mappings = realize_future_token_processor._compute_mappings(
+            prev_batch=prev_batch, inputs=curr_inputs
+        )
+        assert (mappings is not None) == carried
+        assert (
+            realize_future_token_processor.has_carried_requests(
+                prev_batch, curr_inputs
+            )
+            == carried
+        )
+
+
+def test_sampled_draft_probs_realized_in_place() -> None:
+    """Carried rows take their request's previous distribution, new rows zero.
+
+    The graph writes the bound ``draft_probs_full`` buffer in place and no
+    longer returns the distributions, so stale contents must be overwritten.
+    """
+    num_spec, verify_width, vocab = 3, 2, 16
+    device = Accelerator()
+    processor = RealizeFutureTokenProcessor(
+        session=InferenceSession(devices=[device]),
+        devices=[DeviceRef.from_device(device)],
+        num_speculative_tokens=num_spec,
+        enable_dp=False,
+        sampled_draft_vocab_size=vocab,
+    )
+    rng = np.random.default_rng(0)
+    prev_probs = rng.random((3, num_spec, vocab), dtype=np.float32)
+    prev_to_curr = [1, OOB_IDX, 0]
+    curr_to_prev = [2, 0, OOB_IDX]
+    bound = Buffer.from_numpy(
+        np.full((3, verify_width, vocab), 7.0, dtype=np.float32)
+    ).to(device)
+
+    inputs = _RealizeFutureTokenInputs[Buffer, Buffer](
+        prev_to_curr_map=_to_gpu(prev_to_curr),
+        curr_to_prev_map=_to_gpu(curr_to_prev),
+        curr_tokens=_to_gpu([10, 20, 30]),
+        curr_input_row_offsets=_to_gpu([0, 1, 2, 3], dtype=np.uint32),
+        prev_generated_tokens=_to_gpu([7, 8, 9]),
+        spec_decode=_RealizeFutureTokenSpecDecodeInputs(
+            curr_draft_tokens=_to_gpu([[0] * verify_width] * 3),
+            data_parallel_splits=None,
+            curr_cache_lengths=[_to_gpu([5, 5, 5], dtype=np.uint32)],
+            signal_buffers=None,
+            prev_generated_draft_tokens=_to_gpu([[1, 2, 3]] * 3),
+            prev_draft_tokens=_to_gpu([[0] * verify_width] * 3),
+            prev_num_accepted_draft_tokens=_to_gpu([verify_width] * 3),
+            curr_draft_probs_full=bound,
+            prev_generated_draft_probs_full=Buffer.from_numpy(prev_probs).to(
+                device
+            ),
+        ),
+    )
+    outputs = processor._graph.execute(*tree.leaves(inputs))
+
+    assert len(outputs) == 3
+    expected = np.zeros((3, verify_width, vocab), dtype=np.float32)
+    expected[0] = prev_probs[2, :verify_width]
+    expected[1] = prev_probs[0, :verify_width]
+    np.testing.assert_array_equal(bound.to_numpy(), expected)

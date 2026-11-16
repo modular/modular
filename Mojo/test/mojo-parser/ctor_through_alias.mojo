@@ -27,7 +27,7 @@ struct S[a: Int, T: AnyType]:
         pass
 
 
-comptime A[T: AnyType] = S[0, T]
+comptime A = S[0, _]
 
 
 # CHECK-LABEL: lit.fn @"test_partially_bound_alias
@@ -48,7 +48,7 @@ struct S[T: AnyType]:
         pass
 
 
-comptime A[T: AnyType] = S[T]
+comptime A = S[_]
 
 
 # CHECK-LABEL: lit.fn @"test_parametric_init
@@ -81,7 +81,7 @@ def test_nested_unbound_param[
 
 # A struct parameter whose type depends on another (`origin` on `mut`), with an
 # overload taking an auto-parameterized `other: P`, whose own parameters'
-# types refer to each other, as in `UnsafePointer(to=x)`.
+# types refer to each other, as in `Pointer(to=x)`.
 
 
 struct P[mut: Bool, //, T: AnyType, origin: Origin[mut=mut]]:
@@ -118,7 +118,7 @@ struct P[mut: Bool, //, T: AnyType, origin: Origin[mut=mut]]:
         pass
 
 
-comptime A[T: AnyType] = P[T, MutAnyOrigin]
+comptime A = P[_, MutAnyOrigin]
 
 
 # CHECK-LABEL: lit.fn @"test_method_param_refers_to_struct_param

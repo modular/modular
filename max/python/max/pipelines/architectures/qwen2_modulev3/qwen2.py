@@ -20,13 +20,13 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.embedding import VocabParallelEmbedding
-from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParams
 from max.nn.norm import RMSNorm
+from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor
@@ -167,7 +167,7 @@ class Qwen2(Module[[DecoderInputs], DecoderOutputs]):
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Wraps the per-device KV inputs, then runs the language model."""
-        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
+        kv_inputs = iter(kv_input_values(inputs.kv))
         per_device = tree.leaves(
             self.config.kv_params.unflatten_kv_inputs(kv_inputs),
             leaf=KVCacheInputsPerDevice,

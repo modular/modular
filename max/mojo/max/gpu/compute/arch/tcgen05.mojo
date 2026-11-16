@@ -35,29 +35,6 @@ def check_blackwell_constraint():
     )
 
 
-struct TensorMemory(TrivialRegisterPassable):
-    """A wrapper around tensor memory allocated for tcgen05 instructions."""
-
-    var ptr: Pointer[UInt32, MutUntrackedOrigin, address_space=.SHARED]
-    """Pointer to the tensor memory address."""
-
-    var num_cols: UInt32
-    """The number of columns in the tensor memory."""
-
-    @inline(.always)
-    def __init__(out self, num_cols: UInt32):
-        """Initialize the TensorMemory struct.
-
-        Args:
-            num_cols: The number of columns to allocate.
-        """
-        # Bitcast to avoid `cannot implicitly convert` error.
-        self.ptr = external_memory[
-            UInt32, address_space=.SHARED, alignment=16
-        ]().unsafe_bitcast[UInt32]()
-        self.num_cols = num_cols
-
-
 @inline(.nodebug)
 def tcgen05_alloc[
     cta_group: Int32

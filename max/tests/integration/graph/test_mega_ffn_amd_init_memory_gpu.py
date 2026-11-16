@@ -41,7 +41,7 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     QuantAwareTensor,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

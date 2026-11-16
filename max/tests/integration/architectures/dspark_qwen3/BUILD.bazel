@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -36,18 +36,20 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_weight_adapters",
+    name = "test_weight_rules",
     size = "small",
-    srcs = ["test_weight_adapters.py"],
+    srcs = ["test_weight_rules.py"],
+    data = ["testdata/dspark_checkpoint.json"],
     # Import-bound: pulling the pipelines stack outruns the 300s budget on the
     # shared BuildBuddy macOS workers. Nothing here is macOS-incompatible, so
     # skip the CI job rather than the platform.
     tags = ["skip-ci-macos"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/dspark_qwen3",
-        requirement("numpy"),
     ],
 )

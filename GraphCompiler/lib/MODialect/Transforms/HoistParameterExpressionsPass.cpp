@@ -220,8 +220,8 @@ struct HoistParameterExpressionsPass
           HoistParameterExpressionsPass> {
   using HoistParameterExpressionsBase::HoistParameterExpressionsBase;
 
-  /// Maps each `<expr>` in `kgen.param.declare name = <expr>` to `name`, per
-  /// region.
+  /// Maps each dim `<expr>` in `kgen.param.declare name = <expr>` to `name`,
+  /// per region.
   static llvm::DenseMap<Region *,
                         llvm::DenseMap<KGEN::ParamOperatorAttr, std::string>>
   collectExistingExprToParamMap(GraphOp graphOp) {
@@ -229,6 +229,11 @@ struct HoistParameterExpressionsPass
                    llvm::DenseMap<KGEN::ParamOperatorAttr, std::string>>
         regionToExprToParam;
     graphOp.walk([&](KGEN::ParamDeclareOp paramDeclOp) {
+      // Rewriting an mo.if replaces mapped expressions in its regions'
+      // declarations too, and a shape check's `!mo.chain` expression would
+      // become a dim reference to the enclosing region's check.
+      if (!ShapeAttr::isDimType(paramDeclOp.getType()))
+        return;
       Region *parentRegion = paramDeclOp->getParentRegion();
       auto &map = regionToExprToParam[parentRegion];
       if (auto paramExpr =

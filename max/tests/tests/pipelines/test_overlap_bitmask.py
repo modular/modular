@@ -53,8 +53,8 @@ def test_inline_copy_stays_on_the_model_stream() -> None:
 def test_side_stream_copy_runs_in_its_own_region() -> None:
     ir = _build(side_stream=True)
     region = ir.index("mo.sequence[2]")
-    wait = ir.index('"mo.wait_host_value_with_dep"')
-    copy = ir.index('"mo.inplace_memcpy"')
+    wait = ir.index('"runtime.wait_host_value_with_dep"')
+    copy = ir.index('"runtime.inplace_memcpy"')
     end = ir.index("mo.yield")
     # The copy follows the host wait, and both sit inside the region.
     assert region < wait < copy < end

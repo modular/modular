@@ -10,5 +10,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-from .hip_plugin import HipHalPlugin

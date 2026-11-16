@@ -43,6 +43,7 @@ using llvm::raw_ostream;
 class ASTDecl;
 class ExprNode;
 class IREmitter;
+struct RaiseContext;
 class SharedState;
 
 /// Uniqued access path from the match subject (keyed by pointer address).
@@ -210,6 +211,7 @@ struct MatchCaseEntry {
 /// takes an `IREmitter` (dynamic with a builder, or param-only for comptime).
 struct PatternEmitState {
   ASTDecl &curDeclScope;
+  RaiseContext *raiseContext;
   CValue rootSubject;
   const PatternPath *rootPath;
   Location matchLocation;

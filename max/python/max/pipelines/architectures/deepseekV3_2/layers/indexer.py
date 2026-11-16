@@ -27,14 +27,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy import (
-    LayerNorm,
-    Linear,
-    Module,
-    QuantConfig,
-)
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
     mla_fp8_index_top_k_with_physical,
@@ -48,9 +41,11 @@ from max.nn.legacy.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy import LayerNorm, Linear, Module
 from max.nn.legacy.layer import Shardable
-from max.nn.legacy.quant_config import QuantFormat
+from max.nn.quant_config import QuantConfig, QuantFormat
 
 from .transforms import HadamardTransform
 
@@ -72,7 +67,7 @@ class KpoolTailReplayInputs(NamedTuple):
     """One pooled indexer call's inputs to the tail-ring seed.
 
     A speculative verify keeps the ring at its pre-verify members and re-runs
-    :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` over the accepted rows once
+    :func:`~max.nn._graph_ops.mla_kpool_seed_tail` over the accepted rows once
     acceptance is known. The ring is slot-indexed modulo ``kpool``, so a seed
     of a rejected draft can overwrite a pending member the next step closes
     its pool with, and no length pointer undoes that.
@@ -387,7 +382,7 @@ class Indexer(Module, Shardable):
         things follow.
 
         The rows have to be **compacted**, because
-        :func:`~max.nn.legacy.kernels.store_k_cache_ragged` writes a request's rows
+        :func:`~max.nn._graph_ops.store_k_cache_ragged` writes a request's rows
         contiguously; a non-closing row left in place would be written as if it
         were a pooled key.
 
@@ -501,15 +496,15 @@ class Indexer(Module, Shardable):
         request's ragged, multi-token chunk in the same call read and wrote
         out of bounds):
 
-        - :func:`~max.nn.legacy.kernels.mla_kpool_ring_close` closes each request's
+        - :func:`~max.nn._graph_ops.mla_kpool_ring_close` closes each request's
           *pending* pool -- the one the ring already partly holds -- using
           the ring's members plus this call's leading new tokens, whenever
           this call brings enough of them. A request with nothing pending,
           or not yet enough new tokens to finish it, closes nothing.
-        - :func:`~max.nn.legacy.kernels.mla_kpool_compress` builds every pool that is
+        - :func:`~max.nn._graph_ops.mla_kpool_compress` builds every pool that is
           entirely new tokens, skipping the leading tokens the ring-close
           writer above just consumed (or none, when nothing was pending).
-        - :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` stashes whatever remains
+        - :func:`~max.nn._graph_ops.mla_kpool_seed_tail` stashes whatever remains
           incomplete after this call into the ring, for a later call to
           close.
 
@@ -705,7 +700,7 @@ class Indexer(Module, Shardable):
         input_row_offsets: TensorValue,
         indexer_k_collection: PagedCacheValues,
         layer_idx: TensorValue,
-        mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+        mask_variant: MHAMaskVariant,
         *,
         tail: BufferValue | None = None,
         slot_idx: TensorValue | None = None,
@@ -904,7 +899,7 @@ class Indexer(Module, Shardable):
         """Declared ``head_dim`` of the pooled-key cache: 128 / 4 = 32.
 
         The paged cache manager indexes one row per *token* and every leaf of a
-        :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` shares one page table, so a
+        :class:`~max.nn.kv_cache.MultiKVCacheParams` shares one page table, so a
         cache holding one key per ``index_kpool`` tokens cannot be declared four
         times shorter. Declaring it ``index_head_dim / index_kpool`` wide
         instead spreads one 128-value pooled key across the ``index_kpool``

@@ -15,6 +15,8 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/Threading/SignalAltStack.h"
+#include "Support/Threading/ThreadLocalCache.h"
+#include "llvm/ADT/DenseMap.h"
 #include "gtest/gtest.h"
 #include <thread>
 
@@ -64,4 +66,39 @@ TEST(Threading, signalAltStack) {
 
   if (preinstalled)
     GTEST_SKIP() << "threads on this configuration already have one";
+}
+
+TEST(Threading, threadLocalCacheCopiesOriginalByDefault) {
+  llvm::DenseMap<int, int> original = {{1, 10}};
+  ThreadLocalCache<llvm::DenseMap<int, int>> caches(original,
+                                                    /*maxNumThreads=*/1);
+
+  llvm::DenseMap<int, int> &threadCache = caches.getThreadLocalCache();
+  EXPECT_EQ(threadCache.lookup(1), 10);
+  threadCache[2] = 20;
+  EXPECT_FALSE(original.contains(2));
+  EXPECT_EQ(&caches.getThreadLocalCache(), &threadCache);
+}
+
+namespace {
+/// A cache whose thread caches record the cache they were made from. A copy
+/// would not record it.
+struct FactoryCache {
+  static FactoryCache makeThreadCache(const FactoryCache &original) {
+    return FactoryCache{&original};
+  }
+  const FactoryCache *madeFrom = nullptr;
+};
+} // namespace
+
+static_assert(HasThreadCacheFactory<FactoryCache>);
+static_assert(!HasThreadCacheFactory<llvm::DenseMap<int, int>>);
+
+TEST(Threading, threadLocalCacheUsesMakeThreadCache) {
+  FactoryCache original;
+  ThreadLocalCache<FactoryCache> caches(original, /*maxNumThreads=*/1);
+
+  FactoryCache &threadCache = caches.getThreadLocalCache();
+  EXPECT_EQ(threadCache.madeFrom, &original);
+  EXPECT_EQ(&caches.getThreadLocalCache(), &threadCache);
 }

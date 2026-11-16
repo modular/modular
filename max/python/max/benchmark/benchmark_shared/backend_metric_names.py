@@ -13,17 +13,16 @@
 
 """Per-backend Prometheus names for the engine metrics the client reads.
 
-MAX Serve and the Mach engine expose the same concepts under different
-metric names and different ``batch_type`` label values, so the client
-resolves every engine metric through the tables here instead of
-hard-coding one engine's names. ``BenchmarkResult`` field names never
-change; only the Prometheus names the values are looked up under do.
+MAX Serve and the Mach engine expose the same concepts under the unified
+``max_*`` metric names but different ``batch_type`` label values (and two
+families keep family-specific stems), so the client resolves every engine
+metric through the tables here instead of hard-coding one engine's
+spellings. ``BenchmarkResult`` field names never change; only the
+Prometheus names the values are looked up under do.
 
-Batch-histogram table keys are the metric's MAX Serve name (matching the
-``HistogramMetric`` members in ``benchmark_shared.metrics``).
-
-The tables retain historical identities while readers also accept the
-unified ``max_*`` exposition during rolling upgrades.
+Batch-histogram table keys are the client metric names (matching the
+``HistogramMetric`` members in ``benchmark_shared.metrics``), which are
+also the ``BenchmarkResult`` field prefixes.
 """
 
 from __future__ import annotations
@@ -123,114 +122,115 @@ BATCH_TYPE_LABELS: Mapping[EngineFamily, Mapping[BatchPhase, str]] = {
     },
 }
 
-# Batch histograms the client reads, keyed by their MAX Serve name. Only
-# ``mach_batch_size`` and ``mach_batch_execution_time_milliseconds`` are
-# tagged with ``batch_type`` and recorded per constructed / executed batch,
-# so they are the only Mach batch metrics splittable by phase (and the only
-# ones a scrape is required to contain). Mach's other batch histograms carry
-# no label, so they are UNAVAILABLE: pooling every batch, including the
-# ``mixed`` ones, into one phase would misstate both. MAX Serve families are
-# not marked always-emitted because their presence across versions is not
-# verified here, so a missing family keeps the historical null-field behavior
-# for non-mach backends.
+# Batch histograms the client reads, keyed by their client names. Only
+# ``max_batch_size`` and ``max_batch_execution_time_milliseconds`` are
+# tagged with ``batch_type`` on Mach and recorded per constructed / executed
+# batch, so they are the only Mach batch metrics splittable by phase (and
+# the only ones a scrape is required to contain). Mach's other batch
+# histograms carry no label, so they are UNAVAILABLE: pooling every batch,
+# including the ``mixed`` ones, into one phase would misstate both. MAX Serve
+# families are not marked always-emitted because their presence across
+# versions is not verified here, so a missing family keeps the null-field
+# behavior for non-mach backends.
 BATCH_METRIC_NAMES: Mapping[str, Mapping[EngineFamily, EngineMetricName]] = {
     "maxserve_batch_context_tokens": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_context_tokens", MetricAvailability.OPTIONAL
+            "max_batch_context_tokens", MetricAvailability.OPTIONAL
         ),
         # Unlabeled in Mach (record_constructed records it without batch_type).
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_context_tokens", MetricAvailability.UNAVAILABLE
+            "max_batch_context_tokens", MetricAvailability.UNAVAILABLE
         ),
     },
     "maxserve_batch_creation_time_milliseconds": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_creation_time_milliseconds",
+            "max_batch_creation_time_milliseconds",
             MetricAvailability.OPTIONAL,
         ),
         # Unlabeled in Mach (record_constructed records it without batch_type).
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_creation_time_milliseconds",
+            "max_batch_creation_time_milliseconds",
             MetricAvailability.UNAVAILABLE,
         ),
     },
     "maxserve_batch_generation_throughput_tokens_per_second": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_generation_throughput_tokens_per_second",
+            "max_batch_generation_throughput_tokens_per_second",
             MetricAvailability.OPTIONAL,
         ),
         # Unlabeled in Mach (record_executed records it without batch_type).
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_generation_throughput_per_second",
+            "max_batch_generation_throughput_per_second",
             MetricAvailability.UNAVAILABLE,
         ),
     },
     "maxserve_batch_input_tokens": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_input_tokens", MetricAvailability.OPTIONAL
+            "max_batch_input_tokens", MetricAvailability.OPTIONAL
         ),
         # Unlabeled in Mach (record_constructed records it without batch_type).
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_input_tokens", MetricAvailability.UNAVAILABLE
+            "max_batch_input_tokens", MetricAvailability.UNAVAILABLE
         ),
     },
     "maxserve_batch_prompt_throughput_tokens_per_second": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_prompt_throughput_tokens_per_second",
+            "max_batch_prompt_throughput_tokens_per_second",
             MetricAvailability.OPTIONAL,
         ),
         # Unlabeled in Mach (record_executed records it without batch_type).
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_prompt_throughput_per_second",
+            "max_batch_prompt_throughput_per_second",
             MetricAvailability.UNAVAILABLE,
         ),
     },
     "maxserve_batch_size": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_size", MetricAvailability.OPTIONAL
+            "max_batch_size", MetricAvailability.OPTIONAL
         ),
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_size", MetricAvailability.ALWAYS_EMITTED
+            "max_batch_size", MetricAvailability.ALWAYS_EMITTED
         ),
     },
     "maxserve_batch_execution_time_milliseconds": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_batch_execution_time_milliseconds",
+            "max_batch_execution_time_milliseconds",
             MetricAvailability.OPTIONAL,
         ),
         EngineFamily.MACH: EngineMetricName(
-            "mach_batch_execution_time_milliseconds",
+            "max_batch_execution_time_milliseconds",
             MetricAvailability.ALWAYS_EMITTED,
         ),
     },
 }
 
 # Speculative-decode families the client reads. Both engines expose the
-# same two histogram shapes under their own prefixes (the per-position
-# acceptance rate tagged ``position`` and the batch mean acceptance length),
-# and both only when speculative decoding is on, hence OPTIONAL. The third
-# entry is the vLLM-style draft-counter family, matched by this prefix
-# wherever it appears; Mach does not emit it, so it is UNAVAILABLE for mach.
+# same two histogram shapes under the unified ``max_`` prefix (the
+# per-position acceptance rate tagged ``position`` and the batch mean
+# acceptance length), and both only when speculative decoding is on, hence
+# OPTIONAL. The third entry is the vLLM-style draft-counter family, matched
+# by this prefix wherever it appears; Mach does not emit it, so it is
+# UNAVAILABLE for mach.
 SPEC_DECODE_METRIC_NAMES: Mapping[
     str, Mapping[EngineFamily, EngineMetricName]
 ] = {
     "acceptance_rate_per_position": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_spec_decode_acceptance_rate_per_position",
+            "max_spec_decode_acceptance_rate_per_position",
             MetricAvailability.OPTIONAL,
         ),
         EngineFamily.MACH: EngineMetricName(
-            "mach_spec_decode_acceptance_rate_per_position",
+            "max_spec_decode_acceptance_rate_per_position",
             MetricAvailability.OPTIONAL,
         ),
     },
     "avg_acceptance_length": {
         EngineFamily.MAX_SERVE: EngineMetricName(
-            "maxserve_spec_decode_avg_acceptance_length",
+            "max_spec_decode_avg_acceptance_length",
             MetricAvailability.OPTIONAL,
         ),
         EngineFamily.MACH: EngineMetricName(
-            "mach_spec_decode_avg_acceptance_length",
+            "max_spec_decode_avg_acceptance_length",
             MetricAvailability.OPTIONAL,
         ),
     },
@@ -249,10 +249,9 @@ def engine_family(backend: Backend | str | None) -> EngineFamily:
     """Map a benchmark backend name onto its engine-metric naming family.
 
     ``mach`` targets the Mach engine. Every other backend (MAX Serve via
-    ``modular`` / ``modular-chat``, and the third-party servers) keeps the
-    MAX Serve names, which is what the client read before per-backend names
-    existed; a missing ``backend`` (metrics built directly rather than
-    scraped) keeps them too.
+    ``modular`` / ``modular-chat``, and the third-party servers) uses the
+    MAX Serve family, as does a missing ``backend`` (metrics built
+    directly rather than scraped).
     """
     if backend == "mach":
         return EngineFamily.MACH
@@ -268,8 +267,8 @@ def resolve_batch_metric(
 
     Args:
         backend: Backend the metrics were scraped from.
-        client_metric: The client-facing metric identity (its MAX Serve
-            name, a key of :data:`BATCH_METRIC_NAMES`).
+        client_metric: The client-facing metric identity (a key of
+            :data:`BATCH_METRIC_NAMES`).
         phase: The forward-pass phase to read (prefill or decode).
 
     Returns:
@@ -306,28 +305,18 @@ def resolve_spec_decode_metric(
 
 
 def metric_name_candidates(name: str) -> tuple[str, ...]:
-    """Returns current wire names first, then historical spellings.
+    """Returns the wire names to try for *name*, most specific first.
 
-    Known spec-decode unit suffixes precede the older unsuffixed reader names.
-    Backend label vocabularies remain distinct.
+    The spec-decode exporters may append a unit suffix (``_percent`` /
+    ``_tokens``) to the family name, so the suffixed spelling is tried
+    before the unsuffixed one. All other names resolve to themselves.
     """
     suffixes = {
         "spec_decode_acceptance_rate_per_position": "_percent",
         "spec_decode_avg_acceptance_length": "_tokens",
     }
-    for prefix in ("maxserve_", "mach_"):
-        if name.startswith(prefix):
-            stem = name.removeprefix(prefix)
-            unit = suffixes.get(stem, "")
-            # TODO(MAX-1007): Drop the legacy wire-name fallback after rollout
-            # and the rollback window close. Update engine spec wire names to
-            # max_ while preserving benchmark result keys and unit handling.
-            generations = ("max_" + stem, name)
-            return tuple(
-                candidate
-                for generation in generations
-                for candidate in (
-                    (generation + unit, generation) if unit else (generation,)
-                )
-            )
+    if name.startswith("max_"):
+        unit = suffixes.get(name.removeprefix("max_"), "")
+        if unit:
+            return (name + unit, name)
     return (name,)

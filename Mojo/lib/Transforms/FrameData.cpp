@@ -49,7 +49,8 @@ struct CloneFrameArgs {
       SmallVector<ClonedFor> &clones = clonesOf[definingOp];
       auto existingClone =
           llvm::find_if(llvm::reverse(clones), [&](const ClonedFor &existing) {
-            return !frame.suspendBetween(existing.user, user);
+            return !frame.suspendBetween(existing.user, user) &&
+                   dominanceInfo.dominates(existing.clone, user);
           });
       Operation *clonedDefOp;
       if (existingClone == llvm::reverse(clones).end()) {
@@ -61,19 +62,11 @@ struct CloneFrameArgs {
           cloneFrameArgsOf(clonedDefOp);
       } else {
         clonedDefOp = existingClone->clone;
-        if (!dominanceInfo.dominates(clonedDefOp, user)) {
-          // We have two uses with no suspend between them where one does not
-          // dominate the other. This implies that the first instance of the
-          // usage is in a nested region.
-          Operation *parent = clonedDefOp->getParentOp();
-          while (!dominanceInfo.dominates(parent, user))
-            parent = parent->getParentOp();
-          clonedDefOp->moveBefore(parent);
-        }
       }
       use.set(clonedDefOp->getResult(0));
     }
   }
+
   /// A clone of a constant, and the op it was first cloned for.
   struct ClonedFor {
     Operation *user;

@@ -16,9 +16,9 @@ The Mojo kernel test
 (``max/kernels/test/gpu/quantization/test_swiglu_quantize_mxfp8_amd.mojo``)
 checks the fused kernel's bytes against the unfused chain and an fp64
 oracle. This test checks the Python side: ``GatedActivation("situ")``
-validation, the wrapper's AMD-only-MXFP8 format rules, its rank-2 output
-types, and its end-to-end bytes on MI355X against an independent NumPy
-oracle.
+validation, the wrapper's AMD format rules (MXFP4 and MXFP8 in, NVFP4
+out), its rank-2 output types, and its end-to-end bytes on MI355X against
+an independent NumPy oracle.
 """
 
 from __future__ import annotations
@@ -29,9 +29,12 @@ import torch
 from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.activation import GatedActivation
-from max.nn.legacy.kernels import swiglu_quantize_dynamic_block_scaled
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import (
+    quantize_dynamic_block_scaled,
+    swiglu_quantize_dynamic_block_scaled,
+)
+from max.nn.activation import GatedActivation
 
 SF_VECTOR_SIZE = 32
 BETA = 4.0
@@ -249,8 +252,9 @@ def test_swiglu_quantize_mxfp8_amd_matches_numpy_oracle(m: int, n: int) -> None:
     )
 
 
-def test_swiglu_quantize_amd_rejects_non_mxfp8_formats() -> None:
-    """On AMD the op runs MXFP8 only, with no per-tensor scale factor."""
+def test_swiglu_quantize_amd_rejects_nvfp4_and_bad_formats() -> None:
+    """On AMD the op runs MXFP4 and MXFP8 only, with no per-tensor scale
+    factor: NVFP4 (E4M3 scales) and a 16-element block stay rejected."""
     _needs_amd()
     device_ref = DeviceRef.GPU()
     with Graph(
@@ -261,12 +265,12 @@ def test_swiglu_quantize_amd_rejects_non_mxfp8_formats() -> None:
     ) as graph:
         gate_up = graph.inputs[0].tensor
         activation = GatedActivation("situ", alpha=BETA, limit=LINEAR_BETA)
-        with pytest.raises(ValueError, match="MXFP8 only"):
+        with pytest.raises(ValueError, match="float8_e8m0fnu for MXFP4/MXFP8"):
             swiglu_quantize_dynamic_block_scaled(
                 gate_up,
                 activation,
                 sf_vector_size=SF_VECTOR_SIZE,
-                scales_type=DType.float8_e8m0fnu,
+                scales_type=DType.float8_e4m3fn,
                 out_type=DType.uint8,
             )
         with pytest.raises(ValueError, match="sf_vector_size must be 32"):
@@ -277,7 +281,7 @@ def test_swiglu_quantize_amd_rejects_non_mxfp8_formats() -> None:
                 scales_type=DType.float8_e8m0fnu,
                 out_type=DType.float8_e4m3fn,
             )
-        with pytest.raises(ValueError, match="float8_e8m0fnu for MXFP8"):
+        with pytest.raises(ValueError, match="float8_e8m0fnu for MXFP4/MXFP8"):
             swiglu_quantize_dynamic_block_scaled(
                 gate_up,
                 activation,
@@ -295,3 +299,108 @@ def test_swiglu_quantize_amd_rejects_non_mxfp8_formats() -> None:
                 out_type=DType.float8_e4m3fn,
             )
         graph.output(gate_up)
+
+
+# One test node per shape, so each shape's single graph is built and
+# ``session.load``ed before its execute: the MEF record pass stops at the
+# first execute, and a loop over shapes would compile the later ones on the
+# GPU worker instead of replaying a recorded artifact.
+@pytest.mark.parametrize(
+    ("m", "n"),
+    [
+        (64, 384),  # 12 block scales per row: no width alignment to lean on
+        (8, 3072),  # TP8 decode rows at a 3072-wide activation half
+        (128, 4096),  # prefill rows at the widest half the benchmark sweeps
+    ],
+)
+def test_swiglu_quantize_amd_mxfp4_matches_unfused(m: int, n: int) -> None:
+    """Fused MXFP4 equals the unfused chain byte for byte.
+
+    The reference is the chain a model runs when the activation is not
+    fused: the activation as graph ops over fp32 (``silu(gate) * up``,
+    gated_activation_fn's recipe), rounded to bfloat16 once, then the
+    ungated MXFP4 quantize. Both graph outputs -- the packed nibbles and
+    every block scale -- must match exactly, so a wrong nibble order, a
+    swapped gate/up half, a scale read from the wrong column or a doubled
+    scale column each fails here. The reference is a different kernel, so
+    it cannot inherit a bug from the fused one.
+    """
+    _needs_amd()
+    device = Accelerator()
+    device_ref = DeviceRef(device.label, device.id)
+    session = InferenceSession(devices=[device])
+    with Graph(
+        "swiglu_quantize_amd_mxfp4",
+        input_types=[
+            TensorType(DType.bfloat16, shape=(m, 2 * n), device=device_ref)
+        ],
+    ) as graph:
+        gate_up = graph.inputs[0].tensor
+        fused_data, fused_scales = swiglu_quantize_dynamic_block_scaled(
+            gate_up,
+            GatedActivation("silu"),
+            sf_vector_size=SF_VECTOR_SIZE,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.uint8,
+        )
+        assert [int(d) for d in fused_data.shape] == [m, n // 2]
+        assert [int(d) for d in fused_scales.shape] == [
+            m,
+            n // SF_VECTOR_SIZE,
+        ]
+        assert fused_scales.rank == 2
+
+        gate = gate_up[:, :n]
+        up = gate_up[:, n:]
+        gate_f32 = gate.cast(DType.float32)
+        up_f32 = up.cast(DType.float32)
+        h = (gate_f32 * ops.sigmoid(gate_f32) * up_f32).cast(DType.bfloat16)
+        ref_data, ref_scales = quantize_dynamic_block_scaled(
+            h,
+            sf_vector_size=SF_VECTOR_SIZE,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.uint8,
+        )
+        graph.output(fused_data, fused_scales, ref_data, ref_scales)
+    model = session.load(graph)
+
+    gate_up_np = _gate_up_np(m, n, seed=m)
+    gate_up_t = torch.from_numpy(gate_up_np).to(torch.bfloat16)
+    got_data_buf, got_scales_buf, want_data_buf, want_scales_buf = (
+        model.execute(Buffer.from_dlpack(gate_up_t).to(device))
+    )
+    got_data = got_data_buf.view(DType.uint8).to_numpy()
+    got_scales = got_scales_buf.view(DType.uint8).to_numpy()
+    want_data = want_data_buf.view(DType.uint8).to_numpy()
+    want_scales = want_scales_buf.view(DType.uint8).to_numpy()
+    assert got_data.shape == want_data.shape == (m, n // 2)
+    assert (
+        got_scales.shape
+        == want_scales.shape
+        == (
+            m,
+            n // SF_VECTOR_SIZE,
+        )
+    )
+
+    # Every scale block: one byte per 32 elements of the row.
+    scale_diffs = np.argwhere(got_scales != want_scales)
+    if scale_diffs.size:
+        r, c = (int(x) for x in scale_diffs[0])
+        raise AssertionError(
+            f"M={m} N={n}: {len(scale_diffs)} of {got_scales.size} block"
+            f" scales differ, first at ({r}, {c}): fused"
+            f" {int(got_scales[r, c])} vs unfused {int(want_scales[r, c])}"
+        )
+    # Nibble-packed data: one byte per two elements, low nibble first.
+    data_diffs = np.argwhere(got_data != want_data)
+    if data_diffs.size:
+        r, c = (int(x) for x in data_diffs[0])
+        raise AssertionError(
+            f"M={m} N={n}: {len(data_diffs)} of {got_data.size} packed"
+            f" bytes differ, first at ({r}, {c}): fused"
+            f" {int(got_data[r, c])} vs unfused {int(want_data[r, c])}"
+        )
+    # A zero scale byte means a dead block; the ladder input has none.
+    assert np.count_nonzero(got_scales) > 0
+    print(f"M={m} N={n}: fused MXFP4 == unfused chain, byte for byte")

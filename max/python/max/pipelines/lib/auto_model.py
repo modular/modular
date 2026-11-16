@@ -40,6 +40,7 @@ from PIL import Image
 from transformers import AutoTokenizer as _HFAutoTokenizer
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
+from . import memory_ledger
 from .config import PipelineArgs, PipelineConfig
 from .generate import (
     GenerateIterator,
@@ -161,10 +162,12 @@ def _resolve(
     devices: str | None,
     device_graph_capture: bool,
     prefer_module_v3: bool,
+    eager: bool,
     config_overrides: Mapping[str, object],
 ) -> _ResolvedModel:
     """Checks :class:`AutoModel`'s arguments and resolves its config."""
     config_overrides = dict(config_overrides)
+    config_overrides["eager"] = eager
     if devices is not None:
         if "device_specs" in config_overrides:
             raise TypeError("Pass devices or device_specs, not both.")
@@ -320,6 +323,11 @@ class AutoModel:
             ``enable_overlap_scheduler=True`` is also passed.
         prefer_module_v3: Loads the architecture's ModuleV3 version, built
             with ``max.nn``, where it has one.
+        eager: Runs the decoder op by op instead of compiling it, so
+            ``pdb`` and ``print`` inside a module's ``forward()`` show real
+            values on every step. Each step is much slower, so use it for
+            debugging. It needs a ModuleV3 text generation architecture, on one
+            device.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names, such as ``device_specs`` or
             ``enable_prefix_caching``. They win over the debug defaults.
@@ -335,7 +343,11 @@ class AutoModel:
             ``device_graph_capture=True`` builds a pipeline that
             cannot capture graphs, or if an image generation model gets
             ``device_graph_capture=True`` or a ``max_batch_size`` other than
-            1.
+            1, or if ``eager=True`` with a config eager can't run, such as an
+            architecture without a ModuleV3 decoder, a task other than text
+            generation, more devices than eager runs on, device graph
+            capture, the overlap scheduler, LoRA, speculative decoding or
+            expert parallelism.
     """
 
     def __init__(
@@ -345,7 +357,8 @@ class AutoModel:
         max_batch_size: int = 1,
         devices: str | None = None,
         device_graph_capture: bool = False,
-        prefer_module_v3: bool = False,
+        prefer_module_v3: bool = True,
+        eager: bool = False,
         **config_overrides: object,
     ) -> None:
         self._load(
@@ -355,6 +368,7 @@ class AutoModel:
                 devices,
                 device_graph_capture,
                 prefer_module_v3,
+                eager,
                 config_overrides,
             )
         )
@@ -413,6 +427,7 @@ class AutoModel:
                 )
             start = time.monotonic()
             pipeline.warmup_graph_capture()
+            memory_ledger.check_capture(pipeline)
             _logger.info(
                 "Device graph capture warmup completed in %.2fs "
                 "(max_batch_size=%d).",

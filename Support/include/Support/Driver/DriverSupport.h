@@ -17,6 +17,7 @@
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
@@ -48,7 +49,8 @@ namespace M {
 /// Note that this function considers it an error if the given `path` does not
 /// end in a Mojo file extension (`.mojo`), even if the `path` refers
 /// to `stdin` ("-").
-ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
+MODULAR_CXX_EXPORT ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+openMojoInputFile(StringRef path);
 
 /// Resolve the absolute Mojo source file or package at the given path, or if an
 /// error occurs, return an error message.
@@ -56,7 +58,8 @@ ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
 /// Note that this function considers it an error if the given `path` does not
 /// end in a Mojo file extension (`.mojo`, `.mojoc`, or `.mojopkg`), even if
 /// the `path` refers to `stdin` ("-").
-ErrorOr<std::filesystem::path> resolveMojoInputFileOrPackage(StringRef path);
+MODULAR_CXX_EXPORT ErrorOr<std::filesystem::path>
+resolveMojoInputFileOrPackage(StringRef path);
 
 /// Returns the values of the positional arguments in `args`, in order. Each
 /// option table gives them its own `INPUT` ID, which shared code cannot name,
@@ -80,7 +83,7 @@ struct HelpTexts {
 };
 
 /// Additional driver state that is passed to each of the subcommand functions.
-struct State {
+struct MODULAR_CXX_EXPORT State {
   /// Initializes the driver state with the given program name and arguments.
   State(const char *programName, llvm::ArrayRef<const char *> arguments)
       : programName(programName), subcommand(nullptr), arguments(arguments) {}
@@ -167,7 +170,7 @@ struct State {
 
 /// A mapping from each subcommand to a callback function that encapsulates the
 /// logic of executing that subcommand.
-class SubcommandRegistry {
+class MODULAR_CXX_EXPORT SubcommandRegistry {
 public:
   /// A callback is a function that takes the driver `State` and returns an
   /// integer exit code.

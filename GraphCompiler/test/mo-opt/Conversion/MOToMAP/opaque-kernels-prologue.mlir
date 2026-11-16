@@ -1,5 +1,4 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" --mo-to-map | FileCheck %s
-// RUN: mo-opt %s --mo-to-map | FileCheck %s --check-prefix=DISABLED
 
 // CHECK-LABEL: mo.graph @gather
 // CHECK: %[[G:.*]] = map.iter.opaque
@@ -49,9 +48,3 @@ mo.graph @partial_fused(%a: !mo.tensor<[2, 2], f32>, %b: !mo.tensor<[2, 2], f32>
   %c = mo.custom [symbol = "map_lower_partial_fused_inputs", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[2, 2], f32>, !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
-
-// With advanced fusion disabled the pass is a no-op: the custom ops survive
-// and no map ops are produced.
-
-// DISABLED-NOT: map.iter.opaque
-// DISABLED: mo.custom

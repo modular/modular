@@ -76,15 +76,11 @@ from layout import (
     Coord,
     CoordLike,
     ComptimeInt,
-    Layout,
     TileTensor,
-    UNKNOWN_VALUE,
-    coord,
     coord,
     Idx,
 )
-from layout.tile_layout import RowMajorLayout, row_major
-from layout.tensor_core_async import tile_layout_k_major
+from layout.layout import RowMajorLayout, row_major
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.static_tuple import StaticTuple
@@ -1733,6 +1729,8 @@ struct TMATensorTile[
                         Int(coords[4]),
                     ),
                 )
+            case _:
+                pass
 
     @inline(.always)
     def async_multicast_load[
@@ -2821,9 +2819,9 @@ def _gather4_box_width[
     ``swizzle_bytes // sizeof(dtype)``, so that each gather4 call loads one
     swizzle-group-sized chunk of the row.
 
-    The caller iterates over column groups using
-    ``_gather4_num_col_groups`` which uses ``ceildiv`` to handle
-    non-divisible widths (TMA hardware zero-fills out-of-bounds elements).
+    The caller iterates over column groups with
+    ``ceildiv(tile_width, box_width)``; TMA hardware zero-fills out-of-bounds
+    elements.
 
     Parameters:
         dtype: Element data type.
@@ -2838,30 +2836,6 @@ def _gather4_box_width[
         return tile_width
     else:
         return swizzle_mode.bytes() // size_of[dtype]()
-
-
-def _gather4_num_col_groups[
-    dtype: DType,
-    tile_width: Int,
-    swizzle_mode: TensorMapSwizzle,
-]() -> Int:
-    """Returns the number of column groups for a gather4 load of a wide row.
-
-    Each column group loads ``box_width`` elements. The last group may extend
-    past the end of the row when ``tile_width`` is not a multiple of
-    ``box_width``; the TMA hardware zero-fills the out-of-bounds elements.
-
-    Parameters:
-        dtype: Element data type.
-        tile_width: Total number of elements per row in the global tensor.
-        swizzle_mode: TMA swizzle mode.
-
-    Returns:
-        ``ceildiv(tile_width, box_width)`` where ``box_width`` comes
-        from ``_gather4_box_width``.
-    """
-    comptime bw = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return ceildiv(tile_width, bw)
 
 
 @inline(.always)
@@ -2896,7 +2870,7 @@ def create_tma_tile_gather4[
     row).  The caller iterates over column groups using the ``col_idx``
     parameter of ``async_copy_gather4``::
 
-        for cg in range(_gather4_num_col_groups[dtype, tile_width, swizzle_mode]()):
+        for cg in range(ceildiv(tile_width, box_width)):
             tile.async_copy_gather4(dst, bar, col_idx=Int32(cg * box_width),
                                     row0, row1, row2, row3)
 
@@ -3459,7 +3433,7 @@ def create_split_tma[
         swizzle_mode,
     ],
 ) raises:
-    """Creates a TMA tensor tile assuming that the first dimension in global memory has `UNKNOWN_VALUE`.
+    """Creates a TMA tensor tile assuming that the first dimension in global memory is dynamic.
 
     This function creates a `TMATensorTile` that optionally splits the last dimension
     of the tensor into multiples of swizzle granularity. This functionality is currently
@@ -3536,7 +3510,7 @@ def create_split_tma[
         swizzle_mode,
     ],
 ) raises:
-    """Creates a TMA tensor tile assuming that the first two dimensions in global memory has `UNKNOWN_VALUE`.
+    """Creates a TMA tensor tile assuming that the first two dimensions in global memory are dynamic.
 
     This function creates a `TMATensorTile` that optionally splits the last dimension
     of the tensor into multiples of swizzle granularity. This functionality is currently
@@ -3831,11 +3805,6 @@ struct RaggedTMA3DTile[
         Self.dtype
     ]()
     """The number of columns that must be copied at a time due to the swizzle size."""
-
-    comptime layout: Layout = tile_layout_k_major[
-        Self.dtype, Self.BM, Self.BN, Self.swizzle_mode
-    ]()
-    """The unswizzled-smem layout copied to/from by this tma op."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]

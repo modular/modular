@@ -48,6 +48,7 @@ import std.format._utils as fmt
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.3")
 comptime MutSpan[
     T: AnyType,
     origin: MutOrigin,
@@ -62,6 +63,8 @@ Parameters:
     address_space: The address space of the span.
 """
 
+
+@stable(since="1.3")
 comptime ImmSpan[
     T: AnyType,
     origin: ImmOrigin,
@@ -173,6 +176,7 @@ struct Span[
     Boolable,
     Defaultable,
     DevicePassable where address_space == .GENERIC,
+    Equatable where conforms_to(T, Equatable) and address_space == .GENERIC,
     Hashable where conforms_to(T, Hashable) and address_space == .GENERIC,
     ImplicitlyCopyable,
     Iterable where address_space == .GENERIC,
@@ -298,11 +302,17 @@ struct Span[
         self._data = unsafe_ptr
         self._len = length
 
+    # Without this, building a mutable span counts as a write to the list and
+    # invalidates its existing pointers and views. This is safe because
+    # forming a span does not change the list or its elements.
+    @__unsafe_nested_origins_read_only
     @inline(.always)
+    @stable(since="1.3")
     @implicit
     def __init__(
         out self,
         ref[Self.origin] list: List[Self.T],
+        /,
     ):
         """Construct a `Span` from a `List`.
 
@@ -311,14 +321,16 @@ struct Span[
         """
         # TODO: This should carry the List's interior origin and should not
         # need a rebind.
-        self._data = rebind[type_of(self._data)](list.unsafe_ptr())
+        self._data = rebind[type_of(self._data)](list._storage_ptr())
         self._len = len(list)
 
     @inline(.always)
+    @stable(since="1.3")
     @implicit
     def __init__(
         out self,
         ref[Self.origin, Self.address_space] array: Array[Self.T, _],
+        /,
     ):
         """Construct a `Span` from an `Array`.
 
@@ -364,7 +376,7 @@ struct Span[
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
@@ -379,7 +391,7 @@ struct Span[
         Returns:
             A reference to the element at the given index.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
@@ -398,24 +410,25 @@ struct Span[
             "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
             " instead"
         )
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
     @inline(.always)
-    def __getitem__(self, slc: ContiguousSlice) -> Self:
+    @stable(since="1.3")
+    def __getitem__(self, slice: ContiguousSlice) -> Self:
         """Get a new span from a slice of the current span.
 
-        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        Aborts if `slice`'s start or end index is out of bounds (valid range is
         `0` to `len(self)`, inclusive), or if start is greater than end.
         Negative indices are not supported and always abort.
 
         Args:
-            slc: The slice specifying the range of the new subslice.
+            slice: The slice specifying the range of the new subslice.
 
         Returns:
             A new span that points to the same data as the current span.
         """
-        var start, end = check_slice_bounds(slc, len(self))
+        var start, end = check_slice_bounds(slice, len(self))
         return self._unchecked_subspan(start=start, end=end)
 
     @inline(.always)
@@ -472,6 +485,7 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline("builtin")
+    @stable(since="1.3")
     def __len__(self) -> Int:
         """Returns the length of the span. This is a known constant value.
 
@@ -586,6 +600,7 @@ struct Span[
             fmt.TypeNames[Self.T](),
         ).fields(write_fields)
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where (
@@ -657,7 +672,7 @@ struct Span[
             in undefined behavior.
             - This function does not support wraparound for negative indices.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
     @always_inline("builtin")
@@ -724,10 +739,50 @@ struct Span[
         """
         return len(self) > 0
 
-    # This decorator informs the compiler that indirect address spaces are not
-    # dereferenced by the method.
-    # TODO: replace with a safe model that checks the body of the method for
-    # accesses to the origin.
+    # TODO: This decorator informs the compiler that indirect origins are
+    # not dereferenced by the method. replace with a safe model that checks the
+    # body of the method for accesses to the origin.
+    # TODO: We require these first two overload of `__eq/ne__` to conform to the
+    # `Equatable` trait as the `__eq/ne__` signature must match exactly. Ideally
+    # we don't need overloads to have origins work correctly.
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __eq__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are equal in length and contain the same
+            elements, False otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__eq__(rhs=rebind[Generic](rhs_same))
+
+    @__unsafe_nested_origins_read_only
+    @inline(.always)
+    def __ne__(
+        self, rhs_same: Self
+    ) -> Bool where conforms_to(Self.T, Equatable) and Self._is_generic_as:
+        """Verify if span is not equal to another span with the same origin.
+
+        Args:
+            rhs_same: The span to compare against.
+
+        Returns:
+            True if the spans are not equal in length or contents, False
+            otherwise.
+        """
+        comptime Generic = Span[Self.T, Self.origin]
+        return rebind[Generic](self).__ne__(rhs=rebind[Generic](rhs_same))
+
+    # TODO: These follow two overloads of `__eq/ne__` are required so that we
+    # can compare `Span`s with different origins. Ideally we'd only need a
+    # single eq/ne method that handles origins and conforms to the `Equatable`
+    # trait properly.
     @__unsafe_nested_origins_read_only
     @__allow_legacy_custom_self_type
     def __eq__(
@@ -756,6 +811,7 @@ struct Span[
 
     @inline(.always)
     @__allow_legacy_custom_self_type
+    @__unsafe_nested_origins_read_only
     def __ne__(
         self: Span[Self.T, _], rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -899,7 +955,6 @@ struct Span[
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var middle = length // 2
-        var is_odd = length % 2 != 0
         var processed = 0
 
         comptime for i in range(len(widths)):
@@ -915,14 +970,12 @@ struct Span[
                     rhs_ptr.unsafe_store(lhs_v)
                     processed += w
 
-        if is_odd:
-            var value = ptr[unsafe_offset=middle + 1]
-            # Use an unsafe origin cast to silence the (correct) exclusivity error.
-            var middle_prev = ptr.unsafe_offset(middle - 1).unsafe_origin_cast[
-                MutAnyOrigin
-            ]()
-            ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
-            middle_prev.unsafe_write(value)
+        for i in range(processed, middle):
+            var lhs_ptr = ptr.unsafe_offset(i)
+            var rhs_ptr = ptr.unsafe_offset(length - 1 - i)
+            var lhs_v = lhs_ptr.unsafe_load()
+            lhs_ptr.unsafe_store(rhs_ptr.unsafe_load())
+            rhs_ptr.unsafe_store(lhs_v)
 
     @__allow_legacy_custom_self_type
     def apply[
@@ -1080,59 +1133,9 @@ struct Span[
 
         return Optional(Int(cursor)) if value == needle else None
 
-    @__allow_legacy_custom_self_type
-    def binary_search_by[
-        func: def(Self.T) thin -> Int,
-    ](self: Span[Self.T, _]) -> Optional[Int]:
-        """Finds an element using binary search with a custom comparison function.
-
-        The comparison function should return:
-        - A negative value if the element is less than the target
-        - Zero if the element matches the target
-        - A positive value if the element is greater than the target
-
-        Parameters:
-            func: A function that takes an element and returns an Int representing
-                  the comparison result.
-
-        Returns:
-            Returns the index of the matching element if found, None otherwise.
-
-        Notes:
-            This function assumes that `self` is sorted according to the ordering
-            defined by `func`. If not sorted, the result is unspecified.
-
-        Example:
-            ```mojo
-            var data: List[String] = ["a", "bb", "ccc"]
-            var span = Span(data)
-
-            # Search for "bb"
-            def cmp(elem: String) -> Int:
-                if elem < "bb":
-                    return -1
-                elif elem > "bb":
-                    return 1
-                else:
-                    return 0
-
-            var index = span.binary_search_by[cmp]()
-            if case .Some(i) = index:
-                print("Found at index: ", i)
-            else:
-                print("Not found")
-            ```
-        """
-
-        def _cmp(value: Self.T) {var} -> Int:
-            return func(value)
-
-        return self.binary_search_by(_cmp)
-
-    @__allow_legacy_custom_self_type
     def binary_search_by[
         FuncType: def(Self.T) -> Int,
-    ](self: Span[Self.T, _], func: FuncType) -> Optional[Int]:
+    ](self, func: FuncType) -> Optional[Int] where Self._is_generic_as:
         """Finds an element using binary search with a custom comparison function.
 
         The comparison function should return:
@@ -1159,12 +1162,12 @@ struct Span[
             def main():
                 var data: List[String] = ["a", "bb", "ccc"]
                 var span = Span(data)
+                var target = "bb"
 
-                # Search for "bb"
-                def cmp(elem: String) {} -> Int:
-                    if elem < "bb":
+                def cmp(elem: String) {target} -> Int:
+                    if elem < target:
                         return -1
-                    elif elem > "bb":
+                    elif elem > target:
                         return 1
                     else:
                         return 0
@@ -1177,15 +1180,16 @@ struct Span[
             ```
         """
 
+        var span = rebind[Span[Self.T, Self.origin]](self)
         var cursor = 0
-        var length = len(self)
+        var length = len(span)
         var cmp_result = 1  # Initialize to non-zero value
 
         while length > 0:
             var half = length >> Int(length > 1)
             length -= half
             var mid_idx = cursor + half - 1
-            cmp_result = func(self.unsafe_get(mid_idx))
+            cmp_result = func(span.unsafe_get(mid_idx))
 
             # If cmp_result < 0, search in the right half
             cursor += splat(cmp_result < 0) & half

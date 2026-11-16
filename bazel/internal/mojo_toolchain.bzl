@@ -62,6 +62,9 @@ def _mojo_toolchain_impl(ctx):
         runtime_env["MODULAR_DRIVER_PLUGINS"] = plugin
         extra_runfiles.append(ctx.file.driver_plugin)
 
+        # The plugin's shared library deps, which its RPATH finds in runfiles.
+        extra_runfiles.extend(ctx.attr.driver_plugin[DefaultInfo].default_runfiles.files.to_list())
+
     return [
         platform_common.ToolchainInfo(
             mojo_toolchain_info = MojoToolchainInfo(

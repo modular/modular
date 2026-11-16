@@ -18,7 +18,7 @@ from std.collections import Array
 from std.memory import dealloc, unsafe_memset
 
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import (
+from layout.layout import (
     row_major,
     col_major,
     blocked_product,

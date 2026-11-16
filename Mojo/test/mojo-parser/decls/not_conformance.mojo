@@ -59,7 +59,7 @@ struct WhereFalseSpelling(Movable where False):
 # `Deinitable` is injected unconditionally, so opting out makes the struct
 # linear -- the same outcome the `where False` spelling reaches.
 # CHECK-LABEL: lit.struct.decl @NotDeinitable
-# CHECK-SAME: does not conform to 'Deinitable' and must be explicitly destroyed
+# CHECK: } <{{.*}}does not conform to 'Deinitable' and must be explicitly destroyed
 struct NotDeinitable(not Deinitable):
     var x: Int
 
@@ -148,7 +148,7 @@ struct NotCompositionWithReason(not (Base & Other) else "not a plain payload"):
 # the message for abandoning one -- the replacement for `@explicit_destroy`.
 # See `explicit_destroy_errors.mojo` for the diagnostic it reaches.
 # CHECK-LABEL: lit.struct.decl @NotDeinitableWithReason
-# CHECK-SAME: call `close()` instead
+# CHECK: } <{{.*}}call `close()` instead
 struct NotDeinitableWithReason(not Deinitable else "call `close()` instead"):
     var x: Int
 

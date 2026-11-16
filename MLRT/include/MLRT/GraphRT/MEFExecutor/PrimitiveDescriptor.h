@@ -18,6 +18,7 @@
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -156,7 +157,8 @@ public:
 
 /// This is the primitive descriptor you can actually run - it holds the
 /// AsyncValue objects that are needed to run a primitive.
-class RunnablePrimitiveDescriptor : public PrimitiveDescriptor {
+class MODULAR_CXX_EXPORT RunnablePrimitiveDescriptor
+    : public PrimitiveDescriptor {
 public:
   CPUDevice &getRuntime() const { return cpuDevice; }
 

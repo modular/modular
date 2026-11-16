@@ -35,7 +35,8 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
                                          bool /*acceptAsync*/) {
   // Parser doesn't support async concretization, so acceptAsync is ignored -
   // we always return the generator.
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
+  auto typeParam =
+      sugarDynCast<TypeParamAttr>(KGEN::stripIdentityWrappers(typeValue));
   if (!typeParam)
     return failure();
 
@@ -74,27 +75,19 @@ ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol,
+    StringAttr witnessName) {
   auto *astDecl = static_cast<ASTDecl *>(resolved.handle);
 
   // Typically, this is a StructDeclOp created by the parser.
-  if (isa<StructASTDecl>(astDecl)) {
-    auto conformanceDecls =
-        astDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
-    if (conformanceDecls.empty())
-      return nullptr;
-    // TODO: we might need to allow multiple conformance ops for parametric
-    // traits, and we need to filter it here.
-    assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
-    auto &conformDecl = cast<ConformanceASTDecl>(*conformanceDecls.front());
-    if (failed(shared.declResolver->resolveBody(conformDecl,
-                                                conformDecl.getLoc())))
-      return nullptr;
-
-    return conformDecl.getOp();
-  }
-
-  return nullptr;
+  auto *structDecl = dyn_cast<StructASTDecl>(astDecl);
+  if (!structDecl)
+    return nullptr;
+  ConformanceASTDecl *conformDecl = structDecl->lookupConformance(traitSymbol);
+  if (!conformDecl ||
+      failed(resolveConformanceMember(*conformDecl, witnessName)))
+    return nullptr;
+  return conformDecl->getOp();
 }
 
 void ParserEvaluationContext::withEvaluator(

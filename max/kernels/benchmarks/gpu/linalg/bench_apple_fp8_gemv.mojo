@@ -54,7 +54,7 @@ from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp8_gemv import (

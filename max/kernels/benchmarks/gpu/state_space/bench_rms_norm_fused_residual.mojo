@@ -35,7 +35,7 @@ def _median(times: List[Float64]) -> Float64:
     return ordered[middle]
 
 
-def _bench[dtype: DType](ctx: DeviceContext, rows: Int, cols: Int) raises:
+def _bench[dtype: DType](ctx: DeviceContext[], rows: Int, cols: Int) raises:
     var elements = rows * cols
     var input_h = ctx.enqueue_create_host_buffer[dtype](elements)
     var residual_h = ctx.enqueue_create_host_buffer[dtype](elements)
@@ -95,7 +95,7 @@ def _bench[dtype: DType](ctx: DeviceContext, rows: Int, cols: Int) raises:
         )
 
     def launch(
-        lctx: DeviceContext,
+        lctx: DeviceContext[],
     ) raises {
         imm input_fn,
         imm residual_fn,

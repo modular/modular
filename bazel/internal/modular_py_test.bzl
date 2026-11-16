@@ -91,7 +91,10 @@ def _wire_precompile(
         pytest_args: The arguments the consumer passes to pytest.
         deps: The consumer's deps.
         data: The consumer's data.
-        env: The consumer's env.
+        env: The consumer's env, including whether it reads the shared
+            HuggingFace cache. A test that resolves a model by name has to
+            find it in the same cache while recording, or the record run
+            looks in an empty one.
         mojo_deps: The consumer's `mojo_deps`.
         imports: The consumer's import paths.
         gpu_constraints: The consumer's GPU requirements, which say which arch
@@ -177,7 +180,6 @@ def _wire_precompile(
         strip_env = _RECORD_STRIP_ENV,
         test_label = "//{}:{}".format(native.package_name(), test_name),
         expansion_targets = data,
-        exec_properties = get_resources_exec_properties(test_name, test = False),
         tags = ["manual"],
         testonly = True,
         target_compatible_with = gpu_constraints + target_compatible_with + _NO_RECORD,
@@ -337,9 +339,9 @@ def modular_py_test(
     default_exec_properties = get_default_exec_properties(tags, gpu_constraints)
     extra_env |= get_default_test_env(exec_properties)
 
-    if "requires-network" in tags:
-        # Assume networking is used for huggingface and add the cache
-        extra_env |= {"HF_ESCAPES_SANDBOX": "1"}
+    # Assume networking is used for huggingface and add the cache
+    hf_env = {"HF_ESCAPES_SANDBOX": "1"} if "requires-network" in tags else {}
+    extra_env |= hf_env
 
     test_srcs = [src for src in srcs if src.split("/")[-1].startswith("test_")]
     non_test_srcs = [src for src in srcs if not src.split("/")[-1].startswith("test_")]
@@ -428,7 +430,7 @@ def modular_py_test(
                     pytest_args = final_args,
                     deps = deps,
                     data = data,
-                    env = env,
+                    env = hf_env | env,
                     mojo_deps = mojo_deps,
                     imports = imports,
                     gpu_constraints = gpu_constraints,
@@ -447,7 +449,7 @@ def modular_py_test(
                 ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
                 shard_count = n_shards,
                 srcs = test_srcs_with_runner,
-                exec_properties = default_exec_properties | get_resources_exec_properties(test_name, test = True) | exec_properties,
+                exec_properties = default_exec_properties | get_resources_exec_properties(test_name) | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with + per_test_target_compatible_with.get(src, []),
                 tags = tags + get_resources_tags(test_name) + per_test_tags.get(src, []) + replay.tags,
                 imports = imports,
@@ -484,7 +486,7 @@ def modular_py_test(
                 pytest_args = final_args,
                 deps = deps,
                 data = data,
-                env = env,
+                env = hf_env | env,
                 mojo_deps = mojo_deps,
                 imports = imports,
                 gpu_constraints = gpu_constraints,
@@ -506,7 +508,7 @@ def modular_py_test(
             ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []) + replay.deps,
             shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
-            exec_properties = default_exec_properties | get_resources_exec_properties(name, test = True) | exec_properties,
+            exec_properties = default_exec_properties | get_resources_exec_properties(name) | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
             tags = tags + get_resources_tags(name) + replay.tags,
             imports = imports,
@@ -526,7 +528,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ] + ([_PLUGIN] if precompile_mefs else []),
             ignore_unresolved_imports = ignore_unresolved_imports,
-            target_compatible_with = select({
+            target_compatible_with = target_compatible_with + select({
                 # No point in running these, causes "error replanting symlinks" failures
                 "//:asan": ["@platforms//:incompatible"],
                 "//:ubsan": ["@platforms//:incompatible"],

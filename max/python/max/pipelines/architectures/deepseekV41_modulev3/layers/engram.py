@@ -15,7 +15,7 @@
 The V4.1 Engram mechanism, as one shared ``engram`` subgraph that runs before
 layers ``engram_layer_ids`` (1 and 14 in the real checkpoint):
 
-1. ``mo.engram.hash_gather`` -- main's existing graph API, driven through
+1. ``engram.hash_gather`` -- main's existing graph API, driven through
    :class:`~...deepseekV41.layers.engram_lookup.EngramLookup` -- hashes the
    n-grams over the compressed token map and gathers FP8 rows out of the
    per-layer pinned host tables, producing this layer's MXFP8 operand
@@ -60,7 +60,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )
@@ -95,7 +95,7 @@ def _hash_gather(
     *,
     lookup: EngramLookup,
 ) -> tuple[TensorValue, TensorValue]:
-    """Runs main's ``mo.engram.hash_gather`` and stacks both layers' operands.
+    """Runs main's ``engram.hash_gather`` and stacks both layers' operands.
 
     A free function wrapped in ``F.functional`` so that under TP,
     ``call_on_mesh`` runs it once per device: each rank embeds its own copy
@@ -185,9 +185,9 @@ def _gate(
     alive: TensorValue,
     epsilon: float,
 ) -> TensorValue:
-    """Runs main's ``mo.engram.gate_masked`` kernel, as V2's ``Engram`` does."""
+    """Runs main's ``engram.gate_masked`` kernel, as V2's ``Engram`` does."""
     return ops.custom(
-        "mo.engram.gate_masked",
+        "engram.gate_masked",
         device=hidden.device,
         values=[hidden, kv, q_weight, k_weight, alive],
         out_types=[hidden.type],
@@ -255,7 +255,7 @@ class Engram(Module[..., list[Tensor]]):
     """The Engram subgraph body over the operand row.
 
     The hash and gather run through main's ``EngramLookup``
-    (``mo.engram.hash_gather``); the token map is a constructor argument,
+    (``engram.hash_gather``); the token map is a constructor argument,
     embedded as a trace-time constant like every other hash constant.
 
     Args:

@@ -1,6 +1,6 @@
 // RUN: mo-opt --mogg-import-packages --mo-to-map --map-outline-structured-kernel-bodies --map-to-mogg --mogg-to-mgp %s | FileCheck %s
 
-// CHECK-LABEL: mgp.model @call_subgraph subgraph : mof
+// CHECK-LABEL: mgp.model @call_subgraph subgraph
 // CHECK-SAME: devices [#M.device_ref<"cpu", 0>]
 // CHECK: } execute (
 

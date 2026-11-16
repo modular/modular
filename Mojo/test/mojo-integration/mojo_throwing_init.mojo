@@ -64,7 +64,7 @@ def main():
     # CHECK-NEXT: done
     try:
         var m = MemType1(42)
-        var x = PartialInitType(3, m)
+        _ = PartialInitType(3, m)
     except e:
         print(e)
 

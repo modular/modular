@@ -1250,13 +1250,9 @@ def _matmul_qint4[
     )
     var a_scale_base = alloc(AllocLayout[Float32](length=M * k_groups))
 
-    var a_quant_ptr: MutPointer[
-        Scalar[aq_type], origin_of(a_quant_base._alloc)
-    ] = a_quant_base.unsafe_ptr()
+    var a_quant_ptr = a_quant_base.unsafe_ptr()
     var a_quant = TileTensor(a_quant_ptr, row_major((M, K)))
-    var a_scale_ptr: MutPointer[
-        Float32, origin_of(a_scale_base._alloc)
-    ] = a_scale_base.unsafe_ptr()
+    var a_scale_ptr = a_scale_base.unsafe_ptr()
     var a_scale = TileTensor(a_scale_ptr, row_major((M, k_groups)))
 
     kernel.quantize_a_buffer[group_size](a, a_quant, a_scale)

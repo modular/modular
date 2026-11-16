@@ -536,6 +536,34 @@ def fuse_shared_expert_gate_up(out: dict[str, WeightData], shared: str) -> None:
         )
 
 
+def fuse_compressor_projections(
+    out: dict[str, WeightData], compressor: str
+) -> None:
+    """``{compressor}.wkv`` (+ ``wgate``) -> ``{compressor}.proj``, in place.
+
+    Concatenates rows ``[wkv; wgate]``, the order of the compressor's raw
+    input. A state dict without ``wkv`` is untouched.
+
+    Raises:
+        ValueError: If ``wkv`` and ``wgate`` differ in dtype.
+    """
+    wkv = out.pop(f"{compressor}.wkv.weight", None)
+    if wkv is None:
+        return
+    parts = [wkv]
+    wgate = out.pop(f"{compressor}.wgate.weight", None)
+    if wgate is not None:
+        if wgate.dtype != wkv.dtype:
+            raise ValueError(f"{compressor}: wkv and wgate differ in dtype")
+        parts.append(wgate)
+    name = f"{compressor}.proj.weight"
+    out[name] = with_dtype(
+        np.concatenate([_as_same_width_bits(p) for p in parts], axis=0),
+        wkv.dtype,
+        name,
+    )
+
+
 def rewire_trunk_state_dict(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
@@ -543,7 +571,8 @@ def rewire_trunk_state_dict(
 
     Prefixes ``embed`` and layers with ``trunk.``, renames ``engram`` to
     ``engram_fn``, and fuses the query projections
-    (:func:`_rewire_attention_projections`) and shared-expert ``w1``/``w3``
+    (:func:`_rewire_attention_projections`), the compressor projections
+    (:func:`fuse_compressor_projections`) and shared-expert ``w1``/``w3``
     (:func:`fuse_shared_expert_gate_up`). Takes no ``mtp.*`` tensors.
     """
     layer_ids = sorted(
@@ -556,6 +585,7 @@ def rewire_trunk_state_dict(
     out = dict(state_dict)
     for layer in layer_ids:
         _rewire_attention_projections(out, f"layers.{layer}.attn")
+        fuse_compressor_projections(out, f"layers.{layer}.attn.compressor")
         _fill_gate_bias_vl(out, f"layers.{layer}.ffn.gate")
         fuse_shared_expert_gate_up(out, f"layers.{layer}.ffn.shared_experts")
 

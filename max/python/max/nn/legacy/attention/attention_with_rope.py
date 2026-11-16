@@ -29,25 +29,25 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.quant_config import QuantConfig
-
-from ..clamp import clamp
-from ..comm import Allreduce
-from ..kernels import (
+from max.nn._graph_ops import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul_quantized,
     rope_split_store_ragged,
     unfused_qkv_ragged_matmul_gguf_quantized,
 )
-from ..kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import QuantConfig
+
+from ..clamp import clamp
+from ..comm import Allreduce
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import RotaryEmbedding
 from ..stacked_linear import StackedLinear
 from .interfaces import DistributedAttentionImpl
-from .mask_config import MHAMaskVariant
 
 
 class AttentionWithRope(Module, Shardable):
@@ -418,11 +418,12 @@ class AttentionWithRope(Module, Shardable):
         assert k_is is not None
         assert v_is is not None
 
-        return ops.max(
+        stacked = self.quant_config.per_tensor_scale(
             ops.concat(
                 (q_is.reshape((1,)), k_is.reshape((1,)), v_is.reshape((1,)))
             )
-        ).reshape(())
+        )
+        return ops.max(stacked).reshape(())
 
     @property
     def qkv_weight_scale(self) -> TensorValue:
@@ -489,7 +490,7 @@ class AttentionWithRope(Module, Shardable):
         assert k_ws2 is not None
         assert v_ws2 is not None
 
-        return ops.max(
+        stacked = self.quant_config.per_tensor_scale(
             ops.concat(
                 (
                     q_ws2.reshape((1,)),
@@ -497,7 +498,8 @@ class AttentionWithRope(Module, Shardable):
                     v_ws2.reshape((1,)),
                 )
             )
-        ).reshape(())
+        )
+        return ops.max(stacked).reshape(())
 
     def __call__(
         self,

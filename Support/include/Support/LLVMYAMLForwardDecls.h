@@ -22,6 +22,8 @@
 #ifndef SUPPORT_LLVM_YAML_FORWARD_DECLS_H
 #define SUPPORT_LLVM_YAML_FORWARD_DECLS_H
 
+#include "Support/SymbolExport.h"
+
 namespace llvm {
 class StringRef;
 class raw_ostream;
@@ -47,7 +49,7 @@ enum class QuotingType;
   namespace llvm {                                                             \
   namespace yaml {                                                             \
   template <>                                                                  \
-  struct MappingTraits<Type> {                                                 \
+  struct MODULAR_CXX_EXPORT MappingTraits<Type> {                              \
     static void mapping(IO &IO, Type &Obj);                                    \
   };                                                                           \
   }                                                                            \
@@ -57,7 +59,7 @@ enum class QuotingType;
   namespace llvm {                                                             \
   namespace yaml {                                                             \
   template <>                                                                  \
-  struct ScalarEnumerationTraits<Type> {                                       \
+  struct MODULAR_CXX_EXPORT ScalarEnumerationTraits<Type> {                    \
     static void enumeration(IO &io, Type &Value);                              \
   };                                                                           \
   }                                                                            \
@@ -69,7 +71,7 @@ enum class QuotingType;
   namespace llvm {                                                             \
   namespace yaml {                                                             \
   template <>                                                                  \
-  struct ScalarTraits<Type, void> {                                            \
+  struct MODULAR_CXX_EXPORT ScalarTraits<Type, void> {                         \
     static void output(const Type &Value, void *ctx, raw_ostream &Out);        \
     static StringRef input(StringRef Scalar, void *ctxt, Type &Value);         \
     static QuotingType mustQuote(StringRef);                                   \

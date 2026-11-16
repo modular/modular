@@ -61,17 +61,31 @@ from unittest import mock
 
 import pytest
 import torch
-from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    accelerator_api,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
+from max.graph import (
+    DeviceRef,
+    Graph,
+    Shape,
+    ShardingStrategy,
+    TensorType,
+    ops,
+)
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.ep_config import EPConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer
 from max.nn.legacy.comm.ep.ep_manager import _plan_fused_moe_workspace
 from max.nn.legacy.layer import LayerList, Module
 from max.nn.legacy.moe import MoEQuantized
 from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -328,6 +342,7 @@ def _build_arm(
     expect_ready: bool | None = None,
     after_init: Callable[[EPConfig], None] | None = None,
     ep_init_from: EPCommInitializer | None = None,
+    count_expert_load: bool = False,
 ) -> tuple[Model, EPCommInitializer, str]:
     """Builds one arm. ``fused`` requests the fused path at EP init, which
     must then be ready unless ``expect_ready`` says otherwise.
@@ -337,7 +352,8 @@ def _build_arm(
     which the fused path does not do). ``after_init`` edits the config after
     EP init, before the graph is built. ``ep_init_from`` builds the model on
     an existing EP instance (its buffers and workspace) instead of a new one,
-    selecting the fused path only if ``fused``."""
+    selecting the fused path only if ``fused``. ``count_expert_load`` adds
+    the EPLB expert-load tally and gives each layer its index."""
     quant = _quant_config(fmt)
     dtype = DType.uint8 if fmt == "nvfp4" else DType.float8_e4m3fn
     ep_config = EPConfig(
@@ -360,6 +376,8 @@ def _build_arm(
         fused_shared_expert=(fmt == "mxfp8" and not fused and shared),
         fuse_ffn_combine_send=_ship_combine_send(fmt),
         moe_dim=MOE_DIM,
+        eplb_count_expert_load=count_expert_load,
+        num_moe_layers=n_layers if count_expert_load else 0,
     )
     if ep_init_from is None:
         ep_comm_init = EPCommInitializer(ep_config)
@@ -448,8 +466,18 @@ def _build_arm(
         ep_batch_manager.fetch_buffers(graph.inputs[N_DEVICES:])
         # Two chained MoE layers (same weights): consecutive fused launches
         # on one shared workspace, as every layer of a model sees them.
-        for shards in layer_shards:
-            xs = forward_moe_sharded_layers(shards, xs)
+        for layer_idx, shards in enumerate(layer_shards):
+            layer_idx_per_device = (
+                [
+                    ops.constant([layer_idx], DType.int32, device=d)
+                    for d in devices_ref
+                ]
+                if count_expert_load
+                else None
+            )
+            xs = forward_moe_sharded_layers(
+                shards, xs, None, layer_idx_per_device
+            )
         graph.output(*xs)
 
     ir = str(graph)
@@ -634,6 +662,69 @@ def test_ep2_ship_reference_repeats(fmt: str, layers: int) -> None:
             f" {N_GENERATIONS} generations",
             flush=True,
         )
+
+
+@_needs_ep2[0]
+@_needs_ep2[1]
+@_needs_ep2[2]
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep2_fused_counts_expert_load_like_shipping(fmt: str) -> None:
+    """The fused MoE adds the same EPLB expert-load counts as the shipping chain.
+
+    The fused MoE counts in its own arrival wait, not the shipping dispatch's,
+    so it is checked against the shipping chain (whose tally
+    ``test_ep_expert_load.py`` checks against host-computed routes): same
+    weights, routes and inputs give the same per-(layer, local expert) running
+    totals, over every cell and generation.
+    """
+    devices = [Accelerator(i) for i in range(N_DEVICES)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+    session = InferenceSession(devices=devices)
+    wrapped = _weights(fmt)
+    shared = fmt == "nvfp4"
+    ship, ship_init, _ = _build_arm(
+        fmt,
+        False,
+        wrapped,
+        session,
+        devices_ref,
+        "SHIP_EL",
+        shared=shared,
+        count_expert_load=True,
+    )
+    fused, fused_init, _ = _build_arm(
+        fmt,
+        True,
+        wrapped,
+        session,
+        devices_ref,
+        "FULL_EL",
+        shared=shared,
+        count_expert_load=True,
+    )
+    tokens = 0
+    for cell, lengths in CELLS.items():
+        for gen in range(N_GENERATIONS):
+            xs = [
+                Buffer.from_dlpack(x).to(devices[i])
+                for i, x in enumerate(_inputs(lengths, gen, f"{fmt}{cell}"))
+            ]
+            ship.execute(*xs, *ship_init.model_inputs())
+            fused.execute(*xs, *fused_init.model_inputs())
+            tokens += sum(lengths)
+    for d in devices:
+        d.synchronize()
+
+    ship_load = [b.to(CPU()).to_numpy() for b in ship_init.expert_load]
+    fused_load = [b.to(CPU()).to_numpy() for b in fused_init.expert_load]
+    for i in range(N_DEVICES):
+        assert (ship_load[i] == fused_load[i]).all(), (
+            f"{fmt} rank {i}: fused tally {fused_load[i].tolist()} != shipping"
+            f" {ship_load[i].tolist()}"
+        )
+    # Every token picks TOP_K experts in every layer.
+    per_layer = sum(t.sum(axis=1) for t in fused_load)
+    assert per_layer.tolist() == [tokens * TOP_K] * N_LAYERS
 
 
 @_needs_ep2[0]

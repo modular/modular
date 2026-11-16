@@ -19,8 +19,8 @@ from max.gpu.host import DeviceContext
 from max.gpu import block_idx, thread_idx
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from layout import Coord, Layout, TileTensor, coord, row_major
-from layout.tile_layout import Layout as TileLayout
+from layout import Coord, TileTensor, coord, row_major
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange, random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -42,12 +42,12 @@ def test_tma_load_kernel[
     dtype: DType,
     layout: Layout,
     tile_shape: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
     dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
-        type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
+        type_of(row_major[layout.static_shape[0], layout.static_shape[1]]()),
         dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
@@ -56,14 +56,10 @@ def test_tma_load_kernel[
     comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
+    comptime __tile_layout = row_major[tileM, tileN]()
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
-    ](
-        row_major[
-            __tile_layout.shape[0].value(), __tile_layout.shape[1].value()
-        ]()
-    )
+    ](row_major[__tile_layout.static_shape[0], __tile_layout.static_shape[1]]())
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -94,12 +90,12 @@ def test_tma_multiple_loads_kernel[
     dtype: DType,
     layout: Layout,
     tile_shape: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
     dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
-        type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
+        type_of(row_major[layout.static_shape[0], layout.static_shape[1]]()),
         dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, tile_shape],
@@ -108,17 +104,13 @@ def test_tma_multiple_loads_kernel[
     comptime tileN = Int(tile_shape.element_types[1].static_value)
     comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
-    comptime N = layout.shape[1].value()
+    comptime N = layout.static_shape[1]
     comptime num_iters = ceildiv(N, tileN)
 
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
+    comptime __tile_layout = row_major[tileM, tileN]()
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
-    ](
-        row_major[
-            __tile_layout.shape[0].value(), __tile_layout.shape[1].value()
-        ]()
-    )
+    ](row_major[__tile_layout.static_shape[0], __tile_layout.static_shape[1]]())
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -155,15 +147,15 @@ def test_tma_load_row_major[
     tile_layout: Layout,
     load_along_last_dim: Bool = False,
 ](ctx: DeviceContext) raises:
-    comptime M = src_layout.shape[0].value()
-    comptime N = src_layout.shape[1].value()
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime M = src_layout.static_shape[0]
+    comptime N = src_layout.static_shape[1]
+    comptime tileM = tile_layout.static_shape[0]
+    comptime tileN = tile_layout.static_shape[1]
     comptime M_roundup = align_up(M, tileM)
     comptime N_roundup = align_up(N, tileN)
 
     var src = HostDeviceTileTensor[dtype](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
     var dst = HostDeviceTileTensor[dtype](
@@ -190,7 +182,7 @@ def test_tma_load_row_major[
     comptime if load_along_last_dim:
         comptime kernel = test_tma_multiple_loads_kernel[
             type_of(tma_tensor).dtype,
-            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            row_major[M_roundup, N_roundup](),  # dst layout
             type_of(tma_tensor).tile_shape,  # tile shape
             __thread_layout,  # thread layout,
             dst_origin=origin_of(dst),
@@ -204,7 +196,7 @@ def test_tma_load_row_major[
     else:
         comptime kernel = test_tma_load_kernel[
             type_of(tma_tensor).dtype,
-            Layout.row_major(M_roundup, N_roundup),  # dst layout
+            row_major[M_roundup, N_roundup](),  # dst layout
             type_of(tma_tensor).tile_shape,  # tile shape
             __thread_layout,  # thread layout,
             dst_origin=origin_of(dst),
@@ -241,27 +233,23 @@ def test_tma_async_store_kernel[
     dtype: DType,
     tile_shape_param: Coord,
     desc_shape_param: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
     layout: Layout,
     src_origin: MutOrigin,
 ](
     tma_tile: TMATensorTile[dtype, tile_shape_param, desc_shape_param],
     src: TileTensor[
         dtype,
-        type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
+        type_of(row_major[layout.static_shape[0], layout.static_shape[1]]()),
         src_origin,
     ],
 ):
     comptime tileM = Int(tile_shape_param[0])
     comptime tileN = Int(tile_shape_param[1])
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
+    comptime __tile_layout = row_major[tileM, tileN]()
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
-    ](
-        row_major[
-            __tile_layout.shape[0].value(), __tile_layout.shape[1].value()
-        ]()
-    )
+    ](row_major[__tile_layout.static_shape[0], __tile_layout.static_shape[1]]())
 
     var src_tile = src.tile[tileM, tileN](Coord(block_idx.y, block_idx.x))
     copy_dram_to_sram[thread_layout](tile, src_tile)
@@ -280,29 +268,25 @@ def test_tma_async_store_kernel[
 def test_tma_async_multiple_store_kernel[
     dtype: DType,
     tile_shape_param: Coord,
-    thread_layout: TileLayout,
+    thread_layout: Layout,
     layout: Layout,
     src_origin: MutOrigin,
 ](
     tma_tile: TMATensorTile[dtype, tile_shape_param],
     src: TileTensor[
         dtype,
-        type_of(row_major[layout.shape[0].value(), layout.shape[1].value()]()),
+        type_of(row_major[layout.static_shape[0], layout.static_shape[1]]()),
         src_origin,
     ],
 ):
     comptime tileM = Int(tile_shape_param[0])
     comptime tileN = Int(tile_shape_param[1])
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
+    comptime __tile_layout = row_major[tileM, tileN]()
     var tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
-    ](
-        row_major[
-            __tile_layout.shape[0].value(), __tile_layout.shape[1].value()
-        ]()
-    )
+    ](row_major[__tile_layout.static_shape[0], __tile_layout.static_shape[1]]())
 
-    comptime N = layout.shape[1].value()
+    comptime N = layout.static_shape[1]
     comptime num_iters = ceildiv(N, tileN)
 
     for i in range(num_iters):
@@ -328,19 +312,19 @@ def test_tma_async_store[
     dst_layout: Layout,
     load_along_last_dim: Bool = False,
 ](ctx: DeviceContext) raises:
-    comptime src_M = src_layout.shape[0].value()
-    comptime src_N = src_layout.shape[1].value()
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
-    comptime dst_M = dst_layout.shape[0].value()
-    comptime dst_N = dst_layout.shape[1].value()
+    comptime src_M = src_layout.static_shape[0]
+    comptime src_N = src_layout.static_shape[1]
+    comptime tileM = tile_layout.static_shape[0]
+    comptime tileN = tile_layout.static_shape[1]
+    comptime dst_M = dst_layout.static_shape[0]
+    comptime dst_N = dst_layout.static_shape[1]
 
     var src = HostDeviceTileTensor[.float32](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
     var dst = HostDeviceTileTensor[.float32](
-        row_major[dst_layout.shape[0].value(), dst_layout.shape[1].value()](),
+        row_major[dst_layout.static_shape[0], dst_layout.static_shape[1]](),
         ctx,
     )
     arange(src.host_tensor(), 1)
@@ -416,22 +400,22 @@ def test_tma_loads_two_buffers_kernel[
     b_layout: Layout,
     a_tile_shape: Coord,
     b_tile_shape: Coord,
-    a_thread_layout: TileLayout,
-    b_thread_layout: TileLayout,
+    a_thread_layout: Layout,
+    b_thread_layout: Layout,
     a_dst_origin: MutOrigin,
     b_dst_origin: MutOrigin,
 ](
     a_dst: TileTensor[
         dtype,
         type_of(
-            row_major[a_layout.shape[0].value(), a_layout.shape[1].value()]()
+            row_major[a_layout.static_shape[0], a_layout.static_shape[1]]()
         ),
         a_dst_origin,
     ],
     b_dst: TileTensor[
         dtype,
         type_of(
-            row_major[b_layout.shape[0].value(), b_layout.shape[1].value()]()
+            row_major[b_layout.static_shape[0], b_layout.static_shape[1]]()
         ),
         b_dst_origin,
     ],
@@ -442,26 +426,26 @@ def test_tma_loads_two_buffers_kernel[
     comptime tileN = Int(a_tile_shape[1])
     comptime expected_bytes = _idx_product[a_tile_shape]() * size_of[dtype]()
 
-    comptime N = a_layout.shape[1].value()
+    comptime N = a_layout.static_shape[1]
     comptime num_iters = ceildiv(N, tileN)
 
-    comptime __a_tile_layout = Layout.row_major(tileM, tileN)
+    comptime __a_tile_layout = row_major[tileM, tileN]()
     var a_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](
         row_major[
-            __a_tile_layout.shape[0].value(), __a_tile_layout.shape[1].value()
+            __a_tile_layout.static_shape[0], __a_tile_layout.static_shape[1]
         ]()
     )
 
-    comptime __b_tile_layout = Layout.row_major(
+    comptime __b_tile_layout = row_major[
         Int(b_tile_shape[0]), Int(b_tile_shape[1])
-    )
+    ]()
     var b_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](
         row_major[
-            __b_tile_layout.shape[0].value(), __b_tile_layout.shape[1].value()
+            __b_tile_layout.static_shape[0], __b_tile_layout.static_shape[1]
         ]()
     )
 
@@ -506,19 +490,19 @@ def test_tma_loads_two_buffers_kernel[
 def test_tma_load_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, load_along_last_dim: Bool = False
 ](ctx: DeviceContext) raises:
-    comptime M = src_layout.shape[0].value()
-    comptime N = src_layout.shape[1].value()
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime M = src_layout.static_shape[0]
+    comptime N = src_layout.static_shape[1]
+    comptime tileM = tile_layout.static_shape[0]
+    comptime tileN = tile_layout.static_shape[1]
     comptime M_roundup = align_up(M, tileM)
     comptime N_roundup = align_up(N, tileN)
 
     var a_src = HostDeviceTileTensor[.float32](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
     var b_src = HostDeviceTileTensor[.float32](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
 
@@ -553,8 +537,8 @@ def test_tma_load_two_buffers_row_major[
     )
     comptime kernel = test_tma_loads_two_buffers_kernel[
         type_of(a_tma_tensor).dtype,
-        Layout.row_major(M_roundup, N_roundup),  # dst layout
-        Layout.row_major(M_roundup, N_roundup),  # dst layout
+        row_major[M_roundup, N_roundup](),  # dst layout
+        row_major[M_roundup, N_roundup](),  # dst layout
         type_of(a_tma_tensor).tile_shape,
         type_of(b_tma_tensor).tile_shape,
         row_major[__a_tileM, __a_tileN](),  # thread layout
@@ -630,26 +614,26 @@ def test_tma_loads_and_store_two_buffers_kernel[
     comptime tileN = Int(a_tile_shape[1])
     comptime expected_bytes = _idx_product[a_tile_shape]() * size_of[dtype]()
 
-    comptime N = a_layout.shape[1].value()
+    comptime N = a_layout.static_shape[1]
     comptime num_iters = ceildiv(N, tileN)
 
-    comptime __a_tile_layout = Layout.row_major(tileM, tileN)
+    comptime __a_tile_layout = row_major[tileM, tileN]()
     var a_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](
         row_major[
-            __a_tile_layout.shape[0].value(), __a_tile_layout.shape[1].value()
+            __a_tile_layout.static_shape[0], __a_tile_layout.static_shape[1]
         ]()
     )
 
-    comptime __b_tile_layout = Layout.row_major(
+    comptime __b_tile_layout = row_major[
         Int(b_tile_shape[0]), Int(b_tile_shape[1])
-    )
+    ]()
     var b_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
     ](
         row_major[
-            __b_tile_layout.shape[0].value(), __b_tile_layout.shape[1].value()
+            __b_tile_layout.static_shape[0], __b_tile_layout.static_shape[1]
         ]()
     )
 
@@ -698,27 +682,27 @@ def test_tma_loads_and_store_two_buffers_kernel[
 def test_tma_load_and_store_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, dst_layout: Layout
 ](ctx: DeviceContext) raises:
-    comptime M = src_layout.shape[0].value()
-    comptime N = src_layout.shape[1].value()
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
-    comptime dst_M = dst_layout.shape[0].value()
-    comptime dst_N = dst_layout.shape[1].value()
+    comptime M = src_layout.static_shape[0]
+    comptime N = src_layout.static_shape[1]
+    comptime tileM = tile_layout.static_shape[0]
+    comptime tileN = tile_layout.static_shape[1]
+    comptime dst_M = dst_layout.static_shape[0]
+    comptime dst_N = dst_layout.static_shape[1]
 
     var a_src = HostDeviceTileTensor[.float32](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
     var b_src = HostDeviceTileTensor[.float32](
-        row_major[src_layout.shape[0].value(), src_layout.shape[1].value()](),
+        row_major[src_layout.static_shape[0], src_layout.static_shape[1]](),
         ctx,
     )
     var a_dst = HostDeviceTileTensor[.float32](
-        row_major[dst_layout.shape[0].value(), dst_layout.shape[1].value()](),
+        row_major[dst_layout.static_shape[0], dst_layout.static_shape[1]](),
         ctx,
     )
     var b_dst = HostDeviceTileTensor[.float32](
-        row_major[dst_layout.shape[0].value(), dst_layout.shape[1].value()](),
+        row_major[dst_layout.static_shape[0], dst_layout.static_shape[1]](),
         ctx,
     )
 
@@ -810,171 +794,171 @@ def main() raises:
         print("test_tma_load_f32")
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(8, 8),
-            tile_layout=Layout.row_major(4, 4),
+            src_layout=row_major[8, 8](),
+            tile_layout=row_major[4, 4](),
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(9, 24),
-            tile_layout=Layout.row_major(3, 8),
+            src_layout=row_major[9, 24](),
+            tile_layout=row_major[3, 8](),
         ](ctx)
         print("test_tma_load_oob_fill_f32")
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(7, 8),
-            tile_layout=Layout.row_major(4, 4),
+            src_layout=row_major[7, 8](),
+            tile_layout=row_major[4, 4](),
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(10, 12),
-            tile_layout=Layout.row_major(4, 8),
+            src_layout=row_major[10, 12](),
+            tile_layout=row_major[4, 8](),
         ](ctx)
 
         print("test_tma_multiple_loads_f32")
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(12, 16),
-            tile_layout=Layout.row_major(4, 4),
+            src_layout=row_major[12, 16](),
+            tile_layout=row_major[4, 4](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(24, 80),
-            tile_layout=Layout.row_major(3, 16),
+            src_layout=row_major[24, 80](),
+            tile_layout=row_major[3, 16](),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_multiple_loads_oob_fill_f32")
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(6, 20),
-            tile_layout=Layout.row_major(4, 8),
+            src_layout=row_major[6, 20](),
+            tile_layout=row_major[4, 8](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float32,
-            src_layout=Layout.row_major(9, 60),
-            tile_layout=Layout.row_major(8, 16),
+            src_layout=row_major[9, 60](),
+            tile_layout=row_major[8, 16](),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_load_f8e4m3fn")
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(8, 32),
-            tile_layout=Layout.row_major(4, 16),
+            src_layout=row_major[8, 32](),
+            tile_layout=row_major[4, 16](),
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(9, 48),
-            tile_layout=Layout.row_major(3, 16),
+            src_layout=row_major[9, 48](),
+            tile_layout=row_major[3, 16](),
         ](ctx)
         print("test_tma_load_oob_fill_f8e4m3fn")
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(7, 32),
-            tile_layout=Layout.row_major(4, 16),
+            src_layout=row_major[7, 32](),
+            tile_layout=row_major[4, 16](),
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(10, 48),
-            tile_layout=Layout.row_major(4, 32),
+            src_layout=row_major[10, 48](),
+            tile_layout=row_major[4, 32](),
         ](ctx)
 
         print("test_tma_multiple_loads_f8e4m3fn")
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(12, 64),
-            tile_layout=Layout.row_major(4, 16),
+            src_layout=row_major[12, 64](),
+            tile_layout=row_major[4, 16](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(24, 160),
-            tile_layout=Layout.row_major(3, 64),
+            src_layout=row_major[24, 160](),
+            tile_layout=row_major[3, 64](),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_multiple_loads_oob_fill_f8e4m3fn")
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(6, 80),
-            tile_layout=Layout.row_major(4, 16),
+            src_layout=row_major[6, 80](),
+            tile_layout=row_major[4, 16](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_row_major[
             dtype=DType.float8_e4m3fn,
-            src_layout=Layout.row_major(9, 240),
-            tile_layout=Layout.row_major(8, 64),
+            src_layout=row_major[9, 240](),
+            tile_layout=row_major[8, 64](),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_async_store")
         test_tma_async_store[
-            src_layout=Layout.row_major(8, 8),
-            tile_layout=Layout.row_major(4, 4),
-            dst_layout=Layout.row_major(8, 8),
+            src_layout=row_major[8, 8](),
+            tile_layout=row_major[4, 4](),
+            dst_layout=row_major[8, 8](),
         ](ctx)
         test_tma_async_store[
-            src_layout=Layout.row_major(32, 24),
-            tile_layout=Layout.row_major(16, 8),
-            dst_layout=Layout.row_major(32, 24),
+            src_layout=row_major[32, 24](),
+            tile_layout=row_major[16, 8](),
+            dst_layout=row_major[32, 24](),
         ](ctx)
 
         print("test_tma_multiple_async_store")
         test_tma_async_store[
-            src_layout=Layout.row_major(8, 8),
-            tile_layout=Layout.row_major(4, 4),
-            dst_layout=Layout.row_major(8, 8),
+            src_layout=row_major[8, 8](),
+            tile_layout=row_major[4, 4](),
+            dst_layout=row_major[8, 8](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_async_store[
-            src_layout=Layout.row_major(9, 24),
-            tile_layout=Layout.row_major(3, 8),
-            dst_layout=Layout.row_major(9, 24),
+            src_layout=row_major[9, 24](),
+            tile_layout=row_major[3, 8](),
+            dst_layout=row_major[9, 24](),
             load_along_last_dim=True,
         ](ctx)
 
         print("test_tma_async_store_oob")
         test_tma_async_store[
-            src_layout=Layout.row_major(8, 8),
-            tile_layout=Layout.row_major(8, 8),
-            dst_layout=Layout.row_major(6, 8),
+            src_layout=row_major[8, 8](),
+            tile_layout=row_major[8, 8](),
+            dst_layout=row_major[6, 8](),
         ](ctx)
         test_tma_async_store[
-            src_layout=Layout.row_major(32, 8),
-            tile_layout=Layout.row_major(8, 8),
-            dst_layout=Layout.row_major(26, 8),
+            src_layout=row_major[32, 8](),
+            tile_layout=row_major[8, 8](),
+            dst_layout=row_major[26, 8](),
         ](ctx)
         test_tma_async_store[
-            src_layout=Layout.row_major(8, 8),
-            tile_layout=Layout.row_major(8, 8),
-            dst_layout=Layout.row_major(6, 4),
+            src_layout=row_major[8, 8](),
+            tile_layout=row_major[8, 8](),
+            dst_layout=row_major[6, 4](),
         ](ctx)
         test_tma_async_store[
-            src_layout=Layout.row_major(32, 16),
-            tile_layout=Layout.row_major(8, 8),
-            dst_layout=Layout.row_major(26, 12),
+            src_layout=row_major[32, 16](),
+            tile_layout=row_major[8, 8](),
+            dst_layout=row_major[26, 12](),
         ](ctx)
 
         print("test_tma_load_two_buffer_row_major")
         test_tma_load_two_buffers_row_major[
-            src_layout=Layout.row_major(32, 64),
-            tile_layout=Layout.row_major(8, 16),
+            src_layout=row_major[32, 64](),
+            tile_layout=row_major[8, 16](),
             load_along_last_dim=True,
         ](ctx)
         test_tma_load_two_buffers_row_major[
-            src_layout=Layout.row_major(9, 60),
-            tile_layout=Layout.row_major(8, 16),
+            src_layout=row_major[9, 60](),
+            tile_layout=row_major[8, 16](),
         ](ctx)
         print("test_tma_load_and_store_two_buffer")
         test_tma_load_and_store_two_buffers_row_major[
-            src_layout=Layout.row_major(32, 64),
-            tile_layout=Layout.row_major(8, 16),
-            dst_layout=Layout.row_major(32, 64),
+            src_layout=row_major[32, 64](),
+            tile_layout=row_major[8, 16](),
+            dst_layout=row_major[32, 64](),
         ](ctx)
         test_tma_load_and_store_two_buffers_row_major[
-            src_layout=Layout.row_major(32, 64),
-            tile_layout=Layout.row_major(16, 16),
-            dst_layout=Layout.row_major(40, 64),
+            src_layout=row_major[32, 64](),
+            tile_layout=row_major[16, 16](),
+            dst_layout=row_major[40, 64](),
         ](ctx)

@@ -40,9 +40,10 @@ _hy4_model_failures=(
 # Intermittent: fail on some draws only.
 _hy4_intermittent_failures=(
   # tc_schema_enforcement: the prompt asks only for values the schema
-  # forbids; with the grammar blocking them the model sometimes returns a
-  # shorter array than the check's minimum. That array is schema-valid: the
-  # schema has no minItems.
+  # forbids; with the grammar blocking them the model sometimes returned a
+  # shorter array than the check's minimum, which was schema-valid then. Each
+  # schema now sets minItems: 2, so a short array would be a grammar
+  # enforcement failure. Kept until this lane is re-validated at that schema.
   'tc_schema_enforcement:ref_defs_array_of_enums[tool_choice=required]'
   'tc_schema_enforcement:anyof_deeply_nested[tool_choice=required]'
   'tc_schema_enforcement:anyof_deeply_nested[tool_choice=auto]'

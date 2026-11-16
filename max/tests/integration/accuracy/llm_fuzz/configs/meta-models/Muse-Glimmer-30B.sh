@@ -18,6 +18,7 @@ batch_size=64
 max_length=32768
 
 extra_pipelines_args=(
+  --no-prefer-module-v3
   --device-memory-utilization=0.9
   --enable-prefix-caching
   --enable-structured-output

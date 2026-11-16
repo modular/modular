@@ -21,13 +21,9 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 from max.nn.legacy.attention import (
     TensorParallelAttentionWithRope,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MHAKVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 

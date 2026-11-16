@@ -35,24 +35,20 @@ def main() raises:
         print("Free memory:", mem_info[0])
 
         print(
-            "DeviceAttribute.MAX_THREADS_PER_BLOCK:",
-            ctx.device().get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
+            "Max threads per block:",
+            ctx.device().max_threads_per_block(),
         )
         print(
-            "DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK:",
-            ctx.device().get_attribute(
-                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK
-            ),
+            "Max shared memory per block:",
+            ctx.device().max_shared_memory_per_block(),
         )
 
         comptime if not ctx.target.is_apple_gpu():
             # Not currently defined for Apple GPUs
 
             print(
-                "DeviceAttribute.MULTIPROCESSOR_COUNT:",
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
+                "Multiprocessor count:",
+                ctx.device().multiprocessor_count(),
             )
             print(
                 "DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR:",

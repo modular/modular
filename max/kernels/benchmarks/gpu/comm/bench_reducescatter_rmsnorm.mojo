@@ -71,7 +71,7 @@ def _launch_norm[
     out_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
     gamma_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
     local_rows: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Launch a standalone RMSNorm over `[local_rows, num_cols]`.
 
@@ -110,7 +110,7 @@ def _verify_results[
     weight_offset_f32: Float32,
 ](
     num_rows: Int,
-    list_of_ctx: List[DeviceContext],
+    list_of_ctx: List[DeviceContext[]],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
@@ -478,7 +478,7 @@ def bench_reducescatter_rmsnorm[
     quantize: Bool = False,
     cache_busting: Bool = True,
     verify: Bool = True,
-](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext]) raises:
+](num_rows: Int, mut b: Bench, list_of_ctx: List[DeviceContext[]]) raises:
     # This baseline is bf16-only; there is no FP8 / scale machinery here.
     comptime assert (
         not quantize
@@ -671,11 +671,11 @@ def bench_reducescatter_rmsnorm[
     # ===== Variant 1: reduce-scatter only -> t_RS =====
     @inline(.always)
     def bench_rs_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
@@ -701,12 +701,12 @@ def bench_reducescatter_rmsnorm[
     # ===== Variant 2: standalone RMSNorm on a cold shard -> t_norm(shard) =====
     @inline(.always)
     def bench_norm_cold_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             if local_rows > 0:
                 _launch_norm[in_dtype, num_cols, epsilon, weight_offset_f32](
                     cold_ptrs[ctx_idx],
@@ -729,13 +729,13 @@ def bench_reducescatter_rmsnorm[
     # ===== Variant 3: RS then RMSNorm on the live RS output -> t_chained =====
     @inline(.always)
     def bench_chained_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
@@ -771,11 +771,11 @@ def bench_reducescatter_rmsnorm[
     # ===== Variant 4: fused reduce-scatter + RMSNorm kernel -> t_fused =====
     @inline(.always)
     def bench_fused_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
         @inline(.always)
         def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
+            ctx_inner: DeviceContext[], cache_iter: Int
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
@@ -811,12 +811,12 @@ def bench_reducescatter_rmsnorm[
     # `RS_NORM_FUSE_THRESHOLD`, two-launch above).
     @inline(.always)
     def bench_dispatch_iter(
-        mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
+        mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @inline(.always)
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+        def call_fn(ctx_inner: DeviceContext[], cache_iter: Int) raises {imm}:
             # Local views: `{var}` cannot copy `Array[TileTensor, …]`, and
             # `{imm}` nested under `{mut in_bufs}` aliases.
             var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
@@ -912,7 +912,7 @@ def main() raises:
         print("P2P not enabled, skipping benchmark.")
         return
 
-    var list_of_ctx = List[DeviceContext]()
+    var list_of_ctx = List[DeviceContext[]]()
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 

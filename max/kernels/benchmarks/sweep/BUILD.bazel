@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "mojo_test")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "mojo_library", "mojo_test")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 load(":mojo_sweep_benchmark.bzl", "mojo_sweep_benchmark")
 
@@ -47,8 +47,6 @@ mojo_sweep_benchmark(
 # with `bazel test --config=remote-b200`; `manual` keeps it out of `//...`,
 # and the `build_test` keeps the compile coverage.
 _PORTS = {
-    # Sparse MLA decode is implemented only for SM100.
-    "bench_mla_decode_sparse.mojo": ["//:b200_gpu"],
     # SM100 tensor-core scorer: tcgen05 / TMA / SS-UMMA.
     "bench_mla_index_fp8_paged.mojo": ["//:b200_gpu"],
     "bench_mla_prefill_sparse.mojo": ["//:b200_gpu"],
@@ -67,6 +65,307 @@ _PORTS = {
     )
     for src, compat in _PORTS.items()
 ]
+
+# Fixtures, checks and launch helpers the sparse MLA sweeps share.
+mojo_library(
+    name = "mla_sweep",
+    testonly = True,
+    srcs = glob(["mla_sweep/*.mojo"]),
+    validate_missing_docs = False,
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:max_mojo",
+        "//max:nn",
+        "//max/kernels/benchmarks/sweep/bench_sweep",
+        "@mojo//:std",
+    ],
+)
+
+_MLA_DEPS = _DEPS + [
+    ":mla_sweep",
+    "//max:linalg",
+]
+
+# Sparse MLA decode is implemented only for SM100. The arms are the h=128
+# decode front ends: the shipped routing, the unpaired direct gather
+# (`MLA_SPARSE_CG2=0`) and the CTA pair at every walk
+# (`MLA_SPARSE_CG2_ROUTE=0`).
+mojo_sweep_benchmark(
+    name = "bench_mla_decode_sparse.mojo",
+    srcs = ["bench_mla_decode_sparse.mojo"],
+    arms = {
+        "h128": ["num_heads=128"],
+        "h128_direct": [
+            "num_heads=128",
+            "MLA_SPARSE_CG2=0",
+        ],
+        "h128_unrouted": [
+            "num_heads=128",
+            "MLA_SPARSE_CG2_ROUTE=0",
+        ],
+    },
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    gpu_memory = "8",
+    target_compatible_with = ["//:b200_gpu"],
+    deps = _MLA_DEPS,
+)
+
+# Kernel A/B knobs of the sparse MLA prefill-vs-decode sweep, as the defines
+# that differ from the shipped defaults. `row` is the h=128 parity row, the
+# CTA pair unrouted with the split softmax loop off, and the `row_*` arms
+# each change one softmax path against it.
+_PVD_ROW = [
+    "MLA_SPARSE_CG2_ROUTE=0",
+    "MLA_SMX_SPLIT_LOOP=0",
+]
+
+_PVD_PAIR_KNOBS = {
+    # The unpaired direct gather, the CTA pair's escape hatch.
+    "direct": ["MLA_SPARSE_CG2=0"],
+    "row": _PVD_ROW,
+    "row_allfast": _PVD_ROW + ["MLA_SMX_BOUND_SLACK=1048576"],
+    "row_sent": _PVD_ROW + ["MLA_SPARSE_SENTINEL_TRAP=1"],
+    "row_smx0": _PVD_ROW + ["MLA_SMX_SENTINEL_FAST=0"],
+    "row_split": [
+        "MLA_SPARSE_CG2_ROUTE=0",
+        "MLA_SMX_SPLIT_LOOP=1",
+    ],
+    # The pair at every walk.
+    "unrouted": ["MLA_SPARSE_CG2_ROUTE=0"],
+}
+
+# The NVFP4 decode's softmax-path knobs, against the shipped base arm.
+_PVD_NVFP4_KNOBS = {
+    "allfast": ["MLA_SMX_BOUND_SLACK=1048576"],
+    "sent": ["MLA_SPARSE_SENTINEL_TRAP=1"],
+    "smx0": ["MLA_SMX_SENTINEL_FAST=0"],
+    # The unpaired forms' mask-free max off, the baseline of that A/B.
+    "smxoff": ["MLA_SMX_UNPAIRED=0"],
+    "split": ["MLA_SMX_SPLIT_LOOP=1"],
+    "stamp": ["MLA_STAMP=1"],
+    # Every unpaired head count on the masked fast path.
+    "unpaired_all": ["MLA_SMX_UNPAIRED_HEADS=31"],
+}
+
+# Layout E: one key tile and pairing per arm, with routing off, over the
+# NVFP4 cache and the FP8 cache that holds its exact dequantization. Each is
+# `(heads, caches, defines)`.
+_PVD_SINGLE64 = [
+    "MLA_SPARSE_BN_QK=64",
+    "MLA_SPARSE_CG2=0",
+    "MLA_SPARSE_CG2_ROUTE=0",
+]
+
+_PVD_SINGLE128 = [
+    "MLA_SPARSE_BN_QK=128",
+    "MLA_SPARSE_CG2=0",
+    "MLA_SPARSE_CG2_ROUTE=0",
+]
+
+_PVD_PAIR128 = [
+    "MLA_SPARSE_BN_QK=128",
+    "MLA_SPARSE_CG2_ROUTE=0",
+]
+
+_PVD_LAYOUT_E = {
+    "pair128": (
+        [128],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_PAIR128,
+    ),
+    "pair128_smx0": (
+        [128],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_PAIR128 + ["MLA_SMX_SENTINEL_FAST=0"],
+    ),
+    "single128": (
+        [
+            64,
+            128,
+        ],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_SINGLE128,
+    ),
+    # Without the wide tile's early store.
+    "single128_noearly": (
+        [
+            64,
+            128,
+        ],
+        ["nvfp4"],
+        _PVD_SINGLE128 + ["MLA_NVFP4_WIDE_EARLY_STORE=0"],
+    ),
+    "single64": (
+        [
+            64,
+            128,
+        ],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_SINGLE64,
+    ),
+    "single64_qtmem": (
+        [
+            64,
+            128,
+        ],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_SINGLE64 + ["MLA_Q_TMEM=1"],
+    ),
+    "single64_qtmem_stamp": (
+        [64],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_SINGLE64 + [
+            "MLA_Q_TMEM=1",
+            "MLA_STAMP=1",
+        ],
+    ),
+    "single64_stamp": (
+        [64],
+        [
+            "nvfp4",
+            "fp8",
+        ],
+        _PVD_SINGLE64 + ["MLA_STAMP=1"],
+    ),
+} | {
+    # The convert-once converter at index widths around its tile edges.
+    "convert_k" + str(k): (
+        [
+            64,
+            128,
+        ],
+        ["nvfp4"],
+        ["top_k=" + str(k)],
+    )
+    for k in [
+        63,
+        64,
+        65,
+        128,
+        129,
+        192,
+        256,
+        257,
+    ]
+}
+
+_PVD_CACHES = {
+    "bf16": "sweep_cache=2",
+    "fp8": "sweep_cache=1",
+    "nvfp4": "sweep_cache=3",
+}
+
+_PVD_ARMS = {
+    cache + "_h" + str(heads): [
+        define,
+        "sweep_h=" + str(heads),
+    ]
+    for cache, define in _PVD_CACHES.items()
+    for heads in [
+        8,
+        16,
+        32,
+        64,
+        128,
+    ]
+} | {
+    cache + "_h128_" + knob: [
+        _PVD_CACHES[cache],
+        "sweep_h=128",
+    ] + defines
+    for cache in [
+        "fp8",
+        "bf16",
+    ]
+    for knob, defines in _PVD_PAIR_KNOBS.items()
+} | {
+    "fp8_h128_row_stamp": [
+        "sweep_cache=1",
+        "sweep_h=128",
+        "MLA_STAMP=1",
+        # The stamp reserve needs SMEM the 4-stage index ring holds.
+        "MLA_SPARSE_PAIR_IDX_STAGES=3",
+    ] + _PVD_ROW,
+} | {
+    "nvfp4_h" + str(heads) + "_" + knob: [
+        "sweep_cache=3",
+        "sweep_h=" + str(heads),
+    ] + defines
+    for heads in [
+        64,
+        128,
+    ]
+    for knob, defines in _PVD_NVFP4_KNOBS.items()
+} | {
+    cache + "_h" + str(heads) + "_" + variant + ("_trace" if trace else ""): [
+        _PVD_CACHES[cache],
+        "sweep_h=" + str(heads),
+    ] + defines + (["MLA_SPARSE_TRACE_LAUNCH=1"] if trace else [])
+    for variant, (heads_list, caches, defines) in _PVD_LAYOUT_E.items()
+    for heads in heads_list
+    for cache in caches
+    for trace in [
+        False,
+        True,
+    ]
+}
+
+# The SM100 sparse MLA prefill and decode kernels on each other's shapes.
+# Only the combined target, FP8, BF16 and NVFP4 at 64 and 128 heads, is
+# compiled outside `manual`; each arm is one cache format, head count and
+# kernel knob.
+mojo_sweep_benchmark(
+    name = "bench_mla_sparse_prefill_vs_decode.mojo",
+    srcs = ["bench_mla_sparse_prefill_vs_decode.mojo"],
+    arms = _PVD_ARMS,
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    gpu_memory = "12",
+    target_compatible_with = ["//:b200_gpu"],
+    test_arms = False,
+    deps = _MLA_DEPS,
+)
+
+# Sparse MLA prefill through the graph entry points, one cache format and
+# head count per arm. Nothing here builds outside `manual`.
+mojo_sweep_benchmark(
+    name = "bench_mla_sparse_graph_prefill_vs_decode.mojo",
+    srcs = ["bench_mla_sparse_graph_prefill_vs_decode.mojo"],
+    arms = {
+        cache + "_h" + str(heads): [
+            define,
+            "sweep_h=" + str(heads),
+        ]
+        for cache, define in _PVD_CACHES.items()
+        for heads in [
+            64,
+            128,
+        ]
+    },
+    build_test = False,
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    gpu_memory = "12",
+    target_compatible_with = ["//:b200_gpu"],
+    deps = _MLA_DEPS,
+)
 
 # Generators against their CPU references, on every GPU the library targets.
 mojo_test(

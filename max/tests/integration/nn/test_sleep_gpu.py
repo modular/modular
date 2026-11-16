@@ -18,7 +18,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 
 
 def build_sleep_graph(device: Device) -> Model:
@@ -38,8 +38,14 @@ def time_sleep_kernel_with_buffer(
     seconds_buffer: Buffer,
     device: Device = Accelerator(),  # noqa: B008
 ) -> float:
-    model = build_sleep_graph(device=device)
+    return time_sleep_model(
+        build_sleep_graph(device=device), seconds_buffer, device
+    )
 
+
+def time_sleep_model(
+    model: Model, seconds_buffer: Buffer, device: Device
+) -> float:
     # The first run loads the GPU kernel, which can take seconds.
     # Run once with zero sleep so the timed run only measures the sleep.
     warmup_buffer = Buffer(shape=[1], dtype=DType.float64)
@@ -143,16 +149,18 @@ def test_wrong_dtype_runtime() -> None:
 
 
 def test_wrong_rank_runtime() -> None:
+    device = Accelerator()
+    model = build_sleep_graph(device=device)
     with pytest.raises(
         ValueError,
         match=r"Input at position 0: Buffer of type \[\(1, 2, 3\), f64\] does not match expected type \[\(1\), f64\]",
     ):
         seconds_buffer = Buffer(shape=[1, 2, 3], dtype=DType.float64)
-        time_sleep_kernel_with_buffer(seconds_buffer)
+        time_sleep_model(model, seconds_buffer, device)
 
     with pytest.raises(
         ValueError,
         match=r"Input at position 0: Buffer of type \[\(\), f64\] does not match expected type \[\(1\), f64\]",
     ):
         seconds_buffer = Buffer(shape=[], dtype=DType.float64)
-        time_sleep_kernel_with_buffer(seconds_buffer)
+        time_sleep_model(model, seconds_buffer, device)

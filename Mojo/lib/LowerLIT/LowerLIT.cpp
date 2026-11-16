@@ -785,6 +785,22 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   return std::make_pair(result, WalkResult::skip());
 }
 
+/// Return the argument conventions of `sig` after LowerLIT. The argument list
+/// is dropped, so the convention of a variadic pack argument records that it
+/// is a pack and how its elements are passed.
+static SmallVector<ArgConvention> getLoweredArgConventions(FuncType sig) {
+  SmallVector<ArgConvention> conventions(sig.getArgConventions());
+  std::optional<size_t> packIndex = sig.findPackVarArgIndex();
+  if (!packIndex)
+    return conventions;
+  PogListAttr argList = sig.getArgListAttrs();
+  assert(argList.size() == conventions.size() &&
+         "a pack signature has one argument per source argument");
+  conventions[*packIndex] =
+      getPackConvention(argList.getOrigVariadicConvention());
+  return conventions;
+}
+
 static LogicalResult lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
@@ -825,7 +841,7 @@ static LogicalResult lowerAttributesAndTypes(
   replacer.addReplacement([&](FuncType sig) {
     return std::make_pair(
         FuncType::get(cast<FunctionType>(replacer.replace(sig.getValues())),
-                      sig.getArgConventions(), sig.getFnEffects()),
+                      getLoweredArgConventions(sig), sig.getFnEffects()),
         WalkResult::skip());
   });
 
@@ -2074,6 +2090,14 @@ static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
 
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
+  // TODO: Storage outside the default address space needs a target-specific
+  // allocation rather than a stack slot; reject it until that lowering exists.
+  if (!op.getType().isDefaultAddrSpace()) {
+    op.emitError("variables outside the default address space are not yet "
+                 "supported");
+    return {};
+  }
+
   // Lower a lit.var.decl to pop.stack_allocation.
   // Check if the element type is a struct with explicit alignment.
   TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
@@ -2263,6 +2287,15 @@ static Value lowerOp(RefPackFromPointerPackOp op,
   return adaptor.getPack();
 }
 
+// lit.ref.pack.concat => kgen.struct.concat
+static Value lowerOp(RefPackConcatOp op, RefPackConcatOpAdaptor adaptor,
+                     LITTypeLowerer &b) {
+  auto typeOr = b.asType.replace(op.getType());
+  if (failed(typeOr))
+    return nullptr;
+  return StructConcatOp::create(b, op.getLoc(), *typeOr, adaptor.getPacks());
+}
+
 static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
   return ParamConstantOp::create(
       b, op->getLoc(),
@@ -2364,7 +2397,7 @@ static LogicalResult lowerLITTypes(ModuleOp module, StructDecls &state,
               RefFromPointerREPLOp, RefToKgenPtrOp, RefFromKgenPtrOp,
               RefStructGEROp, RefLoadOp, RefStoreOp, MemcpyOp, RebindOp,
               RefPackCreateOp, RefPackExtractOp, RefPackFromPointerPackOp,
-              VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
+              RefPackConcatOp, VarDeclOp, VarLifetimeStartOp, VarLifetimeEndOp,
               MojoVersionMajorOp, MojoVersionMinorOp, MojoVersionPatchOp>(
             [&](auto op) { return b.materializeLowering(op); })
         .Default([&](auto op) { return success(); });

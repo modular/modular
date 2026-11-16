@@ -15,22 +15,26 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from max import functional as F
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged_gpu,
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
+from max.nn.legacy.graph_groups import (
+    VisionHostMax,
+    VisionRowIndex,
+    VisionRows,
+    VisionSegments,
 )
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList
-from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
-    Gemma4RMSNorm,
-)
 from max.tensor import Tensor
 
+from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import MuseGlimmerVisionConfig
 
 
@@ -241,9 +245,38 @@ class MuseGlimmerVisionModel(Module[..., Tensor]):
             text_hidden_size, eps=rms_norm_eps, with_weight=False
         )
 
-    def forward(self, *inputs: Tensor) -> Tensor:
+    def forward(
+        self,
+        pixel_values: Tensor,
+        interp_idx: Tensor,
+        interp_w: Tensor,
+        window_index: Tensor,
+        reverse_index: Tensor,
+        pixel_shuffle_index: Tensor,
+        rot_cos: Tensor,
+        rot_sin: Tensor,
+        cu_seqlens: Tensor,
+        cu_window_seqlens: Tensor,
+        max_seqlen: Tensor,
+        max_window_seqlen: Tensor,
+    ) -> Tensor:
         """Runs the vision tower and adapter over the graph inputs."""
-        h = self.vision_adapter(self.vision_tower(*inputs))
+        h = self.vision_adapter(
+            self.vision_tower(
+                pixel_values,
+                interp_idx,
+                interp_w,
+                window_index,
+                reverse_index,
+                pixel_shuffle_index,
+                rot_cos,
+                rot_sin,
+                cu_seqlens,
+                cu_window_seqlens,
+                max_seqlen,
+                max_window_seqlen,
+            )
+        )
         return self.perception_emb_norm(self.vision_projection(h))
 
 
@@ -266,5 +299,48 @@ def vision_input_types(
         *(
             TensorType(DType.uint32, [], device=DeviceRef.CPU())
             for _ in range(2)
+        ),
+    )
+
+
+def vision_input_tree(
+    config: MuseGlimmerVisionConfig, device: DeviceRef, dtype: DType
+) -> OrderedDict[str, object]:
+    """Returns :func:`vision_input_types` grouped as a serving engine packs them.
+
+    Its leaves are those types in order, each named as the argument of
+    :meth:`MuseGlimmerVisionModel.forward` it feeds. The window order and
+    pixel shuffle index each image's patch rows, and the segment bounds and
+    maximum lengths cover each image and each of its windows.
+    """
+    (
+        pixel_values,
+        interp_idx,
+        interp_w,
+        window_index,
+        reverse_index,
+        pixel_shuffle_index,
+        rot_cos,
+        rot_sin,
+        cu_seqlens,
+        cu_window_seqlens,
+        max_seqlen,
+        max_window_seqlen,
+    ) = vision_input_types(config, device, dtype)
+    return OrderedDict(
+        patches=VisionRows(
+            pixel_values=pixel_values, interp_idx=interp_idx, interp_w=interp_w
+        ),
+        window_order=VisionRowIndex(
+            window_index=window_index,
+            reverse_index=reverse_index,
+            pixel_shuffle_index=pixel_shuffle_index,
+        ),
+        rotary=VisionRows(rot_cos=rot_cos, rot_sin=rot_sin),
+        segments=VisionSegments(
+            cu_seqlens=cu_seqlens, cu_window_seqlens=cu_window_seqlens
+        ),
+        segment_bound=VisionHostMax(
+            max_seqlen=max_seqlen, max_window_seqlen=max_window_seqlen
         ),
     )

@@ -133,8 +133,7 @@ def test_optional_implicit_conversion() raises:
     var greeting: Optional[String] = None
     assert_false(greeting)
     greeting = String("Salve!")
-    assert_true(greeting)
-    assert_equal(greeting.value(), "Salve!")
+    assert_equal(greeting, "Salve!")
 
 
 struct Complex:

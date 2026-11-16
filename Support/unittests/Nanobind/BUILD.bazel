@@ -12,6 +12,10 @@ modular_nanobind_extension(
     name = "bindings",
     testonly = True,
     srcs = ["test_bindings.cpp"],
+    dynamic_deps = [
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
     deps = [
         "//Support:Base",
         "//Support:NanobindUtils",

@@ -68,7 +68,7 @@ def run_on_gpu[
             idx, math_fn(val)
         )
 
-    elementwise[pack_size, target="gpu"](func, Coord(num_log10_inputs), ctx)
+    elementwise[pack_size](func, Coord(num_log10_inputs), ctx)
 
     var out = List[Scalar[dtype]](capacity=num_log10_inputs)
     with out_device.map_to_host() as out_host:

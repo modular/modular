@@ -60,6 +60,8 @@ def extend_shape_5d[
             out_shape[1] = in_shape[0]
             out_shape[2] = in_shape[1]
             out_shape[3] = in_shape[2]
+        case _:
+            pass
 
     return out_shape
 
@@ -92,6 +94,8 @@ def append_shape_5d[
             out_shape[0] = in_shape[0]
             out_shape[1] = in_shape[1]
             out_shape[2] = in_shape[2]
+        case _:
+            pass
 
     return out_shape
 
@@ -113,7 +117,7 @@ def test_conv_transposed[
 
     var output_dims = IndexList[rank](1)
 
-    comptime for i in range(rank):
+    for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             - pad[2 * i]
@@ -136,6 +140,8 @@ def test_conv_transposed[
             pad_d = Index(pad[0], pad[1])
             pad_h = Index(pad[2], pad[3])
             pad_w = Index(pad[4], pad[5])
+        case _:
+            pass
 
     var conv_shape = ConvShape[rank](
         n=N,

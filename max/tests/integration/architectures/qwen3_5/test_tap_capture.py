@@ -37,8 +37,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.nn.legacy.comm.allreduce import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MHAKVCacheParams,
@@ -46,7 +45,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.allreduce import Signals
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
@@ -91,7 +91,6 @@ def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
         vocab_size=VOCAB,
         dtype=DType.float32,
         model_quantization_encoding=None,
-        quantization_config=None,
         kv_params=MHAKVCacheParams(
             dtype=DType.float32,
             devices=[device],
@@ -103,10 +102,7 @@ def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
         norm_dtype=DType.float32,
         rms_norm_eps=1e-6,
         attention_multiplier=16**-0.5,
-        embedding_multiplier=1.0,
-        residual_multiplier=1.0,
         devices=[device],
-        clip_qkv=None,
         layer_types=list(LAYER_TYPES),
         linear_key_head_dim=LINEAR_KEY_DIM,
         linear_value_head_dim=LINEAR_VALUE_DIM,

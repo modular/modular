@@ -16,16 +16,16 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor
 
 
 @extensibility.register("context_not_last")
 struct ContextNotLast:
     @staticmethod
     def execute(
-        output: OutputTensor,
+        output: Some[Output & Tensor],
         ctx: DeviceContext,
-        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        x: Some[Input & Tensor],
     ):
         pass
 
@@ -34,7 +34,7 @@ struct ContextNotLast:
 struct OutputAfterInput:
     @staticmethod
     def execute(
-        x: InputTensor,
-        output: OutputTensor[dtype=x.dtype, rank=x.rank, ...],
+        x: Some[Input & Tensor],
+        output: Some[Output & Tensor],
     ):
         pass

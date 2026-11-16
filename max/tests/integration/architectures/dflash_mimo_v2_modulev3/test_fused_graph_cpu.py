@@ -43,17 +43,20 @@ from typing import Any, cast
 
 import pytest
 from max import functional as F
-from max.driver import CPU
+from max import mlir
+from max.driver import (
+    CPU,
+    DeviceSpec,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
+from max.nn.kv_cache import KVCacheParams, KVConnectorType, MultiKVCacheParams
 from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVConnectorType,
-    MultiKVCacheParams,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
     dflash_mimo_v2_modulev3_draft_arch,
 )
@@ -63,9 +66,6 @@ from max.pipelines.architectures.dflash_mimo_v2_modulev3.model import (
 from max.pipelines.architectures.mimo_v2_modulev3.arch import (
     mimo_v2_modulev3_arch,
 )
-from max.pipelines.architectures.mimo_v2_modulev3.model import (
-    MiMoV2ModuleV3Model,
-)
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
@@ -74,6 +74,7 @@ from max.pipelines.kv_cache.connectors.dkv.connector import (
     _validate_dkv_leaves,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.module_registration import RegisteredDecoderBuilder
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _kv_tree,
     _Pairing,
@@ -90,16 +91,31 @@ from mimo_dflash_v3_fixtures import (
     fused_weights,
     graph_name,
 )
+from test_common.mixed_step_split_ops import record_sources
 
 GRAPH_NAME = "unified_dflash_mimo_v2"
 """The graph-API pairing's graph name, which Mach's block-spec executor binds
 by constant."""
 
-N_INPUTS_1DEV = 35
-"""Inputs at 1 device without the bitmask triple (38 with it): the fused
+GATE_UP_OP = "mo.composite.grouped_matmul_swiglu_nvfp4"
+DOWN_OP = "mo.composite.grouped_matmul_block_scaled"
+"""The experts' two launches: the gate/up matmul with the SwiGLU and MXFP8
+requantize fused into its epilogue, and the down projection that reads it."""
+
+N_INPUTS_1DEV = 38
+"""Inputs at 1 device without the bitmask triple (41 with it): the fused
 signature's tokens, offsets, return_n_logits, the self-declared signal
-buffer, the 24 KV leaves (8 per group over 3 groups), the draft tokens, the
-6 sampling tails. The grammar bitmask is off: its host-wait op is GPU-only."""
+buffer, the 27 KV leaf inputs (9 per group over 3 groups, the split
+record last), the draft tokens, the 6 sampling tails. The grammar
+bitmask is off: its host-wait op is GPU-only."""
+
+TARGET_ATTENTIONS = len(_FakeAttrConfig.hybrid_layer_pattern)
+"""The target's attention ops: one per decoder layer."""
+
+_DRAFTER_LAYER_TYPES = DFLASH_CONFIG["layer_types"]
+assert isinstance(_DRAFTER_LAYER_TYPES, list)
+DRAFTER_ATTENTIONS = len(_DRAFTER_LAYER_TYPES)
+"""The drafter's attention ops: only the block forward attends."""
 
 
 def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
@@ -205,16 +221,25 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
 
     At 7 speculative tokens the base tree's own check counts 7 x 16 = 112
     query rows on the full group (64 Q heads over 4 KV heads). The pairing
-    stamps the block on the tree it hands the target's build: 8 x 16 = 128
-    keeps the split cache's decode route, and 9 x 16 = 144 leaves it, so
-    the build refuses it.
+    stamps the block on the tree it hands the registered builder: 8 x 16 =
+    128 keeps the split cache's decode route, and 9 x 16 = 144 leaves it,
+    so the build refuses it.
     """
+    # The builder resolves the KV tree's devices; the virtual devices
+    # stand in without a GPU, as the staging gates' builds do.
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(1)
     draft_dir = tmp_path / "dflash"
     draft_dir.mkdir()
     (draft_dir / "config.json").write_text(
         json.dumps({**DFLASH_CONFIG, "block_size": block})
     )
     kv_cache_config = KVCacheConfig(kv_cache_page_size=128)
+    # A checkpoint file, so the requested encoding resolves as it does
+    # against a real repo: the file name carries no encoding hint, and the
+    # file exists, so the requested encoding stands.
+    (tmp_path / "model.safetensors").write_bytes(b"")
     pipeline_config = cast(
         Any,
         SimpleNamespace(
@@ -224,11 +249,21 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
             ),
             model=SimpleNamespace(
                 data_parallel_degree=1,
-                device_specs=[None],
+                device_specs=[DeviceSpec.accelerator(0)],
                 huggingface_config=_FakeAttrConfig(),
                 kv_cache=kv_cache_config,
+                # The encoding the config resolves: the checkpoint's own.
+                quantization_encoding="float4_e2m1fnx2",
+                weight_path=[tmp_path / "model.safetensors"],
+                huggingface_weight_repo=None,
+                default_device_spec=DeviceSpec.accelerator(0),
             ),
-            runtime=SimpleNamespace(ep_size=1),
+            runtime=SimpleNamespace(
+                ep_size=1,
+                ep_use_allreduce=True,
+                enable_chunked_prefill=True,
+                max_batch_input_tokens=256,
+            ),
             speculative=SpeculativeConfig(
                 speculative_method="dflash", num_speculative_tokens=7
             ),
@@ -254,22 +289,43 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
         ModelLoadContext,
         SimpleNamespace(
             pipeline_config=pipeline_config,
+            weights=object(),
+            adapter=None,
+            memory_plan=SimpleNamespace(planned_max_batch_size=5),
+            return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
-            max_seq_len=1024,
+            target_layer_ids=(1, 3),
             kv_params=tree.children["target"],
+            max_seq_len=1024,
+            max_batch_total_tokens=512,
+            huggingface_config=_FakeAttrConfig(),
+            start_ep=lambda ep: None,
         ),
     )
 
-    def initialize(*args: object, **kwargs: object) -> MiMoV2Config:
-        raise _PastTheCheck
-
-    monkeypatch.setattr(MiMoV2Config, "initialize", initialize)
+    # The builder reads the checkpoint only to name the decoder's weights,
+    # which this refusal check never loads; an empty state dict keeps the
+    # build about the config, not the tensors.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.parse_state_dict_from_weights",
+        lambda *args: cast(dict[str, Any], {}),
+    )
+    # The registered builder applies the load context -- whose KV check is
+    # the refusal under test -- before it constructs the decoder; the
+    # patch marks where the check has passed for the accepted block.
+    monkeypatch.setattr(
+        "max.pipelines.lib.module_registration.construct_module",
+        lambda *args: (_ for _ in ()).throw(_PastTheCheck()),
+    )
+    builder = RegisteredDecoderBuilder(
+        cast(Any, mimo_v2_modulev3_arch.pipeline_model)
+    )
     if refused:
         with pytest.raises(ValueError, match="144 query rows"):
-            MiMoV2ModuleV3Model.build_module(context)
+            builder.build_module(context)
     else:
         with pytest.raises(_PastTheCheck):
-            MiMoV2ModuleV3Model.build_module(context)
+            builder.build_module(context)
 
 
 @pytest.fixture(scope="module")
@@ -364,24 +420,46 @@ def test_the_trace_carries_the_shared_moe_subgraph(
     assert text.count("mo.graph @") == 2
 
 
+def _nested_ops(
+    op: mlir.Operation | mlir.OpView,
+) -> list[mlir.Operation | mlir.OpView]:
+    """Returns ``op`` and every op nested under it, in program order."""
+    return [op] + [
+        inner
+        for region in op.regions
+        for block in region.blocks
+        for child in block.operations
+        for inner in _nested_ops(child)
+    ]
+
+
 def test_the_trace_carries_the_w4a8_chain(
     staged: tuple[StagedGraph[Any, Any], str],
 ) -> None:
-    """The experts run the MXFP4 chain: quantize, two grouped matmuls and
-    the fused SiLU, all inside the shared body; the dense MLPs run the
-    W8A8 FP8 chain inline."""
-    _, text = staged
+    """The experts run the MXFP4 chain: the input quantize and two grouped
+    matmuls, all inside the shared body; the dense MLPs run the W8A8 FP8
+    chain inline.
+
+    The gate/up matmul's epilogue applies the gated activation and the down
+    projection's MXFP8 re-quantize in place, so neither a standalone SiLU
+    nor a second grouped quantize appears, and the grouped matmul count is
+    two.
+    """
+    graph, text = staged
     for op, expected in (
-        ("mo.moe.create.indices.with.scales.offset", 1),
-        ("mo.grouped.quantize.dynamic.block.scaled.with_row_indices", 1),
-        # The plain name is a substring of the row-indexed one, so both
-        # grouped quantizes count here.
-        ("mo.grouped.quantize.dynamic.block.scaled", 2),
-        ("mo.composite.grouped_matmul_block_scaled", 2),
-        ("ep.fused_silu", 1),
-        ("mo.moe.finalize", 1),
-        ("mo.quantize_dynamic_scaled_float8", 7),
-        ("mo.matmul_dynamic_scaled_fp8", 7),
+        ("moe.create.indices.with.scales.offset", 1),
+        (
+            "quantization.grouped.quantize.dynamic.block.scaled.with_row_indices",
+            1,
+        ),
+        # The plain name is a substring of the row-indexed one, so the
+        # experts' input quantize counts here too.
+        ("quantization.grouped.quantize.dynamic.block.scaled", 1),
+        (GATE_UP_OP, 1),
+        (DOWN_OP, 1),
+        ("moe.finalize", 1),
+        ("mo.composite.quantize_dynamic_scaled_fp8", 7),
+        ("matmul.dynamic_scaled_fp8", 7),
         ("f8e4m3fn", None),
         ("f8e8m0fnu", None),
     ):
@@ -389,24 +467,65 @@ def test_the_trace_carries_the_w4a8_chain(
         assert n > 0, f"missing {op}"
         if expected is not None:
             assert n == expected, f"{op}: expected {expected}, got {n}"
+    assert "ep.fused_silu" not in text, "the chained SiLU is gone"
+    # The fused epilogue rounds its SwiGLU output through the bfloat16 the
+    # chained activation stored before it quantizes, which keeps the layer's
+    # output bit-identical to the chained path's.
+    ops = _nested_ops(graph.graph._mlir_op.block.owner)
+    (gate_up,) = [op for op in ops if op.name == GATE_UP_OP]
+    activation = mlir.StringAttr(gate_up.attributes["activation"]).value
+    assert activation == "silu_bf16", (
+        f"the gate/up matmul fuses {activation}, not a bf16-rounded SwiGLU"
+    )
+    # The down matmul consumes the epilogue's packed output directly: a
+    # restored re-quantize would put another op's result in this slot.
+    (down,) = [op for op in ops if op.name == DOWN_OP]
+    assert down.operands[0] == gate_up.results[0], (
+        "the down matmul does not read the gate/up epilogue's packed result"
+    )
 
 
 def test_the_trace_carries_the_drafter_kernels(
     staged: tuple[StagedGraph[Any, Any], str],
 ) -> None:
-    """The drafter's 2 layers write context and block K/V through the
-    paged stores, rope through the fused QK kernel, and attend through the
-    sinked windowed kernel; the target's 4 layers write their own 8
-    stores."""
+    """The drafter's 2 layers write context and block K/V through one
+    rotation-and-store launch each -- the context rows through the
+    query-less one, the block rows through the one that ropes their queries
+    too -- not the paged stores plus a separate fused QK kernel, and attend
+    through the sinked windowed kernel; the target's 4 layers keep their own
+    8 stores."""
     _, text = staged
     for op, expected in (
-        ("mo.kv_cache.store.paged.ragged", 16),
-        ("mo.fused_qk_rope.ragged.paged", 8),
-        ("mo.mha.ragged.paged.sink_weights", 5),
-        ("mo.mha.ragged.paged", 6),
+        ("kv_cache.store.paged.ragged", 8),
+        ("kv_cache.fused_qk_rope.ragged.paged", 4),
+        ("kv_cache.rope_qkv_store.ragged.paged", 2),
+        ("kv_cache.k_rope_v_store.ragged.paged", 2),
+        ("attention.mha.ragged.paged.sink_weights", 5),
+        ("attention.mha.ragged.paged", 6),
     ):
         n = text.count(op)
         assert n == expected, f"{op}: expected {expected}, got {n}"
+
+
+def test_only_the_target_attention_reads_the_split_record(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The drafter must not split on the target's record: the driver strips
+    the record before every draft forward, so the drafter's attention reads
+    a zeros constant while the target's reads the leaf's graph argument."""
+    graph, _ = staged
+    attention = [
+        source
+        for symbol, source in record_sources(graph.graph._mlir_op.block.owner)
+        if symbol
+        in (
+            "attention.mha.ragged.paged",
+            "attention.mha.ragged.paged.sink_weights",
+        )
+    ]
+    assert attention == (
+        ["argument"] * TARGET_ATTENTIONS + ["mo.constant"] * DRAFTER_ATTENTIONS
+    )
 
 
 def test_the_target_layers_read_the_split_cache(

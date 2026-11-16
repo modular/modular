@@ -15,6 +15,7 @@
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/ModuleCache.h"
+#include "Mojo/MojoParser/ModuleLoader.h"
 #include "Mojo/MojoParser/SharedState.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
@@ -407,9 +408,10 @@ importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
 
 std::pair<OwningOpRef<ModuleOp>, PackageOp> LIT::importMojoPackage(
     ContextRef context, StringRef path, StringRef packageName,
-    llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
-    const CompilationOptions &options, const FrontendOptions &frontendOptions,
-    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
+    const ImportPath &importPath, llvm::SourceMgr &sourceMgr,
+    MLIRContext *mlirContext, const CompilationOptions &options,
+    const FrontendOptions &frontendOptions, mlir::TimingScope &ts,
+    SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -436,8 +438,16 @@ std::pair<OwningOpRef<ModuleOp>, PackageOp> LIT::importMojoPackage(
         if (sharedState.diBuilder)
           fileGuard = sharedState.diBuilder->pushFile(path);
 
-        // Build the package.
-        return sharedState.createPackage(path, packageName);
+        // Build the package, binding it at its import path before anything is
+        // parsed that could import it.
+        PackageASTDecl &package = sharedState.createPackage(path, packageName);
+        // A failure to bind is reported, which fails the import.
+        if (!importPath.components.empty()) {
+          ModuleLoader &loader = sharedState.getModuleLoader();
+          (void)loader.bindPrecompiledPackage(*loader.lookupState(&package),
+                                              importPath.components);
+        }
+        return package;
       });
   LLVM_DEBUG(
       llvm::dbgs()

@@ -18,9 +18,9 @@ from __future__ import annotations
 import enum
 import re
 from collections.abc import Callable, Sequence
-from typing import Any, ClassVar, TypeVar
+from typing import Any, ClassVar
 
-from max.pipelines.lib.reasoning import register
+from max.pipelines.lib.reasoning import Route, RoutedSpan, register
 from max.pipelines.lib.tokenizer import convert_token_to_id
 from max.pipelines.modeling.types import (
     ParsedReasoningDelta,
@@ -28,8 +28,6 @@ from max.pipelines.modeling.types import (
     ReasoningParser,
     ReasoningSpan,
 )
-
-_T = TypeVar("_T")
 
 _HEADER_RECIPIENT = re.compile(r"to=([^\s<]+)")
 _BARE_HEADER = re.compile(r"\s*to=([^\s<]+)")
@@ -42,53 +40,6 @@ class _Channel(enum.Enum):
     HEADER = enum.auto()
     REASONING = enum.auto()
     CONTENT = enum.auto()
-
-
-class _Route(enum.Enum):
-    REASONING = enum.auto()
-    CONTENT = enum.auto()
-    DROP = enum.auto()
-    HOLD = enum.auto()
-
-
-class _ChannelSpan(ReasoningSpan):
-    """Routes each item of the carried-over items plus the delta.
-
-    Items held back by the previous delta are prepended per element type,
-    since llm.py extracts token ids and log-probabilities from separate
-    sequences of the same length.
-    """
-
-    def __init__(
-        self,
-        routes: list[_Route],
-        carried: dict[type, list[Any]],
-        held: dict[type, list[Any]],
-    ) -> None:
-        super().__init__((0, 0), (0, 0))
-        self._routes = routes
-        self._carried = carried
-        self._held = held
-
-    def _select(self, seq: Sequence[_T], route: _Route) -> list[_T]:
-        if not seq:
-            return []
-        key = type(seq[0])
-        routed = list(
-            zip(
-                self._carried.get(key, []) + list(seq),
-                self._routes,
-                strict=True,
-            )
-        )
-        self._held[key] = [x for x, r in routed if r is _Route.HOLD]
-        return [x for x, r in routed if r is route]
-
-    def extract_content(self, seq: Sequence[_T]) -> list[_T]:
-        return self._select(seq, _Route.CONTENT)
-
-    def extract_reasoning(self, seq: Sequence[_T]) -> list[_T]:
-        return self._select(seq, _Route.REASONING)
 
 
 @register("muse_glimmer")
@@ -141,11 +92,11 @@ class MuseGlimmerReasoningParser(ReasoningParser):
             _Channel.REASONING if recipient == "self" else _Channel.CONTENT
         )
 
-    def _body_route(self) -> _Route:
+    def _body_route(self) -> Route:
         return (
-            _Route.REASONING
+            Route.REASONING
             if self._channel is _Channel.REASONING
-            else _Route.CONTENT
+            else Route.CONTENT
         )
 
     def _is_reasoning(self) -> bool:
@@ -179,15 +130,15 @@ class MuseGlimmerReasoningParser(ReasoningParser):
             )
         held_ids = self._held
         held_at = list(range(len(held_ids)))
-        routes = [_Route.HOLD] * len(held_ids)
+        routes = [Route.HOLD] * len(held_ids)
 
-        def resolve_held(count: int, route: _Route) -> None:
+        def resolve_held(count: int, route: Route) -> None:
             for i in held_at[:count]:
                 routes[i] = route
             del held_at[:count], held_ids[:count]
 
         for token_id in delta_token_ids:
-            routes.append(_Route.DROP)
+            routes.append(Route.DROP)
             if (
                 self._channel is _Channel.CLOSED
                 and token_id not in self._boundary_ids
@@ -208,14 +159,14 @@ class MuseGlimmerReasoningParser(ReasoningParser):
                     match = _HEADER_RECIPIENT.search(self._decode(self._header))
                     self._open(match.group(1) if match else None)
                 elif match := _BARE_HEADER.fullmatch(self._decode(held_ids)):
-                    resolve_held(len(held_at), _Route.DROP)
+                    resolve_held(len(held_at), Route.DROP)
                     self._open(match.group(1))
                 else:
                     resolve_held(len(held_at), self._body_route())
             elif self._channel is _Channel.HEADER:
                 self._header.append(token_id)
             else:
-                routes[-1] = _Route.HOLD
+                routes[-1] = Route.HOLD
                 held_at.append(len(routes) - 1)
                 held_ids.append(token_id)
                 while held_ids and not _HEADER_PREFIX.fullmatch(
@@ -225,7 +176,7 @@ class MuseGlimmerReasoningParser(ReasoningParser):
 
         carried, self._carried = self._carried, {}
         return ParsedReasoningDelta(
-            span=_ChannelSpan(routes, carried, self._carried),
+            span=RoutedSpan(routes, carried, self._carried),
             is_still_reasoning=self._is_reasoning(),
         )
 

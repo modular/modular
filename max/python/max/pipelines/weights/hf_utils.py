@@ -29,7 +29,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO, Protocol, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
@@ -52,9 +52,12 @@ from tqdm.std import TqdmDefaultWriteLock
 
 __all__ = [
     "HuggingFaceRepo",
+    "RepoFileSource",
     "download_weight_files",
+    "fetch_repo_file",
     "generate_local_model_path",
     "header_only_weight_files",
+    "is_commit_sha",
     "is_diffusion_pipeline",
     "try_to_load_from_cache",
     "validate_hf_repo_access",
@@ -325,6 +328,96 @@ def download_weight_files(
     )
 
     return weight_paths
+
+
+class RepoFileSource(Protocol):
+    """A repo handle, as far as resolving one of its files goes.
+
+    ``HuggingFaceRepo`` satisfies this as written. A caller that has a repo's
+    identity but no reason to build a real handle -- an architecture resolving
+    one metadata file, whose stand-in would otherwise have to resolve the Hub
+    -- satisfies it too, because :func:`fetch_repo_file` reads these fields
+    alone.
+    """
+
+    @property
+    def repo_type(self) -> str:
+        """``"local"`` for an on-disk repo or an offline cache hit."""
+
+    @property
+    def repo_id(self) -> str:
+        """The Hugging Face repo id, for a repo that is not on disk."""
+
+    @property
+    def revision(self) -> str:
+        """The revision the file was requested at."""
+
+    @property
+    def subfolder(self) -> str | None:
+        """The subdirectory the files live under, if any."""
+
+    @property
+    def local_path(self) -> str:
+        """The directory backing an on-disk repo; local repos only."""
+
+
+def fetch_repo_file(repo: RepoFileSource, filename: str) -> Path | None:
+    """Returns a repo file's local path, downloading it when it is not cached.
+
+    For a checkpoint's metadata rather than its weights (``params.json``, say),
+    where a caller needs the file locally but must work whether the repo is a
+    local directory, an offline cache hit, or a Hub id to fetch. A commit
+    revision is answered from the cache first, which is a lookup rather than a
+    download: it needs no network, and no write, so a read-only cache still
+    answers. A branch or tag revision is not, because the cache resolves it
+    from the ref it last saw, which may trail the Hub; that goes through
+    ``hf_hub_download``, which re-resolves the name and is itself cache-first
+    (and offline-safe) when the Hub cannot be reached.
+
+    A missing file is read as absent: ``None`` covers the repo not holding it,
+    an offline cache miss, and a target this process cannot reach. A failure
+    that is not about absence -- an auth error on a gated repo, a network
+    error -- is logged at warning rather than debug, because it is the
+    operator's problem and the caller can only fall back.
+
+    Args:
+        repo: The repository handle.
+        filename: The file name, relative to the repo root or to its subfolder.
+
+    Returns:
+        The file on disk, or ``None`` when it could not be resolved.
+    """
+    name = f"{repo.subfolder}/{filename}" if repo.subfolder else filename
+    if repo.repo_type == "local":
+        path = Path(repo.local_path) / name
+        return path if path.is_file() else None
+    if is_commit_sha(repo.revision):
+        cached = huggingface_hub.try_to_load_from_cache(
+            repo.repo_id,
+            name,
+            revision=repo.revision,
+        )
+        if isinstance(cached, (str, os.PathLike)):
+            return Path(cached)
+    try:
+        return Path(
+            huggingface_hub.hf_hub_download(
+                repo_id=repo.repo_id,
+                filename=name,
+                revision=repo.revision,
+            )
+        )
+    except (
+        hf_hub_errors.EntryNotFoundError,
+        hf_hub_errors.LocalEntryNotFoundError,
+    ) as error:
+        _logger.debug("%s does not hold %s: %s", repo.repo_id, name, error)
+        return None
+    except Exception as error:
+        _logger.warning(
+            "Could not fetch %s from %s: %s", name, repo.repo_id, error
+        )
+        return None
 
 
 # Empirically 97% of safetensors headers on the Hub fit in 100 kB, so one
@@ -626,6 +719,24 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
 
 _TRAINING_CHECKPOINT_DIR = re.compile(r"(?:^|/)checkpoint-\d+/")
 
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def is_commit_sha(revision: str) -> bool:
+    """Whether a revision already names a commit, so nothing has to resolve it.
+
+    A Hugging Face commit id is 40 lowercase hex characters. Anything else --
+    ``main``, a tag, a branch -- is a name whose current commit is the Hub's
+    answer, and a local cache only knows the one it last saw.
+
+    Args:
+        revision: The revision a repo handle was asked for.
+
+    Returns:
+        Whether it is a commit id.
+    """
+    return _COMMIT_SHA.fullmatch(revision) is not None
+
 
 @dataclass(frozen=True)
 class HuggingFaceRepo:
@@ -787,22 +898,45 @@ class HuggingFaceRepo:
                 ]
             else:
                 safetensor_files: list[str] = []
+                consolidated_files: list[str] = []
                 for f in safetensor_paths:
-                    # If there is more than one weight, ignore consolidated
-                    # tensors.
-                    if "consolidated" in f:
-                        continue
                     relative_path = f.removeprefix(strip_prefix)
-                    # Likewise ignore the per-step snapshots training repos ship
-                    # in `checkpoint-<step>/` directories: those repeat every
-                    # tensor name of the weights above them instead of sharding
-                    # them, and there is no index file to tell them apart.
+                    # Ignore the per-step snapshots training repos ship in
+                    # `checkpoint-<step>/` directories: those repeat every
+                    # tensor name of the weights above them instead of
+                    # sharding them, and there is no index file to tell them
+                    # apart. Judged before the consolidated rule below, so a
+                    # snapshot's own consolidated shards stay ignored.
                     if _TRAINING_CHECKPOINT_DIR.search(
                         relative_path.removeprefix(base_prefix)
                     ):
                         continue
+                    # If there is more than one weight, ignore consolidated
+                    # tensors: a repo that ships both the converted shards and
+                    # the converter's consolidated output holds every tensor
+                    # twice. The name is tested on the file, not on the path:
+                    # a checkout living in a directory called
+                    # `consolidated-export/` would otherwise read as one.
+                    if "consolidated" in os.path.basename(f):
+                        consolidated_files.append(relative_path)
+                        continue
                     safetensor_files.append(relative_path)
-                weight_files[WeightsFormat.safetensors] = safetensor_files
+                if not safetensor_files and consolidated_files:
+                    # A Mistral-style checkpoint shards only as
+                    # `consolidated-00001-of-00032.safetensors` (with a
+                    # `consolidated.safetensors.index.json`), so the rule above
+                    # leaves nothing at all to load. Those shards are disjoint
+                    # and complete, which is what the filtering meant to
+                    # protect; take them in shard order.
+                    safetensor_files = consolidated_files
+                # `glob` returns directory order, which differs between
+                # filesystems and between nodes, so sorting here is what makes
+                # the load order a property of the checkpoint rather than of
+                # the machine. Shard names are zero-padded and the converter's
+                # index orders them as text.
+                weight_files[WeightsFormat.safetensors] = sorted(
+                    safetensor_files
+                )
 
         if gguf_paths:
             weight_files[WeightsFormat.gguf] = [

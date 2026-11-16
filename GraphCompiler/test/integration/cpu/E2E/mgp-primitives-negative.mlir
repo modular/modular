@@ -4,7 +4,7 @@
 // CHECK-LABEL: --- Running 'assert_false'
 // CHECK: <error:
 // CHECK: the buffer must not contain 0>
-mgp.model @assert_false : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @assert_false devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]
@@ -19,7 +19,7 @@ mgp.model @assert_false : mof devices [#M.device_ref<"cpu", 0>] init (%weights: 
 // CHECK-LABEL: --- Running 'buffer_slice_out_of_range'
 // CHECK: <error:
 // CHECK: offset, len and elem_size are out of range
-mgp.model @buffer_slice_out_of_range : mof devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
+mgp.model @buffer_slice_out_of_range devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
   %ch0 = grt.chain.create ()
   %ctx = mgp.context.create 2
   %ch2 = mgp.runtime.create %ch0, %ctx[1]

@@ -120,7 +120,7 @@ def _launch_default[
     a: TileTensor[mut=False, dtype, ...],
     b: TileTensor[mut=False, dtype, ...],
     c: TileTensor[mut=True, c_dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     """Host launcher for the AMDMatmul "standard" 256x256 FP8 config.
 
@@ -241,7 +241,7 @@ def _bench_one_kernel[
     bk_4wave: Int = 0,
     num_splits: Int = 1,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     cb_a: CacheBustingBuffer[dtype],
     cb_b: CacheBustingBuffer[dtype],
@@ -281,7 +281,7 @@ def _bench_one_kernel[
         imm,
     }:
         @inline(.always)
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        def kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -369,7 +369,7 @@ def bench_shape[
     bn_4wave: Int,
     bk_4wave: Int,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     mut b: Bench,
     M: Int,
     n: NType,

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU test for the attention index list on main's ``mo.csa2.index_list``.
+"""GPU test for the attention index list on main's ``attention.csa2.index_list``.
 
 The expected list is derived from the leaf-slot formula --
 ``(block * layers + layer) * slots + entry % slots`` with

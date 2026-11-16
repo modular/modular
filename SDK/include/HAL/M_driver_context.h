@@ -172,8 +172,8 @@ typedef M_driver_status_t (*M_driver_copy_intra_device_sync_func_ptr_t)(
  * Copy `dst->size` bytes from a view on @p src_context's device into a view on
  * @p context's device (a peer copy). @p dst is on @p context's device.
  *
- * @return Standard Status Protocol, or M_DRIVER_STATUS_UNIMPLEMENTED on
- *         backends without peer-copy support.
+ * @return Standard Status Protocol, or M_DRIVER_STATUS_UNSUPPORTED on
+ *         backends that cannot copy between devices.
  */
 M_DRIVER_API_EXPORT
 M_driver_status_t M_driver_copy_inter_device_sync(

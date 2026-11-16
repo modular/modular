@@ -424,11 +424,10 @@ def _replay_us(ctx: DeviceContext, graph: DeviceGraph) raises -> Float64:
 def bench_case[
     hidden_size: Int, block_threads: Int
 ](counts: List[Int], ctx: DeviceContext) raises:
-    """Times the new kernel (`PDLLevel.ON`, with the launch attribute)
-    against the implementation it replaces (`PDLLevel.OFF` on the frozen
-    body), on the same buffers, alternating the arm order every round and
-    reporting the fastest round of each; the two are held to the same output
-    bits first.
+    """Times the new kernel (launched with the PDL attribute) against the
+    implementation it replaces (the frozen base body), on the same buffers,
+    alternating the arm order every round and reporting the fastest round of
+    each; the two are held to the same output bits first.
 
     The two arms differ in exactly two things: the kernel's call to
     `wait_on_dependent_grids`/`launch_dependent_grids`, and the launch
@@ -529,7 +528,6 @@ def bench_case[
             type_of(prev_t.as_imm()).Engine,
             type_of(ew_t.as_imm()).Engine,
             type_of(hw_t.as_imm()).Engine,
-            pdl_level=PDLLevel.ON,
         ]
 
         def build_base(mut b: DeviceGraphBuilder) raises {imm}:
@@ -559,46 +557,8 @@ def bench_case[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        comptime off_kernel = mtp_eh_norm_kernel[
-            .bfloat16,
-            out_t.LayoutType,
-            out_t.origin,
-            type_of(embed_t.as_imm()).LayoutType,
-            ImmOrigin(embed_t.origin),
-            type_of(prev_t.as_imm()).LayoutType,
-            ImmOrigin(prev_t.origin),
-            type_of(ew_t.as_imm()).LayoutType,
-            ImmOrigin(ew_t.origin),
-            type_of(hw_t.as_imm()).LayoutType,
-            ImmOrigin(hw_t.origin),
-            hidden_size,
-            block_threads,
-            max_warps,
-            out_t.Engine,
-            type_of(embed_t.as_imm()).Engine,
-            type_of(prev_t.as_imm()).Engine,
-            type_of(ew_t.as_imm()).Engine,
-            type_of(hw_t.as_imm()).Engine,
-            pdl_level=PDLLevel.OFF,
-        ]
-
-        def build_off_kernel(mut b: DeviceGraphBuilder) raises {imm}:
-            b.recording_context().enqueue_function[off_kernel](
-                out_t,
-                embed_t.as_imm(),
-                prev_t.as_imm(),
-                ew_t.as_imm(),
-                hw_t.as_imm(),
-                eps32,
-                Int32(num_tokens),
-                grid_dim=(num_tokens, 1, 1),
-                block_dim=(block_threads, 1, 1),
-            )
-
         var graph_base = DeviceGraph.create(ctx, build_base)
-        var graph_off_kernel = DeviceGraph.create(ctx, build_off_kernel)
         var graph_pdl = DeviceGraph.create(ctx, build_pdl)
-        var off_us = Float64(1.0e30)
         var base_out = ctx.enqueue_create_host_buffer[.bfloat16](
             num_tokens * 2 * hidden_size
         )
@@ -610,11 +570,9 @@ def bench_case[
         for r in range(BENCH_ROUNDS):
             if r % 2 == 1:
                 base_us = min(base_us, _replay_us(ctx, graph_base))
-                off_us = min(off_us, _replay_us(ctx, graph_off_kernel))
                 pdl_us = min(pdl_us, _replay_us(ctx, graph_pdl))
             else:
                 pdl_us = min(pdl_us, _replay_us(ctx, graph_pdl))
-                off_us = min(off_us, _replay_us(ctx, graph_off_kernel))
                 base_us = min(base_us, _replay_us(ctx, graph_base))
         # Correctness gates the speed, on this vendor: the port must produce
         # the bits of the kernel that ships, element for element.
@@ -658,7 +616,7 @@ def bench_case[
             sep="",
         )
         print(
-            t"  {hidden_size}x{num_tokens} base_us={base_us} off_us={off_us} pdl_us={pdl_us} rewrite={base_us / off_us} overlap={off_us / pdl_us}"
+            t"  {hidden_size}x{num_tokens} base_us={base_us} pdl_us={pdl_us} rewrite={base_us / pdl_us}"
         )
         _ = embed_d
         _ = prev_d

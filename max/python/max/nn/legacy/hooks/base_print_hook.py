@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from max import tree
-from max.nn.legacy._identity import IdentityMap
+from max.nn._identity import IdentityMap
 from max.nn.legacy.layer import Layer
 
 

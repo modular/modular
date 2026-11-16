@@ -18,7 +18,6 @@
 #ifndef KGEN_MOJOPARSER_CLOSUREEMITTER_H
 #define KGEN_MOJOPARSER_CLOSUREEMITTER_H
 
-#include "ExprNodes.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITOps.h"
@@ -26,9 +25,12 @@
 #include "StructEmitter.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
+#include <cstdint>
+
 namespace M::KGEN::LIT {
 class OpASTDecl;
 class TraitASTDecl;
+enum class CaptureConvention : uint8_t;
 
 // Naming schemes used for emitting closure related-struct.
 inline constexpr llvm::StringLiteral kClosurePrefix = "closure$";

@@ -28,21 +28,19 @@ import numpy.typing as npt
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
+from max.pipelines.architectures.qwen3_5.context import (
+    Qwen3_5TextAndVisionContext,
+    VisionEncodingData,
+)
+from max.pipelines.architectures.qwen3_5.data_processing import (
+    QWEN3_5_MAX_PIXELS,
+    get_bilinear_interpolation_weights_and_indices,
+    get_seqlens,
     mrope_pos_ids_3d,
 )
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.vision_packing import (
     pack_uncached_images,
-)
-from max.pipelines.architectures.qwen3vl_moe.context import (
-    Qwen3VLTextAndVisionContext,
-    VisionEncodingData,
-)
-from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
-    QWEN3VL_MAX_PIXELS,
-    get_bilinear_interpolation_weights_and_indices,
-    get_seqlens,
 )
 from max.pipelines.context import ImageMetadata, TokenBuffer
 from max.pipelines.lib.interfaces import arch_has_vision_tower
@@ -80,7 +78,7 @@ def test_row_spec_is_the_lm_hidden_at_the_declared_dtype() -> None:
 
 
 def test_entry_bytes_bound_by_the_processor_resolution_ceiling() -> None:
-    max_tokens = QWEN3VL_MAX_PIXELS // (PATCH_SIZE**2 * MERGE_SIZE**2)
+    max_tokens = QWEN3_5_MAX_PIXELS // (PATCH_SIZE**2 * MERGE_SIZE**2)
     assert Qwen3_5Config.estimate_vision_cache_entry_bytes(_hf_config()) == (
         max_tokens * 2048 * DType.bfloat16.size_in_bytes
     )
@@ -108,7 +106,7 @@ def _tokens_for(grids: list[tuple[int, int, int]]) -> npt.NDArray[np.int64]:
     return np.array(tokens, dtype=np.int64)
 
 
-def _context() -> Qwen3VLTextAndVisionContext:
+def _context() -> Qwen3_5TextAndVisionContext:
     """A two-image context built the way the tokenizer builds one."""
     grid_thw = np.array(GRIDS, dtype=np.int32)
     patch_counts = [t * h * w for t, h, w in GRIDS]
@@ -132,7 +130,7 @@ def _context() -> Qwen3VLTextAndVisionContext:
         spans.append((start, start + rows))
         cursor += rows
 
-    return Qwen3VLTextAndVisionContext(
+    return Qwen3_5TextAndVisionContext(
         max_length=len(tokens) + 1,
         tokens=TokenBuffer(tokens),
         images=[

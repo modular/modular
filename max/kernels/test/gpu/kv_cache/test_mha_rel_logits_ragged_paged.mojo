@@ -17,6 +17,7 @@ production kernel path, not just the mask struct in isolation.
 """
 
 from std.math import align_up, ceildiv, rsqrt
+from std.sys import size_of
 from std.random import seed
 
 from max.gpu.host import DeviceContext
@@ -27,19 +28,38 @@ from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
-from nn.attention.mha_mask import (
-    CausalMask,
-    MHAMask,
-    RelativeLogitsMask,
-    SlidingWindowCausalMask,
-)
+from nn.attention.operand_masks import RelativeLogitsMask
+from extensibility import Loadable
+from layout import Coord, TensorLayout, TileTensor
 from std.testing import assert_almost_equal
 
 
+@fieldwise_init
+struct TileView[dtype_: DType, LT: TensorLayout, origin: ImmOrigin](
+    Loadable, TrivialRegisterPassable
+):
+    """Reads a device tile through `load`, as a mask reads a graph operand."""
+
+    comptime dtype: DType = Self.dtype_
+    comptime rank: Int = Self.LT.rank
+    comptime __shape_types = Self.LT.__shape_types
+    comptime _shape_types = Self.LT._shape_types
+
+    var tile: TileTensor[Self.dtype_, Self.LT, Self.origin]
+
+    def shape(self) -> Coord[*Self._shape_types]:
+        return self.tile.layout.shape_coord()
+
+    def load[
+        width: Int, element_alignment: Int = 1
+    ](self, idx: Coord) -> SIMD[Self.dtype, width]:
+        return self.tile.load[
+            width, alignment=element_alignment * size_of[Self.dtype]()
+        ](idx)
+
+
 def execute_rel_logits_flash_attention_test[
-    V: MHAMask,
-    //,
-    visibility: V,
+    window: Int,
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
     page_size: Int,
@@ -86,11 +106,19 @@ def execute_rel_logits_flash_attention_test[
     rel_logits.to_device()
     var rel_logits_device = rel_logits.device_tensor().as_imm()
 
-    var mask = RelativeLogitsMask[visibility](
-        rel_logits_device,
-        cache_table.cache_lengths.device_tile_tensor(),
-        cache_table.input_row_offsets.device_tile_tensor(),
+    var bias = TileView(rel_logits_device)
+    var cache_lengths_view = TileView(
+        cache_table.cache_lengths.device_tile_tensor().as_imm()
     )
+    var row_offsets = TileView(
+        cache_table.input_row_offsets.device_tile_tensor().as_imm()
+    )
+    var mask = RelativeLogitsMask[
+        window,
+        type_of(bias),
+        type_of(cache_lengths_view),
+        type_of(row_offsets),
+    ](bias, cache_lengths_view, row_offsets)
 
     var num_paged_blocks = 0
     for i in range(batch_size):
@@ -190,7 +218,7 @@ def main() raises:
         # Prefill, global, GQA kv_heads=8, ragged batch of 2 unequal
         # sequences, extent < the longest sequence.
         execute_rel_logits_flash_attention_test[
-            CausalMask(),
+            window=0,
             num_q_heads=32,
             kv_params=KVCacheStaticParams(num_heads=8, head_size=64),
             page_size=128,
@@ -199,7 +227,7 @@ def main() raises:
 
         # Long cached prefixes exercise a nonzero start tile.
         execute_rel_logits_flash_attention_test[
-            SlidingWindowCausalMask[6](),
+            window=6,
             num_q_heads=32,
             kv_params=KVCacheStaticParams(num_heads=16, head_size=64),
             page_size=128,
@@ -207,7 +235,7 @@ def main() raises:
         ]([1, 1], [258, 513], "decode+window+kv16+long_prefix", ctx)
 
         execute_rel_logits_flash_attention_test[
-            CausalMask(),
+            window=0,
             num_q_heads=32,
             kv_params=KVCacheStaticParams(num_heads=8, head_size=64),
             page_size=128,
@@ -218,7 +246,7 @@ def main() raises:
         # odd and even query positions cover both pair alignments of the
         # row-wise bias read.
         execute_rel_logits_flash_attention_test[
-            CausalMask(),
+            window=0,
             num_q_heads=16,
             kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
             page_size=128,
@@ -226,7 +254,7 @@ def main() raises:
         ]([1, 1, 1, 300], [700, 1501, 33, 0], "mixed+global+extent1024", ctx)
 
         execute_rel_logits_flash_attention_test[
-            SlidingWindowCausalMask[512](),
+            window=512,
             num_q_heads=16,
             kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
             page_size=128,
@@ -234,7 +262,7 @@ def main() raises:
         ]([1, 1, 1, 300], [700, 1501, 33, 0], "mixed+window+extent1024", ctx)
 
         execute_rel_logits_flash_attention_test[
-            CausalMask(),
+            window=0,
             num_q_heads=16,
             kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
             page_size=128,
@@ -244,7 +272,7 @@ def main() raises:
         # TODO: Investigate MI355
         comptime if ctx.default_device_info == B200:
             execute_rel_logits_flash_attention_test[
-                SlidingWindowCausalMask[512](),
+                window=512,
                 num_q_heads=32,
                 kv_params=KVCacheStaticParams(num_heads=8, head_size=128),
                 page_size=128,
@@ -258,7 +286,7 @@ def main() raises:
             )
 
             execute_rel_logits_flash_attention_test[
-                CausalMask(),
+                window=0,
                 num_q_heads=32,
                 kv_params=KVCacheStaticParams(num_heads=8, head_size=128),
                 page_size=128,

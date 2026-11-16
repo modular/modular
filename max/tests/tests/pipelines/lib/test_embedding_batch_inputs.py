@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""ModuleV3 embedding inputs match the types their graph declares."""
+"""Ragged encoder inputs match the types their graph declares."""
 
 from __future__ import annotations
 
@@ -19,9 +19,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from max.driver import CPU
 from max.graph import DeviceRef
-from max.pipelines.architectures.qwen3_embedding_modulev3.batch_processor import (
-    Qwen3EmbeddingModuleV3BatchProcessor,
-)
+from max.pipelines.lib.registration_encoder import RaggedEncoderProcessor
 
 
 def test_embedding_inputs_match_their_symbolic_types() -> None:
@@ -32,7 +30,7 @@ def test_embedding_inputs_match_their_symbolic_types() -> None:
     types target a GPU so a CPU-only host still distinguishes the token
     device from the host-side row offsets and ``return_n_logits``.
     """
-    processor = object.__new__(Qwen3EmbeddingModuleV3BatchProcessor)
+    processor = object.__new__(RaggedEncoderProcessor)
     processor.runtime = MagicMock(devices=[CPU()])
     contexts = [
         MagicMock(tokens=MagicMock(active=np.array([1, 2, 3]))),

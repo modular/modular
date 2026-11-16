@@ -11,16 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import get_args
+from dataclasses import replace
+from typing import ClassVar, get_args
 
 import numpy as np
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     AttnKey,
     BatchCharacteristics,
+    KVCacheAssignments,
     KVCacheBuffer,
     KVCacheQuantizationConfig,
     MHAAttnKey,
@@ -29,11 +31,14 @@ from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     PagedKVLeafRegion,
 )
-from max.nn.legacy.kv_cache.cache_params import (
-    SpeculativeMethod as CacheSpeculativeMethod,
-)
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
+    _MAX_INT32_ROW_ID,
+    _MAX_UINT32_SCALE_ROW_ID,
+    _check_paged_row_ids,
     page_stride_of,
+)
+from max.nn.kv_cache.cache_params import (
+    SpeculativeMethod as CacheSpeculativeMethod,
 )
 from max.pipelines.speculative import SpeculativeMethod
 
@@ -584,11 +589,198 @@ def test_mha_attn_key_pack_into_buffer() -> None:
 
 
 def test_mla_attn_key_pack_into_buffer_ignores_cache_length() -> None:
-    """MLA packs a 3-int buffer; max_cache_valid_length is not included."""
-    key = MLAAttnKey(batch_size=2, max_prompt_length=1, num_partitions=5)
+    """MLA packs a 6-int buffer; max_cache_valid_length is not included."""
+    key = MLAAttnKey(
+        batch_size=2,
+        max_prompt_length=1,
+        num_partitions=5,
+        decode_batch_size=1,
+        decode_max_prompt_length=1,
+        decode_num_partitions=3,
+    )
     buffer = key.pack_into_buffer(CPU(), max_cache_valid_length=123)
     np.testing.assert_array_equal(
-        buffer.to_numpy(), np.array([2, 1, 5], dtype=np.int64)
+        buffer.to_numpy(),
+        np.array([2, 1, 5, 1, 1, 3], dtype=np.int64),
+    )
+
+
+def _mla_assignment(
+    record: np.ndarray,
+    *,
+    batch_size: int = 3,
+    max_prompt_length: int = 604,
+    max_cache_valid_length: int = 1_700,
+) -> KVCacheAssignments:
+    """A minimal replica assignment carrying the given split record."""
+    return KVCacheAssignments(
+        cache_lengths_by_device=[],
+        staged_by_device=[{}],
+        max_prompt_length=Buffer.from_numpy(
+            np.array([max_prompt_length], dtype=np.uint32)
+        ),
+        max_cache_length=Buffer.from_numpy(
+            np.array([max_cache_valid_length], dtype=np.uint32)
+        ),
+        batch_characteristics=BatchCharacteristics(
+            batch_size=batch_size,
+            max_prompt_length=max_prompt_length,
+            max_cache_valid_length=max_cache_valid_length,
+        ),
+        mixed_step_split=Buffer.from_numpy(record),
+    )
+
+
+def _spied_mla_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[MLAKVCacheParams, dict[tuple[int, int, int], int]]:
+    """MLA params whose ``resolve_attn_key`` calls are recorded.
+
+    The record maps each call's ``(batch, query, cache)`` to the partition
+    count the real rule would return; the CPU path always returns 1, so the
+    spy is what tells the decode count from the whole-batch one.
+    """
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        page_size=128,
+        num_q_heads=128,
+    )
+    calls: dict[tuple[int, int, int], int] = {}
+    real = params.resolve_attn_key
+
+    def spy(batch_size: int, max_prompt_length: int, max_cache: int) -> object:
+        key = (batch_size, max_prompt_length, max_cache)
+        calls[key] = calls.get(key, 0) + 1
+        return real(batch_size, max_prompt_length, max_cache)
+
+    monkeypatch.setattr(params, "resolve_attn_key", spy)
+    return params, calls
+
+
+def test_mla_resolve_target_key_fills_the_decode_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A split record resolves the decode key over the decode view's rows.
+
+    The recorded ``resolve_attn_key`` call pins the view's rows, max query
+    and max cache, for a head-decode and a tail-decode record.
+    """
+    params, calls = _spied_mla_params(monkeypatch)
+    # A head-decode record: the decode view is the head view.
+    record = np.array([2, 8, 4, 200, 604, 1_700, 1_700], dtype=np.uint32)
+    key = params._resolve_target_key(_mla_assignment(record))
+    assert isinstance(key, MLAAttnKey)
+    assert key.decode_batch_size == 2
+    assert key.decode_max_prompt_length == 4
+    assert calls[(2, 4, 200)] == 1
+
+    # A tail-decode record: the decode view is the tail view.
+    calls.clear()
+    record = np.array([1, 608, 604, 1_700, 4, 200, 200], dtype=np.uint32)
+    key = params._resolve_target_key(_mla_assignment(record))
+    assert isinstance(key, MLAAttnKey)
+    assert key.decode_batch_size == 2
+    assert key.decode_max_prompt_length == 4
+    assert calls[(2, 4, 200)] == 1
+
+
+def test_mla_resolve_target_key_keeps_zeros_for_a_zeros_record() -> None:
+    """A zeros record leaves the whole-batch key's decode fields zero."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        page_size=128,
+        num_q_heads=128,
+    )
+    key = params._resolve_target_key(
+        _mla_assignment(np.zeros(7, dtype=np.uint32))
+    )
+    assert isinstance(key, MLAAttnKey)
+    assert key.decode_batch_size == 0
+    assert key.decode_max_prompt_length == 0
+    assert key.decode_num_partitions == 0
+
+
+def test_mla_symbolic_inputs_declare_the_split_widths() -> None:
+    """The MLA leaf declares a 6-int device buffer and a 2-int host scalar."""
+    params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.GPU()],
+        page_size=128,
+        num_q_heads=128,
+        speculative_method="eagle",
+        num_draft_tokens=3,
+    )
+    (leaf,) = params.get_symbolic_inputs()
+    assert leaf.attention_dispatch_metadata is not None
+    assert leaf.attention_dispatch_metadata.shape == [6]
+    assert leaf.mla_num_partitions is not None
+    assert leaf.mla_num_partitions.shape == [2]
+    assert leaf.draft_attention_dispatch_metadata is not None
+    assert leaf.draft_attention_dispatch_metadata.shape == [6]
+    assert leaf.draft_mla_num_partitions is not None
+    assert leaf.draft_mla_num_partitions.shape == [2]
+
+
+def test_mla_build_runtime_inputs_writes_the_two_value_scalar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-step host scalar holds the whole-batch and decode counts."""
+    params, _ = _spied_mla_params(monkeypatch)
+    params.speculative_method = "eagle"
+    params.num_draft_tokens = 3
+    record = np.array([2, 8, 4, 200, 604, 1_700, 1_700], dtype=np.uint32)
+    blocks = Buffer.zeros([4, *params.shape_per_block], params.dtype, CPU())
+    cache_lengths = Buffer.from_numpy(
+        np.array([200, 200, 1_700], dtype=np.uint32)
+    )
+    lut = Buffer.from_numpy(np.zeros((3, 1), dtype=np.uint32))
+    buffer = KVCacheBuffer(
+        leaf_id="full_group",
+        values=[blocks],
+        replicates_kv_across_tp=False,
+    )
+    assignment = KVCacheAssignments(
+        cache_lengths_by_device=[cache_lengths],
+        staged_by_device=[{"full_group": lut}],
+        max_prompt_length=Buffer.from_numpy(np.array([604], dtype=np.uint32)),
+        max_cache_length=Buffer.from_numpy(np.array([1_700], dtype=np.uint32)),
+        batch_characteristics=BatchCharacteristics(
+            batch_size=3,
+            max_prompt_length=604,
+            max_cache_valid_length=1_700,
+        ),
+        mixed_step_split=Buffer.from_numpy(record),
+    )
+    # The decode view resolves a distinct count, so element 1 cannot be a
+    # copy of element 0.
+    real = params.resolve_attn_key
+
+    def spy(batch_size: int, max_prompt_length: int, max_cache: int) -> object:
+        key = real(batch_size, max_prompt_length, max_cache)
+        if (batch_size, max_prompt_length, max_cache) == (2, 4, 200):
+            assert isinstance(key, MLAAttnKey)
+            return replace(key, num_partitions=7)
+        return key
+
+    monkeypatch.setattr(params, "resolve_attn_key", spy)
+    (leaf,) = params.build_runtime_inputs([assignment], buffers=[buffer])
+    assert leaf.mla_num_partitions is not None
+    np.testing.assert_array_equal(
+        leaf.mla_num_partitions.to_numpy(),
+        np.array([1, 7], dtype=np.int64),
+    )
+    assert leaf.draft_mla_num_partitions is not None
+    np.testing.assert_array_equal(
+        leaf.draft_mla_num_partitions.to_numpy(),
+        np.array([1, 0], dtype=np.int64),
     )
 
 
@@ -716,3 +908,75 @@ def test_a_padded_leaf_hands_byte_movers_its_padded_grid() -> None:
     )
     assert isinstance(buffer, KVCacheBuffer)
     assert page_stride_of(buffer.values[0]) == 192
+
+
+# GLM 5.3's NVFP4 MLA scale pages hold 78 layers x 128 tokens of rows.
+_GLM53_SCALE_ROWS_PER_PAGE = 78 * 128
+
+
+@pytest.mark.parametrize(
+    ("num_pages", "max_row_id", "fits"),
+    [
+        # Past 215,092 pages the scale rows no longer fit int32.
+        (215_092, _MAX_INT32_ROW_ID, True),
+        (215_093, _MAX_INT32_ROW_ID, False),
+        # The uint32 kernels keep all ones for an unused slot.
+        (430_185, _MAX_UINT32_SCALE_ROW_ID, True),
+        (430_186, _MAX_UINT32_SCALE_ROW_ID, False),
+    ],
+)
+def test_paged_row_ids_must_fit_the_kernels(
+    num_pages: int, max_row_id: int, fits: bool
+) -> None:
+    def check() -> None:
+        _check_paged_row_ids(
+            "scales", num_pages, _GLM53_SCALE_ROWS_PER_PAGE, max_row_id
+        )
+
+    if fits:
+        check()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            check()
+
+
+class _ScaleRowsCappedAtOne(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = 1
+
+
+class _ScaleRowsUnbounded(MHAKVCacheParams):
+    nvfp4_max_scale_row_id: ClassVar[int | None] = None
+
+
+@pytest.mark.parametrize(
+    ("params_cls", "fits"),
+    [(_ScaleRowsCappedAtOne, False), (_ScaleRowsUnbounded, True)],
+)
+def test_nvfp4_scale_row_check_follows_the_cache_class(
+    params_cls: type[MHAKVCacheParams], fits: bool
+) -> None:
+    """A cache whose kernels address scales with 64-bit offsets opts out."""
+    params = params_cls(
+        dtype=DType.uint8,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn, quantization_granularity=16
+        ),
+    )
+    assert params.is_nvfp4_kv_cache
+    # Two value pages, which the smaller scale pages also tile.
+    value_page_bytes = int(np.prod(params.shape_per_block))
+    slab = Buffer.from_numpy(np.zeros(2 * value_page_bytes, np.uint8))
+
+    def views() -> None:
+        params.slab_to_buffer_views([slab])
+
+    if fits:
+        views()
+    else:
+        with pytest.raises(ValueError, match="reduce the KV cache memory"):
+            views()

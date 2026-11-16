@@ -254,57 +254,6 @@ DependencyTree DependencyTree::getDependencyTree(Block *block) {
   return tree;
 }
 
-void DependencyTree::dumpToDot(llvm::raw_ostream &os) const {
-  static unsigned int maxNodeNameLength = 20;
-
-  os << "digraph DependencyTree {\n";
-  os << "  node [shape=ellipse];\n";
-
-  auto format = [](Operation *op) {
-    std::string str = llvm::formatv("{0}", *op);
-    for (char &c : str)
-      if (c == '%' || c == '"')
-        c = ' ';
-
-    if (str.size() > maxNodeNameLength)
-      str = str.substr(0, maxNodeNameLength);
-    return str;
-  };
-
-  std::function<void(DependencyTreeNode *)> dumpNode =
-      [&](DependencyTreeNode *node) {
-        if (!node)
-          return;
-        std::string nodeName = format(node->op);
-        os << "  \"" << nodeName << "\";\n";
-        for (auto *child : node->children) {
-          std::string childName = format(child->op);
-          os << "  \"" << nodeName << "\" -> \"" << childName << "\";\n";
-          dumpNode(child);
-        }
-      };
-
-  dumpNode(root);
-
-  for (auto &op : root->op->getBlock()->getOperations()) {
-    auto alloc = dyn_cast<MGP::BufferAllocOp>(op);
-    if (!alloc)
-      continue;
-    auto uses = getAllocUses(alloc);
-    if (uses.isError())
-      continue;
-    std::string nodeName = format(alloc);
-    for (auto use : *uses) {
-      std::string useName = format(use);
-
-      os << "  \"" << nodeName << "\" -> \"" << useName
-         << "\" [color=\"red\", constraint=false, style=dotted];\n";
-    }
-  }
-
-  os << "}\n";
-}
-
 DependencyTreeNode *DependencyTree::get(Operation *op) const {
   auto it = nodes.find(op);
   if (it == nodes.end())

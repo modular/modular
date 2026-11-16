@@ -302,17 +302,6 @@ comptime _nvtxRangeEnd = _dylib_function[
     "nvtxRangeEnd", def(RangeID) thin -> NoneType
 ]
 
-# NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
-comptime _nvtxRangePushEx = _dylib_function[
-    "nvtxRangePushEx",
-    def(
-        Pointer[_C_EventAttributes[ImmUntrackedOrigin], ImmutAnyOrigin]
-    ) thin -> Int32,
-]
-
-# NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
-comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() thin -> Int32]
-
 
 # ===-----------------------------------------------------------------------===#
 # ROCTX Bindings
@@ -323,13 +312,6 @@ comptime _roctxMarkA = _dylib_function[
     "roctxMarkA", def(CStringSpan[ImmutAnyOrigin]) thin -> NoneType
 ]
 
-# ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
-comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", def(CStringSpan[ImmutAnyOrigin]) thin -> Int32
-]
-
-# ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
-comptime _roctxRangePop = _dylib_function["roctxRangePop", def() thin -> Int32]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
     "roctxRangeStartA",
@@ -400,40 +382,6 @@ struct _RangeEnd:
 
     def __call__(self, val: RangeID):
         self._fn(val)
-
-
-struct _RangePush:
-    var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
-
-    def __init__(out self) raises:
-        comptime if default_accelerator().is_nvidia_gpu():
-            self._fn = _nvtxRangePushEx.load()
-        else:
-            self._fn = _roctxRangePushA.load()
-
-    def __call__(self, val: _C_EventAttributes[_]) -> Int32:
-        comptime assert default_accelerator().is_nvidia_gpu()
-        var attrs = c_event_attrs_ffi(val)
-        return self._fn[_nvtxRangePushEx.fn_type](
-            Pointer(to=attrs).as_unsafe_any_origin()
-        )
-
-    def __call__(self, val: CStringSpan[_]) -> Int32:
-        comptime assert default_accelerator().is_amd_gpu()
-        return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
-
-
-struct _RangePop:
-    var _fn: _nvtxRangePop.fn_type
-
-    def __init__(out self) raises:
-        comptime if default_accelerator().is_nvidia_gpu():
-            self._fn = _nvtxRangePop.load()
-        else:
-            self._fn = _roctxRangePop.load()
-
-    def __call__(self) -> Int32:
-        return self._fn()
 
 
 # ===-----------------------------------------------------------------------===#

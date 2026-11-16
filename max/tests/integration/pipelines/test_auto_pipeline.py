@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 from collections.abc import Callable, Iterator
 from unittest.mock import MagicMock
@@ -52,6 +53,11 @@ OTHER_CONVERSATION: list[dict[str, object]] = [
 ]
 
 
+def test_prefers_module_v3_by_default() -> None:
+    parameter = inspect.signature(AutoPipeline).parameters["prefer_module_v3"]
+    assert parameter.default is True
+
+
 @pytest.fixture(scope="module")
 def model_path() -> str:
     # A cached snapshot skips the Hub probe, which CI runs without network.
@@ -67,6 +73,7 @@ def _load_cpu(model_path: str, **overrides: object) -> AutoPipeline:
         max_batch_size=len(PROMPTS),
         device_graph_capture=False,
         prefer_module_v3=False,
+        eager=False,
         devices="cpu",
         quantization_encoding="float32",
         max_length=512,

@@ -1,36 +1,28 @@
-// RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" --mogg-conform-call-operands | FileCheck %s
+// RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
+// RUN:   --mo-to-map --map-to-mogg --mogg-conform-call-operands | FileCheck %s
 
-// ConformCallOperands runs directly on the mogg codegen ops (the
-// post-MAPToMOGG form, with plain !mogg.tensor operands). It re-runs operand
-// inference against the callee mogg.kernel.decl and materializes the non-tensor
-// operands the kernel expects: a scalar operand is wrapped in
-// mogg.scalar.create, and a run of variadic tensor operands is packed into one
-// mogg.tuple.create.
+// ConformCallOperands re-runs operand inference against the callee
+// mogg.kernel.decl and materializes the non-tensor operands the kernel expects:
+// a scalar operand is wrapped in mogg.scalar.create, and a run of variadic
+// tensor operands is packed into one mogg.tuple.create. Trait arguments take
+// their device from the enclosing routine, so the calls start from `mo.custom`
+// rather than bare codegen ops. conform-trait-tensor-tuple-fused-store.mlir
+// checks that repacking keeps the call's epilogue flag.
 
 // The second input is a scalar kernel argument.
-// CHECK-LABEL: func.func @scalar
+// CHECK-LABEL: mo.graph @scalar
 // CHECK: %[[SC:.*]] = mogg.scalar.create(%{{.*}})
 // CHECK: mogg.call.opaque @{{.*}}MapLowerScalar inputs(%{{.*}}, %[[SC]] : !mogg.tensor, !mogg.scalar) outputs(%{{.*}} : !mogg.tensor) context(%{{.*}} : !mogg.context)
-func.func @scalar(%in: !mogg.tensor, %scalar: !mogg.tensor, %out: !mogg.tensor, %ctx: !mogg.context) {
-  mogg.call.opaque @testing_kernels.testing_kernels.MapLowerScalar inputs(%in, %scalar : !mogg.tensor, !mogg.tensor) outputs(%out : !mogg.tensor) context(%ctx : !mogg.context)
-  return
+mo.graph @scalar(%a: !mo.tensor<[4], f32>, %s: !mo.tensor<[], f32>) -> !mo.tensor<[4], f32> {
+  %c = mo.custom [symbol = "map_lower_scalar", device = #M.device_ref<"cpu", 0>](%a, %s) : (!mo.tensor<[4], f32>, !mo.tensor<[], f32>) -> !mo.tensor<[4], f32>
+  mo.output %c : !mo.tensor<[4], f32>
 }
 
 // The two inputs satisfy one variadic kernel argument.
-// CHECK-LABEL: func.func @variadic
-// CHECK: %[[TUP:.*]] = mogg.tuple.create(%{{.*}}, %{{.*}}) : !mogg.tensor, !mogg.tensor
+// CHECK-LABEL: mo.graph @variadic
+// CHECK: %[[TUP:.*]] = mogg.tuple.create(%{{.*}}, %{{.*}}) variadic_abi = <tensor_tuple> : !mogg.tensor, !mogg.tensor
 // CHECK: mogg.call.opaque @{{.*}}MapLowerVariadic inputs(%[[TUP]] : !mogg.tuple) outputs(%{{.*}} : !mogg.tensor) context(%{{.*}} : !mogg.context)
-func.func @variadic(%a: !mogg.tensor, %b: !mogg.tensor, %out: !mogg.tensor, %ctx: !mogg.context) {
-  mogg.call.opaque @testing_kernels.testing_kernels.MapLowerVariadic inputs(%a, %b : !mogg.tensor, !mogg.tensor) outputs(%out : !mogg.tensor) context(%ctx : !mogg.context)
-  return
-}
-
-// Repacking rebuilds the call, so it has to carry the epilogue flag over. Emit
-// reads it instead of inspecting an output's producer, and packing is what
-// replaces that producer -- dropping it silently disables the epilogue.
-// CHECK-LABEL: func.func @variadicKeepsEpilogueFlag
-// CHECK: mogg.call.opaque @{{.*}}MapLowerVariadic inputs(%{{.*}} : !mogg.tuple) outputs(%{{.*}} : !mogg.tensor) context(%{{.*}} : !mogg.context) hasEpilogueFusion = true
-func.func @variadicKeepsEpilogueFlag(%a: !mogg.tensor, %b: !mogg.tensor, %out: !mogg.tensor, %ctx: !mogg.context) {
-  mogg.call.opaque @testing_kernels.testing_kernels.MapLowerVariadic inputs(%a, %b : !mogg.tensor, !mogg.tensor) outputs(%out : !mogg.tensor) context(%ctx : !mogg.context) hasEpilogueFusion = true
-  return
+mo.graph @variadic(%a: !mo.tensor<[4], f32>, %b: !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32> {
+  %c = mo.custom [symbol = "map_lower_variadic", device = #M.device_ref<"cpu", 0>](%a, %b) : (!mo.tensor<[4], f32>, !mo.tensor<[4], f32>) -> !mo.tensor<[4], f32>
+  mo.output %c : !mo.tensor<[4], f32>
 }

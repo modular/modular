@@ -47,6 +47,11 @@ def MAPDialect : Dialect {
   let hasCanonicalizer = 1;
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
+
+  let extraClassDeclaration = [{
+    /// Registers the attributes, defined with their storage in MAPAttrs.cpp.
+    void registerAttributes();
+  }];
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPDIALECT_TD

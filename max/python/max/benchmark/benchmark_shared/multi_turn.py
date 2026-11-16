@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import logging
 import random
+import re
 import time
 from collections.abc import Sequence
 
@@ -61,6 +62,12 @@ from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
 
+# The special tokens of OpenAI's Harmony format. A model can echo them into
+# its message text, where a Harmony chat template rejects them.
+_HARMONY_WIRE_TAG = re.compile(
+    r"<\|(?:start|end|channel|message|constrain|return|call)\|>"
+)
+
 
 def _image_content_blocks(
     images: Sequence[OpenAIImage],
@@ -101,6 +108,7 @@ async def chat_session_driver(
     lora_id: str | None = None,
     disable_ignore_eos: bool = False,
     max_output_len: int | None = None,
+    strip_harmony_wire_tags: bool = False,
 ) -> list[RequestFuncOutput]:
     """Runs one chat session's turns through the request driver."""
     request_func_input = RequestFuncInput(
@@ -282,18 +290,27 @@ async def chat_session_driver(
                 )
             break
 
+        assistant_text = response.generated_text
+        stripped_tags = 0
+        if strip_harmony_wire_tags:
+            assistant_text, stripped_tags = _HARMONY_WIRE_TAG.subn(
+                "", assistant_text
+            )
         message_history.append(
             ChatMessage(
                 role="assistant",
-                content=[TextContentBlock(text=response.generated_text)],
+                content=[TextContentBlock(text=assistant_text)],
             )
         )
         # What the turn actually produced, not what it drew: a constrained turn
         # stops at schema completion, so charging the drawn length would report
         # a prompt_len the next turn never sends and compound it down the
         # session. Falls back to the draw when the server reports no usage,
-        # which is exact for an ignore_eos turn.
-        chat_len += response.server_token_stats.completion_tokens or output_len
+        # which is exact for an ignore_eos turn. Each Harmony wire tag is one
+        # token, so a stripped tag is one token the next turn does not send.
+        chat_len += (
+            response.server_token_stats.completion_tokens or output_len
+        ) - stripped_tags
 
         if next_delay_ms := messages[content_idx + 1].delay_until_next_message:
             sleep_s = next_delay_ms / 1000
@@ -457,6 +474,7 @@ async def run_multiturn_benchmark(
     use_session_id_as_cache_salt: bool = False,
     disable_ignore_eos: bool = False,
     max_output_len: int | None = None,
+    strip_harmony_wire_tags: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -500,6 +518,7 @@ async def run_multiturn_benchmark(
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
                 max_output_len=max_output_len,
+                strip_harmony_wire_tags=strip_harmony_wire_tags,
             )
         session_id = (
             str(chat_session.id)
@@ -630,6 +649,7 @@ async def run_kv_cache_stress_benchmark(
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
     disable_ignore_eos: bool = False,
+    strip_harmony_wire_tags: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -746,6 +766,7 @@ async def run_kv_cache_stress_benchmark(
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
+                strip_harmony_wire_tags=strip_harmony_wire_tags,
             )
             session_id = (
                 str(chat_session.id)

@@ -40,12 +40,10 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
-from max.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-)
+from max.nn.attention_mask import MHAMaskVariant
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.kernels import flash_attention_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from max.tensor import Tensor
 from max.tensor.compilation import (
     CompiledCallable,
@@ -765,6 +763,7 @@ class PagedSpec:
     kv_scales: None = None
     attention_dispatch_metadata: TensorLayout | None = None
     mla_num_partitions: None = None
+    mixed_step_split: TensorLayout | None = None
 
     def __tree_flatten__(self) -> tuple[tuple[Any, ...], tuple[str, ...]]:
         names = tuple(f.name for f in fields(self))
@@ -938,6 +937,7 @@ class TestModel:
             attention_dispatch_metadata=_spec_of(
                 declared.attention_dispatch_metadata
             ),
+            mixed_step_split=_spec_of(declared.mixed_step_split),
         )
         x_spec = TensorLayout(
             _F32, ["total_seq_len", hidden], device=DeviceRef.CPU()

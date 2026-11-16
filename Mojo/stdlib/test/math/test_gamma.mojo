@@ -141,7 +141,7 @@ def _check_exact[
             String(t"gamma({x}) = {got}, exact = {want}"),
         )
         var got_v = gamma(SIMD[dtype, 4](x))
-        comptime for k in range(4):
+        for k in range(4):
             assert_equal(got_v[k], got, String(t"SIMD gamma({x})"))
 
 
@@ -177,11 +177,11 @@ def _max_ulp[
     var i = 0
     while i < n:
         var v = SIMD[dtype, width]()
-        comptime for k in range(width):
+        for k in range(width):
             v[k] = Scalar[dtype](lo + (hi - lo) * Float64(i + k) / Float64(n))
         var got = gamma(v)
         var want = _call_libm["tgamma"](v)
-        comptime for k in range(width):
+        for k in range(width):
             worst = max(
                 worst,
                 _gamma_ulp_distance(got[k], want[k], String(t"gamma({v[k]})")),

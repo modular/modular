@@ -86,15 +86,20 @@ def _concatable(*shapes: Shape, axis: int = 0) -> bool:
     return True
 
 
+# Equal compressed-tensors global scales have equal reciprocals, so they are
+# compared as stored.
+_SCALE_SUFFIXES = (
+    ".weight_scale",
+    ".input_scale",
+    ".weight_scale_2",
+    ".weight_global_scale",
+    ".input_global_scale",
+)
+
+
 def _weight_scale_name(key: str) -> str | None:
     """Checks if the given key is a scale."""
-    if key.endswith(".weight_scale"):
-        return key[: -len(".weight_scale")]
-
-    if key.endswith(".input_scale"):
-        return key[: -len(".input_scale")]
-
-    if key.endswith(".weight_scale_2"):
-        return key[: -len(".weight_scale_2")]
-
+    for suffix in _SCALE_SUFFIXES:
+        if key.endswith(suffix):
+            return key.removesuffix(suffix)
     return None

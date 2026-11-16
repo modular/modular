@@ -53,7 +53,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
@@ -89,7 +89,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0]} ,"
@@ -129,7 +129,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0]} ,"
@@ -171,7 +171,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
@@ -208,7 +208,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0]} ,"
@@ -254,7 +254,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
@@ -292,7 +292,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
         print(
@@ -338,7 +338,7 @@ def main():
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
             output_data_buffer,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
         print(
             t"Output buffer: {output_data_buffer[0, 0]} ,"

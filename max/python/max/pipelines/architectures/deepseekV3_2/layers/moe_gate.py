@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.legacy.kernels import moe_router_group_limited
+from max.nn._graph_ops import moe_router_group_limited
 from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.deepseekV3.layers.moe_gate import (
     DeepseekV3TopKRouter,

@@ -17,9 +17,9 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.legacy.attention import num_heads_for_device
 from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
-from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 

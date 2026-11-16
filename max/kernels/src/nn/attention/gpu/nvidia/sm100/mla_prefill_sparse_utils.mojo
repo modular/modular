@@ -10,15 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""SM100 (B200) sparse MLA prefill shared surface (BF16 + FP8 KV variants).
+"""SM100 (B200) sparse MLA prefill shared surface.
 
 Holds the config, base shared-memory layout, QK/SV MMA operand structs, and
-`MLAPrefillSparseCommon` — the dtype-agnostic machinery (Q-load prologue, the
-QK/SV MMA pipeline `mma` with its `fp8_active` flag, `cp_q_from_smem_to_tmem`,
-`_raw_indices_to_tma_rows`, `kv_valid_producer`) instantiated by both the
-BF16-KV kernel (`mla_prefill_sparse.mojo`) and the FP8-KV kernel
-(`mla_prefill_sparse_kv_fp8.mojo`).  Mirrors the sparse-decode split
-(`mla_decode_utils.mojo` + `mla_decode_sparse_kv_{bf16,fp8}.mojo`).
+`MLAPrefillSparseCommon` (the Q-load prologue, the QK/SV MMA pipeline `mma`,
+`cp_q_from_smem_to_tmem`, `_raw_indices_to_tma_rows`, `kv_valid_producer`)
+for the BF16-cache kernel (`mla_prefill_sparse.mojo`) and the native-FP8
+kernel (`mla_prefill_sparse_qkv_fp8.mojo`).
 """
 
 from std.sys import size_of
@@ -61,6 +59,16 @@ from layout.tma_async import (
     _default_desc_shape,
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
+
+
+def sm100_sparse_mla_heads_ok[num_heads: Int]() -> Bool:
+    """Whether the SM100 sparse MLA kernels serve this head count: 128 on the
+    CTA pair, or a multiple of 8 through 64 (the SWIZZLE_128B 8-row core
+    matrix) on one CTA.
+    """
+    return num_heads == 128 or (
+        0 < num_heads and num_heads <= 64 and num_heads % 8 == 0
+    )
 
 
 struct MLASparseConfig[
@@ -636,14 +644,7 @@ struct MLAPrefillSparseCommon[
 
     @inline(.always)
     @staticmethod
-    def mma[
-        # Under FP8 the K/V producer warpgroups credit k_p*_ready /
-        # v_p*_ready via a manual arrive() after the FP8->BF16 convert,
-        # not via TMA complete_transaction. Skip the expect_bytes calls
-        # below so the consumer wait conditions don't block on an
-        # expect_tx that no one will decrement.
-        fp8_active: Bool = False,
-    ](
+    def mma(
         q_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
         k_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
         s_smem_ptr: Pointer[Scalar[Self.qkv_dtype], address_space=.SHARED, ...],
@@ -674,22 +675,18 @@ struct MLAPrefillSparseCommon[
             var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
             var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
 
-            comptime if not fp8_active:
-                k_p0_ready[cur_buf].expect_bytes(
-                    Int32(
-                        Self.config.B_TOPK
-                        * Self.config.q_smem_depth
-                        * Self.qkv_dtype_size
-                    )
+            k_p0_ready[cur_buf].expect_bytes(
+                Int32(
+                    Self.config.B_TOPK
+                    * Self.config.q_smem_depth
+                    * Self.qkv_dtype_size
                 )
+            )
             k_p0_ready[cur_buf].wait(cur_phase)
             if k > 0:
                 # Wait for WG0 (the consumer of P) to release the prev P
                 # buffer before letting the MMA overwrite it via the next
-                # QK GEMM. Previously this incorrectly waited on
-                # k_p0_ready[prev_buf], which is the producer barrier for K
-                # and a separate state — that race was latent because WG0
-                # never arrived on p_free in the original stub.
+                # QK GEMM.
                 p_free[prev_buf].wait(prev_phase)
 
             tcgen05_fence_after()
@@ -711,17 +708,13 @@ struct MLAPrefillSparseCommon[
             )
 
             # wait for k load p1
-            comptime if not fp8_active:
-                k_p1_ready[cur_buf].expect_bytes(
-                    Int32(
-                        Self.config.B_TOPK
-                        * (
-                            Self.config.input_qk_depth
-                            - Self.config.q_smem_depth
-                        )
-                        * Self.qkv_dtype_size
-                    )
+            k_p1_ready[cur_buf].expect_bytes(
+                Int32(
+                    Self.config.B_TOPK
+                    * (Self.config.input_qk_depth - Self.config.q_smem_depth)
+                    * Self.qkv_dtype_size
                 )
+            )
             k_p1_ready[cur_buf].wait(cur_phase)
             tcgen05_fence_after()
 
@@ -791,15 +784,14 @@ struct MLAPrefillSparseCommon[
             # sizeof = (B_TOPK/2) * v_depth * sizeof.  V_SMEM_COLS_PER_CTA
             # now holds both atoms' cols, so the cluster bytes correspond
             # to one key-half of *both* atoms together.
-            comptime if not fp8_active:
-                v_p0_ready[curr_buf].expect_bytes(
-                    Int32(
-                        Self.config.B_TOPK
-                        // 2
-                        * Self.config.v_depth
-                        * Self.qkv_dtype_size
-                    )
+            v_p0_ready[curr_buf].expect_bytes(
+                Int32(
+                    Self.config.B_TOPK
+                    // 2
+                    * Self.config.v_depth
+                    * Self.qkv_dtype_size
                 )
+            )
             v_p0_ready[curr_buf].wait(cur_phase)
             # Mirrors phase1.cuh:565 — TMEM fence after the v_part0 wait
             # ensures the SV P0 MMA's read of O_TMEM (under c_scale=1 for
@@ -832,15 +824,14 @@ struct MLAPrefillSparseCommon[
                 Self.CTA_MASK,
             )
 
-            comptime if not fp8_active:
-                v_p1_ready[curr_buf].expect_bytes(
-                    Int32(
-                        Self.config.B_TOPK
-                        // 2
-                        * Self.config.v_depth
-                        * Self.qkv_dtype_size
-                    )
+            v_p1_ready[curr_buf].expect_bytes(
+                Int32(
+                    Self.config.B_TOPK
+                    // 2
+                    * Self.config.v_depth
+                    * Self.qkv_dtype_size
                 )
+            )
             v_p1_ready[curr_buf].wait(cur_phase)
             tcgen05_fence_after()
 
@@ -922,7 +913,7 @@ struct MLAPrefillSparseCommon[
         it drops the `num_layers` factor and the gather lands in the wrong
         layer's cache region (progressively worse as the physical block index
         grows).  Mirrors the decode path's `_transform_indices_to_smem`
-        (`mla_decode_sparse_kv_bf16.mojo`), including preserving the `-1`
+        (`mla_decode_sparse_qkv_fp8.mojo`), including preserving the `-1`
         padding sentinel so invalid lanes stay invalid.
         """
         var rows = SIMD[.int32, 4]()

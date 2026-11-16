@@ -155,7 +155,6 @@ def _run_one[
         n_scale_granularity=n_g,
         k_scale_granularity=128,
         transpose_b=True,
-        target="gpu",
     ](c, a, b, a_scales, b_scales, ctx)
 
     ctx.enqueue_copy(c_host, c_dev)
@@ -243,7 +242,6 @@ def _run_one[
             n_scale_granularity=n_g,
             k_scale_granularity=128,
             transpose_b=True,
-            target="gpu",
         ](c_dyn, a, b_dyn, a_scales, bs_dyn, ctx)
         ctx.enqueue_copy(c_other_host, c_other_dev)
         ctx.synchronize()

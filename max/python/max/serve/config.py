@@ -445,15 +445,14 @@ class Settings(BaseSettings):
     )
 
     stream_min_chunk_tokens: int = Field(
-        default=1,
+        default=10,
         ge=1,
         description=(
             "Minimum number of generated tokens to coalesce into a single "
-            "streaming (SSE) chunk. 1 (default) emits each scheduler response "
-            "as its own chunk with no buffering. Higher values buffer decode "
-            "tokens into larger chunks and suppress empty deltas; the first "
-            "chunk is always flushed early so time-to-first-token is "
-            "unaffected."
+            "streaming (SSE) chunk. 1 emits each scheduler response as its own "
+            "chunk with no buffering. Higher values buffer decode tokens into "
+            "larger chunks and suppress empty deltas; the first chunk is "
+            "always flushed early so time-to-first-token is unaffected."
         ),
         alias="MAX_SERVE_STREAM_MIN_CHUNK_TOKENS",
     )

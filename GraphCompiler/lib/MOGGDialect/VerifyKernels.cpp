@@ -16,6 +16,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENPogUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringSet.h"
 
 using namespace M;
@@ -96,9 +97,8 @@ static std::string capitalize(llvm::StringRef s) {
 /// `MutableInputTensor` and the rhs side has a non-mutable tensor (shape /
 /// build_graph cannot mutate their inputs, so a relaxed match is allowed).
 /// Adaptor equality ignores the `stable` flag on purpose, so a build_graph
-/// `StableTensor` / `StableVariadicTensors` argument aligns with the plain
-/// shape-function argument at the same position;
-/// `declVerifyStableTensorArguments` owns the rules for where stable
+/// `Stable` argument aligns with the plain shape-function argument at the same
+/// position; `declVerifyStableTensorArguments` owns the rules for where stable
 /// arguments may appear.
 LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
                                         const KernelDeclFunctionAdaptor &lhs,
@@ -216,11 +216,10 @@ LogicalResult declVerifyShapeFunctionInputsMatchExecuteFunction(
 /// - The `DeviceContext` of `execute` is a `DeviceGraphBuilder` on
 ///   `build_graph`.
 ///
-/// - And a `build_graph` tensor may be the slot-backed
-///   (`StableTensor` / `StableVariadicTensors`) form of the `execute` tensor
-///   at the same position, as long as that tensor is not fused: a slot
-///   publishes the address of a tensor in memory, and a fused input is a
-///   compute lambda with no address.
+/// - And a `build_graph` tensor may add `Stable` to the `execute` tensor at the
+///   same position, as long as that tensor is not fused: a slot publishes the
+///   address of a tensor in memory, and a fused input is a compute lambda with
+///   no address.
 LogicalResult
 declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
                                    const KernelDeclAdaptor &adaptor) {
@@ -238,26 +237,39 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
   auto positionOf = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
     return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
   };
-  auto describe = [](const KernelDeclOperandAdaptor &arg) -> std::string {
+  // A trait argument's IOSpec names only its role, so it prints its whole
+  // contract: two trait arguments can differ only in fusion or access form.
+  auto describe = [&](const KernelDeclOperandAdaptor &arg) -> std::string {
     std::string out;
     llvm::raw_string_ostream os(out);
-    if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
-      os << (arg.isStableTensorType() ? "stable " : "")
-         << (arg.isVariadicTensorType() ? "variadic " : "")
+    if (std::optional<TensorArgContract> contract = arg.getTraitContract())
+      os << (arg.isVariadicTensorType() ? "variadic " : "") << "trait "
+         << tensorArgContractToAttr(decl.getContext(), *contract);
+    else if (std::optional<IOSpec> ioSpec = arg.getIoSpec())
+      os << (arg.isVariadicTensorType() ? "variadic " : "")
          << toString(*ioSpec);
     else
       os << arg.underlyingType;
     return out;
   };
-  // Tensor equality ignores the `stable` bit; everything else must agree.
-  auto sameArgument = [](const KernelDeclOperandAdaptor &executeArg,
-                         const KernelDeclOperandAdaptor &buildGraphArg) {
+  // Tensor equality ignores the `stable` bit, in the trait contract too;
+  // everything else must agree. `declVerifyStableTensorArguments` keeps
+  // `Stable` off `execute`.
+  auto contractIgnoringStable = [](const KernelDeclOperandAdaptor &arg) {
+    std::optional<TensorArgContract> contract = arg.getTraitContract();
+    if (contract)
+      contract->stable = false;
+    return contract;
+  };
+  auto sameArgument = [&](const KernelDeclOperandAdaptor &executeArg,
+                          const KernelDeclOperandAdaptor &buildGraphArg) {
     if (!executeArg.isTensorType())
       return executeArg == buildGraphArg;
     return executeArg.isVariadicTensorType() ==
                buildGraphArg.isVariadicTensorType() &&
            executeArg.getIoSpec() == buildGraphArg.getIoSpec() &&
-           executeArg.getTraitContract() == buildGraphArg.getTraitContract();
+           contractIgnoringStable(executeArg) ==
+               contractIgnoringStable(buildGraphArg);
   };
 
   // `execute` is the reference, so errors point at the `build_graph` side.
@@ -303,18 +315,14 @@ declVerifyExecuteMatchesBuildGraph(KernelDeclOp decl,
                  adaptor.buildGraphFunction->outputArguments);
 }
 
-/// Slot-backed tensor arguments (`StableTensor` / `StableVariadicTensors`)
-/// are a device-graph recording concept: the slot is populated by the graph
-/// builder, so only `build_graph` may declare them, and only as inputs (a
-/// kernel writes its outputs through live addresses). The pack never carries
-/// fusion functors, so a fused stable argument is rejected too.
+/// A `Stable` trait argument is a device-graph recording concept: only
+/// `build_graph` operands are routed through a slot, so on any other entry
+/// point it would read a data pointer as a slot address. Import already
+/// rejects a `Stable` output or one alongside `Fused`, and trait arguments on
+/// the elementwise entry points.
 LogicalResult
 declVerifyStableTensorArguments(KernelDeclOp decl,
                                 const KernelDeclAdaptor &adaptor) {
-  auto positionOf = [](const KernelDeclOperandAdaptor &arg) -> uint64_t {
-    return arg.sourceDescriptor ? arg.sourceDescriptor->position : 0;
-  };
-
   auto rejectStable = [&](const std::optional<KernelDeclFunctionAdaptor> &func,
                           KernelFunctionKind kind) -> LogicalResult {
     if (!func.has_value())
@@ -323,44 +331,58 @@ declVerifyStableTensorArguments(KernelDeclOp decl,
       for (const auto &arg : args)
         if (arg.isStableTensorType())
           return decl->emitError()
-                 << "stable tensor arguments (StableTensor / "
-                    "StableVariadicTensors) are only supported on "
+                 << "Stable trait arguments are only supported on "
                  << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
-                 << " functions (argument at position " << positionOf(arg)
+                 << " functions (argument at position "
+                 << (arg.sourceDescriptor ? arg.sourceDescriptor->position : 0)
                  << " of the " << stringifyKernelFunctionKind(kind)
                  << " function)";
     return success();
   };
 
-  if (rejectStable(adaptor.executeFunction, KernelFunctionKind::Execute)
-          .failed() ||
-      rejectStable(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise)
-          .failed() ||
-      rejectStable(adaptor.tileElementwiseFunction,
-                   KernelFunctionKind::TileElementwise)
-          .failed())
+  // A declarative kernel's `executeFunction` is its `execute_device`.
+  if (failed(rejectStable(adaptor.executeFunction,
+                          adaptor.isDeclarative()
+                              ? KernelFunctionKind::ExecuteDevice
+                              : KernelFunctionKind::Execute)))
     return failure();
+  return rejectStable(adaptor.executeConfigurationFunction,
+                      KernelFunctionKind::ExecuteConfiguration);
+}
 
-  if (!adaptor.buildGraphFunction.has_value())
-    return success();
-
-  for (const auto &arg : adaptor.buildGraphFunction->outputArguments)
-    if (arg.isStableTensorType())
-      return decl->emitError()
-             << "a stable tensor argument cannot be an output (argument at "
-                "position "
-             << positionOf(arg)
-             << " of the build_graph function); a device graph writes "
-                "through live addresses, not stable address slots";
-
-  for (const auto &arg : adaptor.buildGraphFunction->inputArguments)
-    if (arg.isStableTensorType() && arg.isFusedTensorType())
-      return decl->emitError()
-             << "stable tensor arguments cannot be fused (argument at "
-                "position "
-             << positionOf(arg) << " of the build_graph function)";
-
-  return success();
+/// `execute` and `build_graph` take tensor trait arguments;
+/// `ManagedTensorSlice` and its variadic forms are no longer accepted. Shape
+/// functions reject them at import, and `declVerifyDeclarative` covers
+/// `execute_device`.
+LogicalResult declVerifyTakesTraitArguments(KernelDeclOp decl,
+                                            const KernelDeclAdaptor &adaptor) {
+  bool ok = true;
+  for (KernelFunctionKind kind :
+       {KernelFunctionKind::Execute, KernelFunctionKind::BuildGraph}) {
+    // Without a written `execute`, `executeFunction` is a declarative kernel's
+    // `execute_device` or an elementwise kernel's synthesized entry point.
+    if (kind == KernelFunctionKind::Execute && !decl.getExecute())
+      continue;
+    const KernelDeclFunctionAdaptor *function = adaptor.getFunction(kind);
+    if (!function)
+      continue;
+    auto sig = function->attr.getSignature();
+    for (size_t i = 0, n = sig.getNumArguments(); i < n; ++i) {
+      KGEN::LIT::StructType legacyType =
+          getLegacyTensorArgType(sig.getArgument(i));
+      if (!legacyType)
+        continue;
+      mlir::emitError(decl.getMojoArgLocation(kind, i))
+          << stringifyKernelFunctionKind(kind)
+          << " functions take tensor trait arguments; argument at position "
+          << i << " is a '"
+          << legacyType.getSymbol().getLeafReference().getValue()
+          << "'; use a trait bound such as 'Some[Input & Tensor]', or "
+             "'TensorTuple' for variadic operands";
+      ok = false;
+    }
+  }
+  return success(ok);
 }
 
 LogicalResult declVerifyBuildGraphHasBuilder(KernelDeclOp decl,
@@ -528,20 +550,6 @@ LogicalResult declVerifyOpaqueArgumentsArePassedByReference(
                "in kernels";
         return failure();
       }
-      // Tensors must be passed by const reference (`read`/`read_mem`):
-      // their mutability is in the IOSpec type, not the calling convention.
-      // Trait-bound tensors are left to `declVerifyTensorArgsAreBorrowed` and
-      // its trait-specific diagnostic.
-      if (arg.isTensorType() && !arg.isTraitTensorType() &&
-          convention != KGEN::ArgConvention::ImmMem &&
-          convention != KGEN::ArgConvention::ImmReg) {
-        decl->emitError()
-            << "Only the borrowed argument (read) convention is supported "
-               "for tensor arguments (argument at position "
-            << arg.sourceDescriptor->position << " uses '"
-            << KGEN::stringifyArgConvention(convention) << "')";
-        return failure();
-      }
     }
     return success();
   };
@@ -593,11 +601,11 @@ LogicalResult declVerifyTensorArgsAreBorrowed(
   return success();
 }
 
-// Per-function-kind policy for trait-bound tensor arguments: only `execute`
-// and the declarative `execute_device` / `execute_configuration` accept them.
-// Kind-specific rules go here (e.g. build_graph forbidding `TileTensorable`);
-// shape functions, primitives and universal well-formedness are checked at
-// import.
+// Per-function-kind policy for trait-bound tensor arguments: `execute`,
+// `build_graph`, and the declarative `execute_device` /
+// `execute_configuration` accept them. Kind-specific rules go here (e.g.
+// build_graph forbidding `TileTensorable`); shape functions, primitives and
+// universal well-formedness are checked at import.
 LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
                                               KernelDeclAdaptor &adaptor) {
   auto rejectTraitArgs = [&decl](std::optional<KernelDeclFunctionAdaptor> &func,
@@ -613,6 +621,8 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
             << stringifyKernelFunctionKind(kind) << " functions yet (only `"
             << stringifyKernelFunctionKind(KernelFunctionKind::Execute)
             << "`, `"
+            << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+            << "`, `"
             << stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice)
             << "` and `"
             << stringifyKernelFunctionKind(
@@ -625,10 +635,6 @@ LogicalResult declVerifyTraitArgFunctionKinds(KernelDeclOp decl,
   };
 
   bool ok = true;
-  if (rejectTraitArgs(adaptor.buildGraphFunction,
-                      KernelFunctionKind::BuildGraph)
-          .failed())
-    ok = false;
   if (rejectTraitArgs(adaptor.elementwiseFunction,
                       KernelFunctionKind::Elementwise)
           .failed())
@@ -710,17 +716,59 @@ LogicalResult declVerifyHasEntryPoint(KernelDeclOp decl,
   return success();
 }
 
+// A kernel reads its device through its `DeviceContext` argument's `target`, so
+// the graph compiler no longer infers a `target: StaticString` parameter.
+LogicalResult declVerifyNoTargetParameter(KernelDeclOp decl,
+                                          const KernelDeclAdaptor &adaptor) {
+  bool failed = false;
+  auto check =
+      [&](mlir::ArrayAttr params, mlir::Location loc, llvm::StringRef where) {
+        if (!params)
+          return;
+        for (mlir::Attribute attr : params) {
+          auto param = mlir::cast<ParamDeclAttr>(attr);
+          if (demangleParameterName(param.getName().strref()) !=
+              MOGG::kMoggTargetParameterName)
+            continue;
+          mlir::emitError(loc)
+              << where << " declares a `target` parameter, which is no longer "
+              << "supported; take a `ctx: DeviceContext` argument and use "
+                 "`ctx.target` instead";
+          failed = true;
+        }
+      };
+
+  check(adaptor.structParams, decl.getMojoStructLocation(),
+        "the kernel struct");
+  auto checkFunction =
+      [&](const std::optional<KernelDeclFunctionAdaptor> &function,
+          KernelFunctionKind kind) {
+        if (function && function->attr)
+          check(function->attr.getParams(), decl.getMojoFunctionLocation(kind),
+                stringifyKernelFunctionKind(kind));
+      };
+  checkFunction(adaptor.executeFunction, KernelFunctionKind::Execute);
+  checkFunction(adaptor.elementwiseFunction, KernelFunctionKind::Elementwise);
+  checkFunction(adaptor.tileElementwiseFunction,
+                KernelFunctionKind::TileElementwise);
+  checkFunction(adaptor.buildGraphFunction, KernelFunctionKind::BuildGraph);
+  checkFunction(adaptor.executeDeviceFunction,
+                KernelFunctionKind::ExecuteDevice);
+  checkFunction(adaptor.executeConfigurationFunction,
+                KernelFunctionKind::ExecuteConfiguration);
+  return failed ? failure() : success();
+}
+
 // Whether the generated launch can pass `operand` to a declarative entry point:
-// a trait-bound tensor crosses as its `TileTensor` projection and is rebuilt on
-// the device, and a scalar crosses as is.
+// a trait-bound tensor/buffer crosses as its `TileTensor` projection and is
+// rebuilt on the device, a fused tensor crosses as itself, and a scalar
+// crosses as-is.
 static bool isDeclarativeOperand(const KernelDeclOperandAdaptor &operand) {
   if (std::holds_alternative<KernelDeclScalarAdaptor>(operand.underlyingType))
     return true;
   const auto *tensor =
       std::get_if<KernelDeclTensorAdaptor>(&operand.underlyingType);
-  // TODO(GEX-4429): Accept mutable inputs, which reach the launch as buffers.
-  return tensor && tensor->traitContract && !tensor->traitContract->fused &&
-         tensor->traitContract->role != TensorArgRole::mutableInput;
+  return tensor && tensor->traitContract;
 }
 
 // `execute_device` and `execute_configuration` come as a pair over the same
@@ -777,8 +825,7 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
     for (auto [i, operand] : llvm::enumerate(operands)) {
       if (!isDeclarativeOperand(*operand)) {
         return error() << "'" << function << "' operand " << i
-                       << " must be a trait-bound tensor (not fused or a "
-                          "mutable input) or a scalar";
+                       << " must be a trait-bound tensor or a scalar";
       }
     }
     return success();
@@ -873,14 +920,23 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
        i < inputsCount; ++i) {
     // The last argument might be an IndexList. Skip it — it is an
     // elementwise-only concept.
-    if (i + 1 == inputsCount &&
-        elemwiseFn.inputArguments[i].isOpaqueWithTypeName(
-            MOGG::kMojoInternalDpsIndexListTypeQualifiedName)) {
+    if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
       continue;
-    }
     ++operandsCount;
-    if (!elemwiseFn.inputArguments[i].isScalarType())
+    const KernelDeclOperandAdaptor &arg = elemwiseFn.inputArguments[i];
+    if (!arg.isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";
+    // Fused consumers of a load share its value, so an operand must not be
+    // written in place.
+    uint64_t position = arg.sourceDescriptor->position;
+    KGEN::ArgConvention convention = sig.getArgConvention(position);
+    if (convention != KGEN::ArgConvention::ImmMem &&
+        convention != KGEN::ArgConvention::ImmReg)
+      return decl->emitError()
+             << "Elementwise kernels take SIMD operands by the borrowed (read) "
+                "convention (argument at position "
+             << position << " uses '"
+             << KGEN::stringifyArgConvention(convention) << "')";
   }
 
   if (!operandsCount)
@@ -973,10 +1029,14 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
   return fn.outputResult;
 }
 
-/// Verify cross-kernel consistency for every registration identity — the
-/// {op name, device_info} pair ImportPackages deduplicates on — with multiple
-/// declarations. For each group, decls[0] is the reference (ImportPackages
-/// inserts built-ins first, so it is the built-in when one exists).
+/// Verify cross-kernel consistency for every registration identity — an op
+/// name and a set of devices — with multiple declarations. Two registrations
+/// have the same identity if their platforms apply to exactly the
+/// same devices, however the platforms are written. ImportPackages rejects
+/// such a pair within one provenance group, so a group here is a user
+/// registration that replaces a built-in on the same devices. For each group,
+/// decls[0] is the reference (ImportPackages inserts built-ins first, so it is
+/// the built-in when one exists).
 ///
 /// Decls differing in device scope are grouped apart: `getResolvedKernel`
 /// picks among them by device, so they need not agree (e.g. an accelerator
@@ -987,17 +1047,43 @@ getSemanticResult(const KernelDeclFunctionAdaptor &fn) {
 ///   2. If execute: output count, non-launch input count, and per-operand
 ///      types must all match (fusion variants are treated as equivalent).
 LogicalResult crossVerifyKernels(ModuleOp moduleOp) {
-  using RegistrationKey = std::pair<mlir::StringAttr, DeviceInfoAttr>;
-  llvm::DenseMap<RegistrationKey, llvm::SmallVector<KernelDeclOp>> byReg;
-  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
-    byReg[{decl.getRegistrationAttr(), decl.getRegistrationDeviceInfo()}]
-        .push_back(decl);
-
   bool failed = false;
-  for (auto &[regKey, decls] : byReg) {
+  llvm::MapVector<mlir::StringAttr, llvm::SmallVector<KernelDeclOp>> byName;
+  for (KernelDeclOp decl : moduleOp.getOps<KernelDeclOp>())
+    byName[decl.getRegistrationAttr()].push_back(decl);
+
+  llvm::SmallVector<llvm::SmallVector<KernelDeclOp>> groups;
+  for (auto &[name, decls] : byName) {
     if (decls.size() < 2)
       continue;
-    mlir::StringAttr regName = regKey.first;
+    llvm::SmallVector<
+        std::pair<PlatformPredicate, llvm::SmallVector<KernelDeclOp>>>
+        classes;
+    for (KernelDeclOp decl : decls) {
+      ErrorOr<PlatformPredicate> platform =
+          getRegistrationPlatformPredicate(decl);
+      if (platform.isError()) {
+        decl->emitError() << "invalid platform: " << platform.getError();
+        failed = true;
+        continue;
+      }
+      auto *it = classes.begin();
+      for (; it != classes.end(); ++it)
+        if (comparePlatformPredicates(it->first, *platform).order ==
+            PlatformPredicateOrder::Equivalent)
+          break;
+      if (it == classes.end())
+        classes.push_back({platform.takeValue(), {decl}});
+      else
+        it->second.push_back(decl);
+    }
+    for (auto &[platform, members] : classes)
+      if (members.size() >= 2)
+        groups.push_back(std::move(members));
+  }
+
+  for (llvm::SmallVector<KernelDeclOp> &decls : groups) {
+    mlir::StringAttr regName = decls.front().getRegistrationAttr();
 
     KernelDeclAdaptor refAdaptor(decls[0]);
     KernelTypeTag refTag = getKernelType(refAdaptor);
@@ -1161,6 +1247,10 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
               .failed())
         continue;
 
+      if (setFlagIfFailed(failed, declVerifyNoTargetParameter, decl, adaptor)
+              .failed())
+        continue;
+
       // A reduction's entry points are the monoid's own methods.
       if (adaptor.isReduction()) {
         (void)setFlagIfFailed(failed, declVerifyReduction, decl, adaptor);
@@ -1179,6 +1269,10 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
           continue;
         continue;
       }
+
+      if (setFlagIfFailed(failed, declVerifyTakesTraitArguments, decl, adaptor)
+              .failed())
+        continue;
 
       if (setFlagIfFailed(failed, declVerifyShapeFunctionReturnsShape, decl,
                           shapeFnAdaptor)

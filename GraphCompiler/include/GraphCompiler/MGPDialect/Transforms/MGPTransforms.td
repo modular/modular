@@ -174,7 +174,7 @@ def ExecInvariantCodeMotionPass : Pass<"mgp-exec-invariant-code-motion", "MGP::M
 
     For example:
     ```mlir
-    mgp.model @example : mof init {
+    mgp.model @example init {
       %ch0 = grt.chain.create ()
       %ctx = mgp.context.create 1
       mef.output %ch0, %ctx : !mef.chain, !mgp.context
@@ -195,7 +195,7 @@ def ExecInvariantCodeMotionPass : Pass<"mgp-exec-invariant-code-motion", "MGP::M
     ```
     is rewritten to:
     ```mlir
-    mgp.model @example : mof init {
+    mgp.model @example init {
       %ch0 = grt.chain.create ()
       // number of slots increased, to store lifted buffers
       %ctx = mgp.context.create 2
@@ -531,7 +531,7 @@ def OutlineModelsToCallables : Pass<"mgp-outline-models-to-callables", "mlir::Mo
     BEFORE:
     ```mlir
     module {
-      mgp.model @exp subgraph : mof ...
+      mgp.model @exp subgraph ...
       init (/* weights registry, device contexts */...) {
         %0 = grt.chain.create ()
         %1 = mgp.context.create 2
@@ -546,7 +546,7 @@ def OutlineModelsToCallables : Pass<"mgp-outline-models-to-callables", "mlir::Mo
         ...
         mef.output %arg0, %3 : !mef.chain, !mgp.tensor<4x5xf32>
       }
-      mgp.model @main : mof
+      mgp.model @main
         {argument_device_indices = [0 : ui32], result_device_indices = [0 : ui32]}
         devices [#M.device_ref<"cpu", 0>]
         init (/* weights registry, device contexts */)

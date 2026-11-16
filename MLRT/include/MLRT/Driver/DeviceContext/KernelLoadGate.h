@@ -22,6 +22,7 @@
 
 #include "AsyncRT/ForwardDecls.h"
 #include "AsyncRT/Runtime/AsyncValueRef.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
@@ -54,7 +55,7 @@ namespace M::Driver {
 ///
 /// All state lives in this object, never at file scope: the two sides of the
 /// gate are linked into different shared objects of a served process.
-class KernelLoadGate {
+class MODULAR_CXX_EXPORT KernelLoadGate {
 public:
   KernelLoadGate() = default;
   KernelLoadGate(const KernelLoadGate &) = delete;

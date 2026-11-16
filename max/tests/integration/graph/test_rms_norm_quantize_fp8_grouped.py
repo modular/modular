@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""``mo.rms_norm_quantize_dynamic_scaled_float8`` against the unfused pair.
+"""``quantization.rms_norm_quantize_dynamic_scaled_float8`` against the unfused pair.
 
 The fused op must produce the same FP8 activation and the same
 ``[K // group, M_padded]`` group scales as ``ops.rms_norm`` followed by
@@ -28,11 +28,11 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn._graph_ops import (
     quantize_dynamic_scaled_float8,
     rms_norm_quantize_dynamic_scaled_float8,
 )
-from max.nn.legacy.quant_config import (
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,

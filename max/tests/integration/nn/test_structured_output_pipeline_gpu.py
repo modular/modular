@@ -16,12 +16,12 @@ The graph stitches together every primitive added in DRIV-135/DRIV-136:
 
   1. A first GPU ``argmax`` over a hand-crafted logits vector to pick a
      token deterministically.
-  2. A D2H ``mo.inplace_memcpy`` of that token into pinned host memory.
-  3. ``mo.launch_host_func`` runs a Python callback on the GPU stream
+  2. A D2H ``runtime.inplace_memcpy`` of that token into pinned host memory.
+  3. ``runtime.launch_host_func`` runs a Python callback on the GPU stream
      that advances an xgrammar ``XgrammarMatcher`` with the just-arrived
      token and writes the next-step "additive logits mask" (``0.0`` for
      allowed tokens, ``-inf`` for forbidden) into a second pinned buffer.
-  4. An H2D ``mo.inplace_memcpy`` of the mask into a GPU buffer.
+  4. An H2D ``runtime.inplace_memcpy`` of the mask into a GPU buffer.
   5. A second GPU argmax that adds the mask to a fresh logits vector and
      samples the next token.
 
@@ -49,7 +49,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
-from max.nn.legacy import kernels
+from max.nn import _graph_ops as kernels
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     XgrammarBackend,
     XgrammarMatcher,
@@ -90,24 +90,6 @@ def test_structured_output_pipeline_e2e() -> None:
     backend = _make_backend()
     compiled = backend._compiler.compile_regex("ab")
     matcher = XgrammarMatcher(GrammarMatcher(compiled))
-
-    # Pinned host buffers for the cross-device transfers. Backed by
-    # `Usage.STAGING` (page-locked host memory tied to the GPU)
-    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
-    # exposes a zero-copy host view.
-    token_pinned = Buffer(
-        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
-    )
-    mask_pinned = Buffer(
-        dtype=DType.float32,
-        shape=[_VOCAB_SIZE],
-        device=accelerator,
-        usage=Usage.STAGING,
-    )
-    token_pinned_view = token_pinned.to_numpy()
-    mask_pinned_view = mask_pinned.to_numpy()
-    token_pinned_view[0] = -1
-    mask_pinned_view[:] = -1.0
 
     # Host callback: read the just-arrived D2H token, advance the FSM,
     # convert the bitmask into an additive logits mask (0.0 allowed,
@@ -183,6 +165,24 @@ def test_structured_output_pipeline_e2e() -> None:
 
     session = InferenceSession(devices=[accelerator, CPU()])
     model = session.load(graph)
+
+    # Pinned host buffers for the cross-device transfers. Backed by
+    # `Usage.STAGING` (page-locked host memory tied to the GPU)
+    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
+    # exposes a zero-copy host view.
+    token_pinned = Buffer(
+        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
+    )
+    mask_pinned = Buffer(
+        dtype=DType.float32,
+        shape=[_VOCAB_SIZE],
+        device=accelerator,
+        usage=Usage.STAGING,
+    )
+    token_pinned_view = token_pinned.to_numpy()
+    mask_pinned_view = mask_pinned.to_numpy()
+    token_pinned_view[0] = -1
+    mask_pinned_view[:] = -1.0
 
     # Stage the GPU mask buffer (zero-init; overwritten by H2D) and the
     # host_func payload buffer.

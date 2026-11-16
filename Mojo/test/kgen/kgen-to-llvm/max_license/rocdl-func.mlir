@@ -6,7 +6,7 @@
    // COM: entry block; this lets `AMDGPUPromoteKernelArguments` and
    // COM: `InferAddressSpaces` recognize loaded pointers as global.
 
-   // CHECK-LABEL: byval_with_structs(ptr addrspace(4) noalias noundef nonnull byref({ i64, i64 }) %0, ptr addrspace(4) noundef nonnull byref({ i64, i64 })
+   // CHECK-LABEL: byval_with_structs(ptr addrspace(4) noalias noundef nonnull byref({ i64, i64 }) %0, ptr addrspace(4) noundef nonnull readonly byref({ i64, i64 })
    // CHECK: addrspacecast ptr addrspace(4) %{{[0-9]+}} to ptr
    // CHECK: addrspacecast ptr addrspace(4) %{{[0-9]+}} to ptr
    kgen.func export @byval_with_structs(%arg0: !kgen.pointer<struct<(index, index)>> owned_in_mem, %arg1: !kgen.pointer<struct<(index, index)>> imm_mem) {

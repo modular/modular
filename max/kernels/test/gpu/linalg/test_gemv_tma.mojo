@@ -19,7 +19,7 @@ from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from max.gpu.primitives import warp
 from max.gpu.memory import (
@@ -211,7 +211,7 @@ def gemv_tma[
     M: Int,
     N: Int,
     K: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # TODO: Tune further.
     comptime THREAD_NUM = 1024
@@ -269,9 +269,6 @@ def gemv_tma[
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
     )
 
 
@@ -282,7 +279,7 @@ def test_gemv_tma[
     //,
     dtype: DType,
 ](
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     m: MType,
     n: NType,
     k: KType,
@@ -343,7 +340,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
+        def run_func(ctx: DeviceContext[]) raises {imm}:
             gemv_tma(
                 c_device,
                 c_tt,

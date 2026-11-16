@@ -200,10 +200,7 @@ class Lfm3AudioEncoderAttention(Module[..., Tensor]):
         scores = (q @ k_band.transpose(-1, -2)) * d**-0.5
         valid = (band_taps >= 0).reshape((-1, 1, 1, int(band_taps.shape[1])))
         scores = F.where(valid, scores, float("-inf"))
-        # F.softmax here gets fused into an attention kernel at head_dim 64
-        # that returns NaN under the -inf band mask.
-        weights = F.exp(scores - F.max(scores, axis=-1))
-        out = (weights / F.sum(weights, axis=-1)) @ v_band
+        out = F.softmax(scores) @ v_band
         out = F.cast(out, x.dtype).reshape((-1, self.num_heads, d))
         if hasattr(self, "gate_proj"):
             out = out * F.sigmoid(self.gate_proj(x)).reshape(

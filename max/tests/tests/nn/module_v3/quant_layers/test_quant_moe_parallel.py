@@ -16,26 +16,27 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.graph import Graph, KernelLibrary
+from max.graph import DeviceRef, Graph, KernelLibrary
 from max.nn.common_layers import quant_moe, quant_ops
-from max.nn.common_layers.functional_kernels import (
-    moe_create_indices,
-)
-from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mesh_axis import DP, TP
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
+    QuantizedMoE,
     TensorParallelMoE,
+    _shared_expert_overlap,
 )
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
@@ -44,16 +45,19 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS
+from max.nn.ep_config import NUM_GROUPS, EPConfig
+from max.nn.kernels import moe_create_indices
 from max.nn.legacy.comm.ep.ep_manager import (
     EPBatchManager,
     EPCommBuffers,
     get_ep_local_sync_counters_size,
 )
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
+)
+from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe import (
+    DeepseekV3_2TensorParallelMoE,
 )
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.moe_gate import (
     DeepseekV3_2TopKRouter,
@@ -73,7 +77,21 @@ from max.tensor.sharding import (
     DeviceMesh,
     Partial,
     Replicated,
+    Sharded,
+    ShardingError,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_ambient_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The overlap knob comes from the test, never from the job's environment.
+
+    A CI job that exports ``MODULAR_OVERLAP_SHARED_EXPERT=0`` would otherwise
+    change which arm of the shared expert the staging helpers reach.
+    """
+    monkeypatch.delenv("MODULAR_OVERLAP_SHARED_EXPERT", raising=False)
+    monkeypatch.delenv("MODULAR_MEGA_MOE_TP", raising=False)
+
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -86,7 +104,20 @@ _SEQ_LEN = 4
 _FP8_HIDDEN_DIM = 256
 _FP8_MOE_DIM = 512
 
-_MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
+_MEGA_FFN_OP = "moe.grouped.ffn.blockwise.fp8.amd"
+
+
+def _stack_blockwise_mega_ffn_b(
+    projections: list[Tensor], n_experts: int, device: DeviceRef
+) -> Tensor:
+    # The real op is registered only by the closed-source kernel library, so
+    # a source-only build cannot build it. This keeps its shape contract.
+    per_expert = len(projections) // n_experts
+    joined = [
+        F.concat(projections[e * per_expert : (e + 1) * per_expert], axis=0)
+        for e in range(n_experts)
+    ]
+    return F.stack(joined, axis=0).to(device.to_device())
 
 
 # --------------------------------------------------------------------------- #
@@ -215,6 +246,33 @@ def test_tensor_parallel_moe_bf16_shared_experts(
         assert out.mapping.placements == (Partial(),)
 
 
+def test_tensor_parallel_moe_float32_combine_is_refused(
+    mock_accelerator: MagicMock,
+) -> None:
+    """A float32 combine would round each device's partial sum before the
+    caller's all-reduce sums them, so casting the partial sum raises."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+
+        with default_dtype(DType.bfloat16):
+            with default_device(mesh):
+                layer = DeepseekV3_2TensorParallelMoE(
+                    hidden_dim=_HIDDEN_DIM,
+                    num_experts=_NUM_EXPERTS,
+                    num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                    moe_dim=_MOE_DIM,
+                )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            with pytest.raises(ShardingError):
+                layer(x)
+
+
 def test_tensor_parallel_moe_fp8_weights(
     mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
 ) -> None:
@@ -315,11 +373,22 @@ def _build_ep_batch_manager(
             for _ in range(NUM_GROUPS)
         ]
 
+    expert_load = None
+    if config.eplb_count_expert_load:
+        expert_load = {
+            i: Tensor.zeros(
+                [config.num_moe_layers, config.n_experts // n_devices],
+                dtype=DType.uint64,
+                device=devices[i],
+            )
+            for i in range(n_devices)
+        }
     comm = EPCommBuffers(
         atomic_counters=atomic_counters,
         send_buf_ptrs=_make_ptrs(),
         recv_buf_ptrs=_make_ptrs(),
         recv_count_ptrs=_make_ptrs(),
+        eplb_expert_load=expert_load,
     )
     return EPBatchManager(config), comm
 
@@ -393,6 +462,118 @@ def test_expert_parallel_moe_bf16(mock_accelerator: MagicMock) -> None:
         assert out.mapping.mesh == mesh
 
 
+def _trace_ep_moe_ir(
+    mock_accelerator: MagicMock, count_expert_load: bool, pass_layer: bool
+) -> str:
+    """Traces one ExpertParallelMoE forward and returns the graph's IR."""
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(
+                DType.bfloat16,
+                len(devices),
+                eplb_count_expert_load=count_expert_load,
+                num_moe_layers=2,
+            ),
+            devices,
+        )
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+            )
+            layer_idx = (
+                Tensor.zeros([1], dtype=DType.int32, device=replicated)
+                if pass_layer
+                else None
+            )
+            layer(x, comm_buffers, layer_idx)
+            return str(Graph.current._mlir_op)
+
+
+def test_expert_parallel_moe_counts_expert_load_per_device(
+    mock_accelerator: MagicMock,
+) -> None:
+    """Counting dispatches through each device's `.expert_load` op.
+
+    The multi-device dispatch op has no expert-load form, so a counted
+    dispatch runs the per-device fused op once per device instead.
+    """
+    ir = _trace_ep_moe_ir(mock_accelerator, True, pass_layer=True)
+    assert ir.count('"ep.dispatch.expert_load"') == 2
+    assert "mo.distributed.ep.dispatch" not in ir
+
+
+def test_expert_parallel_moe_counting_needs_the_layer_index(
+    mock_accelerator: MagicMock,
+) -> None:
+    with pytest.raises(ValueError, match="layer index"):
+        _trace_ep_moe_ir(mock_accelerator, True, pass_layer=False)
+
+
+def test_expert_parallel_moe_without_counting_is_unchanged(
+    mock_accelerator: MagicMock,
+) -> None:
+    ir = _trace_ep_moe_ir(mock_accelerator, False, pass_layer=True)
+    assert ".expert_load" not in ir
+    assert "mo.distributed.ep.dispatch" in ir
+
+
+def test_expert_parallel_moe_on_a_dp_tp_mesh(
+    mock_accelerator: MagicMock,
+) -> None:
+    """EP spans every device of a ``(dp, tp)`` mesh of attention replicas.
+
+    After attention reduce-scatters each replica's tokens over its ``tp``
+    axis, every device dispatches its own rows; the output keeps that
+    placement.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(i) for i in range(8)]
+        mesh = DeviceMesh(tuple(devices), (2, 4), (DP, TP))
+        num_experts = 8
+        config = EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=_HIDDEN_DIM,
+            top_k=_NUM_EXPERTS_PER_TOKEN,
+            n_experts=num_experts,
+            max_tokens_per_rank=_SEQ_LEN,
+            n_gpus_per_node=len(devices),
+            n_nodes=1,
+        )
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            config, devices
+        )
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=num_experts,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+            assert len(layer.gate_up_proj) == len(devices)
+            sequence_parallel = DeviceMapping(mesh, (Sharded(0), Sharded(0)))
+            x = Tensor.zeros(
+                [2 * len(devices), _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=sequence_parallel,
+            )
+            out = layer(x, comm_buffers)
+
+        assert out.mapping == sequence_parallel
+        assert [int(shard.shape[0]) for shard in out.local_shards] == [2] * 8
+
+
 def test_expert_parallel_moe_allreduce_shared_expert_on_side_stream(
     mock_accelerator: MagicMock,
 ) -> None:
@@ -449,8 +630,9 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
     """Peer-to-peer EP runs the shared expert between dispatch launch and wait.
 
     This matches the graph-API EP path for any ``MODULAR_OVERLAP_SHARED_EXPERT``
-    value: the blocking multi-device dispatch and combine would serialize the
-    shared expert behind the EP communication.
+    value: the blocking multi-device dispatch would serialize the shared expert
+    behind the EP communication. Only the dispatch splits; the combine is fused,
+    because nothing runs between its launch and its wait.
     """
     monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", overlap_env)
     with F.lazy():
@@ -483,9 +665,14 @@ def test_expert_parallel_moe_shared_expert_between_dispatch_launch_and_wait(
             ir = str(Graph.current._mlir_op)
 
     assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
-    assert "mo.distributed.ep" not in ir
-    for op in ("dispatch_async", "dispatch_wait", "combine_async"):
+    for op in ("dispatch_async", "dispatch_wait"):
         assert ir.count(f'"ep.{op}') == num_devices, op
+    # One fused multi-device combine op, not a per-device launch + wait pair:
+    # nothing runs between a combine launch and its wait, so the pair is one
+    # extra launch per device per layer.
+    assert '"ep.combine_async' not in ir
+    assert '"ep.combine_wait' not in ir
+    assert ir.count('"mo.distributed.ep.combine"') == 1
     last_launch = ir.rindex('"ep.dispatch_async')
     first_wait = ir.index('"ep.dispatch_wait')
     # The shared expert's gate/up matmul is the only matmul in between: the
@@ -574,6 +761,9 @@ def test_expert_parallel_moe_runs_blockwise_mega_ffn(
     )
     monkeypatch.setattr(
         ExpertParallelMoE, "_blockwise_mega_ffn_amd_eligible", lambda _: True
+    )
+    monkeypatch.setattr(
+        quant_ops, "stack_blockwise_mega_ffn_b", _stack_blockwise_mega_ffn_b
     )
     with F.lazy():
         devices = [mock_accelerator(0), mock_accelerator(1)]
@@ -665,6 +855,9 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
     monkeypatch.setattr(
         quant_ops, "grouped_ffn_blockwise_fp8_amd_ep", fake_mega_ffn
     )
+    monkeypatch.setattr(
+        quant_ops, "stack_blockwise_mega_ffn_b", _stack_blockwise_mega_ffn_b
+    )
     monkeypatch.setattr(quant_ops, "stack_blockwise_mega_ffn", spy_stack)
     monkeypatch.setattr(quant_moe, "accelerator_api", lambda: "hip")
     monkeypatch.setattr(
@@ -707,16 +900,16 @@ def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
             ir = str(Graph.current._mlir_op)
 
     local_experts = _NUM_EXPERTS // len(devices)
-    assert _MEGA_FFN_OP not in ir
+    assert f'"{_MEGA_FFN_OP}"' not in ir
     if registered:
         # One preshuffled gate/up stack and one down stack per device.
         assert stacked == [local_experts] * 2 * len(devices)
         assert calls == [local_experts] * len(devices)
-        assert "grouped.matmul" not in ir
+        assert "matmul.grouped" not in ir
     else:
         assert stacked == []
         assert calls == []
-        assert ir.count('"mo.grouped.matmul.dynamic.scaled.fp8"') == (
+        assert ir.count('"matmul.grouped.dynamic.scaled.fp8"') == (
             2 * len(devices)
         )
 
@@ -928,6 +1121,66 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
                 2 * _MOE_DIM,
                 _HIDDEN_DIM // 16,
             ]
+
+
+def _nvfp4_ep_forward_reductions(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    prebuilt_stacks: bool,
+) -> int:
+    """Counts the max reductions one NVFP4 EP forward traces."""
+    # The NVFP4 dispatch layout is NVIDIA's; the fake devices report none.
+    with (
+        patch("max.nn._graph_ops.ep.accelerator_api", return_value="cuda"),
+        F.lazy(),
+    ):
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(
+                DType.uint8,
+                len(devices),
+                dispatch_quant_config=nvfp4_quant_config,
+            ),
+            devices,
+        )
+        with default_dtype(DType.bfloat16), default_device(mesh):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=nvfp4_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
+            stacks = layer.expert_stacks() if prebuilt_stacks else None
+            before = str(Graph.current._mlir_op).count("mo.reduce.max")
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=replicated
+            )
+            layer(x, comm_buffers, stacks=stacks)
+            return str(Graph.current._mlir_op).count("mo.reduce.max") - before
+
+
+def test_expert_parallel_moe_nvfp4_reads_the_stacks_global_scale(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """Forward takes the dispatch scale from prebuilt stacks.
+
+    Stacks built outside a cond already hold it on every device, so a
+    branch that recomputed it would reduce the experts' host scalars again
+    on every step.
+    """
+    own = _nvfp4_ep_forward_reductions(
+        mock_accelerator, nvfp4_quant_config, prebuilt_stacks=False
+    )
+    reused = _nvfp4_ep_forward_reductions(
+        mock_accelerator, nvfp4_quant_config, prebuilt_stacks=True
+    )
+    assert own == reused + 1
 
 
 # --------------------------------------------------------------------------- #
@@ -1169,3 +1422,165 @@ def test_expert_parallel_moe_rejects_mxfp8(
                 quant_config=mxfp8_quant_config,
                 ep_batch_manager=ep_batch_manager,
             )
+
+
+# --------------------------------------------------------------------------- #
+# The shared-expert helpers' home
+# --------------------------------------------------------------------------- #
+
+_SHARED_EXPERT_HELPERS = ("_shared_experts_inline", "_compute_shared_experts")
+
+
+@contextmanager
+def _helpers_on_the_expert_parallel_class() -> Iterator[None]:
+    """Puts the two shared-expert helpers back where they were defined.
+
+    They moved from ``ExpertParallelMoE`` up to ``QuantizedMoE`` so a
+    tensor-parallel layer could reach them. The functions are the same objects
+    either way; what this restores is the subclass's own definition, which is
+    the tree before the move.
+    """
+    helpers = {
+        name: QuantizedMoE.__dict__[name] for name in _SHARED_EXPERT_HELPERS
+    }
+    for name, helper in helpers.items():
+        setattr(ExpertParallelMoE, name, helper)
+        delattr(QuantizedMoE, name)
+    try:
+        yield
+    finally:
+        for name, helper in helpers.items():
+            delattr(ExpertParallelMoE, name)
+            setattr(QuantizedMoE, name, helper)
+
+
+_SEED = re.compile(r"#M\.dense_array<\d+> : tensor<ui64>")
+"""A random draw's seed, which one process hands out from a counter: two builds
+of the same layer in one process draw different ones, and they are not part of
+the graph the layer describes."""
+
+
+def _stage_expert_parallel_moe(mock_accelerator: MagicMock) -> str:
+    """Stages DeepSeek's expert-parallel MoE layer and returns its IR.
+
+    The layer is the one ``deepseekV3_modulev3``'s and
+    ``deepseekV3_2_modulev3``'s transformer blocks build for their
+    expert-parallel arm: the framework's own ``ExpertParallelMoE``, off its own
+    gate and shared expert, with no ML4-specific subclass in the way.
+    """
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        num_devices = len(devices)
+        mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(DType.bfloat16, num_devices), devices
+        )
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                has_shared_experts=True,
+                shared_experts_dim=_MOE_DIM,
+                ep_batch_manager=ep_batch_manager,
+            )
+            x = Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM],
+                dtype=DType.bfloat16,
+                device=replicated,
+            )
+            layer(x, comm_buffers)
+            return _SEED.sub(
+                "#M.dense_array<seed> : tensor<ui64>",
+                str(Graph.current._mlir_op),
+            )
+
+
+def test_another_models_expert_parallel_moe_is_unchanged(
+    mock_accelerator: MagicMock,
+) -> None:
+    """Moving the helpers up a class leaves every expert-parallel model alone.
+
+    Three architectures reach these helpers through ``ExpertParallelMoE.forward``
+    -- DeepSeek-V3, DeepSeek-V3.2 and GLM-5.Next -- so the move has to be a move
+    and nothing else. (MiMo-V2 is not one of them: its expert-parallel layer is
+    hand-rolled and never calls either helper.) The comparison arm defines the
+    helpers on the subclass again, which is where they were; what this shows is
+    that the attribute lookup resolves to the same function either way, so the
+    ops the layer runs, and their order, do not notice the move. The bodies
+    themselves are the branch's own objects on both sides, so a change inside one
+    cannot show up here; they were compared with ``892ce9e0e38`` when this
+    landed and differ only in a docstring.
+    """
+    graph = _stage_expert_parallel_moe(mock_accelerator)
+    assert '"mo.sequence"' in graph, (
+        "the layer stages no side-stream region, so it never reaches the"
+        " helpers this test is about"
+    )
+    with _helpers_on_the_expert_parallel_class():
+        before = _stage_expert_parallel_moe(mock_accelerator)
+    assert graph == before, "the move changed another model's MoE graph"
+
+
+def test_the_comparison_above_can_fail(mock_accelerator: MagicMock) -> None:
+    """Control: the knob really does move the shared expert.
+
+    ``MODULAR_OVERLAP_SHARED_EXPERT=0`` runs the shared expert inline instead of
+    in the region, so a comparison that could not see that difference could not
+    see anything. What it does not show is the move: both arms reach the branch's
+    own helper objects, so this proves the variable discriminates, not that the
+    relocation is transparent.
+    """
+    graph = _stage_expert_parallel_moe(mock_accelerator)
+    with patch.dict(os.environ, {"MODULAR_OVERLAP_SHARED_EXPERT": "0"}):
+        inline = _stage_expert_parallel_moe(mock_accelerator)
+    assert '"mo.sequence"' not in inline
+    assert graph != inline
+
+
+@pytest.mark.parametrize(
+    "raw, default, expected",
+    [
+        (None, True, True),
+        (None, False, False),
+        ("0", True, False),
+        ("0", False, False),
+        ("1", True, True),
+        ("1", False, True),
+    ],
+)
+def test_the_overlap_knob_parses_0_and_1_the_same_way(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str | None,
+    default: bool,
+    expected: bool,
+) -> None:
+    """Unset keeps the caller's default; ``0`` and ``1`` override it anywhere.
+
+    The variable has two rules in the tree today -- the legacy expert-parallel
+    forward keeps its own -- but every reader this branch touches goes through
+    this predicate, so there ``0`` and ``1`` mean the same thing whatever the
+    layer's default is, and its two defaults are the two layouts' shipped
+    schedules: on for the expert-parallel layers, off for Mistral Large 4's.
+    """
+    monkeypatch.delenv("MODULAR_OVERLAP_SHARED_EXPERT", raising=False)
+    if raw is not None:
+        monkeypatch.setenv("MODULAR_OVERLAP_SHARED_EXPERT", raw)
+    assert _shared_expert_overlap(default=default) is expected
+
+
+def test_the_overlap_knob_reads_every_other_value_as_on() -> None:
+    """A value that is not ``0`` means on, as it always has for every model.
+
+    The rule predates this predicate: the expert-parallel forward ran the
+    shared expert on a side stream unless the variable read exactly ``0``. So
+    ``true``, the empty string and a stray number keep meaning on, whatever
+    the layer's own default is, and Mistral Large 4 is the only layout whose
+    unset behaviour differs from the expert-parallel layers'.
+    """
+    for raw in ("true", "", "2", "yes"):
+        with patch.dict(os.environ, {"MODULAR_OVERLAP_SHARED_EXPERT": raw}):
+            assert _shared_expert_overlap(default=True)
+            assert _shared_expert_overlap(default=False)

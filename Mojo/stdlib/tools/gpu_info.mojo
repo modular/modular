@@ -73,15 +73,7 @@ def main() raises:
         )
         print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
         print('version="' + arch_name + '", ')
-        print(
-            "sm_count="
-            + String(
-                ctx.device().get_attribute(
-                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
-                )
-            )
-            + ", "
-        )
+        print("sm_count=" + String(ctx.device().multiprocessor_count()) + ", ")
         print(
             "warp_size="
             + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))
@@ -114,15 +106,7 @@ def main() raises:
         print(String(t'api="{ctx.api()}", '))
         print('arch_name="' + arch_name + '", ')
         print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
-        print(
-            "sm_count="
-            + String(
-                ctx.device().get_attribute(
-                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
-                )
-            )
-            + ", "
-        )
+        print("sm_count=" + String(ctx.device().multiprocessor_count()) + ", ")
         print(
             "warp_size="
             + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))

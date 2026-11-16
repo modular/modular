@@ -33,7 +33,7 @@ from layout.coord import ComptimeInt
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_async_copy import copy_dram_to_sram_async_ldmatrix
 from layout.tile_iterator import TileTensorIter
-from layout.tile_layout import Layout as TileLayout
+from layout.layout import Layout
 from layout.tile_tensor import stack_allocation
 
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
@@ -79,7 +79,7 @@ def _b_value(i: Int) -> Scalar[dtype]:
 
 def _gmem_layout[
     rows: Int, cols: Int, row_stride: Int
-]() -> TileLayout[
+]() -> Layout[
     shape_types=Coord[ComptimeInt[rows], ComptimeInt[cols]].element_types,
     stride_types=Coord[ComptimeInt[row_stride], ComptimeInt[1]].element_types,
 ]:

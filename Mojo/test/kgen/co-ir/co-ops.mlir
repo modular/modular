@@ -103,8 +103,8 @@ kgen.func @throwing_coroutine(%arg0: index, %__error__: !kgen.pointer<index> byr
 
 // CHECK-LABEL: kgen.func @call_throwing_coro
 kgen.func @call_throwing_coro(%arg0: index) {
-  %size = index.constant 1
-  %align = index.constant 8
+  %size = kgen.param.constant: scalar<index> = <1>
+  %align = kgen.param.constant: scalar<index> = <8>
   // CHECK: %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
   %0 = co.invoke[(index, !kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> i1: @throwing_coroutine](%arg0)
   %1 = pop.aligned_alloc %align, %size : <index>

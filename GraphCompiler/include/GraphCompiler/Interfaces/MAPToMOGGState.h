@@ -21,6 +21,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 namespace M::MO {
 class InvokeShapeFuncOp;
@@ -41,6 +42,11 @@ struct MAPToMOGGState {
   // compute lambda; mirrors the `EmitMojo` option.
   bool enableComputeLambdas = true;
 
+  // True while lowering a tile fusion container's body, which works on whole
+  // `!mogg.tile`s; `lowerOp` then calls `lowerToMOGGTile`. Set only through
+  // `withTileBody`.
+  bool tileBody = false;
+
   // Maps the kernel's inputs and output block args (and epilogue results) to
   // their reconstructed `!mogg.tensor`s. Nested regions remap their own
   // entries before lowering their body.
@@ -48,6 +54,8 @@ struct MAPToMOGGState {
 
   // Set by `IterOpaqueOp::lowerToMOGG` before any nested op is lowered.
   DeviceRefAttr device;
+  // Whether `device` opted into tile-based fusion.
+  bool tileBasedFusionEnabled = false;
   // Unique dynamic dims, in first-seen order, to their `!mogg.dim` block
   // args (null until the block args exist).
   llvm::MapVector<mlir::Attribute, mlir::BlockArgument> dimArgs;
@@ -61,6 +69,13 @@ struct MAPToMOGGState {
   // against at runtime.
   llvm::DenseMap<mlir::Operation *, llvm::SmallVector<mlir::Value>>
       indexShapeArgs;
+
+  // Runs `fn` with `tileBody` set, then restores its previous value.
+  mlir::LogicalResult
+  withTileBody(llvm::function_ref<mlir::LogicalResult()> fn) {
+    llvm::SaveAndRestore<bool> restore(tileBody, true);
+    return fn();
+  }
 
   mlir::LogicalResult lowerOp(mlir::Operation *op);
   // Lowers `block`'s ops in order, skipping those `shouldLower` rejects; a

@@ -95,6 +95,8 @@ static constexpr llvm::StringLiteral kTransparentThunkCalleeExprAttr =
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGEN.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_KGENOPS_H

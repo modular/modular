@@ -95,11 +95,17 @@ use_repo(toolchains, "default_rust_toolchains")
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
 use_repo(rules_rust, "rules_rust")
 
-# The pyo3 rule attaches rustfmt_aspect, which pulls the nightly rustfmt
-# toolchain into every cold build of a pyo3 extension. Nothing reads its
-# output; //:format runs rustfmt directly.
 rules_rust.patch(
-    patches = ["//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch"],
+    patches = [
+        # rules_rust prefers a cc dependency's interface library (.ifso) but
+        # links it as -ldylib=<name>, which the linker resolves only to
+        # lib<name>.so; this links the .ifso by its file name instead.
+        "//bazel/public-patches:rules_rust_link_interface_libraries.patch",
+        # The pyo3 rule attaches rustfmt_aspect, which pulls the nightly
+        # rustfmt toolchain into every cold build of a pyo3 extension. Nothing
+        # reads its output; //:format runs rustfmt directly.
+        "//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch",
+    ],
     strip = 1,
 )
 
@@ -140,6 +146,8 @@ single_version_override(
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
+        # TODO: Remove when we bump enough
+        "//bazel/public-patches:rules_python_315.patch",
     ],
     version = "1.8.5",
 )
@@ -150,7 +158,7 @@ single_version_override(
     patches = [
         # https://github.com/jvolkman/rules_pycross/pull/219
         "//bazel/public-patches:rules_pycross_exports.patch",
-        # TODO: Remove when 3.8 is no longer pulled in transitively
+        # TODO: Remove when 3.8 is no longer pulled in transitively. We also use this to add 3.15.
         "//bazel/public-patches:rules_pycross_versions.patch",
     ],
 )
@@ -161,6 +169,24 @@ single_version_override(
     patches = [
         # FIXME: `@system_python` is a dev dep, but used in non-dev code
         "//bazel/public-patches:protobuf-dev-dep.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "jemalloc",
+    patch_strip = 1,
+    patches = [
+        # As part of building this, jemalloc expects an `nm` from the
+        # cc toolchain, but plumbing it through requires a rules_cc fix.
+        # Without it, the action just gives us "/bin/bash: line 1: -a: command not found"
+        # since `{nm}` expands to nothing. Unless/until we want to fix it,
+        # just disable the feature. This is not a flag but just a setting,
+        # so annoyingly we have to patch it.
+        "//bazel/public-patches:jemalloc-no-private-namespace.patch",
+        # The repository defaults to compilation_mode=dbg, which would otherwise
+        # enable jemalloc's assertions in every default build. Use
+        # --define=jemalloc_debug=1 to enable them.
+        "//bazel/public-patches:jemalloc-no-debug.patch",
     ],
 )
 
@@ -205,6 +231,7 @@ PYTHON_VERSIONS = [
     "3_12",
     "3_13",
     "3_14",
+    "3_15",
 ]
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -255,6 +282,8 @@ use_repo(compat, "cc_compatibility_proxy")
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+libkineto_repository = use_repo_rule("//bazel/public-patches:libkineto.bzl", "libkineto_repository")
 
 # ......................... NIXL (KV transfer) ................................
 #
@@ -523,16 +552,16 @@ http_archive(
 )
 
 # libkineto is the on-demand CPU+GPU profiler MAX uses to emit Chrome trace
-# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). We pin to the exact SHA
-# bundled with torch==2.12.0+cu130 because the PyTorch/HTA/libkineto/Dynolog
-# compatibility chain at that pairing is empirically validated end-to-end
-# (see MXTOOLS-190 initial spike). The accompanying
-# bazel/public-patches/libkineto.BUILD wires up the CUPTI / CUDA Toolkit deps
-# and exposes the cc_library target.
-http_archive(
+# JSON for HTA / Dynolog IPC capture (MXTOOLS-190). github.com/pytorch/kineto
+# is archived; libkineto now lives in pytorch/pytorch (copied in by #198648,
+# moved to torch/csrc/profiler/kineto after the 2.15 branch cut). We pin the
+# v2.15.0 tag, the first torch release that ships libkineto in-tree, so the
+# libkineto we build is the one bundled with torch==2.15.0. The commit and the
+# per-file sha256 manifest live in bazel/public-patches/libkineto.bzl; bump
+# them with `update-libkineto <pytorch ref>`.
+libkineto_repository(
     name = "libkineto",
     build_file = "//bazel/public-patches:libkineto.BUILD",
-    patch_args = ["-p1"],
     patches = [
         # Emit "Record Window End" on the (-1, 0) overhead track with thread
         # scope so it stops spawning an Unnamed SliceTrack in Perfetto. Covers
@@ -540,14 +569,11 @@ http_archive(
         # in max/internal/profiler/lib/Range.cpp (MXTOOLS-266).
         "//bazel/public-patches:libkineto-record-window-end-track.patch",
     ],
-    sha256 = "7615b3c028b3148d046ba7a34b890d9bf90e5178024c7b749b5018366fc9e631",
-    strip_prefix = "kineto-b2103f78d13fde4937af010c0ef8e24313568bc5",
-    url = "https://github.com/pytorch/kineto/archive/b2103f78d13fde4937af010c0ef8e24313568bc5.tar.gz",
 )
 
 # dynolog supplies the IPC fabric headers libkineto includes under
-# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why the kineto
-# tarball can't provide them. Pinned to b32376d, validated against Dynolog
+# ENABLE_IPC_FABRIC; bazel/public-patches/dynolog.BUILD explains why we don't
+# use libkineto's vendored copy. Pinned to b32376d, validated against Dynolog
 # 0.6.0 + libkineto's IPC protocol.
 http_archive(
     name = "dynolog",
@@ -761,6 +787,7 @@ mojo.gpu_toolchains(
     gpu_mapping = {
         " A10G": "a10",
         "A100-": "a100",
+        "Tesla T4": "t4",
         " H100": "h100",
         " H200": "h200",
         " L4": "l4",
@@ -772,7 +799,7 @@ mojo.gpu_toolchains(
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
-        "RTX 4080 SUPER": "",
+        "RTX 4080 SUPER": "rtx4080super",
         "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 5060 Ti": "rtx5060ti",
         "NVIDIA GeForce RTX 3090": "rtx3090",
@@ -811,6 +838,7 @@ mojo.gpu_toolchains(
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
+        "t4": "nvidia:sm_75",
         "gfx90a": "amdgpu:gfx90a",
         "mi300a": "amdgpu:gfx942",
         "mi300x": "amdgpu:gfx942",
@@ -820,6 +848,7 @@ mojo.gpu_toolchains(
         "gtx970": "nvidia:sm_52",
         "gtx1080ti": "nvidia:sm_61",
         "gtx1060": "nvidia:sm_61",
+        "rtx4080super": "nvidia:sm_89",
         "rtx4090": "nvidia:sm_89",
         "rtx5060ti": "nvidia:sm_120a",
         "rtx5090": "nvidia:sm_120a",
@@ -906,8 +935,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
+    sha256 = "52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.5/52c8f5c2ccf68a146bfe4f719671e5aa4073c6306a4f96d2a06c8352a4555ec6/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
@@ -1150,11 +1179,6 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_gpt-oss_golden.tar.gz",
         "sha256": "808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
-    },
-    {
-        "name": "torch_olmo-1b-hf_golden.tar.gz",
-        "sha256": "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
-        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
     },
     {
         "name": "torch_llama3-8b_q4_k_golden.tar.gz",

@@ -18,6 +18,7 @@
 
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -70,13 +71,29 @@ public:
   }
 
   /// Emit IR for a single argument, according to its convention.
+  /// For a pack argument, `packEltType` replaces the element type at
+  /// `sequenceIndex` in the resolved list of the pack.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
                          ArgConvention convention, Type expectedType,
-                         size_t sequenceIndex = 0);
+                         size_t sequenceIndex = 0, TypedAttr packEltType = {});
 
   /// Emit IR for forwarding a whole variadic pack as a single argument.
   AnyValue emitWholePackForward(ASTExprAnd<AnyValue> operand,
                                 Type expectedType);
+
+  /// Emit a pack argument that has unpacked packs in its operands. The result
+  /// is the concatenation of each run of plain operands and each unpacked
+  /// pack.
+  LogicalResult
+  emitConcatenatedPack(size_t argIdx,
+                       MutableArrayRef<OperandValue> remainingOperands,
+                       ArgConvention convention, Type expectedType,
+                       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
+
+  /// Emit the `!lit.ref.pack` of an unpacked VariadicPack operand, rebound to
+  /// the element list `segmentList` and the origin `origin`.
+  Value emitUnpackedPackSegment(OperandValue &operand, TypedAttr segmentList,
+                                TypedAttr origin);
 
   /// Emit all arguments and return their values in a vector.
   /// This function iterates by expected arguments since we're building the
@@ -252,7 +269,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   Type compatibleVariadicPackType =
       cast<StructASTDecl>(expectedPackType.getDecl(emitter.shared))
           ->getOp()
-          .bindReference(paramBindings);
+          .bindAllReferences(&emitter.shared.getEvaluationContext(),
+                             paramBindings);
   auto compatibleRefType =
       actualRefType.getWithElement(compatibleVariadicPackType);
 
@@ -268,7 +286,8 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
 
 AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx, ArgConvention convention,
-                                    Type expectedType, size_t sequenceIndex) {
+                                    Type expectedType, size_t sequenceIndex,
+                                    TypedAttr packEltType) {
   // Convert to the element type of a variadic list or pack.
   if (calleeSig.isPosVarArg(argIdx)) {
     ASTType listType = RefType::stripRefConvention(expectedType, convention);
@@ -281,8 +300,10 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.  The calleeSig has the
     // pack type resolved to a concrete list of types it is expecting.
-    expectedType =
-        ASTType(refPackType.getVariadicIfResolved().getValues()[sequenceIndex]);
+    if (!packEltType)
+      packEltType =
+          refPackType.getVariadicIfResolved().getValues()[sequenceIndex];
+    expectedType = ASTType(packEltType);
     // Get the !lit.ref with the origin and other paraphernalia.
     expectedType = refPackType.getElementRefTypeFor(expectedType);
     convention = calleeSig.getVariadicConvention(argIdx);
@@ -290,6 +311,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
 
   switch (convention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
@@ -358,6 +382,162 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("unknown argument convention");
 }
 
+Value CallEmitter::emitUnpackedPackSegment(OperandValue &operand,
+                                           TypedAttr segmentList,
+                                           TypedAttr origin) {
+  // Read the `!lit.ref.pack` from the VariadicPack. This reads the value and
+  // does not forward a reference to it. Thus, a temporary can be unpacked.
+  Location mlirLoc = callExpr->getLocation(emitter);
+  MBValue packRef = emitter.emitMBValue(operand, EC_CallArgValue);
+  if (!packRef)
+    return {};
+  Value base = emitter.emitRebindOpIfNeeded(
+      packRef,
+      cast<RefType>(packRef.getType())
+          .getWithElement(SugarAttr::strip(packRef.getRValueType())),
+      operand.expr->getLoc());
+  ASTDecl *packDecl = ASTType(packRef.getRValueType()).getDecl(emitter.shared);
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      "_value", operand.expr->getLoc(), *packDecl,
+      /*searchParentScopes=*/false);
+  auto *fieldDecl =
+      lookup.isSuccess() && lookup.getIfSuccess().size() == 1
+          ? dyn_cast_or_null<StructFieldASTDecl>(lookup.getIfSuccess()[0])
+          : nullptr;
+  assert(fieldDecl && "VariadicPack stores its !lit.ref.pack in _value");
+  Value fieldRef = RefStructGEROp::create(
+      *emitter.builder, mlirLoc, base, fieldDecl->getOp(),
+      &emitter.shared.getEvaluationContext());
+  Value loaded = RefLoadOp::create(*emitter.builder, mlirLoc, fieldRef);
+
+  // Rebind to the common origin, as for the elements of a plain run. The list
+  // can also be different, because ParamInf can upcast it to the trait of the
+  // callee.
+  auto loadedType = cast<RefPackType>(loaded.getType());
+  return emitter.emitRebindOpIfNeeded(
+      loaded,
+      RefPackType::get(segmentList, origin, loadedType.getAddressSpace()),
+      operand.expr->getLoc());
+}
+
+LogicalResult CallEmitter::emitConcatenatedPack(
+    size_t argIdx, MutableArrayRef<OperandValue> remainingOperands,
+    ArgConvention convention, Type expectedType,
+    SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues) {
+  SMLoc loc = callExpr->getLoc();
+  if (!emitter.builder) {
+    emitter.emitError(loc)
+        << "concatenating variadic packs is not supported in a parameter "
+           "expression";
+    return failure();
+  }
+  Location mlirLoc = callExpr->getLocation(emitter);
+
+  ASTType packType = RefType::stripRefConvention(expectedType, convention);
+  RefPackType refPackType = packType.getVariadicPackInfo(emitter.shared);
+  ArgConvention eltConvention = calleeSig.getVariadicConvention(argIdx);
+  TypedAttr eltOrigin = refPackType.getOrigin();
+
+  // Split the operands into segments. Each run of plain operands is one
+  // segment, and each unpacked pack is its own segment.
+  struct Segment {
+    size_t begin, end;
+    bool isUnpacked;
+  };
+  SmallVector<Segment> segments;
+  for (auto [idx, operand] : llvm::enumerate(remainingOperands)) {
+    bool isUnpacked = operand.unpackStyle == ArgUnpackStyle::kStar;
+    if (isUnpacked || segments.empty() || segments.back().isUnpacked)
+      segments.push_back({idx, idx + 1, isUnpacked});
+    else
+      segments.back().end = idx + 1;
+  }
+
+  // Get the element list of each segment from the bound pack type. The
+  // type was bound to a `#kgen.param_list.concat` of the segment lists.
+  auto getUnpackedList = [&](const OperandValue &operand) {
+    return operand.ir.getRValueTypeIfResolvable()
+        .getVariadicPackInfo(emitter.shared)
+        .getVariadic();
+  };
+  SmallVector<TypedAttr> segmentLists;
+  TypedAttr variadic = refPackType.getVariadic();
+  if (auto concat = sugarDynCast<ParamListConcatAttr>(variadic)) {
+    if (auto lists = sugarDynCast<ParamListAttr>(concat.getParamLists()))
+      llvm::append_range(segmentLists, lists.getValues());
+  } else if (auto flat = sugarDynCast<ParamListAttr>(variadic)) {
+    ArrayRef<TypedAttr> remaining = flat.getValues();
+    for (const Segment &segment : segments) {
+      size_t length = segment.end - segment.begin;
+      if (segment.isUnpacked) {
+        auto list = sugarDynCast<ParamListAttr>(
+            getUnpackedList(remainingOperands[segment.begin]));
+        if (!list)
+          break;
+        length = list.getValues().size();
+      }
+      if (length > remaining.size())
+        break;
+      segmentLists.push_back(
+          ParamListAttr::get(remaining.take_front(length), flat.getType()));
+      remaining = remaining.drop_front(length);
+    }
+  }
+  if (segmentLists.size() != segments.size()) {
+    emitter.emitError(loc) << "cannot determine the element types of the "
+                              "concatenated variadic pack "
+                           << packType;
+    return failure();
+  }
+
+  SmallVector<Value> packs;
+  for (auto [segment, segmentList] : llvm::zip(segments, segmentLists)) {
+    if (segment.isUnpacked) {
+      Value pack = emitUnpackedPackSegment(remainingOperands[segment.begin],
+                                           segmentList, eltOrigin);
+      if (!pack)
+        return failure();
+      packs.push_back(pack);
+      continue;
+    }
+
+    auto runList = sugarCast<ParamListAttr>(segmentList);
+    SmallVector<Value> elements;
+    for (size_t idx = segment.begin; idx != segment.end; ++idx) {
+      OperandValue &operand = remainingOperands[idx];
+      AnyValue emitted = emitOneArgVal(
+          operand, argIdx, convention, expectedType,
+          /*sequenceIndex=*/0, runList.getValues()[idx - segment.begin]);
+      if (!emitted)
+        return failure();
+      operand.ir = emitted;
+      Value element = emitPreemittedArgumentAsDynamicValue(
+          operand, /*isDefaultArgVal=*/false, eltConvention, expectedType,
+          ArrayRef<Value>());
+      if (!element)
+        return failure();
+      auto elementType = cast<RefType>(element.getType());
+      if (elementType.getOrigin() != eltOrigin) {
+        element = emitter.emitRebindOpIfNeeded(
+            element, elementType.getWithOrigin(eltOrigin), loc);
+      }
+      elements.push_back(element);
+    }
+    auto runPackType =
+        RefPackType::get(runList, eltOrigin, refPackType.getAddressSpace());
+    packs.push_back(RefPackCreateOp::create(*emitter.builder, mlirLoc,
+                                            runPackType, elements));
+  }
+
+  CValue argVal = SRValue(
+      RefPackConcatOp::create(*emitter.builder, mlirLoc, refPackType, packs));
+  argVal = emitVariadicCtor(packType, argVal, callExpr, emitter);
+  if (!argVal)
+    return failure();
+  argumentValues.push_back({argVal, remainingOperands[0].expr});
+  return success();
+}
+
 /// Emit the given (remaining) operands as a variadic or pack sequence,
 /// appending to the given argument value vector.
 LogicalResult CallEmitter::emitRemainingPosOperands(
@@ -368,10 +548,19 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
          "Must be a variadic we're emitting for");
   assert(!remainingOperands.empty() && "not called for empty lists");
 
+  // We've got at least one splatted variadic pack mixed with another argument;
+  // concatenate them.
+  if (remainingOperands.size() > 1 &&
+      llvm::any_of(remainingOperands, [](const OperandValue &operand) {
+        return operand.unpackStyle == ArgUnpackStyle::kStar;
+      })) {
+    assert(calleeSig.isPack(argIdx) &&
+           "only variadic packs accept an unpack among other operands");
+    return emitConcatenatedPack(argIdx, remainingOperands, convention,
+                                expectedType, argumentValues);
+  }
+
   if (remainingOperands.front().unpackStyle == ArgUnpackStyle::kStar) {
-    assert(remainingOperands.size() == 1 &&
-           "a positional operand after a '*' unpack should have been rejected "
-           "before emission");
     auto &operand = remainingOperands.front();
 
     // Splatting a variadic list is straight-forward, just pass the splat
@@ -762,7 +951,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     if (trackable.endInitState == OriginTrackable::ExitInitState::EndsInit)
       return false;
 
-    // If the type is movable, then ~always use a temporary result.  The reason
+    // If the type is movable, then always use a temporary result.  The reason
     // is that we need to support things like:
     // def func():
     //     val1 = 0
@@ -773,40 +962,11 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     //     use(val1) # Should work!
     //
     // If we don't do this end up with an uninitialized value on the error
-    // return path.  Movable types are supposed to be efficiently movable.
+    // return path.  Movable types are supposed to be efficiently movable and
+    // CheckLifetimes will eliminate the temporary when possible.
     if (destRValueType.isMovable(callExpr->getLoc(), emitter.shared,
-                                 emitter.declScope)) {
-      // If we're the top level, then nothing can use the result, so we can
-      // microoptimize this case.
-      Operation *opForRaise = nullptr;
-      if (emitter.builder)
-        opForRaise =
-            findOpProcessingRaise(emitter.builder->getInsertionBlock());
-
-      bool isOk = false;
-      if (opForRaise) {
-        // If we're exiting the entire function, we are ok.
-        if (isa<FnOp>(opForRaise))
-          isOk = true;
-
-        // If that didn't work, see if we're initializing a vardecl within the
-        // current exception region.  If so, we know that the exception couldn't
-        // use the old value because it won't be live outside.
-        else if (VarDeclOp varDeclOp =
-                     underlyingDest.getDefiningOp<VarDeclOp>()) {
-          if (underlyingDest.use_empty()) {
-            // If there are no assignments into this so far, then it must be
-            // uninit.
-            isOk = true;
-          } else if (opForRaise->isAncestor(varDeclOp)) {
-            isOk = true;
-          }
-        }
-      }
-
-      if (!isOk)
-        return false;
-    }
+                                 emitter.declScope))
+      return false;
   }
 
   // Collect all of the types of all the arguments so we can collect the
@@ -830,7 +990,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
   processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
     // AnyOrigin is assumed to be ok since it is used for
-    // UnsafePointer etc.  We don't want to track it.
+    // Pointer etc.  We don't want to track it.
     if (sugarIsa<AnyOriginAttr>(origin))
       return;
     // We want to track the fully field sensitive origin, and
@@ -925,6 +1085,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   switch (convention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
@@ -969,8 +1132,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // If the callee throws and is not async, we pass the contextual error
     // slot.
-    MLValue errSlot = emitter.findNearestErrorSlot();
-    if (!errSlot) {
+    auto *raiseContext = emitter.getRaiseContext();
+    if (!raiseContext) {
       auto diag = emitter.emitError(callExpr->getLoc())
                   << "cannot call function that may raise in a context that "
                      "cannot raise"
@@ -984,24 +1147,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       }
       return {};
     }
-    // Make sure the raised error type matches the contextual error type. We
-    // don't support throwing an Int in a context that catches a Float for
-    // example.
-    // TODO: we can add support for implicit conversions in the future.  We can
-    // make many types implicitly convert to Error by stringizing.  Until then,
-    // people can do this manually by catching and rethrowing.
-    if (isa<UnresolvedType>(errSlot.getRValueType())) {
-      // If the contextual caught type is unresolved, then we're the first call
-      // in a try block.  Resolve the error type to whatever type we raise.
-      auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-      errorVar.changeElementType(errorType);
-      emitter.checkInferredErrorType(errorType, callExpr->getLoc());
-    } else if (!errorType.isEqualCanon(errSlot.getRValueType())) {
-      emitter.emitError(callExpr->getLoc())
-          << "cannot call function that may raise " << errorType
-          << " in context that supports an error type of "
-          << errSlot.getRValueType() << callExpr->getRange();
-      return {};
+    MLValue errSlot = raiseContext->getOrCreateErrorSlot(
+        emitter, errorType, argValAndExpr.expr->getLocation(emitter));
+    if (raiseContext->isEagerlyEmitted() &&
+        !errorType.isEqualCanon(errSlot.getRValueType())) {
+      auto loc = argValAndExpr.expr->getLocation(emitter);
+      auto tmp = emitter.emitVarDecl("__call_error_tmp__", errorType, loc,
+                                     VarDeclKind::Synthesized);
+      return MLValue(tmp);
     }
     return errSlot;
   }
@@ -1390,12 +1543,11 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
   // local references. When an access to "x.y" happens we'll see both "x" and
   // "x.y" here.
   for (const auto &[origin, info] : originAccesses) {
+    assert(!isa<UnboundAttr>(origin)); // should not see any unbound origin
     // Static origins and subfields are ignorable.  Fields will have their bases
     // included.
     if (isa<StaticOriginAttr, OriginFieldAttr, ComptimeOriginAttr,
-            InteriorOriginAttr, OriginSubtreeAttr>(origin) ||
-        // FIXME: Why are we getting UnboundAttr's here?
-        isa<UnboundAttr>(origin))
+            InteriorOriginAttr, OriginSubtreeAttr>(origin))
       continue;
 
     // Scan up our decl hierarchy to see if this parameter is defined on a
@@ -1403,7 +1555,7 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
     // This seems unfortunate, there should be a better way to do this.
     auto paramDecl = dyn_cast<ParamDeclRefAttr>(origin);
     if (!paramDecl)
-      origin.dump();
+      llvm::errs() << origin << "\n";
     assert(paramDecl && "Unknown origin in mayAccessCallerStack");
     if (!isParamDeclOutsideFunction(paramDecl))
       return true;
@@ -1557,10 +1709,13 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
     // Ignore those so we can see the actual incoming value's origin.
     argVal = RefImmutOp::stripRebinds(argVal);
 
-    // Return true if this is the origin for the argument itself.
+    // Return true if this is the origin of the argument itself. An unpacked
+    // `!lit.ref.pack` segment is a register value, not a reference. The
+    // access to its origin has the mutability of the pack.
     auto isArgOrigin = [&](TypedAttr origin) -> bool {
-      return hasAddress(convention) &&
-             isEqualCanon(cast<RefType>(argVal.getType()).getOrigin(), origin);
+      auto refType = dyn_cast<RefType>(argVal.getType());
+      return refType && hasAddress(convention) &&
+             isEqualCanon(refType.getOrigin(), origin);
     };
 
     // Find all the of the origins that are buried in the specified type.
@@ -1573,6 +1728,12 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       if (isArgOrigin(origin) && hasAddress(convention) &&
           convention != ArgConvention::Mut &&
           cast<RefType>(signature.getArgument(argIdx)).isMutableKnown(false))
+        forceToImmutOrigin = true;
+
+      // The callee mutates an unpacked pack segment only through a `mut`
+      // pack. This is also true when the pack of the caller is mutable.
+      if (isa<RefPackType>(argVal.getType()) &&
+          convention != ArgConvention::Mut)
         forceToImmutOrigin = true;
 
       // Callees marked `@__unsafe_nested_origins_read_only` promise
@@ -1689,6 +1850,15 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
     return;
   }
 
+  // The value is an unpacked pack segment in a concatenated pack.
+  if (isa<RefPackType>(val.getType())) {
+    diag << "'" << ASTType::getOriginAsString(origin, &shared)
+         << "' value is passed through aliasing '" << getUserSyntax(convention)
+         << "' argument " << calleeType.getArgName(argIdx) << " by a '*' unpack"
+         << argumentValues[argIdx].expr->getRange();
+    return;
+  }
+
   if (hasAddress(convention) &&
       OriginMutCastAttr::strip(sugarCast<RefType>(val.getType()).getOrigin()) ==
           origin) {
@@ -1733,7 +1903,7 @@ static bool shouldEmitParameterCall(RValue callee,
                                     SharedState &shared) {
   auto calleeSig = sugarCast<FnTypeGeneratorType>(callee.getRValueType());
 
-  // If this returns something like an UnsafePointer with an unusual origin,
+  // If this returns something like a Pointer with an unusual origin,
   // materialization will fail, so we can't emit it as a parameter call.
   if (ASTType(calleeSig.getUserResultType())
           .containsUnmaterializableOrigins(shared))
@@ -1767,75 +1937,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   auto calleeSig = callEmitter.calleeSig;
   // Function literals might have been converted.
   callee = callEmitter.callee;
-
-  // Check to see if the callee is a throwing function whose thrown type
-  // mismatches any fixed contextual error type, but which is implicitly
-  // convertible.  In this case, we want to compile something like:
-  //   def test() raises Float32: throws_int()
-  // into:
-  //   def test() raises Float32:
-  //     try:
-  //       throws_int()
-  //     except err:
-  //       raise err
-  // This is safe because the thrown type is implicitly convertible to Float32,
-  // and the exception will be implicitly converted when rethrown.
-  if (calleeSig.isThrows() && builder) {
-    MLValue errSlot = findNearestErrorSlot();
-    ASTType thrownType = calleeSig.getUserThrownType();
-
-    auto isErrorTypeConvertible = [&]() -> bool {
-      // FIXME: ImplicitOrigins aren't bound here, but implicit origins may
-      // be in the error type of callee_sig, which will break implicit
-      // conversion checking below.  Implicit origins need to go away!
-      // Example:
-      //  def callee(a: String) raises Pointer[String, origin_of(a)]: ...
-      //  def caller(a: String) raises Pointer[String, origin_of(a)]:
-      //      callee(a)  # calee.error type is a pointer referring to a's
-      //      origin.
-      mlir::AttrTypeWalker walker;
-      // This is overly conservative because it isn't tracking depths.
-      walker.addWalk(
-          [](ImplicitOriginRefAttr sig) { return WalkResult::interrupt(); });
-      if (walker.walk(thrownType).wasInterrupted())
-        return false;
-
-      return canImplicitlyConvertToType(
-          {UnboundAttr::get(thrownType), callExpr}, errSlot.getRValueType(),
-          getDeclScope());
-    };
-
-    if (errSlot &&
-        // We don't need a temp if the types line up, which is common.
-        !isEqualCanon(thrownType, errSlot.getRValueType()) &&
-        // Inferred contextual types will be resolved correctly
-        !sugarIsa<UnresolvedType>(errSlot.getRValueType()) &&
-        // Throw NeverType isn't actually thrown.
-        !sugarIsa<NeverType>(thrownType) &&
-        // Thrown type must be implicitly convertible to the error slot type.
-        isErrorTypeConvertible()) {
-
-      // The callee is already resolved, so emit it unchecked in the try
-      // region rather than re-resolving it as an indirect call.
-      return emitCallInTryBlock(
-          callee, std::move(callOperands),
-          [&](CallOperands &&operands) {
-            return emitCallUnchecked(callee, std::move(operands));
-          },
-          [&](VarDeclOp errDecl) {
-            // Move the error out of the temporary and into the overall error
-            // slot, performing the implicit conversion.
-            ExprDest moveDest(errSlot, EC_RaiseValue);
-            (void)emitResult(MRValue(errDecl), callExpr, moveDest);
-            auto loc = translateLocation(callExpr->getLoc());
-            RaiseOp::create(*builder, loc);
-            TryYieldOp::create(*builder, loc);
-            // Check for invalid origin references.
-            checkInferredErrorType(errDecl.getType().getElementType(),
-                                   callExpr->getLoc());
-          });
-    }
-  }
 
   // Capture the types of any "fully sugared" arguments that are passed in so
   // we can propagate them to the result type.  We capture the sugared forms of
@@ -2030,6 +2131,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
          "All mojo functions return one value");
   Type resultType = expectedCalleeType.getResults()[0];
   CValue callResult;
+  Operation *callOp = nullptr;
   if (auto target = callee.getIfPValue()) {
     if (calleeSig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
@@ -2045,6 +2147,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     } else {
       auto call = CallOp::create(*builder, loc, resultType, target.get(),
                                  implicitOrigins, callArgs);
+      callOp = call;
       callResult = SRValue(call.getResult(0));
 
       // Set the LLVM "tail" marker if the call may not access the caller's
@@ -2070,11 +2173,15 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     assert(calleeVal && "don't have a callee of expected type");
     auto call = CallIndirectOp::create(*builder, loc, resultType, calleeVal,
                                        implicitOrigins, callArgs);
+    callOp = call;
     callResult = SRValue(call.getResult(0));
 
     if (!exclusivityChecker.mayAccessCallerStack())
       call.setTailKind(TailKind::Tail);
   }
+
+  if (callOp)
+    emitCallControlFlow(*callOp, calleeSig.getBodyFnType(), callExpr);
 
   // If there were any writebacks to handle, emit them before handling raised
   // errors.

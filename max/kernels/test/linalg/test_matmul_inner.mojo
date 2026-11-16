@@ -16,7 +16,7 @@ from std.memory.alloc import unsafe_alloc
 from std.sys import align_of
 
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
 from linalg.matmul.cpu.neon import Inner_matmul_neon
@@ -32,8 +32,6 @@ from linalg.utils import (
     use_vnni_fn,
 )
 from std.testing import assert_equal
-
-from std.utils import IndexList
 
 comptime M: Int = 64
 comptime N: Int = 64
@@ -51,7 +49,7 @@ def _matmul_inner_loop[
     b_packed: TileTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
-    tile_n_k: IndexList[2],
+    tile_n_k: Tuple[Int, Int],
     skip_boundary_check: Bool,
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()

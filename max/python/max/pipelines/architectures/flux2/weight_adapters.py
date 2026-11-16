@@ -30,7 +30,7 @@ from max.graph.shape import Shape
 from max.graph.weights import WeightData
 from max.nn.legacy.layer import Module
 from max.nn.legacy.linear import Linear
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.quant_config import QuantConfig
 
 from .nvfp4_weight_adapter import convert_nvfp4_state_dict
 

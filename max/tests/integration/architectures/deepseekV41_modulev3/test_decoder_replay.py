@@ -31,7 +31,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV41.replay import (
     ReplayPlan,
     build_replay_plan,

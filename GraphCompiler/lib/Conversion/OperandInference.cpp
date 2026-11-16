@@ -192,6 +192,19 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
     variadicSize = totalVariadicOperands / mojoVariadicsCount;
   }
 
+  // A `TensorTuple` may bind no operands; `ConformCallOperands` hands it an
+  // empty tuple.
+  auto skipLaunchArgumentAndEmptyTensorTuple =
+      [&](uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
+    while (true) {
+      std::optional<KernelDeclOperandAdaptor> arg =
+          skipLaunchArgument(kernelOperands, idx);
+      if (!arg || variadicSize != 0 || !arg->isTraitTensorTupleType())
+        return arg;
+      ++idx;
+    }
+  };
+
   KernelDeclIndexToOperandAdaptorMapping mapping;
   moOpIndex = 0, kernelIndex = 0;
   uint64_t currVariadicSize = 0;
@@ -199,7 +212,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
 
   while (true) {
     auto moType = skipChainType(values.getTypes(), moOpIndex);
-    auto kernelType = skipLaunchArgument(kernelOperands, kernelIndex);
+    auto kernelType = skipLaunchArgumentAndEmptyTensorTuple(kernelIndex);
 
     if (!moType.has_value() || !kernelType.has_value())
       break;

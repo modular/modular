@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections import OptionalReg
+from std.collections.string.string_span import get_static_string
 
 from std.ffi import (
     __fn_type_is_cabi,
@@ -145,6 +146,10 @@ struct M_driver_runtime_bundle:
     pass
 
 
+struct M_driver_flag:
+    pass
+
+
 # ===-----------------------------------------------------------------------===#
 # Version negotiation struct — must match C layout of M_driver_version.
 # ===-----------------------------------------------------------------------===#
@@ -171,6 +176,7 @@ comptime EventHandle = ExternalHandle[M_driver_event]
 comptime FunctionHandle = ExternalHandle[M_driver_function]
 comptime MemoryHandle = ExternalHandle[M_driver_memory]
 comptime RuntimeBundleHandle = ExternalHandle[M_driver_runtime_bundle]
+comptime FlagHandle = ExternalHandle[M_driver_flag]
 
 
 @fieldwise_init
@@ -180,9 +186,7 @@ struct M_driver_memory_view(Copyable, Movable):
     var size: UInt64
 
 
-comptime MemoryViewHandle[origin: ImmOrigin] = ImmPointer[
-    M_driver_memory_view, origin
-]
+comptime MemoryViewHandle = ImmPointer[M_driver_memory_view, _]
 
 # ===-----------------------------------------------------------------------===#
 # C API function pointer types
@@ -208,14 +212,14 @@ comptime PluginResultCode = Int64
 
 trait HALPluginConstructable(Deinitable, TrivialRegisterPassable):
     def __init__(
-        out self, var handle: _DLHandle, so_path: StringSlice
+        out self, var handle: _DLHandle, so_path: StringSpan
     ) raises HALError:
         self = Self(handle, so_path, use_reflection=())
 
     def __init__(
         out self,
         var handle: _DLHandle,
-        so_path: StringSlice,
+        so_path: StringSpan,
         *,
         use_reflection: Tuple[],
     ) raises HALError:
@@ -249,6 +253,40 @@ trait HALPluginConstructable(Deinitable, TrivialRegisterPassable):
                 # r.field_ref[i](self) = field.T(handle, so_path)
 
 
+# Every plugin entry point is a `HALFunction` field, and each module that loads
+# a plugin inlines all of their constructors. Keeping the lookup and its error
+# path in one shared function, rather than in each constructor, keeps that
+# per-module code small.
+@no_inline
+def _resolve_hal_symbol(
+    lib: _DLHandle, name: StaticString, so_path: StringSpan, required: Bool
+) raises HALError -> Optional[Pointer[NoneType, MutUntrackedOrigin]]:
+    """Looks up a plugin symbol, raising if a required one is missing.
+
+    Args:
+        lib: The loaded plugin library.
+        name: The symbol name. Must be nul-terminated.
+        so_path: The plugin path, for the error message.
+        required: Whether a missing symbol is an error.
+
+    Returns:
+        The symbol's address, or `None` if it is optional and missing.
+
+    Raises:
+        `STATUS_UNKNOWN_SYMBOL` if `required` is set and the symbol is missing.
+    """
+    var symbol = lib.get_symbol[NoneType](cstr_name=name.as_c_string_span())
+    if not symbol and required:
+        raise HALError(
+            STATUS_UNKNOWN_SYMBOL,
+            message=String(
+                t"required symbol {name} was not present in plugin .so"
+                t" {so_path}"
+            ),
+        )
+    return symbol
+
+
 struct HALFunction[
     name: StaticString, fn_type: TrivialRegisterPassable, required: Bool = True
 ](
@@ -272,28 +310,17 @@ struct HALFunction[
 
     var _f: OptionalReg[Self.fn_type]
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         comptime assert __fn_type_is_cabi[Self.fn_type](), (
             "fn_type must conform to C ABI; declare the RawPlugin field"
             ' as `def(...) thin abi("C") -> PluginResultCode`'
         )
 
-        var symbol_exists = lib.check_symbol(Self.name)
-
-        comptime if Self.required:
-            if not symbol_exists:
-                raise HALError(
-                    STATUS_UNKNOWN_SYMBOL,
-                    message=String(
-                        t"required symbol {Self.name} was not present in plugin"
-                        t" .so {so_path}"
-                    ),
-                )
-
-        if symbol_exists:
-            self._f = lib.get_function[Self.fn_type](Self.name)
+        var symbol = _resolve_hal_symbol(
+            lib, get_static_string[Self.name](), so_path, Self.required
+        )
+        if case .Some(address) = symbol:
+            self._f = Pointer(to=address).unsafe_bitcast[Self.fn_type]()[]
         else:
             self._f = None
 
@@ -328,7 +355,7 @@ struct RawPlugin(Movable):
     var so_path: String
 
     var base: RawPluginBase[]
-    var graph_capture: Optional[RawPluginGraphCapture[]]
+    var graph_capture: Optional[RawPluginGraphCapture]
 
     @staticmethod
     def _try_init_optional_component[
@@ -357,7 +384,7 @@ struct RawPlugin(Movable):
 
         self.base = type_of(self.base)(handle, so_path)
         self.graph_capture = Self._try_init_optional_component[
-            RawPluginGraphCapture[]
+            RawPluginGraphCapture
         ](handle, so_path)
 
     def _create_init_driver(mut self) raises HALError -> DriverHandle:

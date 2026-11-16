@@ -21,19 +21,18 @@
 #ifndef SUPPORT_LOGICALRESULT_H
 #define SUPPORT_LOGICALRESULT_H
 
-#include "mlir/Support/LogicalResult.h"
 #include "llvm/Support/LogicalResult.h"
 
 namespace M {
 // Types.
-using mlir::FailureOr;
-using mlir::LogicalResult;
-using mlir::ParseResult;
+using llvm::FailureOr;
+using llvm::LogicalResult;
+using llvm::ParseResult;
 
 // Global functions.
-using mlir::failed;
-using mlir::failure;
-using mlir::succeeded;
+using llvm::failed;
+using llvm::failure;
+using llvm::succeeded;
 
 //===----------------------------------------------------------------------===//
 // Reimplemented success()

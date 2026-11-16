@@ -70,7 +70,7 @@ def run_mha_prefill_v2[
     batch_size: Int,
     bench: Bool,
     verify: Bool,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     comptime scale = Float32(0.125)  # ~rsqrt(64)
     comptime kv_num_heads = num_heads // group
@@ -138,7 +138,9 @@ def run_mha_prefill_v2[
             mut b: Bencher,
         ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @inline(.always)
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+            def _kernel_launch(
+                ctx: DeviceContext[], iteration: Int
+            ) raises {imm}:
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
                     .unsafe_bitcast[BFloat16]()

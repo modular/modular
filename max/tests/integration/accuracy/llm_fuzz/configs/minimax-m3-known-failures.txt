@@ -37,7 +37,6 @@ tc_schema_enforcement:ap_typed_list_dict_str_list_str[tool_choice=auto]
 tc_schema_enforcement:ap_typed_list_dict_str_list_str[tool_choice=required]
 tc_schema_enforcement:ap_typed_pydantic_terminate_eval[tool_choice=auto]
 tc_schema_enforcement:ap_typed_pydantic_terminate_eval[tool_choice=required]
-tc_schema_enforcement:enum_with_object_value[tool_choice=required]
 tc_schema_enforcement:ref_defs_recursive[tool_choice=required]
 # tool_calling
 tool_calling:interleaved_thinking_multi_section

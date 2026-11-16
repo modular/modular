@@ -231,7 +231,7 @@ While `TileTensor` is often used on the GPU, you can also use it to create
 tensors for use on the CPU.
 
 To create a `TileTensor` for use on the CPU, you need a
-[`Layout`](/api/mojo/layout/tile_layout/Layout/) and a block of memory to store
+[`Layout`](/api/mojo/layout/layout/Layout/) and a block of memory to store
 the tensor data. A common way to allocate memory for a `TileTensor` is to use an
 [`Array`](https://mojolang.org/docs/std/collections/array/Array/) or a `List`:
 
@@ -356,7 +356,7 @@ initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 def initialize_tensor_from_cpu_example() raises:
     comptime dtype = DType.float32
@@ -482,9 +482,9 @@ both tensors, instead of doing a bunch of math with thread and block indexes.
 The [`TileTensor` layouts](/tile-tensor/layouts/) page describes
 *tiled layouts*, which organize tensor elements by tile, so that all of the
 elements in a given tile are either contiguous in memory
-([`blocked_product()`](/api/mojo/layout/tile_layout/blocked_product/))
+([`blocked_product()`](/api/mojo/layout/layout/blocked_product/))
 or easily addressed by logical coordinates
-([`zipped_divide()`](/api/mojo/layout/tile_layout/zipped_divide/)).
+([`zipped_divide()`](/api/mojo/layout/layout/zipped_divide/)).
 
 These functions are distinct from the `TileTensor.tile()` method, which extracts
 a sub-tensor from a parent tensor. The `tile()` method works on both flat and
@@ -555,7 +555,7 @@ second along the column mode.
 ```mojo
 from std.collections import Array
 from layout import TileTensor
-from layout.tile_layout import blocked_product, row_major
+from layout.layout import blocked_product, row_major
 
 # A tiled layout: a 2x2 grid of 3x4 fragments. `blocked_product()`
 # puts the fragment first in each mode: shape ((3, 2), (4, 2)).
@@ -587,7 +587,7 @@ mode's leading leaves, the last one possibly cut to a divisor of its extent;
 any other size is a compile-time error. See
 [`TileTensor` layouts](/tile-tensor/layouts/#nested-layouts) for how to
 construct nested layouts with
-[`blocked_product()`](/api/mojo/layout/tile_layout/blocked_product/)
+[`blocked_product()`](/api/mojo/layout/layout/blocked_product/)
 and other functions.
 
 ### Iterating over tiles
@@ -1004,7 +1004,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation
 from layout.tile_io import GenericToSharedAsyncTileCopier, SharedToGenericTileCopier
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from std.sys import align_of
 
 

@@ -20,13 +20,13 @@ shared-memory broadcast read in a block reduce is not ordered against the
 next combine's first store, so a block that grid-strides several rows
 races its own shared-memory strip across row iterations.
 
-The three bodies here cover both cross-thread combine implementations
+The two bodies here cover both cross-thread combine implementations
 every Row-routed op shares: layer_norm exercises `BlockReducer.generic`
-(Welford has no hardware reduce), rms_norm and softmax exercise
-`block.sum` / `block.max` (`_block_reduce_with_padding`). Other Row
-bodies (log_softmax, row_mean_of_squares, the fused rms_norm variants,
-reduce_min_and_max, arg_max/arg_min) combine through the same two
-primitives.
+(Welford has no hardware reduce), row_mean_of_squares exercises
+`block.sum` (`_block_reduce_with_padding`), and a small softmax body
+(`_rowwise_softmax`) runs two dependent combines per row (`block.max`, then
+`block.sum`). Other Row bodies (rms_norm, reduce_min_and_max,
+arg_max/arg_min) combine through the same two primitives.
 
 Failure polarity, measured on an Apple M5 before the fix (each probe =
 8 launches in one process): layer_norm fp32 4096x3072 diverged 8/8
@@ -50,8 +50,11 @@ from std.sys import align_of, size_of
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
-from builtin_kernels.rowwise_normalization import layer_norm, rms_norm
-from builtin_kernels.rowwise_softmax import softmax
+from builtin_kernels.rowwise_normalization import (
+    layer_norm,
+    row_mean_of_squares,
+)
+from _rowwise_softmax import softmax
 from std.utils.coord import ComptimeInt
 from std.utils.index import Index
 
@@ -149,9 +152,9 @@ def _probe_layer_norm[
         # byte-identical results.
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
         # Static cols (`ComptimeInt`) matches the graph op's static-shape
-        # branch, which is what models hit: it enables the Row register
-        # cache (`is_cached` fuse path).
-        layer_norm[dtype, 2, target="gpu"](
+        # branch, which is what models hit: it lets the Row keep its tile
+        # in registers (`keep_tile`).
+        layer_norm[dtype, 2](
             input_fn,
             output_fn,
             Coord(shape),
@@ -174,32 +177,26 @@ def _probe_layer_norm[
     return _verdict(hashes, nans)
 
 
-def _probe_rms_norm[
+def _probe_row_mean_of_squares[
     dtype: DType, rows: Int, cols: Int
 ](ctx: DeviceContext) raises -> Bool:
-    """Runs rms_norm N times on identical input; returns True when all
-    N outputs are byte-identical and NaN-free."""
-    print("== rms_norm", dtype, rows, "x", cols)
+    """Runs row_mean_of_squares N times on identical input; returns True when
+    all N outputs are byte-identical and NaN-free."""
+    print("== row_mean_of_squares", dtype, rows, "x", cols)
 
     var in_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var out_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var out_h = ctx.enqueue_create_host_buffer[dtype](rows)
     ctx.synchronize()
 
     _fill_pseudorandom(in_h, rows * cols)
-    _fill_pseudorandom(gamma_h, cols)
 
     var in_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var out_d = ctx.enqueue_create_buffer[dtype](rows)
     ctx.enqueue_copy(in_d, in_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
 
     var shape = (rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
-    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(cols))
-    comptime epsilon = Float32(1e-5)
+    var out_buf = TileTensor(out_d, row_major(Coord(Index(rows, 1))))
 
     @inline(.always)
     def input_fn[
@@ -211,40 +208,32 @@ def _probe_rms_norm[
 
     @inline(.always)
     def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        out_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf} -> None:
+        out_buf.store((Int(coords[0]), 0), val)
 
     var hashes = List[UInt64]()
     var nans = 0
     for _run in range(_NUM_RUNS):
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
-        rms_norm[
-            dtype, 2, target="gpu", epsilon=epsilon, weight_offset=Float32(0)
-        ](
-            input_fn,
-            output_fn,
-            Coord(shape),
-            ComptimeInt[cols](),
-            gamma,
-            ctx,
+        row_mean_of_squares[dtype, dtype, 2](
+            input_fn, output_fn, Coord(shape), ctx
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        hashes.append(_fnv1a64(out_h, rows * cols))
-        nans += _count_nans(out_h, rows * cols)
+        hashes.append(_fnv1a64(out_h, rows))
+        nans += _count_nans(out_h, rows)
 
     _ = in_buf
     _ = in_d^
     _ = out_d^
-    _ = gamma_d^
     return _verdict(hashes, nans)
 
 
 def _probe_softmax[
     dtype: DType, rows: Int, cols: Int
 ](ctx: DeviceContext) raises -> Bool:
-    """Runs softmax N times on identical input; returns True when all
+    """Runs the softmax body N times on identical input; returns True when all
     N outputs are byte-identical and NaN-free."""
     print("== softmax", dtype, rows, "x", cols)
 
@@ -270,17 +259,18 @@ def _probe_softmax[
             width=width, alignment=alignment * align_of[dtype]()
         ](coords)
 
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        out_buf.store[alignment=alignment * align_of[dtype]()](coords, val)
+
     var hashes = List[UInt64]()
     var nans = 0
     for _run in range(_NUM_RUNS):
         ctx.enqueue_memset(out_d, Scalar[dtype](0))
-        softmax[dtype, 2, target="gpu"](
-            input_fn,
-            Coord(shape),
-            ComptimeInt[cols](),
-            out_buf,
-            1,
-            ctx,
+        softmax[dtype](
+            input_fn, output_fn, Coord(shape), ComptimeInt[cols](), ctx
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
@@ -305,10 +295,10 @@ def main() raises:
         # Warp tier (register-only combine, no shared memory): guards
         # tier-selection changes.
         ok &= _probe_layer_norm[.bfloat16, 512, 1024](ctx)
-        # Block tier through block.sum (_block_reduce_with_padding).
-        ok &= _probe_rms_norm[.float32, 4096, 3072](ctx)
-        ok &= _probe_rms_norm[.bfloat16, 4096, 3072](ctx)
-        # Two dependent combines per row (block.max then block.sum).
+        # Block tier through the hardware reduce (block.sum).
+        ok &= _probe_row_mean_of_squares[.float32, 4096, 3072](ctx)
+        ok &= _probe_row_mean_of_squares[.bfloat16, 4096, 3072](ctx)
+        # Two dependent combines per row (block.max, then block.sum).
         ok &= _probe_softmax[.float32, 4096, 3072](ctx)
         ok &= _probe_softmax[.bfloat16, 4096, 3072](ctx)
         if not ok:

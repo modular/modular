@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import NonCallableMock
 
 from max.dtype import DType
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.lfm3 import Lfm3, Lfm3Config, lfm3_arch
 from max.pipelines.lib import GraphRole
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig

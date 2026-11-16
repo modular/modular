@@ -80,6 +80,7 @@ def multistage_gemm_simple[
             UInt32(config.shared_mem_usage())
         ),
     )
+    _ = gemm_kernel^
 
 
 def multistage_gemm_run[

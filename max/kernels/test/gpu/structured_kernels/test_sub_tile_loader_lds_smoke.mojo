@@ -41,7 +41,7 @@ from layout import (
     TileTensor,
 )
 from layout.swizzle import Swizzle
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from structured_kernels.amd_tile_io import SubTileLoaderLDS
 

@@ -34,7 +34,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.sys.info import _accelerator_arch
 
 from layout import Coord, TileTensor, Idx
-from layout.tile_layout import row_major
+from layout.layout import row_major
 
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import gemm_kernel_apple_8x8

@@ -10,24 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The base (spec-off) graph's input tree, as Mach's registry binds it.
+"""The base (spec-off) graph's input tree, slot for slot.
 
-Mach wires the base MEF by position through the registry entry's slot map,
-and the ModuleV3 base graph does not keep the graph-API build's tree: it
-takes the ModuleV3 ragged ABI — one shared row-offsets input, no signal
-buffer in the template — and a multi-device trace appends one signal buffer
-per device past every other input, where the graph-API base declares
-per-device row offsets with its signal buffers between them and the KV
-tree. The ``-modulev3`` registry entry therefore carries its own slot map
-rather than the V2 entry's, and this test pins the tree that map describes,
-slot for slot, so the two cannot drift apart silently (DISTINF-791).
+The ModuleV3 base graph does not keep the graph-API build's tree: it takes
+the ModuleV3 ragged ABI — one shared row-offsets input, no signal buffer in
+the template — and a multi-device trace appends one signal buffer per device
+past every other input, where the graph-API base declares per-device row
+offsets with its signal buffers between them and the KV tree. This test
+pins that tree, so a change to it is deliberate (DISTINF-791).
 
 The graph is staged on virtual B200s over the tiny fixture and never
-compiled, so the test needs no GPU — the same no-GPU lane the DFlash spec
-graph's signature test
-(``mach/tools/gen-mef/test_mimo_dflash_graph_signature.py``) uses, whose
-inserted signal buffers match a real TP2 export's sidecar slot for slot
-and so prove the trace mirrors what an export records.
+compiled, so the test needs no GPU.
 """
 
 from __future__ import annotations
@@ -46,16 +39,17 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, StaticDim, TensorType
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
+from max.nn.outputs import ReturnLogits
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2Decoder
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
 )
-from max.pipelines.lib.interfaces.batch_processor import (
-    modulev3_ragged_kv_symbolic_inputs,
+from max.pipelines.lib.module_registration import (
+    _DecoderGraph,
+    decoder_input_types,
 )
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
@@ -97,21 +91,25 @@ def staged(
     config.return_logits = ReturnLogits.ALL
 
     weights = SafetensorWeights(sorted(path.glob("*.safetensors")))
-    adapted = convert_safetensor_state_dict(
-        dict(weights.items()), huggingface_config=hf
-    )
+    adapted = convert_safetensor_state_dict(dict(weights.items()))
 
     mesh = DeviceMesh(tuple(devices), (n_devices,), ("tp",))
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        model = MiMoV2(config)
-        inputs = modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=refs
+        model = MiMoV2Decoder(config)
+        inputs = decoder_input_types(
+            config.kv_params,
+            refs[0],
+            input_layout=MiMoV2Decoder.input_layout,
         )
     # A fresh lazy context for the stage, as the CPU harness does: sharing
     # the build's would leave the module's pending weight-prep tensors in
     # the context, which a lazy context refuses to realize.
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = model.stage(*inputs, weights=adapted)
+        staged, _registry = _DecoderGraph(model).stage(
+            inputs,
+            weights=adapted,
+            name=MiMoV2Decoder.graph_name,
+        )
     return (
         tuple(
             value.type
@@ -134,7 +132,7 @@ def _kv_block(
     ``[pages, arity, layers, page_size, heads, head_dim]``; the tiny
     fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads. Each
     head packs its 192-wide key and 128-wide value into one 320-wide plane,
-    the geometry the registry entry's groups declare.
+    the geometry the export's KV groups record.
     """
     block = types[slot]
     assert isinstance(block, BufferType), f"slot {slot} is not a cache pool"
@@ -151,9 +149,9 @@ def test_the_tree_is_the_modulev3_abi(
     staged: tuple[tuple[TensorType | BufferType, ...], int],
 ) -> None:
     """Pins the tokens, logit count and ONE shared row-offsets input, then the
-    two KV groups — 17 inputs at one device. No per-device row offsets and
-    no signal buffers: the graph-API base tree's extras are absent, which is
-    why the ``-modulev3`` registry entry binds its own slot map."""
+    two KV groups, each record ending with its split record — 19 inputs at
+    one device. No per-device row offsets and
+    no signal buffers: the graph-API base tree's extras are absent."""
     types, n_devices = staged
     tokens, return_n_logits, row_offsets = types[:3]
     assert isinstance(tokens, TensorType)
@@ -166,9 +164,9 @@ def test_the_tree_is_the_modulev3_abi(
     assert row_offsets.device == DeviceRef.GPU(0), "one shared input"
 
     if n_devices == 1:
-        assert len(types) == 17
+        assert len(types) == 19
         _kv_block(types, 3, layers=2, heads=8)
-        _kv_block(types, 10, layers=2, heads=4)
+        _kv_block(types, 11, layers=2, heads=4)
         # A single-device trace appends no signal buffers: no input is a
         # uint8 buffer the size of one.
         assert not [
@@ -183,20 +181,20 @@ def test_the_tree_is_the_modulev3_abi(
 def test_a_multi_device_trace_appends_the_signals_past_the_kv_tree(
     staged: tuple[tuple[TensorType | BufferType, ...], int],
 ) -> None:
-    """Checks that at two devices the KV groups widen device-major — 14 slots each, the
-    second group opening at 17 — and the trace appends its signal buffers
+    """Checks that at two devices the KV groups widen device-major — 16 slots each, the
+    second group opening at 19 — and the trace appends its signal buffers
     past the KV tree, one per device: the slots the engine wires for an
     entry on ``SIGNAL_BUFFERS_AFTER_INPUTS``."""
     types, n_devices = staged
     if n_devices != 2:
         pytest.skip("the trailing signal run is a multi-device property")
-    assert len(types) == 33
-    # Group 0's two device records, then group 1's at 17.
+    assert len(types) == 37
+    # Group 0's two device records, then group 1's at 19.
     _kv_block(types, 3, layers=2, heads=4)
-    _kv_block(types, 10, layers=2, heads=4)
-    _kv_block(types, 17, layers=2, heads=2)
-    _kv_block(types, 24, layers=2, heads=2)
-    signals = types[31:]
+    _kv_block(types, 11, layers=2, heads=4)
+    _kv_block(types, 19, layers=2, heads=2)
+    _kv_block(types, 27, layers=2, heads=2)
+    signals = types[35:]
     assert len(signals) == 2
     for device, signal in enumerate(signals):
         assert isinstance(signal, BufferType), f"slot {31 + device}"

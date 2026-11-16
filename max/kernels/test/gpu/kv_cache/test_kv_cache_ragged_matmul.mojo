@@ -317,7 +317,7 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Execute test.
-    _matmul_kv_cache_ragged_impl[target="gpu"](
+    _matmul_kv_cache_ragged_impl(
         hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
         weight_device_tensor.as_imm().as_unsafe_any_origin(),
@@ -538,7 +538,7 @@ def execute_matmul_k_cache_ragged[
     )
 
     # Execute test.
-    _matmul_k_cache_ragged_impl[target="gpu"](
+    _matmul_k_cache_ragged_impl(
         hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
         weight_device_tensor.as_imm().as_unsafe_any_origin(),
@@ -807,7 +807,7 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Execute the matmul
-    _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
+    _fused_qkv_matmul_kv_cache_ragged_impl(
         hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
         weight_device_tensor.as_imm().as_unsafe_any_origin(),
