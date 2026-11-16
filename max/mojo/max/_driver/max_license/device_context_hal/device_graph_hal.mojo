@@ -57,6 +57,32 @@ struct HALDeviceGraph(ImplicitlyCopyable):
 
     var _handle: _DeviceGraphPtr[mut=True]
 
+    @staticmethod
+    def create(
+        ctx: DeviceContext, build: Some[AnyType]
+    ) raises -> HALDeviceGraph:
+        """Unsupported: builds and instantiates a device graph.
+
+        Args:
+            ctx: Device context for the target device.
+            build: Callback that would add nodes to the graph builder.
+
+        Returns:
+            Never returns; the HAL `DeviceContext` cannot build device graphs.
+
+        Raises:
+            Always, since the HAL backend has no device-graph support.
+        """
+        raise Error("device graphs are unsupported by the HAL DeviceContext")
+
+    def replay(self) raises:
+        """Unsupported: launches the device graph.
+
+        Raises:
+            Always, since the HAL backend has no device-graph support.
+        """
+        raise Error("device graphs are unsupported by the HAL DeviceContext")
+
     def take_handle(deinit self) -> _DeviceGraphPtr[mut=True]:
         """Surrenders the owning handle net-zero, suppressing the destructor.
 
