@@ -45,21 +45,15 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-wciBGAfb+aWWW6XuNiWqLtfiaLIE1evNzhS5q5gt0/w=",
+    integrity = "sha256-hN3p8io1Of4cjK6WuUGyhSc2FZcetc3G/TjZ15ZE5dg=",
     patch_strip = 1,
     patches = [
-        # Left as a patch for now since it may not worth upstreaming.
-        # Also includes a toolchain change which has to be done in lockstep to the current commit
-        # That piece can be removed after the 8/5 nightly.
+        # Left as a patch for now since it may not be worth upstreaming.
         "//bazel/public-patches:rules_mojo_toolchain.patch",
-        # TODO(SDLC-4732): Upstream this to `rules_mojo`.
-        # Adds `bitcode_libs` to `mojo_library` so a generated `.bc` can be embedded
-        # in a package; `--bitcode-libs` in copts breaks under path mapping.
-        "//bazel/public-patches:rules_mojo_bitcode_libs.patch",
     ],
-    strip_prefix = "rules_mojo-47643a3b441c20c3a351b8807e37c547338557c8",
+    strip_prefix = "rules_mojo-11d2897b37811f6e8884a5d573f48b3a48f47272",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/47643a3b441c20c3a351b8807e37c547338557c8.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/11d2897b37811f6e8884a5d573f48b3a48f47272.tar.gz",
     ],
 )
 

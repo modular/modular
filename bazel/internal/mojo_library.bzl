@@ -48,7 +48,6 @@ def mojo_library(
         additional_compiler_inputs = [],
         use_production_compiler_for_asan = False,
         copts = [],
-        bitcode_libs = [],
         ignore_deprecated = [],
         import_path = ".",
         target_compatible_with = [],
@@ -74,11 +73,6 @@ def mojo_library(
             Use a production build of Mojo to build this target when in asan mode.
             This is a speed optimization if the coverage is not worth the slowdown.
         copts: Forwarded to `mojo_library`
-        bitcode_libs:
-            LLVM bitcode (`.bc`) files embedded in the precompiled package and
-            linked into any program that imports it. Use this instead of
-            `--bitcode-libs` in `copts`, which cannot name a generated file
-            under path mapping.
         ignore_deprecated:
             Qualified names (e.g. `Variant.take`) of `@deprecated` declarations
             whose deprecation warning should be suppressed for this target,
@@ -106,7 +100,6 @@ def mojo_library(
         tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
         copts = copts + ignore_deprecated_copts,
-        bitcode_libs = bitcode_libs,
         import_path = import_path,
         target_compatible_with = target_compatible_with,
         **library_kwargs
