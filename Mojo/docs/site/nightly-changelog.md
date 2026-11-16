@@ -16,6 +16,11 @@ This version is still a work in progress.
   is analogous to features in Rust and Swift, and also supports
   `comptime __guard`.
 
+- `try` blocks now unify heterogeneous raised error types rather than selecting
+  the first raised type. Mojo selects a common type when one exists, otherwise
+  uses `Error`. It emits a compile-time error when the raised types cannot be
+  unified.
+
 - `with` statements now no longer copy when passed a reference to a context
   manager like in `with foo: pass`.
 

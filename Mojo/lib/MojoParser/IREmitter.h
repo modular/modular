@@ -346,6 +346,13 @@ public:
                          std::function<void(bool isLHS)> configEmitter,
                          ASTType contextualType = {});
 
+  /// Returns a common type for two values using their `__merge_with__`
+  /// functions and implicit conversions, without emitting those conversions.
+  /// Returns null when no common type exists or selecting it would require
+  /// emitting a `__merge_with__` call.
+  ASTType getCommonType(CValue lhs, CValue rhs, SMLoc loc = {},
+                        ASTType contextualType = {});
+
   /// If there is a common type shared between the two reference types, return
   /// it. Otherwise return null.
   static RefType getCommonRefType(RefType ref1, RefType ref2);

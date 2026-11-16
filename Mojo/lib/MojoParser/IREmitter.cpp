@@ -2197,14 +2197,66 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
                                 opForRaise->getLoc());
   }
 
-  // Otherwise we have one or more raises, and they may have different types. If
-  // we're in a context with a required error type (eg due to a with block where
-  // the "exit" handler prescribes a type) that type.
-  MLValue primaryErrorSlot = getErrorSlot();
-  if (requiredErrorType &&
-      !requiredErrorType.isEqualCanon(primaryErrorSlot.getRValueType()))
+  // Otherwise we have one or more raises, and they may have different types.
+  // A context with a required error type (for example, a with block whose exit
+  // handler prescribes a type) takes precedence over inferred merging. If we
+  // don't have one, then take a look at all the raised errors and try to find
+  // a common type.
+  if (!requiredErrorType) {
+    ASTType mergedErrorType = errorSlots.front().getRValueType();
+    CValue mergedErrorValue(errorSlots.front());
+    for (MLValue errorSlot : llvm::drop_begin(errorSlots)) {
+      mergedErrorType =
+          emitter.getCommonType(mergedErrorValue, CValue(errorSlot));
+      if (!mergedErrorType)
+        break;
+
+      if (mergedErrorType.isEqualCanon(errorSlot.getRValueType()))
+        mergedErrorValue = CValue(errorSlot);
+      else if (!mergedErrorType.isEqualCanon(mergedErrorValue.getRValueType()))
+        mergedErrorValue = CValue(PValue(mergedErrorType));
+    }
+    requiredErrorType = mergedErrorType;
+  }
+
+  // When the raised types do not merge directly, they must all be convertible
+  // to Error to use it as the unified exception type.
+  if (!requiredErrorType) {
+    requiredErrorType = emitter.getDeclScope().getShared().lookupBuiltinType(
+        "Error", emitter.getDeclScope(), {});
+    assert(requiredErrorType && "expected builtin Error type");
+    SyntheticNode source(
+        emitter.getDeclScope().getShared().diags.convertLocToSMLoc(
+            opForRaise->getLoc()));
+    for (MLValue errorSlot : errorSlots) {
+      if (IREmitter::canImplicitlyConvertToType({CValue(errorSlot), &source},
+                                                requiredErrorType,
+                                                emitter.getDeclScope()))
+        continue;
+
+      std::string errorTypes;
+      llvm::raw_string_ostream os(errorTypes);
+      llvm::interleaveComma(errorSlots, os, [&](MLValue errorSlot) {
+        os << errorSlot.getRValueType();
+      });
+      emitter.emitError(opForRaise->getLoc())
+          << "cannot find a unified error type for the try body: " << os.str();
+      return errorSlots.front();
+    }
+  }
+
+  // Reuse a slot of the selected type when one was raised. Otherwise, create
+  // the slot after verifying that every raised error can convert to its type.
+  auto primaryIter = llvm::find_if(errorSlots, [&](MLValue errorSlot) {
+    return requiredErrorType.isEqualCanon(errorSlot.getRValueType());
+  });
+  MLValue primaryErrorSlot;
+  if (primaryIter != errorSlots.end()) {
+    primaryErrorSlot = *primaryIter;
+  } else {
     primaryErrorSlot =
         getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
+  }
 
   // Move all the other error slots into the primary slot, performing implicit
   // conversions as needed to get to that unified type.
@@ -2221,7 +2273,9 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
   }
 
   verifyExceptTypeLifetimeValidity(emitter, primaryErrorSlot);
-
+  primaryIter = llvm::find(errorSlots, primaryErrorSlot);
+  assert(primaryIter != errorSlots.end() && "unknown primary error slot");
+  std::swap(errorSlots.front(), *primaryIter);
   return primaryErrorSlot;
 }
 

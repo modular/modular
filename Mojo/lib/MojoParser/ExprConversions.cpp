@@ -1680,6 +1680,21 @@ ParseResult IREmitter::coerceTypesToEachOther(
   return success(lhs && rhs);
 }
 
+/// Returns a common type for two values using their `__merge_with__`
+/// functions and implicit conversions, without emitting those conversions.
+/// Returns null when no common type exists or selecting it would require
+/// emitting a `__merge_with__` call.
+ASTType IREmitter::getCommonType(CValue lhs, CValue rhs, SMLoc loc,
+                                 ASTType contextualType) {
+  SyntheticNode source(loc);
+  ASTType commonType;
+  auto [result, lhsMergeWith, rhsMergeWith] = findCommonType(
+      {lhs, &source}, {rhs, &source}, commonType, *this, contextualType);
+  if (result != CTR_Success || lhsMergeWith || rhsMergeWith)
+    return {};
+  return commonType;
+}
+
 /// Given a value of a type that can be zero cost converted to another type,
 /// emit a rebind or other operation to get it in the right type.
 PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,

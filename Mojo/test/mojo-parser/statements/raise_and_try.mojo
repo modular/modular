@@ -275,3 +275,56 @@ def heterogeneous_try():
         raise_int()
     except err:
         var converted: Float32 = err
+
+
+# CHECK-LABEL: lit.fn @"merged_numeric_try
+def merged_numeric_try():
+    # CHECK: %__try_error__ = lit.var.decl "__try_error__" synth : !lit.ref{{.*}}Int
+    # CHECK-NEXT: %err = lit.var.decl "err" var : !lit.ref{{.*}}Float32
+    try:
+        # CHECK: %[[INT_ERROR:.*]] = lit.ref.load {{.*}} : {{.*}}Int
+        # CHECK-NEXT: %[[FLOAT_ERROR:.*]] = lit.call tail {{.*}}SIMD::@"__init__{{.*}}(%[[INT_ERROR]])
+        # CHECK-NEXT: %[[FLOAT_ERROR_ALIAS:.*]] = kgen.rebind %[[FLOAT_ERROR]]
+        # CHECK-NEXT: lit.ref.store %[[FLOAT_ERROR_ALIAS]], %err : {{.*}}Float32
+        raise_int()
+        raise_float32()
+        # CHECK: } except {
+        # CHECK-NEXT: %converted = lit.var.decl "converted" var : !lit.ref{{.*}}Float32
+        # CHECK-NEXT: %[[EXCEPT_ERROR:.*]] = lit.ref.load %err : {{.*}}Float32
+        # CHECK-NEXT: lit.ref.store %[[EXCEPT_ERROR]], %converted : {{.*}}Float32
+    except err:
+        var converted: Float32 = err
+
+
+struct FirstError(ErrorConversionTrait):
+    def __init__(out self):
+        pass
+
+
+struct SecondError(ErrorConversionTrait):
+    def __init__(out self):
+        pass
+
+
+def raise_first_error() raises FirstError:
+    raise FirstError()
+
+
+def raise_second_error() raises SecondError:
+    raise SecondError()
+
+
+# CHECK-LABEL: lit.fn @"fallback_to_error_try
+def fallback_to_error_try():
+    # CHECK: %__try_error__ = lit.var.decl "__try_error__" synth : !lit.ref<!FirstError
+    # CHECK-NEXT: %__try_error_tmp__ = lit.var.decl "__try_error_tmp__" synth : !lit.ref<!SecondError
+    # CHECK-NEXT: %err = lit.var.decl "err" var : !lit.ref<!Error
+    try:
+        raise_first_error()
+        raise_second_error()
+    except err:
+        # CHECK: } except {
+        # CHECK-NEXT: %[[EXCEPT_ERROR:.*]] = lit.ref.immut %err : <!Error
+        # CHECK-NEXT: {{.*}}lit.call {{.*}}Error::@"use{{.*}}(%[[EXCEPT_ERROR]])
+        # This method is only valid on Error.
+        err.use()
