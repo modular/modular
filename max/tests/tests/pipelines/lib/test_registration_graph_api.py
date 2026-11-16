@@ -27,7 +27,7 @@ import pytest
 from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import CompilationStopped, InferenceSession
 from max.graph import (
     BufferType,
     BufferValue,
@@ -670,6 +670,32 @@ def test_virtual_ep_deployment_compiles_the_init_graph_without_running_it(
     assert exchange is None
     assert ep_init == {"ep_init": graph}
     assert config.events == ["apply_runtime", "size_exchange"]
+
+
+def test_virtual_ep_deployment_continues_when_pre_jit_stops_the_init_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(_DeploymentConfig(), finalized=True)
+    model = _deployment_model(config, ep_size=1)
+    finalized = model._create_model_config({})
+    runtime = replace(finalized.runtime, ep_size=2)
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.is_virtual_device_mode",
+        lambda: True,
+    )
+
+    def stopped(*args: object) -> None:
+        raise CompilationStopped("stopped by pre-jit")
+
+    monkeypatch.setattr(
+        "max.pipelines.lib.registration_runtime.compile_ep_init", stopped
+    )
+    initialized, exchange, ep_init = initialize_ep_comm_buffers(
+        config, runtime, model._session
+    )
+    assert initialized.ep is not None
+    assert exchange is None
+    assert ep_init == {}
 
 
 def test_batch_processor_passes_the_ep_exchange_and_context_lengths() -> None:

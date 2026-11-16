@@ -36,7 +36,7 @@ from typing import Any, ClassVar, Protocol, TypeVar
 from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import CompilationStopped, InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
 from max.nn.ep_config import EPConfig
@@ -321,7 +321,8 @@ def initialize_ep_comm_buffers(
         :attr:`~ExpertParallelDeploymentConfig.expert_parallel_inputs`
         selects them, and the init graph by role, for the pipeline's
         ``compiled_modules``. On virtual devices, which can't run the init
-        graph, the graph is only compiled and the buffers are ``None``.
+        graph, the graph is only compiled and the buffers are ``None``. A
+        ``pre-jit`` stop leaves no init graph.
 
     Raises:
         ValueError: If the expert-parallel size isn't a multiple of the
@@ -335,7 +336,12 @@ def initialize_ep_comm_buffers(
         )
     ep = config.expert_parallel_config(runtime)
     if is_virtual_device_mode():
-        _, modules = compile_ep_init(session, ep)
+        try:
+            _, modules = compile_ep_init(session, ep)
+        except CompilationStopped:
+            # `pre-jit` stops every compile, and this graph compiles before
+            # the decoder's. Propagating would leave the decoder unemitted.
+            modules = {}
         return dataclasses.replace(runtime, ep=ep), None, modules
     initializer, modules = init_ep_comm(session, ep)
     ep.node_id = initializer.config.node_id
