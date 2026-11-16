@@ -1229,6 +1229,7 @@ modular_cc_library(
         ":Driver/DeviceContextAPI",
         "//Support:Base",
         "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
     ],
     # Nothing inside a library that carries this references the entry points,
     # so without always linking, a shared library such as libmax drops the

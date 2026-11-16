@@ -225,6 +225,34 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
       const M_DriverDevice *, const void *, uint64_t) =
       M_DriverCopyPeerToPeerUnordered;
 
+  // Copies through buffer views.
+  M_DriverStatus (*copy_host_to_buffer)(const M_DriverStream *,
+                                        M_DriverBufferView, const void *) =
+      M_DriverCopyHostToBuffer;
+  M_DriverStatus (*copy_buffer_to_host)(const M_DriverStream *, void *,
+                                        M_DriverBufferView) =
+      M_DriverCopyBufferToHost;
+  M_DriverStatus (*copy_buffer_to_buffer)(
+      const M_DriverStream *, M_DriverBufferView, M_DriverBufferView) =
+      M_DriverCopyBufferToBuffer;
+  M_DriverStatus (*copy_buffer_peer)(const M_DriverStream *, M_DriverBufferView,
+                                     M_DriverBufferView) =
+      M_DriverCopyBufferPeer;
+  M_DriverStatus (*copy_buffer_peer_unordered)(
+      const M_DriverStream *, M_DriverBufferView, M_DriverBufferView) =
+      M_DriverCopyBufferPeerUnordered;
+  M_DriverStatus (*copy_buffer_batch)(
+      const M_DriverStream *, const M_DriverBufferView *,
+      const M_DriverBufferView *, size_t) = M_DriverCopyBufferBatch;
+  M_DriverStatus (*copy_host_to_buffer_batch)(
+      const M_DriverStream *, const M_DriverBufferView *, const void *const *,
+      size_t) = M_DriverCopyHostToBufferBatch;
+  M_DriverStatus (*copy_buffer_to_host_batch)(
+      const M_DriverStream *, void *const *, const M_DriverBufferView *,
+      size_t) = M_DriverCopyBufferToHostBatch;
+  M_DriverStatus (*fill_buffer)(const M_DriverStream *, M_DriverBufferView,
+                                uint8_t) = M_DriverFillBuffer;
+
   // Every pointer above must have been initialized from the header, so a
   // declaration whose type changed stops compiling here.
   return capi_version != NULL && last_error_message != NULL &&
@@ -267,5 +295,10 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          host_region_chunk_address != NULL && host_region_chunk_bytes != NULL &&
          copy_host_to_device != NULL && copy_device_to_host != NULL &&
          copy_batch != NULL && copy_device_to_device != NULL &&
-         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL;
+         copy_peer_to_peer != NULL && copy_peer_to_peer_unordered != NULL &&
+         copy_host_to_buffer != NULL && copy_buffer_to_host != NULL &&
+         copy_buffer_to_buffer != NULL && copy_buffer_peer != NULL &&
+         copy_buffer_peer_unordered != NULL && copy_buffer_batch != NULL &&
+         copy_host_to_buffer_batch != NULL &&
+         copy_buffer_to_host_batch != NULL && fill_buffer != NULL;
 }
