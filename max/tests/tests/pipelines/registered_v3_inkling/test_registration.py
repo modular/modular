@@ -167,14 +167,14 @@ def test_preprocess_returns_named_raw_patch_rows() -> None:
         "inkling_preprocess_contract",
         input_types=image_preprocess_input_types(),
     ) as graph:
-        result = InklingImagePreprocess(40)(
+        result = InklingImagePreprocess(40, DType.int16)(
             graph.inputs[0].tensor, graph.inputs[1].tensor
         )
         patches = result["patches"]
         assert isinstance(patches, VisionRows)
         pixels = patches["pixels"]
         assert isinstance(pixels, TensorValue)
-        assert pixels.dtype == DType.int32
+        assert pixels.dtype == DType.int16
         assert tuple(pixels.shape[1:]) == (40, 40, 3)
         assert pixels.device == DeviceRef.CPU()
         graph.output(pixels)

@@ -163,7 +163,7 @@ class InklingModel(
         return GraphSpec(
             vision_model,
             "inkling_vision",
-            vision_model.input_types(model_config.devices[0]),
+            (vision_model.patch_type(model_config.devices[0]),),
             weights=state_dict,
         )
 

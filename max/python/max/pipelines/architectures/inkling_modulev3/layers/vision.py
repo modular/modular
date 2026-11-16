@@ -141,9 +141,9 @@ class InklingVisionModel(Module[[Tensor], Tensor]):
             ],
         )
 
-    def forward(self, patches: Tensor) -> Tensor:
-        """Encodes patches into one decoder-width token each."""
-        x = self.normalize(patches)
+    def forward(self, pixels: Tensor) -> Tensor:
+        """Encodes raw patches into one decoder-width token each."""
+        x = self.normalize(pixels)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
             x = fold_timespace_to_depth(x, t_fold, hw_fold)
             x = self.linears[index](x)
@@ -153,17 +153,15 @@ class InklingVisionModel(Module[[Tensor], Tensor]):
             x = self.final_norm(x)
         return x.reshape([x.shape[0], self.config.decoder_dmodel])
 
-    def input_types(self, device: DeviceRef) -> tuple[TensorType, ...]:
+    def patch_type(self, device: DeviceRef) -> TensorType:
         """One block of raw patches, as the image processor emits them."""
-        return (
-            TensorType(
-                DType.int16,
-                shape=[
-                    "total_patches",
-                    self.config.patch_size,
-                    self.config.patch_size,
-                    self.config.n_channels,
-                ],
-                device=device,
-            ),
+        return TensorType(
+            DType.int16,
+            shape=[
+                "total_patches",
+                self.config.patch_size,
+                self.config.patch_size,
+                self.config.n_channels,
+            ],
+            device=device,
         )

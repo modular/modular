@@ -18,5 +18,6 @@ A text-and-vision pipeline model with KV cache and short-convolution state.
 
 from .arch import inkling_modulev3_arch
 from .model import InklingModel
+from .model_config import InklingConfig
 
-__all__ = ["InklingModel", "inkling_modulev3_arch"]
+__all__ = ["InklingConfig", "InklingModel", "inkling_modulev3_arch"]

@@ -17,19 +17,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, ClassVar
 
-from max._artifact.vision import (
-    InklingPatchRows,
-    ModalityLayout,
-    PromptText,
-    Span,
-    VisionMetadata,
-)
+from max._artifact.vision import VisionMetadata
 from max.driver import Device
+from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.legacy.image_preprocess import image_preprocess_input_types
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
@@ -57,14 +51,16 @@ from max.pipelines.lib.weight_transform import (
     WeightTransform,
 )
 from max.profiler import traced
-from transformers import AutoTokenizer
 from typing_extensions import override
 
 from .batch_processor import InklingBatchProcessor, InklingInputs
 from .inkling import Inkling
 from .layers.vision import InklingVisionModel
 from .model_config import InklingConfig
-from .preprocess_graph import InklingImagePreprocess
+from .preprocess_graph import (
+    inkling_vision_metadata,
+    inkling_vision_preprocess_spec,
+)
 from .processor import load_processor_config
 from .weight_adapters import _TEXT, _VISION, VISION_PREFIX
 
@@ -299,12 +295,7 @@ class InklingModel(
     ) -> GraphSpec:
         """Returns the CPU graph that packs raw patches for the vision tower."""
         assert isinstance(config, InklingConfig)
-        return GraphSpec(
-            InklingImagePreprocess(config.vision_config.patch_size),
-            "inkling_vision_preprocess",
-            image_preprocess_input_types(),
-            weights={},
-        )
+        return inkling_vision_preprocess_spec(config, DType.int32)
 
     @classmethod
     def vision_metadata_for(
@@ -312,29 +303,7 @@ class InklingModel(
     ) -> VisionMetadata:
         """Records Inkling's existing patch-row layout and image placeholder."""
         assert isinstance(config, InklingConfig)
-        model = pipeline_config.model
-        processor = load_processor_config(
-            model.model_path, model.huggingface_model_revision
-        )
-        tokenizer = AutoTokenizer.from_pretrained(
-            model.model_path,
-            revision=model.huggingface_model_revision,
-            trust_remote_code=model.trust_remote_code,
-        )
-        return VisionMetadata.from_layouts(
-            image=ModalityLayout(
-                patch_size=config.vision_config.patch_size,
-                merge_size=1,
-                strategy=InklingPatchRows(),
-                span=Span(
-                    tokenizer.convert_tokens_to_ids(processor["image_token"])
-                ),
-            ),
-            video=None,
-            max_image_bytes=0,
-            max_video_bytes=0,
-            prompt=PromptText(),
-        )
+        return inkling_vision_metadata(pipeline_config, config)
 
     def _vision_spec(
         self, model_config: InklingConfig, state_dict: dict[str, Any]

@@ -14,10 +14,16 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 from max import tree
+from max._artifact.vision import VisionMetadata
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
+from max.nn.legacy.graph_groups import VisionRows
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.pipelines.lib.role_contracts import (
     DecoderInputs,
     DecoderOutputs,
@@ -26,6 +32,10 @@ from max.pipelines.lib.role_contracts import (
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import DeviceMesh
 
+from ..inkling.preprocess_graph import (
+    inkling_vision_metadata,
+    inkling_vision_preprocess_spec,
+)
 from .inkling import Inkling
 from .layers.vision import InklingVisionModel
 from .model_config import InklingConfig
@@ -105,8 +115,32 @@ class InklingVision(InklingVisionModel):
         self.embedding_dtype = config.dtype
         self.embedding_dim = config.text_config.hidden_size
 
-    def input_types(
-        self, device: DeviceRef | None = None
-    ) -> tuple[TensorType, ...]:
-        """Returns the raw patch tensor on the encoder device."""
-        return super().input_types(device or self._registered_config.devices[0])
+    def input_types(self) -> OrderedDict[str, object]:
+        """Groups the raw patches as rows a serving engine concatenates.
+
+        The group is the graph-API Inkling's, with int16 patches on the
+        encoder device.
+        """
+        return OrderedDict(
+            patches=VisionRows(
+                pixels=self.patch_type(self._registered_config.devices[0])
+            )
+        )
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: PipelineConfig, config: InklingConfig
+    ) -> VisionMetadata:
+        """Returns the media layout the checkpoint is served with."""
+        return inkling_vision_metadata(pipeline_config, config)
+
+    @classmethod
+    def vision_preprocess_spec(
+        cls, pipeline_config: PipelineConfig, config: InklingConfig
+    ) -> GraphSpec:
+        """Returns the graph-API Inkling's image preprocessing graph.
+
+        It emits the int16 patches this tower takes.
+        """
+        del pipeline_config
+        return inkling_vision_preprocess_spec(config, DType.int16)

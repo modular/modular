@@ -10,16 +10,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling image preprocessing as a CPU graph."""
+"""Inkling image preprocessing as a CPU graph, and the image layout it serves."""
 
 import math
 from collections import OrderedDict
 
+from max._artifact.vision import (
+    InklingPatchRows,
+    ModalityLayout,
+    PromptText,
+    Span,
+    VisionMetadata,
+)
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.legacy.graph_groups import VisionRows
-from max.nn.legacy.image_preprocess import composite_on_white
+from max.nn.legacy.image_preprocess import (
+    composite_on_white,
+    image_preprocess_input_types,
+)
 from max.nn.legacy.layer import Module
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphSpec
+from transformers import AutoTokenizer
+
+from .model_config import InklingConfig
+from .processor import load_processor_config
 
 
 def _resize_axis(
@@ -66,11 +82,15 @@ def _resize_axis(
 
 
 class InklingImagePreprocess(Module):
-    """Composites on white, upscales with Lanczos and pads patches with -1."""
+    """Composites on white, upscales with Lanczos and pads patches with -1.
 
-    def __init__(self, patch_size: int) -> None:
+    The patches take ``dtype``, the one the vision tower reads.
+    """
+
+    def __init__(self, patch_size: int, dtype: DType) -> None:
         super().__init__()
         self.patch_size = patch_size
+        self.dtype = dtype
 
     def __call__(
         self, image: TensorValue, size: TensorValue
@@ -109,9 +129,67 @@ class InklingImagePreprocess(Module):
             x, resized[1] - 1
         )
         values = ops.gather(pixels.reshape([-1, 3]), indices, axis=0).cast(
-            DType.int32
+            self.dtype
         )
         patches = ops.where(ops.unsqueeze(valid, -1), values, -1).reshape(
             [rows.shape[0] * cols.shape[0], patch, patch, 3]
         )
         return OrderedDict(patches=VisionRows(pixels=patches))
+
+
+def inkling_vision_preprocess_spec(
+    config: InklingConfig, dtype: DType
+) -> GraphSpec:
+    """Returns the CPU graph that packs one image's patches for the tower.
+
+    Args:
+        config: The config the vision tower is built with.
+        dtype: The dtype of the patches the vision tower takes.
+
+    Returns:
+        The image preprocessing graph.
+    """
+    return GraphSpec(
+        InklingImagePreprocess(config.vision_config.patch_size, dtype),
+        "inkling_vision_preprocess",
+        image_preprocess_input_types(),
+        weights={},
+    )
+
+
+def inkling_vision_metadata(
+    pipeline_config: PipelineConfig, config: InklingConfig
+) -> VisionMetadata:
+    """Returns Inkling's patch-row image layout and image placeholder.
+
+    Args:
+        pipeline_config: The pipeline whose checkpoint names the processor
+            config and the tokenizer.
+        config: The config the vision tower is built with.
+
+    Returns:
+        The media layout.
+    """
+    model = pipeline_config.model
+    processor = load_processor_config(
+        model.model_path, model.huggingface_model_revision
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model.model_path,
+        revision=model.huggingface_model_revision,
+        trust_remote_code=model.trust_remote_code,
+    )
+    return VisionMetadata.from_layouts(
+        image=ModalityLayout(
+            patch_size=config.vision_config.patch_size,
+            merge_size=1,
+            strategy=InklingPatchRows(),
+            span=Span(
+                tokenizer.convert_tokens_to_ids(processor["image_token"])
+            ),
+        ),
+        video=None,
+        max_image_bytes=0,
+        max_video_bytes=0,
+        prompt=PromptText(),
+    )

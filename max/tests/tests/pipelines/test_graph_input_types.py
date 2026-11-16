@@ -80,6 +80,9 @@ from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
 from max.pipelines.architectures.inkling.state_cache import (
     InklingConvStateLayout,
 )
+from max.pipelines.architectures.inkling_modulev3.modules import (
+    InklingVision as InklingVisionV3,
+)
 from max.pipelines.architectures.lfm3.model_config import Lfm3Config
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
@@ -605,6 +608,15 @@ def _inkling_vision() -> _InputTree:
     return InklingVisionModel.input_tree(model)
 
 
+def _inkling_modulev3_vision() -> _InputTree:
+    model = _fake(
+        config=_fake(patch_size=40, n_channels=3),
+        _registered_config=_fake(devices=_gpus(1)),
+    )
+    model.patch_type = partial(InklingVisionV3.patch_type, model)
+    return InklingVisionV3.input_types(model)
+
+
 def _muse_glimmer_vision() -> _InputTree:
     config = MuseGlimmerVisionConfig(
         hidden_size=1536,
@@ -627,6 +639,7 @@ def _muse_glimmer_vision() -> _InputTree:
 
 _VISION_CASES: dict[str, Callable[[], _InputTree]] = {
     "inkling": _inkling_vision,
+    "inkling_modulev3": _inkling_modulev3_vision,
     "gemma4": _gemma4_vision,
     "muse_glimmer": _muse_glimmer_vision,
     "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),

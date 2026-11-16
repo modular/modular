@@ -111,7 +111,9 @@ class InklingModuleV3BatchProcessor(DecoderBatchProcessor):
     ) -> VisionEncodeResult:
         """Encodes image rows for the framework's vision cache."""
         assert self._vision_callable is not None
-        output = self._vision_callable(packed).local_shards[0].driver_tensor
+        # The graph takes its named tree's one leaf and returns the
+        # embeddings on its one device.
+        output = self._vision_callable.execute_raw(packed)[0]
         counts = [
             image.embedding_rows for _, images in selection for image in images
         ]
