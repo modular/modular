@@ -84,7 +84,7 @@ from max.gpu.host._driver_common import (
     _check_dim_in_range,
 )
 from max.gpu.host._driver_handles import _DeviceContextPtr
-from max.gpu.host.info import default_accelerator
+from max.gpu.host.info import default_accelerator, get_gpu_info
 from max.gpu.host.launch_config import (
     ExecutionConfig,
     GridBlockExecutionConfig,
@@ -332,7 +332,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     """
 
     comptime default_device_info = (
-        Self._Legacy.default_device_info if use_legacy_backend() else Self._HAL.default_device_info
+        Self._Legacy.default_device_info if use_legacy_backend() else get_gpu_info[
+            Self.target._arch()
+        ]()
     )
     """`GPUInfo` object for the default accelerator."""
 
@@ -379,7 +381,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             return LegacyDeviceContext[Self.target]._default_api()
         else:
-            return HALDeviceContext[Self.target]._default_api()
+            comptime if Self.target.is_cpu():
+                return "cpu"
+            else:
+                return String(Self.default_device_info.api)
 
     @staticmethod
     def _api_matches_target(api: String) -> Bool:
@@ -675,7 +680,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if use_legacy_backend():
             self._impl.synchronize()
         else:
-            self._impl.synchronize()
+            self._impl._stream[].synchronize()
 
     @deprecated("Use `DeviceContext.device().id` instead.")
     def id(self) raises -> Int64:
@@ -1183,6 +1188,19 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
         Raises:
             If the driver contexts cannot be switched.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        var ctx = DeviceContext(device_id=1)
+        # Ensure GPU 1's context is active for these operations.
+        with ctx.push_context():
+            # All GPU operations here will use GPU 1's context.
+            ...  # call external stateful APIs, such as cudnn.
+        # Previous context is automatically restored
+        ```
         """
         return _DeviceContextScope[Self.target](self)
 

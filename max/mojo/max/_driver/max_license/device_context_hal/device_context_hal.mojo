@@ -33,7 +33,7 @@ from std.memory import ArcPointer
 from std.memory.unsafe import bitcast
 
 
-from std.os import abort, getenv
+from std.os import getenv
 from std.reflection import call_location, SourceLocation
 from std.sys import (
     bit_width_of,
@@ -52,6 +52,9 @@ from ..hal import (
     get_device_spec,
 )
 from max._plugin import MaxPluginForTarget
+from max._driver.max_license.device_context_dispatch.device_context import (
+    DeviceContext,
+)
 from ..hal._machine import DeviceRef, DeviceSpec
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 
@@ -75,11 +78,7 @@ from max.gpu.host.nvidia import (
     LaunchAttributeHolderExecutionConfig,
 )
 
-from max.gpu.host.info import (
-    GPUInfo,
-    get_gpu_info,
-    _device_type_encoder_target,
-)
+from max.gpu.host.info import _device_type_encoder_target
 
 # Re-exports any `__extension`s an overlay's hook file declares.
 from ._device_context_hal_extras import *
@@ -327,52 +326,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    # DeviceContext is only usable on hosts so `current()` will always be a CPU.
-    comptime CPU = HALDeviceContext[CompilationTarget.current()]
-    """DeviceContext type for the current CPU target."""
-
     comptime Unknown = HALDeviceContext[CompilationTarget._unknown()]
     """DeviceContext type whose compilation target is not statically known."""
-
-    comptime Optional[
-        target: CompilationTarget = default_accelerator()
-    ] = Optional[HALDeviceContext[target]]
-    """Convenience type alias for an `Optional[DeviceContext[_]]` type parameter.
-
-    This associated type worksaround Mojo's missing support for nested
-    auto-parameterization. Mojo does not currently support argument types like:
-
-    ```mojo
-    ctx: Optional[DeviceContext[_]],
-    ```
-
-    because `_` unbound parameters can only be used in the top-level type of a
-    argument type annotation.
-
-    However, using this alias, auto-parameterization works:
-
-    ```mojo
-    ctx: DeviceContext.Optional,
-
-    # equivalent, also works:
-    ctx: DeviceContext.Optional,
-    ```
-
-    This alias may be removed once Mojo supports nested auto-parameterization.
-    """
-
-    comptime NoneValue = Optional[HALDeviceContext.CPU]()
-    """Convenience helper for constructing a default value for
-    `DeviceContext.Optional` parameters. This guides type inference to the CPU
-    `target` when the default argument value is used, so omitting the context
-    means "run on the CPU".
-
-    Intended to be used like:
-
-    ```mojo
-    ctx: DeviceContext.Optional = DeviceContext.NoneValue,
-    ```
-    """
 
     comptime device_spec = get_device_spec[0]()
     """`DeviceSpec` describing the device this context targets."""
@@ -415,9 +370,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
     """
 
-    comptime default_device_info = get_gpu_info[Self.target._arch()]()
-    """`GPUInfo` object for the default accelerator."""
-
     comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
 
     # ===-------------------------------------------------------------------===#
@@ -435,23 +387,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    @inline(.always)
-    def _default_api() -> String:
-        """Returns the device API that matches this context's target.
-
-        Resolving the API from `Self.target` keeps CPU targets from looking up
-        GPU device info, which only exists for accelerator targets.
-
-        Returns:
-            `"cpu"` for a CPU target, otherwise the API of the target
-            accelerator.
-        """
-        comptime if Self.target.is_cpu():
-            return "cpu"
-        else:
-            return String(Self.default_device_info.api)
 
     @staticmethod
     def _api_matches_target(api: String) -> Bool:
@@ -472,7 +407,7 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         out self,
         device_id: Int = 0,
         *,
-        var api: String = Self._default_api(),
+        var api: String,
     ) raises:
         """Constructs a `DeviceContext` for the specified device.
 
@@ -483,9 +418,9 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         Args:
             device_id: ID of the accelerator device. If not specified, uses
                 the default accelerator (device 0).
-            api: Requested device API (for example, "cuda" or "hip"). Defaults
-                to the device API of this context's target, which is "cpu" for
-                a CPU target.
+            api: Requested device API (for example, "cuda" or "hip"). A CPU
+                target requires "cpu" and any other target requires a non-CPU
+                API.
 
         Raises:
             If `api` does not match this context's target (a CPU target
@@ -592,22 +527,6 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
     ) -> HALDeviceContext[Self.target]:
         return handle.unsafe_bitcast[HALDeviceContext[Self.target]]()[]
 
-    # ===-------------------------------------------------------------------===#
-    # Factory methods
-    # ===-------------------------------------------------------------------===#
-
-    @staticmethod
-    def cpu() -> HALDeviceContext.CPU:
-        """Creates a CPU `DeviceContext`.
-
-        Returns:
-            A new CPU `DeviceContext`.
-        """
-        try:
-            return HALDeviceContext.CPU(api="cpu")
-        except e:
-            abort(t"unable to create CPU DeviceContext: {e}")
-
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
     def assert_default_target(self) -> HALDeviceContext[]:
@@ -645,58 +564,8 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         return rebind[HALDeviceContext.Unknown](self)
 
     # ===-------------------------------------------------------------------===#
-    # Operator dunders
-    # ===-------------------------------------------------------------------===#
-
-    def __enter__(var self) -> Self:
-        """Enables the use of `DeviceContext` in a `with` statement context manager.
-
-        Returns:
-            The `DeviceContext` instance to be used within the context manager block.
-        """
-        return self^
-
-    # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    def synchronize(self) raises:
-        """Blocks until all asynchronous calls on the stream associated with
-        this device context have completed.
-
-        Raises:
-            If the operation fails.
-        """
-        self._stream[].synchronize()
-
-    def push_context(self) raises -> _HALDeviceContextScope:
-        """Returns a context manager that ensures this device's driver context is active.
-
-        This method returns a context manager that pushes this device's driver
-        context as the current context on entry and restores the previous context
-        on exit. This is useful for operations that require a specific GPU context
-        to be active, such as cuDNN operations on multi-GPU systems.
-
-        Returns:
-            A context manager that manages the driver context stack.
-
-        Raises:
-            If there's an error switching contexts.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext(device_id=1)
-        # Ensure GPU 1's context is active for these operations.
-        with ctx.push_context():
-            # All GPU operations here will use GPU 1's context.
-            ...  # call external stateful APIs, such as cudnn.
-        # Previous context is automatically restored
-        ```
-        """
-        return _HALDeviceContextScope(self)
 
     def supports_flag_wait(self) -> Bool:
         """Returns whether this device supports completion flags.
@@ -708,7 +577,7 @@ struct HALDeviceContext[target: CompilationTarget = default_accelerator()](
         # A context boxed under another target's type, such as a CPU context
         # in the accelerator's `DeviceContext[]`, would read the wrong
         # extension struct, so check the runtime API first.
-        if self.api() != Self._default_api():
+        if self.api() != DeviceContext[Self.target]._default_api():
             return False
         comptime Ext = type_of(self._context[].extensions())
         comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
