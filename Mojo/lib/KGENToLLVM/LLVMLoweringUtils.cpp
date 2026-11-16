@@ -1302,22 +1302,20 @@ Value KGEN::materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
   return container;
 }
 
-void KGEN::replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
-                                   LLVM::CallOp call) {
-  SmallVector<Value> results;
-
-  // Unpack the struct if necessary.
-  if (op->getNumResults() <= 1) {
-    llvm::append_range(results, call.getResults());
-  } else {
-    results.reserve(op->getNumResults());
-    for (unsigned i = 0, e = op->getNumResults(); i < e; ++i) {
-      results.push_back(
-          LLVM::ExtractValueOp::create(b, op->getLoc(), call.getResult(), i));
-    }
+void KGEN::replaceCallWithResult(mlir::RewriterBase &b, Operation *op,
+                                 Value result) {
+  if (!result) {
+    b.eraseOp(op);
+    return;
   }
-
-  // Replace the call operation.
+  if (op->getNumResults() == 1) {
+    b.replaceOp(op, result);
+    return;
+  }
+  SmallVector<Value> results;
+  results.reserve(op->getNumResults());
+  for (unsigned i = 0, e = op->getNumResults(); i < e; ++i)
+    results.push_back(LLVM::ExtractValueOp::create(b, op->getLoc(), result, i));
   b.replaceOp(op, results);
 }
 

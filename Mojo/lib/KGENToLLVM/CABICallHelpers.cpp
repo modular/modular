@@ -14,21 +14,12 @@
 #include "CABICallHelpers.h"
 #include "CABILowering.h"
 #include "LLVMLoweringUtils.h"
-#include "Mojo/KGENDialect/KGENTypes.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Transforms/DialectConversion.h"
 
 using namespace mlir;
 using namespace mlir::LLVM;
 using namespace M::KGEN;
-
-bool M::KGEN::isSignedIntegerScalar(Type type) {
-  auto simd = dyn_cast<SIMDType>(type);
-  if (!simd || simd.getResolvedSize() != 1)
-    return false;
-  std::optional<KGENDType> dtype = simd.getResolvedDType();
-  return dtype && dtype->isSInt();
-}
 
 //===----------------------------------------------------------------------===//
 // Coercion through memory
@@ -94,9 +85,7 @@ Value M::KGEN::coerceFromC(OpBuilder &b, Location loc, LLVMFuncOp func,
 
 std::unique_ptr<CABIInfo> CABICallHelper::createABIHandler() const {
   const llvm::Triple &triple = tc->getTarget().getTriple();
-  // POPToLLVMTypeConverter inherits from LLVMDataLayout
-  const LLVMDataLayout &dataLayout = *tc;
-  return M::KGEN::createCABIInfo(triple, ctx, dataLayout);
+  return M::KGEN::createCABIInfo(triple, ctx, *tc);
 }
 
 Value CABICallHelper::createEntryBlockAlloca(DirectRewriter &rewriter,
@@ -199,30 +188,28 @@ Value CABICallHelper::extractReturn(const CoercionInfo &retClass,
 }
 
 CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
-                                         ValueRange argValues, Type origRetTy,
+                                         ValueRange argValues, Type retType,
                                          Location loc, DirectRewriter &rewriter,
                                          size_t numFixedArgs,
                                          bool isVariadic) const {
   auto handler = createABIHandler();
 
-  // Classification runs on LLVM types so register/layout rules see the same
-  // shape the C compiler does.
+  // Classification runs on the unconverted types, which keep the union
+  // members, field layout and signedness the C ABI depends on. The coercion
+  // runs on the LLVM types.
   SmallVector<Type> llvmArgTypes;
   llvmArgTypes.reserve(argTypes.size());
   for (Type t : argTypes)
     llvmArgTypes.push_back(tc->convertType(t));
-  Type llvmRetTy = origRetTy ? tc->convertType(origRetTy) : Type();
+  Type llvmRetTy = retType ? tc->convertType(retType) : Type();
 
-  SmallVector<bool> isArgSigned =
-      llvm::map_to_vector(argTypes, isSignedIntegerScalar);
   SignatureClassification sigClass = handler->computeSignatureInfo(
-      llvmArgTypes, llvmRetTy, loc, CABIRole::caller(isArgSigned),
-      numFixedArgs);
+      argTypes, retType, loc, CABIRole::Caller, numFixedArgs);
 
   LLVMFunctionType sig = sigClass.getFunctionType(
-      ctx, argValues.getTypes(), origRetTy, isVariadic, numFixedArgs);
+      ctx, argValues.getTypes(), llvmRetTy, isVariadic, numFixedArgs);
   auto [callArgs, sretPtr] = buildCallArgs(sigClass.args, sigClass.ret,
-                                           argValues, origRetTy, loc, rewriter);
+                                           argValues, llvmRetTy, loc, rewriter);
   return {sig,       std::move(sigClass), std::move(llvmArgTypes),
           llvmRetTy, std::move(callArgs), sretPtr};
 }

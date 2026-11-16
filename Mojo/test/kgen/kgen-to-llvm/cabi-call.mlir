@@ -375,3 +375,79 @@ kgen.func @callee_take_vec(%s: !kgen.struct<(simd<4, f32>) align(16)>) cabi -> !
 }
 
 } // module
+
+//===----------------------------------------------------------------------===//
+// T7: a call classifies the KGEN types of its operands and result.
+//
+// The LLVM type of a union holds only one member. The si32 member makes the
+// union not homogeneous, so it goes in a GPR. clang: union { double; int; }
+// is i64.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @callee_union
+// CHECK-SAME:    (%{{.*}}: i64) -> i64
+kgen.func @callee_union(%u: !pop.union<scalar<f64>, scalar<si32>>) cabi -> !pop.union<scalar<f64>, scalar<si32>> {
+  hlcf.return %u : !pop.union<scalar<f64>, scalar<si32>>
+}
+
+// CHECK-LABEL: llvm.func internal @caller_union
+// CHECK:         llvm.call @callee_union(%{{.*}}) : (i64) -> i64
+kgen.func @caller_union(%u: !pop.union<scalar<f64>, scalar<si32>>) -> !pop.union<scalar<f64>, scalar<si32>> {
+  %r = kgen.call @callee_union(%u) : (!pop.union<scalar<f64>, scalar<si32>>) -> !pop.union<scalar<f64>, scalar<si32>>
+  hlcf.return %r : !pop.union<scalar<f64>, scalar<si32>>
+}
+
+// CHECK-LABEL: llvm.func internal @caller_indirect_union
+// CHECK:         llvm.call %arg0(%{{.*}}) : !llvm.ptr, (i64) -> i64
+kgen.func @caller_indirect_union(
+    %callee: !kgen.generator<(!pop.union<scalar<f64>, scalar<si32>>) cabi -> !pop.union<scalar<f64>, scalar<si32>>>,
+    %u: !pop.union<scalar<f64>, scalar<si32>>
+) -> !pop.union<scalar<f64>, scalar<si32>> {
+  %r = kgen.call_indirect %callee(%u) : (!pop.union<scalar<f64>, scalar<si32>>) cabi -> !pop.union<scalar<f64>, scalar<si32>>
+  hlcf.return %r : !pop.union<scalar<f64>, scalar<si32>>
+}
+
+} // module
+
+//===----------------------------------------------------------------------===//
+// T8: several results are packed into one LLVM struct, and the C ABI
+// classifies that struct.
+//
+// Two f32 results pack into {f32, f32}, which is an HFA. The definition and
+// both calls return [2 x f32].
+//===----------------------------------------------------------------------===//
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+
+// CHECK-LABEL: llvm.func internal @callee_two_results
+// CHECK-SAME:    -> !llvm.array<2 x f32>
+kgen.func @callee_two_results(%a: !kgen.scalar<f32>) cabi -> (!kgen.scalar<f32>, !kgen.scalar<f32>) {
+  hlcf.return %a, %a : !kgen.scalar<f32>, !kgen.scalar<f32>
+}
+
+// CHECK-LABEL: llvm.func internal @caller_two_results
+// CHECK:         llvm.call @callee_two_results(%{{.*}}) : (f32) -> !llvm.array<2 x f32>
+// CHECK:         [[PACK:%.*]] = llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(f32, f32)>
+// CHECK:         llvm.extractvalue [[PACK]][1] : !llvm.struct<(f32, f32)>
+kgen.func @caller_two_results(%a: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+  %r:2 = kgen.call @callee_two_results(%a) : (!kgen.scalar<f32>) -> (!kgen.scalar<f32>, !kgen.scalar<f32>)
+  hlcf.return %r#1 : !kgen.scalar<f32>
+}
+
+// CHECK-LABEL: llvm.func internal @caller_indirect_two_results
+// CHECK:         llvm.call %arg0(%{{.*}}) : !llvm.ptr, (f32) -> !llvm.array<2 x f32>
+kgen.func @caller_indirect_two_results(
+    %callee: !kgen.generator<(!kgen.scalar<f32>) cabi -> (!kgen.scalar<f32>, !kgen.scalar<f32>)>,
+    %a: !kgen.scalar<f32>
+) -> !kgen.scalar<f32> {
+  %r:2 = kgen.call_indirect %callee(%a) : (!kgen.scalar<f32>) cabi -> (!kgen.scalar<f32>, !kgen.scalar<f32>)
+  hlcf.return %r#1 : !kgen.scalar<f32>
+}
+
+} // module

@@ -28,16 +28,18 @@
 // lowering step in isolation.
 //
 // KEY DIFFERENCES FROM x86-64:
-//   1. HFA (Homogeneous Float Aggregate): all-float structs with ≤4 fields
-//      pass via SIMD registers (V0–V3) as identity — no coercion.
+//   1. HFA (Homogeneous Float Aggregate): a struct of 1-4 members of one
+//      float type goes in SIMD registers (V0-V3). It is coerced to an array
+//      of that type, because the backend keeps only an array argument in
+//      consecutive registers.
 //   2. Two-register structs always use IntegerPair (i64, iN) regardless of
 //      field types. There is no SSEPair or Mixed class on ARM64.
 //   3. Large struct args (>16 bytes) are passed indirectly WITHOUT byval.
 //      x86-64 sets byval; ARM64 does not.
 //   4. Variadic HFA args — Darwin vs Linux split:
-//      Darwin (macOS/iOS): HFA identity bypassed; struct coerced to integer
-//        so va_arg reads from the GP save area (flat va_list).
-//      Linux AAPCS64: HFA identity preserved; struct stays as-is so LLVM
+//      Darwin (macOS/iOS): not classified as an HFA; struct coerced to
+//        integer so va_arg reads from the GP save area (flat va_list).
+//      Linux AAPCS64: classified as an HFA, as a fixed argument is, so LLVM
 //        places it in SIMD registers and va_arg reads from the VR save area.
 //   5. Variadic float args < 64 bits — Darwin vs Linux split:
 //      Darwin: bitcast to integer to prevent LLVM float→double promotion
@@ -52,13 +54,14 @@
 //   A3  arg_3byte_int_struct      {i8,i8,i8} → i32
 //   A4  arg_8byte_int_struct      {i32,i32}  → i64
 //
-// Group F — HFA (Homogeneous Float Aggregate): identity for fixed args
-//   F1  arg_hfa_2xf32             {f32,f32}             → identity (SIMD)
-//   F2  arg_hfa_4xf32             {f32,f32,f32,f32}     → identity (max HFA)
-//   F3  arg_hfa_2xf64             {f64,f64}             → identity (SIMD)
+// Group F - HFA (Homogeneous Float Aggregate): array of the base type
+//   F1  arg_hfa_2xf32             {f32,f32}             -> [2 x f32] (SIMD)
+//   F2  arg_hfa_4xf32             {f32,f32,f32,f32}     -> [4 x f32] (max HFA)
+//   F3  arg_hfa_2xf64             {f64,f64}             -> [2 x f64] (SIMD)
 //   F4  arg_not_hfa_5xf32         {f32,f32,f32,f32,f32} → indirect (>16 AND >4 fields)
 //   F5  arg_not_hfa_mixed         {f32,i32}             → integer coercion (not all-float)
-//   F6  ret_hfa                   return {f32,f32}       → identity (HFA return)
+//   F6  ret_hfa                   return {f32,f32}      -> [2 x f32] (HFA return)
+//   F7  arg_hfa_after_7xf64       7 x f64, {f64,f64}    -> [2 x f64] (all on stack)
 //
 // Group B — 9–16 byte struct args: IntegerPair (always i64+iN on ARM64)
 //   B1  arg_int_pair_12           {i32,i32,i32}          → (i64, i32)
@@ -74,7 +77,7 @@
 //   D3  ret_sret                  returns {i64,i64,i64}  → sret hidden ptr
 //
 // Group G — Variadic functions: ARM64 Darwin vs Linux split
-//   G1  variadic_hfa_linux        Linux:  variadic HFA arg  → identity (VR save area)
+//   G1  variadic_hfa_linux        Linux:  variadic HFA arg  -> [2 x f32] (VR save area)
 //   G2  variadic_float_linux      Linux:  variadic f32 arg  → no bitcast (SIMD reg)
 //   G3  variadic_hfa_darwin       Darwin: variadic HFA arg  → integer coercion (GP)
 //   G4  variadic_float_darwin     Darwin: variadic f32 arg  → bitcast to i32 (GP)
@@ -150,66 +153,65 @@ llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
 //===----------------------------------------------------------------------===//
 // Group F: HFA (Homogeneous Float Aggregate)
 //
-// AAPCS rule: an all-float struct with ≤4 fields of the same float type is an
-// HFA and uses SIMD registers (V0–V3). The lowering treats HFA args as
-// identity (no coercion), deferring register assignment to LLVM's backend.
+// AAPCS rule: a struct of 1-4 members of the same float type, with no
+// padding, is an HFA and uses SIMD registers (V0-V3). The lowering coerces
+// an HFA to an array of its base type, as clang does. The backend keeps an
+// array argument in consecutive registers: if the free SIMD registers are
+// too few, all of the array goes on the stack (AAPCS64 C.3). It does not do
+// this for a struct argument.
 //
-// The identity classification means the LLVM call passes the struct type
-// directly, identical to the DefaultCABIInfo (no-triple) behavior.
+// HFA detection (classifyHomogeneousAggregate):
+//   - All members must be the same float type (f16, f32, or f64)
+//   - At most 4 members (5+ is not HFA)
+//   - Mixed int+float or different float types -> not HFA
 //
-// HFA detection (isAllFloatStruct):
-//   - All fields must be the same float type (f16, f32, or f64)
-//   - At most 4 fields (5+ is not HFA)
-//   - Mixed int+float or heterogeneous float types → not HFA
-//
-// Variadic HFA args are explicitly NOT treated as HFA (see Group G).
+// On Darwin, a variadic HFA arg is not treated as an HFA (see Group G).
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// F1: {f32, f32} (8 bytes, all-float, 2 fields) → HFA → identity.
-// The LLVM struct type is passed as-is. No store/load bitcast.
+// F1: {f32, f32} (8 bytes, all-float, 2 fields) -> HFA -> [2 x f32].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf32
 llvm.func @arg_hfa_2xf32(%arg0: !llvm.struct<(f32, f32)>) {
-  // CHECK: llvm.call @c_f1(%{{.*}}) : (!llvm.struct<(f32, f32)>) -> ()
+  // CHECK: llvm.call @c_f1(%{{.*}}) : (!llvm.array<2 x f32>) -> ()
   pop.external_call @c_f1(%arg0) : (!llvm.struct<(f32, f32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f1(!llvm.struct<(f32, f32)>)
+// CHECK: llvm.func @c_f1(!llvm.array<2 x f32>)
 }
 
 // -----
 
-// F2: {f32, f32, f32, f32} (16 bytes, all-float, 4 fields) → HFA → identity.
-// 4 is the maximum field count for HFA.
+// F2: {f32, f32, f32, f32} (16 bytes, all-float, 4 fields) -> HFA ->
+// [4 x f32]. 4 is the maximum field count for HFA.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_4xf32
 llvm.func @arg_hfa_4xf32(%arg0: !llvm.struct<(f32, f32, f32, f32)>) {
-  // CHECK: llvm.call @c_f2(%{{.*}}) : (!llvm.struct<(f32, f32, f32, f32)>) -> ()
+  // CHECK: llvm.call @c_f2(%{{.*}}) : (!llvm.array<4 x f32>) -> ()
   pop.external_call @c_f2(%arg0) : (!llvm.struct<(f32, f32, f32, f32)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f2(!llvm.struct<(f32, f32, f32, f32)>)
+// CHECK: llvm.func @c_f2(!llvm.array<4 x f32>)
 }
 
 // -----
 
-// F3: {f64, f64} (16 bytes, all-float doubles, 2 fields) → HFA → identity.
+// F3: {f64, f64} (16 bytes, all-float doubles, 2 fields) -> HFA -> [2 x f64].
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_hfa_2xf64
 llvm.func @arg_hfa_2xf64(%arg0: !llvm.struct<(f64, f64)>) {
-  // CHECK: llvm.call @c_f3(%{{.*}}) : (!llvm.struct<(f64, f64)>) -> ()
+  // CHECK: llvm.call @c_f3(%{{.*}}) : (!llvm.array<2 x f64>) -> ()
   pop.external_call @c_f3(%arg0) : (!llvm.struct<(f64, f64)>) -> ()
   llvm.return
 }
-// CHECK: llvm.func @c_f3(!llvm.struct<(f64, f64)>)
+// CHECK: llvm.func @c_f3(!llvm.array<2 x f64>)
 }
 
 // -----
 
 // F4: {f32 × 5} (20 bytes) → NOT HFA (5 fields exceeds the 4-field limit) AND
-// size >16 bytes → indirect. The isAllFloatStruct check rejects 5-field
+// size >16 bytes → indirect. classifyHomogeneousAggregate rejects 5-field
 // structs, so the struct falls through to size classification (>16 → indirect).
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_5xf32
@@ -223,7 +225,7 @@ llvm.func @arg_not_hfa_5xf32(%arg0: !llvm.struct<(f32, f32, f32, f32, f32)>) {
 // -----
 
 // F5: {f32, i32} (8 bytes) → NOT HFA (mixed int+float) → integer coercion → i64.
-// isAllFloatStruct returns false for mixed types, so the struct is classified
+// classifyHomogeneousAggregate rejects mixed types, so the struct is classified
 // as a non-HFA integer struct.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_not_hfa_mixed
@@ -238,17 +240,33 @@ llvm.func @arg_not_hfa_mixed(%arg0: !llvm.struct<(f32, i32)>) {
 
 // -----
 
-// F6: return {f32, f32} → HFA → identity return (no coercion).
-// The call returns the struct type directly, and the return value is used
-// as-is. No extractvalue or store/load needed.
+// F6: return {f32, f32} -> HFA -> [2 x f32]. clang returns an HFA as its
+// struct type, but V0-V3 always hold an HFA result, so the registers are the
+// same.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_hfa
 llvm.func @ret_hfa() {
-  // CHECK: llvm.call @c_f6() : () -> !llvm.struct<(f32, f32)>
+  // CHECK: llvm.call @c_f6() : () -> !llvm.array<2 x f32>
   %r = pop.external_call @c_f6() : () -> !llvm.struct<(f32, f32)>
   llvm.return
 }
-// CHECK: llvm.func @c_f6() -> !llvm.struct<(f32, f32)>
+// CHECK: llvm.func @c_f6() -> !llvm.array<2 x f32>
+}
+
+// -----
+
+// F7: {f64, f64} after seven f64 arguments -> HFA -> [2 x f64]. Only V7 is
+// free, so all of the HFA goes on the stack (AAPCS64 C.3). The backend does
+// this for an array argument; it would put the first member of a struct
+// argument in V7.
+module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_hfa_after_7xf64
+llvm.func @arg_hfa_after_7xf64(%d: f64, %s: !llvm.struct<(f64, f64)>) {
+  // CHECK: llvm.call @c_f7(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, !llvm.array<2 x f64>) -> ()
+  pop.external_call @c_f7(%d, %d, %d, %d, %d, %d, %d, %s) : (f64, f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f7(f64, f64, f64, f64, f64, f64, f64, !llvm.array<2 x f64>)
 }
 
 //===----------------------------------------------------------------------===//
@@ -393,8 +411,9 @@ llvm.func @ret_sret() {
 //
 // Linux AAPCS64: va_list has separate GP (__gr_top) and VR (__vr_top) save
 //   areas. HFA variadic args and float args land in SIMD/VR registers, and
-//   va_arg for HFA structs reads from the VR save area. The lowering preserves
-//   HFA identity and does NOT bitcast floats — LLVM places them in SIMD regs.
+//   va_arg for HFA structs reads from the VR save area. The lowering
+//   classifies HFAs as for fixed args and does not bitcast floats, so LLVM
+//   places them in SIMD registers.
 //
 // References:
 //   AAPCS64 spec IHI0055 §B.4 — va_list structure definition
@@ -403,15 +422,15 @@ llvm.func @ret_sret() {
 
 // -----
 
-// G1: Linux ARM64 — variadic HFA arg stays identity.
-// {f32, f32} is HFA. On Linux, even variadic HFA args use identity: the struct
-// is passed as-is so LLVM places it in SIMD registers where Linux va_arg for
-// HFA structs reads from the VR save area.
+// G1: Linux ARM64 - variadic HFA arg is an HFA.
+// {f32, f32} is HFA. On Linux, a variadic HFA arg is classified as a fixed
+// one is, so LLVM places it in SIMD registers where Linux va_arg for HFA
+// structs reads from the VR save area.
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_hfa_linux
 llvm.func @variadic_hfa_linux(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
-  // HFA struct remains identity on Linux — passed as struct, not coerced to i64.
-  // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.struct<(f32, f32)>) -> ()
+  // The HFA is coerced to an array of f32, not to i64.
+  // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.array<2 x f32>) -> ()
   // CHECK-NOT: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i64)
   pop.external_call @c_g1(%fixed, %s)
     : (i32, !llvm.struct<(f32, f32)>) -> () <numFixedArgs = 1 : index>
@@ -444,7 +463,7 @@ llvm.func @variadic_float_linux(%fixed: i32, %f: f32) {
 // G3: Darwin ARM64 — variadic HFA arg coerced to integer.
 // {f32, f32} is HFA. On Darwin, variadic HFA args must use GPRs because
 // Darwin's flat va_list has no separate VR save area. The isVariadicArg +
-// isDarwin flag suppresses the HFA identity return, and the struct falls
+// isDarwin flag suppresses the HFA classification, and the struct falls
 // through to size classification: 8 bytes → i64.
 module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0", arch="", features="", data_layout="e-m:o-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_hfa_darwin

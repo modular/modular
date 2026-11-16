@@ -49,11 +49,6 @@ inline void applyTailKind(mlir::LLVM::CallOp call, TailKind kind) {
   }
 }
 
-/// Return true if `type` is a KGEN scalar of a signed integer dtype. LLVM
-/// integers are signless, so this is the only source of the sign for a C ABI
-/// integer extension.
-bool isSignedIntegerScalar(mlir::Type type);
-
 //===----------------------------------------------------------------------===//
 // Coercion through memory
 //===----------------------------------------------------------------------===//
@@ -158,15 +153,16 @@ struct CABICallHelper {
   /// Classify arguments and return type, build the coerced LLVM function
   /// signature, and prepare coerced call arguments in one step.
   ///
-  /// `argTypes` drives ABI classification; `argValues` supplies the SSA values
-  /// for coercion. Pass the op's unconverted operand types as `argTypes`: the
-  /// signedness of a narrow integer argument comes from them.
+  /// `argTypes` and `retType` drive ABI classification; `argValues` supplies
+  /// the SSA values for coercion. Pass the op's unconverted types: the union
+  /// members, field layout and signedness that the C ABI depends on come from
+  /// them. `retType` is null for a call without a result.
   /// Pass `numFixedArgs` and `isVariadic=true` for variadic callees.
   ///
   /// The caller creates an llvm.call from the returned signature and call
   /// arguments, then passes it to finishCall.
   CABICallPrep prepareCall(mlir::TypeRange argTypes, mlir::ValueRange argValues,
-                           mlir::Type origRetTy, mlir::Location loc,
+                           mlir::Type retType, mlir::Location loc,
                            M::DirectRewriter &rewriter,
                            size_t numFixedArgs = SIZE_MAX,
                            bool isVariadic = false) const;

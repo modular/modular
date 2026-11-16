@@ -181,15 +181,17 @@ public:
     }
 
     // Classify arguments/return and build the coerced LLVM signature + args.
-    // op.getOperandTypes() holds POP-level types for classification; the
-    // adaptor operands hold the already-converted LLVM values for coercion.
+    // The op's types are the POP-level types for classification; the adaptor
+    // operands hold the already-converted LLVM values for coercion.
+    Type returnType;
     Type llvmReturnType;
-    if (!op.getResults().empty())
-      llvmReturnType =
-          getTypeConverter()->convertType(op.getResult().getType());
-    auto prep = cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
-                                 llvmReturnType, loc, rewriter, numFixedArgs,
-                                 isVariadic);
+    if (!op.getResults().empty()) {
+      returnType = op.getResult().getType();
+      llvmReturnType = getTypeConverter()->convertType(returnType);
+    }
+    auto prep =
+        cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
+                         returnType, loc, rewriter, numFixedArgs, isVariadic);
     const SignatureClassification &sigClass = prep.classification;
     const LLVM::LLVMFunctionType &signature = prep.signature;
 

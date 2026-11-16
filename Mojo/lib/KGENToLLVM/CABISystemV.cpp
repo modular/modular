@@ -26,8 +26,8 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 SystemVABIInfo::SystemVABIInfo(mlir::MLIRContext *ctx,
-                               const LLVMDataLayout &dataLayout)
-    : CABIInfo(ctx, dataLayout) {}
+                               const POPToLLVMTypeConverter &typeConverter)
+    : CABIInfo(ctx, typeConverter) {}
 
 //===----------------------------------------------------------------------===//
 // Argument Classification
@@ -42,7 +42,7 @@ CoercionInfo SystemVABIInfo::classifyArgumentType(mlir::Type type,
   (void)isVariadicArg;
 
   // Arrays should be passed indirectly, as per the C specification
-  if (isa<mlir::LLVM::LLVMArrayType>(type))
+  if (isa<mlir::LLVM::LLVMArrayType>(convertType(type)))
     return CoercionInfo::indirectArgument(/*useByval=*/false);
 
   return classifyStructType(type, loc, /*useSRet=*/false);
@@ -64,13 +64,13 @@ CoercionInfo SystemVABIInfo::classifyReturnType(mlir::Type type,
 CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
                                                 mlir::Location loc,
                                                 bool useSRet) const {
-  // Only LLVM struct types need C ABI classification
-  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(type);
+  // Only types that convert to an LLVM struct need C ABI classification
+  auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(convertType(type));
   if (!structType) {
     // The psABI leaves the upper bits of a narrow integer unspecified, but
     // clang extends at the producer and relies on it at the consumer, so
     // match clang.
-    return CabiUtils::classifyExtendedScalar(type);
+    return CabiUtils::classifyExtendedScalar(type, typeConverter);
   }
 
   int64_t size = CabiUtils::getStructSize(structType, dataLayout);
@@ -89,7 +89,7 @@ CoercionInfo SystemVABIInfo::classifyStructType(mlir::Type type,
   // Classify each member at its offset and merge the classes per eightbyte.
   EightbyteClass lo = EightbyteClass::NoClass; // Bytes 0-7
   EightbyteClass hi = EightbyteClass::NoClass; // Bytes 8-15
-  CabiUtils::forEachMember(structType, /*offset=*/0, dataLayout,
+  CabiUtils::forEachMember(type, /*offset=*/0, typeConverter,
                            [&](mlir::Type member, int64_t offset) {
                              auto [memberLo, memberHi] =
                                  classifyMember(member, offset);
@@ -297,7 +297,7 @@ SystemVABIInfo::classifySignature(mlir::TypeRange argTypes, mlir::Type retType,
     // Only fixed args take part in register accounting; variadic args keep
     // their classification.
     if (!isVariadicArg) {
-      auto [needInt, needSSE] = argRegisterUsage(info, type);
+      auto [needInt, needSSE] = argRegisterUsage(info, convertType(type));
       if (needInt <= freeInt && needSSE <= freeSSE) {
         freeInt -= needInt;
         freeSSE -= needSSE;

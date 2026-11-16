@@ -695,8 +695,7 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
 /// Attribute stamped onto llvm.func ops that were converted from kgen.func ops
 /// with the abi("C") effect. Used by ConvertKGENCall to identify C-ABI
 /// callees regardless of whether the callee was converted before or after the
-/// call site. Its value holds the signedness of each result, which the LLVM
-/// types no longer carry, for the C ABI extension of a narrow integer result.
+/// call site.
 static constexpr StringLiteral kCABIFuncAttr = "kgen.c_abi";
 
 /// Returns true if the callee identified by `sym` has the abi("C") effect.
@@ -710,6 +709,24 @@ static bool isCABICallee(const SymbolTable &symtab, FlatSymbolRefAttr sym) {
   if (auto llvmFunc = dyn_cast_or_null<LLVM::LLVMFuncOp>(calleeOp))
     return llvmFunc->hasAttr(kCABIFuncAttr);
   return false;
+}
+
+/// Get the KGEN types of the C ABI arguments: the arguments that are left
+/// after the arguments of empty type are dropped.
+static SmallVector<Type> getCABIArgTypes(TypeRange argTypes,
+                                         const TypeConverter &typeConverter) {
+  return llvm::to_vector(llvm::make_filter_range(argTypes, [&](Type type) {
+    return !isEmptyType(typeConverter.convertType(type));
+  }));
+}
+
+/// Get the type of the C ABI result: the KGEN type of one result, or
+/// `packedType`, the LLVM struct that packs several results. Returns null if
+/// there is no result.
+static Type getCABIResultType(TypeRange resultTypes, Type packedType) {
+  if (resultTypes.empty())
+    return {};
+  return resultTypes.size() == 1 ? resultTypes.front() : packedType;
 }
 
 /// The C ABI result form of each converted abi("C") definition, for
@@ -773,13 +790,8 @@ public:
     // Mark abi("C") functions so ConvertKGENCall can identify them via
     // symbol lookup regardless of conversion order.
     bool isCABI = func.getFuncTypeGenerator().getBody().getFnEffects().isCABI();
-    if (isCABI) {
-      funcOp->setAttr(kCABIFuncAttr,
-                      b.getDenseBoolArrayAttr(llvm::map_to_vector(
-                          func.getFunctionType().getResults(), [](Type type) {
-                            return isSignedIntegerScalar(type);
-                          })));
-    }
+    if (isCABI)
+      funcOp->setAttr(kCABIFuncAttr, b.getUnitAttr());
 
     // And move the func's body into the new function.
     if (!func.isExternal()) {
@@ -796,11 +808,12 @@ public:
     if (isCABI) {
       std::unique_ptr<CABIInfo> abiInfo =
           createCABIInfo(target.getTriple(), getContext(), *getTypeConverter());
-      bool isResultSigned =
-          func.getFunctionType().getNumResults() == 1 &&
-          isSignedIntegerScalar(func.getFunctionType().getResults().front());
-      cabiDefinitions[funcOp] =
-          rewriteCABIFunctionEntry(funcOp, *abiInfo, isResultSigned);
+      cabiDefinitions[funcOp] = rewriteCABIFunctionEntry(
+          funcOp, *abiInfo,
+          getCABIArgTypes(func.getFunctionType().getInputs(),
+                          *getTypeConverter()),
+          getCABIResultType(func.getFunctionType().getResults(),
+                            funcOp.getFunctionType().getReturnType()));
     }
 
     // Remove the function.
@@ -854,22 +867,17 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
     if (isCABICallee(symtab, flatSymbol)) {
       CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
       Location loc = op.getLoc();
-      Type origRetTy = types.empty() ? Type{} : types.front();
-      SmallVector<Type> filteredOrigTypes;
-      for (auto [orig, converted] :
-           llvm::zip_equal(op.getOperandTypes(), adaptor.getOperands())) {
-        if (!isEmptyType(converted.getType()))
-          filteredOrigTypes.push_back(orig);
-      }
-      auto prep = cabi.prepareCall(filteredOrigTypes, filteredOperands,
-                                   origRetTy, loc, rewriter);
+      auto prep = cabi.prepareCall(
+          getCABIArgTypes(op.getOperandTypes(), *getTypeConverter()),
+          filteredOperands,
+          getCABIResultType(op.getResultTypes(),
+                            types.empty() ? Type() : types.front()),
+          loc, rewriter);
       LLVM::CallOp llvmCall = LLVM::CallOp::create(
           rewriter, loc, prep.signature, flatSymbol, prep.callArgs);
-      if (Value result =
-              cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter))
-        rewriter.replaceOp(op, result);
-      else
-        rewriter.eraseOp(op);
+      replaceCallWithResult(
+          rewriter, op,
+          cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter));
       return success();
     }
 
@@ -942,21 +950,16 @@ struct ConvertKGENCallIndirect
       CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
       Location loc = op.getLoc();
 
-      // Original LLVM return type (null for void functions).
-      Type origRetTy = op.getNumResults() > 0 ? resultType : Type{};
-
-      auto prep =
-          cabi.prepareCall(op.getArguments().getTypes(), adaptor.getArguments(),
-                           origRetTy, loc, rewriter);
+      auto prep = cabi.prepareCall(
+          op.getArguments().getTypes(), adaptor.getArguments(),
+          getCABIResultType(op.getResultTypes(), resultType), loc, rewriter);
       // Insert the indirect call target.
       prep.callArgs.insert(prep.callArgs.begin(), adaptor.getCallee());
 
       llvmCall = createLLVMCall(rewriter, loc, prep.signature, prep.callArgs);
-      if (Value result =
-              cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter))
-        rewriter.replaceOp(op, result);
-      else
-        rewriter.eraseOp(op);
+      replaceCallWithResult(
+          rewriter, op,
+          cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter));
       return success();
     }
 
@@ -969,20 +972,7 @@ struct ConvertKGENCallIndirect
     llvmCall = createLLVMCall(rewriter, op.getLoc(), wrapperFnType,
                               adaptor.getOperands());
     applyTailKind(llvmCall, op.getTailKind());
-
-    if (op.getNumResults() <= 1) {
-      rewriter.replaceOp(op, llvmCall.getResults());
-      return success();
-    }
-
-    // Unpack the struct if necessary.
-    SmallVector<Value> results;
-    results.reserve(op.getNumResults());
-    for (unsigned i = 0, e = op.getNumResults(); i < e; ++i)
-      results.push_back(LLVM::ExtractValueOp::create(rewriter, op.getLoc(),
-                                                     llvmCall.getResult(), i));
-
-    rewriter.replaceOp(op, results);
+    replaceCallWithLLVMCall(rewriter, op, llvmCall);
     return success();
   }
 };

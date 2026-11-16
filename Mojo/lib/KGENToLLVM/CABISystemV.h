@@ -31,7 +31,8 @@ namespace M::KGEN {
 /// - Variadic arguments: on x86-64, variadic args always use stack
 class SystemVABIInfo : public CABIInfo {
 public:
-  SystemVABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout);
+  SystemVABIInfo(mlir::MLIRContext *ctx,
+                 const POPToLLVMTypeConverter &typeConverter);
 
 protected:
   /// Classify a whole signature, applying the rollback-to-stack rule: an

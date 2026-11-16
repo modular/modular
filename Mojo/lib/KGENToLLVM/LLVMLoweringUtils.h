@@ -325,10 +325,18 @@ private:
 Value materializeLLVMStruct(ImplicitLocOpBuilder &b, Type structType,
                             ValueRange elements);
 
+/// Replace the KGEN call `op` with `result`, the value that its LLVM call gives
+/// back. Several results are packed into one LLVM struct, so unpack them. A
+/// null `result` means that there are no results, so erase `op`.
+void replaceCallWithResult(mlir::RewriterBase &b, Operation *op, Value result);
+
 /// Replace a KGEN call with an LLVM call, handling unpacking call results if
 /// necessary.
-void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
-                             mlir::LLVM::CallOp call);
+inline void replaceCallWithLLVMCall(mlir::RewriterBase &b, Operation *op,
+                                    mlir::LLVM::CallOp call) {
+  replaceCallWithResult(b, op,
+                        call.getNumResults() ? call.getResult() : Value());
+}
 
 //===----------------------------------------------------------------------===//
 // Attribute Conversion

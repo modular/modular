@@ -58,9 +58,9 @@ kgen.func @callee_sret(%s: !llvm.struct<(i8, i8, i8)>, %y: i64) cabi -> !llvm.st
   hlcf.return %r : !llvm.struct<(i64, i64, i64)>
 }
 
-// An all-float struct keeps its type. It does not get noundef.
+// An HFA is coerced to an array of floats. It does not get noundef.
 // CHECK-LABEL: llvm.func internal @callee_hfa
-// CHECK-SAME:    (%{{[a-z0-9]+}}: !llvm.struct<(f32, f32)>, %{{[a-z0-9]+}}: i64 {llvm.noundef}) -> i64
+// CHECK-SAME:    (%{{[a-z0-9]+}}: !llvm.array<2 x f32>, %{{[a-z0-9]+}}: i64 {llvm.noundef}) -> i64
 kgen.func @callee_hfa(%s: !llvm.struct<(f32, f32)>, %y: i64) cabi -> i64 {
   hlcf.return %y : i64
 }

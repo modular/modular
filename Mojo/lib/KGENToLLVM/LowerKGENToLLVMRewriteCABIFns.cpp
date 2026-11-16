@@ -114,16 +114,17 @@ void rewriteCABIReturn(ReturnOp ret, const CABIDefinition &def) {
 }
 
 CABIDefinition rewriteCABIFunctionEntry(LLVMFuncOp func, CABIInfo &abiInfo,
-                                        bool isResultSigned) {
+                                        TypeRange argTypes, Type retType) {
   Location loc = func.getLoc();
   MLIRContext *ctx = func.getContext();
   SmallVector<Type> origArgTypes = llvm::to_vector(func.getArgumentTypes());
   Type origRetType = func.getFunctionType().getReturnType();
+  assert(argTypes.size() == origArgTypes.size() &&
+         "one unconverted type per LLVM argument");
 
-  // Classify the whole signature per platform C ABI rules. The arg/return
-  // types are already LLVM types here.
-  SignatureClassification sigClass = abiInfo.computeSignatureInfo(
-      origArgTypes, origRetType, loc, CABIRole::callee(isResultSigned));
+  // Classify the whole signature per platform C ABI rules.
+  SignatureClassification sigClass =
+      abiInfo.computeSignatureInfo(argTypes, retType, loc, CABIRole::Callee);
   SmallVector<CoercionInfo> &argInfos = sigClass.args;
   CoercionInfo &retInfo = sigClass.ret;
 

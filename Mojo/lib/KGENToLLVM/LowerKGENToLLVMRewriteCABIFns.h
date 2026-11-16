@@ -44,10 +44,13 @@ struct CABIDefinition {
 /// Give an abi("C") LLVM function its C ABI signature and attributes. In a
 /// definition, also make the C ABI entry block arguments and rebuild the
 /// Mojo arguments from them at the top of the entry block. Mojo direct
-/// callers are patched by ConvertKGENCall. `isResultSigned` selects signext
-/// over zeroext for a narrow integer result.
+/// callers are patched by ConvertKGENCall. The signature is classified from
+/// `argTypes` and `retType`, the unconverted types of the LLVM arguments and
+/// result; `retType` is null for no result.
 CABIDefinition rewriteCABIFunctionEntry(mlir::LLVM::LLVMFuncOp func,
-                                        CABIInfo &abiInfo, bool isResultSigned);
+                                        CABIInfo &abiInfo,
+                                        mlir::TypeRange argTypes,
+                                        mlir::Type retType);
 
 /// Make `ret` give its result in the C ABI form that `def` describes.
 void rewriteCABIReturn(mlir::LLVM::ReturnOp ret, const CABIDefinition &def);
