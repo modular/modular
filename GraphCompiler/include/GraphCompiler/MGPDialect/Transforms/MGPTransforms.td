@@ -825,4 +825,39 @@ def FinalizeDeviceGraphsPass :
   let dependentDialects = ["M::MOGG::MOGGDialect", "M::KGEN::KGENDialect"];
 }
 
+//===----------------------------------------------------------------------===//
+// OutlineDeviceGraphDependenciesPass
+//===----------------------------------------------------------------------===//
+
+def OutlineDeviceGraphDependenciesPass :
+    Pass<"mgp-outline-device-graph-dependencies", "mlir::ModuleOp"> {
+  let summary = "Outline each device-graph build body into a `mogg.func`.";
+  let description = [{
+    Runs after device-graph synthesis (it must follow
+    `mgp-generate-build-graph-stubs`, whose stub retargeting would otherwise
+    rewrite the wrapper call). Two ops carry build bodies:
+
+    - `mgp.device_graph.dependencies`: its body is one unit of recording work.
+      Each body with no results becomes a module-level `mogg.func`, leaving a
+      single `mogg.call` that forwards the body's builder and the values it
+      captured from above.
+    - `mgp.device_graph.collective.create`: each build region records one
+      device's whole graph. The region's block arguments become the stub's
+      parameters and the values it yields become its results, so the region is
+      left as one `mogg.call` forwarding its arguments into a `yield`.
+
+    These operations contain the majority of the Mojo code that requires
+    elaboration in the device graph synthesis workflow. Outlining this work
+    allows MergeIdenticalFuncs to perform deduplication, similar to how
+    outlining kernel stubs facilitates deduplication.
+
+    For models without device graphs, the pass is a no-op.
+  }];
+
+  let dependentDialects = [
+    "M::MO::MODialect",
+    "M::MOGG::MOGGDialect",
+  ];
+}
+
 #endif // GENERICML_MGPDIALECT_MGPTRANSFORMS_TD

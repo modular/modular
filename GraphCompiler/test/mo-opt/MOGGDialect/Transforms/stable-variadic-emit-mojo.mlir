@@ -14,7 +14,7 @@
 // any other, over the slot address, and the wrapper takes that pointer back off
 // the slice.
 // CHECK-LABEL: def consume_build_graph(
-// CHECK-SAME: [[P0:[a-z_0-9]+]]: OpaquePointer[MutAnyOrigin], [[P1:[a-z_0-9]+]]: OpaquePointer[MutAnyOrigin], {{.*}}, [[BUILDER:[a-z_0-9]+]]: {{[^,]*}}DeviceGraphBuilder) raises:
+// CHECK-SAME: [[P0:[a-z_0-9]+]]: OpaquePointer[MutAnyOrigin], [[P1:[a-z_0-9]+]]: OpaquePointer[MutAnyOrigin], {{.*}}, mut [[BUILDER:[a-z_0-9]+]]: {{[^,]*}}DeviceGraphBuilder) raises:
 // CHECK: var [[A:var[_0-9]+]] = builtin_primitives.primitives.mogg_tensor_init[DType.float32, 1, False, extensibility.IO.Input, {{[0-9]+}}]([[P0]].unsafe_bitcast[NoneType](),
 // CHECK: var [[B:var[_0-9]+]] = builtin_primitives.primitives.mogg_tensor_init[DType.float32, 1, False, extensibility.IO.Input, {{[0-9]+}}]([[P1]].unsafe_bitcast[NoneType](),
 // CHECK: var [[A_SLOT:var[_0-9]+]] = [[A]].unsafe_ptr().unsafe_bitcast[NoneType]().as_unsafe_any_origin()

@@ -79,12 +79,18 @@ mgp.model @dg_collective device_graph devices [#M.device_ref<"gpu", 0>, #M.devic
 
 // CHECK: def [[BUILD:collective_build_for[_0-9]*]][n{{[_0-9]*}} : Int](mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
 // CHECK: comptime if n{{[_0-9]*}} == 0:
-// CHECK: builder.place_stable(0, {{.*}})
+// The producing region is one builder op, so it stays inline: it publishes its
+// tensor to the shared slot.
+// CHECK: {{.*}}.place_stable(0, {{.*}})
 // CHECK: elif n{{[_0-9]*}} == 1:
-// CHECK: [[SLOT:var[_0-9]+]] = builder.get_stable(0)
+// The reading region has more to record, so it becomes a function.
+// CHECK: var {{var[_0-9]+}} = {{__device_graph_collective_create[_0-9]*}}(builder)
+// CHECK: max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
+// That function views the slot as a stable tensor, which is an ordinary
+// `OwnedTensor` over the slot's address.
+// CHECK: [[SLOT:var[_0-9]+]] = {{.*}}.get_stable(0)
 // CHECK: [[SPEC:var[_0-9]+]] = builtin_primitives.primitives.mgp_tensor_spec_create[
 // CHECK: builtin_primitives.primitives.mgp_device_graph_stable_tensor[2, 2, DType.float32]([[SLOT]], [[SPEC]])
-// CHECK: max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
 
 mgp.model @dg_collective_stable device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {

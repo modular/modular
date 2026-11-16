@@ -459,6 +459,14 @@ public:
 
   [[nodiscard]] MojoValue listLiteral(ArrayRef<MojoValue> values);
 
+  /// The Mojo tuple type over `elements`, e.g. `Tuple[A, B]`. A stub with more
+  /// than one result returns them as one tuple, which the call site
+  /// destructures.
+  [[nodiscard]] MojoValue tupleType(ArrayRef<MojoValue> elements);
+
+  /// The Mojo tuple literal over `elements`, e.g. `(a, b)`.
+  [[nodiscard]] MojoValue tupleLiteral(ArrayRef<MojoValue> elements);
+
   /// Unlike MojoValue::operator(), writes the call as a statement.
   void call(const MojoValue &funcName, ArrayRef<MojoValue> parameters = {},
             ArrayRef<MojoValue> operands = {});

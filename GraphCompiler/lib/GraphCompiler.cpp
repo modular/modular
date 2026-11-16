@@ -428,6 +428,8 @@ void M::MO::buildMgpPipeline(mlir::OpPassManager &pm,
     pm.addNestedPass<MGP::ModelOp>(mlir::createCanonicalizerPass());
     pm.addPass(MGP::createFinalizeDeviceGraphsPass());
     pm.addPass(mlir::createReconcileUnrealizedCastsPass());
+
+    pm.addPass(MGP::createOutlineDeviceGraphDependenciesPass());
   }
 
   pm.addPass(MOGG::createSequenceFusion());

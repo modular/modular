@@ -755,6 +755,46 @@ Source:
 Pass definition:
 <https://github.com/modularml/modular/blob/b71cbf8b216acc98960181ebedcd1a1a627b2288/GraphCompiler/include/GraphCompiler/GraphCompiler/Conversion/MOGGToMGP.td>
 
+### OutlineDeviceGraphDependencies
+
+#### Description
+
+Outlines the build bodies of the device-graph ops into module-level
+`mogg.func`s, replacing each body with a single `mogg.call`: the recording body
+of each `mgp.device_graph.dependencies` op that yields no values, and each build
+region of an `mgp.device_graph.collective.create`.
+
+#### Dialects
+
+Consumes and produces `mgp`/`mogg` within a `ModuleOp`.
+
+#### Performance
+
+Makes each unit of device-graph recording a real function. Identical recordings
+across layers share one Mojo function, so `MergeIdenticalFuncs` collapses them
+and the KGEN compiler emits the remaining per-function bodies in parallel.
+
+#### Additional notes
+
+Runs after device-graph synthesis, and specifically after
+`GenerateBuildGraphStubs`: that pass retargets every `mogg.call` inside a
+device-graph region, so a wrapper call present earlier would be mistaken for a
+kernel dispatch. A `mgp.device_graph.dependencies` body references enclosing SSA
+directly (the op is not `IsolatedFromAbove`), so each value the body uses from
+above becomes a trailing stub argument forwarded at the call site; the body's
+builder block argument leads the signature when the body records through it. A
+`collective.create` region takes its block arguments as parameters and returns
+what the region yields, so a multi-result region crosses as a tuple. A
+`mogg.buffer.constant` stays where the constant-resource table lives and crosses
+as an argument, and a dependencies body that yields values is left inline.
+Both containers survive with their node edges, dependency operands, signatures,
+and build-time closures.
+
+Source:
+`GraphCompiler/lib/MGPDialect/Transforms/OutlineDeviceGraphDependencies.cpp`.
+Pass definition:
+`GraphCompiler/include/GraphCompiler/MGPDialect/Transforms/MGPTransforms.td`.
+
 ### LiftBufferCacheSlots
 
 #### Description

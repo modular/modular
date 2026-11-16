@@ -381,18 +381,27 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
   };
 
   SmallVector<MOGG::NamedMojoDef> inputTypes;
-  for (BlockArgument arg : getBody().getArguments())
-    inputTypes.push_back(MOGG::NamedMojoDef("arg", typeToMojo(arg.getType())));
+  for (BlockArgument arg : getBody().getArguments()) {
+    MOGG::NamedMojoDef input("arg", typeToMojo(arg.getType()));
+    // A device-graph recording body records through its builder parameter, and
+    // `DeviceGraphBuilder`'s recording methods take `mut self`.
+    if (isa<MGP::DeviceGraphBuilderType>(arg.getType()))
+      input.argConvention = "mut";
+    inputTypes.push_back(std::move(input));
+  }
 
   // A shape function's shape, or a kernel-allocated opaque, hands back a value.
+  // A recording body may hand back several; they cross as one Mojo tuple, which
+  // `mogg.call` destructures at the call site.
   MOGG::OutputOp bodyOutput = getBodyTerminator();
-  ASSERT_STREAM(bodyOutput.getNumOperands() <= 1,
-                << "a MOGG-ABI stub returns at most one value, got "
-                << bodyOutput.getNumOperands());
-  const bool returnsByValue = bodyOutput.getNumOperands() == 1;
+  SmallVector<Value> returned(bodyOutput.getOperands());
   std::optional<MOGG::MojoValue> returnType;
-  if (returnsByValue)
-    returnType = typeToMojo(bodyOutput.getOperand(0).getType());
+  if (returned.size() == 1) {
+    returnType = typeToMojo(returned.front().getType());
+  } else if (returned.size() > 1) {
+    returnType = state.file->tupleType(llvm::map_to_vector(
+        returned, [&](Value value) { return typeToMojo(value.getType()); }));
+  }
 
   bool errOccurred = false;
   state.file->def(
@@ -407,14 +416,19 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
         errOccurred = llvm::any_of(getOps(), [&](mlir::Operation &op) {
           return state.lowerOpToMojo(&op).failed();
         });
-        if (!errOccurred && returnsByValue) {
-          MOGG::MojoValue value =
-              state.getMojoValueFor(bodyOutput.getOperand(0));
-          // An opaque struct need not be `ImplicitlyCopyable` (`SIMDPair` is
-          // only `RegisterPassable`), so transfer rather than copy it out.
-          if (isa<MO::OpaqueType>(bodyOutput.getOperand(0).getType()))
-            value = value.transfer();
-          state.file->returnsValue(value);
+        if (!errOccurred && !returned.empty()) {
+          SmallVector<MOGG::MojoValue> values;
+          for (Value value : returned) {
+            MOGG::MojoValue mojo = state.getMojoValueFor(value);
+            // An opaque struct need not be `ImplicitlyCopyable` (`SIMDPair` is
+            // only `RegisterPassable`), so transfer rather than copy it out.
+            if (isa<MO::OpaqueType>(value.getType()))
+              mojo = mojo.transfer();
+            values.push_back(mojo);
+          }
+          state.file->returnsValue(values.size() == 1
+                                       ? values.front()
+                                       : state.file->tupleLiteral(values));
         }
       });
 
@@ -3168,14 +3182,20 @@ getStubCallOperands(EmitMojoState &state, Operation::operand_range ops) {
 }
 
 LogicalResult CallOp::emitMojo(EmitMojoState &state) {
+  SmallVector<MojoValue> operands = state.getMojoValuesFor(getInputs());
   state.file->newline();
   MojoValue func(getName());
-  if (getNumResults()) {
-    state.setMojoValueFor(
-        getResult(0),
-        state.file->var(func(getStubCallOperands(state, getOperands()))));
+  if (getNumResults() > 1) {
+    // A stub with several results returns them as one tuple; bind one value
+    // per result so each consumer sees a single SSA value.
+    MojoValue tuple = state.file->var(func(operands));
+    for (auto [idx, result] : llvm::enumerate(getResults()))
+      state.setMojoValueFor(result,
+                            state.file->var(tuple[MojoValue(uint64_t(idx))]));
+  } else if (getNumResults() == 1) {
+    state.setMojoValueFor(getResult(0), state.file->var(func(operands)));
   } else {
-    state.file->call(func, {}, getStubCallOperands(state, getOperands()));
+    state.file->call(func, {}, operands);
   }
   state.file->newline();
 

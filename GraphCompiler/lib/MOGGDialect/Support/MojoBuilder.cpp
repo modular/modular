@@ -289,6 +289,24 @@ MojoValue MojoBuilder::listLiteral(ArrayRef<MojoValue> values) {
 
   return MojoValue(std::move(str));
 }
+MojoValue MojoBuilder::tupleType(ArrayRef<MojoValue> elements) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  os << "Tuple[";
+  llvm::interleaveComma(elements, os);
+  os << "]";
+
+  return MojoValue(std::move(str));
+}
+MojoValue MojoBuilder::tupleLiteral(ArrayRef<MojoValue> elements) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  os << "(";
+  llvm::interleaveComma(elements, os);
+  os << ")";
+
+  return MojoValue(std::move(str));
+}
 void MojoBuilder::call(const MojoValue &funcName,
                        ArrayRef<MojoValue> parameters,
                        ArrayRef<MojoValue> operands) {
