@@ -216,6 +216,7 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
     "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark": (
         "Inferact/Muse-Spark-Open-DSpark",
     ),
+    "moonshotai/Kimi-K3__dspark": ("Inferact/Kimi-K3-DSpark",),
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark_mixed": (
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark",
     ),
