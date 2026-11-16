@@ -110,9 +110,17 @@ public:
   TypedAttr getBody() const;
   StructType getStructType() const;
 
-  /// Returns the body as seen from the scope enclosing the generator, with
-  /// each generator input left unbound.
-  TypedAttr getBodyWithUnboundInputs() const;
+  /// Returns true if the struct parameter at `idx` is unresolved, i.e. its
+  /// value depends on an input of the generator.
+  bool isUnresolvedParam(size_t idx) const;
+
+  /// Returns true if the generator has no inputs left to bind.
+  bool isFullyBound() const;
+
+  /// Returns true if `other` is the struct type of the body, with each
+  /// unresolved parameter matching any value.
+  ///    Bar[?, 1] matches Bar[7, 1], Foo[1] does not match Foo[2]
+  bool isEqualAllowingUnbound(Type other) const;
 
   /// Binds `paramValues` to the generator inputs as a `BindParamsAttr` and
   /// returns the type it forms. The type folds to the struct type when every

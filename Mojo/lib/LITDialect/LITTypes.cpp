@@ -1073,8 +1073,6 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
 
 Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
 
-bool OriginType::supportsUnknownValue() const { return false; }
-
 //===----------------------------------------------------------------------===//
 // OriginSetType
 //===----------------------------------------------------------------------===//
@@ -1100,8 +1098,6 @@ LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value,
   }
   return failure();
 }
-
-bool OriginSetType::supportsUnknownValue() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // RefType

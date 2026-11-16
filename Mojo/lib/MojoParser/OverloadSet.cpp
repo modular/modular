@@ -88,9 +88,8 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
   // We need to do extra work to forward a generator's parameters.
   if (auto gen = LIT::StructTypeGenerator::dynCast(type)) {
     GeneratorType genType = gen.getType();
-    auto pogs = genType.getParamListAttrs().getPogs();
-    for (auto [type, pog] : llvm::zip_equal(gen.getInputParamTypes(), pogs))
-      paramBindings.add(expr, UnboundAttr::get(type), pog.getName());
+    for (PogMetadataAttr pog : genType.getParamListAttrs().getPogs())
+      paramBindings.addUnprovided(expr, pog.getName());
 
     return paramBindings;
   }
@@ -1836,23 +1835,6 @@ FailureOr<CalleeResult> OverloadSet::canConstructType(
 
   if (callee.isErroneous())
     return FailureOr<CalleeResult>(failure());
-  if (!result.isYes())
-    return result;
-
-  // If we found an unambiguous initializer to build this value, make sure that
-  // it returns the right thing we were expecting.  It is possible that
-  // conditional conformances constrain the result type more than we were
-  // expecting.
-  auto resultTy = FnOrFnLiteralTypeGeneratorType::get(result.getYes().getType())
-                      .getUserResultType();
-  auto &shared = paramEmitter.shared;
-  if (!requiredType.isEqualCanon(resultTy)) {
-    // It is ok if the self type has different parameters than the
-    // declaration, this is a form of conditional conformance.
-    // TODO(requires / cond conformance): replace this with a better mechanism.
-    if (!ASTType(requiredType).isEqualAllowingUnbound(resultTy, shared))
-      return FailureOr<CalleeResult>(failure());
-  }
 
   return result;
 }

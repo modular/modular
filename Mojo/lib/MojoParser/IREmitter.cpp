@@ -922,7 +922,8 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
     if (!requiredType.isEqualCanon(rvType)) {
-      if (requiredType.hasUnboundParameters()) {
+      if (auto requiredGen = StructTypeGenerator::dynCast(requiredType);
+          requiredGen && !requiredGen.isFullyBound()) {
         dest.representation =
             cast<LValueContextualType>(dest.representation).expr;
         cValue = emitConstructorCall(

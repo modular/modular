@@ -1700,6 +1700,7 @@ ParameterEvaluator LIT::populateStructBindingEvaluator(StructDeclOp structDecl,
                                                        ASTType structType,
                                                        SharedState &shared) {
   ParameterEvaluator evaluator = shared.getParameterEvaluator();
+  auto structGen = StructTypeGenerator::dynCast(structType);
   for (auto [idx, paramDecl, value] :
        llvm::enumerate(structDecl.getParams(), structType.getParamBindings()))
     // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
@@ -1710,7 +1711,7 @@ ParameterEvaluator LIT::populateStructBindingEvaluator(StructDeclOp structDecl,
     // only the first `a` is a forward parameter, not the second (turning
     // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
     // equal).
-    if (!structType.isUnresolvedParam(idx))
+    if (!structGen || !structGen.isUnresolvedParam(idx))
       evaluator.setDeclBinding(paramDecl, value);
   return evaluator;
 }

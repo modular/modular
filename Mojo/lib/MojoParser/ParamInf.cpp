@@ -583,7 +583,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   //
   // NOTE: in a non-partial binding context, `_` can be also used as a place
   // holder, in this case we don't infer it to `_`
-  if (isa_and_nonnull<UnboundAttr>(binding.ir.getIfPValue().get())) {
+  if (!binding.ir) {
     // `_` means different things when used in struct binding or call bindings,
     // for struct binding, it is a concrete unknown value; for call binding, it
     // means something to be inferred.
@@ -877,7 +877,7 @@ LogicalResult ParamInf::inferFromParamList() {
 
         // Passing `_` to a variadic is not allowed. Users should pass `*_` to
         // unbind a variadic parameter.
-        if (isa_and_nonnull<UnboundAttr>(operand.ir.getIfPValue().get())) {
+        if (!operand.ir) {
           auto &diag = getMojoDiag(operand.expr->getLoc());
           diag << "unbound syntax (i.e. `_`) cannot be passed as a variadic "
                   "parameter";

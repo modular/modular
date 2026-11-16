@@ -88,13 +88,20 @@ public:
   // Provide access to the parameter list this represents.
   const CallOperands &getParameters() const { return parameters; }
 
-  /// Add a bound value for a positional parameter binding.
+  /// Add a bound value for a positional parameter binding. A null `value`
+  /// leaves the parameter explicitly unbound, as `_` does in source.
   void add(const ExprNode *expr, AnyValue value) {
     add(expr, value, StringAttr());
   }
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, AnyValue value, StringAttr name);
+
+  /// Add a binding that leaves the parameter explicitly unbound, as `_` does
+  /// in source. Pass `name` to bind by keyword.
+  void addUnprovided(const ExprNode *expr, StringAttr name = StringAttr()) {
+    add(expr, AnyValue(), name);
+  }
 
   /// Append the bindings in `other` after ours and adopt its binding kind.
   void append(const ParamBindings &other);

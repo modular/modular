@@ -112,7 +112,6 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
 static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
                                     FnTypeGeneratorType expectedGen,
                                     const ExprNode *expr, ASTDecl &declScope) {
-  ParamBindings bindings(declScope, expr);
   SpecializeInf paramInf(declScope, expr, /*no params to infer*/ {},
                          PogListAttr::get(declScope.getContext(), {}),
                          expr->getLoc(), /*discardError=*/true);

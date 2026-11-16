@@ -298,9 +298,9 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     if (isa<LValueContextualType>(representation)) {
       auto ctxType = cast<LValueContextualType>(representation);
 
-      if (ctxType.type.hasUnboundParameters()) {
-        if (!ctxType.type.isEqualAllowingUnbound(existingValueType,
-                                                 emitter.shared))
+      if (auto ctxGen = StructTypeGenerator::dynCast(ctxType.type);
+          ctxGen && !ctxGen.isFullyBound()) {
+        if (!ctxGen.isEqualAllowingUnbound(existingValueType))
           // The context type is partially bound, and the existing type does not
           // simply match it. We need an extra implicit conversion.
           return ctxType.type;
@@ -370,9 +370,10 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
     // The concrete existing value type must match the partially bound type.
     if (isa<LValueContextualType>(representation)) {
       auto cxtType = cast<LValueContextualType>(representation);
-      if (cxtType.type.hasUnboundParameters()) {
+      if (auto cxtGen = StructTypeGenerator::dynCast(cxtType.type);
+          cxtGen && !cxtGen.isFullyBound()) {
         // can not directly use the dest as a lvalue, need a conversion.
-        if (!cxtType.type.isEqualAllowingUnbound(resultType, emitter.shared))
+        if (!cxtGen.isEqualAllowingUnbound(resultType))
           return {};
         // Else, partially bound contextual type, but the existing type is a
         // simple match, just take the type.

@@ -391,8 +391,7 @@ def LIT_MetaType : LITType<"Meta", "meta",
 //===----------------------------------------------------------------------===//
 
 def LIT_OriginType : LITType<"Origin", "origin",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface,
-                                 ["supportsUnknownValue"]>,
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>,
      DeclareTypeInterfaceMethods<SugaredTypeInterface>]> {
   let summary = "Origin type";
   let description = [{
@@ -446,8 +445,7 @@ def LIT_OriginType : LITType<"Origin", "origin",
 //===----------------------------------------------------------------------===//
 
 def LIT_OriginSetType : LITType<"OriginSet", "origin.set",
-    [DeclareTypeInterfaceMethods<ParameterTypeInterface,
-                                 ["supportsUnknownValue"]>]> {
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "a singleton type representing a origin set";
   let description = [{
     The `!lit.origin.set` type is a singleton type that represents a origin

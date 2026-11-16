@@ -466,11 +466,12 @@ static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
       // unbound parameters, walk the attribute and check for ParamDeclRefAttrs
       // to parameters that the type leaves unbound.
       TypedAttr aliasValue = decl.getValueAttr();
+      auto ctxGen = StructTypeGenerator::dynCast(ctxType);
       WalkResult findUnboundParams = aliasValue.walk([&](ParamDeclRefAttr attr)
                                                          -> WalkResult {
         if (auto it = paramDeclIndices.find(attr.getName());
-            it != paramDeclIndices.end() &&
-            ctxType.isUnresolvedParam(it->second)) {
+            it != paramDeclIndices.end() && ctxGen &&
+            ctxGen.isUnresolvedParam(it->second)) {
           emitter.shared.emitError(refLoc, "cannot access comptime member '")
               << declName << "' with unbound parameter '"
               << structDecl.getName() << "." << attr.getName().str() << "'";
@@ -794,8 +795,7 @@ static AnyValue emitArgumentArray(IREmitter &emitter, const ExprNode *expr,
   // unbound for the literal's `__literal_size__` to fill in.
   ParamBindings bindings(emitter.declScope, expr);
   bindings.add(expr, PValue(argumentType));
-  bindings.add(expr,
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
+  bindings.addUnprovided(expr);
   ASTType arrayType = specializeStruct(bindings, structDecl->getOp(), decl);
   if (!arrayType)
     return {};
@@ -1785,10 +1785,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 
 /// Emit an operand as an expression, handling the _ and other cases. This
 /// typically will return a PValue but can also return a UValue when the operand
-/// is (eg) an overload set or init list expression.
-static AnyValue emitSingleParamExpr(const Operand &operand,
-                                    IREmitter &srcEmitter,
-                                    ExprContext context) {
+/// is (eg) an overload set or init list expression. A `_` operand returns a
+/// null value, which ParamBindings treats as an unbound parameter.
+static FailureOr<AnyValue> emitSingleParamExpr(const Operand &operand,
+                                               IREmitter &srcEmitter,
+                                               ExprContext context) {
   // Evaluate foo() as a param call not dynamic call if in a dynamic context.
   auto emitter = srcEmitter.getParamEmitter(EC_TypeParamValue);
   if (operand.expr->kind == ExprNode::kDiscardLiteral) {
@@ -1796,10 +1797,9 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
       srcEmitter.shared.emitError(operand.expr->getLoc())
           << "'**_' not supported on parameter list, using '...' instead"
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
-    // Handle `_` syntax as an unbound parameter.
-    return UnboundAttr::get(UnresolvedType::get(emitter.getContext()));
+    return AnyValue();
   }
 
   // Handle unpacked variadics in the form of `*x`.
@@ -1810,7 +1810,7 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
       srcEmitter.shared.emitError(operand.expr->getLoc())
           << "'*_' not supported on parameter list, using '...' instead"
           << operand.expr->getRange();
-      return {};
+      return failure();
     }
 
     // Only variadic-typed parameters can be unpacked. Emit the subexpression.
@@ -1818,11 +1818,15 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
     // already had its element type disambiguated.
     PValue value = emitter.emitExprPValue(unpackExpr->subExpr, context);
     if (!value)
-      return {};
-    return UnpackedAttr::get(value, /*kwOnly=*/false, value.getType());
+      return failure();
+    return AnyValue(
+        UnpackedAttr::get(value, /*kwOnly=*/false, value.getType()));
   }
 
-  return emitter.emitExpr(operand.expr, context);
+  AnyValue value = emitter.emitExpr(operand.expr, context);
+  if (!value)
+    return failure();
+  return value;
 }
 
 static LogicalResult parseParameterBindings(
@@ -1835,8 +1839,9 @@ static LogicalResult parseParameterBindings(
 
   bool seenEllipsis = false;
   for (auto op : operands) {
-    auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
-    if (!value)
+    FailureOr<AnyValue> value =
+        emitSingleParamExpr(op, emitter, EC_TypeParamValue);
+    if (failed(value))
       return failure();
 
     if (!op.name && seenEllipsis) {
@@ -1846,11 +1851,11 @@ static LogicalResult parseParameterBindings(
              << "parameter after `...` must be passed by keyword"
              << op.expr->getRange();
     }
-    if (isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get())) {
+    if (isa_and_nonnull<EllipsisAttr>(value->getIfPValue().get())) {
       paramBindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
       seenEllipsis = true;
     } else {
-      paramBindings.add(op.expr, value, op.name);
+      paramBindings.add(op.expr, *value, op.name);
     }
   }
 

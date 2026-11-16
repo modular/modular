@@ -765,7 +765,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
     if (auto structGen = StructTypeGenerator::dynCast(genAttr)) {
-      printParam(os, structGen.getBodyWithUnboundInputs(), ctx);
+      ASTTypePrinterContext bodyCtx = ctx;
+      bodyCtx.printGeneratorInputsAsUnbound = true;
+      ASTType(structGen.getStructType()).print(os, bodyCtx);
       return;
     }
     os << "comptime";
@@ -1421,6 +1423,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   // Try to resolve an indexRef to a ParamDeclRefAttr for better printing.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
+    if (ctx.printGeneratorInputsAsUnbound && indexRef.getDepth() == 0) {
+      os << '_';
+      return;
+    }
     if (auto declRef = findDeclRefForIndexRef(indexRef, diagShared))
       return printParam(os, declRef, ctx);
 

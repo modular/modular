@@ -1192,9 +1192,8 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   bindings.add(
       arg.typeExpr, PValue(elementType),
       StringAttr::get(emitter.getContext(), isValueList ? "type" : "Trait"));
-  bindings.add(arg.typeExpr, // 'values' is left unbound.
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "values"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "values"));
 
   ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
   if (!result)
@@ -1964,9 +1963,8 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
-  bindings.add(arg.typeExpr,
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "origin"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType),
                StringAttr::get(emitter.getContext(), "element_trait"));
 
@@ -2034,9 +2032,8 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
                SIMDAttr::getScalarBool(emitter.getContext(), isMutable),
                StringAttr::get(emitter.getContext(), "elt_is_mutable"));
 
-  bindings.add(arg.typeExpr, // Origin is left unbound.
-               UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
-               StringAttr::get(emitter.getContext(), "origin"));
+  bindings.addUnprovided(arg.typeExpr,
+                         StringAttr::get(emitter.getContext(), "origin"));
   bindings.add(arg.typeExpr, PValue(elementType));
 
   bool isVar = arg.convention == ParsedArgument::kConventionVar;

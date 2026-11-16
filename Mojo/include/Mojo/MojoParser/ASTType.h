@@ -90,22 +90,9 @@ public:
   /// refer to an input of the generator.
   ArrayRef<TypedAttr> getParamBindings() const;
 
-  /// Returns true if the parameter binding at `idx` is unresolved, i.e., the
-  /// param value depends on sibling parameters that are unbound.
-  bool isUnresolvedParam(size_t idx) const;
-
-  /// Return true if this type has any unbound parameters.
-  bool hasUnboundParameters() const;
-
   /// Return true if this ASTType is canonically equal (equal ignoring sugar) to
   /// the specified other type.
   bool isEqualCanon(ASTType other) const;
-
-  /// Return true if this is the same as another ASTType are the same, or if
-  /// they match when unbound parameters in the 'this' type are treated as
-  /// the same as the corresponding parameter in the second type.
-  ///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
-  bool isEqualAllowingUnbound(ASTType other, SharedState &shared) const;
 
   /// Return true if this is a None type.
   bool isNoneType() const;
@@ -381,6 +368,10 @@ struct ASTTypePrinterContext {
   /// When non-null, parameter expressions are deduplicated into this context
   /// while printing.
   DedupContext *dedup = nullptr;
+
+  /// Set to true when printing the body of a struct type generator, so that a
+  /// reference to an input of the generator prints as `_`.
+  bool printGeneratorInputsAsUnbound = false;
 
   ASTTypePrinterContext() {}
   ASTTypePrinterContext(SharedState *shared) : shared(shared) {}

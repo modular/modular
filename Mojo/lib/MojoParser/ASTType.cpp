@@ -576,30 +576,14 @@ ArrayRef<TypedAttr> ASTType::getParamBindings() const {
   if (auto mmType = dyn_cast_or_null<StructMetaMetaType>(metatype))
     return mmType.getParamValues();
 
-  // FIXME: this is wrong, remove the following branch
+  // FIXME: this is wrong, remove the following branch: We should not peek into
+  // the generator, pulling out bindings from a parameter scope need special
+  // handling.
   if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this));
       genAttr && LIT::isTypeExpr(genAttr.getBody()))
     return ASTType(genAttr.getBody()).getParamBindings();
 
   return {};
-}
-
-bool ASTType::isUnresolvedParam(size_t idx) const {
-  TypedAttr param = getParamBindings()[idx];
-  if (!LIT::StructTypeGenerator::dynCast(*this))
-    return isa<UnboundAttr>(param);
-
-  ParamIndexRefAttrFinder paramFinder;
-  return paramFinder.hasReferences(param);
-}
-
-bool ASTType::hasUnboundParameters() const {
-  // Generator type should be the only case after fully migrated.
-  if (auto genAttr = sugarDynCastIfPresent<GeneratorAttr>(PValue(*this)))
-    return !genAttr.getInputParamTypes().empty();
-
-  return any_of(getParamBindings(),
-                [](TypedAttr param) { return isa<UnboundAttr>(param); });
 }
 
 bool ASTType::isEqualCanon(ASTType other) const {
@@ -613,38 +597,6 @@ bool ASTType::isEqualCanon(ASTType other) const {
       return true;
 
   return getCanonicalType(*this) == getCanonicalType(other);
-}
-
-/// Return true if this is the same as another ASTType are the same, or if they
-/// match when unbound parameters in the 'this' type are treated as
-/// the same as the corresponding parameter in the second type.
-///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
-bool ASTType::isEqualAllowingUnbound(ASTType other, SharedState &shared) const {
-  if (isEqualCanon(other))
-    return true;
-
-  // Must have the same struct declarations.
-  if (getDecl(shared) != other.getDecl(shared))
-    return false;
-
-  ArrayRef<TypedAttr> lhsParams = getParamBindings();
-  ArrayRef<TypedAttr> rhsParams = other.getParamBindings();
-  assert(lhsParams.size() == rhsParams.size() &&
-         "Type with the same decl should have consistent number of params");
-  for (auto [idx, lhsParam, rhsParam] : llvm::enumerate(lhsParams, rhsParams)) {
-    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
-    // "forwarded" parameters. e.g.,
-    // ```mojo
-    //   comptime A[a : Int] = Param[a, a]
-    // ```
-    // only the first `a` is a forward parameter, not the second (turning
-    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
-    // equal).
-    if (!isUnresolvedParam(idx) &&
-        getCanonicalAttr(lhsParam) != getCanonicalAttr(rhsParam))
-      return false;
-  }
-  return true;
 }
 
 /// Return true if this is a None type.

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -1089,12 +1090,36 @@ LIT::StructType StructTypeGenerator::getStructType() const {
   return sugarCast<LIT::StructType>(ParamType::get(getBody()));
 }
 
-TypedAttr StructTypeGenerator::getBodyWithUnboundInputs() const {
-  ParameterEvaluator evaluator;
-  for (Type type : getInputParamTypes())
-    evaluator.appendIndexBinding(
-        UnboundAttr::get(evaluator.getReboundType(type)));
-  return evaluator.getReboundAttribute(getBody());
+bool StructTypeGenerator::isUnresolvedParam(size_t idx) const {
+  ParamIndexRefAttrFinder finder;
+  return finder.hasReferences(getStructType().getParamValues()[idx]);
+}
+
+bool StructTypeGenerator::isFullyBound() const {
+  return getInputParamTypes().empty();
+}
+
+bool StructTypeGenerator::isEqualAllowingUnbound(Type other) const {
+  LIT::StructType structType = getStructType();
+  auto otherStruct = sugarDynCast<LIT::StructType>(other);
+  if (!otherStruct || otherStruct.getSymbol() != structType.getSymbol())
+    return false;
+
+  for (auto [idx, param, otherParam] : llvm::enumerate(
+           structType.getParamValues(), otherStruct.getParamValues())) {
+    // FIXME: the use of `isUnresolvedParam` is wrong: We only should skip
+    // "forwarded" parameters. e.g.,
+    // ```mojo
+    //   comptime A[a : Int] = Param[a, a]
+    // ```
+    // only the first `a` is a forward parameter, not the second (turning
+    // `Param[a, a]` into `Param[?, ?]` lost the the fact that two values are
+    // equal).
+    if (!isUnresolvedParam(idx) &&
+        getCanonicalAttr(param) != getCanonicalAttr(otherParam))
+      return false;
+  }
+  return true;
 }
 
 Type StructTypeGenerator::bindAll(ArrayRef<TypedAttr> paramValues,
