@@ -59,8 +59,8 @@ LogicalResult DeviceGraphStableCreateOp::inferReturnTypes(
   auto tensorType = cast<DeviceTensorType>(adaptor.getTensor().getType());
 
   auto resultType = DeviceTensorType::get(
-      tensorType.getDevice(), tensorType.getTensorSpec(), tensorType.getMut(),
-      /*stable=*/true);
+      context, tensorType.getDevice(), tensorType.getTensorSpec(),
+      tensorType.getMut(), /*stable=*/true, tensorType.getShapeOnly());
 
   inferredReturnTypes.push_back(resultType);
   return success();
@@ -72,6 +72,30 @@ bool DeviceGraphStableCreateOp::mayAlias(size_t operandIndex,
 }
 
 bool DeviceGraphStableGetOp::isThrows() { return true; }
+
+//===----------------------------------------------------------------------===//
+// DeviceGraphAddInputOp
+//===----------------------------------------------------------------------===//
+
+// `add_input` raises (it allocates the stable location).
+bool DeviceGraphAddInputOp::isThrows() { return true; }
+
+LogicalResult DeviceGraphAddInputOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> /*location*/, Adaptor adaptor,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  Type inputType = adaptor.getInput().getType();
+  auto tensorType = dyn_cast<DeviceTensorType>(inputType);
+  if (!tensorType || !adaptor.getShapeOnly()) {
+    inferredReturnTypes.push_back(inputType);
+    return success();
+  }
+  // A shape-only input records in place, and the value it records against is
+  // marked so a function boundary carries the distinction.
+  inferredReturnTypes.push_back(DeviceTensorType::get(
+      context, tensorType.getDevice(), tensorType.getTensorSpec(),
+      tensorType.getMut(), tensorType.getStable(), /*shapeOnly=*/true));
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // DeviceGraphStablePlaceOp
@@ -89,20 +113,9 @@ LogicalResult DeviceGraphStableTensorOp::inferReturnTypes(
   DeviceTensorType tensorType =
       cast<StableAddressType>(adaptor.getAddr().getType()).getElementType();
   inferredReturnTypes.push_back(DeviceTensorType::get(
-      tensorType.getDevice(), tensorType.getTensorSpec(), tensorType.getMut(),
-      /*stable=*/true));
+      context, tensorType.getDevice(), tensorType.getTensorSpec(),
+      tensorType.getMut(), /*stable=*/true, tensorType.getShapeOnly()));
   return success();
-}
-
-llvm::SmallBitVector DeviceGraphCollectiveCreateOp::shapeOnlyInputs() {
-  llvm::SmallBitVector result(getInputs().size());
-
-  if (std::optional<ArrayRef<int64_t>> attr = getShapeOnlyInputs()) {
-    for (int64_t idx : attr.value())
-      result.set(idx);
-  }
-
-  return result;
 }
 
 bool DeviceGraphCollectiveCreateOp::isThrows() { return true; }

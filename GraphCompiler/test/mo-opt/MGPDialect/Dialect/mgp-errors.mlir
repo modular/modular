@@ -294,3 +294,18 @@ func.func @tensor_create_spurious_mut_attr(%ch: !mef.chain, %buf: !mgp.buffer<<"
   %0 = mgp.tensor.create %ch, %buf, %spec mut : !mgp.tensor<3x5xf32, <"gpu", 0>>
   mef.output %0 : !mgp.tensor<3x5xf32, <"gpu", 0>>
 }
+
+// -----
+
+//
+// mgp.device_graph.add_input
+//
+
+func.func @add_input_shape_only_buffer(%b: !mgp.device_graph.builder, %buf: !mgp.buffer<<"gpu", 0>>) -> !mgp.buffer<<"gpu", 0>> {
+  // expected-error@+1 {{`shapeOnly` requires a tensor input}}
+  %0 = mgp.device_graph.add_input %b, %buf shapeOnly : !mgp.buffer<<"gpu", 0>>
+  mef.output %0 : !mgp.buffer<<"gpu", 0>>
+}
+
+// -----
+

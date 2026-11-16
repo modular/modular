@@ -124,13 +124,15 @@ void M::MGP::printTensorSpec(AsmPrinter &p, TensorSpecType tensorSpec) {
 }
 
 ParseResult M::MGP::parseDeviceTensorTail(AsmParser &p, DeviceRefAttr &device,
-                                          bool &mut, bool &stable) {
+                                          bool &mut, bool &stable,
+                                          bool &shapeOnly) {
   device = DeviceRefAttr::getDefault(p.getContext());
   mut = false;
   stable = false;
+  shapeOnly = false;
 
-  // Optional tail: `mut`, `stable`, and/or a device reference, comma-separated,
-  // in any order, each at most once.
+  // Optional tail: `mut`, `stable`, `shapeOnly`, and/or a device reference,
+  // comma-separated, in any order, each at most once.
   if (failed(p.parseOptionalComma()))
     return success();
 
@@ -144,12 +146,18 @@ ParseResult M::MGP::parseDeviceTensorTail(AsmParser &p, DeviceRefAttr &device,
         return p.emitError(p.getCurrentLocation(),
                            "unexpected repeated `stable`");
       stable = true;
+    } else if (succeeded(p.parseOptionalKeyword("shapeOnly"))) {
+      if (shapeOnly)
+        return p.emitError(p.getCurrentLocation(),
+                           "unexpected repeated `shapeOnly`");
+      shapeOnly = true;
     } else {
       FailureOr<DeviceRefAttr> parsedDevice =
           mlir::FieldParser<DeviceRefAttr>::parse(p);
       if (failed(parsedDevice))
         return p.emitError(p.getCurrentLocation(),
-                           "expected `mut`, `stable`, or a device reference");
+                           "expected `mut`, `stable`, `shapeOnly`, or a device "
+                           "reference");
       if (device != DeviceRefAttr::getDefault(p.getContext()))
         return p.emitError(p.getCurrentLocation(),
                            "unexpected repeated device reference");
@@ -162,7 +170,7 @@ ParseResult M::MGP::parseDeviceTensorTail(AsmParser &p, DeviceRefAttr &device,
 }
 
 void M::MGP::printDeviceTensorTail(AsmPrinter &p, DeviceRefAttr device,
-                                   bool mut, bool stable) {
+                                   bool mut, bool stable, bool shapeOnly) {
   if (device != DeviceRefAttr::getDefault(device.getContext())) {
     p << ", ";
     p.printStrippedAttrOrType(device);
@@ -171,6 +179,8 @@ void M::MGP::printDeviceTensorTail(AsmPrinter &p, DeviceRefAttr device,
     p << ", mut";
   if (stable)
     p << ", stable";
+  if (shapeOnly)
+    p << ", shapeOnly";
 }
 
 //===----------------------------------------------------------------------===//

@@ -108,3 +108,33 @@ func.func @tensor_create_mut_stable(
   %0 = mgp.tensor.create %ch, %buf, %spec mut stable : !mgp.tensor<3x5xf32, <"gpu", 0>, mut, stable>
   mef.output %0 : !mgp.tensor<3x5xf32, <"gpu", 0>, mut, stable>
 }
+
+// The `shapeOnly` marker says a device graph records the value for its shape
+// alone. It prints after the device and the storage markers, and
+// `mgp.device_graph.add_input` is what sets it.
+// CHECK-LABEL: func.func @shape_only_type_round_trip
+// CHECK-SAME: %{{[a-zA-Z0-9_]+}}: !mgp.tensor<4x4xf32, shapeOnly>
+// CHECK-SAME: %{{[a-zA-Z0-9_]+}}: !mgp.tensor<?x3xf32, <"gpu", 0>, shapeOnly>
+// CHECK-SAME: %{{[a-zA-Z0-9_]+}}: !mgp.tensor<4x4xf32, stable, shapeOnly>
+func.func @shape_only_type_round_trip(
+    %host: !mgp.tensor<4x4xf32, shapeOnly>,
+    %gpu: !mgp.tensor<?x3xf32, <"gpu", 0>, shapeOnly>,
+    %host_stable: !mgp.tensor<4x4xf32, stable, shapeOnly>) {
+  mef.output
+}
+
+// The result type is inferred rather than printed, so a reader sees the
+// marker where it takes effect: on the value the op records against.
+// CHECK-LABEL: func.func @add_input_round_trip
+// CHECK: %[[STABLE:.*]] = mgp.device_graph.add_input %{{.*}}, %{{.*}} : !mgp.tensor<3x5xf32, <"gpu", 0>>
+// CHECK: %[[SHAPE:.*]] = mgp.device_graph.add_input %{{.*}}, %{{.*}} shapeOnly : !mgp.tensor<3x5xf32, <"gpu", 0>>
+// CHECK: mgp.tensor.extract.tensor_spec %[[STABLE]] : <3x5xf32, <"gpu", 0>>
+// CHECK: mgp.tensor.extract.tensor_spec %[[SHAPE]] : <3x5xf32, <"gpu", 0>, shapeOnly>
+func.func @add_input_round_trip(%b: !mgp.device_graph.builder,
+                                %t: !mgp.tensor<3x5xf32, <"gpu", 0>>) {
+  %0 = mgp.device_graph.add_input %b, %t : !mgp.tensor<3x5xf32, <"gpu", 0>>
+  %1 = mgp.device_graph.add_input %b, %t shapeOnly : !mgp.tensor<3x5xf32, <"gpu", 0>>
+  %2 = mgp.tensor.extract.tensor_spec %0 : <3x5xf32, <"gpu", 0>>
+  %3 = mgp.tensor.extract.tensor_spec %1 : <3x5xf32, <"gpu", 0>, shapeOnly>
+  mef.output
+}

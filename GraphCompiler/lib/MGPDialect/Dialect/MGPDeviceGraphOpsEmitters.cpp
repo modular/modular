@@ -97,6 +97,25 @@ LogicalResult DeviceGraphAllocOp::emitMojo(MOGG::EmitMojoState &state) {
 }
 
 //===----------------------------------------------------------------------===//
+// DeviceGraphAddInputOp
+//===----------------------------------------------------------------------===//
+
+// Emits `var stable_N = builder.add_input(input)`. A shape-only value is
+// rebound to that kind first, which is how `add_input` knows to record the
+// tensor in place instead of copying it into a stable location.
+LogicalResult DeviceGraphAddInputOp::emitMojo(MOGG::EmitMojoState &state) {
+  using namespace MOGG;
+  DeviceGraphBuilderRef builder(state.getMojoValueFor(getGraphBuilder()));
+  MojoValue input = state.getMojoValueFor(getInput());
+  if (getShapeOnly()) {
+    MojoValue kind = kStructDeviceGraphInputKind.get(kInputKindShapeOnly);
+    input = state.file->var(input.get(kFnWithKind)[{kind}](/*operands=*/{}));
+  }
+  state.setMojoValueFor(getResult(), state.file->var(builder.addInput(input)));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // DeviceGraphRecordingContextOp
 //===----------------------------------------------------------------------===//
 
@@ -297,8 +316,6 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
 
   MojoValue sharedContext = state.getMojoValueFor(op.getTheContext());
 
-  llvm::SmallBitVector shapeOnlyInputs = op.shapeOnlyInputs();
-
   bool errOccurred = false;
   MojoValue buildFor = state.file->lambda(
       "collective_build_for", /*parameters=*/{nParam},
@@ -326,25 +343,8 @@ emitCollectiveBuildForClosure(MOGG::EmitMojoState &state,
                                          block.getArguments().end());
 
           auto regionBody = [&] {
-            DeviceGraphBuilderRef builderValue(builderArgMojo);
-            for (auto [i, arg, operand] :
-                 llvm::enumerate(blockInputs, regionInputs)) {
-              if (!isDeviceGraphInput(operand)) {
-                state.setMojoValueFor(arg, state.getMojoValueFor(operand));
-                continue;
-              }
-              MojoValue input = state.getMojoValueFor(operand);
-              // The tensor was unpacked once with the kind its type implies;
-              // a region that reads only its shape rebinds it so `add_input`
-              // records it in place instead of copying it.
-              if (shapeOnlyInputs.test(inputOffset + i)) {
-                MojoValue kind =
-                    kStructDeviceGraphInputKind.get(kInputKindShapeOnly);
-                input = state.file->var(
-                    input.get(kFnWithKind)[{kind}](/*operands=*/{}));
-              }
-              MojoValue stable = state.file->var(builderValue.addInput(input));
-              state.setMojoValueFor(arg, stable);
+            for (auto [arg, operand] : llvm::zip(blockInputs, regionInputs)) {
+              state.setMojoValueFor(arg, state.getMojoValueFor(operand));
             }
 
             for (Operation &opInBody : block.getOperations())

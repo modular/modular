@@ -46,10 +46,12 @@ public:
 
   /// Returns the device-specific tensor type with the given tensor spec.
   /// `mut` marks the tensor as mutable (the lowered form of `!mo.buffer`);
-  /// `stable` marks the tensor as having a stable address across dispatches.
+  /// `stable` marks the tensor as having a stable address across dispatches;
+  /// `shapeOnly` marks a value a device graph records for its shape alone.
   DeviceTensorType tensorType(TensorSpecType tensorSpecType, bool mut = false,
-                              bool stable = false) {
-    return DeviceTensorType::get(device, tensorSpecType, mut, stable);
+                              bool stable = false, bool shapeOnly = false) {
+    return DeviceTensorType::get(device.getContext(), device, tensorSpecType,
+                                 mut, stable, shapeOnly);
   }
 };
 

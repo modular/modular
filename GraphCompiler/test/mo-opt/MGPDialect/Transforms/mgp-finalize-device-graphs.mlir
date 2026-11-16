@@ -227,10 +227,14 @@ mgp.model @dg_mut_input device_graph devices [#M.device_ref<"gpu", 0>]
 // CHECK: execute (%[[CH:[a-zA-Z0-9_]+]]: !mef.chain, %[[CTX:[a-zA-Z0-9_]+]]: !mgp.context, %{{.+}}: !mgp.opaque<"weights_registry">, %[[GPU0:[a-zA-Z0-9_]+]]: !mgp.device_context<<"gpu", 0>>, %[[GPU1:[a-zA-Z0-9_]+]]: !mgp.device_context<<"gpu", 1>>, %[[IN0:[a-zA-Z0-9_]+]]: !mgp.tensor<2x3xf32, <"gpu", 0>>, %[[IN1:[a-zA-Z0-9_]+]]: !mgp.tensor<2x3xf32, <"gpu", 1>>)
 // CHECK: %[[GRAPHS:[a-zA-Z0-9_]+]]:2 = mogg.routine.async (%[[CTX]], %[[GPU0]], %[[GPU1]], %[[IN0]], %[[IN1]]) : (%{{.+}}: !mgp.context, %{{.+}}: !mgp.device_context<<"gpu", 0>>, %{{.+}}: !mgp.device_context<<"gpu", 1>>, %{{.+}}: !mgp.tensor<2x3xf32, <"gpu", 0>>, %{{.+}}: !mgp.tensor<2x3xf32, <"gpu", 1>>)  -> (!mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 0>>) -> !mgp.tensor<2x3xf32, <"gpu", 0>>>, !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 1>>) -> !mgp.tensor<2x3xf32, <"gpu", 1>>>)
 // CHECK: %[[CACHE:[a-zA-Z0-9_]+]] = mgp.device_graph.cache %{{.+}} : !mgp.device_graph.cache
+// Each graph input is recorded against a graph-owned stable location, so the
+// region takes the caller's tensor and yields what `add_input` handed back.
 // CHECK: %[[CGRAPHS:[a-zA-Z0-9_]+]]:2 = mgp.device_graph.collective.create %{{.+}} cache(%[[CACHE]] : !mgp.device_graph.cache) graph(%{{.+}} : !mgp.device_context<<"gpu", 0>>) builder(%b0) inputs(%[[RI0:[a-zA-Z0-9_]+]] : !mgp.tensor<2x3xf32, <"gpu", 0>>) {
-// CHECK:   mgp.device_graph.yield %[[RI0]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK:   %[[S0:[a-zA-Z0-9_]+]] = mgp.device_graph.add_input %b0, %[[RI0]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK:   mgp.device_graph.yield %[[S0]] : !mgp.tensor<2x3xf32, <"gpu", 0>>
 // CHECK: }, graph(%{{.+}} : !mgp.device_context<<"gpu", 1>>) builder(%b1) inputs(%[[RI1:[a-zA-Z0-9_]+]] : !mgp.tensor<2x3xf32, <"gpu", 1>>) {
-// CHECK:   mgp.device_graph.yield %[[RI1]] : !mgp.tensor<2x3xf32, <"gpu", 1>>
+// CHECK:   %[[S1:[a-zA-Z0-9_]+]] = mgp.device_graph.add_input %b1, %[[RI1]] : !mgp.tensor<2x3xf32, <"gpu", 1>>
+// CHECK:   mgp.device_graph.yield %[[S1]] : !mgp.tensor<2x3xf32, <"gpu", 1>>
 // CHECK: } : !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 0>>) -> !mgp.tensor<2x3xf32, <"gpu", 0>>>, !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 1>>) -> !mgp.tensor<2x3xf32, <"gpu", 1>>>
 // CHECK: %{{[a-zA-Z0-9_]+}}, %[[OUTS:[a-zA-Z0-9_]+]]:2 = mgp.device_graph.collective.execute %[[GRAPHS]]#0, %[[GRAPHS]]#1 inputs(%[[IN0]], %[[IN1]] : !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 1>>) : !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 0>>) -> !mgp.tensor<2x3xf32, <"gpu", 0>>>, !mgp.device_graph<(!mgp.tensor<2x3xf32, <"gpu", 1>>) -> !mgp.tensor<2x3xf32, <"gpu", 1>>> -> !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 1>>
 // CHECK: mef.output %[[CH]], %[[OUTS]]#0, %[[OUTS]]#1 : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 1>>
@@ -343,11 +347,14 @@ mgp.model @dg_stable_slots device_graph devices [#M.device_ref<"gpu", 0>, #M.dev
 // A tensor a region reads only for its shape is recorded on the create op by
 // its flat input position. gpu:1's region takes gpu:0's tensor, but every use
 // is a spec extraction, so that input (region 0 contributes one input before
-// it) is shape-only; gpu:1's own tensor, whose buffer is read, is not.
+// it) is recorded in place and its stable value is marked `shapeOnly`;
+// gpu:1's own tensor, whose buffer is read, is copied as usual.
 //
 // CHECK-LABEL: mgp.model @dg_shape_only_input
 // CHECK: mgp.device_graph.collective.create
-// CHECK: shapeOnlyInputs = array<i64: 1>
+// CHECK: %[[SHAPE:[a-zA-Z0-9_]+]] = mgp.device_graph.add_input %b1, %{{.+}} shapeOnly : !mgp.tensor<2x3xf32, <"gpu", 0>>
+// CHECK-NEXT: %[[COPY:[a-zA-Z0-9_]+]] = mgp.device_graph.add_input %b1, %{{.+}} : !mgp.tensor<2x3xf32, <"gpu", 1>>
+// CHECK-NEXT: %{{[a-zA-Z0-9_]+}} = mgp.tensor.extract.tensor_spec %[[SHAPE]] : <2x3xf32, <"gpu", 0>, shapeOnly>
 
 mgp.model @dg_shape_only_input device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {

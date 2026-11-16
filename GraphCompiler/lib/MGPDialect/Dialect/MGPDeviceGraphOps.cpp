@@ -240,6 +240,5 @@ void DeviceGraphCollectiveCreateOp::build(
   }
 
   build(builder, result, graphTypes, theContext, deviceContexts, cache, inputs,
-        /*stableTypes=*/StableAddressArrayAttr(),
-        /*shapeOnlyInputs=*/mlir::DenseI64ArrayAttr(), /*graphsCount=*/0);
+        /*stableTypes=*/StableAddressArrayAttr(), /*graphsCount=*/0);
 }

@@ -269,12 +269,6 @@ void outlineDependenciesBody(OpBuilder &builder, SymbolTable &symtab,
 /// interface and nothing is captured from an enclosing scope.
 void outlineCollectiveRegion(OpBuilder &builder, SymbolTable &symtab,
                              DeviceGraphCollectiveCreateOp op, Region &region) {
-  // An input the region reads only for its shape is recorded with
-  // `OwnedTensor[..., kind = shape_only]`, a kind the emitter applies at the
-  // call site. A MOGG-ABI stub cannot declare that kind yet, so a region with
-  // such an input stays inline.
-  if (op.shapeOnlyInputs().any())
-    return;
   FailureOr<SetVector<Operation *>> stay = holdBackUnmovableOps(region);
   if (failed(stay))
     return;

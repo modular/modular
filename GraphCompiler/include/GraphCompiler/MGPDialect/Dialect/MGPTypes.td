@@ -519,6 +519,12 @@ def MGP_DeviceTensorType : MGP_DeviceType<"DeviceTensor", "tensor", [
     mechanisms such as `!mgp.stable_addr` slots. A tensor may be both `mut` and
     `stable`.
 
+    The `shapeOnly` marker says nothing reads the tensor's storage, only its
+    shape: a device graph that takes such a value as an input records it in
+    place instead of copying it into a stable location. Only
+    `mgp.device_graph.add_input` produces one, so it marks the value a region
+    records against, not the tensor in the rest of the graph.
+
     `!mgp.tensor`s are represented by (subclasses of)
     `MLRT::AsyncValueRef<Tensor>` in the host C++ runtime, and the underlying
     buffer may also be passed as a raw `void*`. Some devices, such as CUDA, may
@@ -538,6 +544,8 @@ def MGP_DeviceTensorType : MGP_DeviceType<"DeviceTensor", "tensor", [
     !mgp.tensor<4x16xf32, <"gpu", 0>, stable>
     // A mutable, stable tensor on GPU 0.
     !mgp.tensor<4x16xf32, <"gpu", 0>, mut, stable>
+    // A tensor a device graph records for its shape alone.
+    !mgp.tensor<4x16xf32, <"gpu", 0>, shapeOnly>
     ```
   }];
 
@@ -545,14 +553,15 @@ def MGP_DeviceTensorType : MGP_DeviceType<"DeviceTensor", "tensor", [
     MGP_OptDeviceRefParam:$device,
     "M::MGP::TensorSpecType":$tensorSpec,
     DefaultValuedParameter<"bool", "false">:$mut,
-    DefaultValuedParameter<"bool", "false">:$stable
+    DefaultValuedParameter<"bool", "false">:$stable,
+    DefaultValuedParameter<"bool", "false">:$shapeOnly
   );
 
-  // The device, mut, and stable tail share one custom directive: the optional
-  // groups would otherwise start with `,`, which the generated parser cannot
-  // disambiguate.
+  // The device, mut, stable, and shapeOnly tail shares one custom directive:
+  // the optional groups would otherwise start with `,`, which the generated
+  // parser cannot disambiguate.
   let assemblyFormat = [{
-    `<` custom<TensorSpec>($tensorSpec) `` custom<DeviceTensorTail>($device, $mut, $stable) `>`
+    `<` custom<TensorSpec>($tensorSpec) `` custom<DeviceTensorTail>($device, $mut, $stable, $shapeOnly) `>`
   }];
 
   let builders = [

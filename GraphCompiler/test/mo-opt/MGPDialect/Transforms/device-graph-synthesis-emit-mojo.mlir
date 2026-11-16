@@ -28,16 +28,13 @@
 // CHECK-NEXT: def [[BUILD:collective_build_for[_0-9]+]]{{.*}}(mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
 // CHECK-NEXT: comptime if {{[a-z_0-9]+}} == 0:
 
-// Each device input is recorded against a graph-owned stable location rather
-// than the caller's buffer, so a replay does not depend on the caller's address
-// surviving. `mgp.device_graph.execute` copies the live input in before replay.
-// CHECK: var [[STABLE:var[_0-9]+]] = builder.add_input({{var[_0-9]+}})
-
 // A buffer constant stays in the closure: it reads the constant-resource table
 // of the compiled region it lives in, which a MOGG-ABI body does not carry. It
-// crosses into the outlined body as an argument.
+// crosses into the outlined body as an argument. The builder leads the
+// parameter list because `mgp.device_graph.add_input` is the body's first
+// operation, so the builder is the first value the body uses.
 // CHECK: builtin_primitives.primitives.mgp_buffer_constant(
-// CHECK: var [[CALL:var[_0-9]+]] = [[BODY:__device_graph_collective_create[_0-9]*]]({{.*}}, builder)
+// CHECK: var [[CALL:var[_0-9]+]] = [[BODY:__device_graph_collective_create[_0-9]*]](builder, {{.*}})
 
 // The single graph output is registered on the builder: the yielded output
 // tensor is packed into a fresh `AsyncValue` via `async_pack` and handed to
@@ -63,6 +60,11 @@
 // hoisted constant, the input, and the builder — and returns the graph output.
 // Parameters follow first use, not the region's argument order.
 // CHECK: def [[BODY]]({{.*}}mut [[B:[a-z_0-9]+]]: {{.*}}DeviceGraphBuilder{{.*}}) raises -> {{.*}}:
+
+// Each device input is recorded against a graph-owned stable location rather
+// than the caller's buffer, so a replay does not depend on the caller's address
+// surviving. `mgp.device_graph.execute` copies the live input in before replay.
+// CHECK: var [[STABLE:var[_0-9]+]] = {{.*}}.add_input({{.*}})
 
 // The recording allocates the output buffer inside a `region` work closure. The
 // allocated buffer is a body result of the `mgp.device_graph.dependencies` op;
@@ -121,12 +123,12 @@ mo.graph @dg_execute_only(%x: !mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 
 // A `!mo.buffer` graph input written in place (the KV-cache shape). The buffer
 // lowers to a mut-marked `!mgp.tensor`, so its unpack carries the `mutable` kind and
 // the Mojo-side `OwnedTensor[.., kind=.mutable].allocate_stable` registers an
-// in-place marker instead of allocating a stable twin. The emitter loop is
-// unchanged: every device input still routes through `builder.add_input` and
-// is passed to `DeviceGraph.create` as a cache-key input (the mutable one
-// contributes its address to the key via `write_graph_key`).
+// in-place marker instead of allocating a stable twin. The graph records it
+// through `mgp.device_graph.add_input` like any other, and it is passed to
+// `DeviceGraph.create` as a cache-key input (the mutable one contributes its
+// address to the key via `write_graph_key`).
 // CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.float32, kind = max.gpu.host.DeviceGraphInputKind.mutable]
-// CHECK-DAG: builder.add_input({{var[_0-9]+}})
+// CHECK-DAG: {{.*}}.add_input({{.*}})
 // CHECK-DAG: DeviceGraph.create_collective(
 
 mo.graph @dg_mut_input(%buf: !mo.buffer<[2, 3], f32, gpu:0>, %x: !mo.tensor<[2, 3], f32, gpu:0>) -> !mo.chain isDeviceGraph {
@@ -143,11 +145,11 @@ mo.graph @dg_mut_input(%buf: !mo.buffer<[2, 3], f32, gpu:0>, %x: !mo.tensor<[2, 
 // cpu). Its unpack carries the `host` kind, so the Mojo-side
 // `OwnedTensor[.., kind=.host].allocate_stable` gets a host-pool stable twin
 // pre-filled with the caller's bytes, and `write_graph_key` bakes the contents
-// into the graph cache key. The emitter loop is unchanged: the host input
-// still routes through `builder.add_input` and is passed to
-// `DeviceGraph.create` as a cache-key input.
+// into the graph cache key. The graph records it through
+// `mgp.device_graph.add_input` and passes it to `DeviceGraph.create` as a
+// cache-key input.
 // CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.int64, kind = max.gpu.host.DeviceGraphInputKind.host]
-// CHECK-DAG: builder.add_input({{var[_0-9]+}})
+// CHECK-DAG: {{.*}}.add_input({{.*}})
 // CHECK-DAG: DeviceGraph.create_collective(
 
 mo.graph @dg_host_input(%h: !mo.tensor<[4], si64>) -> !mo.tensor<[4], si64, gpu:0> isDeviceGraph {

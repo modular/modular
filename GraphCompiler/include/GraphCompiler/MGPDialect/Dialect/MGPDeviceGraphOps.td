@@ -150,6 +150,50 @@ def DeviceGraphAllocOp : MGP_DeviceGraphOp<"alloc", [
 }
 
 //===----------------------------------------------------------------------===//
+// DeviceGraphAddInputOp
+//===----------------------------------------------------------------------===//
+
+def DeviceGraphAddInputOp : MGP_DeviceGraphOp<"add_input", [
+  DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+  InferTypeOpAdaptor,
+]> {
+  let summary = "Gives a graph input a stable location to record against.";
+  let description = [{
+    Records one of the device graph's inputs, in graph-signature order, and
+    returns the graph-owned value the body records against: a recorded graph
+    bakes in the addresses it was built with, so replay cannot read the
+    caller's storage.
+
+    `shapeOnly` marks an input whose storage the graph never reads, only its
+    shape -- a peer device's tensor whose dimensions size this device's work,
+    for example. Such an input is recorded in place instead of copied, and the
+    result carries the marker on its type.
+
+    Example:
+    ```mlir
+      %stable = mgp.device_graph.add_input %builder, %in
+          : !mgp.tensor<4x16xf32, <"gpu", 0>>
+      %shape = mgp.device_graph.add_input %builder, %peer shapeOnly
+          : !mgp.tensor<?xf32, <"gpu", 1>>
+    ```
+  }];
+
+  let arguments = (ins
+    MGP_DeviceGraphBuilderType:$graphBuilder,
+    AnyTypeOf<[MGP_DeviceTensorType, MGP_DeviceBufferType]>:$input,
+    UnitAttr:$shapeOnly
+  );
+  let results = (outs
+    AnyTypeOf<[MGP_DeviceTensorType, MGP_DeviceBufferType]>:$result);
+
+  let assemblyFormat = [{
+    $graphBuilder `,` $input (`shapeOnly` $shapeOnly^)? attr-dict
+    `:` type($input)
+  }];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // DeviceGraphRecordingContextOp
 //===----------------------------------------------------------------------===//
 
@@ -868,11 +912,7 @@ def DeviceGraphCollectiveCreateOp : MGP_DeviceGraphOp<"collective.create", [
     // The stable address slots the regions index into, copied from the
     // `mgp.device_graph.collective` this op was finalized from. Emission
     // allocates one slot per entry on the device its type names.
-    OptionalAttr<MGP_StableAddressArrayAttr>:$stableTypes,
-    // Positions in `$inputs` of tensors a region reads only for their shape,
-    // such as a peer device's tensor whose dimensions size this device's
-    // work.
-    OptionalAttr<DenseI64ArrayAttr>:$shapeOnlyInputs
+    OptionalAttr<MGP_StableAddressArrayAttr>:$stableTypes
   );
 
   let results = (outs Variadic<MGP_DeviceGraphType>:$outGraphs);
@@ -890,11 +930,6 @@ def DeviceGraphCollectiveCreateOp : MGP_DeviceGraphOp<"collective.create", [
       "llvm::ArrayRef<unsigned>":$inputCounts,
       CArg<"llvm::function_ref<void(::mlir::OpBuilder &, ::mlir::Location, unsigned, ::mlir::Value, ::mlir::Value, ::mlir::ValueRange)>", "nullptr">:$bodyBuilder)>
   ];
-
-  let extraClassDeclaration = [{
-    // Queryable accessor for the shape only operands to the device graph.
-    llvm::SmallBitVector shapeOnlyInputs();
-  }];
 }
 
 //===----------------------------------------------------------------------===//

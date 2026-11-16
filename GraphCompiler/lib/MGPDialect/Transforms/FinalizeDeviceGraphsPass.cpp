@@ -249,16 +249,10 @@ LogicalResult finalizeCollectiveOp(DeviceGraphCollectiveOp collectiveOp,
 
   SmallVector<Value> allInputs;
   SmallVector<unsigned> inputCounts;
-  SmallVector<int64_t> shapeOnlyInputs;
   inputCounts.reserve(regionInterfaces.size());
   for (RegionInterface &info : regionInterfaces) {
     inputCounts.push_back(info.inputs.size());
-    for (Value input : info.inputs) {
-      if (isa<DeviceTensorType, DeviceBufferType>(input.getType()) &&
-          isShapeOnlyInRegion(input, *info.region))
-        shapeOnlyInputs.push_back(allInputs.size());
-      allInputs.push_back(input);
-    }
+    llvm::append_range(allInputs, info.inputs);
   }
 
   auto graphTypes =
@@ -299,7 +293,26 @@ LogicalResult finalizeCollectiveOp(DeviceGraphCollectiveOp collectiveOp,
 
               IRMapping mapper;
               mapper.map(oldRegion.getArgument(0), graphBuilder);
-              mapper.map(info.inputs, inputArgs);
+
+              // Give every graph input a graph-owned stable location, in
+              // signature order, and let the body record against that. The
+              // input itself stays the region's block argument, so what the
+              // graph records is visible in the IR rather than implied by
+              // emission.
+              for (auto &&[input, inputArg] :
+                   llvm::zip(info.inputs, inputArgs)) {
+                if (!isa<DeviceTensorType, DeviceBufferType>(input.getType())) {
+                  mapper.map(input, inputArg);
+                  continue;
+                }
+                bool shapeOnly = isa<DeviceTensorType>(input.getType()) &&
+                                 isShapeOnlyInRegion(input, *info.region);
+                auto addInput = DeviceGraphAddInputOp::create(
+                    innerBuilder, innerLoc, graphBuilder, inputArg,
+                    shapeOnly ? UnitAttr::get(innerBuilder.getContext())
+                              : UnitAttr());
+                mapper.map(input, addInput.getResult());
+              }
 
               for (Operation &op : oldBlock.without_terminator())
                 innerBuilder.clone(op, mapper);
@@ -323,10 +336,6 @@ LogicalResult finalizeCollectiveOp(DeviceGraphCollectiveOp collectiveOp,
                 collectiveOp.getStableTypesAttr();
             !stableTypes.getValue().empty())
           createOp.setStableTypesAttr(stableTypes);
-
-        if (!shapeOnlyInputs.empty())
-          createOp.setShapeOnlyInputsAttr(
-              mlir::DenseI64ArrayAttr::get(ctx, shapeOnlyInputs));
 
         for (Region &createRegion : createOp.getGraphs())
           if (failed(resolveBuilderCasts(createRegion)))

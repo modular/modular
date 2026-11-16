@@ -284,18 +284,6 @@ LogicalResult DeviceGraphCollectiveOp::verify() {
 }
 
 LogicalResult DeviceGraphCollectiveCreateOp::verify() {
-  if (std::optional<ArrayRef<int64_t>> shapeOnly = getShapeOnlyInputs()) {
-    for (int64_t index : *shapeOnly) {
-      if (index < 0 || static_cast<size_t>(index) >= getInputs().size())
-        return emitOpError("`shapeOnlyInputs` names input #")
-               << index << ", but the op has " << getInputs().size()
-               << " inputs";
-      if (!graphInputDevice(getInputs()[index]))
-        return emitOpError("`shapeOnlyInputs` names input #")
-               << index << ", which is not a tensor or buffer";
-    }
-  }
-
   if (getGraphs().size() != getDeviceContexts().size())
     return emitOpError("`deviceContexts` has ")
            << getDeviceContexts().size() << " operands, but the op has "
@@ -439,4 +427,12 @@ LogicalResult DeviceGraphCollectiveExecuteOp::verify() {
   }
 
   return verifyInputResidency(*this, getInputs());
+}
+
+LogicalResult DeviceGraphAddInputOp::verify() {
+  // Inference marks a shape-only result only for a tensor input, and a buffer
+  // has nowhere to carry the marker, so the op cannot mean what it asks.
+  if (getShapeOnly() && !isa<DeviceTensorType>(getInput().getType()))
+    return emitOpError("`shapeOnly` requires a tensor input");
+  return success();
 }

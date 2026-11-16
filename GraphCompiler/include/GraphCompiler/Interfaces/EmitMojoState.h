@@ -237,7 +237,12 @@ public:
           int64_t(tensorSpec.getRank() == 0 ? 1 : tensorSpec.getRank());
       SmallVector<MojoValue> params = {
           mlirDTypeToMojoType(tensorSpec.getOptDType().value()), bufferRank};
-      if (deviceTensorType.getMut())
+      // A shape-only value supersedes mutability/stability since the storage is
+      // never accessed.
+      if (deviceTensorType.getShapeOnly())
+        params.push_back(kParameterKind.equal(
+            kStructDeviceGraphInputKind.get(kInputKindShapeOnly)));
+      else if (deviceTensorType.getMut())
         params.push_back(kParameterKind.equal(
             kStructDeviceGraphInputKind.get(kInputKindMutable)));
       else if (M::isHostPlaced(deviceTensorType.getDevice()))

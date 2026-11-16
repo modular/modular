@@ -79,14 +79,15 @@ mgp.model @dg_collective device_graph devices [#M.device_ref<"gpu", 0>, #M.devic
 
 // CHECK: def [[BUILD:collective_build_for[_0-9]*]][n{{[_0-9]*}} : Int](mut builder: {{.*}}DeviceGraphBuilder) raises {imm}:
 // CHECK: comptime if n{{[_0-9]*}} == 0:
-// The producing region is one builder op, so it stays inline: it publishes its
-// tensor to the shared slot.
-// CHECK: {{.*}}.place_stable(0, {{.*}})
+// Each region records its graph input and then does its own work, so both are
+// functions.
+// CHECK: var {{var[_0-9]+}} = {{__device_graph_collective_create[_0-9]*}}(builder{{.*}})
 // CHECK: elif n{{[_0-9]*}} == 1:
-// The reading region has more to record, so it becomes a function.
-// CHECK: var {{var[_0-9]+}} = {{__device_graph_collective_create[_0-9]*}}(builder)
+// CHECK: var {{var[_0-9]+}} = {{__device_graph_collective_create[_0-9]*}}(builder{{.*}})
 // CHECK: max.gpu.host.DeviceGraph.create_collective({{[a-zA-Z_0-9]+}}, [[BUILD]], {{[a-zA-Z_0-9]+}}, cache = {{var[_0-9]+}}, stable_devices = [0])
-// That function views the slot as a stable tensor, which is an ordinary
+// The producing region publishes its tensor to the shared slot.
+// CHECK: {{.*}}.place_stable(0, {{.*}})
+// The reading region views the slot as a stable tensor, which is an ordinary
 // `OwnedTensor` over the slot's address.
 // CHECK: [[SLOT:var[_0-9]+]] = {{.*}}.get_stable(0)
 // CHECK: [[SPEC:var[_0-9]+]] = builtin_primitives.primitives.mgp_tensor_spec_create[
@@ -121,13 +122,13 @@ mgp.model @dg_collective_stable device_graph devices [#M.device_ref<"gpu", 0>, #
 
 // -----
 
-// gpu:1's graph reads gpu:0's tensor only for its shape, so instead of a
-// stable copy it adds the tensor rebound to the `shape_only` kind: recorded in
-// place, keyed on shape alone. Its own tensor still gets an ordinary
-// `add_input`.
-// CHECK: var [[SHAPE_ONLY:var[_0-9]+]] = {{var[_0-9]+}}.with_kind[max.gpu.host.DeviceGraphInputKind.shape_only]()
-// CHECK-NEXT: builder.add_input([[SHAPE_ONLY]])
-// CHECK-NEXT: builder.add_input({{var[_0-9]+}})
+// gpu:1's graph reads gpu:0's tensor only for its shape, so its
+// `mgp.device_graph.add_input` rebinds the tensor to the `shape_only` kind
+// before recording it: recorded in place, keyed on shape alone. Its own tensor
+// still gets an ordinary `add_input`.
+// CHECK: var [[SHAPE_ONLY:var[_0-9]+]] = {{.*}}.with_kind[max.gpu.host.DeviceGraphInputKind.shape_only]()
+// CHECK-NEXT: var {{var[_0-9]+}} = {{.*}}.add_input([[SHAPE_ONLY]])
+// CHECK-NEXT: var {{var[_0-9]+}} = {{.*}}.add_input({{.*}})
 
 mgp.model @dg_collective_shape_only device_graph devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
   init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {

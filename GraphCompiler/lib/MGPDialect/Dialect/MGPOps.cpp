@@ -810,9 +810,9 @@ LogicalResult TensorSliceOp::inferReturnTypes(
   if (!specType)
     return mlir::emitError(location.value_or(UnknownLoc::get(context)),
                            "expected tensor spec operand");
-  inferredReturnTypes.emplace_back(
-      DeviceTensorType::get(context, inputType.getDevice(), specType,
-                            inputType.getMut(), inputType.getStable()));
+  inferredReturnTypes.emplace_back(DeviceTensorType::get(
+      context, inputType.getDevice(), specType, inputType.getMut(),
+      inputType.getStable(), inputType.getShapeOnly()));
   return success();
 }
 
