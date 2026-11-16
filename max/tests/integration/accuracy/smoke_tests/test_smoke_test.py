@@ -394,7 +394,7 @@ def test_merge_serve_extra_args_does_not_mutate_input() -> None:
 
 
 @pytest.mark.parametrize("framework", ["max", "max-ci"])
-def test_flint_smoke_uses_eager_batch_one_recipe(
+def test_flint_smoke_uses_eager_recipe(
     monkeypatch: MonkeyPatch, framework: str
 ) -> None:
     monkeypatch.setattr(

@@ -22,6 +22,5 @@ model:
 
 runtime:
   prefer_module_v3: true
-  max_batch_size: 1
   device_graph_capture: false
   enable_overlap_scheduler: false
