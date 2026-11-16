@@ -35,26 +35,37 @@ H = 128
 
 
 def _graph_inputs(
-    shapes: list[list[int]], devices: list[DeviceRef]
+    shapes: list[list[int]],
+    devices: list[DeviceRef],
+    dtype: DType = DType.bfloat16,
+    gamma_dtype: DType | None = None,
 ) -> list[TensorType]:
-    """Per-device inputs, then per-device gammas (length = cols)."""
+    """Per-device inputs, then per-device gammas (length = cols).
+
+    ``gamma_dtype`` defaults to ``dtype``; it differs only where a narrower
+    weight rides a wider input.
+    """
+    if gamma_dtype is None:
+        gamma_dtype = dtype
     return [
-        TensorType(dtype=DType.bfloat16, shape=shape, device=dev)
+        TensorType(dtype=dtype, shape=shape, device=dev)
         for shape, dev in zip(shapes, devices, strict=True)
     ] + [
-        TensorType(dtype=DType.bfloat16, shape=[shape[-1]], device=dev)
+        TensorType(dtype=gamma_dtype, shape=[shape[-1]], device=dev)
         for shape, dev in zip(shapes, devices, strict=True)
     ]
 
 
 def _build(
-    shapes: list[list[int]], devices: list[DeviceRef]
+    shapes: list[list[int]],
+    devices: list[DeviceRef],
+    dtype: DType = DType.bfloat16,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     num_gpus = len(devices)
     signals = Signals(devices)
     with Graph(
         "allreduce_rms_norm",
-        input_types=_graph_inputs(shapes, devices)
+        input_types=_graph_inputs(shapes, devices, dtype)
         + list(signals.input_types()),
     ) as graph:
         normed, summed = ops.allreduce_rms_norm(
@@ -81,19 +92,20 @@ def _expect_rejected(
             )
 
 
-def test_allreduce_rms_norm_full_world_shapes() -> None:
+@pytest.mark.parametrize("dtype", [DType.bfloat16, DType.float32])
+def test_allreduce_rms_norm_full_world_shapes(dtype: DType) -> None:
     """Every device holds the sum's shape: the outputs equal the input."""
     num_gpus = 4
     devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
-    normed, summed = _build([[3, H]] * num_gpus, devices)
+    normed, summed = _build([[3, H]] * num_gpus, devices, dtype)
 
     for dev_idx, device in enumerate(devices):
         assert normed[dev_idx].device == device
         assert normed[dev_idx].shape == [3, H]
-        assert normed[dev_idx].dtype == DType.bfloat16
+        assert normed[dev_idx].dtype == dtype
         assert summed[dev_idx].device == device
         assert summed[dev_idx].shape == [3, H]
-        assert summed[dev_idx].dtype == DType.bfloat16
+        assert summed[dev_idx].dtype == dtype
 
 
 @pytest.mark.parametrize("multiply_before_cast", [False, True])
@@ -168,20 +180,20 @@ def test_allreduce_rms_norm_gamma_count_must_match() -> None:
             )
 
 
-def test_allreduce_rms_norm_bf16_only() -> None:
-    """The fused kernel assumes bfloat16 operands."""
+def test_allreduce_rms_norm_dtype_rejected() -> None:
+    """The fused kernel dispatch takes bfloat16 or float32 operands only."""
     devices = [DeviceRef.GPU(id=i) for i in range(2)]
     _expect_rejected(
         [
-            TensorType(dtype=DType.float32, shape=[8, H], device=dev)
+            TensorType(dtype=DType.float16, shape=[8, H], device=dev)
             for dev in devices
         ]
         + [
-            TensorType(dtype=DType.float32, shape=[H], device=dev)
+            TensorType(dtype=DType.float16, shape=[H], device=dev)
             for dev in devices
         ]
         + list(Signals(devices).input_types()),
-        r"bfloat16-only",
+        r"bfloat16 or float32",
     )
 
 
@@ -198,6 +210,49 @@ def test_allreduce_rms_norm_dtype_mismatch_rejected() -> None:
         ]
         + list(Signals(devices).input_types()),
         r"same dtype",
+    )
+
+
+def test_allreduce_rms_norm_bf16_gamma_on_float32_input() -> None:
+    """A bfloat16 gamma on a float32 input stages: the kernels widen it.
+
+    Kimi K3's routed-expert norm keeps a bfloat16 weight on its float32
+    latent; the op must take it as is, with no cast staged in front.
+    """
+    devices = [DeviceRef.GPU(id=i) for i in range(2)]
+    signals = Signals(devices)
+    with Graph(
+        "allreduce_rms_norm",
+        input_types=_graph_inputs(
+            [[8, H]] * 2, devices, DType.float32, DType.bfloat16
+        )
+        + list(signals.input_types()),
+    ) as graph:
+        normed, _summed = ops.allreduce_rms_norm(
+            inputs=[v.tensor for v in graph.inputs[:2]],
+            signal_buffers=[v.buffer for v in graph.inputs[4:]],
+            gammas=[v.tensor for v in graph.inputs[2:4]],
+            epsilon=1e-5,
+        )
+        graph.output(*normed)
+    assert all(t.dtype == DType.float32 for t in normed)
+    assert "mo.cast" not in str(graph)
+
+
+def test_allreduce_rms_norm_float32_gamma_on_bf16_input_rejected() -> None:
+    """Gamma only ever widens: a float32 gamma on bfloat16 input is refused."""
+    devices = [DeviceRef.GPU(id=i) for i in range(2)]
+    _expect_rejected(
+        [
+            TensorType(dtype=DType.bfloat16, shape=[8, H], device=dev)
+            for dev in devices
+        ]
+        + [
+            TensorType(dtype=DType.float32, shape=[H], device=dev)
+            for dev in devices
+        ]
+        + list(Signals(devices).input_types()),
+        r"bfloat16/float16 on a float32 input",
     )
 
 

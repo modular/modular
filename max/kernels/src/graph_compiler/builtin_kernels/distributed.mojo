@@ -19,8 +19,8 @@
 """Registers distributed and multi-GPU collective graph ops backed by the `comm` and `shmem` kernels."""
 
 from std.math.uutils import ualign_down
-from std.math import align_down
-from std.sys import get_defined_bool
+from std.math import align_down, ceildiv
+from std.sys import get_defined_bool, simd_width_of
 from std.sys.info import align_of, size_of
 import extensibility
 
@@ -37,8 +37,12 @@ from comm.allreduce_lamport_rmsnorm import (
 )
 from comm.allreduce_residual_rmsnorm import (
     _dispatch_ar_norm,
+    _gamma_as_input_dtype,
+    _gamma_dtype_supported,
+    _rms_norm_rows_kernel,
     allreduce_residual_rmsnorm,
 )
+from comm.allreduce_rmsnorm_exit_concat import allreduce_rmsnorm_exit_concat
 from comm.allgather_rmsnorm import (
     AG_QUANT_ONLY_THRESHOLD,
     _dispatch_ag_norm,
@@ -74,8 +78,9 @@ from comm.broadcast import broadcast
 from comm.device_collective import _launch_device_collective
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
+from comm.sync import MAX_NUM_BLOCKS_UPPER_BOUND
 import comm.vendor.ccl as vendor_ccl
-from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceContext, DeviceContextArray, get_gpu_target
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, row_major
@@ -1358,7 +1363,7 @@ struct DistributedAllReduceRMSNorm:
         gammas: TensorTuple[*Gammas],
         dev_ctxs_input: DeviceContextArray[_, _],
     ) raises:
-        """Fused allreduce sum + RMSNorm (bf16 in/out, no quantization).
+        """Fused allreduce sum + RMSNorm (bf16 or float32, no quantization).
 
         Sum-reduces `inputs` (one `[rows, cols]` tensor per device) across
         devices and RMSNorm-normalizes the exact f32 peer sum in the same
@@ -1385,7 +1390,9 @@ struct DistributedAllReduceRMSNorm:
                 two-launch arm only.
             inputs: Per-device inputs to reduce.
             signal_buffers: Per-device synchronization buffers.
-            gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
+            gammas: Per-device RMSNorm gamma weights (length cols), in the
+                input dtype or, on a float32 input, bfloat16/float16: the
+                kernels widen it exactly in registers.
             dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
@@ -1406,7 +1413,12 @@ struct DistributedAllReduceRMSNorm:
         _check_tensor_tuple[num_devices, dtype, rank, *Normed]()
         _check_tensor_tuple[num_devices, dtype, rank, *Summed]()
         _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
-        _check_tensor_tuple[num_devices, dtype, 1, *Gammas]()
+        comptime gamma_dtype = Gammas[0].dtype
+        comptime assert _gamma_dtype_supported[gamma_dtype, dtype](), (
+            "allreduce_rms_norm: gamma must be the input dtype, or bfloat16 or"
+            " float16 on a float32 input"
+        )
+        _check_tensor_tuple[num_devices, gamma_dtype, 1, *Gammas]()
 
         # The kernel picks a path that fits the scratch behind the Signal
         # header, so only the header itself is required here.
@@ -1469,7 +1481,7 @@ struct DistributedAllReduceRMSNorm:
             comptime assert conforms_to(type_of(gammas[index]), TileTensorable)
             var normed_buf = outputs_normed[index].to_tile_tensor[dtype]()
             var sum_buf = outputs_summed[index].to_tile_tensor[dtype]()
-            var gamma_tensor = gammas[index].to_tile_tensor[dtype]()
+            var gamma_tensor = gammas[index].to_tile_tensor[gamma_dtype]()
 
             # Two-launch fallback (above the fuse threshold, where the
             # fabric-saturated plain allreduce wins): allreduce into
@@ -1556,18 +1568,57 @@ struct DistributedAllReduceRMSNorm:
                 } -> None:
                     normed_buf.store[alignment=alignment](coords, val)
 
-                rms_norm_gpu[
-                    rank,
-                    epsilon=epsilon,
-                    weight_offset=weight_offset,
-                    multiply_before_cast=multiply_before_cast,
-                ](
-                    norm_input_fn,
-                    norm_output_fn,
-                    sum_buf.layout.shape_coord(),
-                    gamma_tensor,
-                    dev_ctxs_input[index],
-                )
+                comptime if gamma_dtype == dtype:
+                    rms_norm_gpu[
+                        rank,
+                        epsilon=epsilon,
+                        weight_offset=weight_offset,
+                        multiply_before_cast=multiply_before_cast,
+                    ](
+                        norm_input_fn,
+                        norm_output_fn,
+                        sum_buf.layout.shape_coord(),
+                        _gamma_as_input_dtype[dtype](gamma_tensor),
+                        dev_ctxs_input[index],
+                    )
+                else:
+                    # `rms_norm_gpu` reads gamma in the input dtype; the comm
+                    # row norm widens a narrower one in registers instead.
+                    comptime norm_threads = 256
+                    comptime norm_simd_width = simd_width_of[
+                        dtype, target=get_gpu_target()
+                    ]()
+                    var cols = Int(gamma_tensor.dim[0]())
+                    var rows = sum_buf.num_elements() // cols
+                    # An empty batch launches no norm: `enqueue_function`
+                    # rejects the zero grid that follows.
+                    if rows == 0:
+                        return
+                    dev_ctxs_input[index].enqueue_function[
+                        _rms_norm_rows_kernel[
+                            dtype,
+                            gamma_dtype,
+                            norm_simd_width,
+                            norm_threads,
+                            multiply_before_cast,
+                        ]
+                    ](
+                        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                            normed_buf.ptr
+                        ),
+                        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                            sum_buf.ptr
+                        ),
+                        rebind[ImmPointer[Scalar[gamma_dtype], ImmutAnyOrigin]](
+                            gamma_tensor.ptr
+                        ),
+                        Int32(rows),
+                        Int32(cols),
+                        epsilon,
+                        weight_offset.cast[dtype](),
+                        grid_dim=min(rows, MAX_NUM_BLOCKS_UPPER_BOUND),
+                        block_dim=norm_threads,
+                    )
 
             # The vendor CCL build always reduces through the vendor
             # allreduce, as `mo.distributed.allreduce.sum` does.
@@ -1591,6 +1642,174 @@ struct DistributedAllReduceRMSNorm:
 
         _launch_device_collective[num_devices](
             launch_fused_allreduce_norm, dev_ctxs_input.copy()
+        )
+
+
+@extensibility.register(
+    "mo.composite.distributed.allreduce_rms_norm_exit_concat"
+)
+struct DistributedAllReduceRMSNormExitConcat:
+    """Registers `mo.composite.distributed.allreduce_rms_norm_exit_concat`."""
+
+    @staticmethod
+    def execute[
+        Out: TypeList[Trait=Output & Tensor, ...],
+        Ins: TypeList[Trait=Input & Tensor, ...],
+        Sigs: TypeList[Trait=MutableInput & Tensor, ...],
+        Gammas: TypeList[Trait=Input & Tensor, ...],
+        GateUps: TypeList[Trait=Input & Tensor, ...],
+        //,
+        _trace_name: StaticString,
+        epsilon: Float32,
+        beta: Float32,
+        linear_beta: Float32,
+    ](
+        outputs: TensorTuple[*Out],
+        inputs: TensorTuple[*Ins],
+        signal_buffers: TensorTuple[*Sigs],
+        gammas: TensorTuple[*Gammas],
+        gate_ups: TensorTuple[*GateUps],
+        dev_ctxs_input: DeviceContextArray[_, _],
+    ) raises:
+        """Reduces, norms, re-shards and activates the exit's tail: one launch
+        at decode sizes, the plain allreduce plus a norm above the size gate,
+        and the same chain under a vendor-CCL build or without P2P access.
+
+        Parameters:
+            Out: The element types of `outputs` (inferred).
+            Ins: The element types of `inputs` (inferred).
+            Sigs: The element types of `signal_buffers` (inferred).
+            Gammas: The element types of `gammas` (inferred).
+            GateUps: The element types of `gate_ups` (inferred).
+            _trace_name: Trace name for profiling.
+            epsilon: RMSNorm epsilon, shared by every device.
+            beta: The SiTU gate's beta, shared by every device.
+            linear_beta: The SiTU up-half saturation beta; 0 disables it.
+
+        Args:
+            outputs: Per-device `[rows, cols / N + half]` bf16 activation.
+            inputs: Per-device float32 or bf16 `[rows, cols]` partial sums.
+            signal_buffers: Per-device synchronization buffers; the bytes
+                behind each `Signal` header are the collective's staging
+                scratch (the plain allreduce's partition, which is all a
+                large prefill batch needs).
+            gammas: Per-device `[cols]` norm weights, in the inputs' dtype or,
+                on float32 inputs, bfloat16/float16 (widened in registers).
+                Every device must pass the same replicated weight: one device
+                normalizes the columns it holds for every device's rows.
+            gate_ups: Per-device bf16 `[rows, 2 * half]` shared gate/up
+                projection, gate half first.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - The fused arm requires P2P access between the participating
+              GPUs; without it, and under a vendor-CCL build, the launcher runs
+              the chain instead. The group must be the full world, of at most 8
+              devices.
+            - float32 or bf16 partials and bf16 gated projections only.
+        """
+        comptime num_devices = len(Ins)
+        comptime in_dtype = Ins[0].dtype
+        comptime dtype = GateUps[0].dtype
+        comptime assert (
+            len(Sigs) == num_devices
+        ), "expected one signal buffer per allreduce_rms_norm_exit_concat input"
+        comptime assert (
+            len(Gammas) == num_devices
+        ), "expected one gamma per allreduce_rms_norm_exit_concat input"
+        comptime assert len(GateUps) == num_devices, (
+            "expected one gated projection per"
+            " allreduce_rms_norm_exit_concat input"
+        )
+        _check_tensor_tuple[num_devices, in_dtype, 2, *Ins]()
+        _check_tensor_tuple[num_devices, dtype, 2, *Out]()
+        _check_tensor_tuple[num_devices, dtype, 2, *GateUps]()
+        _check_tensor_tuple[num_devices, .uint8, 1, *Sigs]()
+        comptime gamma_dtype = Gammas[0].dtype
+        comptime assert _gamma_dtype_supported[gamma_dtype, in_dtype](), (
+            "allreduce_rms_norm_exit_concat: gamma must be the inputs' dtype,"
+            " or bfloat16 or float16 on float32 inputs"
+        )
+        _check_tensor_tuple[num_devices, gamma_dtype, 1, *Gammas]()
+
+        var cols = Int(inputs[0].shape()[1])
+        var rows = Int(inputs[0].shape()[0])
+        # Scratch, in the input dtype: the plain allreduce's partition staging,
+        # which the fused arm's reduce-scatter never needs more than. The chain
+        # arm's full-width sum is the launcher's own workspace, not this
+        # payload, so the requirement stays the plain allreduce's however many
+        # rows a prefill batch carries.
+        _check_signal_buffer_size(
+            Int(signal_buffers[0].shape().product()),
+            _partitioned_scratch_requirement[num_devices, in_dtype](
+                rows * cols
+            ),
+        )
+
+        comptime InputTensorType = TileTensor[
+            in_dtype,
+            Layout[
+                shape_types=DynamicCoord[.int64, 2].element_types,
+                stride_types=DynamicCoord[.int64, 2].element_types,
+            ],
+            ImmUntrackedOrigin,
+        ]
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+
+        # A collective addresses the signal buffers through flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        def rank_sig[
+            i: Int
+        ]() {imm signal_buffers} -> Pointer[Signal, MutAnyOrigin]:
+            comptime assert conforms_to(
+                type_of(signal_buffers[i]), TileTensorable
+            )
+            return (
+                signal_buffers[i]
+                .to_tile_tensor()
+                .ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
+
+        var rank_sigs = Array[_, num_devices](fill_with_unrolled=rank_sig)
+
+        comptime for i in range(num_devices):
+            comptime assert conforms_to(type_of(inputs[i]), TileTensorable)
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[in_dtype]().make_dynamic[.int64]()
+            )
+
+        @inline(.always)
+        def launch_exit_concat[
+            index: Int
+        ]() raises {
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm gammas,
+            imm gate_ups,
+            imm outputs,
+        }:
+            comptime assert conforms_to(type_of(gammas[index]), TileTensorable)
+            comptime assert conforms_to(
+                type_of(gate_ups[index]), TileTensorable
+            )
+            comptime assert conforms_to(type_of(outputs[index]), TileTensorable)
+            allreduce_rmsnorm_exit_concat(
+                in_tensors,
+                gammas[index].to_tile_tensor[gamma_dtype](),
+                gate_ups[index].to_tile_tensor[dtype](),
+                outputs[index].to_tile_tensor[dtype](),
+                epsilon,
+                beta,
+                linear_beta,
+                rank_sigs,
+                dev_ctxs_input[index],
+                index,
+            )
+
+        _launch_device_collective[num_devices](
+            launch_exit_concat, dev_ctxs_input.copy()
         )
 
 

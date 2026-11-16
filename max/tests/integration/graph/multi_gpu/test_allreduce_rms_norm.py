@@ -83,6 +83,12 @@ LAMPORT_MAX_COLS = 1024 * 8
 UNTILEABLE_COLS = [16400, 8200]
 
 
+def _skip_unless_two_gpus() -> None:
+    """Skips the calling test on a host with fewer than ``NUM_GPUS``."""
+    if NUM_GPUS > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({NUM_GPUS}) for allreduce_rms_norm.")
+
+
 def _fuses_on_target(rows: int, cols: int = COLS) -> bool:
     """Whether the dispatch fuses this payload on this target.
 
@@ -147,15 +153,23 @@ def _ar_rms_norm_graph(
     cols: int,
     multiply_before_cast: bool,
     output_summed: bool = False,
+    dtype: DType = DType.bfloat16,
+    gamma_dtype: DType | None = None,
 ) -> Graph:
-    """Builds the op graph with a symbolic row count, fed as data."""
+    """Builds the op graph with a symbolic row count, fed as data.
+
+    ``gamma_dtype`` defaults to ``dtype``; it differs only for the arms that
+    read a narrower weight than their input.
+    """
+    if gamma_dtype is None:
+        gamma_dtype = dtype
     devices = signals.devices
     input_types: list[TensorType | BufferType] = [
-        TensorType(dtype=DType.bfloat16, shape=["rows", cols], device=device)
+        TensorType(dtype=dtype, shape=["rows", cols], device=device)
         for device in devices
     ]
     input_types += [
-        TensorType(dtype=DType.bfloat16, shape=[cols], device=device)
+        TensorType(dtype=gamma_dtype, shape=[cols], device=device)
         for device in devices
     ]
     input_types += signals.input_types()
@@ -383,8 +397,7 @@ class _GraphCache:
 
 @pytest.fixture(scope="module")
 def graphs() -> _GraphCache:
-    if NUM_GPUS > accelerator_count():
-        pytest.skip(f"Not enough GPUs ({NUM_GPUS}) for allreduce_rms_norm.")
+    _skip_unless_two_gpus()
     return _GraphCache()
 
 
@@ -587,8 +600,7 @@ def test_allreduce_rms_norm_vendor_ccl(multiply_before_cast: bool) -> None:
     writes `summed` and the separate norm reads the bfloat16-rounded sum,
     the same semantics as the two-launch arm.
     """
-    if NUM_GPUS > accelerator_count():
-        pytest.skip(f"Not enough GPUs ({NUM_GPUS}) for allreduce_rms_norm.")
+    _skip_unless_two_gpus()
 
     signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(NUM_GPUS)])
     devices = [Accelerator(n) for n in range(NUM_GPUS)]
@@ -606,3 +618,88 @@ def test_allreduce_rms_norm_vendor_ccl(multiply_before_cast: bool) -> None:
             multiply_before_cast,
             f"rows={rows} vendor CCL (mbc={multiply_before_cast})",
         )
+
+
+# A float32 input fuses under the same byte threshold as bfloat16, so the cut
+# falls at half the rows.
+FP32_FUSE_MAX_ROWS = FUSE_THRESHOLD_BYTES // (COLS * 4)
+# The fused kernel and the two-launch chain each sum the peers and the mean
+# square in float32, in different orders; both sit within a few float32 ULPs
+# of the fp64 reference.
+FP32_RTOL = 1e-5
+
+
+@pytest.mark.parametrize("multiply_before_cast", [False, True])
+@pytest.mark.parametrize(
+    "rows",
+    # 1 and 3 take the fused 1-stage kernel at two ranks, 32 (K3's decode
+    # step) through 256 the fused 2-stage kernel, 257 the two-launch chain
+    # (a plain allreduce, then a standalone norm).
+    [1, 3, 32, 37, FP32_FUSE_MAX_ROWS, FP32_FUSE_MAX_ROWS + 1],
+)
+@pytest.mark.parametrize("gamma_dtype", [DType.float32, DType.bfloat16])
+def test_allreduce_rms_norm_float32(
+    rows: int, multiply_before_cast: bool, gamma_dtype: DType
+) -> None:
+    """Float32 in/out, K3's routed-expert latent, against an fp64 reference.
+
+    With float32 data the cast order selects nothing, so both settings must
+    match the same reference; the outputs must also be identical on both
+    devices on every arm. A bfloat16 gamma is K3's production form (its
+    routed-expert norm weight is bfloat16 on a float32 latent): every arm
+    widens it exactly, so it must match the reference built from the same
+    rounded weight.
+    """
+    _skip_unless_two_gpus()
+
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(NUM_GPUS)])
+    devices = [Accelerator(n) for n in range(NUM_GPUS)]
+    model = InferenceSession(devices=[CPU(), *devices]).load(
+        _ar_rms_norm_graph(
+            signals,
+            COLS,
+            multiply_before_cast,
+            dtype=DType.float32,
+            gamma_dtype=gamma_dtype,
+        )
+    )
+
+    rng = np.random.default_rng(rows)
+    shards = [
+        rng.standard_normal((rows, COLS)).astype(np.float32)
+        for _ in range(NUM_GPUS)
+    ]
+    gamma = (((np.arange(COLS) % 7) * 0.01) + 0.5).astype(np.float32)
+    outputs = model.execute(
+        *[
+            Buffer.from_numpy(s).to(d)
+            for s, d in zip(shards, devices, strict=True)
+        ],
+        *[
+            _to_device_bf16(gamma, d)
+            if gamma_dtype == DType.bfloat16
+            else Buffer.from_numpy(gamma).to(d)
+            for d in devices
+        ],
+        *signals.buffers(),
+    )
+    got = []
+    for out in outputs:
+        assert isinstance(out, Buffer)
+        got.append(out.to(CPU()).to_numpy())
+
+    sums = _peer_sum(shards)
+    want = (
+        sums
+        / np.sqrt(np.mean(sums * sums, axis=-1, keepdims=True) + EPS)
+        * (_bf16(gamma) if gamma_dtype == DType.bfloat16 else gamma).astype(
+            np.float64
+        )
+    )
+    for dev_idx in range(NUM_GPUS):
+        np.testing.assert_allclose(
+            got[dev_idx], want, rtol=FP32_RTOL, atol=FP32_RTOL
+        )
+    assert np.array_equal(got[0], got[1]), (
+        f"rows={rows}: the two GPUs hold different allreduced outputs"
+    )

@@ -84,3 +84,24 @@ def test_post_norm_residual_rms_norm_requires_replicated_operands() -> None:
             F.allreduce_post_norm_residual_rms_norm(
                 t, residual, gamma, gamma, host_mix, 1e-6
             )
+
+
+def test_exit_concat_rejects_indivisible_cols() -> None:
+    """The no-signals fallback keeps the op's equal-shard requirement.
+
+    The kernel path rejects columns that do not divide by the device count;
+    the fallback must not silently drop the remainder columns instead.
+    """
+    mesh = TestCollectives.MESH_1D
+    replicated = DeviceMapping(mesh, (Replicated(),))
+    with F.lazy():
+        t = Tensor.zeros(
+            [2, 10], dtype=DType.float32, device=replicated
+        ).rebind_mapping(DeviceMapping(mesh, (Partial(),)))
+        gate_up = Tensor.zeros([2, 8], dtype=DType.bfloat16, device=replicated)
+        gamma = Tensor.zeros([10], dtype=DType.float32, device=replicated)
+
+        with pytest.raises(ValueError, match="multiple of the device count"):
+            F.allreduce_rms_norm_exit_concat(
+                t, gate_up, gamma, epsilon=1e-5, beta=1.5, linear_beta=1.5
+            )

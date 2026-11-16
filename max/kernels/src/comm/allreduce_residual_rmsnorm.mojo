@@ -179,6 +179,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
     in_dtype: DType,
+    gamma_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     scale_origin: MutOrigin,
@@ -203,7 +204,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     ScaleBufferEngine: TensorEngine,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
-    gamma: TileTensor[in_dtype, LayoutType, origin, Engine=GammaEngine],
+    gamma: TileTensor[gamma_dtype, LayoutType, origin, Engine=GammaEngine],
     scale_buffer: TileTensor[
         mut=True,
         scales_dtype,
@@ -254,7 +255,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    comptime gamma_align = align_of[SIMD[gamma_dtype, simd_width]]()
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
     # Fuse FP8 quantization only when the output dtype differs from the input.
     # When out_dtype == in_dtype the max/scale/quantize phases are skipped.
     comptime quantize = out_dtype != in_dtype
@@ -276,7 +278,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align]((idx,)).cast[
+            gamma.load[width=simd_width, alignment=gamma_align]((idx,)).cast[
                 accum_type
             ]()
             + _weight_offset.cast[accum_type]()
@@ -415,6 +417,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     origin: Origin[mut=mut],
     LayoutType: TensorLayout,
     in_dtype: DType,
+    gamma_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     scale_origin: MutOrigin,
@@ -439,7 +442,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     ScaleBufferEngine: TensorEngine,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
-    gamma: TileTensor[in_dtype, LayoutType, origin, Engine=GammaEngine],
+    gamma: TileTensor[gamma_dtype, LayoutType, origin, Engine=GammaEngine],
     scale_buffer: TileTensor[
         mut=True,
         scales_dtype,
@@ -521,7 +524,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
-    comptime align = align_of[SIMD[in_dtype, simd_width]]()
+    comptime gamma_align = align_of[SIMD[gamma_dtype, simd_width]]()
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
     # Fuse FP8 quantization only when the output dtype differs from the input.
     # When out_dtype == in_dtype the scratch carries the normalized value in
     # out_dtype (== in_dtype) and no scale section is reserved or written.
@@ -623,9 +627,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align]((col_idx,)).cast[
-                accum_type
-            ]()
+            gamma.load[width=simd_width, alignment=gamma_align](
+                (col_idx,)
+            ).cast[accum_type]()
             + _weight_offset.cast[accum_type]()
         )
 
@@ -819,7 +823,7 @@ def _allreduce_rmsnorm_fp8_launch[
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -867,6 +871,7 @@ def _allreduce_rmsnorm_fp8_launch[
         origin=gamma.origin,
         LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
+        gamma_dtype=gamma.dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
@@ -920,7 +925,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -1024,6 +1029,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         origin=gamma.origin,
         LayoutType=gamma.LayoutType,
         in_dtype=in_dtype,
+        gamma_dtype=gamma.dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
         scale_origin=scale_output.origin,
@@ -1066,15 +1072,65 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
 
 
 @inline(.always)
+def _gamma_dtype_supported[gamma_dtype: DType, in_dtype: DType]() -> Bool:
+    """Whether the fused norm kernels can read a `gamma_dtype` gamma.
+
+    Gamma is the input dtype, or a bfloat16/float16 weight on a float32
+    input (Kimi K3's routed-expert norm): it widens exactly in registers,
+    so the norm's value is the one a float32 gamma gives.
+    """
+    return gamma_dtype == in_dtype or (
+        in_dtype == DType.float32
+        and gamma_dtype in (DType.bfloat16, DType.float16)
+    )
+
+
+@inline(.always)
+def _assert_gamma_dtype_supported[gamma_dtype: DType, in_dtype: DType]():
+    """Asserts that the fused norm kernels can read a `gamma_dtype` gamma.
+
+    `_gamma_dtype_supported` lists the dtype pairs that qualify.
+    """
+    comptime assert _gamma_dtype_supported[
+        gamma_dtype, in_dtype
+    ](), "gamma must be the input dtype, or a narrower float on float32 input"
+
+
+@inline(.always)
+def _gamma_as_input_dtype[
+    in_dtype: DType
+](gamma: TileTensor[...]) -> TileTensor[
+    in_dtype,
+    gamma.LayoutType,
+    gamma.origin,
+    Engine=gamma.Engine,
+    address_space=gamma.address_space,
+    linear_idx_type=gamma.linear_idx_type,
+]:
+    """Retypes a gamma known to be `in_dtype` for the paths that require it."""
+    comptime assert gamma.dtype == in_dtype, "gamma must be the input dtype"
+    return rebind[
+        TileTensor[
+            in_dtype,
+            gamma.LayoutType,
+            gamma.origin,
+            Engine=gamma.Engine,
+            address_space=gamma.address_space,
+            linear_idx_type=gamma.linear_idx_type,
+        ]
+    ](gamma)
+
+
 def _rms_norm_rows[
     dtype: DType,
+    gamma_dtype: DType,
     simd_width: Int,
     threads_per_block: Int,
     multiply_before_cast: Bool,
 ](
     output: MutPointer[Scalar[dtype], MutAnyOrigin],
     input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: ImmPointer[Scalar[gamma_dtype], ImmutAnyOrigin],
     rows: Int,
     cols: Int,
     epsilon: Float32,
@@ -1118,34 +1174,40 @@ def _rms_norm_rows[
     )
 )
 @__name(
-    t"rms_norm_rows_{dtype}_{simd_width}_{multiply_before_cast}",
+    t"rms_norm_rows_{dtype}_{gamma_dtype}_{simd_width}_{multiply_before_cast}",
 )
 def _rms_norm_rows_kernel[
     dtype: DType,
+    gamma_dtype: DType,
     simd_width: Int,
     threads_per_block: Int,
     multiply_before_cast: Bool,
 ](
     output: MutPointer[Scalar[dtype], MutAnyOrigin],
     input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: ImmPointer[Scalar[gamma_dtype], ImmutAnyOrigin],
     rows: Int32,
     cols: Int32,
     epsilon: Float32,
     weight_offset: Scalar[dtype],
 ):
     """RMSNorm over each row of a local `[rows, cols]` buffer, one block per
-    row, with the fused kernels' gamma and cast-order arithmetic."""
+    row, with the fused kernels' gamma and cast-order arithmetic. A
+    `gamma_dtype` narrower than `dtype` widens in registers."""
     var _rows = Int(rows)
     var _cols = Int(cols)
     if _cols % simd_width == 0:
         _rms_norm_rows[
-            dtype, simd_width, threads_per_block, multiply_before_cast
+            dtype,
+            gamma_dtype,
+            simd_width,
+            threads_per_block,
+            multiply_before_cast,
         ](output, input, gamma, _rows, _cols, epsilon, weight_offset)
     else:
-        _rms_norm_rows[dtype, 1, threads_per_block, multiply_before_cast](
-            output, input, gamma, _rows, _cols, epsilon, weight_offset
-        )
+        _rms_norm_rows[
+            dtype, gamma_dtype, 1, threads_per_block, multiply_before_cast
+        ](output, input, gamma, _rows, _cols, epsilon, weight_offset)
 
 
 def _launch_split_allreduce_rmsnorm[
@@ -1203,7 +1265,7 @@ def _launch_split_allreduce_rmsnorm[
     comptime norm_threads = 256
     comptime norm_simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime NormKernel = _rms_norm_rows_kernel[
-        in_dtype, norm_simd_width, norm_threads, multiply_before_cast
+        in_dtype, in_dtype, norm_simd_width, norm_threads, multiply_before_cast
     ]
 
     # Pre-compile the RMSNorm kernel before launching allreduce.
@@ -1348,7 +1410,7 @@ def _dispatch_fused_kernel[
     cols: Int,
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     output_2d: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -1412,7 +1474,7 @@ def _dispatch_fused_kernel[
                 cols,
                 src_ptrs,
                 output_2d,
-                gamma,
+                _gamma_as_input_dtype[in_dtype](gamma),
                 epsilon,
                 weight_offset,
                 scale_ub,
@@ -1439,6 +1501,14 @@ def _dispatch_fused_kernel[
     # crossover is measured against the compact FP8 all-gather. So when not
     # quantizing the dispatch picks the Lamport, 1-stage, or 2-stage kernels.
     comptime quantize = out_dtype != in_dtype
+    comptime gamma_dtype = gamma.dtype
+    # Only the 1- and 2-stage kernels widen a narrower gamma in registers;
+    # the Lamport and split paths require gamma in `in_dtype`.
+    _assert_gamma_dtype_supported[gamma_dtype, in_dtype]()
+    comptime assert gamma_dtype == in_dtype or not has_residual, (
+        "a gamma dtype different from the input is supported only without"
+        " a residual"
+    )
     comptime assert multiply_before_cast or not quantize, (
         "the FP8 epilogue applies gamma before the cast, so"
         " multiply_before_cast=False is supported without quantization only"
@@ -1469,6 +1539,7 @@ def _dispatch_fused_kernel[
     comptime if (
         not quantize
         and lamport_dtype
+        and gamma_dtype == in_dtype
         and (force_stage == 0 or force_stage == 4)
     ):
         comptime sm_version = get_sm_version()
@@ -1720,7 +1791,7 @@ def _dispatch_fused_kernel[
                 cols,
                 src_ptrs,
                 output_2d,
-                gamma,
+                _gamma_as_input_dtype[in_dtype](gamma),
                 epsilon,
                 weight_offset,
                 scale_ub,
@@ -1776,7 +1847,7 @@ def allreduce_rmsnorm[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
     ],
     output: TileTensor[mut=True, out_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     scale_ub: Float32,
@@ -1821,7 +1892,9 @@ def allreduce_rmsnorm[
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
         output: Output buffer (FP8 values when quantizing, else `in_dtype`).
-        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
+        gamma: RMSNorm gamma weights (1D TileTensor of length cols), in
+            `in_dtype` or, on a float32 input, bfloat16/float16 (widened
+            exactly in registers).
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Additive offset for gamma weights.
         scale_ub: Upper bound for FP8 scale clamping (ignored when not
@@ -1945,7 +2018,7 @@ def _dispatch_ar_norm[
     ],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
-    gamma: TileTensor[in_dtype, ...],
+    gamma: TileTensor[...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
@@ -1971,9 +2044,13 @@ def _dispatch_ar_norm[
     barriers on shared `rank_sigs`, so a per-rank disagreement would
     deadlock. `sum_out` is written by `two_launch` only.
     """
-    comptime assert (
-        in_dtype == .bfloat16
-    ), "_dispatch_ar_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
+    # The threshold is a byte count calibrated on bf16. A float32 call moves
+    # the same bytes for half the rows, so the same cut keeps it fused only
+    # where a bf16 call of equal traffic was measured to win.
+    comptime assert in_dtype in (
+        DType.bfloat16,
+        DType.float32,
+    ), "_dispatch_ar_norm supports bf16 or float32 in/out only"
 
     # The fused kernels read their peers' inputs directly; without P2P the
     # plain allreduce falls back to staged copies, so run the two-launch
@@ -1996,13 +2073,19 @@ def _dispatch_ar_norm[
         # Off AMD only the latency-bound payloads fuse, the ones
         # `allreduce_rmsnorm` sends to its Lamport kernel: there one launch
         # saves the separate norm launch outright. The 1- and 2-stage fused
-        # kernels are not calibrated against the plain allreduce here.
+        # kernels are not calibrated against the plain allreduce here, and a
+        # gamma narrower than the input only reaches those, so a mismatched
+        # gamma keeps the two-launch chain.
         comptime sm_version = get_sm_version()
+        comptime lamport_reads_gamma = gamma.dtype == in_dtype
         var rows = input_buffers[0].num_elements() // cols
-        fuse = dispatch_select_comm_config[
-            ngpus, sm_version, allreduce_tuning_table
-        ](payload_bytes).algorithm == AllReduceAlgorithm.LAMPORT and (
-            lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
+        fuse = (
+            dispatch_select_comm_config[
+                ngpus, sm_version, allreduce_tuning_table
+            ](payload_bytes).algorithm
+            == AllReduceAlgorithm.LAMPORT
+            and lamport_reads_gamma
+            and lamport_allreduce_rmsnorm_fits[in_dtype, ngpus](rows, cols)
         )
     if fuse:
         # in == out dtype, so the kernel skips its FP8 epilogue and never

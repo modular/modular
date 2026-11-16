@@ -1012,7 +1012,8 @@ def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.dist
     allreduce (which rounds the sum to the input dtype) followed by a norm.
 
     `multiply_before_cast` is the norm's gamma cast order, matching
-    `mo.composite.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
+    `mo.composite.reduce.rms_norm`. bf16 or float32 in/out; no residual and
+    no quantization.
     `gamma` is one operand per device, but every device must pass the same
     replicated weight: the 2-stage dispatch arm normalizes each row shard
     on its owner rank, so a gamma that differed per device would leak the
@@ -1042,6 +1043,56 @@ def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.dist
     `(` operands `)`
     `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
     `multiply_before_cast` `=` $multiply_before_cast `}`
+    attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// DistributedAllReduceRMSNormExitConcatOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_DistributedAllReduceRMSNormExitConcatOp : MO_DistributedOp<"composite.distributed.allreduce_rms_norm_exit_concat", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + RMSNorm + exit SiTU-and-mul concat across N devices.";
+  let description = [{
+    Sum-reduces each device's float32 or bf16 `[rows, cols]` partial across the
+    devices, RMSNorm-normalizes every reduced row over all `cols` columns,
+    keeps that device's column shard of the normed row (`cols / N` columns,
+    rank `r` taking the `r`-th shard) rounded to bf16, and writes it beside
+    the SiTU-and-mul of the device's own `[rows, 2 * half]` gated projection
+    -- the activation a tensor-parallel latent MoE's exit GEMM reads. The
+    output is `[rows, cols / N + half]` per device, column-sharded.
+
+    The norm reads the peer sum rounded to the input dtype, as
+    `mo.distributed.allreduce.sum` writes it, and mirrors
+    `mo.composite.reduce.rms_norm`'s Llama form: `weight_offset` 0 and
+    `multiply_before_cast` False, i.e. `x * rsqrt(mean(x^2) + epsilon)` in
+    float32, rounded to the input dtype, times `gamma`, cast to bf16 last.
+
+    Every device must pass the same replicated `gamma`, since one device
+    normalizes the columns it holds for every other device's rows.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$gammas,
+    Variadic<MO_Tensor>:$gateUp,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$epsilon,
+    MO_F32ScalarAttr:$beta,
+    MO_F32ScalarAttr:$linear_beta
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `beta` `=` $beta `,`
+    `linear_beta` `=` $linear_beta `}`
     attr-dict `:` functional-type(operands, results)
   }];
 }

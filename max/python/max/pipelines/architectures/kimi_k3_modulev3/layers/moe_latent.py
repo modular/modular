@@ -889,18 +889,39 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         # LATENT, before the norm and before the exit projection. The model
         # dtype, not `latent.dtype`: the merged entry GEMM writes float32
         # whenever the router rides it, and `combined` must stay bfloat16 so
-        # the exit matches every other path byte for byte and
-        # `allreduce_rms_norm` keeps its fused one-launch kernel (it is
-        # bfloat16-only).
+        # the exit matches every other path byte for byte -- the fused
+        # `allreduce_rms_norm` runs on float32 partials too, so this is about
+        # parity, not about which kernels can run.
         combined = moe_finalize(
             expert_out,
             restore_token_order,
             topk_weight,
             self.routed_expert_down_proj.weight.dtype,
         )
+        if sharded and self.amd_tp_w4a8:
+            # AMD W4A8 reduces, norms, slices and activates the exit in one
+            # collective launch: each device writes its own bf16 column shard
+            # of the normed latent beside its SiTU-and-mul'd shared half --
+            # the exit GEMM's activation. The norm's attributes are
+            # `routed_expert_norm`'s defaults (weight_offset 0.0,
+            # multiply_before_cast False), the only form the kernel
+            # implements.
+            act = F.allreduce_rms_norm_exit_concat(
+                combined,
+                shared_gate_up,
+                self.routed_expert_norm.weight,
+                epsilon=self.routed_expert_norm.eps,
+                beta=self.beta,
+                linear_beta=(
+                    self.linear_beta if self.linear_beta is not None else 0.0
+                ),
+                mesh_axis=TP,
+            ).rebind_mapping(NamedMapping(combined.mesh, (None, TP)))
+            return F.allreduce_sum(act @ self._exit_weight().T, mesh_axis=TP)
         if sharded:
-            # The norm rides the allreduce in one collective launch. The
-            # attributes mirror `routed_expert_norm` exactly:
+            # The norm rides the allreduce in one collective launch:
+            # `F.allreduce_rms_norm` fuses it into the collective's epilogue.
+            # The attributes mirror `routed_expert_norm` exactly:
             # `RMSNorm.forward` is `ops.rms_norm` with its defaults
             # (weight_offset 0.0, multiply_before_cast False).
             normed = F.allreduce_rms_norm(
@@ -920,42 +941,34 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 hidden_states
             )
 
-        # The exit is row-parallel, and the shared expert's down projection
-        # sums over the same rows: both write a [T, hidden] partial sum that
-        # a single allreduce then reduces. So they run as ONE GEMM whose K is
-        # the local latent slice followed by the local shared activation, and
-        # whose weight is the two input-axis slices side by side. The concat
-        # reads parameters only, so it runs once at model initialization.
-        weight = F.concat(
+        weight = self._exit_weight()
+        dtype = weight.dtype
+        latent_slice = normed.to(NamedMapping(mesh, (None, TP))).cast(dtype)
+        act = F.concat(
+            [
+                latent_slice,
+                self.shared_experts.situ_and_mul(shared_gate_up).cast(dtype),
+            ],
+            axis=-1,
+        )
+        return F.allreduce_sum(act @ weight.T, mesh_axis=TP)
+
+    def _exit_weight(self) -> Tensor:
+        """The TP exit's ``[hidden, latent / N + half]`` merged weight shard.
+
+        The exit is row-parallel, and the shared expert's down projection
+        sums over the same rows: both write a ``[T, hidden]`` partial sum
+        that a single allreduce then reduces. So they run as ONE GEMM whose
+        K is the local latent slice followed by the local shared activation,
+        and whose weight is the two input-axis slices side by side.
+        """
+        return F.concat(
             [
                 self.routed_expert_up_proj.weight,
                 self.shared_experts.down_proj.weight,
             ],
             axis=-1,
         )
-        dtype = weight.dtype
-        latent_slice = normed.to(NamedMapping(mesh, (None, TP))).cast(dtype)
-        if self.amd_tp_w4a8:
-            # AMD W4A8 runs the shared activation and the concat as one
-            # kernel: the elementwise writes its SiTU-and-mul straight into
-            # the concatenation's destination beside the normed latent.
-            act = moe_exit_act_concat(
-                latent_slice,
-                shared_gate_up,
-                beta=self.beta,
-                linear_beta=self.linear_beta,
-            ).rebind_mapping(NamedMapping(mesh, (None, TP)))
-        else:
-            act = F.concat(
-                [
-                    latent_slice,
-                    self.shared_experts.situ_and_mul(shared_gate_up).cast(
-                        dtype
-                    ),
-                ],
-                axis=-1,
-            )
-        return F.allreduce_sum(act @ weight.T, mesh_axis=TP)
 
     def _merged_entry(
         self, hidden_states: Tensor

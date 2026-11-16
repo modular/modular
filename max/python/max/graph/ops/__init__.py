@@ -75,6 +75,7 @@ from .allreduce_rms_norm import (
     allreduce_post_norm_residual_rms_norm,
     allreduce_rms_norm,
 )
+from .allreduce_rms_norm_exit_concat import allreduce_rms_norm_exit_concat
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k

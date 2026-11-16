@@ -29,6 +29,7 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.graph.dim import Dim, StaticDim
+from max.graph.ops.allreduce_rms_norm import gamma_dtype_supported
 from max.graph.ops.slice_tensor import SliceIndex
 from max.tensor import tensor as _experimental_tensor
 from max.tensor.realization_context import ensure_context
@@ -509,11 +510,14 @@ def allreduce_rms_norm(
     :func:`max.graph.ops.allreduce_rms_norm`). The norm runs on the exact
     float32 peer sum, so it is not bit-identical to :func:`allreduce_sum`
     followed by :func:`max.graph.ops.rms_norm`, which reads the sum rounded
-    back to bfloat16.
+    back to bfloat16. On a float32 input there is no such rounding, but its
+    peer sum and mean square may accumulate in a different order, so the two
+    still differ by float32 rounding.
 
     Falls back to that two-launch form when the fused kernel cannot run:
     without signal buffers (single-device and simulated meshes), or when the
-    input is not a 2-D bfloat16 tensor (the fused kernel is bfloat16-only).
+    input is not a 2-D bfloat16 or float32 tensor, or when ``gamma`` is
+    neither the input dtype nor bfloat16/float16 on a float32 input.
 
     Args:
         t: A ``[rows, cols]`` tensor that is
@@ -550,10 +554,15 @@ def allreduce_rms_norm(
 
     replicated = DeviceMapping(mesh, (Replicated(),))
 
-    # The fused kernel is bfloat16, 2-D only; anything else keeps the
-    # unfused allreduce + norm chain rather than failing at build time or
-    # dropping to the home-device add in the no-signal path below.
-    if t.dtype != DType.bfloat16 or t.rank != 2:
+    # The fused kernel is bfloat16 or float32, 2-D only, and reads gamma in
+    # the input dtype or a narrower float on a float32 input; anything else
+    # keeps the unfused allreduce + norm chain rather than failing at build
+    # time or dropping to the home-device add in the no-signal path below.
+    if (
+        t.dtype not in (DType.bfloat16, DType.float32)
+        or t.rank != 2
+        or not gamma_dtype_supported(gamma.dtype, t.dtype)
+    ):
         summed = allreduce_sum(t, mesh_axis=mesh_axis)
 
         def norm(shard: Tensor, gamma_shard: Tensor) -> TensorValue:
@@ -756,6 +765,201 @@ def allreduce_post_norm_residual_rms_norm(
         return call_on_mesh(
             run, mesh, (0,), out_specs=[replicated, replicated]
         )(t, residual, gamma, gamma2, mix, _signal_buffers(mesh))
+
+
+def _exit_concat_without_signals(
+    values: list[TensorValue],
+    gate_ups: list[TensorValue],
+    gamma: TensorValue,
+    epsilon: float,
+    beta: float,
+    linear_beta: float,
+) -> list[TensorValue]:
+    """The unfused :func:`allreduce_rms_norm_exit_concat`, for no signals.
+
+    Reduces on the first device, norms there, and sends each device its
+    column shard of the normed rows, written in bfloat16 beside the
+    SiTU-and-mul of that device's own ``gate_up``.
+    """
+    home = values[0].device
+    num_devices = len(values)
+    cols = int(values[0].shape[1])
+    if cols % num_devices:
+        # The same requirement the op itself enforces: silently dropping the
+        # remainder columns would hand the exit GEMM a wrong-width shard.
+        raise ValueError(
+            "allreduce_rms_norm_exit_concat splits every row into "
+            f"{num_devices} equal column shards, so cols ({cols}) must be a "
+            f"multiple of the device count ({num_devices})"
+        )
+    total = functools.reduce(
+        ops.add,
+        [v if v.device == home else v.to(home) for v in values],
+    )
+    normed = ops.rms_norm(
+        total,
+        gamma if gamma.device == home else gamma.to(home),
+        epsilon,
+        0.0,
+        False,
+    )
+    slice_cols = cols // num_devices
+    outs = []
+    for rank, (value, gate_up) in enumerate(zip(values, gate_ups, strict=True)):
+        shard = normed[:, rank * slice_cols : (rank + 1) * slice_cols]
+        if shard.device != value.device:
+            shard = shard.to(value.device)
+        if gate_up.device != value.device:
+            gate_up = gate_up.to(value.device)
+        half = int(gate_up.shape[1]) // 2
+        gate = ops.cast(gate_up[:, :half], DType.float32)
+        up = ops.cast(gate_up[:, half:], DType.float32)
+        situ = beta * ops.tanh(gate / beta) * ops.sigmoid(gate)
+        if linear_beta != 0.0:
+            up = linear_beta * ops.tanh(up / linear_beta)
+        outs.append(
+            ops.concat(
+                [
+                    ops.cast(shard, DType.bfloat16),
+                    ops.cast(situ * up, DType.bfloat16),
+                ],
+                axis=1,
+            )
+        )
+    return outs
+
+
+def allreduce_rms_norm_exit_concat(
+    t: Tensor,
+    gate_up: Tensor,
+    gamma: Tensor,
+    *,
+    epsilon: float,
+    beta: float,
+    linear_beta: float,
+    mesh_axis: int | str | Sequence[int | str] = 0,
+) -> Tensor:
+    """All-reduces a Partial tensor, norms it and activates the exit in one launch.
+
+    Fuses, for a tensor-parallel latent MoE's exit, the reduction of ``t``
+    across the devices of a one-dimensional mesh, the RMS norm of every
+    reduced row, this device's column shard of the normed row (columns
+    ``[r * cols / N, (r + 1) * cols / N)`` rounded to bfloat16) and the
+    SiTU-and-mul of ``gate_up`` -- the ``[normed latent | shared
+    activation]`` the exit GEMM reads -- into one collective launch (see
+    :func:`max.graph.ops.allreduce_rms_norm_exit_concat`). The norm reads
+    the peer sum rounded to ``t``'s dtype, so it is the same arithmetic as
+    :func:`allreduce_sum` followed by :func:`max.graph.ops.rms_norm` with its
+    defaults (``weight_offset`` 0, ``multiply_before_cast`` False).
+
+    Without signal buffers (single-device and simulated meshes) it stages the
+    unfused chain instead: the sum and the norm on the first device, then
+    each device's column shard beside its own activation.
+
+    Args:
+        t: A ``[rows, cols]`` float32 or bfloat16 tensor that is
+            :class:`~max.tensor.sharding.Partial` on a one-dimensional
+            mesh.
+        gate_up: The gated shared projection, ``[rows, 2 * half]`` bfloat16,
+            gate half first, distributed over the same mesh (column-sharded
+            or replicated).
+        gamma: The norm weight ``[cols]``, in ``t``'s dtype or
+            bfloat16/float16 on a float32 ``t``, replicated on the mesh of
+            ``t``.
+        epsilon: The norm epsilon.
+        beta: The SiTU activation's gate beta.
+        linear_beta: The SiTU activation's up-half saturation beta; ``0.0``
+            passes the up half through unchanged.
+        mesh_axis: The mesh axis or axes to reduce along, by index or name.
+            Must resolve to the only axis of a one-dimensional mesh.
+
+    Returns:
+        A ``[rows, cols / N + half]`` bfloat16 tensor,
+        :class:`~max.tensor.sharding.Sharded` along axis 1 on the reduced
+        axes: each device holds its own normed column shard followed by its
+        own activated half.
+    """
+    mesh = t.mesh
+    axes = [
+        mesh._resolve_axis(axis)
+        for axis in (
+            (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
+        )
+    ]
+    if (
+        mesh.ndim != 1
+        or axes != [0]
+        or not isinstance(t.placements[0], Partial)
+    ):
+        raise ValueError(
+            "allreduce_rms_norm_exit_concat needs a Partial tensor on a "
+            f"one-dimensional mesh, reducing its only axis. Got: {t.mapping}, "
+            f"mesh_axis={mesh_axis!r}."
+        )
+    if t.dtype not in (DType.float32, DType.bfloat16) or t.rank != 2:
+        raise ValueError(
+            "allreduce_rms_norm_exit_concat takes a 2-D float32 or bfloat16 "
+            f"Partial. Got: {t.dtype} {t.rank}-D."
+        )
+    if gate_up.dtype != DType.bfloat16 or gate_up.rank != 2:
+        raise ValueError(
+            "allreduce_rms_norm_exit_concat takes a 2-D bfloat16 gate/up "
+            f"projection. Got: {gate_up.dtype} {gate_up.rank}-D."
+        )
+
+    sharded = DeviceMapping(mesh, (Sharded(axis=1),))
+
+    def run(
+        shards: list[Tensor],
+        gate_ups: list[Tensor] | Tensor,
+        gammas: list[Tensor] | Tensor,
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[TensorValue]:
+        # A tensor that is not distributed reaches the group whole, not as
+        # one shard per device; the op takes one entry per device.
+        if not isinstance(gate_ups, list):
+            gate_ups = [gate_ups] * len(shards)
+        if not isinstance(gammas, list):
+            gammas = [gammas] * len(shards)
+        values = [TensorValue(shard) for shard in shards]
+        if signal_buffers is None:
+            return _exit_concat_without_signals(
+                values,
+                [TensorValue(g) for g in gate_ups],
+                TensorValue(gammas[0]),
+                epsilon,
+                beta,
+                linear_beta,
+            )
+        # The op reads device i's gamma and gate/up on device i.
+        local = [
+            (
+                TensorValue(gate_up_i)
+                if gate_up_i.device == value.device
+                else TensorValue(gate_up_i).to(value.device),
+                TensorValue(gamma_i)
+                if gamma_i.device == value.device
+                else TensorValue(gamma_i).to(value.device),
+            )
+            for gate_up_i, gamma_i, value in zip(
+                gate_ups, gammas, values, strict=True
+            )
+        ]
+        return ops.allreduce_rms_norm_exit_concat(
+            shards,
+            signal_buffers,
+            [gamma_i for _, gamma_i in local],
+            [gate_up_i for gate_up_i, _ in local],
+            epsilon,
+            beta,
+            linear_beta,
+        )
+
+    with ensure_context():
+        signal_buffers = _signal_buffers(mesh) if mesh.num_devices > 1 else None
+        return call_on_mesh(run, mesh, (0,), out_specs=sharded)(
+            t, gate_up, gamma, signal_buffers
+        )
 
 
 def allgather_rms_norm(

@@ -224,29 +224,31 @@ def test_latent_moe_tp2_matches_tp1(dtype: DType, hidden: int) -> None:
     assert err < 1e-4, f"latent MoE TP=2 vs TP=1 diverges: rel_error={err}"
 
 
-def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
+@pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
+def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm(
+    dtype: DType,
+) -> None:
     """The TP graph stages the fused collective, not allreduce + a norm.
 
-    The numerical TP tests run float32, where the functional falls back to
-    allreduce + rms_norm, so they pass whether or not the fusion fires. This
-    stages the layer at TP=2 in bfloat16 -- the production dtype -- through
-    ``Module.stage``, the tracing half of production's ``Module.compile``,
-    which threads the mesh's signal buffers in as graph inputs: the routed
-    branch must be one ``mo.composite.distributed.allreduce_rms_norm`` with
-    no standalone ``mo.composite.reduce.rms_norm`` left on the latent. The
-    row-parallel exit and the shared branch share one plain allreduce.
+    The numerical TP tests pass whether or not the fusion fires. This stages
+    the layer at TP=2 in both dtypes through ``Module.stage``, the tracing
+    half of production's ``Module.compile``, which threads the mesh's signal
+    buffers in as graph inputs: the routed branch must be one
+    ``mo.composite.distributed.allreduce_rms_norm`` with no standalone
+    ``mo.composite.reduce.rms_norm`` left on the latent. The row-parallel
+    exit and the shared branch share one plain allreduce.
     """
     mesh = _tp2_mesh()
     # Weights live on the mesh, replicated or sharded, the way production
     # loads them, so stage() allocates the mesh's signal buffers and the
     # collective takes its fused path. The helper casts its float32 numpy
-    # arrays to bfloat16 eagerly (a graph constant would reject the dtype
-    # it has to convert).
+    # arrays to `dtype` eagerly (a graph constant would reject the dtype it
+    # has to convert).
     with default_device(mesh):
-        layer, _ = _latent_moe_layer(2, DType.bfloat16, seed=4)
+        layer, _ = _latent_moe_layer(2, dtype, seed=4)
         layer = tensor_parallel_latent_moe(layer, mesh)
         staged, _weights = layer.stage(
-            TensorLayout(DType.bfloat16, [SEQ_LEN, HIDDEN], mesh)
+            TensorLayout(dtype, [SEQ_LEN, HIDDEN], mesh)
         )
 
     ir = str(staged)

@@ -33,6 +33,19 @@ _POST_NORM_RESIDUAL_PACK_COLS = 8
 _POST_NORM_RESIDUAL_MAX_COLS = 1024 * _POST_NORM_RESIDUAL_PACK_COLS
 
 
+def gamma_dtype_supported(gamma_dtype: DType, input_dtype: DType) -> bool:
+    """Returns whether a fused allreduce + norm kernel reads this gamma dtype.
+
+    Gamma is the input dtype, or a bfloat16/float16 weight on a float32
+    input, which the kernels widen exactly in registers (Kimi K3's
+    routed-expert norm keeps a bfloat16 weight on a float32 latent).
+    """
+    return gamma_dtype == input_dtype or (
+        input_dtype == DType.float32
+        and gamma_dtype in (DType.bfloat16, DType.float16)
+    )
+
+
 def allreduce_rms_norm(
     inputs: Iterable[TensorValueLike],
     signal_buffers: Iterable[BufferValueLike],
@@ -41,7 +54,7 @@ def allreduce_rms_norm(
     weight_offset: float = 0.0,
     multiply_before_cast: bool = False,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
-    """Fused allreduce sum + RMSNorm across devices (bf16 in/out).
+    """Fused allreduce sum + RMSNorm across devices (bf16 or float32 in/out).
 
     Sum-reduces ``inputs`` (same-shaped per-device tensors) so every device
     holds the sum, then RMSNorm-normalizes the reduced rows in the same
@@ -49,17 +62,21 @@ def allreduce_rms_norm(
     global-memory round-trip between the allreduce and the norm). The norm
     runs on the unrounded float32 sum, so it is not bit-identical to a
     standalone ``allreduce.sum`` -- which rounds the sum to the input dtype
-    before the norm reads it.
+    before the norm reads it. On a float32 input there is no such rounding,
+    but the peer sum and the mean square may accumulate in a different
+    order, so the two still differ by float32 rounding.
 
     Args:
         inputs: The input tensors to reduce, one per device. Shapes must all
             match, since every device contributes the same-sized shard.
         signal_buffers: Device buffer values used for synchronization.
-        gammas: RMSNorm gamma weights, one per device (input dtype, length
-            ``cols``). Every device must pass the same replicated weight:
-            the dispatch's 2-stage arm normalizes each row shard on its
-            owner rank, so a gamma that differed per device would leak the
-            owner's into the other devices' outputs.
+        gammas: RMSNorm gamma weights, one per device (length ``cols``), in
+            the input dtype or, on a float32 input, bfloat16/float16 (the
+            kernels widen it exactly in registers). Every device must pass
+            the same replicated weight: the dispatch's 2-stage arm
+            normalizes each row shard on its owner rank, so a gamma that
+            differed per device would leak the owner's into the other
+            devices' outputs.
         epsilon: RMSNorm epsilon for numerical stability.
         weight_offset: Constant offset added to gamma at runtime (folded in
             float32). ``1.0`` for Gemma-style norms, ``0.0`` otherwise.
@@ -101,10 +118,10 @@ def allreduce_rms_norm(
         )
 
     input_dtype = inputs[0].dtype
-    if input_dtype != DType.bfloat16:
+    if input_dtype not in (DType.bfloat16, DType.float32):
         raise ValueError(
-            "allreduce_rms_norm is bfloat16-only (the fused kernel assumes "
-            f"it). Got: {input_dtype}"
+            "allreduce_rms_norm takes bfloat16 or float32 inputs (the only "
+            f"dtypes the fused kernel dispatch accepts). Got: {input_dtype}"
         )
     if not all(t.dtype == input_dtype for t in inputs[1:]):
         raise ValueError(
@@ -129,13 +146,14 @@ def allreduce_rms_norm(
                 f"last dimension. On device {dev_idx}: gamma {gamma.shape} "
                 f"vs cols {inp.shape[-1]}"
             )
-        # The Mojo handler reads gammas[i] on device i in the input dtype;
-        # anything else fails deep in elaboration, so reject it here.
-        if gamma.dtype != inp.dtype:
+        # The Mojo handler reads gammas[i] on device i in the input dtype,
+        # or widens a narrower float gamma on a float32 input; anything else
+        # fails deep in elaboration, so reject it here.
+        if not gamma_dtype_supported(gamma.dtype, inp.dtype):
             raise ValueError(
                 "allreduce_rms_norm requires each gamma to match its input's "
-                f"dtype. On device {dev_idx}: gamma {gamma.dtype} vs input "
-                f"{inp.dtype}"
+                "dtype, or to be bfloat16/float16 on a float32 input. On "
+                f"device {dev_idx}: gamma {gamma.dtype} vs input {inp.dtype}"
             )
         if gamma.device != inp.device:
             raise ValueError(

@@ -34,9 +34,10 @@ target.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 
+import pytest
 from max import functional as F
 from max.driver import (
     Accelerator,
@@ -56,7 +57,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     _moe_exit_act_concat,
     tensor_parallel_latent_moe,
 )
-from max.tensor import default_device
+from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh, NamedMapping, TensorLayout
 
 GPU = DeviceRef.GPU()
@@ -433,14 +434,47 @@ def test_amd_w4a8_reads_the_merged_fp32_latent() -> None:
     )
 
 
-def test_amd_w4a8_exit_activates_into_the_concat() -> None:
-    """The AMD path's exit runs the shared SiTU-and-mul and the concat as one.
+def test_amd_w4a8_tp_exit_calls_the_fused_collective(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The AMD TP exit goes through the fused exit collective's functional.
 
-    The other paths stage an elementwise activation and then a concat; the
-    AMD path writes the activation into the concatenation's destination
-    instead, so one launch leaves the step per MoE layer.
+    ``allreduce_rms_norm_exit_concat`` reduces, norms, slices and activates
+    in one launch, so the exit stages the fused op and neither the
+    standalone activation concat nor a separate norm. The spy checks the
+    layer called it once, on the bfloat16 latent that moe_finalize writes;
+    the kernel reads the norm's bfloat16 weight as is.
     """
-    assert EXIT_ACT_OP in _trace_moe(amd_w4a8=True, tp_size=2)
+    partial_dtypes: list[DType] = []
+    fused = F.allreduce_rms_norm_exit_concat
+
+    def spy(
+        t: Tensor,
+        gate_up: Tensor,
+        gamma: Tensor,
+        *,
+        epsilon: float,
+        beta: float,
+        linear_beta: float,
+        mesh_axis: int | str | Sequence[int | str] = 0,
+    ) -> Tensor:
+        partial_dtypes.append(t.dtype)
+        return fused(
+            t,
+            gate_up,
+            gamma,
+            epsilon=epsilon,
+            beta=beta,
+            linear_beta=linear_beta,
+            mesh_axis=mesh_axis,
+        )
+
+    monkeypatch.setattr(F, "allreduce_rms_norm_exit_concat", spy)
+    ir = _trace_moe(amd_w4a8=True, tp_size=2)
+    assert partial_dtypes == [DType.bfloat16]
+    assert "mo.composite.distributed.allreduce_rms_norm_exit_concat" in ir
+    assert EXIT_ACT_OP not in ir
+    assert "mo.composite.reduce.rms_norm" not in ir
 
 
 def test_amd_w4a8_tp2_trace_builds() -> None:

@@ -193,6 +193,35 @@ def _assert_bf16_close[
         )
 
 
+def _assert_f32_close[
+    dtype: DType
+](
+    ref_host: Pointer[Scalar[dtype], _],
+    fused_host: Pointer[Scalar[dtype], _],
+    length: Int,
+    *,
+    rtol: Float32 = 1e-5,
+) raises:
+    """Assert two host buffers match to `rtol` of the reference (float32).
+
+    The kernel sums the peers and the mean square in float32 while the host
+    reference uses float64, so a correct kernel sits a few float32 ULPs off.
+    The `max(abs(want), 1)` scale keeps the tolerance absolute near zero.
+    """
+    var num_errors = 0
+    for i in range(length):
+        var want = ref_host[i].cast[.float32]()
+        var got = fused_host[i].cast[.float32]()
+        if abs(got - want) > rtol * max(abs(want), Float32(1)):
+            num_errors += 1
+            if num_errors <= 5:
+                print(t"  float32 mismatch at {i} : ref= {want} , fused= {got}")
+    if num_errors > 0:
+        raise Error(
+            t"float32 mismatches beyond rtol {rtol}: {num_errors} / {length}"
+        )
+
+
 def _assert_cast_order[
     dtype: DType, multiply_before_cast: Bool
 ](
@@ -755,12 +784,19 @@ def test_fused_allreduce_rmsnorm_noquant_latent[
     ctx.enqueue_copy(fused_out_host, fused_out_dev)
     ctx.synchronize()
 
-    _assert_cast_order[dtype, multiply_before_cast](
-        ref_out_host.unsafe_ptr(),
-        ref_other_host.unsafe_ptr(),
-        fused_out_host.unsafe_ptr(),
-        length,
-    )
+    comptime if dtype == DType.float32:
+        # In float32 the two cast orders differ by one float32 rounding, so
+        # there is no order to tell apart: check against the reference.
+        _assert_f32_close(
+            ref_out_host.unsafe_ptr(), fused_out_host.unsafe_ptr(), length
+        )
+    else:
+        _assert_cast_order[dtype, multiply_before_cast](
+            ref_out_host.unsafe_ptr(),
+            ref_other_host.unsafe_ptr(),
+            fused_out_host.unsafe_ptr(),
+            length,
+        )
 
     # Cleanup.
     _ = host_bufs^
@@ -2240,6 +2276,14 @@ def main() raises:
             ](list_of_ctx, rows, latent_cols)
             test_fused_allreduce_rmsnorm_noquant_latent[
                 num_gpus, DType.bfloat16, False
+            ](list_of_ctx, rows, latent_cols)
+        # The production latent is float32. 32 rows is a decode step: 56 KB of
+        # per-rank payload at 8 GPUs, under the 1-stage/2-stage crossover, but
+        # 224 KB at 2 GPUs, over it. 1 row is the smallest message, and 37
+        # leaves the per-rank row split ragged.
+        for rows in [1, 32, 37]:
+            test_fused_allreduce_rmsnorm_noquant_latent[
+                num_gpus, DType.float32, False
             ](list_of_ctx, rows, latent_cols)
 
         print(
