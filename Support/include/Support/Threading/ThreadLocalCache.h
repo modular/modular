@@ -17,6 +17,7 @@
 #include "llvm/Support/Threading.h"
 #include <concepts>
 #include <cstdint>
+#include <memory>
 
 #ifndef SUPPORT_THREADING_THREADLOCALCACHE_H
 #define SUPPORT_THREADING_THREADLOCALCACHE_H
@@ -45,12 +46,11 @@ concept HasThreadCacheFactory = requires(const CacheT &original) {
 template <typename CacheT>
 class ThreadLocalCache {
 public:
-  /// Construct a thread-local cache manager given the maximum number of threads
-  /// that may try to access the cache. This ensures the map does not resize.
-  explicit ThreadLocalCache(CacheT &original, unsigned maxNumThreads)
+  /// Construct a thread-local cache manager given the expected number of
+  /// threads that access the cache.
+  explicit ThreadLocalCache(CacheT &original, unsigned expectedNumThreads)
       : original(original) {
-    // Reserve the thread-local cache map so that it never resizes.
-    threadCaches.reserve(maxNumThreads);
+    threadCaches.reserve(expectedNumThreads);
   }
 
   /// Get the cache instance for the current thread.
@@ -59,34 +59,35 @@ public:
     {
       llvm::sys::SmartScopedReader<true> lock(mutex);
       if (auto it = threadCaches.find(threadId); it != threadCaches.end())
-        return it->second;
+        return *it->second;
     }
     llvm::sys::SmartScopedWriter<true> lock(mutex);
-    return threadCaches.try_emplace(threadId, createThreadCache())
-        .first->second;
+    return *threadCaches.try_emplace(threadId, createThreadCache())
+                .first->second;
   }
 
   /// Consolidate the thread-local caches back into the main cache instance, if
   /// desired.
   void consolidate(llvm::function_ref<void(CacheT &, const CacheT &)> unionFn) {
-    for (const CacheT &cache : llvm::make_second_range(threadCaches))
-      unionFn(original, cache);
+    for (const std::unique_ptr<CacheT> &cache :
+         llvm::make_second_range(threadCaches))
+      unionFn(original, *cache);
   }
 
 private:
   /// Returns the cache a thread starts with: `CacheT::makeThreadCache` if the
   /// cache type defines it, otherwise a copy of `original`.
-  CacheT createThreadCache() const {
+  std::unique_ptr<CacheT> createThreadCache() const {
     if constexpr (HasThreadCacheFactory<CacheT>)
-      return CacheT::makeThreadCache(original);
+      return std::make_unique<CacheT>(CacheT::makeThreadCache(original));
     else
-      return original;
+      return std::make_unique<CacheT>(original);
   }
 
   /// The original cache that each thread's cache starts from.
   CacheT &original;
   /// Thread-local instances of the cache.
-  llvm::DenseMap<uint64_t, CacheT> threadCaches;
+  llvm::DenseMap<uint64_t, std::unique_ptr<CacheT>> threadCaches;
   /// The mutex guarding the thread-local cache instances.
   llvm::sys::SmartRWMutex<true> mutex;
 };
