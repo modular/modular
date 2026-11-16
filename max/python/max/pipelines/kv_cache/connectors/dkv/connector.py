@@ -327,9 +327,39 @@ def _buffer_nbytes(buffer: Buffer) -> int:
     return buffer.num_elements * buffer.dtype.size_in_bytes
 
 
+def _check_handle_source(buffer: Buffer) -> None:
+    """Raises if ``buffer`` cannot cross to the dKV client as a driver buffer.
+
+    Mirrors the refusals of ``Buffer._driver_buffer_handle`` that Python can
+    see, so the shim can check every unit before it makes the first handle.
+
+    Args:
+        buffer: One shard's KV buffer unit.
+
+    Raises:
+        ValueError: If the buffer is strided, empty, or host hazard tracked.
+    """
+    device_id = buffer.device.id
+    if not buffer.is_contiguous:
+        raise ValueError(
+            f"dKV takes a KV buffer as a driver buffer handle, which names "
+            f"contiguous memory, and the KV buffer on device {device_id} is "
+            "strided"
+        )
+    if buffer.num_elements == 0:
+        raise ValueError(
+            f"dKV cannot take the empty KV buffer on device {device_id}"
+        )
+    if buffer._host_hazard_tracked:
+        raise ValueError(
+            f"the KV buffer on device {device_id} is host hazard tracked, "
+            "and dKV copies it on its own streams, outside that tracking"
+        )
+
+
 def _group_units_by_shard(
     kv_memory: Sequence[KVCacheMemory],
-) -> tuple[list[tuple[int, list[tuple[int, int]]]], bool]:
+) -> tuple[list[tuple[int, list[Buffer]]], bool]:
     """Groups one replica's KV memory units into per-shard unit lists.
 
     Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
@@ -344,9 +374,9 @@ def _group_units_by_shard(
 
     Returns:
         A ``(shards, shards_are_identical)`` pair, where ``shards`` has one
-        ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order, and ``shards_are_identical`` reports whether every unit
-        is replicated.
+        ``(device_id, [buffer, ...])`` entry per TP shard in canonical device
+        order, and ``shards_are_identical`` reports whether every unit is
+        replicated.
 
     Raises:
         ValueError: If unit page counts disagree, or if units span different
@@ -381,16 +411,7 @@ def _group_units_by_shard(
 
     topology = next(iter(topologies))
     shards = [
-        (
-            device_id,
-            [
-                (
-                    mem.buffers[rank]._data_ptr(),
-                    _buffer_nbytes(mem.buffers[rank]),
-                )
-                for mem in kv_memory
-            ],
-        )
+        (device_id, [mem.buffers[rank] for mem in kv_memory])
         for rank, device_id in enumerate(topology)
     ]
     return shards, shards_are_identical
@@ -421,7 +442,7 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     total_num_pages = kv_memory[0].total_num_pages
     _, units = shards[0]
 
-    return [nbytes // total_num_pages for _, nbytes in units]
+    return [_buffer_nbytes(buffer) // total_num_pages for buffer in units]
 
 
 # Default wall-clock budget for admitting (connect + handshake) one per-replica
@@ -1668,10 +1689,40 @@ class DKVConnector(KVConnector):
         # unaffected since the null page is last and is never transferred.
         total_num_pages = kv_memory[0].total_num_pages
 
+        # Each unit crosses as a driver buffer handle rather than an address,
+        # so the Rust client copies through views of the buffer. An extension
+        # older than that takes (address, length) pairs, and would refuse the
+        # handles with pyo3's bare TypeError after they exist, with nothing
+        # left to release them.
+        if not getattr(client_cls, "TAKES_DRIVER_BUFFER_HANDLES", False):
+            raise RuntimeError(
+                "The installed dkv_connector extension takes KV buffers as "
+                "(address, length) pairs, but this MAX hands them over as "
+                "driver buffer handles. Install the dkv_connector wheel "
+                "built with this MAX, which has the same version as the max "
+                "package."
+            )
+
+        # Every unit is checked before the first handle exists, because a
+        # refusal partway through would strand the handles made before it.
+        # TODO(pprovins): a refusal Python cannot see, such as a sub-byte view
+        # that does not start on a byte, still strands them. Once such a
+        # buffer can reach dKV, release the made handles on that path.
+        for _, units in shards:
+            for buffer in units:
+                _check_handle_source(buffer)
+
+        # The client owns the handles from here and releases them, also when
+        # its construction fails.
+        device_buffers = [
+            (device_id, [buffer._driver_buffer_handle() for buffer in units])
+            for device_id, units in shards
+        ]
+
         try:
             return client_cls(
                 local_block_store_endpoint,
-                shards,
+                device_buffers,
                 0,  # page_size (tokens): unused by the Rust client
                 total_num_pages,
                 len(shards),
