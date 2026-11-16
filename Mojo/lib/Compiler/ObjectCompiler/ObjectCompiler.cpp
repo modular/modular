@@ -34,10 +34,12 @@
 #include "Mojo/ToolCommon/Debug.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Mojo/ToolCommon/PipelineTiming.h"
+#include "Mojo/TransformUtils/SlicingUtils.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "Target/TargetTraits.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/FileUtilities.h"
@@ -52,6 +54,7 @@
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -815,12 +818,9 @@ translateModuleToLLVMIR(llvm::LLVMContext &ctx, ModuleOp module,
   return llvmModule;
 }
 
-ErrorOr<std::unique_ptr<llvm::Module>>
-ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
-  CompilerTimeTraceScope traceScope("lower-to-llvm");
-
-  // Declared before `mgr` so it outlives the pass manager reporting into it.
-  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+ErrorOrSuccess
+ObjectCompiler::lowerAllFuncsToLLVMDialect(ModuleOp module,
+                                           mlir::TimingScope &timing) {
   mlir::PassManager mgr = createPassManager(pmOptions.operationName, &context);
 
   // Ignore potential error that could happen when `mojo` tool is called,
@@ -849,6 +849,17 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llvm-ir", module,
                              ".mlir")))
     return Error("writing module to file before converting to LLVM IR failed");
+
+  return success();
+}
+
+ErrorOr<std::unique_ptr<llvm::Module>>
+ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
+  CompilerTimeTraceScope traceScope("lower-to-llvm");
+
+  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+  if (ErrorOrSuccess err = lowerAllFuncsToLLVMDialect(module, timing))
+    return err.takeError();
 
   // Translate the operation into an LLVM module.
   std::unique_ptr<llvm::Module> llvmModule =
@@ -1721,6 +1732,15 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 
     // Materialize the module.
     LLVMModuleAndContext module = produceModule();
+    if (!module.hasModule()) {
+      std::move(resultBufs)
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to translate an offload kernel to LLVM IR", loc));
+      std::move(resultKernelId)
+          .setToError(AsyncRT::getMLIRDiagnostic(
+              "failed to translate an offload kernel to LLVM IR", loc));
+      return;
+    }
 
     ErrorOr<std::pair<uint64_t, llvm::Function *>> kernelIdFuncOr =
         getKernelIDFromLLVMModule(*module);
@@ -1809,12 +1829,30 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
   return std::make_pair(std::move(resultBufs), std::move(resultKernelId));
 }
 
+/// Answers `TargetBackend::isSharedMemoryGlobal` for a global that is still in
+/// the LLVM dialect. The backend takes an LLVM IR global and reads its name,
+/// address space and linkage, which the probe built here carries.
+static bool isSharedMemoryGlobal(const TargetBackend &backend,
+                                 mlir::LLVM::GlobalOp global,
+                                 llvm::LLVMContext &probeCtx) {
+  std::unique_ptr<llvm::GlobalVariable> probe(new llvm::GlobalVariable(
+      llvm::Type::getInt8Ty(probeCtx), /*isConstant=*/false,
+      global.getLinkage() == mlir::LLVM::Linkage::External
+          ? llvm::GlobalValue::ExternalLinkage
+          : llvm::GlobalValue::InternalLinkage,
+      /*Initializer=*/nullptr, global.getSymName(),
+      llvm::GlobalValue::NotThreadLocal, global.getAddrSpace()));
+  return backend.isSharedMemoryGlobal(*probe);
+}
+
 // Emit offload kernels.
 // The input module is a bundle of multiple offload kernels.
 // Th output is a vector of compiled offload kernels with their corresponding
 // kernel ids.
 // This function does the following steps:
-// - Split the input module into submodules for each kernel.
+// - Lower the input module to the LLVM dialect.
+// - Split the input module into submodules for each kernel, and translate
+//   each to LLVM IR.
 //   We don't do per function splitting for offload kernels since
 //   some backends are inter-procedural.
 // - Extract kernel ID for each split.
@@ -1830,8 +1868,6 @@ ObjectCompiler::emitOffloadKernels(
   // Perform a cache aware transformation to translate the module to an
   // archive file.
 
-  // Lower the module to LLVM.
-  LLVMModuleAndContext llvmModule;
   Location moduleLoc = module->getLoc();
 
   // Save elaborated MLIR module to saveTempsPrefix.
@@ -1843,15 +1879,28 @@ ObjectCompiler::emitOffloadKernels(
       return Error("failed to save mlir to saveTempPrefix");
   }
 
-  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-        return lowerAllFuncsToLLVM(ctx, *module);
-      })) {
+  auto lowerError = [](const char *message) {
     return Error(
         Twine("failed to lower module to LLVM IR for archive compilation, ") +
-        err.getError());
-  }
+        message);
+  };
+  auto translate =
+      [&options = options](
+          llvm::LLVMContext &ctx,
+          ModuleOp mlirModule) -> ErrorOr<std::unique_ptr<llvm::Module>> {
+    std::unique_ptr<llvm::Module> llvmModule =
+        translateModuleToLLVMIR(ctx, mlirModule, options);
+    if (!llvmModule)
+      return Error("translate module to LLVMIR failed");
+    return llvmModule;
+  };
 
-  (void)writeTempModule(options.saveTempsPrefix, ".pre-split", *llvmModule);
+  mlir::TimingScope timing = pmOptions.nestTimingScope("Lower to LLVM");
+  {
+    CompilerTimeTraceScope lowerScope("lower-to-llvm");
+    if (ErrorOrSuccess err = lowerAllFuncsToLLVMDialect(*module, timing))
+      return lowerError(err.getError());
+  }
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults;
   auto handleSplit =
@@ -1864,10 +1913,36 @@ ObjectCompiler::emitOffloadKernels(
         cachedResults.push_back(std::move(result.second));
       };
 
-  // Required by the signature; offload never outlines, so it stays empty.
-  llvm::StringMap<llvm::GlobalValue::LinkageTypes> unusedLinkageTypes;
-  splitPerExported(std::move(llvmModule), handleSplit, unusedLinkageTypes,
-                   /*outlineSharedSubtrees=*/false);
+  // The kernel tasks share the splitter, which owns what is left of the module.
+  auto splitter =
+      std::make_shared<LLVMDialectModuleSplitter>(std::move(module));
+  llvm::LLVMContext probeCtx;
+  auto isSliceLocalGlobal = [&](mlir::LLVM::GlobalOp global) {
+    return isSharedMemoryGlobal(backend, global, probeCtx);
+  };
+
+  if (failed(splitter->plan(isSliceLocalGlobal)))
+    return lowerError("cannot split the offload module per kernel");
+  timing.stop();
+  unsigned numSymbols = 0;
+  for (size_t idx = 0, e = splitter->getNumSlices(); idx != e; ++idx) {
+    auto produceModule = [splitter, idx, translate]() {
+      OwningOpRef<ModuleOp> slice = splitter->takeSlice(idx);
+      // A failed translation leaves the module empty, which the kernel task
+      // reports.
+      LLVMModuleAndContext sliceModule;
+      (void)sliceModule.create([&](llvm::LLVMContext &ctx) {
+        ErrorOr<std::unique_ptr<llvm::Module>> moduleOr =
+            translate(ctx, *slice);
+        if (!moduleOr.isError())
+          (*moduleOr)->removeModuleInlineAsm();
+        return moduleOr;
+      });
+      return sliceModule;
+    };
+    handleSplit(std::move(produceModule), idx, numSymbols);
+    numSymbols += splitter->getNumSymbols(idx);
+  }
 
   auto result = AsyncRT::AsyncValueRef<
       DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);

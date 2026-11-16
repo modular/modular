@@ -124,6 +124,11 @@ private:
       const std::string &linker,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
+  /// Lower the given module to the LLVM dialect, reporting pass times into
+  /// `timing`.
+  ErrorOrSuccess lowerAllFuncsToLLVMDialect(ModuleOp module,
+                                            mlir::TimingScope &timing);
+
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
   AsyncRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(

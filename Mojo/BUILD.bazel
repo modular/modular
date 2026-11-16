@@ -1340,6 +1340,7 @@ modular_cc_library(
         "//AsyncRT:Runtime",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
+        "@llvm-project//mlir:LLVMDialect",
     ],
 )
 
