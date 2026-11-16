@@ -69,7 +69,7 @@ ARCH_LABEL_OVERRIDES: dict[str, list[str]] = {
 # Registered architectures kept out of the public docs until they are ready
 # to announce, by module directory.
 UNLISTED_MODULES: frozenset[str] = frozenset(
-    {"hy_v4", "mtp_hy_v4", "muse_spark"}
+    {"hy_v4", "inkling2", "mtp_hy_v4", "muse_spark"}
 )
 
 # Speculative-decoding variants that arch resolution rewrites a base

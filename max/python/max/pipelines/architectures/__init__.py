@@ -288,6 +288,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("Ideogram4Pipeline", ".ideogram4", "ideogram4_arch"),
         _LazyArch(
+            "Inkling2ForConditionalGeneration_ModuleV3",
+            ".inkling2",
+            "inkling2_arch",
+        ),
+        _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"
         ),
         _LazyArch(

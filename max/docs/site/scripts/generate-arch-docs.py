@@ -116,7 +116,7 @@ def _lazy_arch_module(elt: ast.expr) -> str | None:
 # Registered architectures kept out of the public docs until they are ready
 # to announce, by module directory.
 UNLISTED_MODULES: frozenset[str] = frozenset(
-    {"hy_v4", "mtp_hy_v4", "muse_spark"}
+    {"hy_v4", "inkling2", "mtp_hy_v4", "muse_spark"}
 )
 
 
