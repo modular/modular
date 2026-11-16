@@ -870,7 +870,9 @@ class PixelGenerationTokenizer(
             if pixel_options.steps is not None
             else self._default_num_inference_steps
         )
-        model_config = self._pipeline_config.model
+        # Diffusion manifests have no "main" role. Every component carries
+        # the same request limits, so any one of them will do.
+        model_config = next(iter(self._pipeline_config.models.values()))
         max_dimension = model_config.max_image_dimension
         for name, value in (("width", width), ("height", height)):
             if value > max_dimension:
