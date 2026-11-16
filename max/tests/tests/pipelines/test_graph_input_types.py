@@ -66,7 +66,6 @@ from max.nn.legacy.graph_groups import BatchContext, RaggedBatch
 from max.nn.outputs import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
-from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
 from max.pipelines.architectures.flint.model_config import FlintConfig
 from max.pipelines.architectures.gemma4.batch_processor import (
     Gemma4BatchProcessor,
@@ -75,6 +74,7 @@ from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.architectures.gemma4.vision_model.vision_model import (
     Gemma4VisionModel,
 )
+from max.pipelines.architectures.gemma4_modulev3.modules import Gemma4Decoder
 from max.pipelines.architectures.inkling.inkling import Inkling
 from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
 from max.pipelines.architectures.inkling.state_cache import (
@@ -125,9 +125,6 @@ from max.pipelines.lib.interfaces import (
     modulev3_ragged_kv_symbolic_input_tree,
 )
 from max.pipelines.lib.module_registration import decoder_input_types
-from max.pipelines.lib.registration_graph_api import (
-    graph_api_decoder_input_types,
-)
 from max.pipelines.lib.registration_runtime import batch_context_length_types
 from max.tensor.tensor_spec_serialization import (
     layout_to_json,
@@ -472,6 +469,27 @@ def _gemma4(*, two_caches: bool = False) -> tuple[_InputTree, _InputTypes]:
     return input_tree, tuple(tree.leaves(input_tree))
 
 
+def _gemma4_modulev3() -> tuple[_InputTree, _InputTypes]:
+    """Gemma 4's ModuleV3 decoder registered by role.
+
+    Its image rows sit on the first device while its caches span both, and
+    the graph keeps the graph API pipeline's input order.
+    """
+    devices = _gpus(2)
+    config = _fake(
+        unquantized_dtype=DType.bfloat16,
+        text_config=_fake(hidden_size=_HIDDEN),
+    )
+    mesh = _fake(devices=devices)
+    types = decoder_input_types(
+        _gemma4_kv_params(devices),
+        devices[0],
+        vision=Gemma4Decoder.vision_input_types(config, mesh),
+        input_layout=Gemma4Decoder.input_layout,
+    )
+    return types, tuple(tree.leaves(types))
+
+
 def _deepseek(
     cls: Any,
     *,
@@ -499,22 +517,6 @@ def _text_model(cls: Any, **attrs: object) -> tuple[_InputTree, _InputTypes]:
     """A model whose ``input_tree`` takes no arguments."""
     input_tree = cls.input_tree(_model(cls, **attrs))
     return input_tree, tuple(tree.leaves(input_tree))
-
-
-def _graph_api_decoder() -> tuple[_InputTree, _InputTypes]:
-    """A registered graph-API decoder with signals, as Gemma 3 registers."""
-    devices = _gpus(2)
-    input_tree = _InputTree(
-        graph_api_decoder_input_types(
-            _kv_params(devices), devices, signals=True
-        )
-    )
-    return input_tree, tuple(tree.leaves(input_tree))
-
-
-def _deepseekV4(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
-    config = _fake(devices=devices, kv_params=_kv_params(devices))
-    return _text_model(DeepseekV4, config=config)
 
 
 def _inkling(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
@@ -552,12 +554,12 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "llama3_single_device": lambda: _llama3(_gpus(1)),
     "llama3_eagle_draft": lambda: _llama3(_gpus(1), hidden=True),
     "llama3_multi_device": _distributed_llama3,
-    "qwen3_5_text": lambda: _qwen3_5(vision=False, mrope=False),
     "qwen3_5_vision": lambda: _qwen3_5(vision=True, mrope=False),
     "qwen3_5_vision_mrope": lambda: _qwen3_5(vision=True, mrope=True),
     "qwen3_5_hybrid": lambda: _qwen3_5(vision=False, mrope=False, hybrid=True),
     "gemma4": _gemma4,
     "gemma4_two_caches": lambda: _gemma4(two_caches=True),
+    "gemma4_modulev3": _gemma4_modulev3,
     "deepseekV3": lambda: _deepseek(DeepseekV3, ep=False),
     "deepseekV3_ep": lambda: _deepseek(DeepseekV3, ep=True),
     "deepseekV3_ep_eplb": lambda: _deepseek(DeepseekV3, ep=True, eplb=True),
@@ -567,15 +569,6 @@ _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
     "deepseekV3_eplb_profile": lambda: _deepseek(
         DeepseekV3, ep=True, profile=True
     ),
-    "deepseekV3_2": lambda: _deepseek(DeepseekV3_2, ep=False),
-    "deepseekV3_2_ep": lambda: _deepseek(DeepseekV3_2, ep=True),
-    "deepseekV3_2_ep_eplb_profile": lambda: _deepseek(
-        DeepseekV3_2, ep=True, eplb=True, profile=True
-    ),
-    "gemma3": _graph_api_decoder,
-    "gpt_oss": _graph_api_decoder,
-    "deepseekV4_single_device": lambda: _deepseekV4(_gpus(1)),
-    "deepseekV4_multi_device": lambda: _deepseekV4(_gpus(2)),
     "registered_decoder": _registered_decoder,
     "registered_decoder_scratch": _registered_decoder_scratch,
     "registered_decoder_total_context": _registered_decoder_total_context,
@@ -850,10 +843,21 @@ def test_max_dims_refuses_an_unknown_dim() -> None:
         _runtime().max_dims(["mystery"], _kv_params(_gpus(1)))
 
 
-def test_deepseekv3_2_inputs_equal_deepseekv3_inputs() -> None:
-    """V3.2 reuses V3's input tree."""
-    assert _snapshot("deepseekV3_2") == _snapshot("deepseekV3")
-    assert _snapshot("deepseekV3_2_ep") == _snapshot("deepseekV3_ep")
+@pytest.mark.parametrize(
+    ("v3_case", "options"),
+    [
+        ("deepseekV3", {"ep": False}),
+        ("deepseekV3_ep", {"ep": True}),
+        ("deepseekV3_ep_eplb", {"ep": True, "eplb": True, "profile": True}),
+    ],
+)
+def test_deepseekv3_2_inputs_equal_deepseekv3_inputs(
+    v3_case: str, options: dict[str, bool]
+) -> None:
+    """V3.2 reuses V3's input tree, so the snapshot records only V3's."""
+    input_tree, input_types = _deepseek(DeepseekV3_2, **options)
+    assert _encode(input_tree) == _encode(_CASES[v3_case]()[0])
+    assert tuple(tree.leaves(input_tree)) == input_types
 
 
 def test_batch_processor_input_tree_is_none_until_bound() -> None:
@@ -882,16 +886,17 @@ def test_pipeline_model_binds_graph_input_tree() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "make_processor"),
+    ("build", "make_processor"),
     [
-        ("qwen3_5_text", Qwen3_5BatchProcessor),
-        ("qwen3_5_vision", Qwen3_5BatchProcessor),
-        ("qwen3_5_vision_mrope", Qwen3_5BatchProcessor),
-        ("gemma4", Gemma4BatchProcessor),
+        (partial(_qwen3_5, vision=False, mrope=False), Qwen3_5BatchProcessor),
+        (_CASES["qwen3_5_vision"], Qwen3_5BatchProcessor),
+        (_CASES["qwen3_5_vision_mrope"], Qwen3_5BatchProcessor),
+        (_CASES["gemma4"], Gemma4BatchProcessor),
     ],
+    ids=["qwen3_5_text", "qwen3_5_vision", "qwen3_5_vision_mrope", "gemma4"],
 )
 def test_bound_processor_symbolic_inputs_match_model_input_types(
-    name: str, make_processor: type
+    build: Callable[[], tuple[_InputTree, _InputTypes]], make_processor: type
 ) -> None:
     devices = _gpus(2)
     processor = _bare(make_processor)
@@ -900,7 +905,7 @@ def test_bound_processor_symbolic_inputs_match_model_input_types(
             kv_params=_kv_params(devices), device_refs=devices
         )
 
-    input_tree, input_types = _CASES[name]()
+    input_tree, input_types = build()
     processor.bind_input_tree(input_tree)
     inputs = processor.get_symbolic_inputs(
         kv_params=_kv_params(devices), device_refs=devices
