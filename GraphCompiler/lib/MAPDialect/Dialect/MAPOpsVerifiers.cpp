@@ -539,6 +539,14 @@ static MOSH::ShapeAttr getIndexedShape(Value index) {
                                                         : MOSH::ShapeAttr();
   if (auto body = llvm::dyn_cast<IterElementwiseBodyOp>(owner))
     return arg.getArgNumber() == 0 ? body.getShape() : MOSH::ShapeAttr();
+  if (auto fold = llvm::dyn_cast<IterReduceOp>(owner)) {
+    Operation *rowwise = fold->getParentOp();
+    if (auto op = llvm::dyn_cast<IterRowwiseOp>(rowwise))
+      return op.getShape();
+    if (auto body = llvm::dyn_cast<IterRowwiseBodyOp>(rowwise))
+      return body.getShape();
+    return {};
+  }
   auto epilogue = llvm::dyn_cast<IterEpilogueOp>(owner);
   if (!epilogue || arg.getArgNumber() != 1)
     return {};
@@ -636,16 +644,17 @@ LogicalResult ConcatSelectOp::verify() {
     return emitOpError() << "index rank does not match spec's rank " << rank;
 
   // The select runs at the loaded vector's first index, so the index must run
-  // along the out-shape's innermost dim with the vector: a loop index or an
-  // enclosing select's argument, never one an index op computed.
+  // along the out-shape's innermost dim with the vector: a loop index, a
+  // fold's index or an enclosing select's argument, never one an index op
+  // computed.
   auto arg = dyn_cast<BlockArgument>(getIndex());
   MOSH::ShapeAttr indexed;
-  if (arg && isa<IterElementwiseOp, IterElementwiseBodyOp, SliceSelectOp,
-                 ConcatSelectOp>(arg.getOwner()->getParentOp()))
+  if (arg && isa<IterElementwiseOp, IterElementwiseBodyOp, IterReduceOp,
+                 SliceSelectOp, ConcatSelectOp>(arg.getOwner()->getParentOp()))
     indexed = getIndexedShape(arg);
   if (!indexed)
-    return emitOpError() << "index must be its foreach's loop index or an "
-                            "enclosing select's argument";
+    return emitOpError() << "index must be its foreach's loop index, a fold's "
+                            "index or an enclosing select's argument";
   if (indexed != spec.getResultShape())
     return emitOpError() << "spec's out-shape " << spec.getResultShape()
                          << " does not match the shape " << indexed

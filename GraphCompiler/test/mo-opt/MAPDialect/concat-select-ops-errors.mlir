@@ -33,7 +33,7 @@ func.func @f(%a: !mo.tensor<[4, 8], f32>, %b: !mo.tensor<[4, 16], f32>) -> !mo.t
   outputs (%out: !mo.tensor<[24, 4], f32>)
   index   (%idx: !map.index<2>) -> !mo.tensor<[24, 4], f32> {
     %t = map.index.reshape<#map.index.reshape.spec<[4, 24] -> [24, 4]>> (%idx) : !map.index<2> -> !map.index<2>
-    // expected-error @below{{index must be its foreach's loop index or an enclosing select's argument}}
+    // expected-error @below{{index must be its foreach's loop index, a fold's index or an enclosing select's argument}}
     %v = map.index.concat.select<#map.index.concat.spec<[4, 8], [4, 16] -> [4, 24], axis = 1>> (%t) : !map.index<2> -> f32 (%i: !map.index<2>) {
       %x = map.load %a[%i] : !mo.tensor<[4, 8], f32>
       map.yield %x : f32

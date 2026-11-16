@@ -55,6 +55,14 @@ StoreOp getUniqueStore(mlir::Block &body);
 /// Asserts there is at least one.
 llvm::SmallVector<StoreOp> getOutputStores(mlir::Block &body);
 
+/// Whether every user of `slot` is a `map.load` whose index satisfies
+/// `atIndex`.
+bool loadsOnlyAt(mlir::BlockArgument slot,
+                 llvm::function_ref<bool(mlir::Value)> atIndex);
+
+/// Whether `op` holds a `map.index.concat.select` anywhere in its body.
+bool holdsConcatSelect(mlir::Operation *op);
+
 } // namespace M::MAP
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPS_H

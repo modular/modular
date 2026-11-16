@@ -2,9 +2,10 @@
 
 // A view op with a registered kernel is called like any other opaque kernel,
 // instead of being lowered to its index loop. %view_kernel_pkg registers
-// mo.static.broadcast_to and mo.transpose for GPU only, so on gpu:0 the ops
-// become map.iter.opaque, and on the host, where no registration matches, the
-// same ops still lower to map.index.broadcast / map.index.transpose.
+// mo.static.broadcast_to, mo.transpose and mo.concat for GPU only, so on gpu:0
+// the ops become map.iter.opaque, and on the host, where no registration
+// matches, the same ops still lower to map.index.broadcast /
+// map.index.transpose / map.index.concat.select.
 
 // CHECK-LABEL: mo.graph @broadcastWithKernel
 // CHECK-SAME:  (%[[IN:.*]]: !mo.tensor<[1, 64], f32, gpu:0>)
@@ -51,4 +52,24 @@ mo.graph @transposeWithoutKernel(%input: !mo.tensor<[2, 3], f32>) -> !mo.tensor<
     !mo.tensor<[2, 3], f32>, !mo.tensor<[2], si64>
   ) -> !mo.tensor<[3, 2], f32>
   mo.output %res : !mo.tensor<[3, 2], f32>
+}
+
+// Concat follows the same rule: the GPU stub, a stand-in for a DMA copy, is
+// called, and on the host the concat lowers to its index loop.
+// CHECK-LABEL: mo.graph @concatWithKernel
+// CHECK:       map.iter.opaque
+// CHECK:       map.call.opaque @{{.*}}view_kernels.Concat[axis = 1 : index] inputs(%{{.*}}, %{{.*}}) outputs(%{{.*}}) kernelName = "mo.concat"
+// CHECK-NOT:   map.index.concat.select
+mo.graph @concatWithKernel(%a: !mo.tensor<[4, 8], f32, gpu:0>, %b: !mo.tensor<[4, 16], f32, gpu:0>) -> !mo.tensor<[4, 24], f32, gpu:0> {
+  %res = mo.concat[1] (%a, %b) : (!mo.tensor<[4, 8], f32, gpu:0>, !mo.tensor<[4, 16], f32, gpu:0>) -> !mo.tensor<[4, 24], f32, gpu:0>
+  mo.output %res : !mo.tensor<[4, 24], f32, gpu:0>
+}
+
+// CHECK-LABEL: mo.graph @concatWithoutKernel
+// CHECK-NOT:   map.iter.opaque
+// CHECK:       map.iter.elementwise<[4, 24]>
+// CHECK:       map.index.concat.select
+mo.graph @concatWithoutKernel(%a: !mo.tensor<[4, 8], f32>, %b: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 24], f32> {
+  %res = mo.concat[1] (%a, %b) : (!mo.tensor<[4, 8], f32>, !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 24], f32>
+  mo.output %res : !mo.tensor<[4, 24], f32>
 }

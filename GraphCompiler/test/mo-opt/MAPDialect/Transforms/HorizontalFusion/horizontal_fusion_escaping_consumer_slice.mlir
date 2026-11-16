@@ -312,3 +312,65 @@ mo.graph @pair_and_slice(%p: !mo.tensor<[8, 8], f32>, %q: !mo.tensor<[8, 16], f3
   %y = mo.relu(%w) : !mo.tensor<[4, 16], f32>
   mo.output %x, %z, %y : !mo.tensor<[8, 16], f32>, !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>
 }
+
+// A concat lowers to a view foreach, so a window of a returned concat merges
+// like any other escaping consumer: the KV-cache window update is one kernel.
+// PIPE-LABEL:  mo.graph @concat_slice_window
+// PIPE:        %[[K:.*]]:2 = map.iter.elementwise<[B, T, 16]>
+// PIPE:        map.index.concat.select
+// PIPE:        map.index.slice.select<#map.index.slice.spec<[B, T, 16] -> [B, 8, 16], starts = [0, -8, 0]
+// PIPE-NOT:    map.iter.elementwise
+// PIPE:        mo.output<B, T> %[[K]]#0, %[[K]]#1
+mo.graph @concat_slice_window<B, S, T -> OB, OT>(
+  %cache: !mo.tensor<[B, 8, 16], f32>,
+  %new: !mo.tensor<[B, S, 16], f32>,
+  %stops: !mo.tensor<[3], si64>
+) -> (!mo.tensor<[OB, OT, 16], f32>, !mo.tensor<[OB, 8, 16], f32>) {
+  %starts = mo.constant <#M.dense_array<0, -8, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %steps = mo.constant <#M.dense_array<1, 1, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %concat = mo.concat[1] (%cache, %new) : (!mo.tensor<[B, 8, 16], f32>, !mo.tensor<[B, S, 16], f32>) -> !mo.tensor<[B, T, 16], f32>
+  %slice = mo.slice(%concat, %starts, %stops, %steps) : (!mo.tensor<[B, T, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[B, 8, 16], f32>
+  mo.output<B, T> %concat, %slice : !mo.tensor<[B, T, 16], f32>, !mo.tensor<[B, 8, 16], f32>
+}
+
+// The window as the concat's sole reader: nothing escapes, so the concat and
+// the window stay two kernels, as with an opaque concat.
+// PIPE-LABEL:  mo.graph @concat_slice_single_use
+// PIPE:        %[[C:.*]] = map.iter.elementwise<[4, 9, 16]>
+// PIPE-NOT:    map.index.slice.select
+// PIPE:        map.iter.elementwise<[4, 8, 16]>
+// PIPE-NEXT:   inputs  (%[[C]]:
+mo.graph @concat_slice_single_use(
+  %arg0: !mo.tensor<[4, 8, 16], f32>,
+  %arg1: !mo.tensor<[4, 1, 16], f32>
+) -> !mo.tensor<[4, 8, 16], f32> {
+  %starts = mo.constant <#M.dense_array<0, -8, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %stops = mo.constant <#M.dense_array<4, 9, 16> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %steps = mo.constant <#M.dense_array<1, 1, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %concat = mo.concat[1] (%arg0, %arg1) : (!mo.tensor<[4, 8, 16], f32>, !mo.tensor<[4, 1, 16], f32>) -> !mo.tensor<[4, 9, 16], f32>
+  %slice = mo.slice(%concat, %starts, %stops, %steps) : (!mo.tensor<[4, 9, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[4, 8, 16], f32>
+  mo.output %slice : !mo.tensor<[4, 8, 16], f32>
+}
+
+// Two windows of one concat pair with each other first; the pair, one consumer
+// with two stores, is not one the select takes, so the concat stays alone.
+// PIPE-LABEL:  mo.graph @concat_slice_two_windows
+// PIPE:        %[[C:.*]] = map.iter.elementwise<[4, 16, 16]>
+// PIPE-NOT:    map.index.slice.select
+// PIPE:        %[[PAIR:.*]]:2 = map.iter.elementwise<[4, 8, 16]>
+// PIPE-NEXT:   inputs  (%[[C]]:
+// PIPE:        mo.output %[[C]], %[[PAIR]]#0, %[[PAIR]]#1
+mo.graph @concat_slice_two_windows(
+  %arg0: !mo.tensor<[4, 15, 16], f32>,
+  %arg1: !mo.tensor<[4, 1, 16], f32>
+) -> (!mo.tensor<[4, 16, 16], f32>, !mo.tensor<[4, 8, 16], f32>, !mo.tensor<[4, 8, 16], f32>) {
+  %tailStarts = mo.constant <#M.dense_array<0, -8, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %stepStarts = mo.constant <#M.dense_array<0, 0, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %stops = mo.constant <#M.dense_array<4, 16, 16> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %unit = mo.constant <#M.dense_array<1, 1, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %step2 = mo.constant <#M.dense_array<1, 2, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %concat = mo.concat[1] (%arg0, %arg1) : (!mo.tensor<[4, 15, 16], f32>, !mo.tensor<[4, 1, 16], f32>) -> !mo.tensor<[4, 16, 16], f32>
+  %tail = mo.slice(%concat, %tailStarts, %stops, %unit) : (!mo.tensor<[4, 16, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[4, 8, 16], f32>
+  %even = mo.slice(%concat, %stepStarts, %stops, %step2) : (!mo.tensor<[4, 16, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[4, 8, 16], f32>
+  mo.output %concat, %tail, %even : !mo.tensor<[4, 16, 16], f32>, !mo.tensor<[4, 8, 16], f32>, !mo.tensor<[4, 8, 16], f32>
+}

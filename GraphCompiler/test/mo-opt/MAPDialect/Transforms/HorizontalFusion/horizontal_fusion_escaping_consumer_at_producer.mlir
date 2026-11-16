@@ -6,6 +6,28 @@
 // producer's place; otherwise readers that are only metadata move past the
 // consumer.
 
+// The cast's result feeds the cumsum, then the mul: one kernel, ahead of the
+// cumsum, stores the cast and the mul.
+// CHECK-LABEL: mo.graph @concat_cast_mul
+// CHECK:       %[[K:.*]]:2 = map.iter.elementwise<[P]>
+// CHECK:       map.index.concat.select
+// CHECK:       %[[CAST:[0-9]+]] = map.call.elementwise @{{.*}}.Cast
+// CHECK-NEXT:  map.store %{{.*}} = %[[CAST]]
+// CHECK:       map.call.elementwise @{{.*}}.Mul(%{{.*}}, %[[CAST]], %{{.*}})
+// CHECK:       %[[SUM:.*]] = map.iter.opaque
+// CHECK-NEXT:  inputs (%[[K]]#0
+// CHECK-NOT:   map.iter.elementwise
+// CHECK:       mo.output %[[SUM]], %[[K]]#1
+mo.graph @concat_cast_mul<B, P>(%x: !mo.tensor<[B], si64>, %s: !mo.tensor<[], ui32>) -> (!mo.tensor<[P], ui32>, !mo.tensor<[P], ui32>) {
+  %z = mo.constant <#M.dense_array<0> : tensor<1xsi64>> : !mo.tensor<[1], si64>
+  %c = mo.concat[0] (%z, %x) : (!mo.tensor<[1], si64>, !mo.tensor<[B], si64>) -> !mo.tensor<[P], si64>
+  %u = mo.cast(%c) : (!mo.tensor<[P], si64>) -> !mo.tensor<[P], ui32>
+  %k = mo.cumsum(%u) [axis = 0, exclusive = 0, reverse = 0] : (!mo.tensor<[P], ui32>) -> !mo.tensor<[P], ui32>
+  %b = mo.static.broadcast_to(%s) : !mo.tensor<[], ui32> -> !mo.tensor<[P], ui32>
+  %m = mo.mul(%u, %b) : !mo.tensor<[P], ui32>
+  mo.output %k, %m : !mo.tensor<[P], ui32>, !mo.tensor<[P], ui32>
+}
+
 // The add feeds the cumsum, then the relu: one kernel, ahead of the cumsum,
 // stores the add and the relu.
 // CHECK-LABEL: mo.graph @add_cumsum_relu
@@ -57,6 +79,27 @@ mo.graph @add_slice_window_rebind<B, S>(%a: !mo.tensor<[B, S, 16], f32>, %b: !mo
   %stops = mo.shape.to_tensor(%shape) -> !mo.tensor<[3], si64>
   %window = mo.slice(%x, %starts, %stops, %steps) : (!mo.tensor<[B, S, 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[B, 8, 16], f32>
   mo.output %full, %window : !mo.tensor<[B, S, 16], f32>, !mo.tensor<[B, 8, 16], f32>
+}
+
+// The KV-cache window as the Graph API builds it: the concat is returned
+// through a `mo.rebind`, and the window's stops are computed after the concat.
+// The rebind moves past the window, and the merged kernel takes its place.
+// CHECK-LABEL: mo.graph @concat_slice_window_rebind
+// CHECK:       %[[K:.*]]:2 = map.iter.elementwise<[B, add(S, 8), 16]>
+// CHECK:       map.index.concat.select
+// CHECK:       map.index.slice.select
+// CHECK:       %[[FULL:.*]] = mo.rebind(%[[K]]#0)
+// CHECK-NOT:   map.iter.elementwise
+// CHECK:       mo.output %[[FULL]], %[[K]]#1
+mo.graph @concat_slice_window_rebind<B, S>(%cache: !mo.tensor<[B, 8, 16], f32>, %new: !mo.tensor<[B, S, 16], f32>) -> (!mo.tensor<[B, add(S, 8), 16], f32>, !mo.tensor<[B, 8, 16], f32>) {
+  %steps = mo.constant <#M.dense_array<1, 1, 1> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %starts = mo.constant <#M.dense_array<0, -8, 0> : tensor<3xsi64>> : !mo.tensor<[3], si64>
+  %concat = mo.concat[1] (%cache, %new) : (!mo.tensor<[B, 8, 16], f32>, !mo.tensor<[B, S, 16], f32>) -> !mo.tensor<[B, add(S, 8), 16], f32>
+  %full = mo.rebind(%concat) : !mo.tensor<[B, add(S, 8), 16], f32> -> !mo.tensor<[B, add(S, 8), 16], f32>
+  %shape = mosh.param.to_value: !mosh.ape = <[B, add(S, 8), 16]>
+  %stops = mo.shape.to_tensor(%shape) -> !mo.tensor<[3], si64>
+  %window = mo.slice(%concat, %starts, %stops, %steps) : (!mo.tensor<[B, add(S, 8), 16], f32>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>, !mo.tensor<[3], si64>) -> !mo.tensor<[B, 8, 16], f32>
+  mo.output %full, %window : !mo.tensor<[B, add(S, 8), 16], f32>, !mo.tensor<[B, 8, 16], f32>
 }
 
 // The add is returned and read by the cumsum in between, and the relu reads
