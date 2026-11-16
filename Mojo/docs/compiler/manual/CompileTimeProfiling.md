@@ -12,6 +12,7 @@ act on.
 | `--mlir-timing`              | Times every MLIR pass and analysis.                                                            |
 | `--llvm-timing`              | Times every LLVM pass and analysis.                                                            |
 | `--mlir-timing-display MODE` | `tree` (default) nests by pipeline structure; `list` aggregates per pass name, sorted by time. |
+| `--parser-stats`             | Reports the parser's self time per declaration.                                                |
 | `--elaboration-stats`        | Reports `comptime for` unrolling and interpreter calls per pipeline.                           |
 | `--timing-json`              | Writes the reports as one JSON object instead of as text.                                      |
 | `--timing-file FILE`         | Writes the reports to `FILE` instead of to stderr.                                             |
@@ -47,7 +48,8 @@ Three sections, in this order:
    target.
 3. `LLVM pass timing (--llvm-timing): host <triple>`.
 
-[Elaboration statistics](#elaboration-statistics) print between the MLIR and
+[Parser statistics](#parser-statistics), then
+[elaboration statistics](#elaboration-statistics), print between the MLIR and
 LLVM sections.
 
 Compiling for an accelerator runs the compiler again on the kernels, so the
@@ -106,7 +108,8 @@ a warm cache still reports nothing.
 
 The object holds one member per report, and only the members the command asked
 for — `--timing-json` with no timing flag gets `{}`. See
-[The `elaboration` member](#the-elaboration-member) for its layout.
+[The `parser` member](#the-parser-member) and
+[The `elaboration` member](#the-elaboration-member) for their layouts.
 
 ```json
 {
@@ -307,6 +310,118 @@ per module, so `InstCombinePass` appears 765 times at about 0.30s each.
 Aggregate by name, stripping the `#N` instance suffix, or the top of the list
 is ten identical rows.
 
+## Parser statistics
+
+`--parser-stats` shows which declarations the parser spends its time on. For
+each declaration it resolves, it reports the self time of each activity:
+
+- `signature` and `body` parse the declaration from source.
+- `synthetic_signature` and `synthetic_body` make a declaration that has no
+  source.
+- `bytecode` resolves a declaration that a precompiled package, such as `std`,
+  holds.
+
+Times are exclusive. When resolving one declaration demands another, the
+demanded one's time counts only for it, so the rows, the unattributed time and
+the profiler overhead add up to the wall time of the parse.
+
+Like the timing reports, it prints as text to stderr. `--timing-json` switches
+it to JSON under a `parser` key, and `--timing-file` sends it to a file. The
+parser runs on every compile, so unlike the elaboration statistics, a warm
+cache does not empty this report.
+
+```bash
+mojo build --parser-stats --timing-json --timing-file=stats.json \
+  model.mojo -o /dev/null
+```
+
+To turn `stats.json` into readable tables, including the self time per source
+file, run the `mojo-compile-stats` skill (`/mojo-compile-stats stats.json`);
+see [Digesting the statistics](#digesting-the-statistics).
+
+### Reading the parser text report
+
+For a small program that imports `std`, trimmed to three declarations:
+
+```text
+===--- Parser statistics (--parser-stats): demo.mojo ===
+
+parse: 0.3126 s wall, 3,623 declarations
+
+Self time by activity:
+      self s    share  activity
+      0.0003     0.1%  signature
+      0.0045     1.4%  body
+      0.0000     0.0%  synthetic_signature
+      0.0005     0.2%  synthetic_body
+      0.2419    77.4%  bytecode
+      0.0601    19.2%  unattributed
+      0.0052     1.7%  profiler_overhead
+
+Declarations by self time:
+      self s   signature s        body s       other s    frames  declaration
+      0.0150        0.0000        0.0000        0.0150         1  file_module std.builtin._format_float  Mojo/stdlib/std/builtin/_format_float.mojo:1:1
+      0.0089        0.0000        0.0000        0.0089         2  def std.collections.string._parsing_numbers.constants.get_power_of_5  Mojo/stdlib/std/collections/string/_parsing_numbers/constants.mojo:53:5
+      0.0044        0.0001        0.0043        0.0000         2  def demo.main  demo.mojo:13:5
+...
+```
+
+| Column or row       | Meaning                                                       |
+|---------------------|---------------------------------------------------------------|
+| `other s`           | The synthetic and `bytecode` time of the declaration.         |
+| `frames`            | The times the parser started an activity for the declaration. |
+| `unattributed`      | Time outside the resolution of any declaration.               |
+| `profiler_overhead` | Time the profiler spends to name new rows.                    |
+
+The text lists the 30 declarations with the most self time; the JSON lists all
+of them. Each declaration shows its kind, its name joined with `.` from the
+module down, and its location.
+
+Caveats:
+
+1. Times are wall time, not CPU time.
+2. A program that imports a precompiled `std` spends most of a small parse in
+   `bytecode`, as above. The cost follows the `std` declarations the program
+   uses, not its own length.
+3. Each parse is one part of the report, with its own header.
+
+### The `parser` member
+
+An array with one entry per parse. Each entry lists every declaration, sorted by
+self time. Trimmed to one declaration:
+
+```json
+{
+  "parser": [
+    {
+      "module": ".../demo.mojo",
+      "total_seconds": 0.408734833,
+      "unattributed_seconds": 0.116075285,
+      "profiler_overhead_seconds": 0.006286287,
+      "activities": {
+        "signature": 0.002619877,
+        "body": 0.007144624,
+        "synthetic_signature": 0.000042583,
+        "synthetic_body": 0.000477164,
+        "bytecode": 0.276089013
+      },
+      "declarations": [
+        {
+          "name": "demo.main",
+          "kind": "def",
+          "location": ".../demo.mojo:13:5",
+          "self_seconds": 0.006474748,
+          "frames": 2,
+          "activities": {"signature": 0.000347626, "body": 0.006127122}
+        }
+      ]
+    }
+  ]
+}
+```
+
+A declaration's `activities` lists only the activities it spent time on.
+
 ## Elaboration statistics
 
 `--elaboration-stats` shows which comptime code elaboration spends its work on.
@@ -327,8 +442,8 @@ mojo build --elaboration-stats --timing-json --timing-file=stats.json \
   --target-accelerator=sm_100a model.mojo -o /dev/null
 ```
 
-To turn `stats.json` into readable tables, run the `mojo-elaborator-stats`
-skill (`/mojo-elaborator-stats stats.json`); see
+To turn `stats.json` into readable tables, run the `mojo-compile-stats`
+skill (`/mojo-compile-stats stats.json`); see
 [Digesting the statistics](#digesting-the-statistics).
 
 ### Reading the text report
@@ -469,28 +584,31 @@ to one row per array:
 A row with no source position has `location`, such as `loc(unknown)`, in place
 of `file`, `line` and `column`.
 
-### Digesting the statistics
+## Digesting the statistics
 
-The `mojo-elaborator-stats` skill digests the JSON and sums each callee across
-pipelines:
+The `mojo-compile-stats` skill digests the JSON of either report, or both from
+one compile. For the parser, it sums the self time of each source file and of
+each declaration across parses. For elaboration, it sums each callee across
+pipelines.
 
 ```text
-/mojo-elaborator-stats stats.json
+/mojo-compile-stats stats.json
 ```
 
 Or run its script directly:
 
 ```bash
-python3 .agents/skills/mojo-elaborator-stats/scripts/digest_elaboration_stats.py stats.json
+python3 .agents/skills/mojo-compile-stats/scripts/digest_compile_stats.py stats.json
 ```
 
 Useful options:
 
-- `--compare BASELINE` — the change per pipeline and per callee against a
-  baseline report.
+- `--compare BASELINE` — the change per file, declaration, pipeline and callee
+  against a baseline report.
 - `--top N` — rows per table (default 10).
-- `--markdown` — Markdown tables, with call sites and loops linked to source.
+- `--markdown` — Markdown tables, with files, declarations, call sites and
+  loops linked to source.
 - `--root DIR` — the directory source paths are relative to (default: cwd).
 
 Compare reports from the same `mojo` build and thread setting. Debug and
-release compilers interpret at different speeds.
+release compilers parse and interpret at different speeds.
