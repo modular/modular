@@ -92,6 +92,9 @@ from max.nn._graph_ops.state_space.kimi_delta import (
 from max.nn._graph_ops.state_space.kimi_delta import (
     kda_verify_ring_conv_packed as kda_verify_ring_conv_op,
 )
+from max.nn._graph_ops.state_space.kimi_delta import (
+    kda_verify_ring_conv_packed_gate_up as kda_verify_ring_conv_gate_up_op,
+)
 from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
@@ -106,6 +109,10 @@ _KIMI_O_NORM_EPS = 1e-5
 distinct from MLA's ``q_a_layernorm``/``kv_a_layernorm`` eps."""
 _FUSED_CONV_ARCH = "gfx950"
 """The one target the fused verify kernel is built for (CDNA4, MI355X)."""
+_GATE_UP_HEAD_MULTIPLE = 4
+"""The per-device head count the folded op requires a multiple of: it loads
+the gate's down projection in 4-element vectors from column
+``4 * inner + heads`` of the packed row."""
 
 
 def _static_extent(dim: Dim) -> int | None:
@@ -315,6 +322,65 @@ def _kda_verify_ring_conv(
 
 
 kda_verify_ring_conv = F.functional(_kda_verify_ring_conv)
+
+
+def _kda_verify_ring_conv_gate_up(
+    packed_qkvg: Tensor,
+    conv_weight: Tensor,
+    conv_pool: Tensor,
+    conv_row_id: Tensor,
+    gate_up_weight: Tensor,
+    a_log: Tensor,
+    dt_bias: Tensor,
+    input_row_offsets: Tensor,
+    state_pool: Tensor,
+    recurrent_row_id: Tensor,
+    ring_pool: Tensor | PerShard[Tensor],
+    ring_row_id: Tensor | PerShard[Tensor],
+    verify_width: TensorValue,
+    norm_weight: Tensor,
+    out_type: TensorType,
+    *,
+    gate_mode: KdaGateMode,
+    norm_eps: float,
+) -> tuple[TensorValue, TensorValue]:
+    """Runs the fused verify op with the gate's up projection folded in.
+
+    :func:`_kda_verify_ring_conv`'s bridge onto
+    ``kimi_delta.kda_verify_ring_conv_packed_gate_up``: the raw gate operand
+    is replaced by ``f_b_proj``'s weight, and the op reads the gate's down
+    projection from the packed row's tail.
+    """
+    assert isinstance(ring_pool, Tensor)
+    assert isinstance(ring_row_id, Tensor)
+    return kda_verify_ring_conv_gate_up_op(
+        TensorValue(packed_qkvg),
+        TensorValue(conv_weight),
+        BufferValue(conv_pool),
+        TensorValue(conv_row_id),
+        TensorValue(gate_up_weight),
+        TensorValue(a_log),
+        TensorValue(dt_bias),
+        TensorValue(input_row_offsets),
+        BufferValue(state_pool),
+        TensorValue(recurrent_row_id),
+        BufferValue(ring_pool),
+        TensorValue(ring_row_id),
+        verify_width,
+        TensorValue(norm_weight),
+        out_type=TensorType(
+            out_type.dtype,
+            out_type.shape,
+            device=TensorValue(packed_qkvg).device,
+        ),
+        norm_eps=norm_eps,
+        gate_mode=gate_mode,
+        beta_mode="logits",
+        state_layout=STATE_LAYOUT,
+    )
+
+
+kda_verify_ring_conv_gate_up = F.functional(_kda_verify_ring_conv_gate_up)
 
 
 def _kimi_short_conv_qkv_verify(
@@ -605,6 +671,19 @@ class KimiK3KDAAttention(
             )
         return True
 
+    def _folds_gate_up(self, mesh_tp: int) -> bool:
+        """Whether the fused verify op runs ``f_b_proj`` itself.
+
+        The op reads the gate's down projection from the fused input GEMM's
+        tail columns, so those columns must be there (``_fuses_gate_down``),
+        and it binds ``f_b_proj``'s weight to the packed row's dtype.
+        """
+        return (
+            self._fuses_gate_down(mesh_tp)
+            and self.f_b_proj.weight.dtype == self.qkvg_proj.weight.dtype
+            and (self.num_heads // mesh_tp) % _GATE_UP_HEAD_MULTIPLE == 0
+        )
+
     def _fused_verify_forward(
         self,
         x: Tensor,
@@ -622,21 +701,15 @@ class KimiK3KDAAttention(
         The op takes the fused input GEMM's packed ``q | k | v | gate | beta``
         output whole and carves the qkv, the norm-gate and the beta views out
         of it itself (see ``kimi_delta.kda_verify_ring_conv_packed``), so no
-        block is materialized as a copy ahead of the launch. The gate's
-        down-projection columns that same GEMM appends sit past everything the
-        op views, and it walks its own row stride, so they cost it nothing.
-        The raw gate -- the up projection the GEMM does not cover -- and the
-        per-channel gate parameters are built here, off the ``gate_down``
-        columns `packed_qkvg` is split into.
+        block is materialized as a copy ahead of the launch. The raw gate --
+        the up projection the GEMM does not cover -- runs inside the op when
+        ``_folds_gate_up`` holds, which reads the ``gate_down`` columns at the
+        packed row's tail; otherwise it is built here off the ``gate_down``
+        columns `packed_qkvg` is split into, and those tail columns sit past
+        everything the op views -- it walks its own row stride -- so they cost
+        it nothing.
         """
         total_seq_len = x.shape[0]
-        # The fused op takes the gate at the rank it requires ([1, T, H, K]),
-        # which the reshape below builds; it does not add the leading axis
-        # itself.
-        raw_gate = F.reshape(
-            self.f_b_proj(gate_down),
-            [1, total_seq_len, self.num_heads, self.head_dim],
-        )
         # The output type is the caller's declaration, as the unfused path's
         # own op call: under TP the op's output holds the per-device head
         # count, which only the layer knows.
@@ -649,12 +722,27 @@ class KimiK3KDAAttention(
             [1, total_seq_len, heads_per_device, self.head_dim],
             device=x.mesh.devices[0] if x.is_distributed else x.device,
         )
-        normed, window = kda_verify_ring_conv(
+        if self._folds_gate_up(tp_size):
+            # The op runs `f_b_proj` over the packed row's `gate_down` tail,
+            # so the graph launches neither that GEMM nor the copy that made
+            # its input contiguous.
+            verify_op = kda_verify_ring_conv_gate_up
+            gate_operand = self.f_b_proj.weight
+        else:
+            # The fused op takes the gate at the rank it requires ([1, T, H,
+            # K]); it does not add the leading axis itself, so the reshape
+            # here builds it.
+            verify_op = kda_verify_ring_conv
+            gate_operand = F.reshape(
+                self.f_b_proj(gate_down),
+                [1, total_seq_len, self.num_heads, self.head_dim],
+            )
+        normed, window = verify_op(
             packed_qkvg,
             self.conv_weight,
             conv_pool,
             conv_row_id,
-            raw_gate,
+            gate_operand,
             self.a_log,
             self.dt_bias,
             input_row_offsets,

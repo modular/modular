@@ -1295,7 +1295,7 @@ def _check_verify_ring_conv(
     conv_weight: TensorValue,
     conv_pool: BufferValue,
     conv_row_id: TensorValue,
-    raw_gate: TensorValue,
+    raw_gate: TensorValue | None,
     beta_logits: TensorValue | None,
     a_log: TensorValue,
     dt_bias: TensorValue,
@@ -1309,27 +1309,38 @@ def _check_verify_ring_conv(
     *,
     op_name: str,
     state_layout: KdaStateLayout,
+    gate_up_weight: TensorValue | None = None,
 ) -> Dim:
     """Checks one fused verify call's operands; returns the conv's width.
 
-    Both registrations of the op take the same operands but for how the qkv,
-    the o_norm gate and the beta logits arrive, so the contract is checked
-    once here. Given ``norm_gate``, ``qkv`` is the raw packed qkv whose
-    ``conv_dim``-wide thirds the conv reads, the gate is its own operand and
-    ``beta_logits`` is at the gate dtype; without it, ``qkv`` is the whole
-    packed projection row the op views all three out of, so the token axis,
-    the value-head axis, the conv width and beta's dtype come from that row.
+    Every registration of the op takes the same operands but for how the
+    qkv, the o_norm gate, the beta logits and the raw gate arrive, so the
+    contract is checked once here. Given ``norm_gate``, ``qkv`` is the raw
+    packed qkv whose ``conv_dim``-wide thirds the conv reads, the gate is its
+    own operand and ``beta_logits`` is at the gate dtype; without it, ``qkv``
+    is the whole packed projection row the op views all three out of, so the
+    token axis, the value-head axis, the conv width and beta's dtype come
+    from that row. Given ``gate_up_weight`` instead of ``raw_gate``, that row
+    also carries the gate's down projection at its tail, and the op runs the
+    up projection itself.
     """
+    if (raw_gate is None) == (gate_up_weight is None):
+        raise ValueError(
+            f"{op_name} takes exactly one of raw_gate and gate_up_weight"
+        )
+    if gate_up_weight is not None and norm_gate is not None:
+        raise ValueError(
+            f"{op_name}: the gate up projection reads the packed row, which"
+            " the norm_gate operand rules out"
+        )
     # The qkv family shares one dtype parameter at the op, and it is the
     # model's working dtype: bf16 in production, fp32 in the fp32-exact
     # integration tests. The kernel casts every one of them to fp32 on
     # load, so both round exactly as the unfused chain does at their own
     # dtype.
-    qkv_family = [
-        ("raw_qkv", qkv),
-        ("raw_gate", raw_gate),
-        ("norm_weight", norm_weight),
-    ]
+    qkv_family = [("raw_qkv", qkv), ("norm_weight", norm_weight)]
+    if raw_gate is not None:
+        qkv_family.append(("raw_gate", raw_gate))
     if norm_gate is not None:
         qkv_family.append(("norm_gate", norm_gate))
     for name, tensor in qkv_family:
@@ -1341,6 +1352,10 @@ def _check_verify_ring_conv(
     # parameter; a mismatch would fail inside the op's registration rather
     # than here.
     same_dtype = [("norm_weight", norm_weight)]
+    if gate_up_weight is not None:
+        # The kernel holds the up projection's weight to the packed row's
+        # dtype.
+        same_dtype.append(("gate_up_weight", gate_up_weight))
     if norm_gate is not None:
         same_dtype.append(("norm_gate", norm_gate))
     for name, tensor in same_dtype:
@@ -1365,7 +1380,10 @@ def _check_verify_ring_conv(
     _check_rank(3, conv_pool=conv_pool)
     if norm_gate is not None:
         _check_rank(3, norm_gate=norm_gate)
-    _check_rank(4, raw_gate=raw_gate)
+    if raw_gate is not None:
+        _check_rank(4, raw_gate=raw_gate)
+    if gate_up_weight is not None:
+        _check_rank(2, gate_up_weight=gate_up_weight)
     _check_rank(4, state_pool=state_pool, ring=ring)
     _check_rank(
         1,
@@ -1379,9 +1397,22 @@ def _check_verify_ring_conv(
         _check_rank(3, beta_logits=beta_logits)
     _check_rank(2, a_log=a_log, dt_bias=dt_bias)
 
-    total_tokens = raw_gate.shape[1]
-    num_value_heads = raw_gate.shape[2]
-    key_head_dim = raw_gate.shape[3]
+    if raw_gate is not None:
+        total_tokens = raw_gate.shape[1]
+        num_value_heads = raw_gate.shape[2]
+        key_head_dim = raw_gate.shape[3]
+        gate_name = "raw_gate"
+    else:
+        assert gate_up_weight is not None
+        total_tokens = qkv.shape[0]
+        num_value_heads = a_log.shape[0]
+        key_head_dim = gate_up_weight.shape[1]
+        gate_name = "gate_up_weight"
+        if gate_up_weight.shape[0] != num_value_heads * key_head_dim:
+            raise ValueError(
+                "expected gate_up_weight to be [num_value_heads *"
+                f" key_head_dim, key_head_dim], was {gate_up_weight.shape}"
+            )
     value_head_dim = (
         norm_weight.shape[0] if norm_gate is None else norm_gate.shape[2]
     )
@@ -1390,11 +1421,11 @@ def _check_verify_ring_conv(
     conv_dim = 3 * inner if norm_gate is None else qkv.shape[1]
 
     token_axis = {
-        "raw_gate": total_tokens,
+        gate_name: total_tokens,
         "raw_qkv": qkv.shape[0],
     }
     value_head_axis = {
-        "raw_gate": num_value_heads,
+        gate_name: num_value_heads,
         "a_log": a_log.shape[0],
         "dt_bias": dt_bias.shape[0],
         "state_pool": state_pool.shape[1],
@@ -1410,22 +1441,42 @@ def _check_verify_ring_conv(
     _check_same_dim("the value-head axis", **value_head_axis)
     _check_same_dim(
         "the key-head width",
-        raw_gate=key_head_dim,
+        **{gate_name: key_head_dim},
         a_log=a_log.shape[1],
         dt_bias=dt_bias.shape[1],
     )
     if norm_gate is None:
-        # A GEMM that pads its output width leaves the tail unread.
+        # A GEMM that pads its output width leaves the tail unread. The
+        # gate's down projection, when the op runs the up projection, sits
+        # right after beta.
+        needed_dim = 4 * inner + num_value_heads
+        if gate_up_weight is not None:
+            needed_dim = needed_dim + key_head_dim
         if isinstance(qkv.shape[1], StaticDim) and isinstance(
-            4 * inner + num_value_heads, StaticDim
+            needed_dim, StaticDim
         ):
             packed_width = int(qkv.shape[1])
-            needed = int(4 * inner + num_value_heads)
+            needed = int(needed_dim)
             if packed_width < needed:
                 raise ValueError(
                     f"expected {op_name}'s packed row to hold q | k | v, the"
-                    f" norm gate and beta in its leading {needed} columns,"
-                    f" was {packed_width}"
+                    " norm gate, beta"
+                    + (
+                        " and the gate's down projection"
+                        if gate_up_weight is not None
+                        else ""
+                    )
+                    + f" in its leading {needed} columns, was {packed_width}"
+                )
+        if gate_up_weight is not None and isinstance(
+            num_value_heads, StaticDim
+        ):
+            # The kernels load the down projection in 4-element vectors from
+            # column `4 * inner + num_value_heads`.
+            if int(num_value_heads) % 4 != 0:
+                raise ValueError(
+                    f"{op_name} needs a value-head count that is a multiple of"
+                    f" 4, was {int(num_value_heads)}"
                 )
     else:
         _check_same_dim(
@@ -1526,7 +1577,11 @@ def _launch_verify_ring_conv(
     beta_mode: KdaBetaMode,
     state_layout: KdaStateLayout,
 ) -> tuple[TensorValue, TensorValue]:
-    """Enqueues one fused verify launch on already-checked operands."""
+    """Enqueues one fused verify launch on already-checked operands.
+
+    ``raw_gate`` is the operand in the raw gate's slot: the raw gate, or for
+    ``kda_verify_ring_conv_packed_gate_up`` the gate's up-projection weight.
+    """
     device = raw_gate.device
     window_rows = Dim(state_indices.shape[0]) * (Dim(verify_width.shape[0]) + 1)
     values: list[TensorValue | BufferValue] = [
@@ -1808,6 +1863,99 @@ def kda_verify_ring_conv_packed(
         conv_pool,
         conv_row_id,
         raw_gate,
+        None,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        None,
+        verify_width,
+        out_type,
+        conv_dim,
+        norm_eps=norm_eps,
+        gate_mode=gate_mode,
+        beta_mode=beta_mode,
+        state_layout=state_layout,
+    )
+
+
+def kda_verify_ring_conv_packed_gate_up(
+    packed_qkvg: TensorValue,
+    conv_weight: TensorValue,
+    conv_pool: BufferValue,
+    conv_row_id: TensorValue,
+    gate_up_weight: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    verify_width: TensorValue,
+    norm_weight: TensorValue,
+    out_type: TensorType,
+    *,
+    norm_eps: float,
+    gate_mode: KdaGateMode = "safe",
+    beta_mode: KdaBetaMode = "logits",
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> tuple[TensorValue, TensorValue]:
+    """Runs :func:`kda_verify_ring_conv_packed` with the gate's up projection.
+
+    The layer's raw gate is two projections, and the fused input GEMM already
+    emits the first: ``packed_qkvg`` carries the gate's ``key_head_dim``-wide
+    down projection right after beta's columns. This op views it there and
+    runs the up projection ``gate_up_weight`` (``[num_value_heads *
+    key_head_dim, key_head_dim]``, the up projection's own weight) inside the
+    recurrence kernel, so the graph launches neither the up projection's GEMM
+    nor the copy that made the down projection contiguous for it. The up
+    projection sums in fp32 and rounds once to the model dtype, as the GEMM
+    did; its summation order is the kernel's, so a raw gate may differ from
+    the GEMM's in that dtype's last bit. Both verify-width arms run the same
+    arithmetic.
+
+    Every other argument is :func:`kda_verify_ring_conv_packed`'s, minus
+    its ``raw_gate``.
+
+    Returns:
+        :func:`kda_verify_ring_conv`'s two results.
+
+    Raises:
+        ValueError: If the dtype groupings bind no kernel, or the ranks and
+            extents disagree.
+    """
+    conv_dim = _check_verify_ring_conv(
+        packed_qkvg,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        None,
+        None,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        ring,
+        ring_indices,
+        norm_weight,
+        None,
+        op_name="kda_verify_ring_conv_packed_gate_up",
+        state_layout=state_layout,
+        gate_up_weight=gate_up_weight,
+    )
+    return _launch_verify_ring_conv(
+        "kda_verify_ring_conv_packed_gate_up",
+        packed_qkvg,
+        conv_weight,
+        conv_pool,
+        conv_row_id,
+        gate_up_weight,
         None,
         a_log,
         dt_bias,

@@ -23,6 +23,12 @@ conditional beside it; the op picks the recurrence at execute time.
 Virtual devices must be configured before the process opens its first one,
 so this is its own target: no test here may create a device outside the
 context manager.
+
+One more trace covers the other arm: a layer holding a speculative verify's
+binding, whose graph runs the fused verify op. There the gate's up projection
+is the op's own work, so the graph holds two matmuls per device instead of
+three -- that trace is what pins the fold, and a control that turns it off
+proves the assertion can fail.
 """
 
 from __future__ import annotations
@@ -38,11 +44,14 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
+from max.graph import ops
+from max.nn._graph_ops.state_space import verify_width_operand
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
+    KdaVerifyBinding,
     KimiK3KDAAttention,
     tensor_parallel_kda_attention,
 )
-from max.tensor import Tensor, default_device
+from max.tensor import Tensor, compilation, default_device
 from max.tensor.sharding import (
     BufferLayout,
     DeviceMesh,
@@ -58,6 +67,12 @@ HIDDEN = 64
 CONV_KERNEL = 4
 BATCH = 2
 SLOTS = 4
+VERIFY_WINDOW = 8
+"""The verify ring's length: one anchor row plus K3's seven drafts."""
+RING_ROWS = 2 * BATCH + 3
+"""Ring rows the trace binds: more than the batch, so no row is ambiguous."""
+RING_STRIDE = 3 * HEAD_DIM
+"""The ring record's `decay | key | update_factor` stride, unpadded."""
 
 
 @contextmanager
@@ -294,4 +309,182 @@ def test_ep_mesh_fuses_the_gate_down_row_replicated() -> None:
     n_matmul = mlir.count("rmo.matmul")
     assert n_matmul == 3 * n_devices, (
         f"each device must trace 3 matmuls, got {n_matmul} over {n_devices}"
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# The speculative-verify arm: the gate's up projection inside the fused op
+# ===----------------------------------------------------------------------=== #
+
+
+def _trace_verify_layer(dtype: DType, folds_gate_up: bool) -> str:
+    """Traces the layer's verify forward on one virtual gfx950 device.
+
+    The verify arm is the one a speculative decode step runs: the layer holds
+    a :class:`KdaVerifyBinding` for its ring, so ``forward`` takes
+    ``_fused_verify_forward`` rather than the plain decode chain. The op's own
+    eligibility conditions are met -- a 128-wide head, a 4-tap conv and the
+    ``-5.0`` safe gate on gfx950 -- which is what makes the fused arm
+    reachable at all.
+
+    The ring and the weights are declared *inputs* of the staged function
+    rather than tensors built inside it: the op takes the ring as a buffer,
+    which the tensor runtime realizes before the graph is finished, so a ring
+    built here would have to execute a device op on hardware that is not
+    attached. Weights ride the same way for the same reason, and neither
+    changes what is being read off the graph -- which ops it holds.
+
+    ``folds_gate_up`` false gives ``f_b_proj`` a dtype the fused input GEMM's
+    weight cannot share, so ``_folds_gate_up`` is false: the reachable
+    configuration in which the layer keeps the gate's own up-projection GEMM,
+    and the arm the assertions below must be able to reject.
+    """
+    inner = HEADS * HEAD_DIM
+    with _virtual_gfx950(1):
+        mesh = DeviceMesh(
+            devices=(Accelerator(0),), mesh_shape=(1,), axis_names=("ep",)
+        )
+        replicated = NamedMapping(mesh, (None,))
+        up_dtype = dtype
+        if not folds_gate_up:
+            up_dtype = (
+                DType.bfloat16 if dtype != DType.bfloat16 else DType.float32
+            )
+
+        def build_graph(
+            x: Tensor,
+            conv_pool: Tensor,
+            conv_row_id: Tensor,
+            state_pool: Tensor,
+            recurrent_row_id: Tensor,
+            input_row_offsets: Tensor,
+            ring_pool: Tensor,
+            ring_row_id: Tensor,
+            qkvg_weight: Tensor,
+            gate_down_weight: Tensor,
+            gate_up_weight: Tensor,
+            o_proj_weight: Tensor,
+            o_norm_weight: Tensor,
+            conv_weight: Tensor,
+            a_log: Tensor,
+            dt_bias: Tensor,
+        ) -> Tensor:
+            # The layer's own initializers draw from the graph's seed.
+            ops.random.set_seed(0)
+            layer = KimiK3KDAAttention(
+                hidden_size=HIDDEN,
+                num_heads=HEADS,
+                head_dim=HEAD_DIM,
+                conv_kernel_size=CONV_KERNEL,
+                gate_lower_bound=-5.0,
+            )
+            layer.qkvg_proj.weight = qkvg_weight
+            layer.f_a_proj.weight = gate_down_weight
+            layer.f_b_proj.weight = gate_up_weight
+            layer.o_proj.weight = o_proj_weight
+            layer.o_norm.weight = o_norm_weight
+            layer.conv_weight = conv_weight
+            layer.a_log = a_log
+            layer.dt_bias = dt_bias
+            layer.verify_binding = KdaVerifyBinding(
+                verify_width=verify_width_operand(VERIFY_WINDOW - 1),
+                ring_pool=ring_pool,
+                ring_row_id=ring_row_id,
+                captures=[[]],
+            )
+            return layer(
+                x,
+                conv_pool,
+                conv_row_id,
+                state_pool,
+                recurrent_row_id,
+                input_row_offsets,
+            )
+
+        with default_device(mesh):
+            staged = compilation.stage(build_graph)(
+                TensorLayout(dtype, ["total_seq_len", HIDDEN], replicated),
+                BufferLayout(
+                    DType.float32,
+                    [SLOTS, 3 * inner, CONV_KERNEL - 1],
+                    replicated,
+                ),
+                TensorLayout(DType.uint32, [BATCH], replicated),
+                BufferLayout(
+                    DType.float32,
+                    [SLOTS, HEADS, HEAD_DIM, HEAD_DIM],
+                    replicated,
+                ),
+                TensorLayout(DType.uint32, [BATCH], replicated),
+                TensorLayout(DType.uint32, [BATCH + 1], replicated),
+                BufferLayout(
+                    DType.float32,
+                    [RING_ROWS, HEADS, VERIFY_WINDOW, RING_STRIDE],
+                    replicated,
+                ),
+                TensorLayout(DType.uint32, [BATCH], replicated),
+                # The fused weight the checkpoint adapter emits: the five
+                # blocks plus `f_a_proj`'s `head_dim` rows.
+                TensorLayout(dtype, [fused_qkvg_rows(1), HIDDEN], replicated),
+                TensorLayout(dtype, [HEAD_DIM, HIDDEN], replicated),
+                TensorLayout(up_dtype, [inner, HEAD_DIM], replicated),
+                TensorLayout(dtype, [HIDDEN, inner], replicated),
+                TensorLayout(dtype, [HEAD_DIM], replicated),
+                TensorLayout(
+                    DType.float32, [3 * inner, CONV_KERNEL], replicated
+                ),
+                TensorLayout(DType.float32, [HEADS, HEAD_DIM], replicated),
+                TensorLayout(DType.float32, [HEADS, HEAD_DIM], replicated),
+            )
+        return str(staged)
+
+
+GATE_UP_OP = '"kda_verify_ring_conv_packed_gate_up"'
+"""The fused op that runs the gate's up projection itself."""
+
+PACKED_OP = '"kda_verify_ring_conv_packed"'
+"""The same fused chain without it; quotes keep it out of ``GATE_UP_OP``."""
+
+
+def test_verify_folds_the_gate_up_projection() -> None:
+    """A verify's graph runs the gate's up projection inside the fused op.
+
+    The raw gate is two projections: the fused input GEMM emits the down one
+    at the tail of the packed row, and the op reduces it against
+    ``f_b_proj``'s weight in the recurrence launch. So the graph holds that
+    one op and two matmuls per device -- the fused qkvg GEMM and ``o_proj`` --
+    where the unfolded chain holds the plain verify op and three: the up
+    projection's own GEMM comes back, and so does the copy that made its
+    non-contiguous input contiguous (a ``mogg_foreach`` pass at run time).
+    """
+    for dtype in (DType.bfloat16, DType.float32):
+        mlir = _trace_verify_layer(dtype, folds_gate_up=True)
+        n_gate_up = mlir.count(GATE_UP_OP)
+        assert n_gate_up == 1, (
+            f"the {dtype} verify graph must run"
+            " kda_verify_ring_conv_packed_gate_up once, got"
+            f" {n_gate_up}"
+        )
+        assert PACKED_OP not in mlir, (
+            "the folded verify must not trace the up-projection-free op too"
+        )
+        n_matmul = mlir.count("rmo.matmul")
+        assert n_matmul == 2, (
+            f"the {dtype} verify graph must trace 2 matmuls (the fused qkvg"
+            f" GEMM and o_proj), got {n_matmul}"
+        )
+
+
+def test_verify_keeps_the_up_projection_gemm_without_the_fold() -> None:
+    """RED control: with ``_folds_gate_up`` false the GEMM and the plain op
+    come back, so the assertions above can fail."""
+    mlir = _trace_verify_layer(DType.bfloat16, folds_gate_up=False)
+    assert GATE_UP_OP not in mlir
+    assert mlir.count(PACKED_OP) == 1, (
+        "the unfolded verify must trace kda_verify_ring_conv_packed"
+    )
+    n_matmul = mlir.count("rmo.matmul")
+    assert n_matmul == 3, (
+        "the unfolded verify must trace 3 matmuls (fused qkvg, f_b, o_proj),"
+        f" got {n_matmul}"
     )
