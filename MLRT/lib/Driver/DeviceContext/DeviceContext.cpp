@@ -1061,6 +1061,25 @@ ErrorOrSuccess DeviceGraphCollection::debugVerifyReplay(
 }
 
 //
+// ===== MemoryManagerFreeList ===== //
+//
+
+std::unique_ptr<MemoryManagerFreeList> MemoryManagerFreeList::createForContext(
+    DeviceContext &context, MemoryManager &memoryManager,
+    MemoryManagerFreeList *parent, bool disableFlush, std::string label) {
+  bool redzones = context.isDebugAllocatorEnabled("out-of-bounds");
+  // `poison-all` is the allocator-layer counterpart to the graph-driver's
+  // type-aware `uninitialized-poison` (see Device::createDeviceMemory): it has
+  // no dtype information, so it fills *every* allocation body with a raw byte
+  // pattern rather than a type-specific sentinel. See the MemoryManagerOverview
+  // doc (`MODULAR_DEBUG_DEVICE_ALLOCATOR`) for how the two tiers relate.
+  bool poison = context.isDebugAllocatorEnabled("poison-all");
+  return std::make_unique<MemoryManagerFreeList>(
+      &context, memoryManager, parent, disableFlush, std::move(label), redzones,
+      poison);
+}
+
+//
 // ===== DeviceGraphMemoryPool ===== //
 //
 
@@ -1071,15 +1090,14 @@ DeviceGraphMemoryPool::DeviceGraphMemoryPool(DeviceContextRef context)
   static std::atomic<int64_t> counter = 0;
 
   int64_t id = counter.fetch_add(1);
-  deviceFreeList = std::make_unique<MemoryManagerFreeList>(
-      context.getPointer(), device.memoryManager(),
-      device.memoryManager().freeList(),
+  deviceFreeList = MemoryManagerFreeList::createForContext(
+      *context, device.memoryManager(), device.memoryManager().freeList(),
       /*disableFlush=*/true,
       /*label=*/
       (Twine("DeviceGraphMemoryPool(id=") + Twine(id) + ", device)").str());
 
-  hostFreeList = std::make_unique<MemoryManagerFreeList>(
-      context.getPointer(), device.hostMemoryManager(),
+  hostFreeList = MemoryManagerFreeList::createForContext(
+      *context, device.hostMemoryManager(),
       device.hostMemoryManager().freeList(),
       /*disableFlush=*/true,
       /*label=*/
@@ -1459,15 +1477,15 @@ uint64_t PinnedCompletionFlag::load() const {
 
 DeviceContext::DeviceContext(Device &device, TypeID typeID)
     : device_(DeviceRef::copy(&device)), typeID(typeID),
-      freeList_(std::make_unique<MemoryManagerFreeList>(
-          this, device.memoryManager(), device.memoryManager().freeList(),
+      freeList_(MemoryManagerFreeList::createForContext(
+          *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"freeList")),
-      hostFreeList_(std::make_unique<MemoryManagerFreeList>(
-          this, device.hostMemoryManager(),
+      hostFreeList_(MemoryManagerFreeList::createForContext(
+          *this, device.hostMemoryManager(),
           device.hostMemoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"hostFreeList")),
-      graphFreeList_(std::make_unique<MemoryManagerFreeList>(
-          this, device.memoryManager(), device.memoryManager().freeList(),
+      graphFreeList_(MemoryManagerFreeList::createForContext(
+          *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/true, /*label=*/"graphFreeList")),
       syncMode_(0) {
   if (syncModeFromConfig()) {

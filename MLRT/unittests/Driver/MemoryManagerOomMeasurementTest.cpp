@@ -94,22 +94,24 @@ TEST_F(MemoryManagerOomMeasurementTest, MixedStateSnapshotIsExact) {
   {
     // Child free-list (per-stream): its frees stay pending until an event
     // fires.
-    MemoryManagerFreeList child(ctx.getPointer(), *cache, cache->freeList(),
-                                /*disableFlush=*/false, "child");
+    std::unique_ptr<MemoryManagerFreeList> child =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                "child");
 
     // Allocate everything up front, in offset order, from the two free-lists.
-    ASSIGN_NO_ERR(void *, a0, root.allocate(kMiB * 3 / 2, mode));  // in-use
-    ASSIGN_NO_ERR(void *, a1, root.allocate(kMiB / 2, mode));      // free
-    ASSIGN_NO_ERR(void *, a2, root.allocate(kMiB * 3, mode));      // in-use
-    ASSIGN_NO_ERR(void *, a3, root.allocate(kMiB / 2, mode));      // in-use
-    ASSIGN_NO_ERR(void *, a4, root.allocate(kMiB / 2, mode));      // free
-    ASSIGN_NO_ERR(void *, b0, child.allocate(kMiB * 3 / 2, mode)); // pending
-    ASSIGN_NO_ERR(void *, b1, root.allocate(kMiB / 2, mode));      // free
-    ASSIGN_NO_ERR(void *, b2, child.allocate(kMiB * 3, mode));     // pending
-    ASSIGN_NO_ERR(void *, b3, child.allocate(kMiB / 2, mode));     // pending
-    ASSIGN_NO_ERR(void *, b4, root.allocate(kMiB / 2, mode));      // free
-    ASSIGN_NO_ERR(void *, c0, root.allocate(kMiB * 3, mode));      // free
-    ASSIGN_NO_ERR(void *, c1, root.allocate(kMiB, mode));          // free
+    ASSIGN_NO_ERR(void *, a0, root.allocate(kMiB * 3 / 2, mode));   // in-use
+    ASSIGN_NO_ERR(void *, a1, root.allocate(kMiB / 2, mode));       // free
+    ASSIGN_NO_ERR(void *, a2, root.allocate(kMiB * 3, mode));       // in-use
+    ASSIGN_NO_ERR(void *, a3, root.allocate(kMiB / 2, mode));       // in-use
+    ASSIGN_NO_ERR(void *, a4, root.allocate(kMiB / 2, mode));       // free
+    ASSIGN_NO_ERR(void *, b0, child->allocate(kMiB * 3 / 2, mode)); // pending
+    ASSIGN_NO_ERR(void *, b1, root.allocate(kMiB / 2, mode));       // free
+    ASSIGN_NO_ERR(void *, b2, child->allocate(kMiB * 3, mode));     // pending
+    ASSIGN_NO_ERR(void *, b3, child->allocate(kMiB / 2, mode));     // pending
+    ASSIGN_NO_ERR(void *, b4, root.allocate(kMiB / 2, mode));       // free
+    ASSIGN_NO_ERR(void *, c0, root.allocate(kMiB * 3, mode));       // free
+    ASSIGN_NO_ERR(void *, c1, root.allocate(kMiB, mode));           // free
 
     // Root frees are root-owned immediately (no migration).
     EXPECT_NO_ERR(root.free(a1));
@@ -119,9 +121,9 @@ TEST_F(MemoryManagerOomMeasurementTest, MixedStateSnapshotIsExact) {
     EXPECT_NO_ERR(root.free(c0));
     EXPECT_NO_ERR(root.free(c1));
     // Child frees stay pending (no sync/poll yet).
-    EXPECT_NO_ERR(child.free(b0));
-    EXPECT_NO_ERR(child.free(b2));
-    EXPECT_NO_ERR(child.free(b3));
+    EXPECT_NO_ERR(child->free(b0));
+    EXPECT_NO_ERR(child->free(b2));
+    EXPECT_NO_ERR(child->free(b3));
 
     VmmOomSnapshot s = cache->oomSnapshotForTesting(0);
 
@@ -184,29 +186,35 @@ TEST_F(MemoryManagerOomMeasurementTest, DrainableRecoveryCountsWholeGranules) {
   MemoryManagerFreeList &root = *cache->freeList();
 
   {
-    MemoryManagerFreeList child1(ctx.getPointer(), *cache, cache->freeList(),
-                                 /*disableFlush=*/false, "child1");
-    MemoryManagerFreeList child2(ctx.getPointer(), *cache, cache->freeList(),
-                                 /*disableFlush=*/false, "child2");
-    MemoryManagerFreeList child3(ctx.getPointer(), *cache, cache->freeList(),
-                                 /*disableFlush=*/false, "child3");
+    std::unique_ptr<MemoryManagerFreeList> child1 =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                "child1");
+    std::unique_ptr<MemoryManagerFreeList> child2 =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                "child2");
+    std::unique_ptr<MemoryManagerFreeList> child3 =
+        MemoryManagerFreeList::createForContext(*ctx, *cache, cache->freeList(),
+                                                /*disableFlush=*/false,
+                                                "child3");
 
     // Allocated in offset order so the bump layout matches the map above.
-    ASSIGN_NO_ERR(void *, q0, child1.allocate(kMiB / 2, mode));
+    ASSIGN_NO_ERR(void *, q0, child1->allocate(kMiB / 2, mode));
     ASSIGN_NO_ERR(void *, r0, root.allocate(kMiB * 3 / 2, mode));
-    ASSIGN_NO_ERR(void *, q1, child2.allocate(kMiB, mode));
-    ASSIGN_NO_ERR(void *, s1, child1.allocate(kMiB, mode));
+    ASSIGN_NO_ERR(void *, q1, child2->allocate(kMiB, mode));
+    ASSIGN_NO_ERR(void *, s1, child1->allocate(kMiB, mode));
     ASSIGN_NO_ERR(void *, u0, root.allocate(kMiB * 2, mode));
-    ASSIGN_NO_ERR(void *, q2, child3.allocate(kMiB, mode));
+    ASSIGN_NO_ERR(void *, q2, child3->allocate(kMiB, mode));
     ASSIGN_NO_ERR(void *, i1, root.allocate(kMiB, mode));
 
     // First free on each child queues an event naming the buffer it lands in.
-    EXPECT_NO_ERR(child1.free(q0));
+    EXPECT_NO_ERR(child1->free(q0));
     // Second free on child1: its flush is already in flight, so this one joins
     // the rotated primary and no queued record names it.
-    EXPECT_NO_ERR(child1.free(s1));
-    EXPECT_NO_ERR(child2.free(q1));
-    EXPECT_NO_ERR(child3.free(q2));
+    EXPECT_NO_ERR(child1->free(s1));
+    EXPECT_NO_ERR(child2->free(q1));
+    EXPECT_NO_ERR(child3->free(q2));
     EXPECT_NO_ERR(root.free(r0));
 
     const VmmOomSnapshot s = cache->oomSnapshotForTesting(0);

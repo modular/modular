@@ -1130,11 +1130,12 @@ TEST_F(MemoryManagerTest, FreeListTeardownRedirectsAllocatedBy) {
 
   void *ptr = nullptr;
   {
-    MemoryManagerFreeList childFreeList(ctx.getPointer(), memMgr, &rootFreeList,
-                                        /*disableFlush=*/false,
-                                        /*label=*/"test_child");
+    std::unique_ptr<MemoryManagerFreeList> childFreeList =
+        MemoryManagerFreeList::createForContext(*ctx, memMgr, &rootFreeList,
+                                                /*disableFlush=*/false,
+                                                /*label=*/"test_child");
     ASSIGN_NO_ERR(void *, allocated,
-                  childFreeList.allocate(256, Device::AllocMode::SYNC));
+                  childFreeList->allocate(256, Device::AllocMode::SYNC));
     EXPECT_NE(allocated, nullptr);
     ptr = allocated;
     // `childFreeList` is destroyed here while `ptr` is still in use; the

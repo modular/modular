@@ -241,6 +241,48 @@ MODULAR_CXX_EXPORT std::string describeVmmOom(const VmmOomSnapshot &snapshot,
 // Full multi-field dump of the snapshot for the verbose log. Pure.
 MODULAR_CXX_EXPORT std::string dumpVmmOom(const VmmOomSnapshot &snapshot);
 
+// Everything a MemoryManager is built from. The factories fill every field from
+// the device and the config, so the manager never reads the config itself.
+struct MemoryManagerOptions {
+  size_t maxSize = 0;
+  size_t chunkSize = 0;
+  size_t alignment = 0;
+  bool isHost = false;
+  bool useOnlyMemoryManagerMode = false;
+  bool vmmEnabled = false;
+  size_t vmmPageSize = 0;
+  size_t largeAllocAlignment = 0;
+
+  // How hard an allocation miss tries to wait out its pending frees. Zero
+  // retries turns the wait off, so a miss fails at once: the switch to reach
+  // for if the stall ever costs more than the restarts it avoids.
+  int64_t drainRetries = 200;
+  int64_t drainBudgetMs = 2000;
+
+  // Debug. The redzone and poison settings apply only to the free lists that
+  // enable them.
+  bool log = false;
+  bool selfCheck = false;
+  // Rounded up to a multiple of the allocation alignment; 0 means the
+  // alignment itself.
+  size_t redzoneSize = 0;
+  uint8_t redzonePattern = 0xBA;
+  // As fp32/bf16 this is a (negative) NaN, so an uninitialized read
+  // propagates NaN into the output and trips the differential test. This is
+  // the opposite choice from the graph-driver's `uninitialized-poison`, which
+  // deliberately uses a *non-NaN* sentinel to avoid conflicting with the
+  // nan-check pass; the cost here is that the NaN can also surface on
+  // legitimately-uninitialized allocation padding, so `poison-all` is a
+  // manual, opt-in aid rather than a CI default.
+  uint8_t poisonPattern = 0xFF;
+
+  // The VMM arena reserves this multiple of the budget as VA.
+  size_t vmmVaFactor = 4;
+
+  // Names the manager in log lines: "cuda[0]", or "cuda[0 - host]".
+  std::string label;
+};
+
 class MODULAR_CXX_EXPORT MemoryManager {
 public:
   class Chunk;
@@ -401,10 +443,7 @@ private:
   friend class Chunk;
   friend class MemoryManagerFreeList;
 
-  MemoryManager(Device &device, size_t maxSize, size_t chunkSize,
-                size_t alignment, bool isHost, bool useOnlyMemoryManagerMode,
-                bool vmmEnabled = false, size_t vmmPageSize = 0,
-                size_t largeAllocAlignment = 0);
+  MemoryManager(Device &device, MemoryManagerOptions options);
 
   Device &device() const;
 
@@ -590,6 +629,8 @@ private:
   // maxCacheSize_.
   void growChunkSizeTo(size_t newChunkSize);
 
+  const MemoryManagerOptions options_;
+
   Device &device_;
 
   // This memory manager is managing "pinned" host memory.
@@ -672,14 +713,6 @@ private:
   std::atomic<size_t> drainRetryAttempts_ = {0};
   std::atomic<size_t> drainRetryRecoveries_ = {0};
 
-  // How hard an allocation miss tries to wait out its pending frees, read once
-  // so the miss path does not take the global config lock. Zero retries turns
-  // the wait off outright and restores the pre-existing behaviour of failing
-  // the miss immediately, which is the switch to reach for if the stall ever
-  // costs more than the restarts it avoids.
-  int64_t drainRetries_ = 0;
-  int64_t drainBudgetMs_ = 0;
-
   // Sequence high-water mark as of the last drain retry that recovered
   // nothing. A later miss whose queued records all sit at or below it is
   // waiting on the very frees that already failed to arrive -- a record gated
@@ -731,14 +764,12 @@ private:
   // managed memory.
   DescMap allocatedMap_;
 
-  // For logging and debugging.
-  std::string &getDeviceDescription() const;
+  // For logging and debugging. The first call prints an initial description.
+  const std::string &getDeviceDescription() const;
   void logErr(llvm::Twine msg) const;
   void logErr(llvm::Twine msg, size_t info, int64_t size,
               bool printInfoSize = true) const;
 
-  bool doSelfCheck_ = false;
-  bool doLog_ = false;
   // Free desc byte total and count. These track VA, not physical, so under
   // VMM they can exceed the physical budget; the VMM paths report
   // vmmAllocatableBytes() instead.
@@ -746,15 +777,24 @@ private:
   size_t freeCount_ = 0;
   size_t chunkCount_ = 0;
   std::string lastChunkAllocFailureDetail_;
-  mutable std::string deviceDescription_;
+  mutable bool descriptionPrinted_ = false;
 };
 
 class MODULAR_CXX_EXPORT MemoryManagerFreeList {
 public:
+  // `context` and `parent` are both null for a manager's root free list, and
+  // both set for every other list.
   MemoryManagerFreeList(DeviceContext *context, MemoryManager &memoryManager,
-                        MemoryManagerFreeList *parent,
-                        bool disableFlush = false, std::string label = "");
+                        MemoryManagerFreeList *parent, bool disableFlush,
+                        std::string label, bool redzones, bool poison);
   ~MemoryManagerFreeList();
+
+  // Builds a free list for `context`, with the redzones and poison that its
+  // `debug.device_allocator` config asks for.
+  static std::unique_ptr<MemoryManagerFreeList>
+  createForContext(DeviceContext &context, MemoryManager &memoryManager,
+                   MemoryManagerFreeList *parent, bool disableFlush,
+                   std::string label);
 
   // Allocate and free memory by using the `MemoryManager`. If the allocation
   // cannot be serviced by the `MemoryManager` due to allocation size or cache
@@ -850,7 +890,7 @@ private:
 
   void flushFreeBuffersToParent(int id);
 
-  // Log helpers that check doLog_ and prepend the free list label.
+  // Log helpers that check options_.log and prepend the free list label.
   void logMsg(llvm::Twine msg) const;
   void logMsg(llvm::Twine msg, size_t info, int64_t size) const;
 

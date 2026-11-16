@@ -47,12 +47,12 @@
 
 // Guard a logErr() call inside MemoryManager methods.
 #define LOG_ERR(...)                                                           \
-  if (doLog_)                                                                  \
+  if (options_.log)                                                            \
   logErr(__VA_ARGS__)
 
 // Guard a logMsg() call inside MemoryManagerFreeList methods.
 #define LOG_MSG(...)                                                           \
-  if (memoryManager_.doLog_)                                                   \
+  if (memoryManager_.options_.log)                                             \
   logMsg(__VA_ARGS__)
 
 static constexpr int KB = 1024;                  // NOLINT
@@ -69,6 +69,12 @@ static size_t alignmentPadding(const char *ptr, size_t alignment) {
   if (alignment == 0)
     return 0;
   return llvm::offsetToAlignedAddr(ptr, llvm::Align(alignment));
+}
+
+// The alignment of every block the manager hands out: the requested
+// alignment, raised to at least 64 bytes.
+static size_t effectiveAllocationAlignment(size_t alignment) {
+  return std::max<size_t>(64, alignment);
 }
 
 class MemoryManager::Chunk {
@@ -441,7 +447,7 @@ void MemoryManager::Chunk::mergeFreeBlockDesc(MemoryManagerFreeList *owner,
     owner->addToFreeList(desc);
     codePath = "no merge";
   }
-  if (memoryManager.doLog_) {
+  if (memoryManager.options_.log) {
     memoryManager.logErr("mergeFreeBlockDesc(" + TWINE_PTR(ptr) + " ; " +
                          TWINE(bufSize) + ") -  (" + codePath + ")");
   }
@@ -505,7 +511,8 @@ MemoryManagerFreeList::MemoryManagerFreeList(DeviceContext *context,
                                              MemoryManager &memoryManager,
                                              MemoryManagerFreeList *parent,
                                              bool disableFlush,
-                                             std::string label)
+                                             std::string label, bool redzones,
+                                             bool poison)
     : ctx_(context), memoryManager_(memoryManager), parent_(parent),
       disableFlush_(disableFlush), label_(std::move(label)) {
   // Either parent and context are both null for the free list associated with
@@ -513,34 +520,16 @@ MemoryManagerFreeList::MemoryManagerFreeList(DeviceContext *context,
   // DeviceContext.
   assert(((ctx_ == nullptr) && (parent_ == nullptr)) ||
          ((ctx_ != nullptr) && (parent_ != nullptr)));
+  assert((ctx_ != nullptr || (!redzones && !poison)) &&
+         "redzones and poison write through the context");
   for (int i = 0; i < kNumFreeBufferLists; ++i) {
     freeBuffers_[i] = nullptr;
   }
 
-  if (ctx_ && ctx_->isDebugAllocatorEnabled("out-of-bounds")) {
-    if (context == nullptr) {
-      memoryManager_.logErr("[" + label_ +
-                            "] redzone checks disabled due to "
-                            "null context in MemoryManagerFreeList");
-    } else {
-      enableRedzones();
-    }
-  }
-
-  // `poison-all` is the allocator-layer counterpart to the graph-driver's
-  // type-aware `uninitialized-poison` (see Device::createDeviceMemory): it has
-  // no dtype information, so it fills *every* allocation body with a raw byte
-  // pattern rather than a type-specific sentinel. See the MemoryManagerOverview
-  // doc (`MODULAR_DEBUG_DEVICE_ALLOCATOR`) for how the two tiers relate.
-  if (ctx_ && ctx_->isDebugAllocatorEnabled("poison-all")) {
-    if (context == nullptr) {
-      memoryManager_.logErr("[" + label_ +
-                            "] poison fill disabled due to "
-                            "null context in MemoryManagerFreeList");
-    } else {
-      enablePoison();
-    }
-  }
+  if (redzones)
+    enableRedzones();
+  if (poison)
+    enablePoison();
 }
 
 DeviceContext *MemoryManagerFreeList::context() { return ctx_; }
@@ -606,8 +595,8 @@ void MemoryManager::waitForPendingFrees(const MemoryManagerFreeList *fl) {
       // The caller is a destructor, and the free lists that own records die
       // with their context, so there is no live object left to hand this to.
       // Log unconditionally rather than through LOG_ERR, which is gated on
-      // `doLog_`: the caller is about to flush these buffers to the parent
-      // without knowing whether the device work finished.
+      // `options_.log`: the caller is about to flush these buffers to the
+      // parent without knowing whether the device work finished.
       logErr(
           "waitForPendingFrees: event synchronize failed, flushing anyway: " +
           llvm::Twine(result.getError()));
@@ -866,7 +855,7 @@ void MemoryManagerFreeList::removeFromFreeList(MemoryManager::Desc *desc) {
 }
 
 void MemoryManagerFreeList::selfCheck() const {
-  if (!memoryManager_.doSelfCheck_ || memoryManager_.chunks_ == nullptr)
+  if (!memoryManager_.options_.selfCheck || memoryManager_.chunks_ == nullptr)
     return;
 
 #define SELF_CHECK(cond)                                                       \
@@ -928,20 +917,18 @@ bool MemoryManagerFreeList::contains(MemoryManager::Desc *desc) const {
   return false;
 }
 
-std::string &MemoryManager::getDeviceDescription() const {
+const std::string &MemoryManager::getDeviceDescription() const {
   static std::mutex mu;
   std::lock_guard<std::mutex> lock(mu);
-  if (deviceDescription_.empty()) {
-    deviceDescription_ = (device().api() + "[" + llvm::Twine(device().id()) +
-                          (isHost() ? " - host]" : "]"))
-                             .str();
+  if (!descriptionPrinted_) {
+    descriptionPrinted_ = true;
     // Print the initial information about this MemoryManager.
-    llvm::errs() << "##(" << deviceDescription_ << ":" << this
+    llvm::errs() << "##(" << options_.label << ":" << this
                  << ")##: memory_manager(chunk_size: " << chunkSize_
                  << " ; max_cache_size: " << maxCacheSize_
                  << " ; free_list: " << freeList_.get() << ")\n";
   }
-  return deviceDescription_;
+  return options_.label;
 }
 
 void MemoryManager::logErr(llvm::Twine msg) const {
@@ -968,46 +955,27 @@ void MemoryManager::logErr(llvm::Twine msg, size_t info, int64_t size,
   }
 }
 
-MemoryManager::MemoryManager(Device &device, size_t maxSize, size_t chunkSize,
-                             size_t alignment, bool isHost,
-                             bool useOnlyMemoryManagerMode, bool vmmEnabled,
-                             size_t vmmPageSize, size_t largeAllocAlignment)
-    : device_(device), isHost_(isHost),
-      useOnlyMemoryManagerMode_(useOnlyMemoryManagerMode),
-      vmmEnabled_(vmmEnabled), pageSize_(vmmPageSize), maxCacheSize_(maxSize),
-      chunkSize_(chunkSize),
-      // A minimum of 64 byte alignment for allocations from the memory manager.
-      alignmentOffset_(std::max<size_t>(64, alignment) - 1),
-      alignmentMask_(~(std::max<size_t>(64, alignment) - 1)),
-      largeAllocAlignment_(largeAllocAlignment),
-      allocatedMap_(chunkSize_ == 0 ? 0 : 10) {
+MemoryManager::MemoryManager(Device &device, MemoryManagerOptions options)
+    : options_(std::move(options)), device_(device), isHost_(options_.isHost),
+      useOnlyMemoryManagerMode_(options_.useOnlyMemoryManagerMode),
+      vmmEnabled_(options_.vmmEnabled), pageSize_(options_.vmmPageSize),
+      maxCacheSize_(options_.maxSize), chunkSize_(options_.chunkSize),
+      alignmentOffset_(effectiveAllocationAlignment(options_.alignment) - 1),
+      alignmentMask_(~(effectiveAllocationAlignment(options_.alignment) - 1)),
+      largeAllocAlignment_(options_.largeAllocAlignment),
+      allocatedMap_(options_.chunkSize == 0 ? 0 : 10) {
   // chunks_ will be lazily initialized on the first allocation request.
   // Alignment masking only works with powers of 2.
-  assert(llvm::isPowerOf2_64(alignment));
-  assert(largeAllocAlignment == 0 || llvm::isPowerOf2_64(largeAllocAlignment));
+  assert(llvm::isPowerOf2_64(options_.alignment));
+  assert(largeAllocAlignment_ == 0 ||
+         llvm::isPowerOf2_64(largeAllocAlignment_));
 
   // Allocate a freelist that maintains free memory blocks not associated with a
   // DeviceContext (aka stream).
-  freeList_ = std::make_unique<MemoryManagerFreeList>(nullptr, *this, nullptr,
-                                                      /*disableFlush=*/false,
-                                                      "mm:root");
+  freeList_ = std::make_unique<MemoryManagerFreeList>(
+      nullptr, *this, nullptr, /*disableFlush=*/false, "mm:root",
+      /*redzones=*/false, /*poison=*/false);
 
-  // Zero disables the drain retry; anything else is a pass count. Read here
-  // rather than per miss because configAsInt takes a process-wide lock.
-  drainRetries_ = std::max<int64_t>(
-      0, DeviceContext::configAsInt("memory_manager_vmm_drain_retries", 200));
-  // Converting to the clock's nanoseconds overflows a signed 64-bit count
-  // somewhere past 9.2e12 ms, and a wrapped deadline lands in the past, so an
-  // operator setting a huge budget to mean "no time limit" would silently get
-  // a single pass. A minute is already far past anything useful here.
-  drainBudgetMs_ = std::clamp<int64_t>(
-      DeviceContext::configAsInt("memory_manager_vmm_drain_budget_ms", 2000), 1,
-      kMaxDrainBudgetMs);
-
-  // Determine state of debugging flags.
-  doLog_ = DeviceContext::configAsBool("memory_manager_log", false);
-  doSelfCheck_ =
-      DeviceContext::configAsBool("memory_manager_self_check", false);
   // Print initial config of memory manager.
   LOG_ERR(llvm::Twine("Memory manager is ") +
           (this->isEnabled() ? "enabled" : "disabled"));
@@ -1193,7 +1161,7 @@ Error MemoryManager::allocationMissError(const MemoryManagerFreeList *freeList,
 
 void MemoryManagerFreeList::logLargestBlocksInfo(size_t wrappedSize,
                                                  std::string missReason) const {
-  if (memoryManager_.doLog_) {
+  if (memoryManager_.options_.log) {
     // The descriptors below are recycled into `unusedDescs_` under `mu_`, so an
     // unlocked walk can read one that a concurrent free has already reused.
     // allocationMissError releases the lock before calling this, the same way
@@ -1411,9 +1379,7 @@ bool MemoryManager::allocateVmmArena() {
   const size_t budget = (maxCacheSize_ / pageSize_) * pageSize_;
   if (budget == 0)
     return false;
-  const int64_t vaFactor = std::max<int64_t>(
-      1, DeviceContext::configAsInt("memory_manager_vmm_va_factor", 4));
-  size_t vaSize = budget * static_cast<size_t>(vaFactor);
+  size_t vaSize = budget * options_.vmmVaFactor;
   ErrorOr<void *> vaOr = device().vmmAddressReserve(vaSize);
   if (vaOr.isError()) {
     // Oversized reservation failed (e.g. VA exhaustion); fall back to a
@@ -2642,7 +2608,7 @@ ErrorOrSuccess MemoryManager::preBackForCapture() {
 Device &MemoryManager::device() const { return device_; }
 
 void MemoryManager::selfCheck() const {
-  if (!doSelfCheck_ || chunks_ == nullptr) {
+  if (!options_.selfCheck || chunks_ == nullptr) {
     return;
   }
 
@@ -2733,7 +2699,7 @@ void MemoryManager::growChunkSizeTo(size_t newChunkSize) {
   // Ensure to not fall below current chunkSize_.
   size_t oldChunkSize = chunkSize_;
   chunkSize_ = std::max(newChunkSize, chunkSize_);
-  if (doLog_ && (chunkSize_ != oldChunkSize)) {
+  if (options_.log && (chunkSize_ != oldChunkSize)) {
     if (isHost()) {
       logErr("growing_chunk_size_to(" + TWINE(chunkSize_) + ")");
     } else {
@@ -2826,30 +2792,22 @@ MemoryManagerFreeList *MemoryManager::freeList() const {
 void MemoryManagerFreeList::enableRedzones() {
   redzoneEnable_ = true;
   size_t alignment = memoryManager_.allocationAlignment();
-  redzoneSize_ =
-      DeviceContext::configAsInt("memory_manager_redzone_size", alignment);
+  redzoneSize_ = memoryManager_.options_.redzoneSize;
+  if (redzoneSize_ == 0)
+    redzoneSize_ = alignment;
   size_t remainder = redzoneSize_ % alignment;
   if (remainder != 0) {
     redzoneSize_ += (alignment - remainder);
     LOG_MSG("memory_manager_redzone_size must be a multiple of " +
             Twine(alignment) + " rounding up to " + Twine(redzoneSize_));
   }
-  redzonePattern_ = static_cast<uint8_t>(
-      DeviceContext::configAsInt("memory_manager_redzone_pattern", 0xBA));
+  redzonePattern_ = memoryManager_.options_.redzonePattern;
   LOG_MSG("redzone checks enabled");
 }
 
 void MemoryManagerFreeList::enablePoison() {
   poisonEnable_ = true;
-  // Default 0xFF: as fp32/bf16 this is a (negative) NaN, so an uninitialized
-  // read propagates NaN into the output and trips the differential test. This
-  // is the opposite choice from the graph-driver's `uninitialized-poison`,
-  // which deliberately uses a *non-NaN* sentinel to avoid conflicting with the
-  // nan-check pass; the cost here is that the NaN can also surface on
-  // legitimately-uninitialized allocation padding, so `poison-all` is a manual,
-  // opt-in aid rather than a CI default.
-  poisonPattern_ = static_cast<uint8_t>(
-      DeviceContext::configAsInt("memory_manager_poison_pattern", 0xFF));
+  poisonPattern_ = memoryManager_.options_.poisonPattern;
   // Poison is independent of redzones: it only fills the allocation body on
   // alloc, with no padding and no per-free validation (cheap). Combine with the
   // `out-of-bounds` mode (`debug.device_allocator=poison-all,out-of-bounds`) to
@@ -3072,7 +3030,7 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
       // backdoor open the miss below is served immediately and at full size,
       // so waiting here would buy budget adherence with latency the caller
       // never asked for.
-      if (desc == nullptr && memoryManager_.drainRetries_ > 0 &&
+      if (desc == nullptr && memoryManager_.options_.drainRetries > 0 &&
           memoryManager_.useOnlyMemoryManagerMode_ &&
           memoryManager_.pendingFrees_.mayHaveRecords() &&
           wrappedSize <= memoryManager_.chunkSize_) {
@@ -3238,8 +3196,8 @@ MemoryManager::Desc *MemoryManagerFreeList::drainAndRetry(size_t wrappedSize) {
   // be interruptible.
   const auto deadline =
       std::chrono::steady_clock::now() +
-      std::chrono::milliseconds(memoryManager_.drainBudgetMs_);
-  for (int64_t i = 0; i < memoryManager_.drainRetries_; ++i) {
+      std::chrono::milliseconds(memoryManager_.options_.drainBudgetMs);
+  for (int64_t i = 0; i < memoryManager_.options_.drainRetries; ++i) {
     if (i != 0) {
       std::this_thread::sleep_for(kRetryInterval);
       // After the sleep, so the budget is spent on work rather than on a pass
@@ -3654,16 +3612,55 @@ static bool memoryManagerOnlyMode(const Device &device) {
          DeviceContext::configAsBool("memory_manager_only", false);
 }
 
-MemoryManager *MemoryManager::disabled(Device &device, size_t alignment) {
-  return new MemoryManager(
-      /*device=*/device,
-      /*maxSize=*/0,
-      /*chunkSize=*/0,
-      /*alignment=*/alignment,
-      /*isHost=*/false,
-      /*useOnlyMemoryManagerMode=*/memoryManagerOnlyMode(device));
+static std::string deviceLabel(const Device &device, bool isHost) {
+  return (device.api() + "[" + llvm::Twine(device.id()) +
+          (isHost ? " - host]" : "]"))
+      .str();
+}
 
+// The options every factory takes from the config. The factory fills in the
+// geometry and the label.
+static MemoryManagerOptions readOptionsFromConfig(size_t alignment) {
+  MemoryManagerOptions options;
+  options.alignment = alignment;
+
+  // Zero disables the drain retry; anything else is a pass count.
+  options.drainRetries = std::max<int64_t>(
+      0, DeviceContext::configAsInt("memory_manager_vmm_drain_retries",
+                                    options.drainRetries));
+  // Converting to the clock's nanoseconds overflows a signed 64-bit count
+  // somewhere past 9.2e12 ms, and a wrapped deadline lands in the past, so an
+  // operator setting a huge budget to mean "no time limit" would silently get
+  // a single pass. A minute is already far past anything useful here.
+  options.drainBudgetMs = std::clamp<int64_t>(
+      DeviceContext::configAsInt("memory_manager_vmm_drain_budget_ms",
+                                 options.drainBudgetMs),
+      1, kMaxDrainBudgetMs);
+
+  options.log = DeviceContext::configAsBool("memory_manager_log", options.log);
+  options.selfCheck = DeviceContext::configAsBool("memory_manager_self_check",
+                                                  options.selfCheck);
+
+  options.redzoneSize = static_cast<size_t>(DeviceContext::configAsInt(
+      "memory_manager_redzone_size", options.redzoneSize));
+  options.redzonePattern = static_cast<uint8_t>(DeviceContext::configAsInt(
+      "memory_manager_redzone_pattern", options.redzonePattern));
+  options.poisonPattern = static_cast<uint8_t>(DeviceContext::configAsInt(
+      "memory_manager_poison_pattern", options.poisonPattern));
+
+  options.vmmVaFactor = static_cast<size_t>(std::max<int64_t>(
+      1,
+      DeviceContext::configAsInt("memory_manager_vmm_va_factor",
+                                 static_cast<int64_t>(options.vmmVaFactor))));
+  return options;
+}
+
+MemoryManager *MemoryManager::disabled(Device &device, size_t alignment) {
+  MemoryManagerOptions options = readOptionsFromConfig(alignment);
   // TODO (GEX-3475): useOnlyMemoryManagerMode should not be required.
+  options.useOnlyMemoryManagerMode = memoryManagerOnlyMode(device);
+  options.label = deviceLabel(device, /*isHost=*/false);
+  return new MemoryManager(device, std::move(options));
 }
 
 MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
@@ -3809,18 +3806,17 @@ MemoryManager *MemoryManager::onDevice(Device &device, Device::MemInfo memInfo,
     largeAllocAlignment = rounded;
   }
 
-  auto result = new MemoryManager(
-      /*device=*/device,
-      /*maxSize=*/maxCacheSize,
-      /*chunkSize=*/chunkSize,
-      /*alignment=*/alignment,
-      /*isHost=*/false,
-      /*useOnlyMemoryManagerMode=*/memoryManagerOnlyMode(device),
-      /*vmmEnabled=*/vmmEnabled,
-      /*vmmPageSize=*/vmmPageSize,
-      /*largeAllocAlignment=*/largeAllocAlignment);
+  MemoryManagerOptions options = readOptionsFromConfig(alignment);
+  options.maxSize = maxCacheSize;
+  options.chunkSize = chunkSize;
+  options.useOnlyMemoryManagerMode = memoryManagerOnlyMode(device);
+  options.vmmEnabled = vmmEnabled;
+  options.vmmPageSize = vmmPageSize;
+  options.largeAllocAlignment = largeAllocAlignment;
+  options.label = deviceLabel(device, /*isHost=*/false);
+  auto result = new MemoryManager(device, std::move(options));
 
-  if (result->doLog_) {
+  if (result->options_.log) {
     result->logErr("initial memInfo(free: " + humanMemorySize(freeMemory) +
                    ", total: " + humanMemorySize(memInfo.total) + ")");
   }
@@ -3857,15 +3853,15 @@ MemoryManager *MemoryManager::onHost(Device &device, size_t alignment) {
                             100,
                         256 * KB)));
 
-  return new MemoryManager(
-      /*device=*/device,
-      /*maxSize=*/maxCacheSize,
-      /*chunkSize=*/chunkSize,
-      /*alignment=*/alignment,
-      /*isHost=*/true,
-      // We disable useOnlyMemoryManagerMode for host memory manager since it is
-      // not useful by bazel to better binpack tests on a runner.
-      /*useOnlyMemoryManagerMode=*/false);
+  MemoryManagerOptions options = readOptionsFromConfig(alignment);
+  options.maxSize = maxCacheSize;
+  options.chunkSize = chunkSize;
+  options.isHost = true;
+  // We disable useOnlyMemoryManagerMode for host memory manager since it is
+  // not useful by bazel to better binpack tests on a runner.
+  options.useOnlyMemoryManagerMode = false;
+  options.label = deviceLabel(device, /*isHost=*/true);
+  return new MemoryManager(device, std::move(options));
 }
 
 } // namespace M::Driver
