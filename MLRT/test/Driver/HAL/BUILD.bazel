@@ -45,6 +45,24 @@ mojo_test(
     ],
 )
 
+# Uses the mock plugin as the accelerator in order to run without a device.
+mojo_test(
+    name = "test_hal_host.mojo.test",
+    srcs = ["test_hal_host.mojo"],
+    data = [
+        ":MockPlugin.so",
+        "//Target:CPUPlugin.so",
+    ],
+    env = {
+        "CPU_PLUGIN": "$(rootpath //Target:CPUPlugin.so)",
+        "MOCK_PLUGIN": "$(rootpath :MockPlugin.so)",
+    },
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # ---------------------------------------------------------------------------
 # GPU-dependent smoke test (existing).
 # ---------------------------------------------------------------------------

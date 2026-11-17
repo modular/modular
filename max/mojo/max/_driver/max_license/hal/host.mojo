@@ -23,6 +23,27 @@ from .status import HALError, STATUS_INVALID_ARG
 from .driver import _first_accelerator, get_device_spec
 
 
+def _accelerator_plugin_entry(plugins_spec: String) -> Optional[String]:
+    """Returns the first non-`cpu` entry of a `MODULAR_DRIVER_PLUGINS` value.
+
+    An entry with no `name@` prefix counts as an accelerator.
+
+    Args:
+        plugins_spec: The `MODULAR_DRIVER_PLUGINS` value.
+
+    Returns:
+        The accelerator entry, or `None` if the value names no accelerator.
+    """
+    for entry in plugins_spec.split(";"):
+        var spec = String(entry.strip())
+        if not spec:
+            continue
+        var parts = spec.split("@", maxsplit=1)
+        if len(parts) == 1 or String(parts[0]).lower() != "cpu":
+            return spec
+    return None
+
+
 struct Host(not Copyable, Movable):
     var drivers: List[ArcPointer[Driver]]
 
@@ -34,13 +55,14 @@ struct Host(not Copyable, Movable):
             )
 
         self.drivers = []
-        var plugin_specs = plugins_spec.strip().split(":")
-        if len(plugin_specs) == 0:
+        var accelerator_spec = _accelerator_plugin_entry(plugins_spec)
+        if not accelerator_spec:
             raise HALError(
-                STATUS_INVALID_ARG, message="No plugin specs provided"
+                STATUS_INVALID_ARG,
+                message="No accelerator plugin in MODULAR_DRIVER_PLUGINS",
             )
         # TODO: support multiple drivers
-        var driver = Driver.create(String(plugin_specs[0]))
+        var driver = Driver.create(accelerator_spec.value())
         self.drivers.append(driver^)
 
     def driver_count(self) -> Int64:
