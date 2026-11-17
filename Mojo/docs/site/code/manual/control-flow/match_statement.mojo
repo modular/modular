@@ -83,7 +83,7 @@ def main() raises:
 
     # Only the first matching case runs.
     assert_equal(first_case_hits(404), 1)
-    # No body runs when no case matches.
+    # `case _: pass` catches an unmatched value and runs nothing.
     assert_equal(unmatched_hits(404), 0)
 
     # Matching optional values

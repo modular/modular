@@ -3,7 +3,7 @@ title: Control flow
 description: Mojo control flow statements.
 ---
 
-<!-- Last updated: 2026-10-15 (adds match, if case, while case) -->
+<!-- Last updated: 2026-11-17 (match exhaustiveness warning, case _: pass) -->
 
 Mojo includes several traditional control flow structures for conditional and
 repeated execution of code blocks.
@@ -174,13 +174,22 @@ Each `case` holds a pattern:
   is also `True`.
 - `_` matches any value without binding it, so it works as a catch-all.
 
-Cases are tested in order. When one matches, its code block runs and no further
-cases are tested, so there's no need for a `break`. If no case matches, no code
-block runs.
+Mojo tests the cases in order. When one matches, its code block runs and Mojo
+tests no further cases, so there's no need for a `break`. If no case matches,
+no code block runs.
 
-When matching open-ended values such as `Int` or `String` with literal cases,
-include a `case _` catch-all. Use `case _: pass` when unmatched values should
-do nothing.
+The compiler warns about a `match` that can leave a value unmatched, such as
+literal cases on an `Int` or `String` with no catch-all. When unmatched values
+should do nothing, end the `match` with `case _: pass`:
+
+```mojo
+var status_code = 404
+match status_code:
+    case 200:
+        print("OK")
+    case _:
+        pass
+```
 
 ### Matching optional values
 
