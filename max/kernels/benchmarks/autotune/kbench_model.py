@@ -267,7 +267,10 @@ class ParamSpace:
 # Singleton build failed state
 @dataclass(frozen=True)
 class _BuildFailed:
-    pass
+    # The cache is pickled between the CI compile and run jobs, and callers
+    # check `is BuildFailed`, so unpickling must return the singleton.
+    def __reduce__(self) -> str:
+        return "BuildFailed"
 
 
 BuildFailed = _BuildFailed()

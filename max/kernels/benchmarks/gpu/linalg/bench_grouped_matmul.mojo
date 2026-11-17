@@ -170,7 +170,6 @@ def bench_grouped_matmul[
         total_num_tokens += num_tokens
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
     var M = total_num_tokens
-    var total_flops = 2 * M * N * K
 
     # Print parsed inputs for verification (before any GPU work).
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
@@ -195,17 +194,24 @@ def bench_grouped_matmul[
                 " entries each (num_active_experts)",
             )
         )
-    for expert_id in expert_ids_input:
-        if expert_id < 0 or expert_id >= num_experts:
+    # -1 marks an inactive expert. Its tokens keep their rows in the buffers,
+    # but the kernels skip its matmul, so they do not count toward the FLOPs.
+    var matmul_tokens = 0
+    for i in range(num_active_experts):
+        var expert_id = expert_ids_input[i]
+        if expert_id < -1 or expert_id >= num_experts:
             raise Error(
                 String(
                     "expert id ",
                     expert_id,
-                    " is outside [0, ",
+                    " is outside [-1, ",
                     num_experts,
                     ")",
                 )
             )
+        if expert_id != -1:
+            matmul_tokens += num_tokens_by_expert[i]
+    var total_flops = 2 * matmul_tokens * N * K
 
     def _ri(v: Int) -> Int64:
         return Int64(v)

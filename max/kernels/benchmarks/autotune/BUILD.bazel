@@ -265,6 +265,7 @@ modular_py_binary(
         "//max:_cudnn",
         "//max:_cufft",
         "//max:_rocblas",
+        "//max:builtin_kernels",
         "//max:comm",
         "//max:extensibility",
         "//max:internal_utils",
