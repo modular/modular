@@ -13,13 +13,13 @@ that vendor plugins implement, see `SDK/include/HAL/`.
 
 The code lives in these places:
 
-| Component                    | Path                                               | Contents                                                            |
-|------------------------------|----------------------------------------------------|---------------------------------------------------------------------|
-| Client API                   | [`hal/`](hal/)                                     | `Driver`, `Device`, `Context`, `Queue`, `Stream`, `Event`, `Buffer` |
-| `DeviceContext` compat layer | [`device_context_hal/`](device_context_hal/)       | The `DeviceContext` API, rebuilt on top of the client API           |
-| Execution configurations     | [`hal/execution_config/`](hal/execution_config/)   | Launch configuration traits and per-vendor implementations          |
-| Extensions                   | [`hal/extensions/`](hal/extensions/)               | Capability traits and per-vendor extension sets                     |
-| Hardware abstraction layer   | `SDK/include/HAL/`                                 | The `M_driver_*` C interface that every plugin implements           |
+| Component                  | Path                                                   | Contents                                                             |
+|----------------------------|--------------------------------------------------------|----------------------------------------------------------------------|
+| Client API                 | [`hal/`](hal/)                                         | `Driver`, `Device`, `Context`, `Queue`, `Stream`, `Event`, `Buffer`  |
+| `DeviceContext` dispatch   | [`device_context_dispatch/`](device_context_dispatch/) | The `DeviceContext` API, forwarding to the legacy or the HAL backend |
+| Execution configurations   | [`hal/execution_config/`](hal/execution_config/)       | Launch configuration traits and per-vendor implementations           |
+| Extensions                 | [`hal/extensions/`](hal/extensions/)                   | Capability traits and per-vendor extension sets                      |
+| Hardware abstraction layer | `SDK/include/HAL/`                                     | The `M_driver_*` C interface that every plugin implements            |
 
 > [!NOTE]
 > The client API is still incubating, and its surface changes as consumers

@@ -1,7 +1,7 @@
 # max._driver
 
-Notes for agents working on the Mojo HAL, the HAL `DeviceContext`
-(`max_license/device_context_hal`) and its plugin hooks
+Notes for agents working on the Mojo HAL, the dispatching `DeviceContext`
+(`max_license/device_context_dispatch`) and its plugin hooks
 (`max_license/hal/_plugin`). The root `AGENTS.md` covers everything general.
 
 ## Resolve per-target things from the type's own target

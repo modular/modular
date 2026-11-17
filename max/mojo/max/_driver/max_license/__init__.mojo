@@ -10,5 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The NeoDriver sources: the HAL client API (`hal`), `machine`, and the HAL
-`DeviceContext` compat layer (`device_context_hal`)."""
+"""The NeoDriver sources: the HAL client API (`hal`), `machine`, and the
+dispatching `DeviceContext` (`device_context_dispatch`)."""

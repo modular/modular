@@ -3,8 +3,9 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//max:consumers"])
 
-# The HAL client API (`hal`), `machine`, and the HAL DeviceContext
-# (`device_context_hal`) compile as part of `max`, as `max._driver.max_license`.
+# The HAL client API (`hal`), `machine`, and the dispatching DeviceContext
+# (`device_context_dispatch`) compile as part of `max`, as
+# `max._driver.max_license`.
 # This package boundary hides them from //max/mojo/max's glob, so `max_srcs`
 # includes them through this filegroup.
 filegroup(
