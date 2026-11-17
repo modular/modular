@@ -17,9 +17,6 @@ from max._core.engine import ModelExecutionError as ModelExecutionError
 
 from . import mlrt as mlrt
 from ._precompiled_mefs import ArtifactBodyMismatch as ArtifactBodyMismatch
-from ._precompiled_mefs import (
-    ArtifactToolchainMismatch as ArtifactToolchainMismatch,
-)
 from ._precompiled_mefs import MefStore as MefStore
 from ._precompiled_mefs import MissingArtifactError as MissingArtifactError
 from .api import CompilationStopped as CompilationStopped

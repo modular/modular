@@ -44,7 +44,7 @@ from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
-from ._precompiled_mefs import MefStore
+from ._precompiled_mefs import MefStore, _kernels, _toolchain
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
@@ -334,6 +334,32 @@ def _process_custom_extensions_object(
 
     # Pass the path through as is.
     return custom_extension
+
+
+def _final_extensions(
+    model: str | Path | Module | Graph,
+    custom_extensions: CustomExtensionsType | None,
+) -> list[CustomExtensionType]:
+    """Returns the extensions a compile of ``model`` links against.
+
+    The one place the caller's extensions and the model's own are put together,
+    so a compile and a digest taken for it agree on what that list is.
+
+    Args:
+        model: The model being compiled.
+        custom_extensions: The extensions the caller named, if any.
+
+    Returns:
+        The extension paths, with source packages built.
+    """
+    extensions: list[CustomExtensionType] = []
+    if custom_extensions is not None:
+        extensions = _process_custom_extensions_objects(custom_extensions)
+    if isinstance(model, Graph):
+        extensions.extend(
+            _process_custom_extensions_objects(model.kernel_libraries_paths)
+        )
+    return extensions
 
 
 def _process_custom_extensions_objects(
@@ -682,9 +708,8 @@ class InferenceSession:
             which lets the compiling and the executing run happen on different
             machines. Raises if a graph has no artifact, and raises
             :class:`ArtifactBodyMismatch` if the artifact was built from a
-            different graph, kernel libraries or compile options, or
-            :class:`ArtifactToolchainMismatch` if a different MAX build exported
-            it.
+            different program: another body, other kernel libraries, other
+            compile options, or a different MAX build.
         export_mefs: A directory to write a compiled-graph artifact into for
             every graph this session loads, alongside a manifest describing
             them. Pass the same directory as another session's
@@ -1003,9 +1028,7 @@ class InferenceSession:
             RuntimeError: If reusing and no recorded artifact matches
                 ``model``'s name and signature.
             ArtifactBodyMismatch: If reusing and the artifact was built from a
-                different graph, kernel libraries or compile options.
-            ArtifactToolchainMismatch: If reusing and a different MAX build
-                exported the artifacts.
+                different program or build than the graph compiles to.
         """
         # See `_precompiled_mefs` for why a caller would want this: it lets the
         # compile happen somewhere that holds no accelerator.
@@ -1026,12 +1049,10 @@ class InferenceSession:
         # not hide them from what the artifact records.
         extensions = custom_extensions or self._custom_extensions
 
+        digest = self._mef_digest(model, extensions, tile_based_fusion)
+
         if not store.exporting:
-            artifact = store.claim_import(
-                model,
-                extensions=extensions,
-                tile_based_fusion=tile_based_fusion,
-            )
+            artifact = store.claim_import(model, digest=digest)
             # A store with nothing to say about this graph declines it, and
             # the compile happens here as it would with no store at all.
             if artifact is not None:
@@ -1047,13 +1068,7 @@ class InferenceSession:
             custom_extensions=custom_extensions,
             tile_based_fusion=tile_based_fusion,
         )
-        compiled.export_mef(
-            store.claim_export(
-                model,
-                extensions=extensions,
-                tile_based_fusion=tile_based_fusion,
-            )
-        )
+        compiled.export_mef(store.claim_export(model, digest=digest))
         store.write_manifest()
         return compiled
 
@@ -1363,6 +1378,45 @@ class InferenceSession:
                 "`MODULAR_DEBUG=source-tracebacks`)."
             )
         return msg
+
+    def _mef_digest(
+        self,
+        graph: Graph,
+        custom_extensions: CustomExtensionsType | None,
+        tile_based_fusion: bool,
+    ) -> str:
+        """Returns what ``graph`` compiles to, as the store records it.
+
+        Seeds the graph the way a compile does first, because the seed is part
+        of the module the digest covers. The compiler's part is what the graph
+        is; what its kernel libraries hold is added here, because a library is
+        named by a path and a path belongs to the machine that wrote it.
+
+        Args:
+            graph: The graph to digest.
+            custom_extensions: The extensions the caller named, if any.
+            tile_based_fusion: Whether this run asks for the tile-based
+                programming model.
+
+        Returns:
+            The digest: the compiler's, then one hex digest per kernel library,
+            then the MAX release that built it.
+        """
+        module = graph.module
+        kernel_library = getattr(graph, "_kernel_library", None)
+        if kernel_library is not None:
+            kernel_library._analysis.seed_kernel_decls(module.mlir_module)
+        program = self._impl.content_digest(
+            module.mlir_module._CAPIPtr,
+            _final_extensions(graph, custom_extensions),
+            tile_based_fusion,
+        )
+        # Two parts the compiler leaves to the store: what its kernel libraries
+        # hold, which a caller names by path, and which MAX release built the
+        # artifact. A path and a build are both about the machine that wrote
+        # it; the release is what the two halves of a split agree on.
+        kernels = ",".join(_kernels(graph, custom_extensions))
+        return f"{program}:{kernels}:{_toolchain()}"
 
     def _compile_module(
         self,

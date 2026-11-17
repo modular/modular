@@ -28,7 +28,9 @@
 #include "mlir/Parser/Parser.h"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include "gtest/gtest.h"
 
@@ -147,6 +149,118 @@ TEST_F(MEFCacheKeyTest, KeyHasExpectedLength) {
   EXPECT_EQ(keyOr.takeValue().size(), kBLAKE3DigestBytes);
 }
 
+TEST_F(MEFCacheKeyTest, GraphCounterDoesNotReachKey) {
+  // A graph's `counter` numbers the symbolic dimension names it mints, so it
+  // moves with work done to the graph rather than with what it computes. Two
+  // modules differing only in it are the same program.
+  auto hasher = tryBuild();
+  if (!hasher)
+    GTEST_SKIP() << "kernel packages unavailable; skip";
+
+  auto fresh = parse(R"mlir(
+    module {
+      mo.graph @g(%arg0: !mo.tensor<[4], f32, cpu:0>) -> !mo.tensor<[4], f32, cpu:0> {
+        mo.output %arg0 : !mo.tensor<[4], f32, cpu:0>
+      } {counter = 0 : i64}
+    }
+  )mlir");
+  auto advanced = parse(R"mlir(
+    module {
+      mo.graph @g(%arg0: !mo.tensor<[4], f32, cpu:0>) -> !mo.tensor<[4], f32, cpu:0> {
+        mo.output %arg0 : !mo.tensor<[4], f32, cpu:0>
+      } {counter = 32 : i64}
+    }
+  )mlir");
+  if (!fresh || !advanced)
+    GTEST_SKIP() << "unable to build the graph fixture";
+
+  auto freshKey = hasher->keyForModule(*fresh);
+  auto advancedKey = hasher->keyForModule(*advanced);
+  ASSERT_FALSE(freshKey.isError());
+  ASSERT_FALSE(advancedKey.isError());
+  EXPECT_EQ(freshKey.takeValue(), advancedKey.takeValue());
+}
+
+TEST_F(MEFCacheKeyTest, ContentDigestIgnoresWhichDevicesWerePresent) {
+  // A split's two halves hold different devices -- the compile-only one holds
+  // none -- and the device-info mapping records them. It must not reach the
+  // digest, or an artifact exported on one half could never be imported on the
+  // other; the tile-based fusion bit it carries is part of the program and
+  // must.
+  auto cpuOnly = parse(R"mlir(
+    module attributes {mo.device_info_mapping = {cpu = #M.device_info<"cpu", "cpu", "", "", tile_based_fusion = false>}} {
+      func.func private @foo(%a: i32) -> i32
+    }
+  )mlir");
+  auto withVirtualGpu = parse(R"mlir(
+    module attributes {mo.device_info_mapping = {cpu = #M.device_info<"cpu", "cpu", "", "", tile_based_fusion = false>, gpu = #M.device_info<"gpu", "cuda", "sm_90a", "", tile_based_fusion = false>}} {
+      func.func private @foo(%a: i32) -> i32
+    }
+  )mlir");
+  if (!cpuOnly || !withVirtualGpu)
+    GTEST_SKIP() << "unable to build the graph fixture";
+
+  auto cpuDigest =
+      computeMefContentDigest(*cpuOnly, MO::GCPipelineOptions{}, maxContext);
+  auto gpuDigest = computeMefContentDigest(*withVirtualGpu,
+                                           MO::GCPipelineOptions{}, maxContext);
+  if (cpuDigest.isError())
+    GTEST_SKIP() << "kernel packages unavailable; skip "
+                 << cpuDigest.takeError().get();
+  ASSERT_FALSE(gpuDigest.isError()) << gpuDigest.takeError().get();
+  EXPECT_EQ(cpuDigest.takeValue(), gpuDigest.takeValue());
+}
+
+TEST_F(MEFCacheKeyTest, ContentDigestIgnoresTheTreeTheGraphWasBuiltIn) {
+  // The kernel-library paths record where the building tree put its kernels.
+  // A split records in one tree and initializes in another, so they cannot be
+  // part of the identity. What the paths hold is hashed from the libraries a
+  // compile is handed, and `KernelLibraryContentInvalidatesKey` covers that.
+  auto built = parse(R"mlir(
+    module {
+      mo.graph @g(%arg0: !mo.tensor<[4], f32, cpu:0>) -> !mo.tensor<[4], f32, cpu:0> attributes {_kernel_library_paths = ["/build/tree/kernels.mojoc"]} {
+        mo.output %arg0 : !mo.tensor<[4], f32, cpu:0>
+      } {counter = 0 : i64}
+    }
+  )mlir");
+  auto replayed = parse(R"mlir(
+    module {
+      mo.graph @g(%arg0: !mo.tensor<[4], f32, cpu:0>) -> !mo.tensor<[4], f32, cpu:0> attributes {_kernel_library_paths = ["/runfiles/tree/kernels.mojoc"]} {
+        mo.output %arg0 : !mo.tensor<[4], f32, cpu:0>
+      } {counter = 0 : i64}
+    }
+  )mlir");
+  if (!built || !replayed)
+    GTEST_SKIP() << "unable to build the graph fixture";
+
+  auto builtDigest =
+      computeMefContentDigest(*built, MO::GCPipelineOptions{}, maxContext);
+  auto replayedDigest =
+      computeMefContentDigest(*replayed, MO::GCPipelineOptions{}, maxContext);
+  if (builtDigest.isError())
+    GTEST_SKIP() << "kernel packages unavailable; skip "
+                 << builtDigest.takeError().get();
+  ASSERT_FALSE(replayedDigest.isError()) << replayedDigest.takeError().get();
+  EXPECT_EQ(builtDigest.takeValue(), replayedDigest.takeValue());
+}
+
+TEST_F(MEFCacheKeyTest, ContentDigestCoversTheBody) {
+  auto foo = parse(kFuncFooModule);
+  auto bar = parse(kFuncBarModule);
+  if (!foo || !bar)
+    GTEST_SKIP() << "unable to build the graph fixture";
+
+  auto fooDigest =
+      computeMefContentDigest(*foo, MO::GCPipelineOptions{}, maxContext);
+  auto barDigest =
+      computeMefContentDigest(*bar, MO::GCPipelineOptions{}, maxContext);
+  if (fooDigest.isError())
+    GTEST_SKIP() << "kernel packages unavailable; skip "
+                 << fooDigest.takeError().get();
+  ASSERT_FALSE(barDigest.isError()) << barDigest.takeError().get();
+  EXPECT_NE(fooDigest.takeValue(), barDigest.takeValue());
+}
+
 TEST_F(MEFCacheKeyTest, KeyIsDeterministic) {
   auto hasher = tryBuild();
   if (!hasher)
@@ -224,6 +338,44 @@ TEST_F(MEFCacheKeyTest, KernelLibraryPathInvalidatesKey) {
   ASSERT_FALSE(plainKey.isError());
   ASSERT_FALSE(extraKey.isError());
   EXPECT_NE(plainKey.takeValue(), extraKey.takeValue());
+}
+
+TEST_F(MEFCacheKeyTest, KernelLibraryContentInvalidatesKey) {
+  // The key covers what a user kernel library holds, not only where it lives,
+  // so editing a kernel misses the old artifact instead of reusing it.
+  llvm::SmallString<128> tmpPath;
+  int tmpFd = -1;
+  auto ec = llvm::sys::fs::createTemporaryFile("mef-cache-key-content-test",
+                                               "dat", tmpFd, tmpPath);
+  ASSERT_FALSE(ec) << "failed to create temp file: " << ec.message();
+  llvm::sys::fs::file_t tmpFile = llvm::sys::fs::convertFDToNativeFile(tmpFd);
+  llvm::sys::fs::closeFile(tmpFile);
+  llvm::scope_exit cleanup{[&] { llvm::sys::fs::remove(tmpPath); }};
+
+  const std::string path(tmpPath.str());
+  auto write = [&](llvm::StringRef contents) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << contents.str();
+  };
+
+  write("the first kernels");
+  auto before = tryBuild(
+      [&](MO::GCPipelineOptions &gc) { gc.kernelLibraryPaths = {path}; });
+  if (!before)
+    GTEST_SKIP() << "kernel packages unavailable; skip";
+
+  write("the edited kernels");
+  auto after = tryBuild(
+      [&](MO::GCPipelineOptions &gc) { gc.kernelLibraryPaths = {path}; });
+  if (!after)
+    GTEST_SKIP() << "kernel packages unavailable; skip";
+
+  auto mod = parse(kEmptyModule);
+  auto beforeKey = before->keyForModule(*mod);
+  auto afterKey = after->keyForModule(*mod);
+  ASSERT_FALSE(beforeKey.isError());
+  ASSERT_FALSE(afterKey.isError());
+  EXPECT_NE(beforeKey.takeValue(), afterKey.takeValue());
 }
 
 TEST_F(MEFCacheKeyTest, KernelLibraryPathIsRelocatable) {

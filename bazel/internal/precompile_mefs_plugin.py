@@ -63,7 +63,6 @@ from max.driver import (
 )
 from max.engine import (
     ArtifactBodyMismatch,
-    ArtifactToolchainMismatch,
     CompileOnlyExecutionError,
     InferenceSession,
     MefStore,
@@ -683,7 +682,7 @@ def _explain_divergence(
         return
     if not isinstance(
         call.excinfo.value,
-        (MissingArtifactError, ArtifactBodyMismatch, ArtifactToolchainMismatch),
+        (MissingArtifactError, ArtifactBodyMismatch),
     ):
         return
 

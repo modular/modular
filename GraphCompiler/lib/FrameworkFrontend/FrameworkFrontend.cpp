@@ -87,6 +87,56 @@ struct MOFConfig {
   }
 };
 
+static void enableTileBasedFusion(ModuleOp moduleOp);
+
+/// Applies the lowering options a compile uses and the module transforms that
+/// change the key, so a digest taken here describes what a compile produces.
+void prepareCompile(MOFContext &ctx, const MOFConfig *mofConfig,
+                    mlir::ModuleOp module, MO::GCPipelineOptions &opts) {
+  ctx.overrideLoweringOptions(opts);
+
+  // Set iff Python `Analysis::seed_kernel_decls` already seeded kernel decls,
+  // so mogg-import-packages can be skipped.
+  if (module->hasAttr(MOGG::kOpaqueTypeMappingAttrName))
+    opts.kernelDeclsPrePopulated = true;
+
+  // Before the key, so tile and non-tile compiles never collide.
+  if (mofConfig && mofConfig->tileBasedFusion)
+    enableTileBasedFusion(module);
+}
+
+/// Sinks the `tile_based_fusion` compile option into every
+/// `mo.device_info_mapping` entry, CPU included, so SIMD can later become a
+/// subset of TileTensor.
+static void enableTileBasedFusion(ModuleOp moduleOp) {
+  MLIRContext *ctx = moduleOp.getContext();
+  auto dict =
+      moduleOp->getAttrOfType<DictionaryAttr>(MO::DeviceInfoMapping::kAttrName);
+  if (!dict)
+    return;
+
+  SmallVector<NamedAttribute> entries;
+  entries.reserve(dict.size());
+  bool changed = false;
+  for (NamedAttribute entry : dict) {
+    auto info = dyn_cast<DeviceInfoAttr>(entry.getValue());
+    if (info && !info.getTileBasedFusion()) {
+      entries.emplace_back(entry.getName(),
+                           DeviceInfoAttr::get(ctx, info.getLabel(),
+                                               info.getApi(), info.getArch(),
+                                               info.getModel(),
+                                               /*tile_based_fusion=*/true));
+      changed = true;
+    } else {
+      entries.push_back(entry);
+    }
+  }
+
+  if (changed)
+    moduleOp->setAttr(MO::DeviceInfoMapping::kAttrName,
+                      DictionaryAttr::get(ctx, entries));
+}
+
 } // namespace
 
 struct MOFContext::Impl final {
@@ -126,6 +176,28 @@ MOFContext::MOFContext(ContextRef maxContext) : impl(std::make_unique<Impl>()) {
 }
 
 MOFContext::~MOFContext() = default;
+
+ErrorOr<std::string> MOFContext::computeContentDigest(void *source,
+                                                      FileFormat format) {
+  if (format != FileFormat::kMODialect)
+    return Error("a compile digest is only defined for MAX graphs");
+
+  // A clone: the caller's graph is not the compiler's to transform.
+  OwningOpRef<ModuleOp> moduleOp =
+      ModuleOp::getFromOpaquePointer(source).clone();
+
+  MLIRContext *mlirCtx = moduleOp->getContext();
+  registerContext(*mlirCtx, impl->maxContext);
+
+  llvm::SourceMgr sourceMgr;
+  mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, mlirCtx);
+
+  MO::GCPipelineOptions gcPipelineOptions;
+  prepareCompile(*this, impl->mofConfig.get(), *moduleOp, gcPipelineOptions);
+
+  return computeMefContentDigest(*moduleOp, gcPipelineOptions,
+                                 impl->maxContext);
+}
 
 const ExecutorDriverOptions *MOFContext::getExecutorDriverOptions() const {
   return impl->driverOptions
@@ -321,38 +393,6 @@ private:
   }
 };
 
-/// Sinks the `tile_based_fusion` compile option into every
-/// `mo.device_info_mapping` entry, CPU included, so SIMD can later become a
-/// subset of TileTensor.
-static void enableTileBasedFusion(ModuleOp moduleOp) {
-  MLIRContext *ctx = moduleOp.getContext();
-  auto dict =
-      moduleOp->getAttrOfType<DictionaryAttr>(MO::DeviceInfoMapping::kAttrName);
-  if (!dict)
-    return;
-
-  SmallVector<NamedAttribute> entries;
-  entries.reserve(dict.size());
-  bool changed = false;
-  for (NamedAttribute entry : dict) {
-    auto info = dyn_cast<DeviceInfoAttr>(entry.getValue());
-    if (info && !info.getTileBasedFusion()) {
-      entries.emplace_back(entry.getName(),
-                           DeviceInfoAttr::get(ctx, info.getLabel(),
-                                               info.getApi(), info.getArch(),
-                                               info.getModel(),
-                                               /*tile_based_fusion=*/true));
-      changed = true;
-    } else {
-      entries.push_back(entry);
-    }
-  }
-
-  if (changed)
-    moduleOp->setAttr(MO::DeviceInfoMapping::kAttrName,
-                      DictionaryAttr::get(ctx, entries));
-}
-
 /// Lowers a module op to MGP then exports to MEF.
 static ErrorOr<BufferRef> convertMOToMEF(ModuleOp moduleOp,
                                          const MO::GCPipelineOptions &options,
@@ -396,16 +436,7 @@ M::ErrorOr<M::BufferRef> MOFContext::compileToBinary(void *source,
 
   // Gather all the options from all the sources.
   MO::GCPipelineOptions gcPipelineOptions;
-  overrideLoweringOptions(gcPipelineOptions);
-
-  // Set iff Python `Analysis::seed_kernel_decls` already seeded kernel decls,
-  // so mogg-import-packages can be skipped.
-  if ((*moduleOp)->hasAttr(MOGG::kOpaqueTypeMappingAttrName))
-    gcPipelineOptions.kernelDeclsPrePopulated = true;
-
-  // Before the cache key, so tile and non-tile compiles never collide.
-  if (impl->mofConfig && impl->mofConfig->tileBasedFusion)
-    enableTileBasedFusion(*moduleOp);
+  prepareCompile(*this, impl->mofConfig.get(), *moduleOp, gcPipelineOptions);
 
   bool enableMEFMetadata = impl->getEnableMEFMetadata();
 

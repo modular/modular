@@ -640,6 +640,25 @@ compileModel(const M::Engine::Context &runtimeContext,
   return compiledModels;
 }
 
+std::string M::Core::InferenceSession::computeContentDigest(
+    const nb::capsule &model,
+    std::vector<std::filesystem::path> &&customExtensions,
+    bool tileBasedFusion) {
+  CompilationRequest compileConfig =
+      populateCompileConfig(std::move(customExtensions));
+  compileConfig.setTileBasedFusion(tileBasedFusion);
+  // The compile adds these before it names its artifact; a digest has to see
+  // the same options or the two would disagree about one graph.
+  compileConfig.setDevices(runtimeContext->getConfig().getDevices());
+
+  auto digestOr = CompiledModels::computeContentDigest(
+      runtimeContext->maxContext, compileConfig, model.data(),
+      frameworkToFileFormat());
+  if (digestOr.isError())
+    throw std::invalid_argument(digestOr.takeError().get());
+  return digestOr.takeValue();
+}
+
 AsyncRT::AsyncValueRef<CompiledModels> M::Core::InferenceSession::compile(
     std::filesystem::path modelPath,
     std::vector<std::filesystem::path> &&customExtensions) {

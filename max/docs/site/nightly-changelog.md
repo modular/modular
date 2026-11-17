@@ -504,9 +504,8 @@ This version is still a work in progress.
   that exported it. Before, only the graph's name and its input and output
   types were compared, so editing a graph or a custom op and reusing an
   artifact silently ran the old program. A mismatch raises
-  `ArtifactBodyMismatch`, or `ArtifactToolchainMismatch` for artifacts from a
-  different MAX build. A caller that knowingly builds different graphs than it
-  recorded, such as a test harness compiling under virtual devices, passes
+  `ArtifactBodyMismatch`. A caller that knowingly builds different graphs than
+  it recorded, such as a test harness compiling under virtual devices, passes
   `MefStore.for_import(..., verify_body=False)`, `InferenceSession(verify_body=
   False)`, or `--no-precompiled-mefs-verify-body` to skip the check.
 

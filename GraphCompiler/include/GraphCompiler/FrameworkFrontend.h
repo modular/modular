@@ -53,6 +53,10 @@ public:
 
   ErrorOrSuccess setConfigs(ArrayRef<std::unique_ptr<DriverConfig>> configs);
 
+  /// The portable digest of what \p source would compile to (see
+  /// `computeMefContentDigest`), without compiling it.
+  ErrorOr<std::string> computeContentDigest(void *source, FileFormat format);
+
   /// Compile an input buffer of a known format to an MEF model binary.
   EXPORT_FOR_MT ErrorOr<M::BufferRef> compileToBinary(M::BufferRef file,
                                                       FileFormat format);

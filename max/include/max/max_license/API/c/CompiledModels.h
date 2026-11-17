@@ -222,6 +222,14 @@ struct CompiledModels {
   /// always do).
   static MODULAR_CXX_EXPORT ErrorOr<CompiledModels> read(BufferRef buffer);
 
+  /// The portable digest of what an in-memory source would compile to, named
+  /// as the cache names its entries, without compiling it. A caller holding an
+  /// artifact compares this against the digest it recorded, which is what
+  /// `create` would have compiled for the same graph.
+  static MODULAR_CXX_EXPORT ErrorOr<std::string>
+  computeContentDigest(M::ContextRef context, const CompilationRequest &compCfg,
+                       void *source, FileFormat format);
+
   const SourceModel &getSourceModel() const { return sourceModel; }
   size_t getNumModels() const { return uninitializedModel.getNumModels(); }
   const M::Model *getFirstModel() const {

@@ -696,6 +696,31 @@ class InferenceSession:
         runtime and can be passed to :meth:`_load_all`.
         """
 
+    def content_digest(
+        self,
+        model: types.CapsuleType,
+        custom_extensions: Sequence[str | os.PathLike],
+        tile_based_fusion: bool = False,
+    ) -> str:
+        """
+        Returns the portable digest of what a model would compile to.
+
+        The digest covers the graph and the codegen options, and nothing about the
+        machine that ran the compile. A caller holding an artifact compares it
+        against the digest recorded when the artifact was exported, with the
+        contents of its kernel libraries and the MAX release added on, since those
+        are a caller's to know rather than this call's.
+
+        Args:
+            model: A capsule containing the MAX graph.
+            custom_extensions: The paths to custom Mojo extension libraries.
+            tile_based_fusion: Whether the graph compiles under the tile-based
+                programming model.
+
+        Returns:
+            The digest, as base64 text.
+        """
+
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
     ) -> None:

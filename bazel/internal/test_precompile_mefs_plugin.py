@@ -336,7 +336,7 @@ def test_replay_reports_a_graph_whose_body_changed(
     replayed = _replay(suite, recorded, tmp_path_factory, {"SUITE_ADDEND": "7"})
 
     assert replayed.returncode != 0
-    assert "describes a different graph" in replayed.output
+    assert "compiled from a different program" in replayed.output
     assert "MEF replay" in replayed.output
 
 

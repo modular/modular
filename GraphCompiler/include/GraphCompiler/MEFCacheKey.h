@@ -60,6 +60,11 @@ computeMEFCacheKey(mlir::ModuleOp module,
                    const MO::GCPipelineOptions &gcPipelineOptions,
                    ContextRef maxContext);
 
+ErrorOr<std::string>
+computeMefContentDigest(mlir::ModuleOp module,
+                        const MO::GCPipelineOptions &gcPipelineOptions,
+                        ContextRef maxContext);
+
 } // namespace M
 
 #endif // GENERICML_MEFCACHEKEY_H

@@ -17,6 +17,7 @@
 #include "GraphCompiler/MEFModel/MEFModel.h"
 #include "GraphCompiler/Support/Telemetry.h"
 #include "MLRT/GraphRT/MEFExecutor/MEFFile.h"
+#include "Support/Base64.h"
 #include "max/max_license/API/c/EngineConfig.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -95,6 +96,22 @@ ErrorOr<CompiledModels> CompiledModels::read(BufferRef buffer) {
 
   return read(std::move(buffer), /*frameworkCtx=*/nullptr,
               SourceModel(ModelSource{nullptr, FileFormat::kMEFFile}));
+}
+
+ErrorOr<std::string>
+CompiledModels::computeContentDigest(M::ContextRef context,
+                                     const CompilationRequest &compCfg,
+                                     void *source, FileFormat format) {
+  std::unique_ptr<MOFContext> frameworkCtx =
+      std::make_unique<MOFContext>(std::move(context));
+  auto configOr = frameworkCtx->setConfigs(compCfg.getFrameworkConfigs());
+  if (configOr.isError())
+    return configOr.takeError();
+  auto digestOr = frameworkCtx->computeContentDigest(source, format);
+  if (digestOr.isError())
+    return digestOr.takeError();
+  // Base64, the way the cache names its entries: the raw digest is bytes.
+  return M::encodeURLSafeBase64(*digestOr);
 }
 
 ErrorOr<CompiledModels>

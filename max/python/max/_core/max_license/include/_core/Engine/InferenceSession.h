@@ -70,6 +70,14 @@ public:
           std::vector<std::filesystem::path> &&customExtensions,
           std::string &&pipelineName, bool tileBasedFusion);
 
+  /// The portable digest of what \p model would compile to, without compiling
+  /// it: what an artifact for it records, and what a caller holding one
+  /// compares against the graph claiming it.
+  std::string
+  computeContentDigest(const nb::capsule &model,
+                       std::vector<std::filesystem::path> &&customExtensions,
+                       bool tileBasedFusion);
+
   /// Initialize a single compiled model with the given weights, blocking until
   /// the model is ready. The \p model pointer must remain valid for the
   /// lifetime of the returned handle (i.e. the owning CompiledModels must

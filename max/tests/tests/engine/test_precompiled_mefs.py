@@ -32,13 +32,11 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import (
     ArtifactBodyMismatch,
-    ArtifactToolchainMismatch,
     InferenceSession,
     MefStore,
     MissingArtifactError,
 )
 from max.graph import DeviceRef, Graph, TensorType
-from max.graph import graph as graph_module
 from max.nn import Module, module_dataclass
 from max.tensor import Tensor, support
 
@@ -329,7 +327,7 @@ def test_reusing_colliding_artifacts_from_two_directories_raises(
         _graph_adding("collide", 2.0)
     )
 
-    with pytest.raises(RuntimeError, match="disagree on their graph bodies"):
+    with pytest.raises(RuntimeError, match="disagree on their"):
         InferenceSession(devices=[CPU()], precompiled_mefs=[first, second])
 
 
@@ -356,8 +354,8 @@ def test_a_manifest_from_before_the_identity_was_recorded_raises(
     tmp_path: Path, _no_default_store: None
 ) -> None:
     # Artifacts outlive the run that wrote them: a manifest from before the
-    # recorded body, kernel libraries and toolchain existed cannot be checked,
-    # so a verifying store reports rather than trusting it.
+    # compiler recorded what an artifact holds cannot be checked, so a
+    # verifying store reports rather than trusting it.
     InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
@@ -367,7 +365,7 @@ def test_a_manifest_from_before_the_identity_was_recorded_raises(
                     {
                         key: value
                         for key, value in entry.items()
-                        if key not in {"fingerprint", "kernels", "options"}
+                        if key != "digest"
                     }
                     for entry in json.loads(manifest.read_text())["graphs"]
                 ]
@@ -375,7 +373,7 @@ def test_a_manifest_from_before_the_identity_was_recorded_raises(
         )
     )
 
-    with pytest.raises(RuntimeError, match="predates recorded"):
+    with pytest.raises(RuntimeError, match="predates recorded digests"):
         InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path).load(
             _graph()
         )
@@ -482,7 +480,7 @@ def test_verify_body_reports_a_diverging_graph(
     InferenceSession.default_mef_store = MefStore.for_import(
         tmp_path, key=_numbered_key(), verify_body=True
     )
-    with pytest.raises(ArtifactBodyMismatch, match="a different graph"):
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
         InferenceSession(devices=[CPU()]).load(_graph_adding("g", 2.0))
 
 
@@ -497,7 +495,7 @@ def test_the_body_is_verified_through_the_public_constructor(
     )
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    with pytest.raises(ArtifactBodyMismatch, match="a different graph"):
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
         session.load(_graph_adding("g", 2.0))
 
 
@@ -533,82 +531,23 @@ def test_the_public_constructor_can_skip_the_check(tmp_path: Path) -> None:
     np.testing.assert_allclose(_execute(reused), np.ones(4))
 
 
-def test_editing_a_kernel_library_is_a_divergence(tmp_path: Path) -> None:
+def test_editing_a_kernel_library_changes_the_digest(tmp_path: Path) -> None:
     # A custom op's source is not part of the graph text, and the artifact
     # embeds the kernels compiled from it. Recording only the library's path
-    # would let an edit run the old kernels; its contents are recorded instead.
+    # would let an edit run the old kernels; the store digests its contents.
+    #
+    # A digest, not a load: the bytes below are not a package a compile could
+    # read, so this asks the digest the question the load would ask it.
     library = tmp_path / "ops.mojoc"
     library.write_bytes(b"the first kernels")
-    dtype = TensorType(DType.float32, [4], device=DeviceRef.CPU())
-    with Graph(
-        "custom", input_types=[dtype], custom_extensions=[library]
-    ) as graph:
-        graph.output(graph.inputs[0].tensor + 1.0)
-
-    exporting = MefStore.for_export(tmp_path / "artifacts")
-    exporting.claim_export(graph)
-    exporting.write_manifest()
-
-    reusing = MefStore.for_import(tmp_path / "artifacts")
-    assert reusing.claim_import(graph) is not None
+    session = InferenceSession(devices=[CPU()], custom_extensions=[library])
+    graph = _graph()
+    before = session._mef_digest(graph, [library], False)
 
     library.write_bytes(b"the edited kernels")
-    with pytest.raises(ArtifactBodyMismatch, match="kernel libraries"):
-        reusing.claim_import(graph)
+    after = session._mef_digest(graph, [library], False)
 
-
-def test_a_source_package_is_digested_as_its_sources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A `.mojo` package is compiled into a `.mojoc` at graph construction, and
-    # that file records the tree it was built in. Digesting it would make two
-    # trees holding the same sources disagree, so the sources are digested.
-    source = tmp_path / "ops"
-    source.mkdir()
-    (source / "__init__.mojo").write_text("fn first():\n    pass\n")
-    built = tmp_path / "ops.mojoc"
-    built.write_bytes(b"compiled from the sources, at some absolute path")
-    # Building one shells out to `mojo precompile`; the `.mojoc` stands in for
-    # that output and deliberately never changes.
-    monkeypatch.setattr(
-        graph_module, "_build_mojo_source_package", lambda path: built
-    )
-
-    dtype = TensorType(DType.float32, [4], device=DeviceRef.CPU())
-    with Graph(
-        "custom", input_types=[dtype], custom_extensions=[source]
-    ) as graph:
-        graph.output(graph.inputs[0].tensor + 1.0)
-
-    exporting = MefStore.for_export(tmp_path / "artifacts")
-    exporting.claim_export(graph)
-    exporting.write_manifest()
-
-    reusing = MefStore.for_import(tmp_path / "artifacts")
-    assert reusing.claim_import(graph) is not None
-
-    (source / "__init__.mojo").write_text("fn second():\n    pass\n")
-    with pytest.raises(ArtifactBodyMismatch, match="kernel libraries"):
-        reusing.claim_import(graph)
-
-
-def test_a_session_extension_is_part_of_the_identity(tmp_path: Path) -> None:
-    # The other route a custom op takes: the library is handed to the session,
-    # so nothing on the graph names it. The recorded identity still has to
-    # include it, or an edited library reuses the kernels it used to hold.
-    artifacts = tmp_path / "artifacts"
-    library = tmp_path / "ops.mojoc"
-    library.write_bytes(b"the first kernels")
-    exporting = MefStore.for_export(artifacts)
-    exporting.claim_export(_graph(), extensions=[library])
-    exporting.write_manifest()
-
-    library.write_bytes(b"the edited kernels")
-    session = InferenceSession(
-        devices=[CPU()], custom_extensions=[library], precompiled_mefs=artifacts
-    )
-    with pytest.raises(ArtifactBodyMismatch, match="kernel libraries"):
-        session.load(_graph())
+    assert before != after
 
 
 def test_reusing_an_artifact_built_with_other_options_raises(
@@ -619,19 +558,23 @@ def test_reusing_an_artifact_built_with_other_options_raises(
     InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    with pytest.raises(ArtifactBodyMismatch, match="compile options"):
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
         session.load(_graph(), tile_based_fusion=True)
 
 
-def test_an_artifact_from_another_max_build_raises(tmp_path: Path) -> None:
+def test_an_artifact_recorded_under_another_digest_raises(
+    tmp_path: Path,
+) -> None:
+    # What a different MAX build, a different device or a different option
+    # looks like from here: the name and signature match, the digest does not.
     InferenceSession(devices=[CPU()], export_mefs=tmp_path).load(_graph())
     manifest = tmp_path / "manifest.json"
     recorded = json.loads(manifest.read_text())
-    recorded["toolchain"] = "0.0.0-before-the-change"
+    recorded["graphs"][0]["digest"] = "not-this-program"
     manifest.write_text(json.dumps(recorded))
 
     session = InferenceSession(devices=[CPU()], precompiled_mefs=tmp_path)
-    with pytest.raises(ArtifactToolchainMismatch, match="Re-export"):
+    with pytest.raises(ArtifactBodyMismatch, match="different program"):
         session.load(_graph())
 
 
@@ -718,7 +661,7 @@ def test_one_name_in_two_directories_raises(tmp_path: Path) -> None:
 
 def test_a_name_cannot_also_be_a_graphs_artifact(tmp_path: Path) -> None:
     store = MefStore.for_export(tmp_path)
-    taken = store.claim_export(_graph()).name
+    taken = store.claim_export(_graph(), digest="0" * 43).name
 
     with pytest.raises(ValueError, match="already a graph's artifact"):
         store.claim_export_artifact(taken)
