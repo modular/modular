@@ -1146,7 +1146,9 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
       });
   PValue boundFunction(function.getFuncLiteralGenerator(
       shared.getEvaluationContext(),
-      ParameterExprArrayAttr::get(ctx, bindings)));
+      ParamsBindingArrayAttr::get(
+          ctx, function.getFullSignature().getInputParamTypes().size(),
+          bindings)));
   ASTDecl &valueDecl =
       shared.declResolver->replaceDecl(nestedFnDecl, boundFunction);
   return {&decl, &valueDecl};

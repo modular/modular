@@ -891,7 +891,7 @@ LogicalResult FnSigDecorators::checkAlwaysInlineBuiltin(FnOp fnOp,
         UnknownAttr::get(evaluator.getReboundType(paramDecl.getType())));
     evaluator.setDeclBinding(paramDecl, params.back());
   }
-  auto paramValueArray = ParameterExprArrayAttr::get(fnOp.getContext(), params);
+  auto paramValueArray = ParamsBindingArrayAttr::get(fnOp.getContext(), params);
   operands.push_back(
       fnOp.getBoundReference(shared.getEvaluationContext(), paramValueArray));
 

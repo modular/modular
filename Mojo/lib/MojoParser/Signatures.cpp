@@ -1133,8 +1133,9 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
         declareAndAddParam(type, pogs[idx].getName());
       propagateBodyConstraints(genParamList);
       return gen
-          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
-                                   shared.translateLocation(loc))
+          .getSpecializedGenerator(
+              ParamsBindingArrayAttr::get(gen.getContext(), paramValues),
+              &shared.getEvaluationContext(), shared.translateLocation(loc))
           .getInstantiatedBody();
     }
   }

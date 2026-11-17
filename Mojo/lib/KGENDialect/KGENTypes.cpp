@@ -526,15 +526,16 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   VerboseCompilerTimeTraceScope traceScope(
       "GeneratorType::getSpecializedGenerator");
 
   // If the signature isn't parameterized, then there are no substitutions to
-  // perform.
-  if (paramBindings.empty())
+  // perform. A non-empty list goes through the arity check even when it binds
+  // no values.
+  if (paramBindings.size() == 0)
     return *this;
 
   std::optional<PartiallySpecializedInputParams> specializationOpt =
@@ -547,7 +548,7 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return getSpecializedGenerator(
       paramBindings, evaluationContext,
@@ -1003,7 +1004,7 @@ FuncTypeGeneratorType FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   return ::cast_or_null<FuncTypeGeneratorType>(
@@ -1012,7 +1013,7 @@ FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return ::cast_or_null<FuncTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
@@ -1089,7 +1090,7 @@ FuncLiteralTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
 
 FuncLiteralTypeGeneratorType
 FuncLiteralTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
   return ::cast_or_null<FuncLiteralTypeGeneratorType>(
@@ -1099,7 +1100,7 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
 
 FuncLiteralTypeGeneratorType
 FuncLiteralTypeGeneratorType::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return ::cast_or_null<FuncLiteralTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,

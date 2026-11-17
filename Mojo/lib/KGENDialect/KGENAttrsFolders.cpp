@@ -48,7 +48,9 @@ FailureOr<TypedAttr> ParamListReduceAttr::evaluateWithContext(
     IntegerAttr vaIdx =
         IntegerAttr::get(IndexType::get(paramList.getContext()), i);
     GeneratorAttr spGen = reducer.getSpecializedGenerator(
-        {reducedVal, paramList, vaIdx}, &context);
+        ParamsBindingArrayAttr::get(getContext(),
+                                    {reducedVal, paramList, vaIdx}),
+        &context);
     if (!spGen)
       return TypedAttr();
     // This should never happen, we should have verified VariadicMapAttr.
@@ -78,7 +80,8 @@ FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
   values.reserve(n);
   for (int64_t i = 0; i < n; ++i) {
     IntegerAttr idxAttr = IntegerAttr::get(IndexType::get(getContext()), i);
-    GeneratorAttr spGen = genAttr.getSpecializedGenerator({idxAttr}, &context);
+    GeneratorAttr spGen = genAttr.getSpecializedGenerator(
+        ParamsBindingArrayAttr::get(getContext(), {idxAttr}), &context);
     if (!spGen)
       return TypedAttr();
     if (!spGen.isFullyBound())

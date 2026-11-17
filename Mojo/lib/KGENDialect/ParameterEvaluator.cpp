@@ -339,7 +339,10 @@ SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
       // If generator takes input, we need to further evaluate the inlined
       // expression with the parameter binding provided by the apply.
       inlinedExpr = cast<GeneratorAttr>(inlinedExpr)
-                        .getSpecializedGenerator(paramBinding, this)
+                        .getSpecializedGenerator(
+                            ParamsBindingArrayAttr::get(
+                                inlinedExpr.getContext(), paramBinding),
+                            this)
                         .getInstantiatedValue();
     }
 
@@ -705,7 +708,7 @@ void ParameterEvaluator::dump() const {
 
 std::optional<PartiallySpecializedInputParams>
 PartiallySpecializedInputParams::from(
-    ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
+    ArrayRef<Type> paramTypes, ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn,
     const llvm::BitVector &dischargedBodyConstraints) {
@@ -734,9 +737,9 @@ PartiallySpecializedInputParams::from(
     return evaluator.getReboundType(type);
   };
 
-  for (auto [paramNo, valueX, type] :
-       llvm::enumerate(paramBindings, paramTypes)) {
-    auto value = valueX;
+  const TypedAttr *nextBoundValue = paramBindings.getBoundValues().begin();
+  for (auto [paramNo, isBound, type] :
+       llvm::enumerate(paramBindings.getBoundMask().asArrayRef(), paramTypes)) {
     // Bound parameters are allowed to refine the type of subsequent
     // parameters, e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the
     // expected type of the second parameter will be refined when the first
@@ -744,9 +747,7 @@ PartiallySpecializedInputParams::from(
     auto remappedDeclType = remapType(type);
 
     // Even if we're skipping a binding site, we still need to remap the decl.
-    // A null value is an unbound parameter.
-    // TODO: Disallow UnboundAttr for skipping bindings.
-    if (!value || ::isa<UnboundAttr>(value)) {
+    if (!isBound) {
       // An unbound parameter stays a parameter of the specialized generator:
       // bind it to that generator's own variable at its new index.
       //
@@ -757,6 +758,7 @@ PartiallySpecializedInputParams::from(
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.appendIndexBinding(value);
     } else {
+      TypedAttr value = *nextBoundValue++;
       // The value comes from the caller, one scope out, and may refer to
       // outer-context indexed parameters. Increase depth by one when pushing
       // into the current scope.

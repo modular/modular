@@ -1747,7 +1747,12 @@ def KGEN_ParamsBindingArrayAttr
     AttrBuilder<(ins
       "size_t":$numParams,
       "ArrayRef<TypedAttr>":$paramValues
-    )>
+    )>,
+    // Build one value per entry of a dense list.
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$paramValues), [{
+      return ParamsBindingArrayAttr::get($_ctxt, paramValues.size(),
+                                         paramValues);
+    }]>
   ];
   let extraClassDeclaration = [{
     /// Return the number of inputs, bound or not.
@@ -2052,11 +2057,11 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
       PartiallySpecializedInputParams &specialization,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorAttr getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext, Location location);
 
     /// Returns true if the signature has no input params.

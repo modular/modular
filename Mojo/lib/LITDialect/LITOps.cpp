@@ -598,10 +598,7 @@ Type FnOp::getUserResultType() {
 }
 
 TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
-                                  ParameterExprArrayAttr bindings) {
-  if (!bindings) // We allow null for convenience.
-    bindings = ParameterExprArrayAttr::get(getContext(), {});
-
+                                  ParamsBindingArrayAttr bindings) {
   TypedAttr literal =
       getFuncLiteralGenerator(evalContext, bindings, /*discharged=*/{});
 
@@ -611,7 +608,7 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
 
 FuncSymbolGenerator
 FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
-                        ParameterExprArrayAttr bindings) {
+                        ParamsBindingArrayAttr bindings) {
   return getBoundReference(evalContext, bindings);
 }
 
@@ -619,11 +616,14 @@ FuncSymbolGenerator
 FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                         ArrayRef<TypedAttr> bindings) {
   return getBoundSymbolRef(evalContext,
-                           ParameterExprArrayAttr::get(getContext(), bindings));
+                           ParamsBindingArrayAttr::get(
+                               getContext(),
+                               getFullSignature().getInputParamTypes().size(),
+                               bindings));
 }
 
 TypedAttr FnOp::getFuncLiteralGenerator(
-    ParameterEvaluationContext &evalContext, ParameterExprArrayAttr bindings,
+    ParameterEvaluationContext &evalContext, ParamsBindingArrayAttr bindings,
     const llvm::BitVector &dischargedBodyConstraints) {
   SmallVector<TypedAttr> paramValues;
   FnTypeGeneratorType fullSig = getFullSignature();
@@ -1251,7 +1251,7 @@ StructDeclOp::getConformanceCondition(StringRef traitName) {
 ArrayRef<ParamDeclAttr> StructDeclOp::getInputParams() { return getParams(); }
 
 TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
-                                      ArrayRef<TypedAttr> paramValues) {
+                                      ParamsBindingArrayAttr paramValues) {
   TypeSignatureType sig = getSignature();
   // create a list of forwarded parameter
   SmallVector<TypedAttr> forwardParams;
@@ -1268,18 +1268,20 @@ TypedAttr StructDeclOp::bindReference(ParameterEvaluationContext *evalCtx,
 
   auto typeExpr =
       GeneratorAttr::get(sig.getParamTypes(), genBody, sig.getParamListAttrs());
-  if (paramValues.empty())
+  if (!paramValues)
     return typeExpr;
 
   // TODO: maybe worth a cache here?
   return BindParamsAttr::get(typeExpr.getContext(), typeExpr, paramValues,
-                             evalCtx);
+                             /*discharged=*/nullptr, evalCtx);
 }
 
 LIT::StructType
 StructDeclOp::bindAllReferences(ParameterEvaluationContext *evalCtx,
                                 ArrayRef<TypedAttr> paramValues) {
-  TypedAttr typeVal = this->bindReference(evalCtx, paramValues);
+  assert(getSignature().getParamTypes().size() == paramValues.size());
+  TypedAttr typeVal = this->bindReference(
+      evalCtx, ParamsBindingArrayAttr::get(getContext(), paramValues));
   // must be fully resolved to a struct type.
   return cast<LIT::StructType>(ParamType::get(typeVal));
 }

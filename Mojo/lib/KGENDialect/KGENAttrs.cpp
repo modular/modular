@@ -1280,12 +1280,10 @@ inferBindParamsResultType(GeneratorType genType, ParamsBindingArrayAttr params,
   } else {
     llvm::BitVector dischargedBodyConstraints =
         denseBoolArrayAttrToBitVector(discharged);
-    // TODO: make `PartiallySpecializedInputParams` work directly on
-    // `ParamsBindingArrayAttr` without densify it first.
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genType.getInputParamTypes(), params.getDenseBindingArray(),
-            evaluationContext, /*emitErrorFn=*/{}, dischargedBodyConstraints);
+            genType.getInputParamTypes(), params, evaluationContext,
+            /*emitErrorFn=*/{}, dischargedBodyConstraints);
     assert(specializationOpt && "Failed to specialize generator");
     specializedType =
         genType.getSpecializedGenerator(*specializationOpt, /*emitErrorFn=*/{});
@@ -1417,8 +1415,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
         denseBoolArrayAttrToBitVector(discharged);
     std::optional<PartiallySpecializedInputParams> specializationOpt =
         PartiallySpecializedInputParams::from(
-            genAttr.getInputParamTypes(), params.getDenseBindingArray(),
-            evaluationContext,
+            genAttr.getInputParamTypes(), params, evaluationContext,
             /*emitErrorFn=*/{}, dischargedBodyConstraints);
     if (!specializationOpt)
       return {};
@@ -1841,8 +1838,9 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   SmallVector<TypedAttr> boundParams = remapper.replace(getParamValues());
   auto declSignature =
       getSymbolSignature(func, symbolOps)
-          .getSpecializedGenerator(boundParams, &evaluationContext,
-                                   [&] { return emitError(loc); });
+          .getSpecializedGenerator(
+              ParamsBindingArrayAttr::get(getContext(), boundParams),
+              &evaluationContext, [&] { return emitError(loc); });
 
   if (!declSignature)
     return failure();
@@ -1919,12 +1917,12 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  if (paramBindings.empty())
+  if (paramBindings.size() == 0)
     return *this;
-
+  assert(paramBindings.size() == getInputParamTypes().size());
   std::optional<PartiallySpecializedInputParams> specializationOpt =
       PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
                                             evaluationContext, emitErrorFn);
@@ -1935,7 +1933,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
 }
 
 GeneratorAttr GeneratorAttr::getSpecializedGenerator(
-    ArrayRef<TypedAttr> paramBindings,
+    ParamsBindingArrayAttr paramBindings,
     ParameterEvaluationContext *evaluationContext, Location location) {
   return getSpecializedGenerator(
       paramBindings, evaluationContext,

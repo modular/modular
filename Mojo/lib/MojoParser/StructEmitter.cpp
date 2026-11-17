@@ -451,8 +451,8 @@ StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
   // create a specialized generator from the fnTypeGen
   FuncTypeGeneratorType specializedGenerator =
       fnTypeGen.getSpecializedGenerator(
-          callParamBindings, &fnDecl.getShared().getEvaluationContext(),
-          fn.getLoc());
+          ParamsBindingArrayAttr::get(fn.getContext(), callParamBindings),
+          &fnDecl.getShared().getEvaluationContext(), fn.getLoc());
 
   // Bail if specialization failed (already diagnosed)
   if (!specializedGenerator) {

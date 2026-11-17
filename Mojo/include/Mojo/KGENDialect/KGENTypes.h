@@ -43,6 +43,7 @@ class FnMetadataAttrInterface;
 class FuncInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class ParamsBindingArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
 class FuncOp;
@@ -82,11 +83,11 @@ public:
 
   /// Get this GeneratorType with some parameters bound.
   FuncTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
   FuncTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
 
@@ -124,11 +125,11 @@ public:
 
   /// Get this GeneratorType with some parameters bound.
   FuncLiteralTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
   FuncLiteralTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
 

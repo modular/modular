@@ -997,8 +997,8 @@ VerifiedParamBindings ParamInf::inferForStruct() {
   }
 
   succeeded = true;
-  ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
-      getShared().getContext(), evaluator.getIndexBindings());
+  auto rawBindings = ParamsBindingArrayAttr::get(getShared().getContext(),
+                                                 evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
                                std::move(dischargedBodyConstraints),
                                evaluator.getEvaluationContext());
@@ -2410,8 +2410,8 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   if (failed(checkBodyConstraints(paramBindings.additionalConstraints)))
     return {};
 
-  ParameterExprArrayAttr rawBindings = ParameterExprArrayAttr::get(
-      getShared().getContext(), evaluator.getIndexBindings());
+  auto rawBindings = ParamsBindingArrayAttr::get(getShared().getContext(),
+                                                 evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
                                std::move(dischargedBodyConstraints),
                                evaluator.getEvaluationContext());

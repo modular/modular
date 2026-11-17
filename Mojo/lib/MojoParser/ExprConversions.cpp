@@ -306,7 +306,9 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Rebind the argument and result types into the scope of the body.
   FunctionType functionType =
       thunkSignature
-          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext())
+          .getSpecializedGenerator(
+              ParamsBindingArrayAttr::get(ctx, paramValues),
+              &shared.getEvaluationContext())
           .getBody()
           .getValues();
 
@@ -810,8 +812,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   evaluator.appendIndexBinding(calleeParam);
 
   FuncSymbolGenerator symbol = thunk.getBoundSymbolRef(
-      emitter.shared.getEvaluationContext(),
-      ParameterExprArrayAttr::get(ctx, evaluator.getIndexBindings()));
+      emitter.shared.getEvaluationContext(), evaluator.getIndexBindings());
 
   // Finally, cast the result back to the expected type.
   return emitter.emitCResult(ParamOperatorAttr::getRebind(symbol, expected),

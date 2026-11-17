@@ -18,7 +18,6 @@
 #include "Mojo/MojoParser/CallOperands.h"
 
 namespace M::KGEN {
-class ParameterExprArrayAttr;
 class PogListAttr;
 } // namespace M::KGEN
 

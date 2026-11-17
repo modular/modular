@@ -81,18 +81,13 @@ getTraitFunctionSignature(ASTDecl &declScope, FnTypeGeneratorType fullSig,
   if (auto eva = populateTraitBindingEvaluator(traitSymbol, traitDeclOp))
     trait = eva->replace(trait);
 
-  SmallVector<TypedAttr> params;
-  ArrayRef<Type> paramTypes = fullSig.getInputParamTypes();
-
-  // Add trait's _Self param replacement.
-  params.push_back(TypeParamAttr::get(structSelfType, trait));
-
-  // Leave the rest alone.
-  for (Type type : paramTypes.drop_front())
-    params.push_back(UnboundAttr::get(type));
-
+  // Bind only the trait's `_Self` parameter and leave the rest unbound.
+  TypedAttr selfValue = TypeParamAttr::get(structSelfType, trait);
   FnTypeGeneratorType newSignature = fullSig.getSpecializedGenerator(
-      params, &declScope.getShared().getEvaluationContext());
+      ParamsBindingArrayAttr::get(selfValue.getContext(),
+                                  fullSig.getInputParamTypes().size(),
+                                  {selfValue}),
+      &declScope.getShared().getEvaluationContext());
   return newSignature;
 }
 
@@ -1503,21 +1498,19 @@ createRequirementSignature(FnTypeGeneratorType signature, ASTType newSelfType,
   // Now we need to drop the "<trait<@AnyType>" parameter, which we do by
   // specializing it away.  We know all references to it are already gone.
 
-  // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
-  // used) not an UnboundAttr which remains an unbound parameter.
+  // NOTE: This is an UnknownAttr (an arbitrary attr that is never used), which
+  // binds the parameter so that it drops out of the result.
   // NOTE: we need to adjust the depth by -1 since we are pulling out the `Self`
   // from a parameter scope.
-  ParameterEvaluator evaluator = declResolver.shared.getParameterEvaluator();
   IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
-  evaluator.appendIndexBinding(UnknownAttr::get(
-      minusOneAdjuster.replace(signature.getInputParamTypes()[0])));
+  TypedAttr selfValue = UnknownAttr::get(
+      minusOneAdjuster.replace(signature.getInputParamTypes()[0]));
 
-  // Use UnboundAttr for any other parameters so they remain in the result.
-  for (Type type : signature.getInputParamTypes().drop_front())
-    evaluator.appendIndexBinding(
-        UnboundAttr::get(evaluator.getReboundType(getCanonicalType(type))));
+  // Leave the other parameters unbound so they remain in the result.
   signature = signature.getSpecializedGenerator(
-      evaluator.getIndexBindings(),
+      ParamsBindingArrayAttr::get(selfValue.getContext(),
+                                  signature.getInputParamTypes().size(),
+                                  {selfValue}),
       &declResolver.shared.getEvaluationContext());
 
   return signature;

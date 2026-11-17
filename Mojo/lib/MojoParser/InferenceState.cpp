@@ -224,7 +224,7 @@ LogicalResult InferenceState::checkBodyConstraints(
 TypedAttr
 VerifiedParamBindings::specializeStructType(StructDeclOp structOp) const {
   assert(*this && "specializing with failed inference bindings");
-  return PValue(structOp.bindReference(evaluationContext, getValues()));
+  return PValue(structOp.bindReference(evaluationContext, bindings));
 }
 
 TypedAttr
@@ -237,7 +237,7 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       generator.getContext(), dischargedBodyConstraints);
   TypedAttr result =
-      BindParamsAttr::get(generator.getContext(), generator, getValues(),
+      BindParamsAttr::get(generator.getContext(), generator, bindings,
                           discharged, evaluationContext);
   assert(isEqualCanon(result.getType(), specializedType) &&
          "inferred bind_params type must match verified specialization");
@@ -249,7 +249,7 @@ Type VerifiedParamBindings::specializeGeneratorType(
   assert(*this && "specializing with failed inference bindings");
   std::optional<PartiallySpecializedInputParams> specializationOpt =
       PartiallySpecializedInputParams::from(
-          genType.getInputParamTypes(), getValues(), evaluationContext,
+          genType.getInputParamTypes(), bindings, evaluationContext,
           /*emitErrorFn=*/{}, dischargedBodyConstraints);
   assert(specializationOpt &&
          "verified bindings should specialize this generator");

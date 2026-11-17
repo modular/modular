@@ -126,23 +126,27 @@ def LIT_FnOp : LITOp<"fn", [
     Type getUserResultType();
 
     /// Return a reference for this function, optionally bound to a set of
-    /// parameter bindings.
+    /// parameter bindings with one entry per input of the full signature.
     TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
-                                ParameterExprArrayAttr bindings = {});
+                                ParamsBindingArrayAttr bindings = {});
     FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
-                      ParameterExprArrayAttr bindings = {});
+                      ParamsBindingArrayAttr bindings = {});
+    /// Like the above, from a dense list where a null value leaves that input
+    /// unbound. Missing trailing values are unbound.
     FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ArrayRef<TypedAttr> bindings);
 
     /// Return a GeneratorAttr that generates a FuncLiteralAttr for this
-    /// function. `dischargedBodyConstraints` is an optional bitmask over the
-    /// function's body constraints: a set bit drops the matching constraint
-    /// from the result type. Empty (the default) retains all body constraints.
+    /// function, bound to `bindings` with one entry per input of the full
+    /// signature. A null `bindings` returns the unbound generator.
+    /// `dischargedBodyConstraints` is an optional bitmask over the function's
+    /// body constraints: a set bit drops the matching constraint from the
+    /// result type. Empty (the default) retains all body constraints.
     TypedAttr
     getFuncLiteralGenerator(ParameterEvaluationContext &evalContext,
-                            ParameterExprArrayAttr bindings = {},
+                            ParamsBindingArrayAttr bindings = {},
                             const llvm::BitVector &dischargedBodyConstraints =
                                 llvm::BitVector());
 
@@ -560,7 +564,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Get a type expression after binding the parameter value to the struct
     /// decl.
     TypedAttr bindReference(ParameterEvaluationContext *evalCtx,
-                            ArrayRef<TypedAttr> paramValues = {});
+                            ParamsBindingArrayAttr paramValues = {});
 
     /// Get a fully bound struct type with the given parameter values.
     /// The method assume that the provided parameter values will lead to a

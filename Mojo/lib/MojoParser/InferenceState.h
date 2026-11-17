@@ -46,7 +46,7 @@ class StructDeclOp;
 
 /// A set of parameter bindings that have been verified against a particular
 /// Pog list signature by parameter inference. The verified-against-signature
-/// invariant is what differentiates this from a raw `ParameterExprArrayAttr`,
+/// invariant is what differentiates this from a raw `ParamsBindingArrayAttr`,
 /// and is what makes the specialization helpers below well-defined.
 ///
 /// A default-constructed (or null) value represents failed inference; users
@@ -57,19 +57,21 @@ public:
   VerifiedParamBindings() = default;
 
   /// Truthiness reflects whether inference succeeded (i.e. the underlying
-  /// `ParameterExprArrayAttr` is non-null). Note that a successful inference
+  /// `ParamsBindingArrayAttr` is non-null). Note that a successful inference
   /// can still produce zero bindings (for non-parametric callables); use
   /// `empty()` / `size()` to distinguish "no bindings to apply".
   explicit operator bool() const { return bool(bindings); }
-  bool empty() const { return getValues().empty(); }
-  size_t size() const { return getValues().size(); }
+  bool empty() const { return size() == 0; }
+  size_t size() const { return bindings ? bindings.size() : 0; }
 
-  /// Raw access for legacy interop with APIs that take a
-  /// `ParameterExprArrayAttr` or `ArrayRef<TypedAttr>` (e.g.
-  /// `BindParamsAttr::get`, `getCallee`, etc.).
-  ParameterExprArrayAttr asAttr() const { return bindings; }
-  ArrayRef<TypedAttr> getValues() const {
-    return bindings ? bindings.getValue() : ArrayRef<TypedAttr>{};
+  /// Return the bindings, with one entry per parameter of the verified
+  /// signature.
+  ParamsBindingArrayAttr getBindings() const { return bindings; }
+
+  /// Return one value per parameter, null where the parameter is unbound.
+  SmallVector<TypedAttr> getDenseBindingArray() const {
+    return bindings ? bindings.getDenseBindingArray()
+                    : SmallVector<TypedAttr>{};
   }
   /// Mask for body constraints discharged by these bindings.
   const llvm::BitVector &getDischargedBodyConstraints() const {
@@ -87,19 +89,19 @@ public:
   /// `GeneratorType::getSpecializedGenerator` API.
   Type specializeGeneratorType(GeneratorType genType) const;
 
-  void setBindings(ParameterExprArrayAttr bindings) {
+  void setBindings(ParamsBindingArrayAttr bindings) {
     this->bindings = bindings;
   }
 
 private:
-  VerifiedParamBindings(ParameterExprArrayAttr bindings,
+  VerifiedParamBindings(ParamsBindingArrayAttr bindings,
                         llvm::BitVector dischargedBodyConstraints,
                         ParameterEvaluationContext *evaluationContext)
       : bindings(bindings),
         dischargedBodyConstraints(std::move(dischargedBodyConstraints)),
         evaluationContext(evaluationContext) {}
 
-  ParameterExprArrayAttr bindings;
+  ParamsBindingArrayAttr bindings;
   llvm::BitVector dischargedBodyConstraints;
   ParameterEvaluationContext *evaluationContext = nullptr;
 

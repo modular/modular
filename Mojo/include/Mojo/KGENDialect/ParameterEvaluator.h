@@ -439,14 +439,12 @@ struct PartiallySpecializedInputParams {
   /// match the generator's body-constraint list in size.
   llvm::BitVector dischargedBodyConstraints;
 
-  /// Given an input parameter specification `paramTypes` and the full set of
-  /// bindings `paramBindings`, create a partially specialized input parameter
-  /// specification.
-  ///
-  /// The bindings may be partially specified, with holes represented by
-  /// UnboundAttrs.
+  /// Given an input parameter specification `paramTypes` and the bindings
+  /// `paramBindings`, create a partially specialized input parameter
+  /// specification. An input that `paramBindings` leaves unbound stays an
+  /// input of the specialization.
   static std::optional<PartiallySpecializedInputParams>
-  from(ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
+  from(ArrayRef<Type> paramTypes, ParamsBindingArrayAttr paramBindings,
        ParameterEvaluationContext *evaluationContext,
        function_ref<InFlightDiagnostic()> emitErrorFn,
        const llvm::BitVector &dischargedBodyConstraints = llvm::BitVector());

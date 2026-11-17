@@ -154,7 +154,7 @@ TypedAttr LIT::getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       ctxBoundFn.getContext(), verified.getDischargedBodyConstraints());
   return BindParamsAttr::get(ctxBoundFn.getContext(), ctxBoundFn,
-                             verified.getValues(), discharged, &evalContext);
+                             verified.getBindings(), discharged, &evalContext);
 }
 
 /// Utility function to perform substitutions of the bindings into the symbol
@@ -171,37 +171,36 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
     assert(!isa<TraitDeclOp>(funcOp->getParentOp()) &&
            "trait witness should always retrieved from a witness entry");
     return funcOp.getFuncLiteralGenerator(
-        shared.getEvaluationContext(), verified.asAttr(),
+        shared.getEvaluationContext(), verified.getBindings(),
         verified.getDischargedBodyConstraints());
   }
 
   auto *witnessEntry = dyn_cast<WitnessASTDecl>(&fnDecl);
   assert(witnessEntry);
 
-  ArrayRef<TypedAttr> verifiedValues = verified.getValues();
-  // Must at least have one `_Self` parameter.
-  assert(!verifiedValues.empty());
+  SmallVector<TypedAttr> verifiedValues = verified.getDenseBindingArray();
+  // Must at least have one `_Self` parameter, and it must be bound.
+  assert(!verifiedValues.empty() && verifiedValues[0]);
 
   TypedAttr selfExpr = verifiedValues[0];
   auto signature =
       cast<FnTypeGeneratorType>(witnessEntry->getWitnessEntry().witnessType);
 
-  SmallVector<TypedAttr> paramValues;
-  paramValues.push_back(selfExpr);
-  for (Type t : signature.getInputParamTypes().drop_front())
-    paramValues.push_back(UnboundAttr::get(t));
-
   TraitSymbolAttr witnessFor = witnessEntry->traitSymbol;
 
   // Get the signature with only `_Self` bound.
-  signature = signature.getSpecializedGenerator(paramValues,
-                                                &shared.getEvaluationContext());
+  signature = signature.getSpecializedGenerator(
+      ParamsBindingArrayAttr::get(selfExpr.getContext(),
+                                  signature.getInputParamTypes().size(),
+                                  {selfExpr}),
+      &shared.getEvaluationContext());
 
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
       selfExpr, witnessFor, witnessEntry->getWitnessEntry().witnessName,
       signature);
 
-  ArrayRef<TypedAttr> remainingParamValues = verifiedValues.drop_front();
+  ArrayRef<TypedAttr> remainingParamValues =
+      ArrayRef(verifiedValues).drop_front();
   const llvm::BitVector &discharged = verified.getDischargedBodyConstraints();
   DenseBoolArrayAttr dischargedAttr =
       KGEN::getDenseBoolArrayAttr(fnRef.getContext(), discharged);

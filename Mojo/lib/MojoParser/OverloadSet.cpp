@@ -1584,12 +1584,9 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
       const VerifiedParamBindings &paramBindings = fitness.getParamBindings();
       auto discharged = KGEN::getDenseBoolArrayAttr(
           getContext(), paramBindings.getDischargedBodyConstraints());
-      auto params = ParamsBindingArrayAttr::get(
-          getContext(), calleeSig.getInputParamTypes().size(),
-          paramBindings.getValues());
       Location loc = translateLocation(callExpr->getLoc());
-      auto bindOp =
-          BindParamsOp::create(*builder, loc, calleeVal, params, discharged);
+      auto bindOp = BindParamsOp::create(
+          *builder, loc, calleeVal, paramBindings.getBindings(), discharged);
       boundCalleeRV = SRValue(bindOp.getResult());
     }
   }
