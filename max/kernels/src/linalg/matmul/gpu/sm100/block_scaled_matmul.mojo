@@ -2068,15 +2068,6 @@ def _create_tma_and_launch[
 
     # Launch kernel
     ctx.enqueue_function[kernel](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-            block_dim=(
-                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-            ),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(pdl_level),
-        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -2086,6 +2077,15 @@ def _create_tma_and_launch[
         mnk,
         workspace,
         alpha,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(
+                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         host_args=(epilogue_fn, compute_fn),
     )
 

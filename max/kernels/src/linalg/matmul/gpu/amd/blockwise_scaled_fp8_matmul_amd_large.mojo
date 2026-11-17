@@ -64,7 +64,7 @@ from max.gpu import (
     block_idx,
     thread_idx,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.intrinsics import AMDBufferResource, permlane_swap, readfirstlane
 from max.gpu.memory import AddressSpace, external_memory
 from max.gpu.sync import barrier, s_waitcnt
@@ -652,7 +652,9 @@ def blockwise_scaled_fp8_matmul_amd_large[
         Int64(b_scales),
         Int32(M),
         Int32(a_scale_stride),
-        grid_dim=ceildiv(tiles, XCDS) * XCDS,
-        block_dim=THREADS,
-        shared_mem_bytes=LDS_BYTES,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(tiles, XCDS) * XCDS,
+            block_dim=THREADS,
+            shared_mem_bytes=LDS_BYTES,
+        ),
     )

@@ -38,7 +38,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import align_up, ceildiv
 from std.sys import align_of, simd_width_of
 from std.utils import StaticTuple
@@ -647,8 +647,10 @@ def mxfp4_moe_matmul_amd_routed[
         expert_ids,
         Int32(num_tokens),
         Int32(size_expert_ids),
-        grid_dim=(ceildiv(N, Kernel.BN), size_expert_ids),
-        block_dim=Kernel.num_threads,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, Kernel.BN), size_expert_ids),
+            block_dim=Kernel.num_threads,
+        ),
     )
 
 

@@ -50,7 +50,7 @@ from max.gpu import (
     block_idx,
     grid_dim,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.layout import row_major
@@ -465,10 +465,12 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
         b_scales,
         a_offsets,
         expert_ids,
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(m_cap, BM),
-            grid_z,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(m_cap, BM),
+                grid_z,
+            ),
+            block_dim=(num_threads, 1, 1),
         ),
-        block_dim=(num_threads, 1, 1),
     )

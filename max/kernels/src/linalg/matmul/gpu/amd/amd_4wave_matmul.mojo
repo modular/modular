@@ -47,7 +47,7 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from max.gpu.sync import schedule_barrier, s_waitcnt
@@ -2302,9 +2302,11 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
                 host_args=(epilogue_fn,),
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
             )
         elif has_compute_fn:
             comptime value_kernel = kernel_type.run_with_compute_fn[
@@ -2320,9 +2322,11 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
                 host_args=(compute_fn,),
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
             )
         elif dump_asm_path != "":
             ctx.enqueue_function[kernel, dump_asm=dump_asm_path](
@@ -2337,8 +2341,10 @@ def _structured_4wave_matmul_impl[
                 a,
                 b,
                 c,
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
             )
 
     comptime if block_m_override > 0 and block_n_override > 0:

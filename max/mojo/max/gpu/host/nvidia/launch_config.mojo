@@ -28,13 +28,13 @@ def kernel():
 
 with DeviceContext() as ctx:
     ctx.enqueue_function[kernel](
-        ClusterAttributeLaunchConfig(
+        execution_config=ClusterAttributeLaunchConfig(
             grid_dim=4,
             block_dim=128,
             cluster_dim=Dim(2, 1, 1),
             shared_mem_bytes=64 * 1024,
             attributes=pdl_launch_attributes(PDLLevel.ON),
-        )
+        ),
     )
 ```
 """

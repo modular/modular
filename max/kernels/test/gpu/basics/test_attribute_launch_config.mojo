@@ -113,22 +113,22 @@ def test_pdl_chain(ctx: DeviceContext) raises:
 
     for k in range(iterations):
         ctx.enqueue_function[produce](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=NUM_BLOCKS,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            ),
             a,
             Int32(k),
-        )
-        ctx.enqueue_function[consume](
-            GridBlockAttributeLaunchConfig(
+            execution_config=GridBlockAttributeLaunchConfig(
                 grid_dim=NUM_BLOCKS,
                 block_dim=BLOCK_SIZE,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             ),
+        )
+        ctx.enqueue_function[consume](
             b,
             a,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=NUM_BLOCKS,
+                block_dim=BLOCK_SIZE,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
         )
 
     with b.map_to_host() as h:
@@ -146,12 +146,12 @@ def test_host_args(ctx: DeviceContext) raises:
     var dst = ctx.enqueue_create_buffer[.int32](N)
     dst.enqueue_fill(0)
     ctx.enqueue_function[apply_closure[type_of(add_offset)]](
-        GridBlockAttributeLaunchConfig(
+        dst,
+        execution_config=GridBlockAttributeLaunchConfig(
             grid_dim=NUM_BLOCKS,
             block_dim=BLOCK_SIZE,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         ),
-        dst,
         host_args=(add_offset,),
     )
     with dst.map_to_host() as h:
@@ -164,7 +164,7 @@ def test_attributes_reach_launch(ctx: DeviceContext) raises:
     # which only happens if the config's attributes reach the driver.
     with assert_raises():
         ctx.enqueue_function[noop](
-            GridBlockAttributeLaunchConfig(
+            execution_config=GridBlockAttributeLaunchConfig(
                 grid_dim=1 << 16,
                 block_dim=1024,
                 attributes=[
@@ -173,27 +173,27 @@ def test_attributes_reach_launch(ctx: DeviceContext) raises:
                         LaunchAttributeValue(True),
                     )
                 ],
-            )
+            ),
         )
 
 
 def test_cluster_dim_attribute_rejected(ctx: DeviceContext) raises:
     with assert_raises(contains="cluster_dim"):
         ctx.enqueue_function[noop](
-            GridBlockAttributeLaunchConfig(
+            execution_config=GridBlockAttributeLaunchConfig(
                 grid_dim=2,
                 block_dim=1,
                 attributes=[LaunchAttribute.from_cluster_dim(Dim(2, 1, 1))],
-            )
+            ),
         )
     with assert_raises(contains="cluster_dim"):
         ctx.enqueue_function[noop](
-            ClusterAttributeLaunchConfig(
+            execution_config=ClusterAttributeLaunchConfig(
                 grid_dim=2,
                 block_dim=1,
                 cluster_dim=Dim(2, 1, 1),
                 attributes=[LaunchAttribute.from_cluster_dim(Dim(2, 1, 1))],
-            )
+            ),
         )
 
 
@@ -205,15 +205,15 @@ def test_cluster_large_smem_pdl(ctx: DeviceContext) raises:
     ranks.enqueue_fill(-1)
 
     ctx.enqueue_function[cluster_large_smem](
-        ClusterAttributeLaunchConfig(
+        dst,
+        ranks,
+        execution_config=ClusterAttributeLaunchConfig(
             grid_dim=NUM_BLOCKS,
             block_dim=BLOCK_SIZE,
             cluster_dim=Dim(cluster_size, 1, 1),
             shared_mem_bytes=LARGE_SMEM_BYTES,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         ),
-        dst,
-        ranks,
     )
 
     with dst.map_to_host() as h:

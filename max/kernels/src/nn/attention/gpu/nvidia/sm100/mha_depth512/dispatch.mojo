@@ -359,15 +359,6 @@ def mha_sm100_depth512_dispatch[
                     ].kernel
 
                     ctx.enqueue_function[kernel](
-                        ClusterAttributeLaunchConfig(
-                            grid_dim=SchedulerType.grid_dim(
-                                batch_size, block_x
-                            ),
-                            block_dim=(num_threads, 1, 1),
-                            cluster_dim=Dim(2, 1, 1),
-                            shared_mem_bytes=smem_use,
-                            attributes=pdl_launch_attributes(PDLLevel.ON),
-                        ),
                         q_tma_op,
                         k_tma_op,
                         v_tma_op,
@@ -377,6 +368,15 @@ def mha_sm100_depth512_dispatch[
                         batch_size,
                         max_cache_valid_length,
                         pack,
+                        execution_config=ClusterAttributeLaunchConfig(
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size, block_x
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=Dim(2, 1, 1),
+                            shared_mem_bytes=smem_use,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
+                        ),
                     )
 
                 # --- ragged dispatch ---
@@ -489,15 +489,6 @@ def mha_sm100_depth512_dispatch[
                     ].kernel
 
                     ctx.enqueue_function[kernel](
-                        ClusterAttributeLaunchConfig(
-                            grid_dim=SchedulerType.grid_dim(
-                                batch_size, block_x
-                            ),
-                            block_dim=(num_threads, 1, 1),
-                            cluster_dim=Dim(2, 1, 1),
-                            shared_mem_bytes=smem_use,
-                            attributes=pdl_launch_attributes(PDLLevel.ON),
-                        ),
                         q_tma_op,
                         k_tma_op,
                         v_tma_op,
@@ -507,6 +498,15 @@ def mha_sm100_depth512_dispatch[
                         batch_size,
                         max_cache_valid_length,
                         pack,
+                        execution_config=ClusterAttributeLaunchConfig(
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size, block_x
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=Dim(2, 1, 1),
+                            shared_mem_bytes=smem_use,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
+                        ),
                     )
 
                 # --- ragged dispatch ---

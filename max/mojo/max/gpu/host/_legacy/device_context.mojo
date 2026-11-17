@@ -5697,19 +5697,19 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
         *encoded_types: DevicePassable,
     ](
         self,
-        config: ConfigType,
         *encoded_args: *encoded_types,
+        execution_config: ConfigType,
         host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
         """Compiles and enqueues a kernel with a capability-typed launch
         configuration.
 
-        `config` must be a `GridBlockLaunchConfig`, a `ClusterLaunchConfig`,
-        or, on NVIDIA targets, a `GridBlockAttributeLaunchConfig` or a
-        `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia`. A
-        capability this target lacks, such as clusters or launch attributes,
-        fails to compile:
+        `execution_config` must be a `GridBlockLaunchConfig`, a
+        `ClusterLaunchConfig`, or, on NVIDIA targets, a
+        `GridBlockAttributeLaunchConfig` or a `ClusterAttributeLaunchConfig`
+        from `max.gpu.host.nvidia`. A capability this target lacks, such as
+        clusters or launch attributes, fails to compile:
 
         ```mojo
         from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
@@ -5719,14 +5719,14 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
 
         with DeviceContext() as ctx:
             ctx.enqueue_function[kernel](
-                ClusterLaunchConfig(
+                execution_config=ClusterLaunchConfig(
                     grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1)
-                )
+                ),
             )
         ```
 
-        Put capturing closures in `host_args`, after the encoded arguments,
-        as for the keyword overload.
+        Put capturing closures in `host_args`, after `execution_config`, as
+        for the keyword overload.
 
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device
@@ -5738,9 +5738,9 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
                 device layout.
 
         Args:
-            config: The launch configuration.
             encoded_args: The variadic `DevicePassable` arguments encoded to
                 device layout.
+            execution_config: The launch configuration.
             host_args: The trailing arguments passed by host layout.
             location: Source location for the function call.
 
@@ -5763,13 +5763,15 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             comptime assert conforms_to(
                 Self.ExecutionConfigType, ClusterExecutionConfig
             ), "this target does not support thread block cluster launch"
-            cluster_dim = config.get_cluster_dim()
+            cluster_dim = execution_config.get_cluster_dim()
 
         var shared_mem_bytes = OptionalReg[Int](None)
         comptime if conforms_to(
             ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
         ):
-            shared_mem_bytes = config.get_near_compute_scratchpad_usage()
+            shared_mem_bytes = (
+                execution_config.get_near_compute_scratchpad_usage()
+            )
 
         var attributes = List[LaunchAttribute]()
         comptime if conforms_to(
@@ -5778,15 +5780,17 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             comptime assert conforms_to(
                 Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
             ), "this target does not support launch attributes"
-            if _holds_cluster_dim_attribute(config.get_launch_attributes()):
+            if _holds_cluster_dim_attribute(
+                execution_config.get_launch_attributes()
+            ):
                 raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
-            attributes = List(config.get_launch_attributes())
+            attributes = List(execution_config.get_launch_attributes())
 
         self.enqueue_function[func](
             *encoded_args,
             host_args=host_args,
-            grid_dim=config.get_grid_dim(),
-            block_dim=config.get_block_dim(),
+            grid_dim=execution_config.get_grid_dim(),
+            block_dim=execution_config.get_block_dim(),
             cluster_dim=cluster_dim,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,

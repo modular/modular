@@ -125,16 +125,19 @@ def run_dsmem_test[
             cluster_dim=Dim(P, 1, 1),
         )
         ctx.enqueue_function[kernel](
-            rebind[DeviceContext[].ExecutionConfigType](config), out_dev
+            out_dev,
+            execution_config=rebind[DeviceContext[].ExecutionConfigType](
+                config
+            ),
         )
     else:
         ctx.enqueue_function[kernel](
-            ClusterLaunchConfig(
+            out_dev,
+            execution_config=ClusterLaunchConfig(
                 grid_dim=(P, 1, 1),
                 block_dim=(32, 1, 1),
                 cluster_dim=Dim(P, 1, 1),
             ),
-            out_dev,
         )
     ctx.synchronize()
 

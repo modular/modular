@@ -1680,12 +1680,6 @@ def sm100_warp_specialized_blockwise_fp8[
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
     ctx.enqueue_function[kernel](
-        GridBlockLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-            block_dim=(32 * 7),
-            shared_mem_bytes=smem_size,
-        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1694,4 +1688,10 @@ def sm100_warp_specialized_blockwise_fp8[
         Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(32 * 7),
+            shared_mem_bytes=smem_size,
+        ),
     )

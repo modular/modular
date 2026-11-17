@@ -254,17 +254,17 @@ def dispatch_sm100_conv2d[
                 filter.Engine,
             ]
             ctx.enqueue_function[transpose_kernel](
-                GridBlockAttributeLaunchConfig(
-                    grid_dim=grid,
-                    block_dim=transpose_block,
-                    attributes=pdl_launch_attributes(PDLLevel.ON),
-                ),
                 filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(F),
                 Int32(C),
                 Int32(R),
                 Int32(S),
+                execution_config=GridBlockAttributeLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=transpose_block,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                ),
             )
         else:
             var R = Int(filter.dim[0]())
@@ -278,17 +278,17 @@ def dispatch_sm100_conv2d[
                 filter.Engine,
             ]
             ctx.enqueue_function[transpose_kernel](
-                GridBlockAttributeLaunchConfig(
-                    grid_dim=grid,
-                    block_dim=transpose_block,
-                    attributes=pdl_launch_attributes(PDLLevel.ON),
-                ),
                 filter.as_imm(),
                 filter_krsc_ptr,
                 Int32(R),
                 Int32(S),
                 Int32(C),
                 Int32(F),
+                execution_config=GridBlockAttributeLaunchConfig(
+                    grid_dim=grid,
+                    block_dim=transpose_block,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                ),
             )
 
         # Construct problem shape and TileTensors

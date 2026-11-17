@@ -2505,13 +2505,6 @@ def _grouped_matmul_sm100_persistent[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     ctx.enqueue_function[kernel](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 4 EPILOGUE warps
-            block_dim=(32 * 6),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(pdl_level),
-        ),
         expert_usage_stats,
         a_tma_op,
         expert_ids,
@@ -2522,6 +2515,13 @@ def _grouped_matmul_sm100_persistent[
         mnk,
         a_gmem,
         b_gmem,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 4 EPILOGUE warps
+            block_dim=(32 * 6),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
         host_args=(epilogue_fn, compute_fn),
     )
 

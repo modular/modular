@@ -3152,16 +3152,6 @@ def fp8_index_score_sm100_prefill[
             ),
         )
     ctx.enqueue_function[kernel](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=(
-                batch_size,
-                token_blocks,
-                num_key_parts,
-            ),
-            block_dim=CFG.nthreads,
-            shared_mem_bytes=smem_bytes,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
-        ),
         q_tma,
         k_tma,
         ks_tma,
@@ -3180,4 +3170,14 @@ def fp8_index_score_sm100_prefill[
         Int32(evict_k),
         score_hook,
         cp_rank,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=(
+                batch_size,
+                token_blocks,
+                num_key_parts,
+            ),
+            block_dim=CFG.nthreads,
+            shared_mem_bytes=smem_bytes,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
     )

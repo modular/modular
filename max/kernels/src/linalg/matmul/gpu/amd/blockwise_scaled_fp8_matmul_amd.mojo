@@ -59,7 +59,7 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import barrier
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
@@ -723,8 +723,10 @@ def _launch_blockwise_split_k[
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), num_splits),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), num_splits),
+            block_dim=(num_threads, 1, 1),
+        ),
     )
 
     # Reduce + cast on the same stream (serialized after the matmul): sums the
@@ -744,8 +746,10 @@ def _launch_blockwise_split_k[
         Int32(total_elems),
         Int32(elems_per_split),
         Int32(N),
-        grid_dim=(num_blocks,),
-        block_dim=(block_dim_x,),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks,),
+            block_dim=(block_dim_x,),
+        ),
     )
     # Keep the workspace alive until both kernels are enqueued.
     _ = workspace^
@@ -1040,6 +1044,8 @@ def blockwise_scaled_fp8_matmul_amd[
         b,
         a_scales,
         b_scales,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-        block_dim=(num_threads, 1, 1),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+            block_dim=(num_threads, 1, 1),
+        ),
     )

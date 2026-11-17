@@ -59,7 +59,7 @@ end-to-end correctness coverage.
 
 from std.math import ceildiv
 
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 
 from layout import TileTensor
 
@@ -412,9 +412,11 @@ def amd_4wave_conv[
                 source_ptr,
                 Int32(source_row_stride),
                 beta,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(num_blocks_n * num_blocks_m,),
+                    block_dim=config.num_threads(),
+                ),
                 host_args=(epilogue_fn, compute_fn),
-                grid_dim=(num_blocks_n * num_blocks_m,),
-                block_dim=config.num_threads(),
             )
 
     # Tile shape: BK depends on dtype default + `block_k_override`.

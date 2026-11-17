@@ -52,8 +52,10 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
 
     comptime kernel_func = dynamic_smem_kernel[origin_of(res_device)]
     ctx.enqueue_function[kernel_func](
-        GridBlockLaunchConfig(grid_dim=1, block_dim=16, shared_mem_bytes=24960),
         res_device,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=1, block_dim=16, shared_mem_bytes=24960
+        ),
     )
 
     ctx.enqueue_copy(res_host_ptr, res_device)
@@ -107,7 +109,10 @@ def test_external_shared_mem_above_default_limit(ctx: DeviceContext) raises:
             grid_dim=1, block_dim=16, shared_mem_bytes=LARGE_SMEM_BYTES
         )
 
-        ctx.enqueue_function[large_dynamic_smem_kernel](config, res_device)
+        ctx.enqueue_function[large_dynamic_smem_kernel](
+            res_device,
+            execution_config=config,
+        )
 
         var res_host_ptr = unsafe_alloc[Float32](16)
         ctx.enqueue_copy(res_host_ptr, res_device)

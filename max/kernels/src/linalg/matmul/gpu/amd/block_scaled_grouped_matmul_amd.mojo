@@ -26,7 +26,7 @@ from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 
@@ -755,8 +755,10 @@ struct PreShuffledBGroupedGEMM[
                 Int32(max_padded_M),
                 c_scales_ptr,
                 c_scales_max_padded_m,
-                grid_dim=(Self.total_wg, 1, 1),
-                block_dim=MatmulDeviceFunctionType.num_threads,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(Self.total_wg, 1, 1),
+                    block_dim=MatmulDeviceFunctionType.num_threads,
+                ),
             )
         else:
             comptime kernel = Self.kernel[
@@ -814,12 +816,14 @@ struct PreShuffledBGroupedGEMM[
                 Int32(max_padded_M),
                 c_scales_ptr,
                 c_scales_max_padded_m,
-                grid_dim=(
-                    ceildiv(N, BN),
-                    ceildiv(m_cap, BM),
-                    grid_z,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=(
+                        ceildiv(N, BN),
+                        ceildiv(m_cap, BM),
+                        grid_z,
+                    ),
+                    block_dim=MatmulDeviceFunctionType.num_threads,
                 ),
-                block_dim=MatmulDeviceFunctionType.num_threads,
             )
 
 
@@ -1246,12 +1250,14 @@ def _launch_block_scaled_grouped[
         a_offsets,
         expert_ids,
         Int32(num_active_experts),
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(
+                ceildiv(N, BN),
+                ceildiv(max_num_tokens_per_expert, BM),
+                num_active_experts,
+            ),
+            block_dim=Kernel.num_threads,
         ),
-        block_dim=Kernel.num_threads,
     )
 
 

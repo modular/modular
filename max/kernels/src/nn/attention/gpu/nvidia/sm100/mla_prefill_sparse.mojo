@@ -1618,12 +1618,6 @@ def mla_prefill_sparse[
         comptime smem_size = size_of[MLASparseSharedMemory[config]]()
 
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=(config.cta_group * num_q_rows, 1, 1),
-                block_dim=(config.num_threads, 1, 1),
-                shared_mem_bytes=smem_size,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            ),
             q_tma_op,
             k_tma_op,
             v_tma_op,
@@ -1634,4 +1628,10 @@ def mla_prefill_sparse[
             scale,
             attn_sink_ptr,
             indices_stride,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=(config.cta_group * num_q_rows, 1, 1),
+                block_dim=(config.num_threads, 1, 1),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
         )

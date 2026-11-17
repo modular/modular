@@ -47,7 +47,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.compute.mma import mma
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.memory import AddressSpace, external_memory
 
 from .mamba2_ssd_out_mi355 import (
@@ -274,5 +274,10 @@ def ssd_state_mi355(
         resident_workgroups[ssd_state_mi355_kernel](ctx, STATE_LDS),
     )
     ctx.enqueue_function[ssd_state_mi355_kernel](
-        params, grid_dim=grid, block_dim=THREADS, shared_mem_bytes=STATE_LDS
+        params,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid,
+            block_dim=THREADS,
+            shared_mem_bytes=STATE_LDS,
+        ),
     )

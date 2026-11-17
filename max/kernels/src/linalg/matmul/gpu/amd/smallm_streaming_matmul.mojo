@@ -42,7 +42,7 @@ from max.gpu import (
 from std.memory import unsafe_stack_allocation
 
 from max.gpu.compute.mma import mma
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import barrier
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor, row_major
@@ -391,8 +391,10 @@ def smallm_preshuffle_b[
         dst,
         src,
         Int32(n),
-        grid_dim=ceildiv(n * (k_static // 8), 256),
-        block_dim=256,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=ceildiv(n * (k_static // 8), 256),
+            block_dim=256,
+        ),
     )
 
 
@@ -448,8 +450,10 @@ def smallm_streaming_matmul[
             a_scratch,
             a,
             Int32(m),
-            grid_dim=ceildiv(m_tiles * _TILE_N * (k_static // 8), 256),
-            block_dim=256,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=ceildiv(m_tiles * _TILE_N * (k_static // 8), 256),
+                block_dim=256,
+            ),
         )
 
         comptime kernel = _gemm_smallm_streaming_kernel[
@@ -473,15 +477,17 @@ def smallm_streaming_matmul[
             b_shuffled,
             Int32(m),
             Int32(n),
-            # Looped grid only on the register-resident-A instantiation.
-            # The cap stays a raw min(): an exactly tile-balanced grid
-            # measures slower than an XCD-aligned one with stragglers.
-            grid_dim=(
-                min(
-                    ceildiv(n, _TILE_N), max_grid_blocks
-                ) if a_in_regs else ceildiv(ceildiv(n, _TILE_N), col_tiles)
+            execution_config=GridBlockLaunchConfig(
+                # Looped grid only on the register-resident-A instantiation.
+                # The cap stays a raw min(): an exactly tile-balanced grid
+                # measures slower than an XCD-aligned one with stragglers.
+                grid_dim=(
+                    min(
+                        ceildiv(n, _TILE_N), max_grid_blocks
+                    ) if a_in_regs else ceildiv(ceildiv(n, _TILE_N), col_tiles)
+                ),
+                block_dim=warps_per_block * ctx.default_device_info.warp_size,
             ),
-            block_dim=warps_per_block * ctx.default_device_info.warp_size,
         )
 
     # Register-resident A pays 4 VGPRs per k-chunk, so gate it to shallow

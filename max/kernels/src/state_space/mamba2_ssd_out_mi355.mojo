@@ -57,7 +57,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.compute.mma import mma
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.intrinsics import ds_read_tr16_b64
 from max.gpu.memory import AddressSpace, external_memory
 from max.gpu.sync import barrier, s_waitcnt
@@ -807,5 +807,10 @@ def ssd_out_mi355(
         resident_workgroups[ssd_out_mi355_kernel](ctx, OUT_LDS),
     )
     ctx.enqueue_function[ssd_out_mi355_kernel](
-        params, grid_dim=grid, block_dim=THREADS, shared_mem_bytes=OUT_LDS
+        params,
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid,
+            block_dim=THREADS,
+            shared_mem_bytes=OUT_LDS,
+        ),
     )

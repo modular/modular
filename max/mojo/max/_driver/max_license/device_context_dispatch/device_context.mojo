@@ -3073,8 +3073,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         *encoded_types: DevicePassable,
     ](
         self,
-        config: ConfigType,
         *encoded_args: *encoded_types,
+        execution_config: ConfigType,
         host_args: Tuple[*HostArgs] = (),
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -3106,8 +3106,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             encoded_types: The types of the device arguments.
 
         Args:
-            config: The execution configuration of the launch.
             encoded_args: The device arguments to pass to the kernel.
+            execution_config: The execution configuration of the launch.
             host_args: The host-only arguments to pass to the kernel.
             location: The source location of the call.
 
@@ -3124,8 +3124,8 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 " configurations"
             )
             self._impl.enqueue_function[func](
-                config,
                 *encoded_args,
+                execution_config=execution_config,
                 host_args=host_args,
                 location=location,
             )
@@ -3135,7 +3135,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime if Self._HALHooks.Enqueuer.overrides:
             Self._HALHooks.Enqueuer.enqueue_function[func](
                 self._hal_stream()[],
-                config,
+                execution_config,
                 *encoded_args,
                 host_args=host_args,
             )
@@ -3143,7 +3143,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             var gpu_kernel = self.compile_function[func]()
             comptime if not Self._HALHooks.Launcher.overrides_grid_block:
                 _check_config_dims["DeviceContext.enqueue_function"](
-                    config, location=call_location()
+                    execution_config, location=call_location()
                 )
             comptime for idx in range(HostArgs.length):
                 type_of(gpu_kernel)._check_trailing_host[
@@ -3151,7 +3151,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ]()
             gpu_kernel._do_call_with_pack_checked(
                 self._hal_stream(),
-                config,
+                execution_config,
                 *encoded_args,
                 host_args=host_args,
                 location=location.or_else(call_location()),

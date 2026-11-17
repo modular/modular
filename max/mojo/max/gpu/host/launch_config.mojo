@@ -31,7 +31,7 @@ def kernel():
 
 with DeviceContext() as ctx:
     ctx.enqueue_function[kernel](
-        ClusterLaunchConfig(grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1))
+        execution_config=ClusterLaunchConfig(grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1)),
     )
 ```
 """

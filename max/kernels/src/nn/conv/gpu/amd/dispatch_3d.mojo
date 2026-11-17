@@ -49,7 +49,7 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 """
 
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
@@ -386,8 +386,10 @@ def dispatch_amd_4wave_conv3d[
                 Int32(_R),
                 Int32(_S),
                 Int32(_K_padded),
-                grid_dim=transpose_grid,
-                block_dim=_transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=_transpose_block,
+                ),
             )
         else:
             comptime transpose_kernel = _transpose_qrscf_to_fk_kpad[
@@ -405,8 +407,10 @@ def dispatch_amd_4wave_conv3d[
                 Int32(_C_in),
                 Int32(_C_out),
                 Int32(_K_padded),
-                grid_dim=transpose_grid,
-                block_dim=_transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=_transpose_block,
+                ),
             )
 
         # -------- Filter view: [C_out, K_padded] ---------

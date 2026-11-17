@@ -459,8 +459,9 @@ This version is still a work in progress.
 
 - `DeviceContext.enqueue_function()` accepts a `GridBlockLaunchConfig` (grid,
   block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
-  clusters) from `max.gpu.host` as its first argument. A cluster launch on a
-  GPU without clusters fails to compile; generic code checks
+  clusters) from `max.gpu.host` as a keyword-only `execution_config` argument
+  after the kernel arguments. A cluster launch on a GPU without clusters fails
+  to compile; generic code checks
   `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
   On NVIDIA GPUs, `GridBlockAttributeLaunchConfig` and
   `ClusterAttributeLaunchConfig` from `max.gpu.host.nvidia` also carry launch

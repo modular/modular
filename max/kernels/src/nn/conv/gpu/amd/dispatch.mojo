@@ -41,7 +41,7 @@ Mirrors the structure of `nn.conv.gpu.amd.rdna.dispatch` and
 """
 
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
@@ -444,8 +444,10 @@ def dispatch_amd_4wave_conv2d[
                 Int32(_R),
                 Int32(_S),
                 Int32(_K_padded),
-                grid_dim=transpose_grid,
-                block_dim=_transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=_transpose_block,
+                ),
             )
         else:
             comptime transpose_kernel = _transpose_rscf_to_frsc_kpad[
@@ -462,8 +464,10 @@ def dispatch_amd_4wave_conv2d[
                 Int32(_C_in),
                 Int32(_C_out),
                 Int32(_K_padded),
-                grid_dim=transpose_grid,
-                block_dim=_transpose_block,
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=transpose_grid,
+                    block_dim=_transpose_block,
+                ),
             )
 
         # -------- Filter view: FRSC, K-padded (built above) ---------

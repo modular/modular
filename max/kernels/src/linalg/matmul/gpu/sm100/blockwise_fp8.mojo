@@ -923,16 +923,16 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
     ]
 
     ctx.enqueue_function[kernel](
-        GridBlockLaunchConfig(
-            grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
-            block_dim=(block_dim),
-            shared_mem_bytes=smem_use,
-        ),
         a_tma_op,
         b_tma_op,
         c_kernel,
         a_scales_tma_op,
         b_scales_kernel,
         Int32(ceildiv(Int(K), BK)),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(ceildiv(Int(N), BN), ceildiv(Int(M), BM)),
+            block_dim=(block_dim),
+            shared_mem_bytes=smem_use,
+        ),
         host_args=(epilogue_fn, compute_fn),
     )

@@ -50,7 +50,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig, HostBuffer
 from std.math import align_up, ceildiv
 from std.math.uutils import udivmod, uceildiv
 from std.memory import bitcast
@@ -554,8 +554,10 @@ struct Shuffler[E: Int]:
             raw.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
             dst.ptr.unsafe_origin_cast[MutAnyOrigin](),
             Int32(num_frags),
-            grid_dim=grid,
-            block_dim=BLOCK,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid,
+                block_dim=BLOCK,
+            ),
         )
 
     @staticmethod
@@ -605,12 +607,14 @@ struct Shuffler[E: Int]:
         ctx.enqueue_function[kernel](
             raw_any,
             dst_any,
-            grid_dim=(
-                K_BYTES // Self.MFMA_K_BYTES,
-                N // Self.MFMA_MN_LANES,
-                Self.E,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    K_BYTES // Self.MFMA_K_BYTES,
+                    N // Self.MFMA_MN_LANES,
+                    Self.E,
+                ),
+                block_dim=Self.NUM_THREADS,
             ),
-            block_dim=Self.NUM_THREADS,
         )
 
     # ---- Scale preshuffle (works for both A and B scales; same layout) ----
@@ -848,6 +852,8 @@ struct Shuffler[E: Int]:
             Int32(num_active_experts),
             Int32(max_padded_M),
             Int32(total_wg),
-            grid_dim=(total_wg,),
-            block_dim=Self.NUM_THREADS,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(total_wg,),
+                block_dim=Self.NUM_THREADS,
+            ),
         )

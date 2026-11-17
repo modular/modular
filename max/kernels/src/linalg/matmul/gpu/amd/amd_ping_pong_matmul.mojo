@@ -27,7 +27,7 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from max.gpu.intrinsics import readfirstlane
@@ -872,11 +872,13 @@ def amd_ping_pong_matmul[
             a,
             b,
             c,
-            grid_dim=(
-                ceildiv(N, config.block_shape[1]),
-                ceildiv(M, config.block_shape[0]),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(
+                    ceildiv(N, config.block_shape[1]),
+                    ceildiv(M, config.block_shape[0]),
+                ),
+                block_dim=config.num_threads(),
             ),
-            block_dim=config.num_threads(),
         )
 
     # Dispatch: FP8 uses 16x16x128 MMA with BK=128.

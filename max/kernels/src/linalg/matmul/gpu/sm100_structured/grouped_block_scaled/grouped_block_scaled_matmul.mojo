@@ -541,11 +541,6 @@ def _grouped_block_scaled_matmul_impl[
     comptime if config.cta_group == 2:
         # 2SM mode: use CLC-based run_2sm() for proper cluster synchronization
         ctx.enqueue_function[matmul_kernel.run_2sm](
-            GridBlockLaunchConfig(
-                grid_dim=grid_dim,
-                block_dim=num_threads,
-                shared_mem_bytes=smem_size,
-            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -567,16 +562,16 @@ def _grouped_block_scaled_matmul_impl[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             host_args=(compute_fn,),
         )
     else:
         # 1SM mode: use linear iteration run()
         ctx.enqueue_function[matmul_kernel.run](
-            GridBlockLaunchConfig(
-                grid_dim=grid_dim,
-                block_dim=num_threads,
-                shared_mem_bytes=smem_size,
-            ),
             # Template TMA descriptors
             a_tma_op,
             b_tma_op,
@@ -598,6 +593,11 @@ def _grouped_block_scaled_matmul_impl[
             # Problem sizes and group count
             problem_sizes,
             Int32(num_groups),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=num_threads,
+                shared_mem_bytes=smem_size,
+            ),
             host_args=(compute_fn,),
         )
 

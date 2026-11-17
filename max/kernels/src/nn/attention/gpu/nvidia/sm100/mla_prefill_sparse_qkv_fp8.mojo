@@ -2298,12 +2298,6 @@ def mla_prefill_sparse_qkv_fp8[
         comptime smem_size = size_of[Kernel.SMemType]()
 
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=(config.cta_group * num_q_rows, 1, 1),
-                block_dim=(config.num_threads, 1, 1),
-                shared_mem_bytes=smem_size,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            ),
             q_tma_op,
             kv_tma_op,
             o_tma_op,
@@ -2314,4 +2308,10 @@ def mla_prefill_sparse_qkv_fp8[
             attn_sink_ptr,
             indices_stride,
             v_tma_op,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=(config.cta_group * num_q_rows, 1, 1),
+                block_dim=(config.num_threads, 1, 1),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
         )

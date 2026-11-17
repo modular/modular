@@ -33,7 +33,7 @@ the post-cast `c_type` MMA output before the residual FMA, and
 """
 
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from std.math import align_up, ceildiv
 
 from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
@@ -253,8 +253,10 @@ def amd_4wave_conv_fprop_with_residual[
             Int32(K_real),
             Int32(K_padded),
             Int32(_C_out),
-            grid_dim=_kpad_grid,
-            block_dim=_kpad_block,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=_kpad_grid,
+                block_dim=_kpad_block,
+            ),
         )
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)
@@ -424,8 +426,10 @@ def _launch_plain_conv[
             Int32(K_real),
             Int32(K_padded),
             Int32(_C_out),
-            grid_dim=_kpad_grid,
-            block_dim=_kpad_block,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=_kpad_grid,
+                block_dim=_kpad_block,
+            ),
         )
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)

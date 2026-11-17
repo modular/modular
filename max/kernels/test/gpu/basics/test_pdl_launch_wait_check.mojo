@@ -73,12 +73,12 @@ def _config_launch_rejected[
 ](ctx: DeviceContext, dst: MutPointer[Int32, MutAnyOrigin]) raises -> Bool:
     try:
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
+            dst,
+            execution_config=GridBlockAttributeLaunchConfig(
                 grid_dim=1,
                 block_dim=1,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             ),
-            dst,
         )
     except e:
         assert_true("griddepcontrol.wait" in String(e), String(e))

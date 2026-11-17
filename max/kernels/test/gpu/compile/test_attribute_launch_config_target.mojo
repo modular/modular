@@ -59,18 +59,18 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime if get_defined_bool["USE_CLUSTER", False]():
             ctx.enqueue_function[kernel](
-                ClusterAttributeLaunchConfig(
+                execution_config=ClusterAttributeLaunchConfig(
                     grid_dim=2,
                     block_dim=32,
                     cluster_dim=Dim(2, 1, 1),
                     attributes=pdl_launch_attributes(PDLLevel.ON),
-                )
+                ),
             )
         else:
             ctx.enqueue_function[kernel](
-                GridBlockAttributeLaunchConfig(
+                execution_config=GridBlockAttributeLaunchConfig(
                     grid_dim=1,
                     block_dim=32,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
-                )
+                ),
             )

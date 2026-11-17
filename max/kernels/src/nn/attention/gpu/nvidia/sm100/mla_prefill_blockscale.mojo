@@ -2086,12 +2086,6 @@ def _mla_prefill_sm100_valid_length_dispatch[
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
     ctx.enqueue_function[kernel](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=smem_use,
-            attributes=pdl_launch_attributes(PDLLevel.ON),
-        ),
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,
@@ -2102,4 +2096,10 @@ def _mla_prefill_sm100_valid_length_dispatch[
         scale,
         UInt32(batch_size),
         pack,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+            block_dim=(num_threads, 1, 1),
+            shared_mem_bytes=smem_use,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        ),
     )

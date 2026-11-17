@@ -241,13 +241,6 @@ def blockwise_fp8_matmul[
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
     ctx.enqueue_function[Kernel.run](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
-            block_dim=(32 * 7),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(pdl_level),
-        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -256,4 +249,11 @@ def blockwise_fp8_matmul[
         Int32(ceildiv(K, BK)),
         b_scales,
         problem_shape,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
+            block_dim=(32 * 7),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
     )

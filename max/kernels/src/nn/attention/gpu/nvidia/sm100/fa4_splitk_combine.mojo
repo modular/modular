@@ -501,16 +501,16 @@ def fa4_splitk_combine[
             output_type, ov_depth, intermediate_type, P_STATIC=P_STATIC
         ]
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=(Int(rows_heads), 1, 1),
-                block_dim=(nthreads, 1, 1),
-                attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
-            ),
             output_ptr,
             o_partial_ptr,
             lse_partial_ptr,
             num_partitions,
             rows_heads,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=(Int(rows_heads), 1, 1),
+                block_dim=(nthreads, 1, 1),
+                attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+            ),
         )
 
     comptime _COMBINE_P_LADDER = splitk_p_ladder[sm_count]()

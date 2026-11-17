@@ -1191,12 +1191,12 @@ def launch_mla_combine_kernel_split_parallel[
             has_attn_sink,
         ]
     ](
-        GridBlockAttributeLaunchConfig(
+        params,
+        execution_config=GridBlockAttributeLaunchConfig(
             grid_dim=grid_dim,
             block_dim=block_dim,
             attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
         ),
-        params,
     )
 
 
@@ -1337,13 +1337,13 @@ def launch_mla_combine_kernel[
             LseOutPtrType=LseOutPtrType,
         ]
     ](
-        GridBlockAttributeLaunchConfig(
+        params,
+        lse_out,
+        execution_config=GridBlockAttributeLaunchConfig(
             grid_dim=grid_dim,
             block_dim=block_dim,
             attributes=pdl_launch_attributes(_combine_pdl_level[pdl]()),
         ),
-        params,
-        lse_out,
     )
 
 

@@ -448,12 +448,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime if has_epilogue_fn:
         comptime kernel = matmul_kernel.run_with_epilogue_fn[EpilogueFnType]
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=grid_dim,
-                block_dim=KernelType.NUM_THREADS,
-                shared_mem_bytes=smem_size,
-                attributes=pdl_launch_attributes(pdl_level),
-            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -462,6 +456,12 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             cluster_dim,
             mnk,
             workspace,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             host_args=(epilogue_fn,),
         )
     elif has_compute_fn:
@@ -490,12 +490,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             type_of(compute_with_c)
         ]
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=grid_dim,
-                block_dim=KernelType.NUM_THREADS,
-                shared_mem_bytes=smem_size,
-                attributes=pdl_launch_attributes(pdl_level),
-            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -506,17 +500,17 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             workspace,
             rank_sigs,
             Int32(0),
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
             host_args=(compute_with_c,),
         )
     else:
         comptime kernel = matmul_kernel.run
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=grid_dim,
-                block_dim=KernelType.NUM_THREADS,
-                shared_mem_bytes=smem_size,
-                attributes=pdl_launch_attributes(pdl_level),
-            ),
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -527,6 +521,12 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             workspace,
             rank_sigs,
             Int32(0),
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                block_dim=KernelType.NUM_THREADS,
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
         )
 
     comptime if enable_profiling:
@@ -1452,15 +1452,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         workspace = Span[UInt64, MutAnyOrigin]()
 
     ctx.enqueue_function[kernel](
-        GridBlockAttributeLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
-            block_dim=(
-                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
-            ),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(pdl_level),
-        ),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1472,6 +1463,15 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         cluster_dim,
         mnk,
         workspace,
+        execution_config=GridBlockAttributeLaunchConfig(
+            grid_dim=grid_dim,
+            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
+            block_dim=(
+                32 * (load_warps + mma_warps + scheduler_warps + epilogue_warps)
+            ),
+            shared_mem_bytes=smem_size,
+            attributes=pdl_launch_attributes(pdl_level),
+        ),
     )
 
     _ = reduction_workspace^
@@ -1723,27 +1723,27 @@ def matmul_sm100_fallback[
     comptime if has_compute_fn:
         comptime kernel = fallback_kernel.run_with_compute_fn[ComputeFnType]
         ctx.enqueue_function[kernel](
-            GridBlockLaunchConfig(
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                block_dim=(block_dim),
-                shared_mem_bytes=smem_use,
-            ),
             a_tma_op,
             b_tma_op,
             c,
             Int32(ceildiv(K, BK)),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(block_dim),
+                shared_mem_bytes=smem_use,
+            ),
             host_args=(compute_fn,),
         )
     else:
         comptime kernel = fallback_kernel.run
         ctx.enqueue_function[kernel](
-            GridBlockLaunchConfig(
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                block_dim=(block_dim),
-                shared_mem_bytes=smem_use,
-            ),
             a_tma_op,
             b_tma_op,
             c,
             Int32(ceildiv(K, BK)),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
+                block_dim=(block_dim),
+                shared_mem_bytes=smem_use,
+            ),
         )

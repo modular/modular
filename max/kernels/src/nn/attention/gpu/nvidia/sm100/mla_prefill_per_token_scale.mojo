@@ -2199,12 +2199,6 @@ def mla_sm100_prefill_per_token_scale[
         comptime smem_use = cfg.launch_smem_used()
 
         ctx.enqueue_function[kernel](
-            GridBlockAttributeLaunchConfig(
-                grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
-                block_dim=(num_threads, 1, 1),
-                shared_mem_bytes=smem_use,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            ),
             q_nope_tma_op,
             q_rope_tma_op,
             k_nope_tma_op,
@@ -2218,6 +2212,12 @@ def mla_sm100_prefill_per_token_scale[
             scale,
             UInt32(batch_size),
             pack,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=SchedulerType.grid_dim(UInt32(batch_size), num_blocks),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=smem_use,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            ),
         )
 
     # --- 1Q / 2Q dispatch (see the generic MLA dispatch for details) ---

@@ -36,7 +36,7 @@ from std.sys import align_of
 from std.utils import Index
 
 from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 
 from layout import Coord, Idx, TensorEngine, TensorLayout, TileTensor
 from layout.layout import row_major
@@ -553,8 +553,10 @@ def _amd_4wave_split_k_matmul_impl[
             a,
             b,
             ws_tile,
-            grid_dim=(num_blocks_n * num_blocks_m, 1, num_splits),
-            block_dim=config.num_threads(),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks_n * num_blocks_m, 1, num_splits),
+                block_dim=config.num_threads(),
+            ),
         )
 
     # Same auto-pick as the base kernel: BM=BN=64 for M ≤ 512, else 128.
@@ -597,9 +599,11 @@ def _amd_4wave_split_k_matmul_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
             host_args=(epilogue_fn,),
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
         )
     elif has_compute_fn:
         comptime reduce_kernel = _split_k_reduce_kernel_compute_fn[
@@ -615,9 +619,11 @@ def _amd_4wave_split_k_matmul_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
             host_args=(compute_fn,),
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
         )
     else:
         comptime reduce_kernel = _split_k_reduce_kernel[
@@ -632,6 +638,8 @@ def _amd_4wave_split_k_matmul_impl[
             Int32(total_elems),
             Int32(elems_per_split),
             Int32(N),
-            grid_dim=(num_blocks,),
-            block_dim=(block_dim_x,),
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=(num_blocks,),
+                block_dim=(block_dim_x,),
+            ),
         )
