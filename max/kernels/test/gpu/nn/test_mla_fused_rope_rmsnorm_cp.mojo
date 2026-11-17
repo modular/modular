@@ -33,14 +33,13 @@ from std.sys import size_of
 from max.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Idx, RowMajorLayout, TileTensor, row_major
+from layout import Coord, Idx, RowMajorLayout, TileTensor, row_major
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 from nn.attention.gpu.mla_graph import (
     mla_fused_rope_rmsnorm_quantization,
     mla_store_ragged_paged,
 )
 from std.testing import assert_equal
-from std.utils import IndexList
 
 comptime dtype = DType.bfloat16
 comptime freq_dtype = DType.float32
@@ -249,8 +248,8 @@ def launch[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
-        return kv_tt.load[width=width]((coords[0], coords[1]))
+    ](coords: Coord[Int, Int]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
+        return kv_tt.load[width=width](coords)
 
     comptime if nvfp4:
         var coll = PagedKVCacheCollection[
@@ -352,8 +351,8 @@ def launch_store[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
-        return kv_tt.load[width=width]((coords[0], coords[1]))
+    ](coords: Coord[Int, Int]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
+        return kv_tt.load[width=width](coords)
 
     comptime if nvfp4:
         var coll = PagedKVCacheCollection[

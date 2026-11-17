@@ -5305,11 +5305,9 @@ trait _MLAPrefillGraphPagedOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         mla_prefill_branch_fp8[
@@ -5470,11 +5468,9 @@ trait _MLADecodeGraphPagedFP8Op:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_partitions_proj = Int(
@@ -5910,11 +5906,9 @@ trait _MLADecodeGraphPagedFP8SparseOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -6130,11 +6124,9 @@ trait _MLAPrefillGraphBF16PagedOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         mla_prefill_branch_bf16[
@@ -6276,11 +6268,9 @@ trait _MLADecodeGraphBF16PagedOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_partitions_proj = Int(
@@ -6470,11 +6460,9 @@ trait _MLADecodeGraphBF16PagedSparseOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -6725,11 +6713,9 @@ trait _MLADecodeGraphBF16PagedSparseNVFP4Op:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -6965,11 +6951,9 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -7134,11 +7118,9 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -7322,11 +7304,9 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_tokens = Int(q.shape()[0].value())
@@ -7540,11 +7520,9 @@ trait _MLAPrefillGraphDecodePagedFP8Op:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_partitions_proj = Int(
@@ -7798,11 +7776,9 @@ trait _MLAPrefillGraphDecodePagedFP8SparseOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         comptime mla_page_size = type_of(kv_blocks)._shape_types[3].static_value
@@ -8077,11 +8053,9 @@ trait _MLAPrefillGraphDecodeBF16PagedOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_partitions_proj = Int(
@@ -8316,11 +8290,9 @@ struct Struct_mla_store_ragged_paged:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -8505,11 +8477,9 @@ struct Struct_mla_store_ragged_paged_nvfp4:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
@@ -8727,11 +8697,9 @@ trait _MLAPrefillGraphDecodePagedSparseOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         comptime mla_page_size = type_of(kv_blocks)._shape_types[3].static_value
@@ -9042,11 +9010,9 @@ trait _MLAPrefillGraphDecodePagedSparseNVFP4Op:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         comptime mla_page_size = type_of(kv_blocks)._shape_types[3].static_value
@@ -9303,11 +9269,9 @@ trait _MLAPrefillGraphDecodeBF16PagedQuantizedOp:
         @inline(.always)
         def kv_input_fn[
             width: Int
-        ](coords: IndexList[2]) {var kv_view} -> SIMD[.bfloat16, width]:
+        ](coords: Coord[Int, Int]) {var kv_view} -> SIMD[.bfloat16, width]:
             return rebind[SIMD[.bfloat16, width]](
-                kv_view.load[width=width, element_alignment=width](
-                    Coord(coords)
-                )
+                kv_view.load[width=width, element_alignment=width](coords)
             )
 
         var num_partitions_proj = Int(

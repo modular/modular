@@ -89,7 +89,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from std.testing import assert_almost_equal, assert_true
 from std.memory import bitcast
-from std.utils.index import IndexList
 from std.utils.numerics import isinf, isnan, min_or_neg_inf
 
 comptime Q_DEPTH = 576  # 512 latent + 64 rope
@@ -708,8 +707,8 @@ def _run_fused_cp[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
-        return kv_in_tt.load[width=width](Coord(coords))
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
+        return kv_in_tt.load[width=width](coords)
 
     var mla_args = MLADispatchScalarArgs[num_heads=F_HEADS, is_fp8_kv=True](
         batch_size, cache_len, q_max, ctx
@@ -1104,8 +1103,8 @@ def _run_bf16_branch[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
-        return kv_in_tt.load[width=width](Coord(coords))
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
+        return kv_in_tt.load[width=width](coords)
 
     var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=False](
         batch_size, cache_len, q_max, ctx
@@ -1732,8 +1731,8 @@ def _run_nvfp4_branch[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
-        return kv_in_tt.load[width=width](Coord(coords))
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
+        return kv_in_tt.load[width=width](coords)
 
     var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=True](
         batch_size, cache_len, q_max, ctx

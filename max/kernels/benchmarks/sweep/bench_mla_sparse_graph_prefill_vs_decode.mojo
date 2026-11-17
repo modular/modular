@@ -100,7 +100,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from nn.attention.mha_utils import NonNullPointer
 from std.benchmark import BenchId
-from std.utils import IndexList
 from nn.attention.gpu.mla_graph import SM100MLAGraph
 
 comptime fp8 = DType.float8_e4m3fn
@@ -573,9 +572,9 @@ def run_dense[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     @inline(.always)
     def prefill_launch(launch_ctx: DeviceContext[]) raises {mut ref_tt, imm}:
@@ -767,8 +766,8 @@ def prime_packed(
     @inline(.always)
     def kv_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
-        return kv_in_tt.load[width=width](Coord(coords))
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
+        return kv_in_tt.load[width=width](coords)
 
     var done = 0
     while done < rows:
@@ -985,9 +984,9 @@ def run_nvfp4[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[bf16, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     @inline(.always)
     def mirror_launch(launch_ctx: DeviceContext[]) raises {mut mirror_tt, imm}:

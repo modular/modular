@@ -25,7 +25,6 @@ from std.memory import bitcast
 
 from std.sys import simd_width_of, size_of
 from std.sys.info import align_of
-from std.utils.index import Index, IndexList
 
 from max.algorithm.functional import _elementwise_impl_gpu
 from max.gpu import (
@@ -1004,7 +1003,7 @@ def _fused_rope_rmsnorm_quantization_body[
     store_only: Bool,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     *,
     QRopeOutputEngine: TensorEngine,
     QRopeEngine: TensorEngine,
@@ -1235,7 +1234,7 @@ def fused_rope_rmsnorm_quantization_kernel[
     store_only: Bool,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     *,
     QRopeOutputEngine: TensorEngine,
     QRopeEngine: TensorEngine,
@@ -1377,7 +1376,7 @@ def _fused_rope_rmsnorm_quantization_cp_kernel[
     store_only: Bool,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     *,
     QRopeOutputEngine: TensorEngine,
     QRopeEngine: TensorEngine,
@@ -1467,7 +1466,7 @@ def mla_fused_rope_rmsnorm_quantization[
     out_rope_dtype: DType,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     store_only: Bool = False,
     dcp_size: Int = 1,
@@ -1656,7 +1655,7 @@ def mla_store_ragged_paged[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     dcp_size: Int = 1,
     dcp_interleave: Int = 1,
@@ -1771,7 +1770,7 @@ def mla_prefill_branch_fp8[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     m_scale_granularity: Int,
     n_scale_granularity: Int,
@@ -2658,7 +2657,7 @@ def mla_decode_branch_fp8[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     m_scale_granularity: Int,
     n_scale_granularity: Int,
@@ -3264,7 +3263,7 @@ def mla_prefill_branch_sparse_fp8[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     m_scale_granularity: Int,
     n_scale_granularity: Int,
@@ -3728,7 +3727,7 @@ def mla_prefill_decode_graph_fp8[
     collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     m_scale_granularity: Int,
     n_scale_granularity: Int,
@@ -3969,11 +3968,11 @@ def mla_prefill_decode_graph_fp8[
                     @inline(.always)
                     def view_kv_input_fn[
                         width: Int
-                    ](coords: IndexList[2]) {
+                    ](coords: Coord[Int, Int]) {
                         var kv_input_fn, var first_token
                     } -> SIMD[DType.bfloat16, width]:
                         return kv_input_fn[width=width](
-                            IndexList[2](coords[0] + first_token, coords[1])
+                            Coord(coords[0] + first_token, coords[1])
                         )
 
                     mla_prefill_decode_graph_fp8[
@@ -4357,7 +4356,7 @@ def mla_prefill_branch_bf16[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
     # Presence of `output_gate` (inferred from its type); see the docstring.
@@ -4713,7 +4712,7 @@ def mla_decode_branch_bf16[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
     sparse_mla: Bool = False,
@@ -5159,7 +5158,7 @@ def mla_prefill_branch_sparse_bf16[
     collection_t: KVCollectionT,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     indices_stride: Int,
     # See `nvfp4_prefill_converts_once`; 0 always runs the NVFP4 kernel.
@@ -5797,7 +5796,7 @@ def mla_prefill_decode_graph_bf16[
     collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int](IndexList[2]) -> SIMD[DType.bfloat16, width],
+    & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
     //,
     mask_str: StaticString,
     sparse_mla: Bool = False,
@@ -6033,11 +6032,11 @@ def mla_prefill_decode_graph_bf16[
                     @inline(.always)
                     def view_kv_input_fn[
                         width: Int
-                    ](coords: IndexList[2]) {
+                    ](coords: Coord[Int, Int]) {
                         var kv_input_fn, var first_token
                     } -> SIMD[DType.bfloat16, width]:
                         return kv_input_fn[width=width](
-                            IndexList[2](coords[0] + first_token, coords[1])
+                            Coord(coords[0] + first_token, coords[1])
                         )
 
                     mla_prefill_decode_graph_bf16[

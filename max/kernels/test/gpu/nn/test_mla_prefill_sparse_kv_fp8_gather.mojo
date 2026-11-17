@@ -75,7 +75,6 @@ from nn.attention.gpu.mla_graph import (
 from nn.attention.mha_mask import NullMask, PaddingMask
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_raises, assert_true
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 comptime KV_LATENT_DIM = 512
@@ -876,9 +875,9 @@ def _check_attn_sink_guard(ctx: DeviceContext) raises:
     @always_inline
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     with assert_raises(contains="attention sink"):
         mla_prefill_branch_sparse_fp8[

@@ -67,7 +67,6 @@ from layout import (
     row_major,
     TileTensor,
 )
-from std.utils.index import IndexList
 from nn.attention.gpu.mla_graph import mla_fused_rope_rmsnorm_quantization
 
 from _fuzz import (
@@ -479,8 +478,8 @@ def run_one_case(
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var latent} -> SIMD[kv_type, width]:
-        return latent.load[width=width]((coords[0], coords[1]))
+    ](coords: Coord[Int, Int]) {var latent} -> SIMD[kv_type, width]:
+        return latent.load[width=width](coords)
 
     # === Kernel under test ===================================================
     mla_fused_rope_rmsnorm_quantization(

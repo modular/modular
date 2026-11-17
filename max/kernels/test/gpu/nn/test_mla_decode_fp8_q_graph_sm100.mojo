@@ -37,7 +37,6 @@ from nn.attention.gpu.mla_graph import (
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.utils import IndexList
 from std.utils.numerics import isfinite
 
 comptime KV_LATENT_DIM = 512
@@ -334,9 +333,9 @@ def _run_arm[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     mla_decode_branch_fp8[
         m_scale_granularity=M_SCALE_GRAN,

@@ -41,7 +41,6 @@ from layout import (
 from linalg.fp4_utils import NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE
 from nn.attention.gpu.mla_graph import mla_fused_rope_rmsnorm_quantization
 from std.testing import assert_equal, assert_true
-from std.utils import IndexList
 
 comptime dtype = DType.bfloat16
 comptime freq_dtype = DType.float32
@@ -345,8 +344,8 @@ def run_case[num_q_heads: Int](ctx: DeviceContext) raises:
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
-        return kv_tt.load[width=width]((coords[0], coords[1]))
+    ](coords: Coord[Int, Int]) {var kv_tt} -> SIMD[DType.bfloat16, width]:
+        return kv_tt.load[width=width](coords)
 
     mla_fused_rope_rmsnorm_quantization(
         q_ref_tt,

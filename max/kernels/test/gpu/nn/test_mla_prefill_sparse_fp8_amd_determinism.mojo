@@ -37,7 +37,6 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_sparse_fp8,
 )
 from std.testing import assert_equal, assert_true
-from std.utils import IndexList
 
 comptime dtype = DType.bfloat16
 comptime fp8 = DType.float8_e4m3fn
@@ -259,9 +258,9 @@ def _run[
     @always_inline
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[dtype, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[dtype, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     var first = ctx.enqueue_create_host_buffer[dtype](out_elems)
     var cur = ctx.enqueue_create_host_buffer[dtype](out_elems)

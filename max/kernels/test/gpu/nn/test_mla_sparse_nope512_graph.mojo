@@ -60,7 +60,6 @@ from nn.attention.gpu.mla_graph import (
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.utils import IndexList
 from std.utils.numerics import isnan
 
 comptime LATENT = 512
@@ -367,9 +366,9 @@ def _run_arm[
     @inline(.always)
     def kv_input_fn[
         width: Int
-    ](coords: IndexList[2]) {var kv_in_tt} -> SIMD[DType.bfloat16, width]:
+    ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[DType.bfloat16, width]:
         comptime assert type_of(kv_in_tt).flat_rank == 2
-        return kv_in_tt.load[width=width](Coord(coords))
+        return kv_in_tt.load[width=width](coords)
 
     def launch() raises {imm}:
         mla_prefill_decode_graph_bf16[
