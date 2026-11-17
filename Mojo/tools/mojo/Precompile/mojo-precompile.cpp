@@ -240,6 +240,15 @@ static int precompile(const State &subcommandState) {
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 
+  // Declared first so it outlives the reports, which write into it from their
+  // destructors.
+  TimingReportSink timingReport;
+  if (ErrorOrSuccess err = timingReport.configure(precompileArgs.driverOptions))
+    return state.reportError(err.getError());
+
+  ParserStatsReport parserStats;
+  parserStats.configure(precompileArgs.compileOptions, timingReport);
+
   // Create our context (including the cpuDevice).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo", Init::Options().withCPUDeviceOptions(AsyncRT::CPUDeviceOptions()),
@@ -272,10 +281,16 @@ static int precompile(const State &subcommandState) {
       &precompileArgs.ctx, precompileArgs.frontendOptions.disableWarnings,
       precompileArgs.frontendOptions.warningsAsErrors);
 
+  // The timing shows the parse and the check passes.
+  MLIRPassTiming timing;
+  if (ErrorOrSuccess err =
+          timing.configure(precompileArgs.driverOptions, timingReport))
+    return state.reportError(err.getError());
+
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, precompileArgs.driverOptions, /*tagEnvironment=*/false,
       precompileArgs.compileOptions, precompileArgs.frontendOptions,
-      &precompileArgs.ctx, cpuDevice, /*timingScope=*/nullptr,
+      &precompileArgs.ctx, cpuDevice, &timing.rootScope(),
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
@@ -307,7 +322,8 @@ static int precompile(const State &subcommandState) {
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
-  KGENCompiler compiler(precompileArgs.ctx, precompileArgs.compileOptions);
+  KGENCompiler compiler(precompileArgs.ctx, precompileArgs.compileOptions,
+                        timing.passManagerOptions());
   if (failed(compiler.runCheckLITPipeline(**module)))
     return state.reportError("errors occurred during compilation");
 

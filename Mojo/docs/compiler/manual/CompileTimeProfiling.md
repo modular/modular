@@ -18,9 +18,12 @@ act on.
 | `--timing-file FILE`         | Writes the reports to `FILE` instead of to stderr.                                             |
 
 See them and their full help text with `mojo build --help-hidden` or
-`mojo run --help-hidden`. Their definitions live in
-`Mojo/tools/mojo/Common/CompilationOptions.td` and
-`Mojo/tools/mojo/Common/BackendOptions.td`.
+`mojo run --help-hidden`. `mojo precompile` also accepts `--mlir-timing`,
+`--mlir-timing-display`, `--parser-stats`, `--timing-json` and
+`--timing-file`; its MLIR timing covers the parse and the check passes. Their
+definitions live in `Mojo/tools/mojo/Common/CompilationOptions.td`,
+`Mojo/tools/mojo/Common/BackendOptions.td` and the files those include:
+`ParserStatsOptions.td`, `MLIRTimingOptions.td` and `TimingReportOptions.td`.
 
 Four things to know before reading any report they produce:
 
