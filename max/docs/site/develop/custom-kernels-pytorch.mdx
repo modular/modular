@@ -100,11 +100,12 @@ manage build steps.
 Now for the core implementation—our high-performance Mojo kernel. We'll create a
 Mojo package that defines our grayscale conversion operation.
 
-First, create an empty file called `__init__.mojo` inside the `operations`
-folder. This file marks the folder as a Mojo package, which `CustomOpLibrary`
-requires:
+First, create an `operations` folder with an empty file called `__init__.mojo`
+inside it. This file marks the folder as a Mojo package, which
+`CustomOpLibrary` requires:
 
 ```bash
+mkdir operations
 touch operations/__init__.mojo
 ```
 

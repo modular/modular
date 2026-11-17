@@ -462,10 +462,12 @@ which Mojo's portable API abstracts away:
   forces the participating threads to wait for each other. It is necessary for
   correctness in algorithms that rely on warp-synchronous behavior.
 
-- On AMD GPUs, threads within a wavefront (the AMD equivalent of a warp) are
-  guaranteed by the hardware to execute in lock-step. They cannot diverge in the
-  same way. Consequently, `syncwarp()` is a **no-op** on AMD architectures; the
-  Mojo compiler emits no instruction for it.
+- On AMD GPUs, the hardware executes the threads of a wavefront (the AMD
+  equivalent of a warp) in lock-step, so `syncwarp()` needs no hardware
+  instruction. It compiles to `llvm.amdgcn.wave.barrier`, a compiler-level
+  barrier that emits no instruction but stops the compiler from moving memory
+  operations across it. This keeps shared-memory writes before the call ahead
+  of reads after it. On AMD GPUs, `syncwarp()` ignores the `mask` argument.
 
 - On Apple silicon GPUs, this provides only execution synchronization within a
   SIMD group (the Apple equivalent of a warp), with no memory fence (the Apple
@@ -826,11 +828,17 @@ common sources of bugs in parallel programs.
 As a quick reminder, a race condition occurs when multiple threads write to the
 same memory location without a defined order of execution, leading to a
 non-deterministic outcome. Here's a simple example where threads attempt to
-update a shared counter:
+update a shared counter, an `Int32` in shared memory:
 
 ```mojo
+from std.memory import unsafe_stack_allocation
+
+var shared_counter = unsafe_stack_allocation[
+    1, DType.int32, address_space=.SHARED
+]()
+
 # INCORRECT: Race condition
-shared_counter[0] += my_value  # Multiple threads modify same location
+shared_counter[] += my_value  # Multiple threads modify same location
 ```
 
 This leads to "lost updates" because the read-modify-write sequence isn't
@@ -839,11 +847,13 @@ atomic. To prevent this, you must use synchronization primitives like
 [`Atomic`](https://mojolang.org/docs/std/atomic/atomic/Atomic/) operations for
 simple updates. For example, you could use the
 [`Atomic.fetch_add()`](https://mojolang.org/docs/std/atomic/atomic/Atomic/#fetch_add)
-method to atomically increment the counter:
+method, which takes a pointer to the value, to atomically increment the counter:
 
 ```mojo
+from std.atomic import Atomic
+
 # CORRECT: Atomic increment
-_ = Atomic.fetch_add(shared_counter[0], my_value)
+_ = Atomic.fetch_add(shared_counter, my_value)
 ```
 
 #### Avoiding deadlocks with `barrier()`
@@ -1010,8 +1020,8 @@ blocks for writing correct and high-performance parallel algorithms.
   barrier and a memory fence, primarily to coordinate access to shared memory.
 
 - `gpu.sync.syncwarp()`: A fine-grained primitive for managing thread divergence
-  within a single warp. It's necessary for correctness on hardware that supports
-  independent thread scheduling.
+  within a single warp. Use it when lanes of a warp exchange data through
+  memory after divergent code.
 
 - `gpu.primitives.block` operations: High-level primitives that combine
   synchronization with common computational patterns (like reductions) across
