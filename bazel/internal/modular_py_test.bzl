@@ -322,6 +322,7 @@ def modular_py_test(
     toolchains.append(env_name)
     extra_data += [env_name]  # buildifier: disable=list-append
     extra_env |= {
+        "MODULAR_DRIVER_PLUGINS": "$(MODULAR_DRIVER_PLUGINS)",
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
         "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
         "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",

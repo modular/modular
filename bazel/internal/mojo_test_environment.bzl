@@ -76,18 +76,26 @@ def _runtime_link_files(ctx, cc_toolchain):
     return depset([f for f in cc_toolchain.all_files.to_list() if f not in compile_only])
 
 def _mojo_test_environment_implementation(ctx):
-    mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
+    toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"]
+    mojo_toolchain = toolchain.mojo_toolchain_info
+
+    # The driver plugins Mojo tests get from the toolchain, so Python tests on
+    # the same platform load the same ones.
+    driver_plugins = getattr(toolchain, "runtime_env", {}).get("MODULAR_DRIVER_PLUGINS", "")
+    driver_plugin_runfiles = ctx.runfiles(files = getattr(toolchain, "extra_runfiles", []))
 
     _, transitive_mojodeps, data_ccdeps = collect_mojoinfo(ctx.attr.data)
     if not transitive_mojodeps:
         return [
             CcInfo(),  # Requirement of py_test
             PyInfo(transitive_sources = depset()),  # Requirement of py_test
+            DefaultInfo(runfiles = driver_plugin_runfiles),
             platform_common.TemplateVariableInfo({
                 "COMPILER_RT_PATH": "",
                 "COMPUTED_IMPORT_PATH": "",
                 "COMPUTED_LIBS": "",
                 "LLD_PATH": "",
+                "MODULAR_DRIVER_PLUGINS": driver_plugins,
                 "MOJO_BINARY_PATH": "",
                 "MOJO_LINKER_DRIVER": "",
                 "MOJO_LINKER_SYSTEM_LIBS": "",
@@ -178,7 +186,7 @@ def _mojo_test_environment_implementation(ctx):
             runfiles = ctx.runfiles(
                 transitive_files = depset(transitive = [transitive_mojodeps] + transitive_files +
                                                        [_runtime_link_files(ctx, cc_toolchain)]),
-            ).merge_all(transitive_runfiles),
+            ).merge_all(transitive_runfiles + [driver_plugin_runfiles]),
         ),
         platform_common.TemplateVariableInfo({
             # CompilerRT is no longer an implicit dep, so it is only present for
@@ -192,6 +200,7 @@ def _mojo_test_environment_implementation(ctx):
             "COMPUTED_IMPORT_PATH": ",".join(sorted(sets.to_list(import_paths))),
             "COMPUTED_LIBS": ",".join(sorted(shared_libs)),
             "LLD_PATH": mojo_toolchain.lld.short_path if ctx.attr.short_path else mojo_toolchain.lld.path,
+            "MODULAR_DRIVER_PLUGINS": driver_plugins,
             "MOJO_BINARY_PATH": mojo_toolchain.mojo.short_path if ctx.attr.short_path else mojo_toolchain.mojo.path,
             "MOJO_LINKER_DRIVER": linker_driver,
             "MOJO_LINKER_SYSTEM_LIBS": ",".join(new_system_libs),
