@@ -51,9 +51,11 @@ MACH = {"MACH"}
 # model runs only on manual dispatch. VARIANT marks a `<hf-repo>__<variant>` key
 # that runs a recipe from MODEL_RECIPES in smoke_test.py; PRIVATE marks one
 # whose recipe ships with a private arch and resolves from private hw_recipes.
-# Mach runs every other entry on the same HW as MAX. Do not add Mach-only HW
-# tags to hide a model Mach cannot serve on some HW yet: let that job fail. A
-# red smoke test is the forcing function to implement it or to drop the model.
+# Mach runs every other entry on the same HW as MAX, except that a scheduled
+# run skips a variant Mach has no entry for and lists it in the run summary.
+# Do not add Mach-only HW tags to hide a model Mach cannot serve on some HW
+# yet: let that job fail. A red smoke test is the forcing function to
+# implement it or to drop the model.
 # MACH marks the one exception, a model with no MAX Serve path: only mach-ci
 # runs it, on the HW it lists, and a MACH variant runs its Mach recipe alone.
 #
