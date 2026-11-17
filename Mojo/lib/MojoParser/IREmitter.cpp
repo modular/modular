@@ -2495,22 +2495,11 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 //===--------------------------------------------------------------------===//
 
 ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
-  OpBuilder b(shared.getTopLevelDecl().getOp());
-  b.setInsertionPointToStart(
-      &shared.getTopLevelDecl().getOp().getBodyRegion().front());
-  MLIRContext *ctx = b.getContext();
-
+  auto &topLevelDecl = shared.getTopLevelDecl();
+  MLIRContext *ctx = shared.getContext();
   // A illegal name to avoid collisions.
   StringRef name = UNI_CLOSURE_TRAIT_NAME;
-  auto closureTrait =
-      TraitDeclOp::create(b, mlir::UnknownLoc::get(ctx), // synthetic trait
-                          StringAttr::get(ctx, name));
-  auto &traitDecl =
-      cast<TraitASTDecl>(shared.declResolver->addFullyResolvedDecl(
-          &*closureTrait, StringAttr::get(ctx, name), SMLoc(),
-          &shared.getTopLevelDecl()));
 
-  // Populate the trait with parent and self methods.
   SmallVector<TraitSymbolAttr> parents;
   DenseSet<TraitSymbolAttr> immediateParents;
   for (auto traitName : {"AnyType", "Movable", "Deinitable"}) {
@@ -2521,6 +2510,22 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
       parents.push_back(traitDecl->getOp().bindReference({}));
     }
   }
+
+  // Looking up the parents can import a precompiled stdlib, which creates the
+  // trait through a re-entrant call.
+  if (ArrayRef<ASTDecl *> existing =
+          topLevelDecl.lookupInCurrentScope(StringAttr::get(ctx, name));
+      !existing.empty())
+    return existing.front();
+
+  OpBuilder b(topLevelDecl.getOp());
+  b.setInsertionPointToStart(&topLevelDecl.getOp().getBodyRegion().front());
+  auto closureTrait =
+      TraitDeclOp::create(b, mlir::UnknownLoc::get(ctx), // synthetic trait
+                          StringAttr::get(ctx, name));
+  auto &traitDecl =
+      cast<TraitASTDecl>(shared.declResolver->addFullyResolvedDecl(
+          &*closureTrait, StringAttr::get(ctx, name), SMLoc(), &topLevelDecl));
 
   SmallVector<ParamDeclAttr> decls = {
       // The parameter decl list, passed in as a param_list of param decls.
