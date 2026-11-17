@@ -1761,8 +1761,20 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
       Block *elseBlock = builder.createBlock(&comptimeIfOp.getElseRegion());
       builder.setInsertionPointToStart(elseBlock);
       elseCursor.restore(getLexer());
-      if (failed(parseLocalScopeSuite(curIndent)))
-        return failure();
+      {
+        // The else suite only runs when the condition is false, so it can
+        // refine conditional types on the inverted condition, like the else
+        // branch of a `comptime if`.
+        DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+        llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+        pushChildScope(scopeGuard, keepDecl);
+        ConstraintAttr elseAssumption = LIT::buildBranchAssumption(
+            conditionValue.get(), /*invertCondition=*/true, guardLocation);
+        curDeclScope->insertKnownAssumptions(elseAssumption);
+        shadowRefinedTypeParams(elseAssumption, *curDeclScope);
+        if (failed(parseSuite(curIndent)))
+          return failure();
+      }
       if (!builder.getInsertionBlock()->mightHaveTerminator()) {
         auto unreachable = HLCF::UnreachableOp::create(builder, guardLocation);
         unreachable.setFallthroughErrorAttr(
@@ -1771,6 +1783,17 @@ ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
 
       builder.setInsertionPointToStart(thenBlock);
       openComptimeGuards.push_back(comptimeIfOp);
+
+      // The continuation only runs when the condition holds. It is parsed in
+      // the enclosing scope, so, like `comptime assert`, take over
+      // `curDeclScope` with a nested scope that knows the condition.
+      curDeclScope = &getDeclResolver().addFullyResolvedDecl(
+          nullptr, StringAttr(), guardLoc, curDeclScope);
+      ConstraintAttr thenAssumption = LIT::buildBranchAssumption(
+          conditionValue.get(), /*invertCondition=*/false, guardLocation);
+      curDeclScope->insertKnownAssumptions(thenAssumption);
+      shadowRefinedTypeParams(thenAssumption, *curDeclScope);
+
       afterCursor.restore(getLexer());
       return success();
     }

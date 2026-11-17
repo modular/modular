@@ -145,7 +145,7 @@ async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' if_condition ':' suite ('elif' if_condition ':' suite)* ['else' ':' suite]
 if_condition: namedexpr_test | "case" patterns '=' namedexpr_test
 while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
-guard_stmt: "__guard" "case" patterns '=' namedexpr_test 'else' ':' suite
+guard_stmt: '__guard' if_condition 'else' ':' suite
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+

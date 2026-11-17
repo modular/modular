@@ -152,6 +152,38 @@ def f[T: AnyType]():
     assert_mojo_format(source, expected)
 
 
+def test_mojo_formats_guard_condition():
+    source = """\
+def f(cond):
+    __guard   cond   else:
+        return
+    use()
+"""
+    expected = """\
+def f(cond):
+    __guard cond else:
+        return
+    use()
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_comptime_guard_condition():
+    source = """\
+def f[cond: Bool]():
+    comptime __guard not  cond else:
+        return
+    use()
+"""
+    expected = """\
+def f[cond: Bool]():
+    comptime __guard not cond else:
+        return
+    use()
+"""
+    assert_mojo_format(source, expected)
+
+
 def test_python_mode_keeps_case_indent():
     source = """\
 def f(x):
