@@ -279,6 +279,10 @@ def _run_round[call: Int](ctx0: DeviceContext[], ctx1: DeviceContext[]) raises:
 
     var collective_error = _spin_and_release(ctx0, ctx1, flag, clock)
     tg.wait()
+    # The coroutine reads the closure's captures, but `TaskGroup` drops the
+    # coroutine's origins (MOCO-771), so nothing else keeps `lane` alive
+    # until the task finishes.
+    _ = lane
     clock.mark("lane: joined")
     if collective_error:
         raise collective_error.take()

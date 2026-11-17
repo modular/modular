@@ -166,6 +166,11 @@ def _run_scenario[
     # its last use, and destroying a group whose tasks are still pending
     # aborts with a runtime error that buries the hang report.
     _ = tg.chain
+    # The coroutines read their closures' captures, but `TaskGroup` drops
+    # their origins (MOCO-771), so nothing else keeps the closures alive
+    # until the tasks finish.
+    _ = opener
+    _ = loader
     _mark(start_ns, "scenario finished")
     if collective_error:
         raise collective_error.take()
