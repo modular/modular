@@ -50,6 +50,9 @@ archive_override(
     patches = [
         # Left as a patch for now since it may not be worth upstreaming.
         "//bazel/public-patches:rules_mojo_toolchain.patch",
+        # TODO(SDLC-4491): Upstream this to `rules_mojo`.
+        # Lets tools/bazel invalidate the detected GPU set when the host reboots.
+        "//bazel/public-patches:rules_mojo_host_fingerprint.patch",
     ],
     strip_prefix = "rules_mojo-11d2897b37811f6e8884a5d573f48b3a48f47272",
     urls = [

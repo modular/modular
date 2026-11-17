@@ -41,6 +41,7 @@
 /bazel/public-patches/llvm-shared.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
+/bazel/public-patches/rules_mojo_host_fingerprint.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc
 /bazel/public-patches/rules_mypy_exec_types.patch @modular/sdlc
 /bazel/public-patches/rules_mypy_pyi_files.patch @modular/sdlc

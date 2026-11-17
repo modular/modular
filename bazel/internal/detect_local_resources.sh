@@ -13,9 +13,31 @@
 ##===----------------------------------------------------------------------===##
 
 # Detects number and memory amounts of local GPUs.
-# Outputs relevant bazelrc lines.
+# Outputs relevant bazelrc lines, stamped with the host fingerprint.
+# With --fingerprint, prints only the fingerprint.
 
 set -euo pipefail
+
+# Changes only across a reboot or a container restart. Containers on one node
+# share the kernel's boot_id, hence PID 1's start time as well.
+host_fingerprint() {
+    if [[ "$(uname)" == "Linux" ]]; then
+        local boot_id pid1_start
+        boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+        # Field 22, counted from after the comm field, which may contain spaces.
+        pid1_start=$(sed 's/.*) //' /proc/1/stat 2>/dev/null | awk '{print $20}')
+        echo "${boot_id}-${pid1_start:-unknown}"
+    else
+        sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+).*/\1/'
+    fi
+}
+
+if [[ "${1:-}" == "--fingerprint" ]]; then
+    host_fingerprint
+    exit 0
+fi
+
+echo "# host-fingerprint: $(host_fingerprint)"
 
 if [[ "$(uname)" == "Linux" ]]; then
     if command -v nvidia-smi > /dev/null; then

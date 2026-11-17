@@ -65,13 +65,23 @@ readonly bazelrc_root="$script_root/../build"
 readonly logs_dir="$bazelrc_root/logs"
 mkdir -p "$logs_dir"
 
-# Cache resource results, writing the file only when detection succeeds
-if [[ ! -s "$bazelrc_root/local-resources.bazelrc" ]]; then
-  local_resources=$("$script_root/../bazel/internal/detect_local_resources.sh")
-  printf "%s\n" "$local_resources" > "$bazelrc_root/local-resources.bazelrc"
+# Cache resource results per boot; the GPU set can't change without one.
+readonly detect_resources="$script_root/../bazel/internal/detect_local_resources.sh"
+readonly local_resources="$bazelrc_root/local-resources.bazelrc"
+host_fingerprint="$("$detect_resources" --fingerprint)"
+if [[ "$(head -n 1 "$local_resources" 2>/dev/null)" != "# host-fingerprint: $host_fingerprint" ]]; then
+  local_resources_tmp="$local_resources.tmp.$$"
+  if ! "$detect_resources" > "$local_resources_tmp"; then
+    cat "$local_resources_tmp" >&2
+    rm -f "$local_resources_tmp"
+    exit 1
+  fi
+  mv -f "$local_resources_tmp" "$local_resources"
 fi
 
 bazelrc_lines+=("import %workspace%/build/local-resources.bazelrc")
+# Re-runs the @mojo_host_platform GPU detection on the same schedule.
+bazelrc_lines+=("common --repo_env=MOJO_HOST_FINGERPRINT=$host_fingerprint")
 
 printf "%s\n" "${bazelrc_lines[@]}" > "$bazelrc_root/wrapper.bazelrc"
 
