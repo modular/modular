@@ -1,6 +1,6 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
 // RUN:   --mo-to-map --map-to-mogg --mogg-conform-call-operands \
-// RUN:   --mogg-form-graph-blobs | FileCheck %s
+// RUN:   --mogg-form-graph-blobs="max-calls=100" | FileCheck %s
 
 // A sequence of declarative routines becomes one routine whose body is a
 // `mogg.graph_blob` holding theirs in order. It reads the sequence's input and

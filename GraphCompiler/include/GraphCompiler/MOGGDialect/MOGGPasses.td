@@ -216,11 +216,20 @@ def FormGraphBlobs
     output, so no path leaves the group and comes back in. Device graphs are
     left alone. Runs before `OutlineRoutines`, which outlines the fused
     routine.
+
+    The group size is also limited by the `max-calls` configuration flag. With
+    `max-calls` at 0, no graph blobs will be formed.
   }];
 
   let dependentDialects = [
     "M::MO::MODialect",
     "M::MOGG::MOGGDialect",
+  ];
+
+  let options = [
+    Option<"maxCalls", "max-calls", "unsigned", /*default=*/"0",
+           "The maximum number of calls in a graph blob; set to 0 to disable "
+           "graph blob formation.">,
   ];
 }
 

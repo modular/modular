@@ -211,8 +211,13 @@ void MOFContext::overrideLoweringOptions(
     if (configOr->getValueAsBool("max-debug.pre-jit", false))
       gcPipelineOptions.preJit = true;
 
-    if (configOr->getValueAsBool("max-debug.graph-blobs", false))
-      gcPipelineOptions.enableGraphBlobs = true;
+    StringRef blobMaxCallsStr =
+        configOr->getValue("max-debug.graph-blob-max-calls");
+    if (!blobMaxCallsStr.empty()) {
+      unsigned maxCalls = 0;
+      if (!blobMaxCallsStr.getAsInteger(/*radix=*/10, maxCalls))
+        gcPipelineOptions.graphBlobMaxCalls = maxCalls;
+    }
 
     // mo-opt's flag doesn't reach the in-process Python compile path.
     StringRef timingOutDir =

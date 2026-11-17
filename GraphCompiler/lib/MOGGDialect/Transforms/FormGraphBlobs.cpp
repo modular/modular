@@ -411,7 +411,8 @@ struct OpenBlobs {
 // depend on, and no path can leave a blob and come back in, which would make
 // the fused routine wait on itself. The block's terminator, such as the graph's
 // output, doesn't count: it takes its operands only when the whole block ends.
-// Siblings still join one blob, whether or not they share an input.
+// Siblings still join one blob, whether or not they share an input. A blob
+// holding `maxCalls` routines, one call each, ends before the next.
 //
 // A multi-device graph interleaves its devices' routines, so a routine on
 // another device doesn't end a blob. The fused routine can still go where its
@@ -420,12 +421,14 @@ struct OpenBlobs {
 // device, ends the blob at the member it reads, and a routine on the same
 // device that didn't join came after the blob ended.
 void formInBlock(Block &block, SymbolTable &symbols,
-                 const llvm::DenseSet<Value> &invariant) {
+                 const llvm::DenseSet<Value> &invariant, unsigned maxCalls) {
   OpenBlobs blobs;
   for (Operation &op : llvm::make_early_inc_range(block)) {
     auto routine = dyn_cast<RoutineOp>(op);
     if (routine && canJoinBlob(routine, symbols, invariant)) {
       OpenBlob &blob = blobs[MO::getDeviceOrDefaultAny(routine)];
+      if (blob.members.size() >= maxCalls)
+        blob.close();
       blob.add(routine);
       if (isReadOutside(routine, symbols, invariant))
         blob.close();
@@ -451,7 +454,7 @@ void formInBlock(Block &block, SymbolTable &symbols,
       for (Region &region : op.getRegions()) {
         for (Block &nested : region) {
           if (sortTopologically(&nested))
-            formInBlock(nested, symbols, invariant);
+            formInBlock(nested, symbols, invariant, maxCalls);
         }
       }
       continue;
@@ -488,7 +491,7 @@ struct FormGraphBlobsPass
       if (!sortTopologically(&body))
         continue;
       llvm::DenseSet<Value> invariant = findInvariantValues(body);
-      formInBlock(body, symbols, invariant);
+      formInBlock(body, symbols, invariant, maxCalls);
     }
   }
 };

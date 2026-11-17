@@ -2,7 +2,8 @@
 // RUN:   --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers \
 // RUN:   --map-raise-back-contiguous-views --map-outline-structured-kernel-bodies \
 // RUN:   --map-fuse-contiguous-views --canonicalize --cse --map-to-mogg \
-// RUN:   --mogg-conform-call-operands --mogg-form-graph-blobs \
+// RUN:   --mogg-conform-call-operands \
+// RUN:   --mogg-form-graph-blobs="max-calls=100" \
 // RUN:   --mogg-reuse-graph-blob-buffers | FileCheck %s
 
 // Members 0 to 3 run a -> b -> c -> d -> e, and the graph returns e. b is

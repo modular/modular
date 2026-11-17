@@ -1,5 +1,5 @@
 // RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
-// RUN:   --mogg-form-graph-blobs | FileCheck %s
+// RUN:   --mogg-form-graph-blobs="max-calls=100" | FileCheck %s
 
 // A fused routine is deferred if any member is.
 // CHECK-LABEL: mo.graph @one_deferred

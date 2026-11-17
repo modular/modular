@@ -368,8 +368,8 @@ void M::MO::buildMoggPipeline(mlir::OpPassManager &pm,
                               const MoggPipelineOptions &opts) {
   pm.addPass(MOGG::createLegalizeRowwiseKernels());
   pm.addPass(MOGG::createConformCallOperands());
-  if (opts.enableGraphBlobs) {
-    pm.addPass(MOGG::createFormGraphBlobs());
+  if (opts.graphBlobMaxCalls) {
+    pm.addPass(MOGG::createFormGraphBlobs({opts.graphBlobMaxCalls}));
     pm.addNestedPass<GraphOp>(MOGG::createReuseGraphBlobBuffers());
   }
   pm.addPass(MOGG::createOutlineRoutines());
@@ -535,7 +535,7 @@ static void gcPipelineImpl(mlir::OpPassManager &pm,
   mapOpts.fuseMutableLoadStore = opts.fuseMutableLoadStore;
 
   MoggPipelineOptions moggOpts;
-  moggOpts.enableGraphBlobs = opts.enableGraphBlobs;
+  moggOpts.graphBlobMaxCalls = opts.graphBlobMaxCalls;
 
   MGP::MOGGToMGPOptions moToPrimOpts;
   moToPrimOpts.minimumCpuAlignment = opts.minimumCpuAlignment;

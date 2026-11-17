@@ -4,7 +4,8 @@
 // RUN:   --mo-to-map --map-fuse-kernels --map-allocate-accumulating-buffers \
 // RUN:   --map-outline-structured-kernel-bodies \
 // RUN:   --canonicalize --cse --map-to-mogg --mogg-conform-call-operands \
-// RUN:   --mogg-form-graph-blobs --mogg-outline-routines --mogg-emit-mojo \
+// RUN:   --mogg-form-graph-blobs="max-calls=100" --mogg-outline-routines \
+// RUN:   --mogg-emit-mojo \
 // RUN:   -verify-each=false
 // RUN: FileCheck %s < %t/graph.mojo
 
