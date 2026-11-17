@@ -427,7 +427,7 @@ void formInBlock(Block &block, SymbolTable &symbols,
     auto routine = dyn_cast<RoutineOp>(op);
     if (routine && canJoinBlob(routine, symbols, invariant)) {
       OpenBlob &blob = blobs[MO::getDeviceOrDefaultAny(routine)];
-      if (blob.members.size() >= maxCalls)
+      if (blob.routines.size() >= maxCalls)
         blob.close();
       blob.add(routine);
       if (isReadOutside(routine, symbols, invariant))
