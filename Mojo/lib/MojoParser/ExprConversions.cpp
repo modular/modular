@@ -717,7 +717,6 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // `expected` does NOT contain paramrefs referring to the callee's function
   // definition's parameters.
   for (auto [i, type] : llvm::enumerate(expected.getInputParamTypes())) {
-    // Note that `type` might contain UnboundAttr at this point, that's fine.
     thunkParamTypes.push_back(paramRefsReplacer.getReboundType(type));
     paramRefsReplacer.appendIndexBinding(ParamIndexRefAttr::get(
         i + mentionedParamRefs.size(), thunkParamTypes.back()));
@@ -793,15 +792,14 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     // Bind the clarifying parameter (see TAPCPTTT).
     evaluator.appendIndexBinding(ref);
   }
-  for (Type type :
+  for (Type _ :
        ArrayRef(thunkParamTypes).drop_front(mentionedParamRefs.size())) {
     // If there are "remaining input parameters", like in:
     //
     //     alias my_func_alias: def[Y: Bool]() -> None = ...
     //
     // then we leave them unbound (see TARIPNBITM).
-    evaluator.appendIndexBinding(
-        UnboundAttr::get(evaluator.getReboundType(getCanonicalType(type))));
+    evaluator.appendIndexBinding(TypedAttr());
   }
   // Bind the user kernel as the conversion thunk's `callee` input parameter.
   // Both the position (last param) and the explicit
@@ -2530,8 +2528,6 @@ CValue IREmitter::emitImplicitConversionToType(
                                      dest, additionalAssumptions);
   }
 
-  assert(llvm::none_of(requiredType.getParamBindings(),
-                       llvm::IsaPred<UnboundAttr>));
   //  We disable implicit conversions to prevent converting T -> S -> U in
   //  one step, and to avoid infinite conversion cycles.
   return emitConstructorCall(requiredType,

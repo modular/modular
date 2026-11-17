@@ -82,7 +82,7 @@ lit.fn @decorated_fn()
 // CHECK: hlcf.return
 kgen.generator @bind_params_discharged_mask_cleared() {
   kgen.param.declare bound: index =
-    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("lower-lit":1:1)>}>index> ?, 1 | "1">>
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("lower-lit":1:1)>}>index> *?, 1 | "1">>
   hlcf.return
 }
 

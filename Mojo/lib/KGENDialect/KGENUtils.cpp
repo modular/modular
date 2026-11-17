@@ -1146,18 +1146,19 @@ ParseResult KGEN::parseParamsBindingArray(AsmParser &p, GeneratorType genType,
     if (failed(p.parseOptionalComma()))
       break;
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type valueType;
-    TypedAttr value;
-    if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
-        parseParamValue(p, value, valueType))
-      return failure();
-    if (::isa<UnboundAttr>(value)) {
+    // A '?' leaves the input unbound.
+    if (succeeded(p.parseOptionalQuestion())) {
       paramValues.push_back(TypedAttr());
       auto residual = ParamIndexRefAttr::get(
           /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
+    Type valueType;
+    TypedAttr value;
+    if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
+        parseParamValue(p, value, valueType))
+      return failure();
     paramValues.push_back(value);
     evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
@@ -1443,12 +1444,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     if (failed(p.parseString(&name)))
       return failure();
     value = ParamDeclRefAttr::get(name, type);
-    return success();
-  }
-
-  // A '?' represents an unknown parameter.
-  if (succeeded(p.parseOptionalQuestion())) {
-    value = UnboundAttr::get(type);
     return success();
   }
 
@@ -1870,11 +1865,6 @@ void KGENParamPrinter::printParamValueImpl(AsmPrinter &p, TypedAttr value,
 
   if (isa<SingletonAttr>(value)) {
     p << "*()";
-    return;
-  }
-
-  if (isa<UnboundAttr>(value)) {
-    p << '?';
     return;
   }
 

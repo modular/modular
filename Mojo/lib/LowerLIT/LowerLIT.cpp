@@ -736,23 +736,24 @@ template <typename GenKind>
 static std::conditional_t<std::is_base_of_v<Type, GenKind>, Type, Attribute>
 removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
                       GenKind generator) {
+  // Bind singleton parameters to their canonical value, and leave the others
+  // unbound.
   SmallVector<TypedAttr> paramsToBind;
   bool hasRemovals = false;
-
   for (Type paramType : generator.getInputParamTypes()) {
+    TypedAttr value;
     if (singletonTypeHelper.isSingletonType(paramType)) {
-      // Bind singleton parameters to their canonical value.
-      paramsToBind.push_back(singletonTypeHelper.getSingletonValue(paramType));
+      value = singletonTypeHelper.getSingletonValue(paramType);
       hasRemovals = true;
-    } else {
-      // Keep non-singleton parameters unbound.
-      paramsToBind.push_back(UnboundAttr::get(paramType));
     }
+    paramsToBind.push_back(value);
   }
 
   // Update the generator if we dropped anything.
   if (hasRemovals) {
-    generator = getSpecializedWithConcreteBindings(generator, paramsToBind);
+    generator = getSpecializedWithConcreteBindings(
+        generator,
+        ParamsBindingArrayAttr::get(generator.getContext(), paramsToBind));
     assert(generator && "didn't replace singletons correctly");
     if (generator.isFullyBound()) {
       // By back-compat, we never eliminate the empty generator type wrapper on

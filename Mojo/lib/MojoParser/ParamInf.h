@@ -84,8 +84,8 @@ private:
   // invoked after both parameter list and argument list has been scanned).
   LogicalResult inferFromDefaults();
 
-  // Finalize the inference by making any remaining uninferred parameter to
-  // UnboundAttr.
+  // Finalize the inference by leaving any remaining uninferred parameter
+  // unbound.
   LogicalResult finalizeWithUnbound();
 
   /// Infer still-unbound parameters from equality (`where a == b`) body

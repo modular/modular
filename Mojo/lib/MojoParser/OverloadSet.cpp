@@ -99,8 +99,6 @@ static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
     ArrayRef<PogMetadataAttr> pogs =
         structDecl->getOp().getSignature().getParamListAttrs().getPogs();
     for (auto [value, pog] : llvm::zip_equal(type.getParamBindings(), pogs)) {
-      // The struct type must be fully bound.
-      assert(!isa<UnboundAttr>(value));
       paramBindings.add(expr, value, pog.getName());
     }
     return paramBindings;
@@ -1100,7 +1098,7 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
     // Pass our assumptions along: dropping the candidate's generator body
     // constraints to reach `functionType` may depend on them.
     auto conversion = IREmitter::classifyImplicitConversionWithDetails(
-        {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
+        {UnknownAttr::get(boundCandidateType), getExpr()}, functionType,
         getDeclScope(), additionalAssumptions, /*deferralCtx=*/nullptr);
     if (conversion.isYes())
       return Candidacy::kValid;

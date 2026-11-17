@@ -218,11 +218,8 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target,
       return mlir::failure();
   }
 
-  for (TypedAttr binding : evaluator.getIndexBindings()) {
-    if (!binding)
-      return mlir::failure();
-    assert(!sugarIsa<UnboundAttr>(binding));
-  }
+  if (llvm::is_contained(evaluator.getIndexBindings(), TypedAttr()))
+    return mlir::failure();
 
   SmallVector<TypedAttr> specialization;
   specialization.reserve(evaluator.getIndexBindings().size());

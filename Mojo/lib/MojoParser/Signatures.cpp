@@ -1075,9 +1075,10 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // FIXME: We need an AnyFunction metatype.
   if (auto sig = sugarDynCast<FnTypeGeneratorType>(type)) {
     TypedAttr origins = sig.getCaptureOrigins();
-    if (!isa<UnboundAttr>(origins))
+    if (!isa<GeneratorAttr>(origins))
       return type;
-    declareAndAddParam(origins.getType(), "__origins__");
+    declareAndAddParam(cast<GeneratorType>(origins.getType()).getBody(),
+                       "__origins__");
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
@@ -2820,10 +2821,11 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // signature type later.
   if (originExpr) {
     // Special rule for `[_]` when specifying the capture origin set: the
-    // set is unbound and will be autoparameterized.
+    // set is a generator and will be autoparameterized.
     auto setType = OriginSetType::get(shared.getContext());
     if (originExpr->kind == ExprNode::kDiscardLiteral) {
-      captureOrigins = UnboundAttr::get(setType);
+      captureOrigins =
+          GeneratorAttr::get({setType}, ParamIndexRefAttr::get(0, setType));
     } else {
       TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
           paramList, &typeEmitter);

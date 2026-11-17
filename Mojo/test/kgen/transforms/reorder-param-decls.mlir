@@ -87,9 +87,9 @@ kgen.generator @reorder_asserts_def_in_parent<q, w>() {
   kgen.param.assert <gt(w, q)>, "w is greater than q"
 
   // CHECK: hlcf.comptime.for
-  hlcf.comptime.for iter in ?
-      has_next :() -> i1 ?
-      get_next_iter :() -> () ? {
+  hlcf.comptime.for iter in *?
+      has_next :() -> i1 *?
+      get_next_iter :() -> () *? {
         // CHECK: kgen.param.assert <ge(:scalar<index> from_builtin(q), 3)>, "q is no less than 3"
         kgen.param.assert <ge(q, 3)>, "q is no less than 3"
         // CHECK: hlcf.comptime.if

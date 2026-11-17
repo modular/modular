@@ -1509,7 +1509,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
   // Check for a function type.
   if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
     // For a fully bound type, require that the origin set is concrete.
-    if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
+    if (isa<GeneratorAttr>(sig.getCaptureOrigins())) {
       emitError(value.expr->getLoc(),
                 "function type missing required origin set parameter")
           << value.expr->getRange();
@@ -1564,7 +1564,6 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value,
     }
   }
 
-  assert(llvm::none_of(type.getParamBindings(), llvm::IsaPred<UnboundAttr>));
   return type;
 }
 

@@ -509,12 +509,6 @@ bool SingletonAttr::isConstant() const {
 }
 
 //===----------------------------------------------------------------------===//
-// UnboundAttr
-//===----------------------------------------------------------------------===//
-
-bool UnboundAttr::isConstant() const { return !isParameterizedType(getType()); }
-
-//===----------------------------------------------------------------------===//
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
@@ -1125,7 +1119,7 @@ ParamsBindingArrayAttr::get(MLIRContext *context, size_t numParams,
   SmallVector<TypedAttr> boundValues;
   SmallVector<bool> boundBits(numParams, false);
   for (auto [idx, value] : llvm::enumerate(paramValues)) {
-    if (!value || isa<UnboundAttr>(value))
+    if (!value)
       continue;
     boundBits[idx] = true;
     boundValues.push_back(value);
@@ -4178,9 +4172,6 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   TypedAttr input = operands.front();
   if (input.getType() == resultType)
     return input;
-  // Fold rebinds of an unbound.
-  if (isa<UnboundAttr>(input))
-    return UnboundAttr::get(resultType);
   if (isa<UnknownAttr>(input))
     return UnknownAttr::get(resultType);
 

@@ -908,10 +908,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
-  // If the actual value is a ? then we never bind to it.
-  if (isa<UnboundAttr>(actualAttr))
-    return success();
-
   // Match two casts if the target type aligns.
   auto actualCast = dyn_cast<CastFromBuiltinAttr>(actualAttr);
   auto expectedCast = dyn_cast<CastFromBuiltinAttr>(expectedAttr);

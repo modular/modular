@@ -330,7 +330,7 @@ private:
 FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
 
 /// Return true if `symbol` binds any of its input parameters directly to
-/// `#kgen.unbound` or `#kgen.unknown`.
+/// `#kgen.unknown`.
 bool hasUnresolvedParamValue(FuncSymbolGenerator symbol);
 
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by

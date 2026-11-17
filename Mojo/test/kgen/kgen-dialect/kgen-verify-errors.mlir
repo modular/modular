@@ -230,7 +230,7 @@ kgen.generator @bad_index_ref<fn: <i32, !pop.array<*(0,0), i32>>() -> ()>() {
 kgen.generator @two_params<a, b>() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{generator type expects 2 parameters but got bindings for 1}}
-  kgen.param.declare f: <index, index>() -> () = <@two_params<?>>
+  kgen.param.declare f: <index, index>() -> () = <@two_params<*?>>
   hlcf.return
 }
 

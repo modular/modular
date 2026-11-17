@@ -59,9 +59,8 @@ bool KGEN::hasUnresolvedParamValue(FuncSymbolGenerator symbol) {
   // Input parameters still left on the generator are unbound.
   if (!symbol.isFullyBound())
     return true;
-  return llvm::any_of(symbol.getParamValues(), [](TypedAttr value) {
-    return isa<UnboundAttr, UnknownAttr>(value);
-  });
+  return llvm::any_of(symbol.getParamValues(),
+                      [](TypedAttr value) { return isa<UnknownAttr>(value); });
 }
 
 ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
@@ -632,7 +631,6 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
           intAttr.print(os, /*elideType=*/true);
       })
       .Case<NoneAttr>([&](auto noneAttr) { os << "None"; })
-      .Case<UnboundAttr>([&](auto unboundAttr) { os << "?"; })
       .Case<TypeParamAttr>([&](auto typeAttr) {
         if (auto typeValue = dyn_cast<TypeValueType>(typeAttr.getTypeValue())) {
           if (auto instanceRef =

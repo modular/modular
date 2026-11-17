@@ -145,9 +145,9 @@ kgen.generator @lifetime_union<x: !lit.origin<false>, y: !lit.origin<false>>() {
                                 :origin<false> #lit.implicit.origin.ref<0, 1>> : !lit.origin<false>} : () -> ()
 
   kgen.param.declare is_mut: !kgen.scalar<bool> = <#kgen.simd<false>:!kgen.scalar<bool>>
-  kgen.param.declare a: origin<true> = <?>
-  kgen.param.declare b: origin<false> = <?>
-  kgen.param.declare c: origin<is_mut> = <?>
+  kgen.param.declare a: origin<true> = <#lit.any.origin>
+  kgen.param.declare b: origin<false> = <#lit.any.origin>
+  kgen.param.declare c: origin<is_mut> = <#lit.any.origin>
 
   // CHECK: <{(is_mut) c, mut a, imm b}>
   kgen.param.constant: origin.set = <{imm b, mut a, (is_mut) c, mut a}>

@@ -100,11 +100,15 @@ static ParseResult parseColonTypeOrDimension(AsmParser &parser, Type &type) {
 
 static ParseResult parseShapeValueElement(AsmParser &p, TypedAttr &value) {
   Type type;
-  if (parseColonTypeOrDimension(p, type) ||
-      KGEN::parseParamValue(p, value, type))
+  if (parseColonTypeOrDimension(p, type))
     return failure();
 
-  return success();
+  // A '?' is an unknown dimension.
+  if (succeeded(p.parseOptionalQuestion())) {
+    value = KGEN::UnknownAttr::get(type);
+    return success();
+  }
+  return KGEN::parseParamValue(p, value, type);
 }
 
 ParseResult M::MOSH::parseShapeValue(AsmParser &p,
@@ -136,6 +140,10 @@ static void printColonTypeOrDimensionPrefix(AsmPrinter &p, Type type) {
 
 void M::MOSH::printDimensionValue(AsmPrinter &p, TypedAttr value) {
   printColonTypeOrDimensionPrefix(p, value.getType());
+  if (isa<KGEN::UnknownAttr>(value)) {
+    p << '?';
+    return;
+  }
   KGEN::printParamValue(p, value);
 }
 

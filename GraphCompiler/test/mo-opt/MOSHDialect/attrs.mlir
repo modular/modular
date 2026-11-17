@@ -11,8 +11,8 @@ kgen.generator @shape_attr_and_type() {
   %1 = "foo.parametric"() {bb = #mosh<ape[N, ?, 3]> : !mosh.ape} : () -> !mosh.ape
   // CHECK: "foo.empty"() {cc = #mosh<ape[]> : !mosh.ape} : () -> !mosh.ape
   %2 = "foo.empty"() {cc = #mosh<ape[]> : !mosh.ape} : () -> !mosh.ape
-  // CHECK: "foo.expression"() {dd = #mosh<ape[mul(N, ?), N]> : !mosh.ape} : () -> !mosh.ape
-  %3 = "foo.expression"() {dd = #mosh<ape[mul(N, ?), N]> : !mosh.ape} : () -> !mosh.ape
+  // CHECK: "foo.expression"() {dd = #mosh<ape[mul(N, *?), N]> : !mosh.ape} : () -> !mosh.ape
+  %3 = "foo.expression"() {dd = #mosh<ape[mul(N, *?), N]> : !mosh.ape} : () -> !mosh.ape
 
   // CHECK: kgen.param.declare [[P:.*]]: !mosh.ape = <apply(:() -> !mosh.ape "mosh.foobar")>
   kgen.param.declare P: !mosh.ape = <apply(:() -> !mosh.ape "mosh.foobar")>

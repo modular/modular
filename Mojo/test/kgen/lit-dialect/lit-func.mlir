@@ -203,11 +203,11 @@ lit.fn @inferred<a: i1, b, +, c = 1, |>() {
   // CHECK-NEXT: !lit.generator<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()>
   kgen.param.constant: !lit.generator<<"a": i1, "b": index, +, "c": index = 1, |>() -> ()> = <@inferred<:i1 *(0,0), *(0,1), *(0,2)>>
 
-  // CHECK-NEXT: !lit.generator<<index, +, *, index>() -> ()> = <?>
-  kgen.param.constant: !lit.generator<<index, +, *, index>() -> ()> = <?>
+  // CHECK-NEXT: !lit.generator<<index, +, *, index>() -> ()> = <*?>
+  kgen.param.constant: !lit.generator<<index, +, *, index>() -> ()> = <*?>
 
-  // CHECK-NEXT: !lit.generator<<index, +>() -> ()> = <?>
-  kgen.param.constant: !lit.generator<<index, +>() -> ()> = <?>
+  // CHECK-NEXT: !lit.generator<<index, +>() -> ()> = <*?>
+  kgen.param.constant: !lit.generator<<index, +>() -> ()> = <*?>
   hlcf.return
 }
 
@@ -219,17 +219,17 @@ lit.fn @different_param_name<["a"]param, |>() {
 
 // CHECK-LABEL: lit.fn @lifetime_set
 lit.fn @lifetime_set<set: origin.set>[mut lt]() {
-  // CHECK-NEXT: f0: !lit.generator<:set:() -> ()> = <?>
-  kgen.param.declare f0: !lit.generator<:set:() -> ()> = <?>
-  // CHECK-NEXT: f1: !lit.generator<:{mut lt}:() -> ()> = <?>
-  kgen.param.declare f1: !lit.generator<:{mut lt}:() -> ()> = <?>
-  // CHECK-NEXT: f2: !lit.generator<[1]:set:() -> ()> = <?>
-  kgen.param.declare f2: !lit.generator<[1]:set:() -> ()> = <?>
-  // CHECK-NEXT: f3: !lit.generator<[1]:{mut lt}:() -> ()> = <?>
-  kgen.param.declare f3: !lit.generator<[1]:{mut lt}:() -> ()> = <?>
-  // CHECK-NEXT: f4: !lit.generator<<index>:set:() -> ()> = <?>
-  kgen.param.declare f4: !lit.generator<<index>:set:() -> ()> = <?>
-  // CHECK-NEXT: f5: !lit.generator<<index>:{mut lt}:() -> ()> = <?>
-  kgen.param.declare f5: !lit.generator<<index>:{mut lt}:() -> ()> = <?>
+  // CHECK-NEXT: f0: !lit.generator<:set:() -> ()> = <*?>
+  kgen.param.declare f0: !lit.generator<:set:() -> ()> = <*?>
+  // CHECK-NEXT: f1: !lit.generator<:{mut lt}:() -> ()> = <*?>
+  kgen.param.declare f1: !lit.generator<:{mut lt}:() -> ()> = <*?>
+  // CHECK-NEXT: f2: !lit.generator<[1]:set:() -> ()> = <*?>
+  kgen.param.declare f2: !lit.generator<[1]:set:() -> ()> = <*?>
+  // CHECK-NEXT: f3: !lit.generator<[1]:{mut lt}:() -> ()> = <*?>
+  kgen.param.declare f3: !lit.generator<[1]:{mut lt}:() -> ()> = <*?>
+  // CHECK-NEXT: f4: !lit.generator<<index>:set:() -> ()> = <*?>
+  kgen.param.declare f4: !lit.generator<<index>:set:() -> ()> = <*?>
+  // CHECK-NEXT: f5: !lit.generator<<index>:{mut lt}:() -> ()> = <*?>
+  kgen.param.declare f5: !lit.generator<<index>:{mut lt}:() -> ()> = <*?>
   hlcf.return
 }

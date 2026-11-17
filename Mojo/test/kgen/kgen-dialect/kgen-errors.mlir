@@ -454,7 +454,7 @@ kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[el
 kgen.generator @bind_params_discharged_mask_size() {
   // expected-error @+2 {{bind_params discharged mask has size 1 but the generator has 2 body constraints}}
   kgen.param.declare bad: index =
-    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> ?, 1 | "1">>
+    <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> *?, 1 | "1">>
   hlcf.return
 }
 

@@ -334,26 +334,6 @@ def KGEN_SingletonAttr : KGEN_ExprAttr<"Singleton", "singleton"> {
 }
 
 //===----------------------------------------------------------------------===//
-// UnboundAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_UnboundAttr : KGEN_ExprAttr<"Unbound", "unbound"> {
-  let summary = "An unbound parameter value.";
-  let description = [{
-    The `#kgen.unbound` attribute represents an unbound parameter value. It is
-    a special placeholder that appears in collections of parameters that have
-    been partially bound.
-  }];
-
-  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = "";
-
-  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
-    return get(type.getContext(), type);
-  }]>];
-}
-
-//===----------------------------------------------------------------------===//
 // NoneAttr
 //===----------------------------------------------------------------------===//
 
@@ -1741,9 +1721,9 @@ def KGEN_ParamsBindingArrayAttr
   let assemblyFormat = "`<` struct(params) `>`";
 
   let builders = [
-    // Build `numParams` values from a dense list, where a null value or an
-    // UnboundAttr leaves that input unbound. Missing trailing values are
-    // unbound. The list must not be longer than `numParams`.
+    // Build `numParams` values from a dense list, where a null value leaves
+    // that input unbound. Missing trailing values are unbound. The list must
+    // not be longer than `numParams`.
     AttrBuilder<(ins
       "size_t":$numParams,
       "ArrayRef<TypedAttr>":$paramValues
@@ -1812,9 +1792,9 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
     ), "", "TypedAttr">
   ];
   let extraClassDeclaration = [{
-    /// Build from a dense list of parameter values, where a null value or an
-    /// UnboundAttr leaves that input unbound. Missing trailing values are
-    /// unbound. The list must not be longer than the generator's inputs.
+    /// Build from a dense list of parameter values, where a null value leaves
+    /// that input unbound. Missing trailing values are unbound. The list must
+    /// not be longer than the generator's inputs.
     static TypedAttr get(
         MLIRContext *context, TypedAttr generator,
         ArrayRef<TypedAttr> paramValues, DenseBoolArrayAttr discharged,

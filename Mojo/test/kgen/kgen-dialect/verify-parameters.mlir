@@ -107,7 +107,7 @@ kgen.generator @use() {
       apply(
         :() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>>
           @pass_type<:type () -> !kgen.simd<*(2,0), si8>>))>
-  >() -> () = <?>
+  >() -> () = <*?>
   hlcf.return
 }
 
@@ -118,10 +118,10 @@ lit.struct.decl @T<a> {
 
 // CHECK-LABEL: kgen.generator @f
 kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
-  // CHECK-NEXT: ref: <index, !lit.struct<@T<*(0,0)>>, <apply(:() -> !kgen.type @f<*(2,0), :!lit.struct<@T<*(2,0)>> *(2,1)>)>() -> ()>() -> () = <?>
-  kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(2,0), :@T<*(2,0)> *(2,1)>)>() -> ()>() -> () = <?>
+  // CHECK-NEXT: ref: <index, !lit.struct<@T<*(0,0)>>, <apply(:() -> !kgen.type @f<*(2,0), :!lit.struct<@T<*(2,0)>> *(2,1)>)>() -> ()>() -> () = <*?>
+  kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(2,0), :@T<*(2,0)> *(2,1)>)>() -> ()>() -> () = <*?>
 
   // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>
-  kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
+  kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>() -> () = <*?>
   hlcf.unreachable
 }

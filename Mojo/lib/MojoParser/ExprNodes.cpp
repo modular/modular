@@ -2543,7 +2543,6 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     // Two possible cases: 1) a fully-bound struct type, 2) a generator
     if (auto st = sugarDynCast<StructMetaType>(baseRVMetaType)) {
-      assert(!llvm::any_of(st.getParamValues(), llvm::IsaPred<UnboundAttr>));
       for (auto [name, value] :
            llvm::zip(structDecl->getOp().getParams(), st.getParamValues())) {
         if (name.getName() == paramRef.getName())
@@ -3496,8 +3495,6 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // A struct type has all of its parameters bound. A struct with parameters
     // left to bind is a generator instead.
     if (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType)) {
-      assert(llvm::none_of(baseType.getParamBindings(),
-                           llvm::IsaPred<UnboundAttr>));
       // Print the struct type itself rather than an alias it is spelled with,
       // but keep the spelling of its parameter values.
       emitter.emitError(lsquareLoc)

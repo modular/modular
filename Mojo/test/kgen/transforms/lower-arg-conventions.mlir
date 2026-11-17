@@ -159,9 +159,9 @@ kgen.func @byref_throws(
   // CHECK: %[[ERROR:.*]] = pop.stack_allocation 1 x struct<(f32)>
   // CHECK: %[[VALUE:.*]] = pop.stack_allocation 1 x index
 
-  // CHECK: %[[FLAG:.*]] = kgen.param.constant: i1 = <?>
+  // CHECK: %[[FLAG:.*]] = kgen.param.constant: i1 = <*?>
   // CHECK: %[[COND:.*]] = pop.cast_from_builtin %[[FLAG]] : i1 to !kgen.scalar<bool>
-  %0 = kgen.param.constant: i1 = <?>
+  %0 = kgen.param.constant: i1 = <*?>
   %cflag = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
 
   // CHECK: hlcf.if %[[COND]]

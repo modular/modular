@@ -4,7 +4,7 @@
 // CHECK-LABEL: @lifetimes
 lit.fn @lifetimes() {
   // CHECK: partial: !lit.generator<<index>[1](!lit.ref<index, mut *[0,0]>) -> ()>
-  lit.alias.decl partial: !lit.generator<<index>[1](!lit.ref<index, mut *[0,0]>) -> ()> = <?>
+  lit.alias.decl partial: !lit.generator<<index>[1](!lit.ref<index, mut *[0,0]>) -> ()> = <*?>
   lit.var.decl "x" var : !lit.ref<index, mut *"a`">
   hlcf.return
 }

@@ -163,9 +163,9 @@ kgen.generator @parent<A>() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  hlcf.comptime.for A in ?
-     has_next :() -> i1 ?
-     get_next_iter :() -> () ? {
+  hlcf.comptime.for A in *?
+     has_next :() -> i1 *?
+     get_next_iter :() -> () *? {
     kgen.param.constant = <A>
     hlcf.comptime.for.continue
   } else {

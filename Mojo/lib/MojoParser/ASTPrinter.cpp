@@ -134,9 +134,8 @@ static StringRef tryGetTypeNameFromSymbolRef(SymbolRefAttr symbol) {
 /// type, allowing us to print just "x" instead.
 ///
 /// This is safe because StructType::getParamValues() always contains an entry
-/// for every declared parameter (unbound slots use UnboundAttr), so we never
-/// match a partial application — any non-auto-param entry causes early
-/// bail-out.
+/// for every declared parameter, so we never match a partial application — any
+/// non-auto-param entry causes early bail-out.
 static StringRef getIdentityReconstructionArgName(ArrayRef<TypedAttr> params) {
   if (params.empty())
     return {};
@@ -378,16 +377,6 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
   }
 }
 
-/// Bind every input of a generator to an UnboundAttr, so that a generator over
-/// a struct prints as the partially bound struct, e.g. `SIMD[.int, _]`.
-static ParameterEvaluator getUnboundInputsEvaluator(ArrayRef<Type> inputTypes) {
-  ParameterEvaluator evaluator;
-  for (Type type : inputTypes)
-    evaluator.appendIndexBinding(
-        UnboundAttr::get(evaluator.getReboundType(type)));
-  return evaluator;
-}
-
 /// Print the input parameter types of a generator type/attr.
 /// This needs to handle the case when 'paramInfo' is null.
 /// An additional attr/type body can be provided that will also be rebound with
@@ -434,10 +423,6 @@ printGeneratorInterface(raw_ostream &os, ArrayRef<Type> inputParamTypes,
       }
       // Any direct use of this should print as _ since we're not going to show
       // the declaration.
-      // Use UnknownAttr instead of UnboundAttr here since UnboundAttr are
-      // treated specially in a lot of places. E.g., by `BindParamAttr`. In this
-      // case, we mean a concrete value that we don't care (instead of a
-      // unprovided parameter values).
       evaluator.appendIndexBinding(UnknownAttr::get(reboundType));
       continue;
     }
@@ -1490,11 +1475,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (isa<UnboundAttr>(param)) {
-    os << "_";
-    return;
-  }
-
   // Handle other KGEN parameters that it knows about with an ugly fallback.
   // TODO: Remove this - we should cover all attrs here, anything that falls
   // back should be an error/assertion.
@@ -1566,26 +1546,14 @@ void ASTType::printOriginParam(raw_ostream &os, TypedAttr param,
 
 static void printRef(RefType refType, raw_ostream &os,
                      ASTTypePrinterContext ctx) {
-  os << "ref";
-  bool printed = false;
-
-  // Just print "ref" in the presence of "ref [_]".
-  // NOTE: This makes it impossible to know what the mutability is if hard
-  // coded - print something like "ref [mut=True]"?
-  if (!isa<UnboundAttr>(refType.getOrigin())) {
-    os << '[';
-    ASTType::printRefOriginParam(os, refType.getOrigin(), ctx.shared);
-    printed = true;
-  }
-
+  os << "ref[";
+  ASTType::printRefOriginParam(os, refType.getOrigin(), ctx.shared);
   if (!refType.isDefaultAddrSpace()) {
-    if (printed)
-      os << ", ";
+    os << ", ";
     ASTType::printParam(
         os, ASTType::getAddressSpaceForDisplay(refType.getAddressSpace()), ctx);
-    printed = true;
   }
-  os << (printed ? "] " : " ");
+  os << "] ";
 }
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
@@ -1952,9 +1920,10 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     printParam(os, paramRef.getParam(), ctx);
   } else if (auto genType = dyn_cast<GeneratorType>(type);
              genType && sugarIsa<StructMetaType>(genType.getBody())) {
-    ASTType(getUnboundInputsEvaluator(genType.getInputParamTypes())
-                .getReboundType(genType.getBody()))
-        .print(os, ctx);
+    // Print the generator as the partially bound struct, e.g. `SIMD[.int, _]`.
+    ASTTypePrinterContext bodyCtx = ctx;
+    bodyCtx.printGeneratorInputsAsUnbound = true;
+    ASTType(genType.getBody()).print(os, bodyCtx);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
     PogListAttr paramList = genType.getParamListAttrs();
     ParameterEvaluator evaluator;

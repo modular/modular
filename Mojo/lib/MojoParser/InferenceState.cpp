@@ -160,14 +160,13 @@ private:
 LogicalResult InferenceState::checkBodyConstraints(
     ArrayRef<ConstraintAttr> extraConstraints) {
   // Substitute the parameters that are bound, but leave the unbound ones as
-  // references rather than inlining their `UnboundAttr` marker.
+  // references.
   assert(evaluator.getDepth() == 0 &&
          "body constraints are checked from the decl scope");
   ParameterEvaluator partialEvaluator;
   partialEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
   for (TypedAttr binding : evaluator.getIndexBindings())
-    partialEvaluator.appendIndexBinding(
-        binding && sugarIsa<UnboundAttr>(binding) ? TypedAttr() : binding);
+    partialEvaluator.appendIndexBinding(binding);
 
   // Check the extra constraints first.
   if (LIT::canDischargeConstraintsInScope(

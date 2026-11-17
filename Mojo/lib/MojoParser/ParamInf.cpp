@@ -1204,13 +1204,6 @@ void ParamInf::inferOriginParams() {
         auto origin = // Get the Origin value.
             evaluator.getReboundAttribute(paramType.getParamValues()[1]);
 
-        // If the !lit.origin is unbound, then we have a partial binding - don't
-        // bind a concrete Origin around an unbound Origin, just let other
-        // things leave it unbound also.  We don't want things like
-        // Span[mut=False] to bind the Origin.
-        if (isa<UnboundAttr>(origin))
-          continue;
-
         TypedAttr paramVal =
             emitter.getStdlibOriginOf(origin, getDeclScope().getLoc());
         setInferredValue(idx, paramVal);
@@ -1351,10 +1344,8 @@ LogicalResult ParamInf::finalizeWithUnbound() {
   // to unboundAttr.
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     TypedAttr inferred = evaluator.getIndexBindings()[idx];
-    if (inferred) {
-      assert(!sugarIsa<UnboundAttr>(inferred));
+    if (inferred)
       continue;
-    }
 
     bool installUnbound = [&]() -> bool {
       // Call must produce a concrete type
@@ -1391,7 +1382,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
                                         ParamDeclRefAttr::get(implicitParam));
         continue;
       }
-      evaluator.overwriteIndexBinding(idx, UnboundAttr::get(targetType));
+      evaluator.overwriteIndexBinding(idx, TypedAttr());
       continue;
     }
 

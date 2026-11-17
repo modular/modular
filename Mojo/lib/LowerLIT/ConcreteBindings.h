@@ -37,22 +37,15 @@ namespace M::KGEN {
 class ConcreteBindingReplacer
     : public IndexParameterReplacer<ConcreteBindingReplacer> {
 public:
-  /// Binding for a single parameter: either a concrete value or a new index.
-  struct ParamBinding {
-    TypedAttr boundValue;
-    unsigned newIndex = 0;
-    bool isBound = false;
-  };
-
-  ConcreteBindingReplacer(ArrayRef<TypedAttr> paramBindings);
+  ConcreteBindingReplacer(ParamsBindingArrayAttr paramBindings)
+      : bindings(paramBindings) {}
   SmallVector<Type> getRemappedUnboundParamTypes(ArrayRef<Type> originalTypes);
   Type getReboundType(Type type) { return replace(type); }
   TypedAttr getReboundAttribute(TypedAttr attr) { return replace(attr); }
 
   /// Specialize generator metadata using this replacer's bindings.
   PogListAttr
-  specializeMetadata(PogListAttr genMetadata, ArrayRef<TypedAttr> paramBindings,
-                     ArrayRef<Type> paramTypes,
+  specializeMetadata(PogListAttr genMetadata, ArrayRef<Type> paramTypes,
                      function_ref<InFlightDiagnostic()> emitErrorFn);
 
 private:
@@ -60,8 +53,19 @@ private:
   Type tryReplace(Type, size_t) { return {}; }
   friend class IndexParameterReplacer<ConcreteBindingReplacer>;
 
-  SmallVector<ParamBinding> bindings;
-  size_t numUnbound = 0;
+  bool isBound(size_t idx) const {
+    return bindings.getBoundMask().asArrayRef()[idx];
+  }
+
+  /// Return the position of input `idx` among the inputs with the same bound
+  /// state: the number of bound/unbound values depending on whether `idx`
+  /// itself is bound/unbound.
+  size_t getRank(size_t idx) const {
+    return llvm::count(bindings.getBoundMask().asArrayRef().take_front(idx),
+                       isBound(idx));
+  }
+
+  ParamsBindingArrayAttr bindings;
 };
 
 //===----------------------------------------------------------------------===//
@@ -70,12 +74,12 @@ private:
 
 /// Get this GeneratorType with concrete bindings, no index refs.
 GeneratorType getSpecializedWithConcreteBindings(
-    GeneratorType gen, ArrayRef<TypedAttr> paramBindings,
+    GeneratorType gen, ParamsBindingArrayAttr paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn = {});
 
 /// Get this GeneratorAttr with concrete bindings, no index refs.
 GeneratorAttr getSpecializedWithConcreteBindings(
-    GeneratorAttr gen, ArrayRef<TypedAttr> paramBindings,
+    GeneratorAttr gen, ParamsBindingArrayAttr paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn = {});
 
 } // namespace M::KGEN

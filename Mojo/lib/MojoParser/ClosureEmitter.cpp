@@ -2603,7 +2603,7 @@ PValue ClosureEmitter::createParamClosureExtensionType(
           // `#func.symbol[*(0, 0), *(0, 0)]`, and only the first one is unbound
           // not the second one.
           if (ref && ref.getDepth() == 0)
-            return UnboundAttr::get(adjuster.replace(ref.getType()));
+            return nullptr;
           return cast<TypedAttr>(adjuster.replace(value));
         });
   };
@@ -2613,7 +2613,7 @@ PValue ClosureEmitter::createParamClosureExtensionType(
   // Collecting all the parameter
   SmallVector<TypedAttr> thunkParams;
   for (auto param : thunkBindings) {
-    if (sugarIsa<UnboundAttr>(param))
+    if (!param)
       continue;
     thunkParams.push_back(param);
   }

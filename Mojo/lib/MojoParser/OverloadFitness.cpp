@@ -353,7 +353,6 @@ OverloadFitness OverloadFitness::evaluateDirectCall(
       // index refs, so those match anything.
       bool ctxIsGenerator = sugarIsa<GeneratorAttr>(PValue(ctxType));
       auto isUnbound = [&](TypedAttr param) {
-        assert(!llvm::isa<UnboundAttr>(param));
         auto indexRef = dyn_cast<ParamIndexRefAttr>(param);
         return ctxIsGenerator && indexRef && indexRef.getDepth() == 0;
       };

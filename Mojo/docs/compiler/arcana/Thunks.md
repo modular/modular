@@ -501,7 +501,8 @@ def generic_ship_func_wrapper[
     callee[Y](s) # implicit cast to imm
 ```
 
-Note that `?` there. That's MLIR-speak for `UnboundAttr`.
+Note that `?` there. That's MLIR-speak for an input that `bind_params` leaves
+unbound.
 
 That `?` corresponds to the `[Y: Bool]` on the binding's type.
 

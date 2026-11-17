@@ -222,12 +222,6 @@ def SingletonAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
-def UnboundAttr : DialectAttribute<(attr
-  Type:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def NoneAttr : DialectAttribute<(attr)>;
 
 def ParamDeclRefAttr : DialectAttribute<(attr
@@ -628,7 +622,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamListGetAttr,
     ParamListConcatAttr,
     UnknownAttr,
-    UnboundAttr,
     NoneAttr,
     ParamDeclRefAttr,
     ParamIndexRefAttr,
