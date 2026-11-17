@@ -48,13 +48,13 @@ struct Ordering(
     orderings for atomic operations.
 
     Attributes:
-        NOT_ATOMIC: Not atomic.
-        UNORDERED: Unordered.
-        RELAXED: Relaxed.
-        ACQUIRE: Acquire.
-        RELEASE: Release.
-        ACQUIRE_RELEASE: Acquire-release.
-        SEQUENTIAL: Sequentially consistent.
+        not_atomic: Not atomic.
+        unordered: Unordered.
+        relaxed: Relaxed.
+        acquire: Acquire.
+        release: Release.
+        acquire_release: Acquire-release.
+        sequential: Sequentially consistent.
     """
 
     var _value: UInt8
@@ -62,20 +62,35 @@ struct Ordering(
     This is the underlying value of the memory ordering.
     """
 
-    comptime NOT_ATOMIC = Self(0)
+    comptime not_atomic = Self(0)
     """Not atomic."""
-    comptime UNORDERED = Self(1)
+    comptime unordered = Self(1)
     """Unordered."""
-    comptime RELAXED = Self(2)
+    comptime relaxed = Self(2)
     """Relaxed."""
-    comptime ACQUIRE = Self(3)
+    comptime acquire = Self(3)
     """Acquire."""
-    comptime RELEASE = Self(4)
+    comptime release = Self(4)
     """Release."""
-    comptime ACQUIRE_RELEASE = Self(5)
+    comptime acquire_release = Self(5)
     """Acquire-release."""
-    comptime SEQUENTIAL = Self(6)
+    comptime sequential = Self(6)
     """Sequentially consistent."""
+
+    comptime NOT_ATOMIC = Self.not_atomic
+    """Alias for `not_atomic`."""
+    comptime UNORDERED = Self.unordered
+    """Alias for `unordered`."""
+    comptime RELAXED = Self.relaxed
+    """Alias for `relaxed`."""
+    comptime ACQUIRE = Self.acquire
+    """Alias for `acquire`."""
+    comptime RELEASE = Self.release
+    """Alias for `release`."""
+    comptime ACQUIRE_RELEASE = Self.acquire_release
+    """Alias for `acquire_release`."""
+    comptime SEQUENTIAL = Self.sequential
+    """Alias for `sequential`."""
 
     @inline(.always)
     def __init__(out self, value: UInt8):

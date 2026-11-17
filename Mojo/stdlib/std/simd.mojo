@@ -334,15 +334,15 @@ struct FastMathFlag(
     optimization modes that trade strict IEEE 754 compliance for performance.
 
     Available flags:
-    - `NONE`: No fast-math optimizations.
-    - `NNAN`: Assume operands and results are not NaN.
-    - `NINF`: Assume operands and results are not +/- infinity.
-    - `NSZ`: Treat the sign of a zero as insignificant.
-    - `ARCP`: Allow reciprocal of values.
-    - `CONTRACT`: Allow floating-point contraction (e.g., fused multiply-add).
-    - `AFN`: Allow algebraic function approximations.
-    - `REASSOC`: Allow reassociation of floating-point operations.
-    - `FAST`: Enable all fast-math optimizations.
+    - `none`: No fast-math optimizations.
+    - `nnan`: Assume operands and results are not NaN.
+    - `ninf`: Assume operands and results are not +/- infinity.
+    - `nsz`: Treat the sign of a zero as insignificant.
+    - `arcp`: Allow reciprocal of values.
+    - `contract`: Allow floating-point contraction (e.g., fused multiply-add).
+    - `afn`: Allow algebraic function approximations.
+    - `reassoc`: Allow reassociation of floating-point operations.
+    - `fast`: Enable all fast-math optimizations.
 
     Examples:
         ```mojo
@@ -352,41 +352,68 @@ struct FastMathFlag(
         var accumulator = Float32(1.0)
 
         # Use contract flag for fused multiply-add
-        var result = value.fma[FastMathFlag.CONTRACT](multiplier, accumulator)
+        var result = value.fma[FastMathFlag.contract](multiplier, accumulator)
 
         # Use fast flag for maximum optimization
-        var fast_result = value.fma[FastMathFlag.FAST](multiplier, accumulator)
+        var fast_result = value.fma[FastMathFlag.fast](multiplier, accumulator)
         ```
     """
 
     var _value: UInt8
 
-    comptime NONE = Self(0)
+    comptime none = Self(0)
     """No fast-math optimizations enabled."""
 
-    comptime NNAN = Self(1)
+    comptime nnan = Self(1)
     """Assume no NaN values."""
 
-    comptime NINF = Self(2)
+    comptime ninf = Self(2)
     """Assume no infinite values."""
 
-    comptime NSZ = Self(3)
+    comptime nsz = Self(3)
     """Treat the sign of zero as insignificant."""
 
-    comptime ARCP = Self(4)
+    comptime arcp = Self(4)
     """Allow reciprocal approximations."""
 
-    comptime CONTRACT = Self(5)
+    comptime contract = Self(5)
     """Allow floating-point contraction."""
 
-    comptime AFN = Self(6)
+    comptime afn = Self(6)
     """Allow approximate function implementations."""
 
-    comptime REASSOC = Self(7)
+    comptime reassoc = Self(7)
     """Allow reassociation of operations."""
 
-    comptime FAST = Self(8)
+    comptime fast = Self(8)
     """Enable all fast-math optimizations."""
+
+    comptime NONE = Self.none
+    """Alias for `none`."""
+
+    comptime NNAN = Self.nnan
+    """Alias for `nnan`."""
+
+    comptime NINF = Self.ninf
+    """Alias for `ninf`."""
+
+    comptime NSZ = Self.nsz
+    """Alias for `nsz`."""
+
+    comptime ARCP = Self.arcp
+    """Alias for `arcp`."""
+
+    comptime CONTRACT = Self.contract
+    """Alias for `contract`."""
+
+    comptime AFN = Self.afn
+    """Alias for `afn`."""
+
+    comptime REASSOC = Self.reassoc
+    """Alias for `reassoc`."""
+
+    comptime FAST = Self.fast
+    """Alias for `fast`."""
 
     comptime _enum_case_names = ParameterList.of[
         "NONE".value,

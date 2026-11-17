@@ -72,28 +72,43 @@ struct Level(
 
     var _value: Int
 
-    comptime NOTSET = Self(0)
+    comptime notset = Self(0)
     """Lowest level, used when no level is set."""
 
-    comptime TRACE = Self(10)
+    comptime trace = Self(10)
     """Repetitive trace information, Indicates repeated execution or IO-coupled
     activity, typically only of interest when diagnosing hangs or ensuring a
     section of code is executing."""
 
-    comptime DEBUG = Self(20)
+    comptime debug = Self(20)
     """Detailed information, typically of interest only when diagnosing problems."""
 
-    comptime INFO = Self(30)
+    comptime info = Self(30)
     """Confirmation that things are working as expected."""
 
-    comptime WARNING = Self(40)
+    comptime warning = Self(40)
     """Indication that something unexpected happened, or may happen in the near future."""
 
-    comptime ERROR = Self(50)
+    comptime error = Self(50)
     """Due to a more serious problem, the software has not been able to perform some function."""
 
-    comptime CRITICAL = Self(60)
+    comptime critical = Self(60)
     """A serious error indicating that the program itself may be unable to continue running."""
+
+    comptime NOTSET = Self.notset
+    """Alias for `notset`."""
+    comptime TRACE = Self.trace
+    """Alias for `trace`."""
+    comptime DEBUG = Self.debug
+    """Alias for `debug`."""
+    comptime INFO = Self.info
+    """Alias for `info`."""
+    comptime WARNING = Self.warning
+    """Alias for `warning`."""
+    comptime ERROR = Self.error
+    """Alias for `error`."""
+    comptime CRITICAL = Self.critical
+    """Alias for `critical`."""
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

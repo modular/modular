@@ -85,14 +85,22 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
 
     var _value: Int
 
+    # TODO: Rename to `pass`. It is a keyword, so the declaration needs
+    # backticks, but uses such as `TestResult.pass` do not.
     comptime PASS = Self(0)
     """The test passed."""
 
-    comptime FAIL = Self(1)
+    comptime fail = Self(1)
     """The test failed."""
 
-    comptime SKIP = Self(2)
+    comptime skip = Self(2)
     """The test was skipped."""
+
+    comptime FAIL = Self.fail
+    """Alias for `fail`."""
+
+    comptime SKIP = Self.skip
+    """Alias for `skip`."""
 
     comptime _enum_case_names = ParameterList.of[
         "PASS".value,

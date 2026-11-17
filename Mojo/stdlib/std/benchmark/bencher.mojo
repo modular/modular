@@ -521,11 +521,17 @@ struct Mode(ImplicitlyCopyable):
     var value: Int
     """Represents the mode type."""
 
-    comptime Benchmark = Mode(0)
+    comptime benchmark = Mode(0)
     """Mode for running actual benchmarks."""
 
-    comptime Test = Mode(1)
+    comptime test = Mode(1)
     """Mode for running tests."""
+
+    comptime Benchmark = Self.benchmark
+    """Alias for `benchmark`."""
+
+    comptime Test = Self.test
+    """Alias for `test`."""
 
     def __eq__(self, other: Self) -> Bool:
         """Check if its Benchmark mode or test mode.
